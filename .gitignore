@@ -1,9 +1,8 @@
-.gitattributes
 !!!_Ouput_Video_Files_!!!/
-mp3/
 logs/
 config/
-*.mp4
-*.mp3
 __pycache__/
 advanced/
+*.mp4
+*.mp3
+!mp3/Cool Dance Background Music (No CopyRights).mp3
