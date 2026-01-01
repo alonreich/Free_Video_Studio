@@ -187,7 +187,7 @@ class UiBuilderMixin:
                 self.logger.critical(f"ERROR: Video Merger script not found at {merger_main_path}")
                 QMessageBox.critical(self, "Error", "Video Merger script not found.")
                 return
-            command = [sys.executable, merger_main_path]
+            command = [sys.executable, "-B", merger_main_path]
             subprocess.Popen(command, cwd=self.base_dir)
             self.close()
         except Exception as e:

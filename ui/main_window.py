@@ -240,7 +240,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         """Launches the advanced video editor application."""
         try:
             self.logger.info("ACTION: Launching Advanced Video Editor via F11...")
-            command = [sys.executable, "-m", "advanced.advanced_video_editor"]
+            command = [sys.executable, os.path.join(self.base_dir, 'advanced', 'advanced_video_editor.py')]
             if self.input_file_path:
                 command.append(self.input_file_path)
             subprocess.Popen(command, cwd=self.base_dir)

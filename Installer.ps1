@@ -280,7 +280,7 @@ echo [pip] Upgrading pip (Direct)...
 $cmd -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 
 echo [pip] Installing packages (Direct)...
-$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
+$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
 if %errorlevel% neq 0 echo [!] Failed Direct Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -295,7 +295,7 @@ echo [pip] Upgrading pip (Launcher)...
 $cmd -3.13 -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 
 echo [pip] Installing packages (Launcher)...
-$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
+$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
 if %errorlevel% neq 0 echo [!] Failed Launcher Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -314,33 +314,22 @@ exit /b 0
         if ($exit -ne 0) { $pipOK = $false; Add-Content $logPath "[pip] ExitCode=$exit" } else { Add-Content $logPath "[pip] Completed successfully" }
     }
 } catch { $pipOK = $false }
-if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false }
+if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false }
 
 Step 5 "Classic context menu hack skipped" $true
 
 $binOK=$true
-try{
-$bin = Join-Path $installPath "bin"
-if(!(Test-Path $bin)){ New-Item -ItemType Directory -Force -Path $bin | Out-Null }
-$pyPath = if($global:Py -and $global:Py.PyLauncherPath){ $global:Py.PyLauncherPath } elseif($global:Py -and $global:Py.PyExe){ $global:Py.PyExe } else { '' }
-"@echo off`r`n""$pyPath"" %*" | Set-Content -Path (Join-Path $bin "py.cmd") -Encoding ASCII -Force
-if($global:Py.PyExe){
-"@echo off`r`n""$($global:Py.PyExe)"" %*" | Set-Content -Path (Join-Path $bin "python.cmd") -Encoding ASCII -Force
-"@echo off`r`n""$($global:Py.PyExe)"" -m pip %*" | Set-Content -Path (Join-Path $bin "pip.cmd") -Encoding ASCII -Force
-}
-Add-PathEntryUser $bin
-Broadcast-EnvChange
-}catch{ $binOK=$false }
-Step 6 ("Created PATH shims in \bin and added to PATH"+$(if($binOK){" "}else{" - errors occurred"})) $binOK
+Step 6 "Skipped creating PATH shims in \bin" $true
 
 # --- STEP 7: INTEGRATED "SYSTEM FILE ASSOCIATIONS" FIX ---
 $verbOK=$true
 try{
     $verbName = "Fortnite_Video_Software"
     $iconPath = Join-Path $installPath "icons\Video_Icon_File.ico"
-    $pythonCmdPath = Join-Path $installPath "bin\python.cmd"
+    $runner = if($global:Py -and $global:Py.PyLauncherPath){ $global:Py.PyLauncherPath } elseif($global:Py -and $global:Py.PyExe){ $global:Py.PyExe } else { 'py.exe' }
+    $pyArg = if($global:Py -and $global:Py.PyExe){ "-B" } else { "-3.13 -B" }
     $appPyPath = Join-Path $installPath "app.py"
-    $CmdValue = "`"$pythonCmdPath`" `"$appPyPath`" `"%1`""
+    $CmdValue = "`"$runner`" $pyArg `"$appPyPath`" `"%1`""
     
     $RegPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\SystemFileAssociations\.mp4\shell\$verbName"
     $CmdPath = "$RegPath\command"
@@ -386,7 +375,7 @@ if(Test-Path $shortcutPath){Remove-Item $shortcutPath -Force}
 $shell=New-Object -ComObject WScript.Shell
 $sc=$shell.CreateShortcut($shortcutPath)
 $sc.TargetPath=$runner
-$sc.Arguments="$pyArg `"$installPath\app.py`""
+$sc.Arguments="$pyArg -B `"$installPath\app.py`""
 $sc.IconLocation=Join-Path $installPath "icons\Video_Icon_File.ico"
 $sc.WorkingDirectory=$installPath
 $sc.Description="Launch Fortnite Video Software"
