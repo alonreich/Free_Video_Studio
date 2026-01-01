@@ -192,20 +192,33 @@ $zipFile="$env:TEMP\Fortnite_Video_Software.zip"
 $stage=Join-Path $env:TEMP ("FVS_stage_"+[guid]::NewGuid())
 if(Test-Path $stage){Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue}; New-Item -ItemType Directory -Force -Path $stage|Out-Null
 Info "[download] $zipURL"
-if(-not (Get-FileSmart -Url $zipURL -OutFile $zipFile -TimeoutSec 1800)){ throw "Download failed" }
-Expand-Archive -Path $zipFile -DestinationPath $stage -Force
-Remove-Item $zipFile -Force
-$top=Get-ChildItem -Directory -Path $stage | Select-Object -First 1
-if(-not $top){throw "No extracted folder found"}
-Get-ChildItem -LiteralPath $top.FullName -Force | %{
-$dest=Join-Path $installPath $_.Name
-if(Test-Path $dest){Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue}
-Move-Item -LiteralPath $_.FullName -Destination $installPath -Force
-}
-Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-Step 2 "Fetched, extracted, and flattened project files into $installPath" $true
+    if(-not (Get-FileSmart -Url $zipURL -OutFile $zipFile -TimeoutSec 1800)){ throw "Download failed" }
+    Expand-Archive -Path $zipFile -DestinationPath $stage -Force
+    Remove-Item $zipFile -Force
+    $top=Get-ChildItem -Directory -Path $stage | Select-Object -First 1
+    if(-not $top){throw "No extracted folder found"}
+    Get-ChildItem -LiteralPath $top.FullName -Force | %{
+        $dest=Join-Path $installPath $_.Name
+        if(Test-Path $dest){Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue}
+        Move-Item -LiteralPath $_.FullName -Destination $installPath -Force
+    }
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 
-# --- RESTORE MP3 FILES ---
+    # --- LFS RECOVERY: Check for "fake" pointer files and download real binaries ---
+    $binDir = Join-Path $installPath "binaries"
+    if (Test-Path $binDir) {
+        $dlls = Get-ChildItem -Path $binDir -Filter "*.dll"
+        foreach ($dll in $dlls) {
+            if ($dll.Length -lt 2KB) { # It's a pointer file, not the real binary
+                Info "[LFS Fix] Downloading real binary for: $($dll.Name)..."
+                $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/binaries/$($dll.Name)"
+                if (-not (Get-FileSmart -Url $rawUrl -OutFile $dll.FullName -TimeoutSec 1800)) {
+                    Write-Host "Failed to download LFS file: $($dll.Name)" -ForegroundColor Red
+                }
+            }
+        }
+    }
+    Step 2 "Fetched files and verified LFS binaries" $true
 $oldMp3 = Join-Path $backupPath "mp3"
 $newMp3 = Join-Path $installPath "mp3"
 if ((Test-Path $oldMp3) -and (Test-Path $newMp3)) {
