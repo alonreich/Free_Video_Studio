@@ -1,4 +1,5 @@
-﻿$excludedDirNames = @('binaries','config','logs','mp3','!!!_Ouput_Video_Files_!!!')
+﻿Set-Location $PSScriptRoot
+$excludedDirNames = @('binaries','config','logs','mp3','!!!_Ouput_Video_Files_!!!')
 
 $selfName = Split-Path -Leaf $PSCommandPath
 

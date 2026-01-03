@@ -67,7 +67,7 @@ class MusicHandler(MusicDialogHandler):
         if not self._music_files:
             return
         if self.parent.music_volume_slider.value() in (0, 25):
-             self.parent.music_volume_slider.setValue(25)
+            self.parent.music_volume_slider.setValue(25)
         try:
             p = self.parent.music_combo.currentData()
             if not p:

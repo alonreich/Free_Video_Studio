@@ -889,10 +889,10 @@ class UiBuilderMixin:
         self.add_music_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-right: 0px; margin-bottom: 20px; margin-left: 0px; padding: 0px;")
         right_col.addWidget(self.add_music_checkbox)
         def _update_ui_positions(checked):
-             d_top = 0 if checked else 10
-             self.drop_area.setStyleSheet(f"font-size: 11px; font-weight: bold; margin-top: {d_top}px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px; padding: 5px;")
-             s_top = 32 if checked else 32
-             self.slider_vbox_layout.setContentsMargins(0, s_top, 0, 0)
+            d_top = 0 if checked else 10
+            self.drop_area.setStyleSheet(f"font-size: 11px; font-weight: bold; margin-top: {d_top}px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px; padding: 5px;")
+            s_top = 32 if checked else 32
+            self.slider_vbox_layout.setContentsMargins(0, s_top, 0, 0)
         self.add_music_checkbox.toggled.connect(_update_ui_positions)
         self.music_combo = QComboBox()
         self.music_combo.setFixedWidth(250)

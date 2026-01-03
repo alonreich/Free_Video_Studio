@@ -121,9 +121,9 @@ class PhaseOverlayMixin:
             self._sample_perf_counters_safe()
             self._stats_timer.start()
             if not getattr(self, "_color_pulse_timer", None):
-                 self._color_pulse_timer = QTimer(self)
-                 self._color_pulse_timer.setInterval(100)
-                 self._color_pulse_timer.timeout.connect(self._pulse_button_color)
+                self._color_pulse_timer = QTimer(self)
+                self._color_pulse_timer.setInterval(100)
+                self._color_pulse_timer.timeout.connect(self._pulse_button_color)
             self._color_pulse_timer.start()
         except Exception:
             pass

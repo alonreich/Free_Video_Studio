@@ -280,7 +280,7 @@ echo [pip] Upgrading pip (Direct)...
 $cmd -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 
 echo [pip] Installing packages (Direct)...
-$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
+[cite_start]$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
 if %errorlevel% neq 0 echo [!] Failed Direct Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -295,7 +295,7 @@ echo [pip] Upgrading pip (Launcher)...
 $cmd -3.13 -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 
 echo [pip] Installing packages (Launcher)...
-$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
+[cite_start]$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
 if %errorlevel% neq 0 echo [!] Failed Launcher Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -314,7 +314,7 @@ exit /b 0
         if ($exit -ne 0) { $pipOK = $false; Add-Content $logPath "[pip] ExitCode=$exit" } else { Add-Content $logPath "[pip] Completed successfully" }
     }
 } catch { $pipOK = $false }
-if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false }
+[cite_start]if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv, send2trash)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false } [cite: 12]
 
 Step 5 "Classic context menu hack skipped" $true
 

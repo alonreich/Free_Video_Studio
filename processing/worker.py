@@ -325,7 +325,7 @@ class ProcessThread(QThread):
                 if self.is_boss_hp:
                     healthbar_scale = 1.615116
                 else:
-                                         healthbar_scale = 1.717429
+                    healthbar_scale = 1.717429
                 loot_scale = 1.772287
                 stats_scale = 2.0
                 team_scale = 1.61
@@ -544,13 +544,13 @@ class ProcessThread(QThread):
                 a1_chain = (
                     f"atrim=start={mo:.3f}:duration={music_needed_duration:.3f},"
                     f"asetpts=PTS-STARTPTS,volume={vol:.4f},aresample=48000"
-                 )
+                )
                 if not self.disable_fades:
-                     music_fade_out_start = max(0.0, music_needed_duration - 1.5)
-                     a1_chain += (
-                         f",afade=t=in:st=0:d=1.5"
-                         f",afade=t=out:st={music_fade_out_start:.3f}:d=1.5"
-                     )
+                    music_fade_out_start = max(0.0, music_needed_duration - 1.5)
+                    a1_chain += (
+                        f",afade=t=in:st=0:d=1.5"
+                        f",afade=t=out:st={music_fade_out_start:.3f}:d=1.5"
+                    )
                 core_filters.append(f"[1:a]{a1_chain}[a_music_prepared]")
                 core_filters.append(
                     "[a_main_speed_corrected][a_music_prepared]"
@@ -830,9 +830,9 @@ class ProcessThread(QThread):
                     output_path
                 ]
             else:
-                 if not self.is_canceled:
+                if not self.is_canceled:
                     self.finished_signal.emit(False, "No video files found for final step.")
-                 return
+                return
             if self.is_canceled: return
             self.logger.info(f"STEP 3/3 CONCAT: {' '.join(concat_cmd)}")
             startupinfo = None
@@ -886,9 +886,9 @@ class ProcessThread(QThread):
                 except Exception:
                     pass
             for p in [core_path, intro_path, concat_path]:
-                 if p and os.path.exists(p):
-                     try: os.remove(p)
-                     except Exception: pass
+                if p and os.path.exists(p):
+                    try: os.remove(p)
+                    except Exception: pass
             for ext in ["", "-0.log", "-1.log", ".log", ".log-0.log", ".log-1.log"]:
                 try:
                     os.remove(temp_log_path.replace(".log", ext))

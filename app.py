@@ -72,7 +72,7 @@ if __name__ == "__main__":
     ffprobe_path = os.path.join(BIN_DIR, 'ffprobe.exe')
     try:
         subprocess.run([ffmpeg_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
         subprocess.run([ffprobe_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
     except FileNotFoundError:

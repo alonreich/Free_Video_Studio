@@ -56,12 +56,12 @@ class FFMpegProcessMixin:
                 os.remove(concat_txt_path)
                 self.logger.info("Removed temporary concat list: %s", concat_txt_path)
             except Exception as e:
-                 self.logger.error("Error removing concat list %s: %s", concat_txt_path, e)
+                self.logger.error("Error removing concat list %s: %s", concat_txt_path, e)
         self.parent.set_ui_busy(False)
         self.process = None
         if exit_status == QProcess.CrashExit:
-             QMessageBox.critical(self.parent, "Merge Failed", "FFmpeg process crashed unexpectedly.")
-             return
+            QMessageBox.critical(self.parent, "Merge Failed", "FFmpeg process crashed unexpectedly.")
+            return
         if exit_code != 0:
             QMessageBox.critical(
                 self.parent,

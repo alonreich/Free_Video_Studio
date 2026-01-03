@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import shutil
 import os
 from PyQt5.QtWidgets import (
@@ -379,15 +379,15 @@ class CustomFileDialog(QFileDialog):
         act_new_folder = None
         act_delete = None
         if paths:
-            act_play = menu.addAction("▶   Preview Play the Video   ▶")
+            act_play = menu.addAction("â–¶   Preview Play the Video   â–¶")
             menu.addSeparator()
         if len(paths) == 1:
             act_rename = menu.addAction("          Rename the File")
             menu.addSeparator()
-        act_new_folder = menu.addAction("📂   Create a New Folder   📂")
+        act_new_folder = menu.addAction("ðŸ“‚   Create a New Folder   ðŸ“‚")
         if paths:
             menu.addSeparator()
-            act_delete = menu.addAction("        ⛔   Delete File   ⛔")
+            act_delete = menu.addAction("        â›”   Delete File   â›”")
         chosen = menu.exec_(global_pos)
         if chosen == act_new_folder:
             self._create_new_folder()
@@ -450,24 +450,30 @@ class CustomFileDialog(QFileDialog):
         paths = self._selected_paths_from_view(view)
         if not paths:
             return
-        try:
-            from send2trash import send2trash
-            use_trash = True
-        except Exception:
-            send2trash = None
-            use_trash = False
+        def _send_to_bin_windows(path):
+            import ctypes
+            from ctypes import wintypes
+            class SHFILEOPSTRUCTW(ctypes.Structure):
+                _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
+                            ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_uint), ("fAnyOperationsAborted", wintypes.BOOL),
+                            ("hNameMappings", wintypes.LPVOID), ("lpszProgressTitle", wintypes.LPCWSTR)]
+            FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION = 3, 0x40, 0x10
+            fileop = SHFILEOPSTRUCTW(hwnd=None, wFunc=FO_DELETE, pFrom=path + '\0', pTo=None,
+                                     fFlags=FOF_ALLOWUNDO | FOF_NOCONFIRMATION, fAnyOperationsAborted=False,
+                                     hNameMappings=None, lpszProgressTitle=None)
+            return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(fileop)) == 0
         failed = []
         for p in paths:
             try:
-                if not os.path.exists(p):
-                    continue
-                if use_trash and send2trash:
+                if not os.path.exists(p): continue
+                try:
+                    from send2trash import send2trash
                     send2trash(p)
-                else:
-                    if os.path.isfile(p):
-                        os.remove(p)
-                    elif os.path.isdir(p):
-                        shutil.rmtree(p)
+                except ImportError:
+                    if not _send_to_bin_windows(os.path.abspath(p)):
+                        raise OSError("Windows Shell delete failed.")
+            except Exception as e:
+                failed.append((p, str(e)))
             except Exception as e:
                 failed.append((p, str(e)))
         try:

@@ -4,7 +4,7 @@ The app is devided into 4 different parts/apps: Main App.py, Video Merger, Crop 
 Main App.py = This main video compression app.
 Video Merger = Join multiple short videos into a single long video file.
 Crop Tools = Provide exact user friendly coordinations on the screen for any game/app.
-Advanced Video Editor = A multi-track video editor for sequencing clips.
+Advanced Video Editor = Advanced multi-track video/music sophisticated editor for complext video and music editing on a professional level.
 
 # General Project Guidelines:
 1. Each code/script file, should never exceed 150 - 170 lines of code max per file. if 150 lines should exceeded devide the code into multiple file in such way that eventually no file exceed 150 - 170 lines of code.
@@ -24,22 +24,32 @@ Advanced Video Editor = A multi-track video editor for sequencing clips.
 ├── !!!_Ouput_Video_Files_!!!\: Default output directory for processed videos.
 │
 ├── advanced\: A separate, multi-track video editor application. Requires `PyQt5` and `python-mpv`.
-│   ├── advanced_video_editor.py: Application entry point. Bootstraps UI and Logging.
-│   ├── clip_item.py: The draggable clip items, rubberband selection, and drawing logic.
-│   ├── exporter.py: FFmpeg rendering engine with HW acceleration failover (NVENC/AMF/QSV).
-│   ├── history.py: Undo/Redo stack handling with deep state serialization.
+│   ├── advanced_video_editor.py: Application entry point. Bootstraps UI, Logging and patching.
+│   ├── asset_loader.py: Manages media import and background probing/thumbnail generation.
+│   ├── binary_manager.py: Manages external binary paths and patching (mpv).
+│   ├── clip_item.py: Visual representation of clips on the timeline.
+│   ├── clip_manager.py: Logic for splitting, deleting, and updating clip parameters.
+│   ├── clip_painter.py: Static class for raw QPainter commands to draw clips.
+│   ├── export_dialog.py: UI for rendering project and configuring export settings.
+│   ├── ffmpeg_generator.py: Engine for building complex FFmpeg filter graphs for playback/export.
+│   ├── history.py: Undo/Redo stack with smart delta compression.
 │   ├── inspector.py: Properties panel for selected clips (Speed, Volume, Effects).
-│   ├── main_window.py: The primary QMainWindow shell and layout orchestration.
-│   ├── model.py: Data models for the application (e.g., ClipModel).
-│   ├── player.py: High-precision video player using python-mpv.
-│   ├── preview.py: Video preview widget with crop overlays and aspect ratio masking.
-│   ├── prober.py: Background worker for media probing (ffprobe).
-│   ├── project.py: Project file management, asset copying/staging, autosave logic.
-│   ├── system.py: Centralized logging (stdout/stderr redirect), ConfigManager.
-│   ├── timeline_container.py: Container widget for the timeline and track headers.
-│   ├── timeline_view.py: The main timeline controller, ruler, and scroll logic.
-│   ├── track_header.py: UI for the headers of the timeline tracks.
-│   └── worker.py: Generic worker thread for background tasks like thumbnail generation.
+│   ├── main_window.py: The central hub instantiating docks and controllers.
+│   ├── media_pool.py: Drag-and-drop list widget for source files.
+│   ├── model.py: Data models defining ClipModel and storing pure data.
+│   ├── playback_manager.py: Manages playback state and sync between player and timeline.
+│   ├── player.py: Wraps libmpv in a Qt widget for playback and seeking.
+│   ├── preview.py: Video preview widget with overlay controls.
+│   ├── prober.py: Background worker for media probing (ffprobe) and waveform generation.
+│   ├── project.py: Low-level file system operations for projects.
+│   ├── project_controller.py: High-level logic for Project actions (Open, Save, Autosave).
+│   ├── render_worker.py: Background thread executing final FFmpeg export.
+│   ├── system.py: Logging config and ConfigManager.
+│   ├── timeline_container.py: Container for TrackHeaders and TimelineView.
+│   ├── timeline_scene.py: Graphics scene drawing the background grid and track lines.
+│   ├── timeline_view.py: Interactive view handling mouse events and tools.
+│   ├── track_header.py: UI for track controls and reordering.
+│   └── worker.py: Generic background worker (e.g., thumbnails).
 │
 ├── binaries\: Contains all the necessary binaries for the application to run.
 │   ├── ffmpeg.exe, ffplay.exe, ffprobe.exe: The FFmpeg suite for video manipulation.

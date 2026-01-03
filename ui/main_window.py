@@ -74,7 +74,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         """
         try:
             if getattr(self, "vlc_player", None):
-                self.vlc_player.pause()
+                self.vlc_player.stop()
             self.positionSlider.blockSignals(True)
             self.positionSlider.setValue(self.positionSlider.maximum())
             self.positionSlider.blockSignals(False)
@@ -185,7 +185,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             if em:
                 em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached) 
             else:
-                 self.logger.warning("Could not get VLC event manager to attach EndReached handler.")
+                self.logger.warning("Could not get VLC event manager to attach EndReached handler.")
         except Exception as e:
             self.logger.error("Failed to attach VLC EndReached handler: %s", e)
         try:
@@ -257,16 +257,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.music_offset_input.setValue(start_sec)
             self.music_offset_input.blockSignals(False)
             self.logger.info(f"MUSIC: trim changed via slider to start={start_sec:.2f}s")
-
-    def _on_playback_finished(self, event=None):
-        try:
-            self.vlc_player.stop()
-            self.positionSlider.setValue(0)
-            self.playPauseButton.setText("Play")
-            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-            self.positionSlider.setEnabled(True)
-        except Exception:
-            pass
 
     def _update_window_size_in_title(self):
         self.setWindowTitle(f"{self._base_title}  —  {self.width()}x{self.height()}")
@@ -457,11 +447,11 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             if timer and timer.isActive():
                 timer.stop()
         except Exception as stop_err:
-             self.logger.error("Error stopping existing player/media: %s", stop_err)
+            self.logger.error("Error stopping existing player/media: %s", stop_err)
         try:
             self.reset_app_state()
         except Exception as reset_err:
-             self.logger.error("Error during UI reset: %s", reset_err)
+            self.logger.error("Error during UI reset: %s", reset_err)
         self.logger.info("FILE: loading for playback: %s", file_path)
         self.input_file_path = file_path
         self.drop_label.setWordWrap(True)
@@ -475,7 +465,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             if status_method:
                 status_method("Selected file not found.", "red")
             else:
-                 self.logger.error("Selected file not found: %s", p)
+                self.logger.error("Selected file not found: %s", p)
             return
         media = self.vlc_instance.media_new_path(p)
         if media is None:
@@ -487,16 +477,16 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         if media is None:
             status_method = getattr(self, '_safe_status', None) or getattr(self, 'set_status_text_with_color', None)
             if status_method:
-                 status_method("Failed to open media.", "red")
+                status_method("Failed to open media.", "red")
             else:
-                 self.logger.error("Failed to open media: %s", p)
+                self.logger.error("Failed to open media: %s", p)
             return
         self.vlc_player.set_media(media)
         try:
             if sys.platform.startswith('win'):
                 self.vlc_player.set_hwnd(int(self.video_surface.winId()))
         except Exception as hwnd_err:
-             self.logger.error("Failed to set HWND for player: %s", hwnd_err)
+            self.logger.error("Failed to set HWND for player: %s", hwnd_err)
         self.vlc_player.play()
         QTimer.singleShot(150, lambda: self._on_mobile_format_toggled(self.mobile_checkbox.isChecked()))
         def apply_rate_and_volume():

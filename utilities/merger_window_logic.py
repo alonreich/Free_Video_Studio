@@ -37,7 +37,7 @@ class MergerWindowLogic:
             else:
                 _save_conf(save_cfg)
         except Exception as err:
-             self.window.logger.error("Error saving config in merger closeEvent: %s", err)
+            self.window.logger.error("Error saving config in merger closeEvent: %s", err)
 
     def can_anim(self, row, new_row):
         if row == new_row or not (0 <= row < self.window.listw.count()) or not (0 <= new_row < self.window.listw.count()):

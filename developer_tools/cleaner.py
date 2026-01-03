@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 
 def clean_python_file(filepath):
@@ -12,12 +12,12 @@ def clean_python_file(filepath):
         line = line.rstrip()
         stripped = line.strip()
         if '"""' in stripped and stripped.count('"""') % 2 != 0:
-            in_multiline_string = not in_multiline
+            in_multiline_string = not in_multiline_string
             if stripped == '"""':
                 continue
         if in_multiline_string or '"""' in stripped:
-             no_comments.append(line)
-             continue
+            no_comments.append(line)
+            continue
         if stripped.startswith('#'):
             continue
         line = line.split('#', 1)[0].rstrip()
@@ -34,8 +34,7 @@ def clean_python_file(filepath):
         final_code.append(line)
     with open(filepath, 'w', encoding='utf-8') as f:
         if final_code:
-            f.write('\n'.join(final_code))
-            f.write('\n')
+            f.write('\n'.join(final_code) + '\n')
 if __name__ == "__main__":
     for filepath in sys.argv[1:]:
         clean_python_file(filepath)
