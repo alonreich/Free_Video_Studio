@@ -1,54 +1,74 @@
-﻿Set-Location $PSScriptRoot
-$excludedDirNames = @('binaries','config','logs','mp3','!!!_Ouput_Video_Files_!!!')
-
-$selfName = Split-Path -Leaf $PSCommandPath
-
-$excludedFileNames = @('app.py','Installer.ps1','project_structure.txt', $selfName)
-
-$allowedExtensions = @('.py','.txt','.md','.json','.ini','.cfg','.yml','.yaml','.js','.ts','.html','.css','.qss','.bat','.cmd','.ps1')
-
-function Get-TargetFiles {
-    Get-ChildItem -Recurse -File | Where-Object {
-        if ($excludedFileNames -contains $_.Name) { return $false }
-        if ($allowedExtensions -notcontains $_.Extension.ToLowerInvariant()) { return $false }
-        $dirParts = $_.DirectoryName -split '[\\/]'
-        foreach ($d in $excludedDirNames) {
-            if ($dirParts -contains $d) { return $false }
-        }
-        return $true
+﻿function Test-PythonSyntax {
+    param([Parameter(Mandatory = $true)][string]$FilePath, [Parameter(Mandatory = $true)][string]$Content)
+    if ($Content -match "`t") {
+        Write-Host "[STYLE ERROR] $FilePath" -ForegroundColor Red
+        Write-Host "    Tab character(s) detected. Convert tabs to spaces." -ForegroundColor Yellow
+        return $false
     }
+    $checkScript = @"
+import sys
+import re
+def check_indentation():
+    success = True
+    try:
+        lines = sys.stdin.readlines()
+        bracket_level = 0
+        last_logical_indent = 0
+        for i, line in enumerate(lines):
+            lnum = i + 1
+            line = re.sub(r"\s+\\", "", line)
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            current_indent = len(line) - len(stripped)
+            if bracket_level == 0:
+                if current_indent % 4 != 0:
+                    print(f"ALIGNMENT ERROR: Line {lnum} has {current_indent} spaces (not a multiple of 4).")
+                    success = False
+                if current_indent > last_logical_indent + 4:
+                    print(f"DEEP INDENT ERROR: Line {lnum} jumped from {last_logical_indent} to {current_indent} spaces.")
+                    success = False
+                last_logical_indent = current_indent
+            clean_line = re.sub(r"'.*?'|\".*?\"", "", line)
+            bracket_level += clean_line.count('(') + clean_line.count('[') + clean_line.count('{')
+            bracket_level -= clean_line.count(')') + clean_line.count(']') + clean_line.count('}')
+        try:
+            compile("".join(lines), '<stdin>', 'exec')
+        except (SyntaxError, IndentationError) as e:
+            print(f"PYTHON PARSER ERROR: {e.msg} | Line: {e.lineno}")
+            success = False
+        return success
+    except Exception as e:
+        print(f"OTHER ERROR: {str(e)}")
+        return False
+if __name__ == '__main__':
+    sys.exit(0 if check_indentation() else 1)
+"@
+    $result = $Content | python -X utf8 -c $checkScript 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[INVALID] $FilePath" -ForegroundColor Red
+        if ($result) { $result | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow } }
+        return $false
+    }
+    return $true
 }
+
 function Get-PythonCommentIndex {
-    param(
-        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Line,
-        [Parameter(Mandatory=$true)][ref]$InTripleSingle,
-        [Parameter(Mandatory=$true)][ref]$InTripleDouble
-    )
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Line, [Parameter(Mandatory=$true)][ref]$InTripleSingle, [Parameter(Mandatory=$true)][ref]$InTripleDouble)
     if ([string]::IsNullOrEmpty($Line)) { return -1 }
-    $inSingle = $false
-    $inDouble = $false
-    $escape = $false
+    $inSingle = $false; $inDouble = $false; $escape = $false
     for ($i = 0; $i -lt $Line.Length; $i++) {
         $ch = $Line[$i]
         if ($escape) { $escape = $false; continue }
         if ($InTripleSingle.Value) {
-            if ($i -le $Line.Length - 3 -and $Line.Substring($i,3) -eq "'''") {
-                $InTripleSingle.Value = $false
-                $i += 2
-            }
+            if ($i -le $Line.Length - 3 -and $Line.Substring($i,3) -eq "'''") { $InTripleSingle.Value = $false; $i += 2 }
             continue
         }
         if ($InTripleDouble.Value) {
-            if ($i -le $Line.Length - 3 -and $Line.Substring($i,3) -eq '"""') {
-                $InTripleDouble.Value = $false
-                $i += 2
-            }
+            if ($i -le $Line.Length - 3 -and $Line.Substring($i,3) -eq '"""') { $InTripleDouble.Value = $false; $i += 2 }
             continue
         }
-        if (($inSingle -or $inDouble) -and $ch -eq '\') {
-            $escape = $true
-            continue
-        }
+        if (($inSingle -or $inDouble) -and $ch -eq '\') { $escape = $true; continue }
         if (-not ($inSingle -or $inDouble)) {
             if ($i -le $Line.Length - 3) {
                 $tri = $Line.Substring($i,3)
@@ -58,155 +78,165 @@ function Get-PythonCommentIndex {
         }
         if (-not $inDouble -and $ch -eq "'") { $inSingle = -not $inSingle; continue }
         if (-not $inSingle -and $ch -eq '"') { $inDouble = -not $inDouble; continue }
-        if (-not ($inSingle -or $inDouble)) {
-            if ($ch -eq '#') { return $i }
-        }
+        if (-not ($inSingle -or $inDouble) -and $ch -eq '#') { return $i }
     }
     return -1
 }
+
 function Get-FlaggedItemsForFile {
-    param([Parameter(Mandatory=$true)][string]$FilePath)
-    $ext = [IO.Path]::GetExtension($FilePath).ToLowerInvariant()
-    $lines = Get-Content -LiteralPath $FilePath
+    param([Parameter(Mandatory=$true)][string[]]$Lines, [Parameter(Mandatory=$true)][string]$Extension, [string]$FilePath)
+    $ext = $Extension.ToLowerInvariant()
     $items = New-Object System.Collections.Generic.List[object]
-	$inTripleSingle = $false
-	$inTripleDouble = $false
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $cur = $lines[$i]
-        $next = if ($i -lt $lines.Count - 1) { $lines[$i+1] } else { '' }
+    $inTripleSingle = $false; $inTripleDouble = $false; $inPsBlock = $false
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $cur = $lines[$i]; $next = if ($i -lt $lines.Count - 1) { $lines[$i+1] } else { '' }
         $isEmpty = ($cur -match '^\s*$')
-        $isFullLineComment = (($cur -match '^\s*\#') -or ($cur -match '^\s*\*\*') -or ($cur -match '^\s*//') -or ($cur -match '^\s*;') -or ($cur -match '^\s*/\*') -or ($cur -match '^\s*\*/') -or ($cur -match '^\s*\*'))
-        $hasBlockInlineComment = ($cur -match '/\*.*\*/')
-		$hashIndex = -1
-		$hasHashInlineComment = $false
-		if ($ext -eq '.py' -and -not $isEmpty) {
-			$hashIndex = Get-PythonCommentIndex -Line $cur -InTripleSingle ([ref]$inTripleSingle) -InTripleDouble ([ref]$inTripleDouble)
-			$hasHashInlineComment = ($hashIndex -ge 0)
-		}
+        $isShebang = ($i -eq 0 -and $cur -match '^#!')
+        if ($isShebang) { continue }
+        if ($ext -eq '.ps1') {
+            $hasOpen = $cur.Contains('<#')
+            $hasClose = $cur.Contains('#>')
+            $isFullLineComment = $inPsBlock -or ($cur -match '^\s*\#') -or ($cur -match '^\s*<#')
+            if ($hasOpen -and -not $hasClose) { $inPsBlock = $true }
+            elseif ($hasClose -and -not $hasOpen) { $inPsBlock = $false }
+            $hasBlockInlineComment = (-not $isFullLineComment -and ($cur -match '<#.*#>' -or $cur -match '<#'))
+        } elseif ($ext -eq '.py') {
+            $isFullLineComment = ($cur -match '^\s*\#')
+            $hasBlockInlineComment = $false
+        } else {
+            $isFullLineComment = (($cur -match '^\s*//') -or ($cur -match '^\s*/\*') -or ($cur -match '^\s*\*'))
+            $hasBlockInlineComment = ($cur -match '/\*.*\*/')
+        }
+        $hashIndex = -1; $hasHashInlineComment = $false
+        if (($ext -eq '.py' -or $ext -eq '.ps1') -and -not $isEmpty -and -not $isFullLineComment) {
+            $dummy = $false
+            $refTripleSingle = if ($ext -eq '.py') { [ref]$inTripleSingle } else { [ref]$dummy }
+            $refTripleDouble = if ($ext -eq '.py') { [ref]$inTripleDouble } else { [ref]$dummy }
+            $hashIndex = Get-PythonCommentIndex -Line $cur -InTripleSingle $refTripleSingle -InTripleDouble $refTripleDouble
+            $hasHashInlineComment = ($hashIndex -ge 0)
+        }
         $isComment = ($isFullLineComment -or $hasBlockInlineComment -or $hasHashInlineComment)
         $isNextCode = ($next -match '^\s*(def|class|from|import)\b')
-        $preserve = ($isEmpty -and $isNextCode)
-        if (($isEmpty -or $isComment) -and -not $preserve) {
-            $kind = if ($isEmpty) { 'EMPTY' } else { 'COMMENT' }
+        if ($isComment -or ($isEmpty -and -not $isNextCode)) {
+            $kindString = if ($isEmpty) { 'EMPTY' } else { 'COMMENT' }
             $items.Add([pscustomobject]@{
-                FilePath=$FilePath
-                LineIndexZeroBased=$i
-                LineNumberOneBased=($i+1)
-                Kind=$kind
-                IsEmpty=$isEmpty
-                IsFullLineComment=$isFullLineComment
-                HasBlockInlineComment=$hasBlockInlineComment
-                HasHashInlineComment=$hasHashInlineComment
-                HashCommentIndex=$hashIndex
-                OriginalLine=$cur
+                FilePath             = $FilePath
+                LineIndexZeroBased   = $i
+                LineNumberOneBased   = ($i + 1)
+                Kind                 = $kindString
+                IsEmpty              = $isEmpty
+                IsFullLineComment    = $isFullLineComment
+                HasBlockInlineComment = $hasBlockInlineComment
+                HasHashInlineComment = $hasHashInlineComment
+                HashCommentIndex     = $hashIndex
+                OriginalLine         = $cur
             })
         }
     }
     return $items
 }
-function Apply-SurgicalRemovalsForFile {
-    param(
-        [Parameter(Mandatory=$true)][string]$FilePath,
-        [Parameter(Mandatory=$true)][System.Collections.Generic.List[object]]$FlaggedItems
-    )
-    if (-not (Test-Path -LiteralPath $FilePath)) { return }
-    $ext = [IO.Path]::GetExtension($FilePath).ToLowerInvariant()
-    $lines = Get-Content -LiteralPath $FilePath
-    $removeLineIndexes = New-Object 'System.Collections.Generic.HashSet[int]'
-    foreach ($it in $FlaggedItems) {
-        if ($it.IsEmpty -or $it.IsFullLineComment) {
-            [void]$removeLineIndexes.Add([int]$it.LineIndexZeroBased)
-        }
-    }
+
+function Get-SurgicallyCleanedContent {
+    param([Parameter(Mandatory=$true)][string[]]$Lines, [Parameter(Mandatory=$true)][string]$Extension, [System.Collections.Generic.List[object]]$FlaggedItems)
+    $ext = $Extension.ToLowerInvariant()
+    $lookup = if ($FlaggedItems -and $FlaggedItems.Count -gt 0) { $FlaggedItems | Group-Object LineIndexZeroBased -AsHashTable } else { @{} }
     $newLines = New-Object System.Collections.Generic.List[string]
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($removeLineIndexes.Contains($i)) { continue }
-        $line = $lines[$i]
-        $inlineItems = @($FlaggedItems | Where-Object { $_.LineIndexZeroBased -eq $i -and -not $_.IsEmpty -and -not $_.IsFullLineComment })
-        if ($inlineItems.Count -gt 0) {
-            $hasBlock = $false
-            $hasHash = $false
-            $hashIndex = -1
-            foreach ($it in $inlineItems) {
+        $its = if ($lookup.ContainsKey($i)) { $lookup[$i] } else { $null }
+        if ($its -and ($its | Where-Object { $_.IsEmpty -or $_.IsFullLineComment })) { continue }
+        $line = $lines[$i].Replace("`t", "    ")
+        $line = [regex]::Replace($line, '\s+\\', '')
+        $line = $line.TrimEnd()
+        if ($its) {
+            $hasBlock = $false; $hasHash = $false; $hashIndex = -1
+            foreach ($it in $its) {
                 if ($it.HasBlockInlineComment) { $hasBlock = $true }
                 if ($it.HasHashInlineComment) { $hasHash = $true; $hashIndex = $it.HashCommentIndex }
             }
-            if ($hasBlock -and ($line -match '/\*.*\*/')) {
-                $line = [regex]::Replace($line, '/\*.*?\*/', '', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($hasBlock) {
+                if ($line -match '/\*.*\*/') { $line = [regex]::Replace($line, '/\*.*?\*/', '', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase) }
+                if ($ext -eq '.ps1') {
+                    if ($line -match '<#.*#>') { $line = [regex]::Replace($line, '<#.*?#>', '', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase) }
+                    elseif ($line -match '<#') { $line = $line.Split('<#')[0] }
+                }
             }
-            if ($hasHash -and $ext -eq '.py' -and $hashIndex -ge 0) {
-                $line = $line.Substring(0, $hashIndex).TrimEnd()
-            }
+            if ($hasHash -and ($ext -eq '.py' -or $ext -eq '.ps1') -and $hashIndex -ge 0) { $line = $line.Substring(0, $hashIndex) }
             $line = $line.TrimEnd()
         }
         $newLines.Add($line)
     }
-    $oldText = ($lines -join "`n")
-    $newText = ($newLines.ToArray() -join "`n")
-    if ($newText -ne $oldText) {
-        Set-Content -LiteralPath $FilePath -Value $newText -Encoding UTF8
-    }
+    return $newLines -join [Environment]::NewLine
 }
-Write-Output 'Instructions for an AI Agent: Below are result of comments and empty lines which should be removed from the code which is inside the files. when removing these below comments, or empty lines, please becareful not to touch or hurt the code. only remove the comment and empty line surgecly, without impacting the code:'
-$allFlagged = New-Object System.Collections.Generic.List[object]
-Get-TargetFiles | ForEach-Object {
-    $file = $_.FullName
-    $items = Get-FlaggedItemsForFile -FilePath $file
-    foreach ($it in $items) {
-        $cur = $it.OriginalLine
-        $prefix = "{0}:{1} [{2}] " -f $it.FilePath, $it.LineNumberOneBased, $it.Kind
-        Write-Host $prefix -NoNewline
-        if ($it.IsEmpty -or $it.IsFullLineComment) {
-            Write-Host $cur -ForegroundColor Red
-        } else {
-            if ($it.HasHashInlineComment -and $it.HashCommentIndex -ge 0) {
-                $codePart = $cur.Substring(0, $it.HashCommentIndex)
-                $commentPart = $cur.Substring($it.HashCommentIndex)
-                Write-Host $codePart -NoNewline
-                Write-Host $commentPart -ForegroundColor Red
-            }
-            elseif ($it.HasBlockInlineComment) {
-                $match = [regex]::Match($cur, '/\*.*?\*/')
-                if ($match.Success) {
-                    $pre = $cur.Substring(0, $match.Index)
-                    $comment = $match.Value
-                    $post = $cur.Substring($match.Index + $match.Length)
-                    Write-Host $pre -NoNewline
-                    Write-Host $comment -NoNewline -ForegroundColor Red
-                    Write-Host $post
-                } else {
-                    Write-Host $cur -ForegroundColor Red
+
+function Apply-SurgicalRemovalsForFile {
+    param([string]$FilePath, [string]$CleanContent)
+    Set-Content -LiteralPath $FilePath -Value $CleanContent -Encoding UTF8
+}
+
+Set-Location $PSScriptRoot
+$excludedDirNames = @('binaries','config','logs','mp3','!!!_Ouput_Video_Files_!!!','venv','.git')
+$excludedFileNames = @('app.py','Installer.ps1','project_structure.txt', $MyInvocation.MyCommand.Name)
+$allowedExtensions = @('.py','.txt','.md','.json','.ini','.cfg','.yml','.yaml','.js','.ts','.html','.css','.qss','.bat','.cmd','.ps1')
+Write-Host "--- PRE-FLIGHT: Generating Change Report ---`n" -ForegroundColor Cyan
+$targetFiles = Get-ChildItem -Recurse -File | Where-Object {
+    if ($excludedFileNames -contains $_.Name) { return $false }
+    if ($allowedExtensions -notcontains $_.Extension.ToLowerInvariant()) { return $false }
+    $dirParts = $_.DirectoryName -split '[\\/]'; foreach ($d in $excludedDirNames) { if ($dirParts -contains $d) { return $false } }; return $true
+}
+$report = New-Object System.Collections.Generic.List[string]
+$pendingChanges = @{}
+foreach ($file in $targetFiles) {
+    $lines = @(Get-Content -LiteralPath $file.FullName -ErrorAction SilentlyContinue)
+    if ($null -eq $lines -or $lines.Count -eq 0) { continue }
+    $original = $lines -join [Environment]::NewLine
+    $flagged = Get-FlaggedItemsForFile -Lines $lines -Extension $file.Extension -FilePath $file.FullName
+    $cleaned = Get-SurgicallyCleanedContent -Lines $lines -Extension $file.Extension -FlaggedItems $flagged
+    if ($file.Extension -eq '.py' -and -not (Test-PythonSyntax -FilePath $file.FullName -Content $cleaned)) { continue }
+    if ($original.Replace("`r`n", "`n") -ne $cleaned.Replace("`r`n", "`n")) {
+        $pendingChanges[$file.FullName] = $cleaned
+        $report.Add("--- $($file.FullName)")
+		$report.Add("+++ $($file.FullName) (PROPOSED)")
+        $origLines = $original -split '\r?\n'
+        $newLines = $cleaned -split '\r?\n'
+        $removeIdxs = New-Object 'System.Collections.Generic.HashSet[int]'
+        foreach($f in $flagged) { if($f.IsEmpty -or $f.IsFullLineComment) { [void]$removeIdxs.Add($f.LineIndexZeroBased) } }
+        $newPtr = 0
+        for($j=0; $j -lt $origLines.Count; $j++) {
+                $oldLine = $origLines[$j]
+                if($removeIdxs.Contains($j)) {
+                    $report.Add("- $oldLine")
+                    continue
                 }
-            } else {
-                Write-Host $cur -ForegroundColor Red
+                $newLine = if ($newPtr -lt $newLines.Count) { $newLines[$newPtr] } else { $null }
+                if ($null -ne $newLine -and $oldLine -ne $newLine) {
+                    $report.Add("- $oldLine")
+                    $report.Add("+ $newLine")
+                }
+                $newPtr++
             }
+            $report.Add("`n")
+    }
+}
+if ($pendingChanges.Count -gt 0) {
+    Write-Host "`n--- PROPOSED CHANGES ---" -ForegroundColor Cyan
+    foreach ($line in $report) {
+        if ($line.StartsWith('---') -or $line.StartsWith('+++')) {
+            Write-Host $line -ForegroundColor White -BackgroundColor DarkGray
+        } elseif ($line.StartsWith('-')) {
+            Write-Host $line -ForegroundColor Red
+        } elseif ($line.StartsWith('+')) {
+            Write-Host $line -ForegroundColor Green
+        } else {
+            Write-Host $line
         }
-
-        $allFlagged.Add($it)
     }
-}
-
-Write-Output ""
-Write-Output ""
-Write-Output ""
-Write-Output "-------------------------------------------------------------------------------------------------------------------------------"
-Write-Output "-------------------------------------------------------------------------------------------------------------------------------"
-Write-Output ""
-Write-Output ""
-Write-Output ""
-
-$answer = Read-Host 'Do you wish me to go a head and perform these replacements now for you? (Y/N)'
-$answer = ($answer + '').Trim()
-
-if ($answer -match '^(Y|YES)$') {
-    $byFile = $allFlagged | Group-Object -Property FilePath
-    foreach ($group in $byFile) {
-        $filePath = $group.Name
-        $itemsList = New-Object System.Collections.Generic.List[object]
-        foreach ($x in $group.Group) { $itemsList.Add($x) }
-        Apply-SurgicalRemovalsForFile -FilePath $filePath -FlaggedItems $itemsList
-    }
-    Write-Output "Done. Replacements applied to the flagged lines only."
-} else {
-    Write-Output "No changes were made."
-}
+    Write-Host ("=" * 60)
+    $answer = (Read-Host "Review the changes above. Apply all changes now? (Y/N)").Trim()
+    if ($answer -match '^(Y|YES)$') {
+        foreach ($path in $pendingChanges.Keys) {
+            Apply-SurgicalRemovalsForFile -FilePath $path -CleanContent $pendingChanges[$path]
+            Write-Host "Fixed: $path" -ForegroundColor Green
+        }
+    } else { Write-Host "Aborted. No files were touched." -ForegroundColor Red }
+} else { Write-Host "Everything is already clean." -ForegroundColor Green }
+pause
