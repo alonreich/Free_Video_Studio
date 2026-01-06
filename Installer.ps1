@@ -5,14 +5,11 @@ if ($needsElevation -or ($ep -notin @('Bypass','Unrestricted'))) {
     Start-Process -Verb RunAs -FilePath "$PSHOME\powershell.exe" -ArgumentList $args
     exit
 }
-
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $logPath = "$env:TEMP\Fortnite_Video_Software_Install_Report.txt"
 "Fortnite Video Software Installation Report" | Out-File $logPath -Encoding UTF8
 "==========================================" | Out-File $logPath -Append -Encoding UTF8
 Add-Content $logPath ("Started: " + (Get-Date))
-
-# --- Status Tracking Variables ---
 $step0OK=$false; $step1OK=$false; $step2OK=$false; $pyOK=$false; $pipOK=$false; $verbOK=$false; $binOK=$false; $deskOK=$false; $fixOK=$false
 
 function Step($n,$m,$ok){$s=if($ok){"✅ SUCCESS"}else{"❌ FAILED"};Write-Host "[$n] $s - $m";Add-Content $logPath "[$n] $s - $m"}
@@ -133,25 +130,17 @@ public static class LnkRunAs {
 Add-Type -TypeDefinition $src -ErrorAction SilentlyContinue | Out-Null
 [LnkRunAs]::Enable($lnkPath)
 }
-
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
 $desktop=[Environment]::GetFolderPath("Desktop")
 try{ Get-ChildItem -Path $desktop -Filter "*fortnite*.lnk" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }catch{}
 try{ Get-ChildItem -Path $desktop -Filter "*video*.lnk" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }catch{}
 try{ $ves=Join-Path $desktop "Video_Editing_Software"; if(Test-Path $ves){ Remove-Item $ves -Recurse -Force -ErrorAction SilentlyContinue } }catch{}
-
-# --- FIX: Nuke Windows Store Python Execution Aliases to prevent "Access Denied" ---
 try {
     Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WindowsApps\python*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WindowsApps\pip*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 } catch {}
-
 $installPath = "C:\Fortnite_Video_Software"
 $backupPath = "C:\Old_Fortnite_Video_Software"
-
-# --- STEP 0: BACKUP EXISTING INSTALLATION ---
-# 1. Clear any previous "Old" folder so we can make a fresh backup
 while (Test-Path $backupPath) {
     try {
         Remove-Item $backupPath -Recurse -Force -ErrorAction Stop
@@ -162,8 +151,6 @@ while (Test-Path $backupPath) {
         Read-Host "    >>> PRESS [ENTER] TO RETRY <<<"
     }
 }
-
-# 2. Rename Current Install to "Old" (if it exists)
 if (Test-Path $installPath) {
     $renamed = $false
     while (-not $renamed) {
@@ -182,9 +169,7 @@ if (Test-Path $installPath) {
     Step 0 "No previous installation found (Clean Install)" $true
 }
 $step0OK = $true
-
 try{ New-Item -ItemType Directory -Force -Path $installPath|Out-Null; Step 1 "Install directory prepared at $installPath" $true; $step1OK=$true }catch{ Step 1 "Failed to prepare $installPath : $($_.Exception.Message)" $false }
-
 try{
 $repoURL="https://github.com/alonreich/Fortnite_Video_Software"
 $zipURL="$repoURL/archive/refs/heads/main.zip"
@@ -203,8 +188,6 @@ Info "[download] $zipURL"
         Move-Item -LiteralPath $_.FullName -Destination $installPath -Force
     }
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-
-    # --- LFS RECOVERY: Check for "fake" pointer files and download real binaries ---
     $binDir = Join-Path $installPath "binaries"
     if (Test-Path $binDir) {
         $dlls = Get-ChildItem -Path $binDir -Filter "*.dll"
@@ -231,21 +214,17 @@ if ((Test-Path $oldMp3) -and (Test-Path $newMp3)) {
 }
 $step2OK = $true
 }catch{ Step 2 "GitHub fetch/extract failed: $($_.Exception.Message)" $false }
-
 $pyOK=$false; $global:Py=$null
 try{
   $pyInstallerUrl = "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe"
   $pyInstallerFile = Join-Path $env:TEMP 'python-3.13.0-amd64.exe'
-  
   if(-not (Test-Path $pyInstallerFile)){
     Info "[download] Python installer from $pyInstallerUrl"
     if(-not (Get-FileSmart -Url $pyInstallerUrl -OutFile $pyInstallerFile -TimeoutSec 900)){ throw "Python installer download failed." }
   }
-  
   Info "[install] Launching Python silent installer..."
   $pyProc = Start-Process -FilePath $pyInstallerFile -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -PassThru -Wait
   if($pyProc.ExitCode -ne 0 -and $pyProc.ExitCode -ne 3010){ Write-Host "[install] Python installer failed (Exit Code $($pyProc.ExitCode))" -ForegroundColor Red }
-  
   $global:Py=Find-PythonInstall
   if($global:Py.PyLauncherPath){ Add-PathEntryUser ([System.IO.Path]::GetDirectoryName($global:Py.PyLauncherPath)) }
   if($global:Py.PyDir){ Add-PathEntryUser $global:Py.PyDir }
@@ -253,8 +232,6 @@ try{
   Broadcast-EnvChange
   if(($global:Py.PyExe -and $global:Py.PyExe -notlike "*WindowsApps*") -or $global:Py.PyLauncherPath){ $pyOK=$true; Step 3 "Python located. Launcher: '$($global:Py.PyLauncherPath)'; Python: '$($global:Py.PyExe)'" $true } else { Step 3 "Python invalid or not available (Store version ignored)" $false }
 }catch{ Step 3 "Python check/install error: $($_.Exception.Message)" $false }
-
-# --- PIP INSTALLATION (Absolute Paths, Double Tap) ---
 $pipOK = $true
 try {
     if (-not $pyOK) {
@@ -262,15 +239,12 @@ try {
     } else {
         $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
         $pipBat = Join-Path $env:TEMP "FVS_PipInstall.cmd"
-        
         $pipContent = @"
 @echo off
 setlocal
 set LOG="$logPath"
 echo ==== PIP INSTALLATION PHASE STARTED ==== >> %LOG% 2>&1
 "@
-
-        # 1. Direct Python Executable
         if ($global:Py.PyExe) {
             $cmd = "`"$($global:Py.PyExe)`""
             $pipContent += @"
@@ -278,14 +252,11 @@ echo. >> %LOG%
 echo [pip] Targeting: Direct Python Executable >> %LOG% 2>&1
 echo [pip] Upgrading pip (Direct)...
 $cmd -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
-
 echo [pip] Installing packages (Direct)...
 [cite_start]$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
 if %errorlevel% neq 0 echo [!] Failed Direct Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
-
-        # 2. Py Launcher
         if ($global:Py.PyLauncherPath) {
             $cmd = "`"$($global:Py.PyLauncherPath)`""
             $pipContent += @"
@@ -293,35 +264,27 @@ echo. >> %LOG%
 echo [pip] Targeting: Py Launcher (-3.13) >> %LOG% 2>&1
 echo [pip] Upgrading pip (Launcher)...
 $cmd -3.13 -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
-
 echo [pip] Installing packages (Launcher)...
 [cite_start]$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
 if %errorlevel% neq 0 echo [!] Failed Launcher Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
-
         $pipContent += @"
 echo ==== PIP PHASE COMPLETE ==== >> %LOG% 2>&1
 exit /b 0
 "@
         Set-Content -Path $pipBat -Encoding ASCII -Value $pipContent
-        
         Write-Host "[pip] Running installation (Using Absolute Paths for Reliability)" -ForegroundColor Cyan
         $proc = Start-Process -FilePath cmd.exe -ArgumentList "/c `"$pipBat`"" -PassThru -Wait
         $exit = if($proc){ $proc.ExitCode } else { 9999 }
         try { Remove-Item $pipBat -Force -ErrorAction SilentlyContinue } catch {}
-        
         if ($exit -ne 0) { $pipOK = $false; Add-Content $logPath "[pip] ExitCode=$exit" } else { Add-Content $logPath "[pip] Completed successfully" }
     }
 } catch { $pipOK = $false }
 [cite_start]if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv, send2trash)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false } [cite: 12]
-
 Step 5 "Classic context menu hack skipped" $true
-
 $binOK=$true
 Step 6 "Skipped creating PATH shims in \bin" $true
-
-# --- STEP 7: INTEGRATED "SYSTEM FILE ASSOCIATIONS" FIX ---
 $verbOK=$true
 try{
     $verbName = "Fortnite_Video_Software"
@@ -330,11 +293,8 @@ try{
     $pyArg = if($global:Py -and $global:Py.PyExe){ "-B" } else { "-3.13 -B" }
     $appPyPath = Join-Path $installPath "app.py"
     $CmdValue = "`"$runner`" $pyArg `"$appPyPath`" `"%1`""
-    
     $RegPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\SystemFileAssociations\.mp4\shell\$verbName"
     $CmdPath = "$RegPath\command"
-
-    # NUKE OLD KEYS
     $shellKey = "Registry::HKEY_CLASSES_ROOT\.mp4\shell"
     if (Test-Path $shellKey) {
         Get-ChildItem $shellKey | Where-Object { $_.Name -match "Fortnite" -or $_.Name -match "Video_Compressor" } | ForEach-Object {
@@ -343,26 +303,19 @@ try{
         }
     }
     Remove-Item "HKCU:\Software\Classes\.mp4\shell\Fortnite*" -Recurse -Force -ErrorAction SilentlyContinue
-
     if (-not (Test-Path $iconPath)) { Write-Host " [WARNING] Icon file not found at: $iconPath" -ForegroundColor Red }
-
-    # CREATE NEW KEYS
     New-Item -Path $RegPath -Force -ItemType Directory | Out-Null
     New-ItemProperty -Path $RegPath -Name "MUIVerb" -Value "Fortnite Video Software" -PropertyType String -Force | Out-Null
     if(Test-Path $iconPath){ New-ItemProperty -Path $RegPath -Name "Icon" -Value $iconPath -PropertyType String -Force | Out-Null }
     New-Item -Path $CmdPath -ItemType Directory -Force | Out-Null
     Set-Item -Path $CmdPath -Value $CmdValue | Out-Null
-    
-    # REFRESH EXPLORER
     Write-Host " [Refresh] Restarting Explorer to apply icon..." -ForegroundColor DarkGray
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
     if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer }
-
     $verbOK=$true
 } catch { $verbOK=$false }
 Step 7 ("Cleaned old keys and registered 'SystemFileAssociations' (Strong Fix)"+$(if($verbOK){" "}else{" - errors occurred"})) $verbOK
-
 $deskOK=$true
 try{
 $desktop=[Environment]::GetFolderPath("Desktop")
@@ -382,7 +335,6 @@ $sc.Description="Launch Fortnite Video Software"
 $sc.Save()
 }catch{ $deskOK=$false }
 Step 8 ("Desktop shortcut created/updated"+$(if($deskOK){" "}else{" - errors occurred"})) $deskOK
-
 $fixOK=$true;$fixDeskOK=$true
 try{
 $fixCmdPath = Join-Path $installPath "Fix OS Problems.cmd"
@@ -407,10 +359,7 @@ $sl.Save()
 Set-ShortcutRunAsAdministrator -lnkPath $fixLnk
 }catch{ $fixDeskOK=$false }
 Step 9 ("Fix OS script created"+$(if($fixOK){" "}else{" - errors occurred"})+"; desktop shortcut created (Run as admin)"+$(if($fixDeskOK){" "}else{" - errors occurred"})) ($fixOK -and $fixDeskOK)
-
 Add-Content $logPath ("Finished: " + (Get-Date))
-
-# --- SUMMARY LOG ON DESKTOP ---
 $summaryPath = "$([Environment]::GetFolderPath("Desktop"))\Fortnite Video Software Log.txt"
 $summaryContent = @()
 $summaryContent += "Fortnite Video Software - Installation Summary"
@@ -418,7 +367,6 @@ $summaryContent += "Date: $(Get-Date)"
 $summaryContent += "---------------------------------------------"
 
 function Get-StatusMsg($b) { if($b) { return "✅ SUCCESS" } else { return "❌ FAILED" } }
-
 $summaryContent += "1. Clean/Backup Files:   $(Get-StatusMsg $step0OK)"
 $summaryContent += "2. Install Directory:    $(Get-StatusMsg $step1OK)"
 $summaryContent += "3. Download Source:      $(Get-StatusMsg $step2OK)"
@@ -436,7 +384,6 @@ if ($step1OK -and $step2OK -and $pyOK -and $pipOK -and $verbOK) {
 }
 $summaryContent | Out-File $summaryPath -Encoding UTF8 -Force
 Write-Host "`nSummary log created at: $summaryPath" -ForegroundColor Cyan
-
 Write-Host "`n==========================================================" -ForegroundColor Yellow
 Write-Host "✅ Installation Complete." -ForegroundColor Green
 Write-Host "NOTE: A system reboot is critical for PATH and registry changes to take full effect." -ForegroundColor Red

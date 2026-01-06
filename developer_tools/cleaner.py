@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 
 def clean_python_file(filepath):

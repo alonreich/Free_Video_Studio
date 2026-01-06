@@ -1,4 +1,4 @@
-﻿from PyQt5.QtCore import QEvent, Qt, QRect
+from PyQt5.QtCore import QEvent, Qt, QRect
 from PyQt5.QtGui import QPainter, QColor, QFont, QPen
 class EventsMixin:
     def mousePressEvent(self, event):
