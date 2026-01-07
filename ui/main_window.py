@@ -175,7 +175,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             '--file-caching=1000',
             '--audio-time-stretch',
             '--aout=directsound',
-            f'--plugin-path={self.bin_dir}/plugins',
             '--verbose=-1',
         ]
         self.vlc_instance = vlc.Instance(vlc_args)
@@ -249,6 +248,26 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         except Exception as e:
             self.logger.critical(f"ERROR: Failed to launch Advanced Editor. Error: {e}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor. Error: {e}")
+
+    def launch_video_merger(self):
+        """Launches the Video Merger with sanity checks (Overrides Mixin)."""
+        merger_path = os.path.join(self.base_dir, 'utilities', 'video_merger.py')
+        if not os.path.exists(merger_path):
+            self.logger.error(f"Sanity Check Failed: Merger script missing at {merger_path}")
+            QMessageBox.critical(self, "Missing Component", 
+                f"Could not find the Video Merger script:\n{merger_path}\n\nPlease check your installation.")
+            return
+        try:
+            self.logger.info(f"ACTION: Launching Video Merger: {merger_path}")
+            subprocess.Popen([sys.executable, "-B", merger_path], cwd=self.base_dir)
+            self.logger.info("Merger launched successfully. Closing Main App.")
+            self.close()
+        except OSError as e:
+            self.logger.critical(f"OS Error launching merger: {e}")
+            QMessageBox.critical(self, "Launch Error", f"Failed to start the Video Merger.\n\nOS Error: {e}")
+        except Exception as e:
+            self.logger.critical(f"Unexpected error launching merger: {e}")
+            QMessageBox.critical(self, "Launch Error", f"An unexpected error occurred:\n{e}")
 
     def _on_music_trim_changed(self, start_sec, end_sec):
         """Handles music trim time changes from the slider."""
@@ -542,7 +561,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             cfg['window_geometry'] = {
                 'x': self.geometry().x(),
                 'y': self.geometry().y(),
-                'w': self.geometry().width(),'h': self.geometry().height()
+                'w': self.geometry().width(),
+                'h': self.geometry().height()
             }
         except Exception:
             pass
@@ -593,7 +613,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
 
     def _reset_player_after_end(self):
         try:
-            p = getattr(self, 'player', None)
+            p = getattr(self, 'vlc_player', None)
             if not p:
                 return
             p.blockSignals(True)
@@ -627,7 +647,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
 
     def _on_position_changed(self, pos_ms):
         try:
-            p = getattr(self, 'player', None)
+            p = getattr(self, 'vlc_player', None)
             if not p:
                 return
             dur = int(p.duration() or 0)

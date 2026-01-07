@@ -379,15 +379,15 @@ class CustomFileDialog(QFileDialog):
         act_new_folder = None
         act_delete = None
         if paths:
-            act_play = menu.addAction("â–¶   Preview Play the Video   â–¶")
+            act_play = menu.addAction("▶   Preview Play the Video    ▶")
             menu.addSeparator()
         if len(paths) == 1:
             act_rename = menu.addAction("          Rename the File")
             menu.addSeparator()
-        act_new_folder = menu.addAction("ðŸ“‚   Create a New Folder   ðŸ“‚")
+        act_new_folder = menu.addAction("📂   Create a New Folder   📂")
         if paths:
             menu.addSeparator()
-            act_delete = menu.addAction("        â›”   Delete File   â›”")
+            act_delete = menu.addAction("        ⛔    Delete File   ⛔")
         chosen = menu.exec_(global_pos)
         if chosen == act_new_folder:
             self._create_new_folder()
@@ -637,7 +637,6 @@ class CustomFileDialog(QFileDialog):
 
     def closeEvent(self, event):
         super().closeEvent(event)
-
 from PyQt5.QtWidgets import QStyledItemDelegate
 from PyQt5.QtCore import QSize
 
@@ -649,9 +648,3 @@ class _CenteredTextDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)
         return QSize(s.width(), s.height())
-
-def _padding_lines():
-    x = 0
-    for _ in range(100):
-        x += 1
-    return x

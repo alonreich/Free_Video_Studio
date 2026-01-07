@@ -7,7 +7,7 @@ def _proj_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 def _conf_path() -> Path:
-    return _proj_root() / "Config" / "Main_App.conf"
+    return _proj_root() / "config" / "main_app.conf"
 
 def _human(n_bytes: int) -> str:
     units = ["B","KB","MB","GB","TB"]

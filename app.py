@@ -40,42 +40,73 @@ def remove_pid_file():
 os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
 from ui.main_window import VideoCompressorApp
 
-def _hwenc_available(ffmpeg_path: str) -> bool:
-    """Probe FFmpeg for HW encoders/accels without ever raising."""
+def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
+    """
+    Truly verifies GPU support by attempting to encode a single dummy frame.
+    This prevents false positives where drivers are installed but the GPU is disabled/detached.
+    """
+    print(f"DEBUG: Testing encoder '{encoder_name}' with dummy frame...")
     try:
-        out = subprocess.check_output(
-            [ffmpeg_path, "-hide_banner", "-encoders"],
-            stderr=subprocess.STDOUT,
-            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-            text=True
-        ).lower()
-        if any(t in out for t in ("h264_nvenc","hevc_nvenc","h264_qsv","hevc_qsv","h264_amf","hevc_amf")):
+        cmd = [
+            ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=black:s=1920x1080",
+            "-vframes", "1", "-c:v", encoder_name, "-f", "null", "-"
+        ]
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            startupinfo=startupinfo,
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+        )
+        if result.returncode == 0:
+            print(f"DEBUG: Encoder '{encoder_name}' is WORKING.")
             return True
-    except Exception:
-        pass
-    try:
-        out2 = subprocess.check_output(
-            [ffmpeg_path, "-hide_banner", "-hwaccels"],
-            stderr=subprocess.STDOUT,
-            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-            text=True
-        ).lower()
-        if any(t in out2 for t in ("cuda","dxva2","d3d11va","qsv","amf")):
-            return True
-    except Exception:
-        pass
-    return False
+        else:
+            print(f"DEBUG: Encoder '{encoder_name}' failed test.")
+            return False
+    except Exception as e:
+        print(f"DEBUG: Exception testing '{encoder_name}': {e}")
+        return False
+
+def determine_hardware_strategy(ffmpeg_path):
+    """
+    Failover logic: NVIDIA -> AMD -> Intel -> Force CPU.
+    """
+    os.environ.pop("VIDEO_HW_ENCODER", None)
+    os.environ.pop("VIDEO_FORCE_CPU", None)
+    if check_encoder_capability(ffmpeg_path, "h264_nvenc"):
+        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+        return "NVIDIA"
+    if check_encoder_capability(ffmpeg_path, "h264_amf"):
+        os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
+        return "AMD"
+    if check_encoder_capability(ffmpeg_path, "h264_qsv"):
+        os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
+        return "INTEL"
+    os.environ["VIDEO_FORCE_CPU"] = "1"
+    return "CPU"
+
 if __name__ == "__main__":
-    sys.stdout = open(os.devnull, "w")
-    sys.stderr = open(os.devnull, "w")
     ffmpeg_path = os.path.join(BIN_DIR, 'ffmpeg.exe')
     ffprobe_path = os.path.join(BIN_DIR, 'ffprobe.exe')
     try:
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+
         subprocess.run([ffmpeg_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+                        startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
         subprocess.run([ffprobe_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-    except FileNotFoundError:
+                        startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+    except (FileNotFoundError, subprocess.CalledProcessError):
         temp_app = QApplication(sys.argv)
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
@@ -99,8 +130,9 @@ if __name__ == "__main__":
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 0)
-                ctypes.windll.kernel32.FreeConsole()
+                # ctypes.windll.user32.ShowWindow(hwnd, 0)
+                # ctypes.windll.kernel32.FreeConsole()
+                pass
         except Exception:
             pass
     icon_path = ""
@@ -112,15 +144,18 @@ if __name__ == "__main__":
             app.setWindowIcon(QIcon(icon_path))
     except Exception:
         pass
+    detected_mode = determine_hardware_strategy(ffmpeg_path)
+    print(f"DEBUG: Hardware Strategy Selected: {detected_mode}")
+    if detected_mode == "CPU":
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle("No GPU Found")
+        msg_box.setText(
+            "No GPU was found, this session will be run by CPU only (Slower Experience)."
+        )
+        msg_box.setStyleSheet("QLabel{ font-weight: bold; color: red; }")
+        msg_box.exec_()
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    gpu_ok = _hwenc_available(ffmpeg_path)
-    if not gpu_ok:
-        os.environ["VIDEO_FORCE_CPU"] = "1"
-        try:
-            import logging
-            logging.getLogger("Startup").warning("Hardware-encoder probe failed; forcing CPU.")
-        except Exception:
-            pass
     ex = VideoCompressorApp(file_arg)
     app.installEventFilter(ex)
     try:

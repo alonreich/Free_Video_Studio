@@ -1,10 +1,6 @@
 # Project Goal and description:
 a quick video gpu based software editor which is free of use, free of advertisement, yet quick to create an easy to share Fortnite cool video clips with family or friends.
-The app is devided into 4 different parts/apps: Main App.py, Video Merger, Crop Tools, and Advanced Video Editor.
-Main App.py = This main video compression app.
-Video Merger = Join multiple short videos into a single long video file.
-Crop Tools = Provide exact user friendly coordinations on the screen for any game/app.
-Advanced Video Editor = Advanced multi-track video/music sophisticated editor for complext video and music editing on a professional level.
+The app is devided into 4 different parts/apps: Video Compressor, Video Merger, Crop Tool, and Advanced Video Editor.
 
 # General Project Guidelines:
 1. Each code/script file, should never exceed 150 - 170 lines of code max per file. if 150 lines should exceeded devide the code into multiple file in such way that eventually no file exceed 150 - 170 lines of code.
@@ -13,43 +9,16 @@ Advanced Video Editor = Advanced multi-track video/music sophisticated editor fo
 
 # File Map Structure:
 .\
-├── app.py: Main entry point for the application. Handles initialization, environment setup, and launches the main window. Can also launch the Advanced Video Editor.
-├── Fix OS Problems.cmd: A command script to fix potential OS-related issues.
-├── Installer.ps1: PowerShell script for installing the application and its dependencies.
+├── main.py: Main entry point for the application. Launches the different applications based on command-line arguments.
 ├── README.md: Contains information about the project.
-├── z_Install_Fortnite_Video_Software.cmd: A command script for installing the software.
 ├── project_structure.txt: This file, containing a map and description of the project structure.
 ├── .gitignore: Specifies files and directories to be ignored by Git.
 │
 ├── !!!_Ouput_Video_Files_!!!\: Default output directory for processed videos.
 │
 ├── advanced\: A separate, multi-track video editor application. Requires `PyQt5` and `python-mpv`.
-│   ├── advanced_video_editor.py: Application entry point. Bootstraps UI, Logging and patching.
-│   ├── asset_loader.py: Manages media import and background probing/thumbnail generation.
-│   ├── binary_manager.py: Manages external binary paths and patching (mpv).
-│   ├── clip_item.py: Visual representation of clips on the timeline.
-│   ├── clip_manager.py: Logic for splitting, deleting, and updating clip parameters.
-│   ├── clip_painter.py: Static class for raw QPainter commands to draw clips.
-│   ├── export_dialog.py: UI for rendering project and configuring export settings.
-│   ├── ffmpeg_generator.py: Engine for building complex FFmpeg filter graphs for playback/export.
-│   ├── history.py: Undo/Redo stack with smart delta compression.
-│   ├── inspector.py: Properties panel for selected clips (Speed, Volume, Effects).
-│   ├── main_window.py: The central hub instantiating docks and controllers.
-│   ├── media_pool.py: Drag-and-drop list widget for source files.
-│   ├── model.py: Data models defining ClipModel and storing pure data.
-│   ├── playback_manager.py: Manages playback state and sync between player and timeline.
-│   ├── player.py: Wraps libmpv in a Qt widget for playback and seeking.
-│   ├── preview.py: Video preview widget with overlay controls.
-│   ├── prober.py: Background worker for media probing (ffprobe) and waveform generation.
-│   ├── project.py: Low-level file system operations for projects.
-│   ├── project_controller.py: High-level logic for Project actions (Open, Save, Autosave).
-│   ├── render_worker.py: Background thread executing final FFmpeg export.
-│   ├── system.py: Logging config and ConfigManager.
-│   ├── timeline_container.py: Container for TrackHeaders and TimelineView.
-│   ├── timeline_scene.py: Graphics scene drawing the background grid and track lines.
-│   ├── timeline_view.py: Interactive view handling mouse events and tools.
-│   ├── track_header.py: UI for track controls and reordering.
-│   └── worker.py: Generic background worker (e.g., thumbnails).
+│   ├── advanced_video_editor.py: Application entry point. Bootstraps UI, Logging and patching. Can be launched with a file path as a command-line argument to auto-load a video.
+│   ├── ... (other files for the advanced editor)
 │
 ├── binaries\: Contains all the necessary binaries for the application to run.
 │   ├── ffmpeg.exe, ffplay.exe, ffprobe.exe: The FFmpeg suite for video manipulation.
@@ -61,19 +30,10 @@ Advanced Video Editor = Advanced multi-track video/music sophisticated editor fo
 │   ├── main_app.conf: Configuration for the main Video Compressor application.
 │   └── advanced_editor.conf: Configuration for the Advanced Video Editor application.
 │
-├── developer_tools\: A separate PyQt5 application for creating cropped video segments.
-│   ├── crop_tools.py: The main entry point for the Crop Tool application.
-│   ├── app_handlers.py: Event handlers for the Crop Tool application.
-│   ├── ui_setup.py: Sets up the UI for the Crop Tool.
-│   ├── config.py: Configuration for the developer tools.
-│   ├── crop_widgets.py: Custom widgets used in the Crop Tool.
-│   ├── graphics_items.py: Custom QGraphicsItem implementations for resizable pixmap items.
-│   ├── Keyboard_Mixing.py: A mixin to handle keyboard shortcuts.
-│   ├── logger_setup.py: Sets up logging for the developer tools.
-│   ├── media_processor.py: Handles media processing tasks for the Crop Tool.
-│   ├── portrait_window.py: The window for arranging and managing cropped video pieces.
-│   ├── utils.py: Utility functions for the developer tools.
-│   └── cleaner.py: Script to clean up project files.
+├── crop_tool\: The Crop Tool application.
+│   ├── cropper\: Contains the source code for the crop tool.
+│       ├── crop_tools.py: Main entry point for the Crop Tool application.
+│       └── ... (other files for the crop tool)
 │
 ├── icons\: Contains application icons.
 │   └── Video_Icon_File.ico
@@ -81,56 +41,15 @@ Advanced Video Editor = Advanced multi-track video/music sophisticated editor fo
 ├── logs\: Directory for application log files.
 │   └── Fortnite-Video-Converter.log
 │
-├── MP3\: Directory for background music MP3 files.
+├── mp3\: Directory for background music MP3 files.
 │
-├── processing\: Contains the core video processing logic.
-│   ├── worker.py: A QThread worker that runs the complex FFmpeg processing pipeline.
-│   └── old_worker.py: An old, likely unused version of the worker.
+├── video_compressor\: The main Video Compressor application.
+│   ├── main.py: Main entry point for the Video Compressor application.
+│   ├── system\: System-level modules for the main application.
+│   ├── ui\: The user interface for the main application.
+│   └── processing\: The core video processing logic.
 │
-├── system\: Contains system-level modules for the main application.
-│   ├── config.py: Manages loading and saving of the application's configuration file.
-│   └── logger.py: Sets up the main application logger.
-│
-├── ui\: Contains the user interface for the main application.
-│   ├── main_window.py: The main window class for the Video Compressor application, bringing together all UI parts and functionality.
-│   ├── parts\: Mixin classes that provide specific functionalities to the main window.
-│   │   ├── events_mixin.py: Handles UI events like drag-and-drop and window events.
-│   │   ├── ffmpeg_mixin.py: Handles video metadata retrieval and starting the processing thread.
-│   │   ├── keyboard_mixin.py: Handles global keyboard shortcuts for the main application.
-│   │   ├── music_mixin.py: Handles all music-related functionality, including the music selection dropdown and offset dialog.
-│   │   ├── phase_overlay_mixin.py: Manages the overlay shown during video processing.
-│   │   ├── player_mixin.py: Handles video playback using VLC.
-│   │   ├── trim_mixin.py: Handles the logic for setting video start and end trim times.
-│   │   ├── ui_builder_mixin.py: Constructs the main application UI widgets and layout.
-│   │   └── volume_mixin.py: Handles master and music volume controls.
-│   └── widgets\: Custom, reusable Qt widgets used in the main application UI.
-│       ├── clickable_button.py: A button widget that can be clicked. (likely has more specific functionality)
-│       ├── draggable_list_widget.py: A QListWidget with drag-and-drop reordering functionality.
-│       ├── drop_area.py: A QFrame that accepts file drops to load videos.
-│       ├── music_offset_dialog.py: A dialog window for selecting the start time of the background music, with a waveform preview.
-│       ├── slider_container.py: A container to manage the timeline slider's geometry.
-│       ├── timeline_slider.py: The main timeline slider for video seeking, showing playback progress.
-│       ├── tooltip_manager.py: Manages the display of custom tooltips.
-│       └── trimmed_slider.py: A QSlider with visual handles to indicate the start and end trim points.
-│
-└── utilities\: Contains a separate Video Merger application, refactored into multiple specialized modules.
-    ├── video_merger.py: Main entry point for the Video Merger application. Handles setup and launches the main window.
-    ├── merger_window.py: The main QMainWindow class for the merger, acting as a central coordinator for all its parts.
-    ├── merger_window_logic.py: Handles supplemental window logic like saving/loading state and list item animations.
-    ├── merger_ui.py: Facade module that composes the main MergerUI class from the mixins below.
-    ├── merger_ui_main.py: The main UI handler class, inheriting from all UI mixins.
-    ├── merger_ui_build.py: Mixin for building the core layout and widgets of the merger window.
-    ├── merger_ui_style.py: Mixin that provides the CSS stylesheet for the merger application.
-    ├── merger_ui_widgets.py: Mixin for creating custom widgets used in the merger.
-    ├── merger_ui_badge.py: Mixin for managing the music volume percentage badge.
-    ├── merger_ui_overlay.py: Mixin for handling the processing overlay.
-    ├── merger_handlers_main.py: Facade module that composes the main MergerHandlers class from the mixins below.
-    ├── merger_handlers_buttons.py: Mixin containing event handlers for button clicks.
-    ├── merger_handlers_dialogs.py: Mixin for showing success, error, and confirmation dialogs.
-    ├── merger_handlers_list.py: Mixin for handling events from the video list (selection, reordering).
-    ├── merger_handlers_preview.py: Mixin for handling video preview logic.
-    ├── merger_ffmpeg.py: Contains the FFMpegHandler class, which builds the ffmpeg command for merging.
-    ├── merger_ffmpeg_process.py: A mixin that runs the ffmpeg command as a QProcess and handles its output and completion.
-    ├── merger_music.py: Contains the MusicHandler class for all background music functionality.
-    ├── merger_music_dialog.py: Contains the logic for the music start time selection dialog.
-    └── merger_utils.py: Utility functions for the Video Merger (logging, config, path helpers).
+└── video_merger\: The Video Merger application.
+    └── merger\: Contains the source code for the video merger.
+        ├── video_merger.py: Main entry point for the Video Merger application.
+        └── ... (other files for the video merger)

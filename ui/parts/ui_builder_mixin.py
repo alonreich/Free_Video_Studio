@@ -318,7 +318,7 @@ class UiBuilderMixin:
         self.positionSlider.setFixedHeight(50)
         self.positionSlider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.positionSlider.setObjectName("timelineSlider")
-        self.tooltip_manager.add_tooltip(self.positionSlider, "Seek: â†  â†’\nFast Seek: Shift + â† /â†’\nFine Seek: Ctrl + â† /â†’")
+        self.tooltip_manager.add_tooltip(self.positionSlider, "Seek: ← / →\nFast Seek: Shift + ← / →\nFine Seek: Ctrl + ← / →")
         self.positionSlider.sliderMoved.connect(self.set_vlc_position)
         self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
@@ -333,7 +333,7 @@ class UiBuilderMixin:
         self.volume_slider.setTickPosition(QSlider.TicksBothSides)
         self.volume_slider.setTracking(True)
         self.volume_slider.setInvertedAppearance(True)
-        self.tooltip_manager.add_tooltip(self.volume_slider, "Adjust Volume: â†‘ / â†“\nLarge Step: Shift + â†‘ / â†“")
+        self.tooltip_manager.add_tooltip(self.volume_slider, "Adjust Volume: ↑ / ↓\nLarge Step: Shift + ↑ / ↓")
         try:
             eff = int(self.config_manager.config.get('last_volume', 100))
         except Exception:
