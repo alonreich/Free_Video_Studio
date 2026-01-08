@@ -3,10 +3,13 @@ from PyQt5.QtCore import Qt
 from ui.widgets.music_offset_dialog import MusicOffsetDialog
 
 class MusicDialogHandler:
+
     def __init__(self, parent):
         self.parent = parent
         self.logger = parent.logger
+
     def show_music_offset_dialog(self, path):
+
         def _configure_dialog_player(vlc_player):
             try:
                 vlc_player.audio_output_set('directsound')

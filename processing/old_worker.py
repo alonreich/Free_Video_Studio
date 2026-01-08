@@ -10,6 +10,7 @@ import time
 from PyQt5.QtCore import QThread
 
 class ProcessThread(QThread):
+
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
                  script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
                  is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
@@ -173,6 +174,7 @@ class ProcessThread(QThread):
             thumbnail_hold_sec = 0.0
             start_time_corrected = in_ss
             AUDIO_KBPS = 256
+
             def _probe_src_audio_kbps():
                 try:
                     ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
@@ -225,6 +227,7 @@ class ProcessThread(QThread):
                 try:
                     src_bytes = os.path.getsize(self.input_path)
                     target_file_size_bits = max(1, src_bytes) * 8
+
                     def _probe_audio_kbps():
                         """Probe the audio bitrate of the input using ffprobe located in the Binaries folder."""
                         try:

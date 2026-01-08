@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QPushButton, QApplication
 from PyQt5.QtCore import Qt
 
 class ClickableButton(QPushButton):
+
     def enterEvent(self, event):
         """
         Set the override cursor to a pointing hand when the mouse enters the button.

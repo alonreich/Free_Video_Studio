@@ -30,6 +30,7 @@ from PyQt5.QtCore import (
 )
 
 class RubberBandHelper(QObject):
+
     def __init__(self, tree_view: QTreeView):
         super().__init__(tree_view)
         self._tree = tree_view
@@ -154,12 +155,14 @@ class CenterHeaderProxyStyle(QProxyStyle):
     """
     Forces the header text to be centered, overriding the model's preference.
     """
+
     def drawControl(self, element, option, painter, widget=None):
         if element == QStyle.CE_HeaderLabel:
             option.textAlignment = Qt.AlignCenter
         super().drawControl(element, option, painter, widget)
 
 class CenterAlignedTreeView(QTreeView):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._align_timer = None
@@ -184,6 +187,7 @@ class CenterAlignedTreeView(QTreeView):
             pass
 
 class CustomFileDialog(QFileDialog):
+
     def __init__(self, *args, config=None, **kwargs):
         super(CustomFileDialog, self).__init__(*args, **kwargs)
         self.config = config
@@ -450,9 +454,11 @@ class CustomFileDialog(QFileDialog):
         paths = self._selected_paths_from_view(view)
         if not paths:
             return
+
         def _send_to_bin_windows(path):
             import ctypes
             from ctypes import wintypes
+
             class SHFILEOPSTRUCTW(ctypes.Structure):
                 _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
                             ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_uint), ("fAnyOperationsAborted", wintypes.BOOL),
@@ -641,6 +647,7 @@ from PyQt5.QtWidgets import QStyledItemDelegate
 from PyQt5.QtCore import QSize
 
 class _CenteredTextDelegate(QStyledItemDelegate):
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.displayAlignment = Qt.AlignCenter

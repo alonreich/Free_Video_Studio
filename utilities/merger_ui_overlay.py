@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QWidget
 import math
 
 class MergerUIOverlayMixin:
+
     def _ensure_processing_overlay(self):
         if hasattr(self.parent, "_overlay"):
             return

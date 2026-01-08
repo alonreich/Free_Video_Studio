@@ -7,6 +7,7 @@ class SliderContainer(QWidget):
     drawing handles above the container's bounds without disturbing
     the positions of other widgets.
     """
+
     def __init__(self, slider_instance, parent=None):
         super().__init__(parent)
         self.slider = slider_instance

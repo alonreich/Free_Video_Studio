@@ -16,6 +16,7 @@ def cleanup_temp_snapshots():
 
 class PersistentWindowMixin:
     """A mixin to provide common window geometry persistence."""
+
     def setup_persistence(self, config_path, settings_key, default_geo, title_info_provider):
         self.config_path = config_path
         self.settings_key = settings_key

@@ -4,6 +4,7 @@ from PyQt5.QtGui import QBrush, QColor, QPen
 
 class ResizablePixmapItem(QGraphicsObject):
     item_changed = pyqtSignal()
+
     def __init__(self, pixmap, crop_rect, parent=None):
         super(ResizablePixmapItem, self).__init__(parent)
         self.original_pixmap = pixmap 

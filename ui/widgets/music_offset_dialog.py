@@ -13,6 +13,7 @@ except Exception:
 PREVIEW_VISUAL_LEAD_MS = 1100
 
 class MusicOffsetDialog(QDialog):
+
     def __init__(self, parent, vlc_instance, audio_path: str, initial_offset: float, bin_dir: str):
         super().__init__(parent)
         self.setWindowTitle("Choose Background Music Start")
@@ -127,8 +128,10 @@ class MusicOffsetDialog(QDialog):
         self._caret.setStyleSheet("background:#3498db;")
         self._caret.hide()
         self._restore_geometry()
-        self._init_assets(float(initial_offset or 0.0))
+        import threading
+        threading.Thread(target=self._init_assets, args=(float(initial_offset or 0.0),), daemon=True).start()
     @property
+
     def selected_offset(self):
         return float(self.slider.value()) / 1000.0
 
@@ -220,12 +223,14 @@ class MusicOffsetDialog(QDialog):
 
     def _init_assets(self, initial_offset: float):
         dur_ms = self._probe_duration_ms()
-        if dur_ms <= 0:
-            dur_ms = 1
+        if dur_ms <= 0: dur_ms = 1
         self._total_ms = dur_ms
-        self.slider.setRange(0, self._total_ms)
-        self.slider.set_duration_ms(self._total_ms)
-        self.slider.setValue(max(0, min(self._total_ms, int(initial_offset * 1000.0 + 0.5))))
+
+        def _apply_init():
+            self.slider.setRange(0, self._total_ms)
+            self.slider.set_duration_ms(self._total_ms)
+            self.slider.setValue(max(0, min(self._total_ms, int(initial_offset * 1000.0 + 0.5))))
+        QTimer.singleShot(0, _apply_init)
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
                 self._temp_png_path = tf.name
@@ -239,15 +244,18 @@ class MusicOffsetDialog(QDialog):
                 "-y", self._temp_png_path
             ]
             subprocess.run(cmd, check=True, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-            pm = QPixmap(self._temp_png_path)
-            if pm.isNull():
-                self.wave.setText("Error: Could not load waveform image.")
-                self._pm_src = None
-            else:
-                self._pm_src = pm
-                self._refresh_wave_scaled()
+
+            def _apply_wave():
+                pm = QPixmap(self._temp_png_path)
+                if pm.isNull():
+                    self.wave.setText("Error: Could not load waveform image.")
+                else:
+                    self._pm_src = pm
+                    self._refresh_wave_scaled()
+                self._sync_caret()
+            QTimer.singleShot(0, _apply_wave)
         except Exception:
-            self.wave.setText("Error: Waveform generation failed.")
+            QTimer.singleShot(0, lambda: self.wave.setText("Error: Waveform generation failed."))
             self._pm_src = None
         QTimer.singleShot(0, self._sync_caret)
 
@@ -273,10 +281,8 @@ class MusicOffsetDialog(QDialog):
         try:
             self._player = self._vlc.media_player_new()
             m = self._vlc.media_new(self._mpath)
-            try:
-                m.parse()
-            except Exception:
-                pass
+            import threading
+            threading.Thread(target=m.parse, daemon=True).start()
             self._player.set_media(m)
             try:
                 vlc_dur = int(m.get_duration() or 0)
@@ -413,6 +419,7 @@ class MusicOffsetDialog(QDialog):
             pass
 
     def _on_vlc_ended(self, event=None):
+
         def _ui():
             try:
                 self._timer.stop()

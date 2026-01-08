@@ -2,6 +2,7 @@ from PyQt5.QtCore import QUrl, Qt
 from PyQt5.QtGui import QDesktopServices
 
 class MergerHandlersPreviewMixin:
+
     def preview_file(self, path: str):
         try:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))

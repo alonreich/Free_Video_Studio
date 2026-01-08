@@ -26,6 +26,7 @@ from ui.parts.ffmpeg_mixin import FfmpegMixin
 from ui.parts.keyboard_mixin import KeyboardMixin
 
 class _QtLiveLogHandler(logging.Handler):
+
     def __init__(self, ui_owner):
         super().__init__()
         self.ui = ui_owner
@@ -133,6 +134,14 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         except Exception:
             pass
         self.logger.info("=== Application started ===")
+
+        import tempfile, glob
+        for pattern in ["core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log"]:
+            for old_file in glob.glob(os.path.join(tempfile.gettempdir(), pattern)):
+                try:
+                    os.remove(old_file)
+                except:
+                    pass
         self.logger.info("RUN: cwd=%s | script_dir=%s", os.getcwd(), self.script_dir)
         try:
             import faulthandler, signal
@@ -149,18 +158,21 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                         faulthandler.register(sig, file=fh_stream, all_threads=True, chain=True)
         except Exception:
             pass
+
         def _excepthook(exc_type, exc, tb):
             import traceback
             self.logger.exception("UNCAUGHT EXCEPTION:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
         sys.excepthook = _excepthook
         try:
             import threading
+
             def _thread_excepthook(args):
                 self.logger.error("THREAD EXCEPTION: %s", args)
             threading.excepthook = _thread_excepthook
         except Exception:
             pass
         try:
+
             def _unraisable(hook):
                 self.logger.error("UNRAISABLE: %s", hook)
             sys.unraisablehook = _unraisable
@@ -508,6 +520,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.logger.error("Failed to set HWND for player: %s", hwnd_err)
         self.vlc_player.play()
         QTimer.singleShot(150, lambda: self._on_mobile_format_toggled(self.mobile_checkbox.isChecked()))
+
         def apply_rate_and_volume():
             try:
                 self.vlc_player.set_rate(self.playback_rate)
@@ -582,7 +595,10 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.logger.info("CONFIG: Saved current state to disk.")
 
     def closeEvent(self, event):
-        """Saves the window position and size before closing."""
+        """Ensures all background encoding processes are killed before exit."""
+        if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
+            self.logger.warning("App closing during process. Killing ffmpeg...")
+            self.process_thread.cancel()
         self._save_app_state_and_config()
         super().closeEvent(event)
 

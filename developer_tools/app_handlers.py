@@ -11,6 +11,7 @@ from portrait_window import PortraitWindow
 from utils import cleanup_temp_snapshots
 
 class CropAppHandlers:
+
     def connect_signals(self):
         self.play_pause_button.clicked.connect(self.play_pause)
         self.open_button.clicked.connect(self.open_file)
@@ -111,6 +112,7 @@ class CropAppHandlers:
         self.snapshot_button.setText("Loading...")
         self.position_slider.setEnabled(True)
         self.show_video_view()
+
         def enable_snap():
             res = self.media_processor.original_resolution
             self.logger.info(f"Media resolution determined: {res}")

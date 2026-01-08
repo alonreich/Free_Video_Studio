@@ -8,6 +8,7 @@ import subprocess
 from utilities.merger_utils import _human
 
 class MergerHandlersDialogsMixin:
+
     def open_folder(self, path: str):
         folder_path = str(Path(path))
         if not folder_path or not os.path.isdir(folder_path):
@@ -40,6 +41,7 @@ class MergerHandlersDialogsMixin:
         grid.setVerticalSpacing(100)
         grid.setContentsMargins(30, 20, 30, 24)
         button_size = (btn_w, btn_h)
+
         def _open_whatsapp():
             try:
                 QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))

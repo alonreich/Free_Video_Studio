@@ -3,6 +3,7 @@ from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import QToolTip
 
 class ToolTipManager(QObject):
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tooltips = {}

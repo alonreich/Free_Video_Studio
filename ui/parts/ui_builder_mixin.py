@@ -12,6 +12,7 @@ from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
 
 class ClickableSpinBox(QDoubleSpinBox):
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             opt = QStyleOptionSpinBox()
@@ -153,8 +154,6 @@ class UiBuilderMixin:
                 return
             if not self._ensure_default_trim():
                 return
-            self._show_processing_overlay()
-            self._append_live_log("Processing started…")
             self.start_processing()
         except Exception as e:
             try:
@@ -173,8 +172,8 @@ class UiBuilderMixin:
             if has_duration:
                 if not self.process_button.isEnabled():
                     if hasattr(self, "logger"): self.logger.info("READY: Media loaded; enabling Process button")
-                self.process_button.setEnabled(True)
-                self._ensure_default_trim()
+                    self.process_button.setEnabled(True)
+                    self._ensure_default_trim()
         except Exception:
             pass
 
@@ -227,6 +226,7 @@ class UiBuilderMixin:
             gap = grid.horizontalSpacing() or 0
             cx  = self.playPauseButton.mapTo(self.player_col_container,
                                             self.playPauseButton.rect().center()).x()
+
             def _minw(w):
                 if not w or not w.isVisible():
                     return 0
@@ -596,6 +596,7 @@ class UiBuilderMixin:
         fm = QFontMetrics(self.quality_value_label.font())
         fixed_w = fm.horizontalAdvance("Maximum (For Social Media)") + 16
         self.quality_value_label.setMinimumWidth(fixed_w)
+
         def _on_quality_changed(value: int):
             titles = [
                 "Bad (Lightning Speed Shares)",
@@ -766,6 +767,7 @@ class UiBuilderMixin:
         self.process_finished_signal.connect(self.on_process_finished)
         self.selected_intro_abs_time = None
         self.thumb_pick_btn.setText("📸 Set Thumbnail 📸")
+
         def _mirror_overlay_progress(pct: int):
             try:
                 if getattr(self, "_overlay_progress", None):
@@ -888,6 +890,7 @@ class UiBuilderMixin:
         self.add_music_checkbox.setChecked(False)
         self.add_music_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-right: 0px; margin-bottom: 20px; margin-left: 0px; padding: 0px;")
         right_col.addWidget(self.add_music_checkbox)
+
         def _update_ui_positions(checked):
             d_top = 0 if checked else 10
             self.drop_area.setStyleSheet(f"font-size: 11px; font-weight: bold; margin-top: {d_top}px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px; padding: 5px;")
@@ -935,6 +938,7 @@ class UiBuilderMixin:
         self._hide_processing_overlay()
         old_resize = getattr(self, "resizeEvent", None)
         _update_ui_positions(self.add_music_checkbox.isChecked())
+
         def _resized(e):
             if callable(old_resize):
                 old_resize(e)
@@ -968,6 +972,7 @@ class UiBuilderMixin:
             self.portrait_mask_overlay.setVisible(False)
 
 class VlcSafePortraitOverlay(QWidget):
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)

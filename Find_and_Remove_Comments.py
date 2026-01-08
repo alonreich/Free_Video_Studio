@@ -3,7 +3,6 @@ import sys
 import tokenize
 import re
 import ctypes
-
 RED = '\033[91m'
 GREEN = '\033[92m'
 CYAN = '\033[96m'
@@ -27,10 +26,9 @@ def center_console():
         y = max(0, (screen_h - win_h) // 2)
         user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004)
     except: pass
-
 EXCLUDE_FOLDERS = ['.git', '__pycache__', '.idea', 'venv', 'env', 'cache', 'project']
 EXCLUDE_FILES = ['__init__.py', 'app.py']
-EXCLUDE_EXTS = ['.txt', '.md', '.log', '.json']
+EXCLUDE_EXTS = ['.txt', '.log', '.json']
 
 def get_target_files(root_dir):
     targets = []
@@ -72,25 +70,35 @@ def analyze_comments(filepath):
                 stripped = line.strip()
                 if stripped.startswith('#'):
                     actions[i] = {'action': 'DELETE', 'type': 'COMMENT', 'line': i + 1, 'content': stripped}
-        for i in range(len(lines)):
-            if i in actions and actions[i]['action'] == 'DELETE':
-                continue
-            line = lines[i]
+        cite_pattern = r'\s*\[cite:\s*[0-9,\s\-]+\]'
+        for i, line in enumerate(lines):
+            if i in actions: continue
+            if 'cite:' in line:
+                new_line = re.sub(cite_pattern, '', line)
+                if new_line != line:
+                    actions[i] = {'action': 'EDIT', 'type': 'CITATION', 'line': i + 1, 'content': 'Removed', 'new_content': new_line}
+        for i, line in enumerate(lines):
+            if i in actions: continue 
             if not line.strip():
-                is_duplicate = False
-                if i + 1 < len(lines):
-                    if not lines[i+1].strip():
-                        is_duplicate = True
-                if is_duplicate:
-                    actions[i] = {'action': 'DELETE', 'type': 'EMPTY LINE', 'line': i + 1, 'content': '<Redundant Empty>'}
-                    continue
-                next_real_line = None
-                for j in range(i + 1, len(lines)):
-                    if lines[j].strip():
-                        next_real_line = lines[j].strip()
-                        break
-                if not next_real_line:
+                next_content = any(l.strip() for l in lines[i+1:])
+                if not next_content:
                     actions[i] = {'action': 'DELETE', 'type': 'EMPTY LINE', 'line': i + 1, 'content': '<Trailing Empty>'}
+                    continue
+                should_keep = False
+                for j in range(i + 1, len(lines)):
+                    next_line = lines[j].strip()
+                    if next_line:
+                        if next_line.startswith(('def ', 'class ', 'import ', 'from ', '"""', "'''", '#')):
+                            should_keep = True
+                        break
+                if not should_keep:
+                    actions[i] = {'action': 'DELETE', 'type': 'EMPTY LINE', 'line': i + 1, 'content': '<Excessive Empty>'}
+        for i, line in enumerate(lines):
+            if i in actions or i == 0: continue
+            stripped = line.lstrip()
+            if stripped.startswith(('def ', 'class ')):
+                if lines[i-1].strip():
+                    actions[i] = {'action': 'EDIT', 'type': 'MISSING NEWLINE', 'line': i + 1, 'content': 'Add Blank Line Above', 'new_content': '\n' + line}
         return [v for k, v in sorted(actions.items())]
     except Exception as e:
         return []
@@ -100,37 +108,26 @@ def nuke_comments(filepath, items):
         print(f"\n{CYAN}Cleaning Comments/Empty Lines in: {filepath}{RESET}")
         with open(filepath, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        
         action_map = {item['line'] - 1: item for item in items}
-        
         with open(filepath, 'w', encoding='utf-8') as f:
             for i, line in enumerate(lines):
                 if i in action_map:
                     act = action_map[i]
-
                     start_idx = max(0, i - 2)
                     end_idx = min(len(lines), i + 3)
-                    
                     print("-" * 40)
-
                     for ctx in range(start_idx, i):
                         print(f"  {lines[ctx].rstrip()}")
-
                     print(f"{RED}- {lines[i].rstrip()}{RESET}")
-                    
                     if act['action'] == 'DELETE':
                         print(f"{GREEN}+ ### LINE REMOVED ###{RESET}")
-
                     elif act['action'] == 'EDIT':
                         print(f"{GREEN}+ {act['new_content'].rstrip()}{RESET}")
                         f.write(act['new_content'])
-
                     for ctx in range(i + 1, end_idx):
                         print(f"  {lines[ctx].rstrip()}")
-                        
                 else:
                     f.write(line)
-        
         print("-" * 40)
         return True
     except Exception as e:
@@ -163,7 +160,6 @@ def fix_syntax(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
-
         cleaned_lines = []
         for line in lines:
             line_expanded = line.replace('\t', '    ')
@@ -181,26 +177,21 @@ def fix_syntax(filepath):
                 else:
                     new_spaces = leading_spaces + (4 - remainder)
                 cleaned_lines.append(' ' * new_spaces + stripped)
-
         final_lines = list(cleaned_lines)
         
         def get_indent(s):
             return len(s) - len(s.lstrip())
-
         for i in range(len(final_lines)):
             line = final_lines[i]
             stripped = line.lstrip()
-
             if stripped.startswith(('def ', 'class ', 'if ')):
                 current_indent = get_indent(line)
-                
                 next_indents = []
                 for j in range(i + 1, len(final_lines)):
                     if final_lines[j].strip():
                         next_indents.append(get_indent(final_lines[j]))
                     if len(next_indents) == 2:
                         break
-                
                 if len(next_indents) == 2:
                     b1, b2 = next_indents
                     if b1 == b2:
@@ -211,33 +202,24 @@ def fix_syntax(filepath):
                         elif diff == 8:
                             new_indent = current_indent + 4
                             final_lines[i] = (' ' * new_indent) + stripped
-
         changes_found = False
         print(f"\n{CYAN}Applying Syntax Fixes for: {filepath}{RESET}")
-        
         for i, (orig, new) in enumerate(zip(lines, final_lines)):
             if orig != new:
                 changes_found = True
-                
                 start_idx = max(0, i - 2)
                 end_idx = min(len(lines), i + 3)
-                
                 print("-" * 40)
-
                 for ctx in range(start_idx, i):
                     print(f"  {lines[ctx].rstrip()}")
-
                 print(f"{RED}- {orig.rstrip()}{RESET}")
                 print(f"{GREEN}+ {new.rstrip()}{RESET}")
-
                 for ctx in range(i + 1, end_idx):
                     print(f"  {lines[ctx].rstrip()}")
-        
         if not changes_found:
             print("  No changes needed.")
         else:
             print("-" * 40)
-
         with open(filepath, 'w', encoding='utf-8') as f:
             f.writelines(final_lines)
         return True
@@ -314,6 +296,5 @@ def main():
             print("Skipping syntax fixes.")
     input("\nPress Enter to exit...")
     print("\nDone.")
-
 if __name__ == "__main__":
     main()

@@ -11,10 +11,8 @@ $logPath = "$env:TEMP\Fortnite_Video_Software_Install_Report.txt"
 "==========================================" | Out-File $logPath -Append -Encoding UTF8
 Add-Content $logPath ("Started: " + (Get-Date))
 $step0OK=$false; $step1OK=$false; $step2OK=$false; $pyOK=$false; $pipOK=$false; $verbOK=$false; $binOK=$false; $deskOK=$false; $fixOK=$false
-
 function Step($n,$m,$ok){$s=if($ok){"✅ SUCCESS"}else{"❌ FAILED"};Write-Host "[$n] $s - $m";Add-Content $logPath "[$n] $s - $m"}
 function Info($t){Write-Host $t -ForegroundColor Cyan;Add-Content $logPath $t}
-
 function Broadcast-EnvChange {
 try {
 $src=@'
@@ -30,7 +28,6 @@ $r=[IntPtr]::Zero
 [void][EnvRefresh]::SendMessageTimeout([IntPtr]0xffff,0x001A,[IntPtr]0,"Environment",2,5000,[ref]$r)
 } catch {}
 }
-
 function Add-PathEntryUser($dir){
 if(-not (Test-Path $dir)){return}
 $current=[Environment]::GetEnvironmentVariable('Path','User')
@@ -38,7 +35,6 @@ $parts=($current -split ';')|Where-Object { $_ -ne '' }
 if($parts -notcontains $dir){[Environment]::SetEnvironmentVariable('Path',(($parts+$dir)-join ';'),'User')}
 if(($env:Path -split ';') -notcontains $dir){$env:Path=($env:Path.TrimEnd(';')+';'+$dir)}
 }
-
 function Find-PythonInstall{
 $info=[ordered]@{PyLauncherPath=$null;PyDir=$null;PyExe=$null;ScriptsDir=$null;Ver='3.13'}
 $l1=Join-Path $env:LOCALAPPDATA 'Programs\Python\Launcher\py.exe'
@@ -50,7 +46,6 @@ if(-not $info.PyDir){$g=Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3.13'
 if($info.PyDir){$px=Join-Path $info.PyDir 'python.exe'; if(Test-Path $px){$info.PyExe=$px}; $sd=Join-Path $info.PyDir 'Scripts'; if(Test-Path $sd){$info.ScriptsDir=$sd}}
 [pscustomobject]$info
 }
-
 function Ensure-Winget{
 $wg=Get-Command winget -ErrorAction SilentlyContinue
 if($wg){return $true}
@@ -58,7 +53,6 @@ Info "[winget] Registering Desktop App Installer"
 try{Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe; Start-Sleep 5; $wg=Get-Command winget -ErrorAction SilentlyContinue; if($wg){return $true}}catch{}
 return $false
 }
-
 function Get-FileSmart {
 param(
   [Parameter(Mandatory=$true)][string]$Url,
@@ -87,7 +81,6 @@ try {
     return $false
 }
 }
-
 function Set-ShortcutRunAsAdministrator {
 param([string]$lnkPath)
 $src=@'
@@ -95,6 +88,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+
 class CShellLink {}
 [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("0000010b-0000-0000-C000-000000000046")]
 interface IPersistFile {
@@ -253,7 +247,7 @@ echo [pip] Targeting: Direct Python Executable >> %LOG% 2>&1
 echo [pip] Upgrading pip (Direct)...
 $cmd -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 echo [pip] Installing packages (Direct)...
-[cite_start]$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
+$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
 if %errorlevel% neq 0 echo [!] Failed Direct Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -265,7 +259,7 @@ echo [pip] Targeting: Py Launcher (-3.13) >> %LOG% 2>&1
 echo [pip] Upgrading pip (Launcher)...
 $cmd -3.13 -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 echo [pip] Installing packages (Launcher)...
-[cite_start]$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1 [cite: 12]
+$cmd -3.13 -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
 if %errorlevel% neq 0 echo [!] Failed Launcher Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -281,7 +275,7 @@ exit /b 0
         if ($exit -ne 0) { $pipOK = $false; Add-Content $logPath "[pip] ExitCode=$exit" } else { Add-Content $logPath "[pip] Completed successfully" }
     }
 } catch { $pipOK = $false }
-[cite_start]if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv, send2trash)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false } [cite: 12]
+if ($pipOK) { Step 4 "Installed Python packages (PyQt5, psutil, python-vlc, pypiwin32, python-mpv, send2trash)" $true } else { Step 4 "pip packages were not fully installed; see log at $logPath" $false }
 Step 5 "Classic context menu hack skipped" $true
 $binOK=$true
 Step 6 "Skipped creating PATH shims in \bin" $true
@@ -365,7 +359,6 @@ $summaryContent = @()
 $summaryContent += "Fortnite Video Software - Installation Summary"
 $summaryContent += "Date: $(Get-Date)"
 $summaryContent += "---------------------------------------------"
-
 function Get-StatusMsg($b) { if($b) { return "✅ SUCCESS" } else { return "❌ FAILED" } }
 $summaryContent += "1. Clean/Backup Files:   $(Get-StatusMsg $step0OK)"
 $summaryContent += "2. Install Directory:    $(Get-StatusMsg $step1OK)"

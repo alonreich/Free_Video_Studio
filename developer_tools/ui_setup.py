@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QSize
 from crop_widgets import DrawWidget
 
 class Ui_CropApp:
+
     def setupUi(self, CropAppWindow):
         CropAppWindow.setWindowTitle(CropAppWindow.base_title)
         CropAppWindow.view_stack = QStackedWidget(CropAppWindow)

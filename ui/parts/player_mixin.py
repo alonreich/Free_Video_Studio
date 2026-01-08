@@ -4,6 +4,7 @@ from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtWidgets import QStyle
 
 class PlayerMixin:
+
     def _safe_stop_playback(self):
         try:
             if getattr(self, "player", None):
@@ -117,10 +118,11 @@ class PlayerMixin:
     def _on_vlc_end_reached(self, event=None):
         """
         VLC reached end.
-        This is called from a VLC thread, so DO NOT touch any Qt widgets.
-        Just emit a signal to be handled by the main thread.
+        Ensures thread-safe handling by using QTimer to push the execution 
+        to the main Qt event loop, preventing cross-thread deadlocks.
         """
         try:
-            self.video_ended_signal.emit()
-        except Exception:
-            pass
+            QTimer.singleShot(0, lambda: self.video_ended_signal.emit())
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.error(f"VLC End Event failed to defer: {e}")

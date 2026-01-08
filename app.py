@@ -4,14 +4,22 @@
 # To install manually the pip packages:
 # "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc pypiwin32 pynput opencv-python PyQtWebEngine audioop-lts
 
-
 import os, sys, tempfile, psutil
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 sys.dont_write_bytecode = True
+try:
+    import audioop
+except ImportError:
+    try:
+        import audioop_lts as audioop_shim
+        sys.modules['audioop'] = audioop_shim
+    except ImportError:
+        pass
 from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget
 from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtGui import QIcon
 import subprocess, ctypes
+
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 PLUGINS   = os.path.join(BIN_DIR, 'plugins')
@@ -120,7 +128,7 @@ if __name__ == "__main__":
         app = QApplication(sys.argv)
     print("DEBUG: Connecting remove_pid_file to app.aboutToQuit signal.")
     app.aboutToQuit.connect(remove_pid_file)
-    write_pid_file() # Write PID after QApplication is initialized
+    write_pid_file()
     print("DEBUG: Called write_pid_file().")
     if sys.platform.startswith("win"):
         try:
@@ -130,8 +138,6 @@ if __name__ == "__main__":
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                # ctypes.windll.user32.ShowWindow(hwnd, 0)
-                # ctypes.windll.kernel32.FreeConsole()
                 pass
         except Exception:
             pass

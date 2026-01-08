@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QLabel, QPushButton
 from utilities.merger_utils import _load_conf, _save_conf
 
 class MergerWindowLogic:
+
     def __init__(self, window):
         self.window = window
 
@@ -69,6 +70,7 @@ class MergerWindowLogic:
             a1.setStartValue(r1.topLeft()); a1.setEndValue(r2.topLeft()); a1.setEasingCurve(QEasingCurve.InOutQuad)
             a2.setStartValue(r2.topLeft()); a2.setEndValue(r1.topLeft()); a2.setEasingCurve(QEasingCurve.InOutQuad)
             self.window._animating = True
+
             def _finish():
                 try:
                     self.perform_swap(row, new_row)

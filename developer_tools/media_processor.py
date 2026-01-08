@@ -7,6 +7,7 @@ from PyQt5.QtCore import QTimer
 logger = logging.getLogger(__name__)
 
 class MediaProcessor:
+
     def __init__(self, bin_dir):
         self.bin_dir = bin_dir
         logger.info("Initializing MediaProcessor...")

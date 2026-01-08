@@ -1,6 +1,7 @@
 from PyQt5.QtCore import Qt
 
 class KeyboardShortcutMixin:
+
     def keyPressEvent(self, event):
         key = event.key()
         if key == Qt.Key_F12:

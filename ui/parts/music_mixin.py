@@ -10,6 +10,7 @@ from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_offset_dialog import MusicOffsetDialog
 
 class MusicMixin:
+
     def _mp3_dir(self):
         """Return the absolute path to the project's central MP3 folder.
         The application historically stored MP3 files in ``ui/MP3``.  The
@@ -165,15 +166,12 @@ class MusicMixin:
             initial = 0.0
             self.logger.info("MUSIC: open offset dialog | file='%s' | initial=%.3fs | vol_eff=%d%%",
                             os.path.basename(p), initial, self._music_eff())
-            dlg = MusicOffsetDialog(self, getattr(self, "vlc_instance", None), p, initial, getattr(self, "bin_dir", ""))
-            if dlg.exec_() == QDialog.Accepted:
-                self.music_offset_input.setValue(dlg.selected_offset)
-                music_end = (self.trim_end or self.original_duration)
-                if self.music_start_sec is not None and self.music_end_sec is not None:
-                    music_end = self.music_end_sec
-                self.positionSlider.set_music_times(dlg.selected_offset, music_end)
-                self.logger.info("MUSIC: selected | file='%s' | start=%.3fs | vol_eff=%d%%",
-                                os.path.basename(p), float(dlg.selected_offset), self._music_eff())
+            self._open_music_offset_dialog(p)
+            offset = self._get_music_offset()
+            music_end = (self.trim_end or self.original_duration)
+            self.positionSlider.set_music_times(offset, music_end)
+            self.logger.info("MUSIC: selected | file='%s' | start=%.3fs | vol_eff=%d%%",
+                             os.path.basename(p), offset, self._music_eff())
         except Exception as e:
             self.logger.error(f"Error in _on_music_selected: {e}")
     
@@ -187,7 +185,8 @@ class MusicMixin:
             png = None
             try:
                 ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
-                tmp_png = os.path.join(tempfile.gettempdir(), "bg_waveform.png")
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                    tmp_png = tf.name
                 cmd = [
                     ffmpeg_path, "-hide_banner", "-loglevel", "error",
                     "-i", path, "-frames:v", "1",
@@ -201,8 +200,11 @@ class MusicMixin:
             except Exception:
                 png = None
             dlg = QDialog(self)
+            dlg.setStyleSheet(self.styleSheet())
             dlg.setWindowTitle("Choose Background Music Start")
             v = QVBoxLayout(dlg)
+            v.setContentsMargins(20, 20, 20, 20)
+            v.setSpacing(20)
             geom = self.config_manager.config.get('music_dialog_geom')
             if isinstance(geom, dict):
                 try:
@@ -212,6 +214,7 @@ class MusicMixin:
                     pass
     
             class _WaveformWithCaret(QLabel):
+
                 def __init__(self, pix: QPixmap, *args, **kwargs):
                     super().__init__(*args, **kwargs)
                     self._pix = pix
@@ -219,7 +222,14 @@ class MusicMixin:
                     self._eff_w = int(round(pix.width()  / self._dpr))
                     self._eff_h = int(round(pix.height() / self._dpr))
                     self._x = 0
-                    self.setMinimumHeight(self._eff_h + 6)
+                    self.setMinimumHeight(self._eff_h + 30)
+                    self.setStyleSheet("""
+                        QLabel {
+                            background-color: #34495e;
+                            border: 2px solid #266b89;
+                            border-radius: 12px;
+                        }
+                    """)
     
                 def set_frac(self, frac: float):
                     frac = max(0.0, min(1.0, float(frac)))
@@ -243,8 +253,8 @@ class MusicMixin:
                 eff_h = int(round(_pix.height() / dpr))
                 lbl = _WaveformWithCaret(_pix)
                 lbl.setAlignment(Qt.AlignCenter)
-                lbl.setMinimumWidth(eff_w)
-                dlg.resize(max(dlg.width(), eff_w + 80), max(dlg.height(), eff_h + 140))
+                lbl.setMinimumWidth(eff_w + 60)
+                dlg.resize(max(dlg.width(), eff_w + 120), max(dlg.height(), eff_h + 240))
                 v.addWidget(lbl)
             h = QHBoxLayout()
             slider = TrimmedSlider(dlg)
@@ -260,31 +270,35 @@ class MusicMixin:
             h.addWidget(slider)
             h.addWidget(val_label)
             v.addLayout(h)
-            preview_controls = QHBoxLayout()
+            blue_btn_style = "QPushButton { background-color: #266b89; color: #ffffff; border: none; min-width: 100px; padding: 10px; border-radius: 8px; font-weight: bold; } QPushButton:hover { background-color: #2980b9; }"
+            red_btn_style = "QPushButton { background-color: #e74c3c; color: #ffffff; border: none; min-width: 100px; padding: 10px; border-radius: 8px; font-weight: bold; } QPushButton:hover { background-color: #c0392b; }"
+            ok = QPushButton("OK")
+            ok.setStyleSheet(blue_btn_style)
+            ok.setFixedHeight(40)
             play_btn = QPushButton("▶ Play")
+            play_btn.setStyleSheet(blue_btn_style)
+            play_btn.setFixedHeight(40)
             play_btn.setFocusPolicy(Qt.NoFocus)
+            cancel = QPushButton("Cancel")
+            cancel.setStyleSheet(red_btn_style)
+            cancel.setFixedHeight(40)
             preview_timer = QTimer(dlg)
             preview_timer.setInterval(100)
+
             def _update_slider_from_audio():
-                """Update the preview slider and caret based on current audio time."""
                 try:
                     if audio_player is not None and audio_player.is_playing():
                         ms = int(audio_player.get_time() or 0)
                         slider.blockSignals(True)
                         slider.setValue(min(slider.maximum(), ms))
                         slider.blockSignals(False)
-                        try:
-                            if png:
-                                lbl.set_frac(ms / max(1, slider.maximum()))
-                            val_label.setText(f"{ms/1000.0:.2f} s")
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                        if png: lbl.set_frac(ms / max(1, slider.maximum()))
+                        val_label.setText(f"{ms/1000.0:.2f} s")
+                except Exception: pass
             preview_timer.timeout.connect(_update_slider_from_audio)
+
             def toggle_preview():
-                if audio_player is None:
-                    return
+                if audio_player is None: return
                 try:
                     if audio_player.is_playing():
                         audio_player.pause()
@@ -292,48 +306,39 @@ class MusicMixin:
                         preview_timer.stop()
                     else:
                         audio_player.stop()
-                        start_ms = slider.value()
                         audio_player.play()
-                        audio_player.set_time(int(start_ms))
+                        audio_player.set_time(int(slider.value()))
                         play_btn.setText("⏸ Pause")
                         preview_timer.start()
-                except Exception:
-                    pass
+                except Exception: pass
             play_btn.clicked.connect(toggle_preview)
-            preview_controls.addWidget(play_btn)
-            preview_controls.addStretch(1)
-            v.addLayout(preview_controls)
             audio_player = None
             try:
                 audio_media = self.vlc_instance.media_new_path(path)
                 audio_player = self.vlc_instance.media_player_new()
                 audio_player.set_media(audio_media)
-                init_vol = 50
-                try:
-                    init_vol = max(0, min(100, self.music_volume_slider.value()))
-                except Exception:
-                    pass
+                init_vol = max(0, min(100, self.music_volume_slider.value()))
                 audio_player.audio_set_volume(int(init_vol))
-                def _seek_audio(ms: int):
-                    try:
-                        audio_player.set_time(int(ms))
-                    except Exception:
-                        pass
-                slider.valueChanged.connect(_seek_audio)
-            except Exception:
-                audio_player = None
+                slider.valueChanged.connect(lambda ms: audio_player.set_time(int(ms)) if audio_player else None)
+            except Exception: audio_player = None
+
             def _sync_caret(ms):
-                if png:
-                    lbl.set_frac(ms / max(1, slider.maximum()))
+                if png: lbl.set_frac(ms / max(1, slider.maximum()))
                 val_label.setText(f"{ms/1000.0:.2f} s")
             _sync_caret(slider.value())
             slider.valueChanged.connect(_sync_caret)
-            btns = QHBoxLayout()
-            ok = QPushButton("OK")
-            cancel = QPushButton("Cancel")
-            btns.addWidget(ok)
-            btns.addWidget(cancel)
-            v.addLayout(btns)
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(ok)
+            button_row.addSpacing(45)
+            button_row.addWidget(play_btn)
+            button_row.addSpacing(45)
+            button_row.addWidget(cancel)
+            button_row.addStretch(1)
+            v.addLayout(button_row)
+            ok.clicked.connect(dlg.accept)
+            cancel.clicked.connect(dlg.reject)
+
             def on_slide(x):
                 val_label.setText(f"{x/1000.0:.2f} s")
             slider.valueChanged.connect(on_slide)
@@ -370,6 +375,9 @@ class MusicMixin:
                     QDialog.keyPressEvent(dlg, event)
             dlg.keyPressEvent = dialog_key_press
             accepted = dlg.exec_()
+            if tmp_png and os.path.exists(tmp_png):
+                try: os.remove(tmp_png)
+                except: pass
             try:
                 if audio_player is not None:
                     audio_player.stop()

@@ -2,6 +2,7 @@ from PyQt5.QtCore import QTimer, QPoint, Qt
 from PyQt5.QtWidgets import QStyleOptionSlider, QStyle
 
 class VolumeMixin:
+
     def apply_master_volume(self):
         """Push current slider value into VLC (unmute), persist, and refresh badge."""
         try:

@@ -10,11 +10,12 @@ import time
 from PyQt5.QtCore import QThread
 
 class ProcessThread(QThread):
+
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
-                 script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
-                 is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
-                 bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
-                 disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None):
+                script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
+                is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
+                bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
+                disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None):
         super().__init__()
         self.is_boss_hp = is_boss_hp
         self.input_path = input_path
@@ -124,6 +125,7 @@ class ProcessThread(QThread):
     def _get_audio_bitrate(self):
         """Robustly probes audio bitrate. Tries stream first, falls back to format."""
         ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
+
         def _run_probe(args):
             try:
                 cmd = [ffprobe_path, "-v", "error", "-of", "default=nw=1:nk=1"] + args + [self.input_path]
@@ -232,8 +234,11 @@ class ProcessThread(QThread):
                     AUDIO_KBPS = probed
             video_bitrate_kbps = self._calculate_video_bitrate(effective_duration, AUDIO_KBPS)
             if video_bitrate_kbps is None:
-                self.finished_signal.emit(False, "Video duration is too short for the target file size (Audio takes up all space).")
-                return
+                if not self.keep_highest_res:
+                    self.finished_signal.emit(False, "Video duration is too short for the target file size (Audio takes up all space).")
+                    return
+                else:
+                    video_bitrate_kbps = 2500
             if self.keep_highest_res:
                 self.status_update_signal.emit(f"Maximum quality: source-matched size; video ~{video_bitrate_kbps} kbps.")
             else:
@@ -263,14 +268,8 @@ class ProcessThread(QThread):
                 def scale_box(box, s):
                     return tuple(int(round(v * s)) for v in box)
                 in_w, in_h = map(int, self.original_resolution.split('x'))
-                if self.original_resolution == "1920x1080":
-                    scale_factor = 1.0
-                elif self.original_resolution == "2560x1440":
-                    scale_factor = 2560 / 1920.0
-                elif self.original_resolution == "3840x2160":
-                    scale_factor = 3840 / 1920.0
-                else:
-                    scale_factor = in_w / 1920.0
+                scale_factor = in_h / 1080.0
+                self.logger.info(f"Mobile Crop: Resolution {in_w}x{in_h} detected. Scale factor: {scale_factor:.4f}")
                 hp = scale_box(hp_1080, scale_factor)
                 loot = scale_box(loot_1080, scale_factor)
                 stats = scale_box(stats_1080, scale_factor)
@@ -422,8 +421,9 @@ class ProcessThread(QThread):
                     vcodec = ['-c:v', 'libx264', '-preset', 'veryfast', '-b:v', f'{video_bitrate_kbps}k']
             else:
                 vcodec = ['-c:v', hw_encoder]
-                if video_bitrate_kbps:
-                     vcodec += ['-b:v', f'{video_bitrate_kbps}k', '-maxrate', f'{int(video_bitrate_kbps*1.05)}k', '-bufsize', f'{int(video_bitrate_kbps*1.2)}k']
+                if video_bitrate_kbps is not None:
+                    kbps = int(video_bitrate_kbps)
+                    vcodec += ['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps*1.05)}k', '-bufsize', f'{int(kbps*1.2)}k']
                 vcodec += ['-g', '60', '-keyint_min', '60']
                 if hw_encoder == 'h264_nvenc':
                     strict_size = (effective_duration <= 20.0)
@@ -575,14 +575,45 @@ class ProcessThread(QThread):
                                 progress = int(max(0, min(100 * core_progress_weight, percent * 100 * core_progress_weight)))
                                 self.progress_update_signal.emit(progress)
             self.current_process.wait()
-            if self.is_canceled: return
+            if self.is_canceled: 
+                self.logger.info("Thread stopping: Cancelled after Step 1.")
+                return
             if self.current_process.returncode != 0:
-                self.logger.warning("GPU (NVENC) encoding failed. Retrying with CPU libx264 fallback...")
-                cmd_cpu = [ffmpeg_path, '-y']
-                cmd_cpu += ['-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_path]
-                if have_bg:
-                    cmd_cpu += ['-i', self.bg_music_path]
-                cmd_cpu += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
+                self.logger.warning(f"Primary encoder '{hw_encoder}' failed. Starting hardware cascade...")
+                fallback_queue = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
+                try:
+                    start_idx = fallback_queue.index(hw_encoder) + 1
+                except ValueError:
+                    start_idx = 0
+                success = False
+                for encoder in fallback_queue[start_idx:]:
+                    self.logger.info(f"Attempting fallback to: {encoder}")
+                    self.status_update_signal.emit(f"Hardware failure. Trying {encoder}...")
+                    cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_file_path]
+                    if have_bg: cmd_retry += ['-i', self.bg_music_path]
+                    if encoder == "libx264":
+                        cmd_retry += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
+                    else:
+                        cmd_retry += ['-c:v', encoder, '-b:v', f'{video_bitrate_kbps}k']
+                    cmd_retry += [
+                        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+                        '-c:a', 'aac', '-b:a', f'{AUDIO_KBPS}k', '-ar', '48000',
+                        '-filter_complex', ';'.join(core_filters),
+                        '-map', '[vcore]', '-map', '[acore]', '-shortest', core_path
+                    ]
+                    retry_proc = subprocess.Popen(cmd_retry, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                                text=True, creationflags=safe_flags, startupinfo=startupinfo)
+                    for line in retry_proc.stdout:
+                        if self.is_canceled: break
+                        self.logger.info(line.strip())
+                    retry_proc.wait()
+                    if retry_proc.returncode == 0:
+                        self.logger.info(f"Fallback to {encoder} succeeded.")
+                        success = True
+                        break
+                if not success:
+                    self.finished_signal.emit(False, "All hardware and software encoders failed.")
+                    return
                 cmd_cpu += [
                     '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
                     '-c:a', 'aac', '-b:a', f'{AUDIO_KBPS}k', '-ar', '48000',
@@ -630,7 +661,9 @@ class ProcessThread(QThread):
                     return
                 else:
                     self.logger.info("CPU fallback succeeded after GPU failure.")
-            if self.is_canceled: return
+            if self.is_canceled:
+                self.logger.info("Thread stopping: Cancelled before Intro step.")
+                return
             if self.intro_still_sec > 0:
                 if self.intro_abs_time is None and self.intro_from_midpoint:
                     mid = (user_start + user_end) / 2.0
@@ -671,7 +704,7 @@ class ProcessThread(QThread):
                     else:
                         vcodec_intro = ['-c:v', hw_encoder]
                         if video_bitrate_kbps:
-                             vcodec_intro += ['-b:v', f'{video_bitrate_kbps}k', '-maxrate', f'{video_bitrate_kbps}k', '-bufsize', f'{int(video_bitrate_kbps*1.0)}k']
+                            vcodec_intro += ['-b:v', f'{video_bitrate_kbps}k', '-maxrate', f'{video_bitrate_kbps}k', '-bufsize', f'{int(video_bitrate_kbps*1.0)}k']
                         vcodec_intro += ['-g', '60', '-keyint_min', '60']
                         if hw_encoder == 'h264_nvenc':
                             vcodec_intro += ['-rc', 'cbr', '-tune', 'hq', '-rc-lookahead', '0', '-bf', '0', '-forced-idr', '1', '-b_ref_mode', 'disabled']
@@ -714,14 +747,36 @@ class ProcessThread(QThread):
                     self.current_process.wait()
                     if self.is_canceled: return
                     if self.current_process.returncode != 0:
-                        self.logger.warning("Intro GPU (NVENC) encoding failed. Retrying with CPU libx264 fallback...")
-                        vcodec_intro_cpu = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
-                        intro_cmd_cpu = intro_cmd_base + vcodec_intro_cpu + [
-                            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                            "-c:a", "aac", "-b:a", f'{AUDIO_KBPS}k', '-ar', '48000',
-                            "-filter_complex", intro_filter,
-                            "-map", "[vintro]", "-map", "[aintro]", "-shortest", intro_path
-                        ]
+                        self.logger.warning(f"Intro encoder '{hw_encoder}' failed. Cascading...")
+                        fallback_queue = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
+                        try:
+                            start_idx = fallback_queue.index(hw_encoder) + 1
+                        except ValueError:
+                            start_idx = 0
+                        intro_success = False
+                        for encoder in fallback_queue[start_idx:]:
+                            self.logger.info(f"Intro fallback attempt: {encoder}")
+                            vcodec_fallback = ['-c:v', encoder]
+                            if encoder == 'libx264':
+                                vcodec_fallback += ['-preset', 'medium', '-crf', '23']
+                            else:
+                                vcodec_fallback += ['-b:v', f'{video_bitrate_kbps}k', '-g', '60']
+                            cmd_intro_retry = intro_cmd_base + vcodec_fallback + [
+                                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                                "-c:a", "aac", "-b:a", f'{AUDIO_KBPS}k', '-ar', '48000',
+                                "-filter_complex", intro_filter,
+                                "-map", "[vintro]", "-map", "[aintro]", "-shortest", intro_path
+                            ]
+                            retry_proc = subprocess.Popen(cmd_intro_retry, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                                        text=True, creationflags=safe_flags, startupinfo=startupinfo)
+                            retry_proc.wait()
+                            if retry_proc.returncode == 0:
+                                self.logger.info(f"Intro fallback to {encoder} succeeded.")
+                                intro_success = True
+                                break
+                        if not intro_success:
+                            self.finished_signal.emit(False, "Intro encoding failed across all available hardware.")
+                            return
                         self.logger.info(f"Retry STEP 2/3 with CPU (libx264): {' '.join(intro_cmd_cpu)}")
                         startupinfo = None
                         if sys.platform == "win32":
@@ -755,7 +810,9 @@ class ProcessThread(QThread):
             else:
                 self.logger.info("Skipping Intro: disabled (intro_still_sec<=0).")
                 intro_path = None
-            if self.is_canceled: return
+            if self.is_canceled:
+                self.logger.info("Thread stopping: Cancelled before Concat step.")
+                return
             concat_list_path = os.path.join(temp_dir, f"concat-{os.getpid()}-{int(time.time())}.txt")
             files_to_concat = []
             if intro_path and os.path.exists(intro_path):

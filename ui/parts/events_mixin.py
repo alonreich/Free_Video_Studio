@@ -1,6 +1,8 @@
 from PyQt5.QtCore import QEvent, Qt, QRect
 from PyQt5.QtGui import QPainter, QColor, QFont, QPen
+
 class EventsMixin:
+
     def mousePressEvent(self, event):
         """Force keyboard focus back to the main window to enable shortcuts."""
         try:
@@ -34,14 +36,17 @@ class EventsMixin:
                 gap = 12
                 bands = 4
                 band_h = (h - gap * (bands - 1)) // bands
+
                 def band_rect(row: int):
                     y0 = top + row * (band_h + gap)
                     return QRect(left, y0, w, band_h)
+
                 def draw_band_frame(r: QRect):
                     pen_axes = QPen(QColor(230,230,230)); pen_axes.setWidth(2)
                     p.setPen(pen_axes); p.drawRect(r)
                     pen_grid = QPen(QColor(130,130,130)); pen_grid.setStyle(Qt.DashLine)
                     p.setPen(pen_grid); p.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
+
                 def plot_band(hist, label, color, row):
                     r = band_rect(row)
                     draw_band_frame(r)

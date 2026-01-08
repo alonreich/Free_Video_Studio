@@ -3,6 +3,7 @@ from PyQt5.QtGui import QPainter, QFontMetrics, QPen, QColor
 from PyQt5.QtWidgets import QSlider, QToolTip
 
 class TimelineSlider(QSlider):
+
     def __init__(self, orientation=Qt.Horizontal, parent=None):
         super().__init__(orientation, parent)
         self._duration_ms = 0
@@ -51,6 +52,7 @@ class TimelineSlider(QSlider):
             else:
                 major, minor = 5, 1
             maxv = self.maximum()
+
             def x_for(sec):
                 val = (sec * 1000) / self._duration_ms * maxv
                 return int(val / max(1, maxv) * w)

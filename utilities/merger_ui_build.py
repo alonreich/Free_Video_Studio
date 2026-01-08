@@ -5,6 +5,7 @@ from PyQt5.QtCore import Qt
 from utilities.merger_ui_widgets import MergerUIWidgetsMixin
 
 class MergerUIBuildMixin(MergerUIWidgetsMixin):
+
     def setup_ui(self):
         root = QWidget(self.parent)
         self.parent.setCentralWidget(root)
