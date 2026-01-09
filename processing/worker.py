@@ -513,8 +513,25 @@ class ProcessThread(QThread):
                         f",afade=t=out:st={music_fade_out_start:.3f}:d=1.5"
                     )
                 core_filters.append(f"[1:a]{a1_chain}[a_music_prepared]")
+                core_filters.append("[a_main_speed_corrected]asplit=3[a_main_final][a_trig_spectral][a_trig_vol]")
+                core_filters.append("[a_trig_spectral]asplit=3[t_raw_low][t_raw_mid][t_raw_high]")
+                core_filters.append("[t_raw_low]lowpass=f=250[t_low]")
+                core_filters.append("[t_raw_mid]highpass=f=250,lowpass=f=4000[t_mid]")
+                core_filters.append("[t_raw_high]highpass=f=4000[t_high]")
+                core_filters.append("[a_music_prepared]asplit=3[m_raw_low][m_raw_mid][m_raw_high]")
+                core_filters.append("[m_raw_low]lowpass=f=250[m_low]")
+                core_filters.append("[m_raw_mid]highpass=f=250,lowpass=f=4000[m_mid]")
+                core_filters.append("[m_raw_high]highpass=f=4000[m_high]")
+                duck_params = "threshold=0.1:ratio=3:attack=5:release=200"
+                core_filters.append(f"[m_low][t_low]sidechaincompress={duck_params}[m_low_ducked]")
+                core_filters.append(f"[m_mid][t_mid]sidechaincompress={duck_params}[m_mid_ducked]")
+                core_filters.append(f"[m_high][t_high]sidechaincompress={duck_params}[m_high_ducked]")
+                core_filters.append("[m_low_ducked][m_mid_ducked][m_high_ducked]amix=inputs=3:weights=1 1 1:normalize=0[a_music_carved]")
                 core_filters.append(
-                    "[a_main_speed_corrected][a_music_prepared]"
+                    f"[a_music_carved][a_trig_vol]sidechaincompress=threshold=0.2:ratio=1.5:attack=30:release=500[a_music_final_ready]"
+                )
+                core_filters.append(
+                    "[a_main_final][a_music_final_ready]"
                     "amix=inputs=2:duration=first:dropout_transition=3,aresample=48000[acore]"
                 )
             else:

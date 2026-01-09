@@ -5,20 +5,14 @@ import tempfile
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPixmap, QPainter, QColor
 from PyQt5.QtWidgets import (QStyleOptionSlider, QStyle, QDialog, QVBoxLayout,
-                             QLabel, QHBoxLayout, QPushButton, QWidget)
+                             QLabel, QHBoxLayout, QPushButton, QWidget, QSlider, QApplication)
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_offset_dialog import MusicOffsetDialog
 
 class MusicMixin:
 
     def _mp3_dir(self):
-        """Return the absolute path to the project's central MP3 folder.
-        The application historically stored MP3 files in ``ui/MP3``.  The
-        user has moved this folder to the project root and renamed it
-        ``mp3`` (lowercase).  Use ``self.base_dir``—which points one
-        level above the ``ui`` directory—to construct the new path and
-        ensure it exists.
-        """
+        """Return the absolute path to the project's central MP3 folder."""
         d = os.path.join(self.base_dir, "mp3")
         try:
             os.makedirs(d, exist_ok=True)
@@ -41,7 +35,6 @@ class MusicMixin:
                 if hasattr(self, "music_volume_badge"):
                     self.music_volume_badge.hide()
                 return
-            from PyQt5.QtWidgets import QStyleOptionSlider, QStyle
             s = self.music_volume_slider
             opt = QStyleOptionSlider()
             opt.initFrom(s)
@@ -67,7 +60,7 @@ class MusicMixin:
             pass
     
     def _scan_mp3_folder(self):
-        r"""Scan .\MP3 for .mp3 files, sorted by modified time (newest first). Never raises."""
+        r"""Scan .\MP3 for .mp3 files, sorted by modified time (newest first)."""
         try:
             d = self._mp3_dir()
             files = []
@@ -151,7 +144,8 @@ class MusicMixin:
             self.music_volume_slider.setValue(20)
         try:
             p = self.music_combo.currentData()
-            if not p: return
+            if not p:
+                return
             self.music_offset_input.setValue(0.0)
             self.positionSlider.set_music_times(self.trim_start or 0.0, self.trim_end or self.original_duration)
             dur = self._probe_audio_duration(p)
@@ -165,7 +159,7 @@ class MusicMixin:
             self.music_offset_input.setVisible(True)
             initial = 0.0
             self.logger.info("MUSIC: open offset dialog | file='%s' | initial=%.3fs | vol_eff=%d%%",
-                            os.path.basename(p), initial, self._music_eff())
+                             os.path.basename(p), initial, self._music_eff())
             self._open_music_offset_dialog(p)
             offset = self._get_music_offset()
             music_end = (self.trim_end or self.original_duration)
@@ -174,9 +168,9 @@ class MusicMixin:
                              os.path.basename(p), offset, self._music_eff())
         except Exception as e:
             self.logger.error(f"Error in _on_music_selected: {e}")
-    
+
     def _open_music_offset_dialog(self, path: str):
-        """Popup dialog to select music start (seconds) with a waveform image. Robust fallback if ffmpeg fails."""
+        """Popup dialog to select music start (seconds). Responsive and saves geometry instantly."""
         try:
             import tempfile
             dur = self._probe_audio_duration(path)
@@ -190,11 +184,11 @@ class MusicMixin:
                 cmd = [
                     ffmpeg_path, "-hide_banner", "-loglevel", "error",
                     "-i", path, "-frames:v", "1",
-                    "-filter_complex", "showwavespic=s=1500x400:split_channels=0:colors=0x86a8b4",
+                    "-filter_complex", "showwavespic=s=1920x600:split_channels=0:colors=0x86a8b4",
                     "-y", tmp_png
                 ]
                 subprocess.run(cmd, check=True,
-                            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
+                               creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
                 if os.path.isfile(tmp_png):
                     png = tmp_png
             except Exception:
@@ -202,27 +196,54 @@ class MusicMixin:
             dlg = QDialog(self)
             dlg.setStyleSheet(self.styleSheet())
             dlg.setWindowTitle("Choose Background Music Start")
+            dlg.setMinimumSize(1200, 260)
+            geom_key = 'music_dialog_geom'
+            saved_geom = self.config_manager.config.get(geom_key)
+            if isinstance(saved_geom, dict):
+                dlg.resize(saved_geom.get('w', 1200), saved_geom.get('h', 260))
+                dlg.move(saved_geom.get('x', 0), saved_geom.get('y', 0))
+            else:
+                screen_geo = QApplication.desktop().availableGeometry()
+                w, h = 1200, 260
+                x = screen_geo.x() + (screen_geo.width() - w) // 2
+                y = screen_geo.y() + (screen_geo.height() - h) // 2
+                dlg.setGeometry(x, y, w, h)
+
+
+
+            def save_geometry():
+                try:
+                    cfg = dict(self.config_manager.config)
+                    g = dlg.geometry()
+                    cfg[geom_key] = {'x': g.x(), 'y': g.y(), 'w': g.width(), 'h': g.height()}
+                    self.config_manager.save_config(cfg)
+                except Exception:
+                    pass
+
+
+
+            def resize_event(event):
+                QDialog.resizeEvent(dlg, event)
+                save_geometry()
+            
+            def move_event(event):
+                QDialog.moveEvent(dlg, event)
+                save_geometry()
+            dlg.resizeEvent = resize_event
+            dlg.moveEvent = move_event
             v = QVBoxLayout(dlg)
             v.setContentsMargins(20, 20, 20, 20)
             v.setSpacing(20)
-            geom = self.config_manager.config.get('music_dialog_geom')
-            if isinstance(geom, dict):
-                try:
-                    dlg.resize(int(geom.get('w', dlg.width())), int(geom.get('h', dlg.height())))
-                    dlg.move(int(geom.get('x', dlg.x())), int(geom.get('y', dlg.y())))
-                except Exception:
-                    pass
-    
-            class _WaveformWithCaret(QLabel):
+
+
+
+            class _ResponsiveWaveform(QLabel):
 
                 def __init__(self, pix: QPixmap, *args, **kwargs):
                     super().__init__(*args, **kwargs)
                     self._pix = pix
-                    self._dpr = float(getattr(pix, "devicePixelRatioF", lambda: 1.0)())
-                    self._eff_w = int(round(pix.width()  / self._dpr))
-                    self._eff_h = int(round(pix.height() / self._dpr))
-                    self._x = 0
-                    self.setMinimumHeight(self._eff_h + 30)
+                    self._frac = 0.0
+                    self.setSizePolicy(1|4, 1|4)
                     self.setStyleSheet("""
                         QLabel {
                             background-color: #34495e;
@@ -230,32 +251,69 @@ class MusicMixin:
                             border-radius: 12px;
                         }
                     """)
-    
+
                 def set_frac(self, frac: float):
-                    frac = max(0.0, min(1.0, float(frac)))
-                    self._x = int(frac * max(1, self._eff_w - 1))
+                    self._frac = max(0.0, min(1.0, float(frac)))
                     self.update()
-    
+
                 def paintEvent(self, e):
                     p = QPainter(self)
                     p.setRenderHint(QPainter.Antialiasing)
-                    x0 = (self.width()  - self._eff_w) // 2
-                    y0 = (self.height() - self._eff_h) // 2
-                    p.drawPixmap(QRect(x0, y0, self._eff_w, self._eff_h), self._pix)
+                    scaled_pix = self._pix.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+                    x_off = (self.width() - scaled_pix.width()) // 2
+                    y_off = (self.height() - scaled_pix.height()) // 2
+                    p.drawPixmap(x_off, y_off, scaled_pix)
+                    cx = int(self._frac * self.width())
                     p.setPen(QColor(255, 255, 255))
-                    cx = x0 + self._x
-                    p.drawLine(cx, y0 - 2, cx, y0 + self._eff_h + 2)
+                    p.drawLine(cx, 0, cx, self.height())
                     p.end()
+            waveform_layout = QHBoxLayout()
+            waveform_layout.setSpacing(15)
             if png:
                 _pix = QPixmap(png)
-                dpr = float(getattr(_pix, "devicePixelRatioF", lambda: 1.0)())
-                eff_w = int(round(_pix.width()  / dpr))
-                eff_h = int(round(_pix.height() / dpr))
-                lbl = _WaveformWithCaret(_pix)
+                lbl = _ResponsiveWaveform(_pix)
                 lbl.setAlignment(Qt.AlignCenter)
-                lbl.setMinimumWidth(eff_w + 60)
-                dlg.resize(max(dlg.width(), eff_w + 120), max(dlg.height(), eff_h + 240))
-                v.addWidget(lbl)
+                waveform_layout.addWidget(lbl, stretch=1)
+            vol_slider = QSlider(Qt.Vertical)
+            vol_slider.setRange(0, 100)
+            vol_slider.setSingleStep(1)
+            vol_slider.setPageStep(15)
+            vol_slider.setTickInterval(10)
+            vol_slider.setTickPosition(QSlider.TicksBothSides)
+            vol_slider.setTracking(True)
+            vol_slider.setInvertedAppearance(True) 
+            vol_slider.setFixedWidth(40)
+            vol_slider.setStyleSheet("""
+                QSlider::groove:vertical {
+                    border: 1px solid #1f2a36;
+                    background: qlineargradient(x1:0, y1:1, x2:0, y2:0,
+                        stop:0   #e64c4c, stop:0.25 #f7a8a8, stop:0.50 #f2f2f2,
+                        stop:0.75 #7bcf43, stop:1   #009b00);
+                    width: 20px;
+                    border-radius: 3px;
+                }
+                QSlider::handle:vertical {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #455A64, stop:0.40 #455A64, stop:0.42 #90A4AE, stop:0.44 #90A4AE,
+                        stop:0.46 #455A64, stop:0.48 #455A64, stop:0.50 #90A4AE, stop:0.52 #90A4AE,
+                        stop:0.54 #455A64, stop:0.56 #455A64, stop:0.58 #90A4AE, stop:0.60 #90A4AE,
+                        stop:0.62 #455A64, stop:1 #455A64);
+                    border: 1px solid #1f2a36;
+                    width: 22px; height: 40px; margin: 0 -2px; border-radius: 4px;
+                }
+                QSlider::handle:vertical:hover {
+                    border: 1px solid #90A4AE;
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #546E7A, stop:0.40 #546E7A, stop:0.42 #CFD8DC, stop:0.44 #CFD8DC,
+                        stop:0.46 #546E7A, stop:0.48 #546E7A, stop:0.50 #CFD8DC, stop:0.52 #CFD8DC,
+                        stop:0.54 #546E7A, stop:0.56 #546E7A, stop:0.58 #CFD8DC, stop:0.60 #CFD8DC,
+                        stop:0.62 #546E7A, stop:1 #546E7A);
+                }
+                QSlider::sub-page:vertical, QSlider::add-page:vertical { background: transparent; }
+            """)
+            vol_slider.setValue(self.music_volume_slider.value())
+            waveform_layout.addWidget(vol_slider, stretch=0)
+            v.addLayout(waveform_layout, stretch=1)
             h = QHBoxLayout()
             slider = TrimmedSlider(dlg)
             slider.enable_trim_overlays(False)
@@ -269,7 +327,7 @@ class MusicMixin:
             val_label = QLabel(f"{slider.value()/1000.0:.2f} s")
             h.addWidget(slider)
             h.addWidget(val_label)
-            v.addLayout(h)
+            v.addLayout(h, stretch=0)
             blue_btn_style = "QPushButton { background-color: #266b89; color: #ffffff; border: none; min-width: 100px; padding: 10px; border-radius: 8px; font-weight: bold; } QPushButton:hover { background-color: #2980b9; }"
             red_btn_style = "QPushButton { background-color: #e74c3c; color: #ffffff; border: none; min-width: 100px; padding: 10px; border-radius: 8px; font-weight: bold; } QPushButton:hover { background-color: #c0392b; }"
             ok = QPushButton("OK")
@@ -317,10 +375,20 @@ class MusicMixin:
                 audio_media = self.vlc_instance.media_new_path(path)
                 audio_player = self.vlc_instance.media_player_new()
                 audio_player.set_media(audio_media)
-                init_vol = max(0, min(100, self.music_volume_slider.value()))
-                audio_player.audio_set_volume(int(init_vol))
+                eff_vol = self._music_eff(vol_slider.value())
+                audio_player.audio_set_volume(eff_vol)
                 slider.valueChanged.connect(lambda ms: audio_player.set_time(int(ms)) if audio_player else None)
             except Exception: audio_player = None
+
+            def on_dialog_vol_changed(val):
+                eff = self._music_eff(val)
+                if audio_player:
+                    audio_player.audio_set_volume(eff)
+                self.music_volume_slider.blockSignals(True)
+                self.music_volume_slider.setValue(val)
+                self.music_volume_slider.blockSignals(False)
+                self._on_music_volume_changed(val)
+            vol_slider.valueChanged.connect(on_dialog_vol_changed)
 
             def _sync_caret(ms):
                 if png: lbl.set_frac(ms / max(1, slider.maximum()))
@@ -335,40 +403,29 @@ class MusicMixin:
             button_row.addSpacing(45)
             button_row.addWidget(cancel)
             button_row.addStretch(1)
-            v.addLayout(button_row)
-            ok.clicked.connect(dlg.accept)
-            cancel.clicked.connect(dlg.reject)
-
+            v.addLayout(button_row, stretch=0)
+            
             def on_slide(x):
                 val_label.setText(f"{x/1000.0:.2f} s")
             slider.valueChanged.connect(on_slide)
             ok.clicked.connect(dlg.accept)
             cancel.clicked.connect(dlg.reject)
-    
+
             def dialog_key_press(event):
                 key = event.key()
                 step = 0
-                if key == Qt.Key_Up:
-                    step = 1
-                elif key == Qt.Key_Down:
-                    step = -1
-                elif key == Qt.Key_Plus:
-                    step = 5
-                elif key == Qt.Key_Minus:
-                    step = -5
+                if key == Qt.Key_Up:    step = 1
+                elif key == Qt.Key_Down:  step = -1
+                elif key == Qt.Key_Plus:  step = 5
+                elif key == Qt.Key_Minus: step = -5
                 if step != 0:
-                    slider = self.music_volume_slider
-                    eff_callback = self._music_eff
-                    eff_vol = eff_callback(slider.value())
+                    eff_vol = self._music_eff(vol_slider.value())
                     new_eff_vol = max(0, min(100, eff_vol + step))
-                    if slider.invertedAppearance():
-                        new_raw_val = slider.maximum() + slider.minimum() - new_eff_vol
+                    if vol_slider.invertedAppearance():
+                        new_raw_val = vol_slider.maximum() + vol_slider.minimum() - new_eff_vol
                     else:
                         new_raw_val = new_eff_vol
-                    new_raw_val = max(slider.minimum(), min(slider.maximum(), new_raw_val))
-                    slider.setValue(new_raw_val) 
-                    if audio_player is not None:
-                        audio_player.audio_set_volume(new_eff_vol)
+                    vol_slider.setValue(new_raw_val)
                     self.logger.debug(f"DIALOG: Music volume set to {new_eff_vol}%")
                     event.accept()
                 else:
@@ -382,34 +439,19 @@ class MusicMixin:
                 if audio_player is not None:
                     audio_player.stop()
                     audio_player.release()
-            except Exception:
-                pass
+            except Exception: pass
             try:
                 preview_timer.stop()
-            except Exception:
-                pass
+            except Exception: pass
             if accepted == QDialog.Accepted:
                 try:
-                    cfg = dict(self.config_manager.config)
-                    cfg['music_dialog_geom'] = {'x': dlg.x(), 'y': dlg.y(), 'w': dlg.width(), 'h': dlg.height()}
-                    self.config_manager.save_config(cfg)
-                except Exception:
-                    pass
-                try:
                     self.music_offset_input.setValue(slider.value() / 1000.0)
-                except Exception:
-                    pass
+                except Exception: pass
         except Exception:
             pass
-    
-    def _get_music_offset(self) -> float:
-        try:
-            return float(self.music_offset_input.value())
-        except Exception:
-            return 0.0
-    
+
     def _get_selected_music(self):
-        """Return (path, volume_linear) or (None, None) if disabled/invalid."""
+        """Returns (path, volume_linear) for the processor. Required by ffmpeg_mixin."""
         if not self.add_music_checkbox.isChecked():
             return None, None
         if not self._music_files:
@@ -419,13 +461,22 @@ class MusicMixin:
             return None, None
         vol_pct = self._music_eff()
         return path, (vol_pct / 100.0)
+
+    def _get_music_offset(self):
+        """Returns the start time offset in seconds (float). Required by ffmpeg_mixin."""
+        if not hasattr(self, 'music_offset_input'):
+            return 0.0
+        try:
+            return float(self.music_offset_input.value())
+        except:
+            return 0.0
     
-    def _music_eff(self, raw: int | None = None) -> int:
+    def _music_eff(self, raw=None):
         """Map slider value -> 0..100 respecting invertedAppearance."""
-        v = int(self.music_volume_slider.value() if raw is None else raw)
+        val = self.music_volume_slider.value() if raw is None else raw
         if self.music_volume_slider.invertedAppearance():
-            return max(0, min(100, self.music_volume_slider.maximum() + self.music_volume_slider.minimum() - v))
-        return max(0, min(100, v))
+            return max(0, min(100, self.music_volume_slider.maximum() + self.music_volume_slider.minimum() - val))
+        return max(0, min(100, val))
     
     def _on_music_volume_changed(self, raw: int):
         """Keep label/badge in effective % while the slider is inverted."""
@@ -437,7 +488,7 @@ class MusicMixin:
                 self._update_music_badge()
             try:
                 cfg = dict(self.config_manager.config)
-                cfg['last_music_volume'] = eff
+                cfg['music_volume'] = eff
                 self.config_manager.save_config(cfg)
             except Exception:
                 pass
