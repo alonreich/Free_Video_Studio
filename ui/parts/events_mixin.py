@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QEvent, Qt, QRect
+from PyQt5.QtCore import QEvent, Qt, QRect, QTimer
 from PyQt5.QtGui import QPainter, QColor, QFont, QPen
 
 class EventsMixin:
@@ -85,7 +85,9 @@ class EventsMixin:
                     self._layout_volume_slider()
                     self._update_volume_badge()
                     if hasattr(self, "portrait_mask_overlay"):
-                        self.portrait_mask_overlay.setGeometry(self.video_surface.rect())
+                        r = self.video_surface.rect()
+                        top_left = self.video_surface.mapToGlobal(r.topLeft())
+                        self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
                         self._update_portrait_mask_overlay_state()
                 except Exception:
                     pass
@@ -120,10 +122,15 @@ class EventsMixin:
             pass
         return super().resizeEvent(event)
 
-    def _on_mobile_format_toggled(self, checked):
-        if not getattr(self, "vlc_player", None):
-            return
-        if checked:
-            self.vlc_player.video_set_crop_geometry("115:192")
-        else:
-            self.vlc_player.video_set_crop_geometry(None)
+    def _on_mobile_format_toggled(self, checked: bool):
+        if hasattr(self, "logger"):
+            self.logger.info("OPTION: Mobile Format -> %s", checked)
+        if hasattr(self, "teammates_checkbox"):
+            self.teammates_checkbox.setVisible(checked)
+            self.teammates_checkbox.setEnabled(checked)
+            if not checked:
+                self.teammates_checkbox.setChecked(False)
+        if hasattr(self, "_recenter_process_controls"):
+            QTimer.singleShot(0, self._recenter_process_controls)
+        if hasattr(self, "_update_portrait_mask_overlay_state"):
+            self._update_portrait_mask_overlay_state()

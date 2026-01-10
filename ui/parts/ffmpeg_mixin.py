@@ -120,6 +120,8 @@ class FfmpegMixin:
                 self.no_fade_checkbox.isChecked(),
                 (music_path or "None"), (music_vol_linear if music_vol_linear is not None else 0.0)
             )
+            if hasattr(self, 'portrait_mask_overlay'):
+                self.portrait_mask_overlay.hide()
             self.is_processing = True
             self._proc_start_ts = time.time()
             self._pulse_phase = 0
@@ -268,6 +270,8 @@ class FfmpegMixin:
             layout.addLayout(grid)
             dialog.setLayout(layout)
             result = dialog.exec_()
+            if hasattr(self, '_update_portrait_mask_overlay_state'):
+                self._update_portrait_mask_overlay_state()
             if result == QDialog.Rejected:
                 self.handle_new_file()
         else:

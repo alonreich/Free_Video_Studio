@@ -1,15 +1,23 @@
 from PyQt5.QtWidgets import QWidget
-from PyQt5.QtGui import QPainter, QColor
+from PyQt5.QtGui import QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect
 
 class PortraitMaskOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.original_video_resolution = ""
+        self.setWindowFlags(
+            Qt.Tool |
+            Qt.FramelessWindowHint |
+            Qt.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.original_video_resolution = "1920x1080"
         self.current_video_frame_size = None
         self.setHidden(True)
+
 
     def set_video_info(self, resolution_str: str, frame_size):
         if self.original_video_resolution != resolution_str or self.current_video_frame_size != frame_size:
@@ -18,39 +26,53 @@ class PortraitMaskOverlay(QWidget):
             self.update()
 
     def paintEvent(self, event):
-        if not self.isVisible() or not self.current_video_frame_size or not self.original_video_resolution:
+        if not self.isVisible() or not self.current_video_frame_size:
             return
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
         try:
-            orig_w, orig_h = map(int, self.original_video_resolution.split('x'))
-        except ValueError:
-            return
-        if orig_w == 0 or orig_h == 0:
-            return
-        aspect_ratio = orig_w / orig_h
-        if aspect_ratio < 1.5:
-            return
-        frame_w = self.width()
-        frame_h = self.height()
-        video_display_w = frame_w
-        video_display_h = int(frame_w / aspect_ratio)
-        if video_display_h > frame_h:
-            video_display_h = frame_h
-            video_display_w = int(frame_h * aspect_ratio)
-        video_x = (frame_w - video_display_w) // 2
-        video_y = (frame_h - video_display_h) // 2
-        target_portrait_aspect = 1150 / 1920
-        clear_w = video_display_w
-        clear_h = int(video_display_w / target_portrait_aspect)
-        if clear_h > video_display_h:
-            clear_h = video_display_h
-            clear_w = int(video_display_h * target_portrait_aspect)
-        clear_x_offset = (video_display_w - clear_w) // 2
-        clear_y_offset = (video_display_h - clear_h) // 2
-        clear_rect = QRect(video_x + clear_x_offset, video_y + clear_y_offset, clear_w, clear_h)
-        dim_color = QColor(0, 0, 0, 128)
-        painter.fillRect(self.rect(), dim_color)
-        painter.setCompositionMode(QPainter.CompositionMode_Clear)
-        painter.fillRect(clear_rect, Qt.transparent)
-        painter.end()
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            painter.setRenderHint(QPainter.Antialiasing)
+            try:
+                if not self.original_video_resolution:
+                    orig_w, orig_h = 1920, 1080
+                else:
+                    parts = self.original_video_resolution.lower().split('x')
+                    orig_w, orig_h = int(parts[0]), int(parts[1])
+            except Exception:
+                orig_w, orig_h = 1920, 1080
+            if orig_w > 0 and orig_h > 0:
+                aspect_ratio = orig_w / orig_h
+                if aspect_ratio < 1.0: 
+                    return
+            else:
+                aspect_ratio = 1.77
+            frame_w = self.width()
+            frame_h = self.height()
+            video_display_w = frame_w
+            video_display_h = int(frame_w / aspect_ratio)
+            if video_display_h > frame_h:
+                video_display_h = frame_h
+                video_display_w = int(frame_h * aspect_ratio)
+            video_x = (frame_w - video_display_w) // 2
+            video_y = (frame_h - video_display_h) // 2
+            portrait_ratio = 1150.0 / 1920.0
+            clear_w = int(video_display_h * portrait_ratio)
+            if clear_w > video_display_w:
+                clear_w = video_display_w
+            clear_x_offset = (video_display_w - clear_w) // 2
+            clear_rect = QRect(video_x + clear_x_offset, video_y, clear_w, video_display_h)
+            dim_color = QColor(0, 0, 0, 165)
+            if clear_rect.left() > 0:
+                painter.fillRect(0, 0, clear_rect.left(), frame_h, dim_color)
+            if clear_rect.right() < frame_w:
+                painter.fillRect(clear_rect.right(), 0, frame_w - clear_rect.right(), frame_h, dim_color)
+            pen = QPen(QColor(255, 255, 255, 180))
+            pen.setStyle(Qt.DashLine)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawLine(clear_rect.left(), video_y, clear_rect.left(), video_y + video_display_h)
+            painter.drawLine(clear_rect.right(), video_y, clear_rect.right(), video_y + video_display_h)
+        except Exception:
+            pass
+        finally:
+            painter.end()

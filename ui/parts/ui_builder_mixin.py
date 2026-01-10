@@ -6,10 +6,11 @@ from PyQt5.QtGui import QPixmap, QPainter, QFont, QIcon, QFontMetrics, QColor, Q
 from PyQt5.QtWidgets import (QGridLayout, QMessageBox, QSizePolicy, QHBoxLayout,
                              QVBoxLayout, QFrame, QSlider, QLabel, QStyle,
                              QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
-                             QProgressBar, QComboBox, QWidget, QStyleOptionSpinBox)
+                             QProgressBar, QComboBox, QWidget, QStyleOptionSpinBox, QStackedLayout)
 from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
+from ui.widgets.portrait_mask_overlay import PortraitMaskOverlay
 
 class ClickableSpinBox(QDoubleSpinBox):
 
@@ -200,7 +201,6 @@ class UiBuilderMixin:
                     self._center_timer.start(16)
             elif obj is getattr(self, "video_surface", None):
                 if hasattr(self, 'portrait_mask_overlay'):
-                    self.portrait_mask_overlay.setGeometry(self.video_surface.rect())
                     self._update_portrait_mask_overlay_state()
         return super().eventFilter(obj, event)
 
@@ -282,7 +282,6 @@ class UiBuilderMixin:
         if hasattr(self, "_center_timer"):
             self._center_timer.start(16)
         if hasattr(self, 'portrait_mask_overlay'):
-            self.portrait_mask_overlay.setGeometry(self.video_surface.rect())
             self._update_portrait_mask_overlay_state()
 
     def init_ui(self):
@@ -291,40 +290,19 @@ class UiBuilderMixin:
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
-        self.video_frame = QFrame()
-        self.video_frame.setMinimumHeight(360)
-        self.video_frame.setFocusPolicy(Qt.NoFocus)
-        self.video_frame.installEventFilter(self)
-        video_layout = QVBoxLayout(self.video_frame)
-        video_layout.setContentsMargins(0, 0, 0, 0)
-        self.video_surface = QWidget()
-        self.video_surface.setStyleSheet("background-color: black;")
-        self.video_surface.setAttribute(Qt.WA_NativeWindow)
-        self.video_surface.setVisible(True)
-        video_layout.addWidget(self.video_surface)
-        self.video_surface.installEventFilter(self)
-        self.portrait_mask_overlay = VlcSafePortraitOverlay(self.video_surface)
-        self.portrait_mask_overlay.setGeometry(self.video_surface.rect())
-        self.portrait_mask_overlay.raise_()
-        self.setFocusPolicy(Qt.StrongFocus)
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
+        self._top_row = top_row
         player_col = QVBoxLayout()
         player_col.setSpacing(6)
-        self.video_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        player_col.addWidget(self.video_frame)
-        self.positionSlider = TrimmedSlider(self)
-        self.positionSlider.setRange(0, 0)
-        self.positionSlider.setFixedHeight(50)
-        self.positionSlider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.positionSlider.setObjectName("timelineSlider")
-        self.tooltip_manager.add_tooltip(self.positionSlider, "Seek: ← / →\nFast Seek: Shift + ← / →\nFine Seek: Ctrl + ← / →")
-        self.positionSlider.sliderMoved.connect(self.set_vlc_position)
-        self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
-        self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
-        self.positionSlider.raise_()
-        player_col.addWidget(self.positionSlider)
-        self.volume_slider = QSlider(Qt.Vertical, self)
+        video_and_volume_layout = QHBoxLayout()
+        video_and_volume_layout.setContentsMargins(0, 0, 0, 0)
+        video_and_volume_layout.setSpacing(6)
+        volume_stack_layout = QVBoxLayout()
+        volume_stack_layout.setContentsMargins(0, 0, 0, 0)
+        volume_stack_layout.setSpacing(0)
+        volume_stack_layout.setAlignment(Qt.AlignTop)
+        self.volume_slider = QSlider(Qt.Vertical)
         self.volume_slider.setObjectName("volumeSlider")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setSingleStep(1)
@@ -394,24 +372,58 @@ class UiBuilderMixin:
         self.volume_slider.valueChanged.connect(self._on_master_volume_changed)
         self.volume_slider.sliderMoved.connect(lambda _: self._update_volume_badge())
         self.volume_slider.installEventFilter(self)
-        self.volume_badge = QLabel("0%", self)
+        self.volume_badge = QLabel("0%", self.volume_slider)
         self.volume_badge.setObjectName("volumeBadge")
         self.volume_badge.setStyleSheet("color: white; background: rgba(0,0,0,160); padding: 2px 6px; border-radius: 6px; font-weight: bold;")
         self.volume_badge.adjustSize()
         self.volume_badge.hide()
-        QTimer.singleShot(0, self._layout_volume_slider)
-        QTimer.singleShot(0, self._update_volume_badge)
-        self.volume_slider.show()
-        self.volume_slider.raise_()
+        volume_stack_layout.addWidget(self.volume_badge, 0, Qt.AlignHCenter)
+        volume_stack_layout.addWidget(self.volume_slider, 1, Qt.AlignHCenter)
+        video_and_volume_layout.addLayout(volume_stack_layout)
+        self.video_frame = QFrame()
+        self.video_frame.setMinimumHeight(360)
+        self.video_frame.setFocusPolicy(Qt.NoFocus)
+        self.video_frame.installEventFilter(self)
+        video_layout = QVBoxLayout(self.video_frame)
+        video_layout.setContentsMargins(0, 0, 0, 0)
+        self.video_viewport_container = QWidget()
+        self.video_viewport_container.setContentsMargins(0, 0, 0, 0)
+        self.video_viewport_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        _center_row = QHBoxLayout(self.video_viewport_container)
+        _center_row.setContentsMargins(0, 0, 0, 0)
+        _center_row.setSpacing(0)
+        self.video_surface = QWidget()
+        self.video_surface.setStyleSheet("background-color: black;")
+        self.video_surface.setAttribute(Qt.WA_NativeWindow)
+        _center_row.addWidget(self.video_surface)
+        video_layout.addWidget(self.video_viewport_container, stretch=1)
+        self.portrait_mask_overlay = PortraitMaskOverlay(self.video_frame)
+        self.portrait_mask_overlay.hide()
+        self.video_surface.installEventFilter(self)
+        video_and_volume_layout.addWidget(self.video_frame, stretch=1)
+        player_col.addLayout(video_and_volume_layout)
         player_col.setStretch(0, 1)
+        self.positionSlider = TrimmedSlider(self)
+        self.positionSlider.setRange(0, 0)
+        self.positionSlider.setFixedHeight(50)
+        self.positionSlider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.positionSlider.setObjectName("timelineSlider")
+        player_col.addWidget(self.positionSlider)
         player_col.setStretch(1, 0)
         player_container = QWidget()
         player_container.setLayout(player_col)
         self.player_col_container = player_container
         self.player_col_container.installEventFilter(self)
         top_row.addWidget(player_container, stretch=6)
-        self._top_row = top_row
-        left_layout.addLayout(self._top_row)
+        left_layout.addLayout(top_row)
+        main_layout.addLayout(left_layout)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.tooltip_manager.add_tooltip(self.positionSlider, "Seek: ← / →\nFast Seek: Shift + ← / →\nFine Seek: Ctrl + ← / →")
+        self.positionSlider.sliderMoved.connect(self.set_vlc_position)
+        self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
+        self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
+        self.positionSlider.raise_()
+        player_col.addWidget(self.positionSlider)
         self.playPauseButton = QPushButton("Play")
         self.playPauseButton.setObjectName("playPauseButton")
         self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
@@ -739,7 +751,7 @@ class UiBuilderMixin:
         self.center_btn_container = process_controls
         player_col.addLayout(process_controls)
         QTimer.singleShot(0, self._recenter_process_controls)
-        self.mobile_checkbox.toggled.connect(self._on_mobile_format_toggled)
+        self.mobile_checkbox.toggled.connect(self._on_mobile_toggled)
         self.mobile_checkbox.toggled.connect(lambda _: QTimer.singleShot(0, self._recenter_process_controls))
         self.quality_slider.valueChanged.connect(lambda _: self._recenter_process_controls())
         self.speed_spinbox.valueChanged.connect(lambda _: self._recenter_process_controls())
@@ -962,50 +974,16 @@ class UiBuilderMixin:
     def _update_portrait_mask_overlay_state(self):
         if not hasattr(self, 'portrait_mask_overlay'):
             return
-        if self.mobile_checkbox.isChecked():
-            self.portrait_mask_overlay.setGeometry(self.video_surface.rect())
-            self.portrait_mask_overlay.set_video_info(self.original_resolution, self.video_frame.size())
+        res = getattr(self, 'original_resolution', "1920x1080")
+        if not res:
+            res = "1920x1080"
+        if hasattr(self, "mobile_checkbox") and self.mobile_checkbox.isChecked():
+            if self.video_surface.isVisible():
+                global_pos = self.video_surface.mapToGlobal(self.video_surface.rect().topLeft())
+                self.portrait_mask_overlay.setGeometry(global_pos.x(), global_pos.y(), self.video_surface.width(), self.video_surface.height())
+            self.portrait_mask_overlay.set_video_info(res, self.video_surface.size())
             self.portrait_mask_overlay.setVisible(True)
             self.portrait_mask_overlay.raise_()
             self.portrait_mask_overlay.update()
         else:
             self.portrait_mask_overlay.setVisible(False)
-
-class VlcSafePortraitOverlay(QWidget):
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WA_NoSystemBackground, True)
-        self.setAutoFillBackground(False)
-        self.setAttribute(Qt.WA_NativeWindow, True)
-        self.setAttribute(Qt.WA_AlwaysStackOnTop, True)
-        self.setStyleSheet("background: transparent; border: none; margin: 0; padding: 0;")
-        self.setVisible(False)
-        self.original_video_resolution = ""
-        self.current_video_frame_size = None
-
-    def set_video_info(self, resolution_str: str, frame_size):
-        if self.original_video_resolution != resolution_str or self.current_video_frame_size != frame_size:
-            self.original_video_resolution = resolution_str
-            self.current_video_frame_size = frame_size
-            self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-        if w == 0 or h == 0: return
-        target_width = int(h * (9 / 16))
-        x_start = (w - target_width) // 2
-        bar_color = QColor(0, 0, 0, 220)
-        painter.fillRect(0, 0, x_start, h, bar_color)
-        right_bar_start = x_start + target_width
-        painter.fillRect(right_bar_start, 0, w - right_bar_start, h, bar_color)
-        pen = QPen(QColor(255, 255, 255, 120))
-        pen.setStyle(Qt.DashLine)
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.drawLine(x_start, 0, x_start, h)
-        painter.drawLine(right_bar_start, 0, right_bar_start, h)

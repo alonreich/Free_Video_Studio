@@ -513,13 +513,14 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 self.logger.error("Failed to open media: %s", p)
             return
         self.vlc_player.set_media(media)
+        self.vlc_player.video_set_scale(0)
         try:
             if sys.platform.startswith('win'):
                 self.vlc_player.set_hwnd(int(self.video_surface.winId()))
         except Exception as hwnd_err:
             self.logger.error("Failed to set HWND for player: %s", hwnd_err)
         self.vlc_player.play()
-        QTimer.singleShot(150, lambda: self._on_mobile_format_toggled(self.mobile_checkbox.isChecked()))
+        QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
 
         def apply_rate_and_volume():
             try:
