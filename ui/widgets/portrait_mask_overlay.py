@@ -53,10 +53,10 @@ class PortraitMaskOverlay(QWidget):
             if video_display_h > frame_h:
                 video_display_h = frame_h
                 video_display_w = int(frame_h * aspect_ratio)
-            video_x = (frame_w - video_display_w) // 2
-            video_y = (frame_h - video_display_h) // 2
-            portrait_ratio = 1150.0 / 1920.0
-            clear_w = int(video_display_h * portrait_ratio)
+                video_x = (frame_w - video_display_w) // 2
+                video_y = (frame_h - video_display_h) // 2
+                portrait_ratio = 1280.0 / 1920.0
+                clear_w = int(video_display_h * portrait_ratio)
             if clear_w > video_display_w:
                 clear_w = video_display_w
             clear_x_offset = (video_display_w - clear_w) // 2

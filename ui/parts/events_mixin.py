@@ -130,6 +130,10 @@ class EventsMixin:
             self.teammates_checkbox.setEnabled(checked)
             if not checked:
                 self.teammates_checkbox.setChecked(False)
+        if hasattr(self, "portrait_text_input"):
+            self.portrait_text_input.setVisible(checked)
+            if not checked:
+                self.portrait_text_input.clear()
         if hasattr(self, "_recenter_process_controls"):
             QTimer.singleShot(0, self._recenter_process_controls)
         if hasattr(self, "_update_portrait_mask_overlay_state"):

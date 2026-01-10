@@ -90,7 +90,7 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
             title_info_provider=self.get_title_info
         )
         self.scene = QGraphicsScene(self)
-        self.scene.setSceneRect(0, 0, 1150, 1920)
+        self.scene.setSceneRect(0, 0, 1280, 1920)
         self.view = PortraitView(self.scene, self)
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -175,7 +175,7 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
     def add_scissored_item(self, pixmap, crop_rect, background_crop_width):
         item = ResizablePixmapItem(pixmap, crop_rect)
         if background_crop_width > 0:
-            visual_scale_factor = 1150 / background_crop_width
+            visual_scale_factor = 1280 / background_crop_width
             item.current_width *= visual_scale_factor
             item.current_height *= visual_scale_factor
             item.update_handle_positions()
@@ -186,11 +186,11 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
 
     def update_item_info(self, item):
         pos = item.pos()
-        scale_x = 1150 / self.scene.width() 
+        scale_x = 1280 / self.scene.width() 
         scale_y = 1920 / self.scene.height() 
         real_x = pos.x() * scale_x
         real_y = pos.y() * scale_y
-        self.pos_label.setText(f"Pos (1150x1920): x={real_x:.0f}, y={real_y:.0f}")
+        self.pos_label.setText(f"Pos (1280x1920): x={real_x:.0f}, y={real_y:.0f}")
         current_w = item.boundingRect().width()
         current_h = item.boundingRect().height()
         real_w = current_w * scale_x
@@ -210,7 +210,7 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
     def on_finished(self):
         data = []
         data.append(f"Original Video Resolution: {getattr(self, 'original_resolution', 'N/A')}")
-        data.append("Target Canvas: 1150x1920")
+        data.append("Target Canvas: 1280x1920")
         selected_items = self.scene.selectedItems()
         if not selected_items:
             QMessageBox.information(self, "No Item Selected", "Please select a cropped piece to show its coordinates.")
@@ -221,7 +221,7 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
             crop_rect = item.crop_rect
             data.append(f"SOURCE CROP (Original): crop={crop_rect.width()}:{crop_rect.height()}:{crop_rect.x()}:{crop_rect.y()}")
             pos = item.pos()
-            scale_x = 1150 / self.scene.width() 
+            scale_x = 1280 / self.scene.width() 
             scale_y = 1920 / self.scene.height() 
             real_x = pos.x() * scale_x
             real_y = pos.y() * scale_y

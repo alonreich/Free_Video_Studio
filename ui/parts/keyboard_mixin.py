@@ -38,6 +38,8 @@ class KeyboardMixin(QWidget):
                 return True
             if getattr(self, "input_file_path", None):
                 if key == Qt.Key_Space:
+                    if hasattr(self, "portrait_text_input") and self.portrait_text_input.isVisible() and self.portrait_text_input.hasFocus():
+                        return False
                     self.toggle_play_pause()
                     return True
                 if key == Qt.Key_BracketLeft:

@@ -686,6 +686,11 @@ class UiBuilderMixin:
         self.mobile_checkbox = QCheckBox("Mobile Format (Portrait)")
         self.mobile_checkbox.setStyleSheet("font-size: 14px; font-weight: bold; margin-left: 0px; padding: 0; margin-right: 0px; padding: 0;")
         self.mobile_checkbox.setChecked(bool(self.config_manager.config.get('mobile_checked', False)))
+        
+        from PyQt5.QtWidgets import QLineEdit
+        self.portrait_text_input = QLineEdit()
+        self.portrait_text_input.setPlaceholderText("Overlay Text (Hebrew/English)")
+        self.portrait_text_input.setStyleSheet("QLineEdit { background-color: #4a667a; color: white; border: 1px solid #266b89; border-radius: 4px; padding: 4px; font-size: 14px; }")
         self.teammates_checkbox = QCheckBox("Show Teammates Healthbar")
         self.teammates_checkbox.setStyleSheet("font-size: 11px; margin-left: 15px; margin-right: 0px; padding: 0;")
         self.teammates_checkbox.setChecked(bool(self.config_manager.config.get('teammates_checked', False)))
@@ -698,9 +703,11 @@ class UiBuilderMixin:
         self.no_fade_checkbox.toggled.connect(
             lambda c: self.logger.info("OPTION: Disable Fade-In/Out -> %s", c)
         )
-        self.teammates_checkbox.setVisible(self.mobile_checkbox.isChecked())
-        self.teammates_checkbox.setEnabled(self.mobile_checkbox.isChecked())
-        if not self.mobile_checkbox.isChecked():
+        is_mob = self.mobile_checkbox.isChecked()
+        self.teammates_checkbox.setVisible(is_mob)
+        self.teammates_checkbox.setEnabled(is_mob)
+        self.portrait_text_input.setVisible(is_mob)
+        if not is_mob:
             self.teammates_checkbox.setChecked(False)
         process_controls = QGridLayout()
         process_controls.setContentsMargins(0, 0, 0, 0)
@@ -715,6 +722,7 @@ class UiBuilderMixin:
         _left_col.setContentsMargins(0, 0, 0, 0)
         _left_col.setSpacing(6)
         _left_col.addLayout(left_group)
+        _left_col.addWidget(self.portrait_text_input)
         self.left_group_widget = QWidget()
         self.left_group_widget.setLayout(_left_col)
         self.left_group_widget.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
@@ -966,6 +974,8 @@ class UiBuilderMixin:
         self.logger.info("OPTION: Mobile Format -> %s", checked)
         self.teammates_checkbox.setVisible(checked)
         self.teammates_checkbox.setEnabled(checked)
+        if hasattr(self, 'portrait_text_input'):
+            self.portrait_text_input.setVisible(checked)
         if not checked:
             self.teammates_checkbox.setChecked(False)
         QTimer.singleShot(0, self._recenter_process_controls)

@@ -144,6 +144,11 @@ class FfmpegMixin:
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
             music_path, music_vol_linear = self._get_selected_music()
+            p_text = None
+            if is_mobile_format and hasattr(self, 'portrait_text_input'):
+                raw_text = self.portrait_text_input.text().strip()
+                if raw_text:
+                    p_text = raw_text
             self.process_thread = ProcessThread(
                 self.input_file_path, start_time, end_time, self.original_resolution,
                 is_mobile_format, speed_factor, self.script_dir,
@@ -159,6 +164,7 @@ class FfmpegMixin:
                 intro_still_sec=0.1,
                 intro_from_midpoint=(getattr(self, 'selected_intro_abs_time', None) is None),
                 intro_abs_time=getattr(self, 'selected_intro_abs_time', None),
+                portrait_text=p_text
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))

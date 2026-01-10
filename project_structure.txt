@@ -48,6 +48,7 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 │   ├── system\: System-level modules for the main application.
 │   ├── ui\: The user interface for the main application.
 │   └── processing\: The core video processing logic.
+│       └── crops_coordinations.conf: JSON configuration for crop coordinates and overlays.
 │
 └── video_merger\: The Video Merger application.
     └── merger\: Contains the source code for the video merger.

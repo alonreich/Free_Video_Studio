@@ -444,8 +444,12 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         )
         dialog.setWindowModality(Qt.ApplicationModal)
         file_paths = []
+        if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
+            self.portrait_mask_overlay.hide()
         if dialog.exec_():
             file_paths = dialog.selectedFiles()
+        if hasattr(self, "_update_portrait_mask_overlay_state"):
+            self._update_portrait_mask_overlay_state()
         self.refresh_ui_styles()
         if file_paths:
             file_to_load = file_paths[0]

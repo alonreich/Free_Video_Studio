@@ -144,7 +144,7 @@ class CropAppHandlers:
             return
         if self.portrait_window is None:
             self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
-        target_aspect = 1150 / 1920
+        target_aspect = 1080 / 1920
         img_aspect = snapshot_pixmap.width() / snapshot_pixmap.height()
         if img_aspect > target_aspect:
             h = snapshot_pixmap.height()

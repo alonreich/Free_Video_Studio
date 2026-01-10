@@ -8,15 +8,60 @@ import tempfile
 import psutil
 import time
 from PyQt5.QtCore import QThread
+from PyQt5.QtGui import QFont, QFontMetrics
 
 class ProcessThread(QThread):
+
+    def _popen(self, cmd):
+        startupinfo = None
+        creationflags = 0
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = subprocess.CREATE_NO_WINDOW
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            creationflags=creationflags,
+            startupinfo=startupinfo,
+            encoding="utf-8",
+            errors="replace"
+        )
+
+    def _read_ffmpeg_progress(self, proc, time_regex, duration_sec, weight=1.0, base_progress=0):
+        while True:
+            if self.is_canceled:
+                break
+            line = proc.stdout.readline()
+            if not line and proc.poll() is not None:
+                break
+            if not line:
+                continue
+            s = line.strip()
+            if not s:
+                continue
+            self.logger.info(s)
+            m = time_regex.search(s)
+            if not m:
+                continue
+            current_time_str = m.group(1).split('.')[0]
+            current_seconds = self._parse_time_to_seconds(current_time_str)
+            if duration_sec > 0:
+                percent = current_seconds / float(duration_sec)
+                progress = int(max(0, min(100, base_progress + percent * 100 * weight)))
+                self.progress_update_signal.emit(progress)
 
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
                 script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
                 is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
                 bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
-                disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None):
+                disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None,
+                portrait_text: str = None):
         super().__init__()
+        self.portrait_text = portrait_text
         self.is_boss_hp = is_boss_hp
         self.input_path = input_path
         self.start_time = start_time
@@ -83,24 +128,25 @@ class ProcessThread(QThread):
         self.is_canceled = False
 
     def _parse_time_to_seconds(self, time_str: str) -> float:
-        """Converts HH:MM:SS.ss or MM:SS.ss time string to seconds."""
+        """Converts HH:MM:SS(.ss) or MM:SS(.ss) or SS(.ss) time string to seconds."""
         try:
-            parts = time_str.split(':')
+            s = str(time_str or "").strip()
+            if not s:
+                return 0.0
+            parts = s.split(":")
             if len(parts) == 3:
                 h = int(parts[0])
                 m = int(parts[1])
-                s = float(parts[2])
-                return (h * 3600) + (m * 60) + s
+                sec = float(parts[2])
+                return (h * 3600) + (m * 60) + sec
+            if len(parts) == 2:
+                m = int(parts[0])
+                sec = float(parts[1])
+                return (m * 60) + sec
+            if len(parts) == 1:
+                return float(parts[0])
         except Exception:
-            try:
-                if len(parts) == 2:
-                    m = int(parts[0])
-                    s = float(parts[1])
-                    return (m * 60) + s
-                elif len(parts) == 1:
-                    return float(parts[0])
-            except Exception:
-                return 0.0
+            return 0.0
         return 0.0
 
     def cancel(self):
@@ -214,6 +260,19 @@ class ProcessThread(QThread):
             vfade_out_d  = vfade_out_d / self.speed_factor if self.speed_factor != 1.0 else vfade_out_d
             vfade_out_st = vfade_out_st / self.speed_factor if self.speed_factor != 1.0 else vfade_out_st
             self.duration_corrected = max(0.0, output_clip_duration)
+            if self.is_mobile_format and self.portrait_text:
+                txt = self.portrait_text
+                if any("\u0590" <= c <= "\u05ff" for c in txt):
+                    rev_full = txt[::-1]
+
+
+
+                    def _flip_back_match(match):
+                        return match.group(0)[::-1]
+                    final_text = re.sub(r'[^\u0590-\u05ff]+', _flip_back_match, rev_full)
+                else:
+                    final_text = txt
+                final_text = final_text.replace(":", "\\:").replace("'", "'\\\\''")
             if self.speed_factor != 1.0:
                 self.status_update_signal.emit(f"Adjusting trim times for speed factor {self.speed_factor}x.")
             thumbnail_hold_sec = 0.0
@@ -250,20 +309,53 @@ class ProcessThread(QThread):
             if total_frames is None:
                 self.status_update_signal.emit("Could not determine total frames. Progress bar might be inaccurate.")
             video_filter_cmd = ""
-            main_width  = 1150
+            main_width  = 1280
             main_height = 1920
             if self.is_mobile_format:
-                loot_1080 = (339, 60, 1547, 980)
-                stats_1080 = (212, 173, 1687, 0)
-                normal_hp_1080 = (311, 47, 41, 980)
-                boss_hp_1080 = (325, 46, 138, 981)
-                team_1080  = (174, 161, 14, 801)
+                coords = {
+                    "crops_1080p": {
+                        "loot": [339, 68, 1548, 976], "stats": [215, 153, 1682, 20],
+                        "normal_hp": [324, 50, 33, 979], "boss_hp": [325, 46, 138, 981],
+                        "team": [174, 161, 14, 801]
+                    },
+                    "scales": {
+                        "loot": 1.953, "stats": 2.112, "team": 1.61,
+                        "normal_hp": 1.849, "boss_hp": 1.615
+                    },
+                    "overlays": {
+                        "loot": {"x": 613, "y": 1659}, "stats": {"x": 829, "y": 0},
+                        "team": {"x": 32, "y": 1434},
+                        "normal_hp": {"x": 5, "y": 1681}, "boss_hp": {"x": 20, "y": 1701}
+                    }
+                }
+                conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+                if os.path.exists(conf_path):
+                    try:
+                        with open(conf_path, 'r') as f:
+                            coords.update(json.load(f))
+                        self.logger.info(f"Loaded crop config from {conf_path}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to load crop config, using defaults: {e}")
+                loot_1080 = tuple(coords['crops_1080p']['loot'])
+                stats_1080 = tuple(coords['crops_1080p']['stats'])
+                normal_hp_1080 = tuple(coords['crops_1080p']['normal_hp'])
+                boss_hp_1080 = tuple(coords['crops_1080p']['boss_hp'])
+                team_1080 = tuple(coords['crops_1080p']['team'])
                 if self.is_boss_hp:
                     hp_1080 = boss_hp_1080
+                    healthbar_scale = float(coords['scales']['boss_hp'])
+                    hp_ov = coords['overlays']['boss_hp']
                     self.logger.info("Using Boss HP coordinates.")
                 else:
                     hp_1080 = normal_hp_1080
+                    healthbar_scale = float(coords['scales']['normal_hp'])
+                    hp_ov = coords['overlays']['normal_hp']
                     self.logger.info("Using Normal HP coordinates.")
+                healthbar_overlay_x = hp_ov['x']
+                healthbar_overlay_y = hp_ov['y']
+                loot_scale = float(coords['scales']['loot'])
+                stats_scale = float(coords['scales']['stats'])
+                team_scale = float(coords['scales']['team'])
 
                 def scale_box(box, s):
                     return tuple(int(round(v * s)) for v in box)
@@ -278,40 +370,18 @@ class ProcessThread(QThread):
                 loot_area_crop_string  = f"{loot[0]}:{loot[1]}:{loot[2]}:{loot[3]}"
                 stats_area_crop_string = f"{stats[0]}:{stats[1]}:{stats[2]}:{stats[3]}"
                 team_crop_string       = f"{team[0]}:{team[1]}:{team[2]}:{team[3]}"
-                if self.is_boss_hp:
-                    healthbar_scale = 1.615116
-                else:
-                    healthbar_scale = 1.717429
-                loot_scale = 1.772287
-                stats_scale = 2.0
-                team_scale = 1.61
-                healthbar_scaled_width  = int(round(hp_1080[0] * healthbar_scale))
-                healthbar_scaled_height = int(round(hp_1080[1] * healthbar_scale))
-                loot_scaled_width       = int(round(loot_1080[0] * loot_scale))
-                loot_scaled_height      = int(round(loot_1080[1] * loot_scale))
-                stats_scaled_width      = int(round(stats_1080[0] * stats_scale))
-                stats_scaled_height     = int(round(stats_1080[1] * stats_scale))
-                team_scaled_width       = int(round(team_1080[0] * team_scale))
-                team_scaled_height      = int(round(team_1080[1] * team_scale))
-                if self.is_boss_hp:
-                    healthbar_overlay_x = 8
-                    healthbar_overlay_y = 1701
-                else:
-                    healthbar_overlay_x = 3
-                    healthbar_overlay_y = 1696
-                loot_overlay_x = 544
-                loot_overlay_y = 1687
-                stats_overlay_x = 748
-                stats_overlay_y = -3
-                team_overlay_x = 32
-                team_overlay_y = 1434
-                lootbar_scale_str = f"scale={loot_scaled_width}:{loot_scaled_height}"
-                healthbar_scale_str = f"scale={healthbar_scaled_width}:{healthbar_scaled_height}"
-                stats_scale_str = f"scale={stats_scaled_width}:{stats_scaled_height}"
-                team_scale_str = f"scale={team_scaled_width}:{team_scaled_height}"
-                common_splits = "split=4[main][lootbar][healthbar][stats]"
+                lootbar_scale_str = f"scale={int(round(loot_1080[0] * loot_scale))}:{int(round(loot_1080[1] * loot_scale))}"
+                healthbar_scale_str = f"scale={int(round(hp_1080[0] * healthbar_scale))}:{int(round(hp_1080[1] * healthbar_scale))}"
+                stats_scale_str = f"scale={int(round(stats_1080[0] * stats_scale))}:{int(round(stats_1080[1] * stats_scale))}"
+                team_scale_str = f"scale={int(round(team_1080[0] * team_scale))}:{int(round(team_1080[1] * team_scale))}"
+                loot_overlay_x = coords['overlays']['loot']['x']
+                loot_overlay_y = coords['overlays']['loot']['y']
+                stats_overlay_x = coords['overlays']['stats']['x']
+                stats_overlay_y = coords['overlays']['stats']['y']
+                team_overlay_x = coords['overlays']['team']['x']
+                team_overlay_y = coords['overlays']['team']['y']
                 common_filters = (
-                    f"[main]scale={main_width}:{main_height}:force_original_aspect_ratio=increase,crop={main_width}:{main_height}[main_cropped];"
+                    f"[main]scale=1280:1920:force_original_aspect_ratio=increase,crop=1280:1920[main_cropped];"
                     f"[lootbar]crop={loot_area_crop_string},drawbox=t=2:c=black,{lootbar_scale_str},format=yuva444p[lootbar_scaled];"
                     f"[healthbar]crop={healthbar_crop_string},drawbox=t=2:c=black,{healthbar_scale_str},format=yuva444p[healthbar_scaled];"
                     f"[stats]crop={stats_area_crop_string},drawbox=t=2:c=black,{stats_scale_str},format=yuva444p[stats_scaled];"
@@ -330,11 +400,107 @@ class ProcessThread(QThread):
                         f"[t3][team_scaled]overlay={team_overlay_x}:{team_overlay_y}"
                     )
                 else:
-                    video_filter_cmd = f"{common_splits};{common_filters}{common_overlays}"
-                self.logger.info(f"Mobile portrait mode: loot={loot_area_crop_string}, health={healthbar_crop_string}, "
-                                f"stats={stats_area_crop_string}, alpha=0.8, "
-                                f"stats_xy=({stats_overlay_x},{stats_overlay_y})")
-                self.status_update_signal.emit("Optimizing for mobile: Applying portrait crop.")
+                    video_filter_cmd = f"split=4[main][lootbar][healthbar][stats];{common_filters}{common_overlays}"
+                video_filter_cmd += ",scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+                if self.portrait_text:
+                    RAW = self.portrait_text
+                    WRAP_AT_PX = 950
+                    SAFE_MAX_PX = 900
+                    BASE_SIZE = 80
+                    MIN_SIZE = 36
+                    LINE_SPACING = -45
+                    SHADOW_PAD_PX = 14
+                    MEASURE_FUDGE = 1.12
+
+                    def _measure_px(s: str, px_size: int) -> int:
+                        f = QFont("Arial")
+                        f.setPixelSize(int(px_size))
+                        fm = QFontMetrics(f)
+                        try:
+                            w = int(fm.horizontalAdvance(s))
+                        except Exception:
+                            w = int(fm.width(s))
+                        return int(w * MEASURE_FUDGE) + SHADOW_PAD_PX
+                    MAX_LINE_W = WRAP_AT_PX
+                    HARD_MAX_W = SAFE_MAX_PX
+
+                    def _split_long_token(tok: str, px_size: int):
+                        chunks = []
+                        cur = ""
+                        for ch in tok:
+                            cand = cur + ch
+                            if cur and _measure_px(cand, px_size) > MAX_LINE_W:
+                                chunks.append(cur)
+                                cur = ch
+                            else:
+                                cur = cand
+                        if cur:
+                            chunks.append(cur)
+                        return chunks
+
+                    def _wrap_text(s: str, px_size: int):
+                        tokens = []
+                        for t in (s or "").split():
+                            if _measure_px(t, px_size) > MAX_LINE_W:
+                                tokens.extend(_split_long_token(t, px_size))
+                            else:
+                                tokens.append(t)
+                        lines = []
+                        cur = ""
+                        for t in tokens:
+                            cand = t if not cur else (cur + " " + t)
+                            if not cur or _measure_px(cand, px_size) <= MAX_LINE_W:
+                                cur = cand
+                            else:
+                                lines.append(cur)
+                                cur = t
+                        if cur:
+                            lines.append(cur)
+                        return lines if lines else [""]
+
+                    def _fit_and_wrap(s: str):
+                        size = BASE_SIZE
+                        for _ in range(25):
+                            lines = _wrap_text(s, size)
+                            widest = max(_measure_px(ln, size) for ln in lines) if lines else 0
+                            if widest <= MAX_LINE_W and len(lines) <= 2:
+                                return size, lines
+                            ratio = (widest / float(MAX_LINE_W)) if MAX_LINE_W else 1.25
+                            ratio = max(1.08, ratio)
+                            penalty = max(0, len(lines) - 2) * 5
+                            new_size = int(max(MIN_SIZE, (size / ratio) - penalty))
+                            if new_size >= size:
+                                new_size = size - 2
+                            if new_size <= MIN_SIZE:
+                                break
+                            size = new_size
+                        size = max(MIN_SIZE, int(size))
+                        lines = _wrap_text(s, size)
+                        return size, lines
+                    font_px, lines = _fit_and_wrap(RAW)
+                    txt_wrapped = "\n".join(lines)
+                    txt_with_ltr_numbers = re.sub(
+                        r'([0-9]+(?:[.,:/\-][0-9]+)*)',
+                        lambda m: "\u2066" + m.group(1) + "\u2069",
+                        txt_wrapped
+                    )
+                    if any("\u0590" <= c <= "\u05ff" for c in self.portrait_text):
+                        final_text = "\u2067" + txt_with_ltr_numbers + "\u200F" + "\u2069"
+                    else:
+                        final_text = "\u2066" + txt_with_ltr_numbers + "\u2069"
+                    textfile_path = os.path.join(temp_dir, f"drawtext-{os.getpid()}-{int(time.time())}.txt")
+                    with open(textfile_path, "w", encoding="utf-8") as tf:
+                        tf.write(final_text)
+                    ff_textfile = textfile_path.replace("\\", "/").replace(":", "\\:")
+                    video_filter_cmd += (
+                        f",drawtext=fontfile='C\\:/Windows/Fonts/arial.ttf':"
+                        f"textfile='{ff_textfile}':reload=0:text_shaping=1:"
+                        f"fontcolor=white:fontsize={int(font_px)}:"
+                        f"x=(w-text_w)/2:y=40:line_spacing={LINE_SPACING}:"
+                        f"shadowcolor=black:shadowx=3:shadowy=3"
+                    )
+                self.logger.info(f"Mobile portrait mode (Canvas Trick 1080x1920): Title='{self.portrait_text}'")
+                self.status_update_signal.emit("Optimizing: Applying Canvas Trick (Shrink & Pad) with Text.")
             else:
                 original_width, original_height = map(int, self.original_resolution.split('x'))
                 if self.keep_highest_res:
@@ -563,34 +729,14 @@ class ProcessThread(QThread):
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             safe_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            self.current_process = subprocess.Popen(
-                core_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                creationflags=safe_flags,
-                startupinfo=startupinfo,
-                encoding="utf-8",
-                errors="replace"
+            self.current_process = self._popen(core_cmd)
+            self._read_ffmpeg_progress(
+                self.current_process,
+                time_regex,
+                self.duration_corrected,
+                weight=core_progress_weight,
+                base_progress=0
             )
-            while True:
-                if self.is_canceled: break
-                line = self.current_process.stdout.readline()
-                if not line and self.current_process.poll() is not None:
-                    break
-                if line:
-                    s = line.strip()
-                    if s:
-                        self.logger.info(s)
-                        match = time_regex.search(s)
-                        if match:
-                            current_time_str = match.group(1).split('.')[0]
-                            current_seconds = self._parse_time_to_seconds(current_time_str)
-                            if self.duration_corrected > 0:
-                                percent = (current_seconds / self.duration_corrected)
-                                progress = int(max(0, min(100 * core_progress_weight, percent * 100 * core_progress_weight)))
-                                self.progress_update_signal.emit(progress)
             self.current_process.wait()
             if self.is_canceled: 
                 self.logger.info("Thread stopping: Cancelled after Step 1.")
@@ -606,7 +752,7 @@ class ProcessThread(QThread):
                 for encoder in fallback_queue[start_idx:]:
                     self.logger.info(f"Attempting fallback to: {encoder}")
                     self.status_update_signal.emit(f"Hardware failure. Trying {encoder}...")
-                    cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_file_path]
+                    cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_path]
                     if have_bg: cmd_retry += ['-i', self.bg_music_path]
                     if encoder == "libx264":
                         cmd_retry += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
@@ -631,53 +777,6 @@ class ProcessThread(QThread):
                 if not success:
                     self.finished_signal.emit(False, "All hardware and software encoders failed.")
                     return
-                cmd_cpu += [
-                    '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-                    '-c:a', 'aac', '-b:a', f'{AUDIO_KBPS}k', '-ar', '48000',
-                    '-filter_complex', ';'.join(core_filters),
-                    '-map', '[vcore]', '-map', '[acore]', '-shortest',
-                    core_path
-                ]
-                self.logger.info(f"Retry STEP 1/3 with CPU (libx264): {' '.join(cmd_cpu)}")
-                startupinfo = None
-                if sys.platform == "win32":
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                self.current_process = subprocess.Popen(
-                    cmd_cpu,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    stdin=subprocess.DEVNULL,
-                    text=True,
-                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0),
-                    startupinfo=startupinfo,
-                    encoding='utf-8',
-                    errors='replace'
-                )
-                while True:
-                    if self.is_canceled: break
-                    line = self.current_process.stdout.readline()
-                    if not line and self.current_process.poll() is not None:
-                        break
-                    if line:
-                        s = line.strip()
-                        if s:
-                            self.logger.info(s)
-                            match = time_regex.search(s)
-                            if match:
-                                current_time_str = match.group(1).split('.')[0]
-                                current_seconds = self._parse_time_to_seconds(current_time_str)
-                                if self.duration_corrected > 0:
-                                    percent = (current_seconds / self.duration_corrected)
-                                    progress = int(max(0, min(100 * core_progress_weight, percent * 100 * core_progress_weight)))
-                                    self.progress_update_signal.emit(progress)
-                self.current_process.wait()
-                if self.is_canceled: return
-                if self.current_process.returncode != 0:
-                    self.finished_signal.emit(False, "Core encode failed (STEP 1/3) after GPU and CPU retries.")
-                    return
-                else:
-                    self.logger.info("CPU fallback succeeded after GPU failure.")
             if self.is_canceled:
                 self.logger.info("Thread stopping: Cancelled before Intro step.")
                 return
@@ -702,14 +801,14 @@ class ProcessThread(QThread):
                         f"anullsrc=r=48000:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
                     )
                     if self.is_mobile_format:
-                        main_width = 1150
+                        main_width = 1080
                         main_height = 1920
                         intro_filter = (
                             f"[0:v]scale={main_width}:{main_height}:force_original_aspect_ratio=increase,"
                             f"crop={main_width}:{main_height},{base_intro_filter}"
                         )
                         self.logger.info(
-                            "INTRO: abs=%.3fs len=%.3fs (portrait crop)", self.intro_abs_time, still_len
+                            "INTRO: abs=%.3fs len=%.3fs (portrait crop 1080)", self.intro_abs_time, still_len
                         )
                     else:
                         intro_filter = f"[0:v]{base_intro_filter}"
@@ -747,30 +846,24 @@ class ProcessThread(QThread):
                         startupinfo = subprocess.STARTUPINFO()
                         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     if self.is_canceled: return
-                    self.current_process = subprocess.Popen(
-                        intro_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        stdin=subprocess.DEVNULL,
-                        universal_newlines=True,
-                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                        startupinfo=startupinfo,
-                        encoding="utf-8",
-                        errors="replace"
+                    self.current_process = self._popen(intro_cmd)
+                    self._read_ffmpeg_progress(
+                        self.current_process,
+                        time_regex,
+                        max(0.01, float(self.intro_still_sec or 0.1)),
+                        weight=1.0,
+                        base_progress=95
                     )
-                    for line in self.current_process.stdout:
-                        self.logger.info(line.rstrip())
-                        self.progress_update_signal.emit(95)
                     self.current_process.wait()
                     if self.is_canceled: return
-                    if self.current_process.returncode != 0:
+                    intro_success = (self.current_process.returncode == 0)
+                    if not intro_success:
                         self.logger.warning(f"Intro encoder '{hw_encoder}' failed. Cascading...")
                         fallback_queue = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
                         try:
                             start_idx = fallback_queue.index(hw_encoder) + 1
                         except ValueError:
                             start_idx = 0
-                        intro_success = False
                         for encoder in fallback_queue[start_idx:]:
                             self.logger.info(f"Intro fallback attempt: {encoder}")
                             vcodec_fallback = ['-c:v', encoder]
@@ -784,43 +877,22 @@ class ProcessThread(QThread):
                                 "-filter_complex", intro_filter,
                                 "-map", "[vintro]", "-map", "[aintro]", "-shortest", intro_path
                             ]
-                            retry_proc = subprocess.Popen(cmd_intro_retry, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
-                                                        text=True, creationflags=safe_flags, startupinfo=startupinfo)
+                            retry_proc = subprocess.Popen(
+                                cmd_intro_retry,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                text=True,
+                                creationflags=safe_flags,
+                                startupinfo=startupinfo
+                            )
                             retry_proc.wait()
                             if retry_proc.returncode == 0:
                                 self.logger.info(f"Intro fallback to {encoder} succeeded.")
                                 intro_success = True
                                 break
-                        if not intro_success:
-                            self.finished_signal.emit(False, "Intro encoding failed across all available hardware.")
-                            return
-                        self.logger.info(f"Retry STEP 2/3 with CPU (libx264): {' '.join(intro_cmd_cpu)}")
-                        startupinfo = None
-                        if sys.platform == "win32":
-                            startupinfo = subprocess.STARTUPINFO()
-                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        if self.is_canceled: return
-                        self.current_process = subprocess.Popen(
-                            intro_cmd_cpu,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL,
-                            universal_newlines=True,
-                            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                            startupinfo=startupinfo,
-                            encoding="utf-8",
-                            errors="replace"
-                        )
-                        for line in self.current_process.stdout:
-                            self.logger.info(line.rstrip())
-                            self.progress_update_signal.emit(95)
-                        self.current_process.wait()
-                        if self.is_canceled: return
-                        if self.current_process.returncode != 0:
-                            self.finished_signal.emit(False, "Intro encode failed (STEP 2/3) after GPU and CPU retries.")
-                            return
-                        else:
-                            self.logger.info("Intro CPU fallback succeeded after GPU failure.")
+                    if not intro_success:
+                        self.finished_signal.emit(False, "Intro encoding failed across all available hardware.")
+                        return
                 else:
                     self.logger.info("Skipping Intro: no absolute time resolved (user pick or midpoint).")
                     intro_path = None
