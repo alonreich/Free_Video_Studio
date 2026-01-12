@@ -28,7 +28,9 @@ def parse_time_to_seconds(time_str: str) -> float:
         return 0.0
     return 0.0
 
-def create_subprocess(cmd):
+def create_subprocess(cmd, logger=None):
+    if logger:
+        logger.info(f"Executing command: {' '.join(cmd)}")
     startupinfo = None
     creationflags = 0
     if sys.platform == "win32":

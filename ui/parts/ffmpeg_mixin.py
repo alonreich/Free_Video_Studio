@@ -85,8 +85,12 @@ class FfmpegMixin:
             if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
                 self._safe_status("Unsupported input resolution.", "red")
                 return
-            start_time = (self.start_minute_input.value() * 60) + self.start_second_input.value()
-            end_time   = (self.end_minute_input.value()   * 60) + self.end_second_input.value()
+            if self.trim_start is not None and self.trim_end is not None and self.trim_end > 0:
+                start_time = self.trim_start
+                end_time = self.trim_end
+            else:
+                start_time = (self.start_minute_input.value() * 60) + self.start_second_input.value()
+                end_time   = (self.end_minute_input.value()   * 60) + self.end_second_input.value()
             is_mobile_format = self.mobile_checkbox.isChecked()
             speed_factor = self.speed_spinbox.value()
             if speed_factor < 0.5 or speed_factor > 3.1:
@@ -343,10 +347,20 @@ class FfmpegMixin:
                 self.start_second_input.setRange(0, 59)
                 self.end_minute_input.setRange(0, total_minutes)
                 self.end_second_input.setRange(0, 59)
-                self.start_minute_input.setValue(0)
-                self.start_second_input.setValue(0)
-                self.end_minute_input.setValue(total_minutes)
-                self.end_second_input.setValue(max_seconds)
+                self.start_minute_input.blockSignals(True)
+                self.start_second_input.blockSignals(True)
+                self.end_minute_input.blockSignals(True)
+                self.end_second_input.blockSignals(True)
+                try:
+                    self.start_minute_input.setValue(0)
+                    self.start_second_input.setValue(0)
+                    self.end_minute_input.setValue(total_minutes)
+                    self.end_second_input.setValue(max_seconds)
+                finally:
+                    self.start_minute_input.blockSignals(False)
+                    self.start_second_input.blockSignals(False)
+                    self.end_minute_input.blockSignals(False)
+                    self.end_second_input.blockSignals(False)
                 if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
                     self._safe_status(f"Note: Odd resolution ({self.original_resolution})", "orange")
                 self._safe_set_duration_text(

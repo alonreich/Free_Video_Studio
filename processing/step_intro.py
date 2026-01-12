@@ -34,7 +34,7 @@ class IntroProcessor:
             "-map", "[vintro]", "-map", "[aintro]", "-shortest", intro_path
         ]
         self.logger.info("STEP 2/3 INTRO")
-        self.current_process = create_subprocess(intro_cmd)
+        self.current_process = create_subprocess(intro_cmd, self.logger)
         monitor_ffmpeg_progress(
             self.current_process, 
             still_len, 

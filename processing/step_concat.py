@@ -42,7 +42,7 @@ class ConcatProcessor:
             output_path
         ]
         self.logger.info("STEP 3/3 CONCAT")
-        self.current_process = create_subprocess(concat_cmd)
+        self.current_process = create_subprocess(concat_cmd, self.logger)
         while True:
             line = self.current_process.stdout.readline()
             if not line:

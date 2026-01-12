@@ -85,7 +85,7 @@ class ProcessThread(QThread):
                 else:
                     in_ss = self.start_time - FADE_DUR
                     vfade_in_d = FADE_DUR
-                if self.original_total_duration > 0 and self.end_time > (self.original_total_duration - FADE_DUR + EPS):
+                if self.original_total_duration > 0 and (self.end_time > self.original_total_duration - FADE_DUR):
                     adj_end = self.original_total_duration
                     vfade_out_d = 0.0
                 else:
@@ -97,12 +97,16 @@ class ProcessThread(QThread):
                     vfade_out_st = max(0.0, output_clip_dur_pre_speed - vfade_out_d)
                 else:
                     vfade_out_st = output_clip_dur_pre_speed
+            output_clip_dur_pre_speed = in_t
             if self.speed_factor != 1.0:
-                in_t /= self.speed_factor
+                in_t_speed_adjusted = in_t / self.speed_factor
                 vfade_in_d /= self.speed_factor
                 vfade_out_d /= self.speed_factor
                 vfade_out_st /= self.speed_factor
-            self.duration_corrected = max(0.0, in_t)
+            else:
+                in_t_speed_adjusted = in_t
+
+            self.duration_corrected = max(0.0, in_t_speed_adjusted)
             if self.is_mobile_format and self.portrait_text:
                 fix_hebrew_text(self.portrait_text)
             audio_kbps = 256
@@ -158,7 +162,8 @@ class ProcessThread(QThread):
             has_bg = bool(self.bg_music_path)
             audio_chains = self.filter_builder.build_audio_chain(
                 has_bg, self.bg_music_volume, self.bg_music_offset, 
-                self.duration_corrected, self.disable_fades, audio_speed_cmd
+                self.duration_corrected, self.disable_fades, audio_speed_cmd,
+                vfade_in_d, vfade_out_d, vfade_out_st
             )
             core_filters = []
             vcore_str = f"[0:v]{video_filter_cmd}," if video_filter_cmd else "[0:v]"
@@ -187,7 +192,7 @@ class ProcessThread(QThread):
                 core_path
             ]
             self.logger.info(f"STEP 1/3 CORE")
-            self.current_process = create_subprocess(cmd)
+            self.current_process = create_subprocess(cmd, self.logger)
             monitor_ffmpeg_progress(
                 self.current_process, self.duration_corrected, 
                 self.progress_update_signal, lambda: self.is_canceled, self.logger
@@ -212,7 +217,7 @@ class ProcessThread(QThread):
                         '-filter_complex', ';'.join(core_filters),
                         '-map', '[vcore]', '-map', '[acore]', '-shortest', core_path
                     ]
-                    retry_proc = create_subprocess(cmd_retry)
+                    retry_proc = create_subprocess(cmd_retry, self.logger)
                     retry_proc.wait()
                     if retry_proc.returncode == 0:
                         success = True
