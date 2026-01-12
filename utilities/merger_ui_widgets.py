@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QCheckBox,
     QComboBox, QDoubleSpinBox, QSlider, QSizePolicy, QVBoxLayout, QWidget
 )
+
 from PyQt5.QtCore import Qt
 
 class MergerUIWidgetsMixin:

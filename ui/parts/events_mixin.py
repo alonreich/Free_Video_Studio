@@ -8,8 +8,8 @@ class EventsMixin:
         try:
             if event.button() == Qt.LeftButton:
                 self.setFocus(Qt.MouseFocusReason)
-        except Exception:
-            pass
+        except Exception as e:
+            if hasattr(self, "logger"): self.logger.error(f"MousePress error: {e}")
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
@@ -82,25 +82,23 @@ class EventsMixin:
         if obj in (getattr(self, "video_frame", None), getattr(self, "video_surface", None)):
             if event.type() in (QEvent.Resize, QEvent.Move):
                 try:
-                    self._layout_volume_slider()
                     self._update_volume_badge()
                     if hasattr(self, "portrait_mask_overlay"):
                         r = self.video_surface.rect()
                         top_left = self.video_surface.mapToGlobal(r.topLeft())
                         self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
                         self._update_portrait_mask_overlay_state()
-                except Exception:
-                    pass
+                except Exception as e:
+                    if hasattr(self, "logger"): self.logger.error(f"EventFilter resize error: {e}")
                 return False
         return super().eventFilter(obj, event)
 
     def resizeEvent(self, event):
         self._update_window_size_in_title()
         try:
-            self._layout_volume_slider()
             self._update_volume_badge()
-        except Exception:
-            pass
+        except Exception as e:
+            if hasattr(self, "logger"): self.logger.error(f"ResizeEvent error (volume): {e}")
         try:
             if getattr(self, "_overlay", None) and self._overlay.isVisible():
                 gw, gh = self._graph.width(), self._graph.height()
@@ -108,8 +106,8 @@ class EventsMixin:
                 y = max(10, int(self._overlay.height() * 0.06))
                 self._graph.move(x, y)
                 self._update_overlay_mask()
-        except Exception:
-            pass
+        except Exception as e:
+            if hasattr(self, "logger"): self.logger.error(f"ResizeEvent error (overlay): {e}")
         try:
             player_container = getattr(self, 'player_col_container', None)
             trim_container = getattr(self, 'trim_container', None)
@@ -118,8 +116,8 @@ class EventsMixin:
                 video_w = self.video_frame.width()
                 pad = max(0, (player_w - video_w) // 2)
                 trim_container.setContentsMargins(pad, 0, pad, 0)
-        except Exception:
-            pass
+        except Exception as e:
+            if hasattr(self, "logger"): self.logger.error(f"ResizeEvent error (layout): {e}")
         return super().resizeEvent(event)
 
     def _on_mobile_format_toggled(self, checked: bool):

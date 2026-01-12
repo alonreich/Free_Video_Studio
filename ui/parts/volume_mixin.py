@@ -21,8 +21,6 @@ class VolumeMixin:
         except Exception:
             pass
 
-
-
     def _vol_eff(self, raw: int | None = None) -> int:
         """Map slider value -> real volume (0..100) respecting invertedAppearance."""
         v = int(self.volume_slider.value() if raw is None else raw)

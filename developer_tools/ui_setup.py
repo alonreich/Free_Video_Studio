@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QSlider, QStyle, QStackedWidget
 )
+
 from PyQt5.QtCore import Qt, QSize
 from crop_widgets import DrawWidget
 

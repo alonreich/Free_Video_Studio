@@ -49,14 +49,15 @@ class PhaseOverlayMixin:
                 font-family: Consolas, monospace; font-size: 12px;
             }
         """)
+
         from collections import deque
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
             if not hasattr(self, nm):
                 setattr(self, nm, deque(maxlen=400))
         self._stats_timer = QTimer(self)
-        self._stats_timer.setInterval(500)
+        self._stats_timer.setInterval(2000)
         self._stats_timer.timeout.connect(self._sample_perf_counters_safe)
-        self._overlay.installEventFilter(self) 
+        self._overlay.installEventFilter(self)
 
     def _resize_overlay(self) -> None:
         """Called by the main resizeEvent to resize/mask the overlay."""
@@ -68,11 +69,15 @@ class PhaseOverlayMixin:
             pass
 
     def _update_overlay_mask(self):
-        """Positions graph/log and punches holes for button/progress bar."""
+        """Positions graph/log and raises interaction widgets above the overlay."""
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
             self._overlay.setGeometry(self.rect())
+            self._overlay.raise_()
+            for w in (getattr(self, "process_button", None), getattr(self, "cancel_button", None), getattr(self, "progress_bar", None)):
+                if w and w.isVisible():
+                    w.raise_()
             if not hasattr(self, "video_frame"):
                 return
             vf_topleft_global = self.video_frame.mapToGlobal(self.video_frame.rect().topLeft())
@@ -90,23 +95,6 @@ class PhaseOverlayMixin:
                 spacing = 0
             self._graph.setGeometry(vf_geom.x(), vf_geom.y(), vf_geom.width(), graph_h)
             self.live_log.setGeometry(vf_geom.x(), vf_geom.y() + graph_h + spacing, vf_geom.width(), log_h)
-            r = QRegion(self._overlay.rect())
-
-            def _hole_for_safe(w):
-                if not w or not isinstance(w, QWidget) or not w.isVisible():
-                    return None
-                top_left_global = w.mapToGlobal(w.rect().topLeft())
-                top_left_on_overlay = self._overlay.mapFromGlobal(top_left_global)
-                gr = QRect(top_left_on_overlay, w.rect().size())
-                gr = gr.adjusted(-6, -6, 6, 6)
-                if not gr.intersects(self._overlay.rect()):
-                    return None
-                return QRegion(gr)
-            for w in (getattr(self, "process_button", None), getattr(self, "cancel_button", None), getattr(self, "progress_bar", None)):
-                q = _hole_for_safe(w)
-                if q is not None:
-                    r -= q
-            self._overlay.setMask(r)
         except Exception:
             pass
 
@@ -147,7 +135,6 @@ class PhaseOverlayMixin:
         try:
             if getattr(self, "_overlay", None):
                 self._overlay.hide()
-                self._overlay.setMask(QRegion())
         except Exception:
             pass
 

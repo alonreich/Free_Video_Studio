@@ -7,6 +7,7 @@ class TrimmedSlider(QSlider):
     music_trim_changed = pyqtSignal(float, float)
 
     def __init__(self, parent=None):
+        print("DEBUG: Timeline __init__ CALLED. If you see this, the object exists.")
         super().__init__(Qt.Horizontal, parent)
         self.music_v_offset = -6
         self.trimmed_start = None
@@ -15,13 +16,14 @@ class TrimmedSlider(QSlider):
         self.music_end_sec = None
         self._duration_ms = 0
         self.setMouseTracking(True)
+        self.setMinimumHeight(40)
         self.setStyleSheet("""
             QSlider::groove:horizontal {
                 background: #4a667a;
-                height: 2px;
-                border-radius: 4px;
-                margin-top: 6px;
-                margin-bottom: 6px;
+                height: 4px; 
+                border-radius: 2px;
+                margin-top: 10px;
+                margin-bottom: 10px;
             }
             QSlider::handle:horizontal {
                 background: transparent;
@@ -29,8 +31,8 @@ class TrimmedSlider(QSlider):
                 width: 26px;
                 margin: -10px 0;
             }
-            QSlider::sub-page:horizontal { background: transparent; border-radius: 4px; }
-            QSlider::add-page:horizontal { background: transparent; border-radius: 4px; }
+            QSlider::sub-page:horizontal { background: transparent; }
+            QSlider::add-page:horizontal { background: transparent; }
         """)
         self.sliderPressed.connect(self._on_pressed)
         self.sliderReleased.connect(self._on_released)
@@ -42,6 +44,13 @@ class TrimmedSlider(QSlider):
         self._dragging_music_handle = None
         self._hovering_music_handle = None
         self._music_drag_offset_sec = 0
+
+    def set_duration_ms(self, ms: int):
+        new_ms = max(0, int(ms))
+        if self._duration_ms != new_ms:
+            print(f"DEBUG: TrimmedSlider duration updated: {self._duration_ms} -> {new_ms} ms")
+            self._duration_ms = new_ms
+            self.update()
 
     def set_music_visible(self, visible: bool):
         self._show_music = visible
@@ -75,7 +84,7 @@ class TrimmedSlider(QSlider):
         self.initStyleOption(opt)
         groove = self.style().subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
         if groove.width() <= 0:
-            h = 8
+            h = 4
             top = (self.height() - h) // 2
             groove = QRect(8, top, self.width() - 16, h)
         return QRect(groove.left(), groove.center().y() - 2, groove.width(), 4)
@@ -123,7 +132,7 @@ class TrimmedSlider(QSlider):
     def _get_playhead_rect(self):
         cx = self._map_value_to_pos(self.value())
         groove = self._get_groove_rect()
-        playhead_width = 10 
+        playhead_width = 12
         playhead_height = groove.height() + 26
         playhead_y = groove.center().y() - playhead_height // 2
         return QRect(cx - playhead_width // 2, playhead_y, playhead_width, playhead_height)
@@ -177,10 +186,6 @@ class TrimmedSlider(QSlider):
             self.update()
         super().mouseReleaseEvent(e)
 
-    def set_duration_ms(self, ms: int):
-        self._duration_ms = max(0, int(ms))
-        self.update()
-
     def _fmt(self, ms: int) -> str:
         s = max(0, ms // 1000)
         h, s = divmod(s, 3600)
@@ -192,26 +197,26 @@ class TrimmedSlider(QSlider):
             new_val = self._map_pos_to_value(e.pos().x())
             new_time_sec = (new_val / self.maximum()) * (self._duration_ms / 1000.0) if self.maximum() > 0 else 0
             snap_threshold_px = 5
-            trim_start_px = self._map_value_to_pos(self.trimmed_start * 1000)
-            trim_end_px = self._map_value_to_pos(self.trimmed_end * 1000)
+            trim_start_px = self._map_value_to_pos(self.trimmed_start * 1000) if self.trimmed_start else 0
+            trim_end_px = self._map_value_to_pos(self.trimmed_end * 1000) if self.trimmed_end else 0
             if self._dragging_music_handle == 'body':
                 duration = self.music_end_sec - self.music_start_sec
                 new_start_sec = new_time_sec + self._music_drag_offset_sec
                 new_end_sec = new_start_sec + duration
-                if abs(self._map_value_to_pos(new_start_sec * 1000) - trim_start_px) < snap_threshold_px:
+                if self.trimmed_start and abs(self._map_value_to_pos(new_start_sec * 1000) - trim_start_px) < snap_threshold_px:
                     new_start_sec = self.trimmed_start
-                if abs(self._map_value_to_pos(new_end_sec * 1000) - trim_end_px) < snap_threshold_px:
+                if self.trimmed_end and abs(self._map_value_to_pos(new_end_sec * 1000) - trim_end_px) < snap_threshold_px:
                     new_end_sec = self.trimmed_end
                     new_start_sec = new_end_sec - duration
                 self.music_start_sec = max(0.0, new_start_sec)
                 self.music_end_sec = self.music_start_sec + duration
             else:
                 if self._dragging_music_handle == 'start':
-                    if abs(e.pos().x() - trim_start_px) < snap_threshold_px:
+                    if self.trimmed_start and abs(e.pos().x() - trim_start_px) < snap_threshold_px:
                         new_time_sec = self.trimmed_start
                     self.music_start_sec = min(max(0.0, new_time_sec), self.music_end_sec - 0.1)
                 elif self._dragging_music_handle == 'end':
-                    if abs(e.pos().x() - trim_end_px) < snap_threshold_px:
+                    if self.trimmed_end and abs(e.pos().x() - trim_end_px) < snap_threshold_px:
                         new_time_sec = self.trimmed_end
                     self.music_end_sec = max(self.music_start_sec + 0.1, new_time_sec)
             self.music_trim_changed.emit(self.music_start_sec, self.music_end_sec)
@@ -302,17 +307,15 @@ class TrimmedSlider(QSlider):
         return QRect(start_x, int(y_pos), end_x - start_x, line_height)
 
     def paintEvent(self, event):
-        super().paintEvent(event)
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.Antialiasing)
             p.fillRect(self.rect(), Qt.transparent)
-            f = QFont(self.font())
             groove_rect = self._get_groove_rect()
             p.setPen(Qt.NoPen)
             p.setBrush(QColor("#3d3d3d"))
             p.drawRoundedRect(groove_rect, 2, 2)
-            if self.trimmed_start is not None and self.trimmed_end is not None:
+            if self.trimmed_start is not None and self.trimmed_end is not None and self._duration_ms > 0:
                 fill_color = QColor("#59B1D5")
                 fill_color.setAlpha(150)
                 p.setBrush(fill_color)
@@ -328,10 +331,11 @@ class TrimmedSlider(QSlider):
                 p.setPen(Qt.NoPen)
                 music_rect = self._get_music_line_rect()
                 p.drawRect(music_rect)
+            f = QFont(self.font())
+            f.setPointSize(max(10, f.pointSize()))
+            p.setFont(f)
+            fm = QFontMetrics(f)
             if self._duration_ms > 0 and groove_rect.width() > 10:
-                f.setPointSize(max(10, f.pointSize()))
-                p.setFont(f)
-                fm = QFontMetrics(f)
                 major_tick_pixels = 120 
                 num_major_ticks = max(1, int(round(groove_rect.width() / major_tick_pixels)))
                 for i in range(num_major_ticks + 1):
@@ -353,59 +357,43 @@ class TrimmedSlider(QSlider):
                         time_str = self._fmt(int(ms))
                         text_width = fm.horizontalAdvance(time_str)
                         p.drawText(x - text_width // 2, groove_rect.bottom() + 18, time_str)
-                    for handle_type in ['start', 'end']:
-                        handle_rect = self._get_handle_rect(handle_type)
-                        if not handle_rect.isValid(): continue
-                        color = QColor(0, 0, 0, 150)
-                        if self._hovering_handle == handle_type or self._dragging_handle == handle_type:
-                            color = QColor(230, 126, 34, 200)
-                        p.setPen(Qt.NoPen)
-                        p.setBrush(color)
-                        p.drawRoundedRect(handle_rect, 4, 4)
-                    playhead_rect = self._get_playhead_rect()
-                    if playhead_rect.isValid():
-                        knob_w = 18
-                        knob_h = 40
-                        cx = playhead_rect.center().x()
-                        cy = groove_rect.center().y()
-                        knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
-                        border_color = QColor("#1f2a36")
-                        if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                            border_color = QColor("#90A4AE")
-                        p.setPen(QPen(border_color, 1))
-                        g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
-                        if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                            g.setColorAt(0.00, QColor("#546E7A"))
-                            g.setColorAt(0.40, QColor("#546E7A"))
-                            g.setColorAt(0.42, QColor("#90A4AE"))
-                            g.setColorAt(0.44, QColor("#90A4AE"))
-                            g.setColorAt(0.46, QColor("#546E7A"))
-                            g.setColorAt(0.48, QColor("#546E7A"))
-                            g.setColorAt(0.50, QColor("#90A4AE"))
-                            g.setColorAt(0.52, QColor("#90A4AE"))
-                            g.setColorAt(0.54, QColor("#546E7A"))
-                            g.setColorAt(0.56, QColor("#546E7A"))
-                            g.setColorAt(0.58, QColor("#90A4AE"))
-                            g.setColorAt(0.60, QColor("#90A4AE"))
-                            g.setColorAt(0.62, QColor("#546E7A"))
-                            g.setColorAt(1.00, QColor("#546E7A"))
-                        else:
-                            g.setColorAt(0.00, QColor("#546E7A"))
-                            g.setColorAt(0.40, QColor("#546E7A"))
-                            g.setColorAt(0.42, QColor("#90A4AE"))
-                            g.setColorAt(0.44, QColor("#90A4AE"))
-                            g.setColorAt(0.46, QColor("#546E7A"))
-                            g.setColorAt(0.48, QColor("#546E7A"))
-                            g.setColorAt(0.50, QColor("#90A4AE"))
-                            g.setColorAt(0.52, QColor("#90A4AE"))
-                            g.setColorAt(0.54, QColor("#546E7A"))
-                            g.setColorAt(0.56, QColor("#546E7A"))
-                            g.setColorAt(0.58, QColor("#90A4AE"))
-                            g.setColorAt(0.60, QColor("#90A4AE"))
-                            g.setColorAt(0.62, QColor("#546E7A"))
-                            g.setColorAt(1.00, QColor("#546E7A"))
-                        p.setBrush(QBrush(g))
-                        p.drawRoundedRect(knob_rect, 4, 4)
+            else:
+                p.setPen(QColor(150, 150, 150))
+                p.drawText(groove_rect.left(), groove_rect.bottom() + 18, "0:00")
+                p.drawText(groove_rect.right() - 20, groove_rect.bottom() + 18, "0:00")
+            for handle_type in ['start', 'end']:
+                handle_rect = self._get_handle_rect(handle_type)
+                if not handle_rect.isValid(): continue
+                color = QColor(0, 0, 0, 150)
+                if self._hovering_handle == handle_type or self._dragging_handle == handle_type:
+                    color = QColor(230, 126, 34, 200)
+                p.setPen(Qt.NoPen)
+                p.setBrush(color)
+                p.drawRoundedRect(handle_rect, 4, 4)
+            playhead_rect = self._get_playhead_rect()
+            if playhead_rect.isValid():
+                knob_w = 12
+                knob_h = 36
+                cx = playhead_rect.center().x()
+                cy = groove_rect.center().y()
+                knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
+                border_color = QColor("#1f2a36")
+                if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
+                    border_color = QColor("#90A4AE")
+                p.setPen(QPen(border_color, 1))
+                g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
+                c1 = QColor("#546E7A")
+                c2 = QColor("#90A4AE")
+                if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
+                    c1 = c1.lighter(120)
+                    c2 = c2.lighter(120)
+                g.setColorAt(0.0, c1)
+                g.setColorAt(0.4, c1)
+                g.setColorAt(0.5, c2)
+                g.setColorAt(0.6, c1)
+                g.setColorAt(1.0, c1)
+                p.setBrush(QBrush(g))
+                p.drawRoundedRect(knob_rect, 4, 4)
             if self._show_music:
                 for handle_type in ['start', 'end']:
                     handle_rect = self._get_music_handle_rect(handle_type)

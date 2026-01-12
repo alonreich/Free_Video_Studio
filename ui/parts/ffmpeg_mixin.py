@@ -4,10 +4,11 @@ import time
 import subprocess
 import json
 import threading
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton)
+
 from processing.worker import ProcessThread
 
 class FfmpegMixin:
@@ -299,59 +300,89 @@ class FfmpegMixin:
         if not self.input_file_path or not os.path.exists(self.input_file_path):
             self.show_message("Error", "No valid video file selected.")
             return
-        self._safe_status("Analyzing video...", "white")
+        self._safe_status("Analyzing video... (Background)", "orange")
         self.process_button.setEnabled(False)
         self.playPauseButton.setEnabled(False)
         self.start_trim_button.setEnabled(False)
         self.end_trim_button.setEnabled(False)
-        QApplication.processEvents()
-        try:
-            duration_s, resolution_str = self._probe_video_metadata(self.input_file_path)
-            if duration_s <= 0.0 or not resolution_str:
-                self._safe_status("Could not analyze video file.", "red")
+        path = self.input_file_path
+
+        def _bg_worker(p):
+            try:
+                d, r = self._probe_video_metadata(p)
+                return True, d, r
+            except Exception as e:
+                return False, 0.0, str(e)
+
+        def _on_worker_finished(result):
+            success, duration_s, res_or_err = result
+
+            def _reenable():
+                self.playPauseButton.setEnabled(True)
+                self.start_trim_button.setEnabled(True)
+                self.end_trim_button.setEnabled(True)
+                self.process_button.setEnabled(True)
+            if not success:
+                self._safe_status(f"Error analyzing: {res_or_err}", "red")
+                if hasattr(self, "logger"):
+                    self.logger.error(f"Probe failed: {res_or_err}")
+                _reenable()
                 return
-            self.original_duration = duration_s
-            self.original_resolution = resolution_str
-            ms = int(self.original_duration * 1000)
-            self.positionSlider.setRange(0, ms)
-            self.positionSlider.set_duration_ms(ms)
-            total_minutes = int(self.original_duration) // 60
-            max_seconds = int(self.original_duration) % 60
-            self.start_minute_input.setRange(0, total_minutes)
-            self.start_second_input.setRange(0, 59)
-            self.end_minute_input.setRange(0, total_minutes)
-            self.end_second_input.setRange(0, 59)
-            self.start_minute_input.setValue(0)
-            self.start_second_input.setValue(0)
-            self.end_minute_input.setValue(total_minutes)
-            self.end_second_input.setValue(max_seconds)
-            if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
-                error_message = "This software is designed for 1080p/1440p/3440x1440/4K inputs."
-                self._safe_status(error_message, "red")
-                self._safe_set_duration_text(f"Duration: N/A | Resolution: {self.original_resolution}")
+            if duration_s <= 0.0 or not res_or_err:
+                self._safe_status("Video analysis failed (invalid metadata).", "red")
+                _reenable()
                 return
-            self._safe_set_duration_text(
-                f"Duration: {self.original_duration:.0f} s | Resolution: {self.original_resolution}")
-            self.trim_start = 0.0
-            self.trim_end = self.original_duration
-            self._update_trim_widgets_from_trim_times()
-            self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
-            self._safe_status("Video loaded successfully.", "white")
-            self.playPauseButton.setEnabled(True)
-            self.start_trim_button.setEnabled(True)
-            self.end_trim_button.setEnabled(True)
-            self.process_button.setEnabled(True)
-        except Exception as e:
-            self._safe_status(f"Error analyzing video: {e}", "red")
-            self.logger.exception("get_video_info failed")
-        finally:
-            if hasattr(self, 'timer') and not self.timer.isActive():
-                self.timer.start(100)
-            if hasattr(self, 'video_frame'):
-                self.video_frame.setFocus()
-            self.activateWindow()
-            self.setFocus()
-    
+            try:
+                self.original_duration = duration_s
+                self.original_resolution = res_or_err
+                ms = int(self.original_duration * 1000)
+                self.positionSlider.setRange(0, ms)
+                self.positionSlider.set_duration_ms(ms)
+                total_minutes = int(self.original_duration) // 60
+                max_seconds = int(self.original_duration) % 60
+                self.start_minute_input.setRange(0, total_minutes)
+                self.start_second_input.setRange(0, 59)
+                self.end_minute_input.setRange(0, total_minutes)
+                self.end_second_input.setRange(0, 59)
+                self.start_minute_input.setValue(0)
+                self.start_second_input.setValue(0)
+                self.end_minute_input.setValue(total_minutes)
+                self.end_second_input.setValue(max_seconds)
+                if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
+                    self._safe_status(f"Note: Odd resolution ({self.original_resolution})", "orange")
+                self._safe_set_duration_text(
+                    f"Duration: {self.original_duration:.0f} s | Res: {self.original_resolution}"
+                )
+                self.trim_start = 0.0
+                self.trim_end = self.original_duration
+                self._update_trim_widgets_from_trim_times()
+                self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
+                self._safe_status("Video loaded.", "white")
+                _reenable()
+            except Exception as e:
+                self._safe_status(f"UI Update Error: {e}", "red")
+                if hasattr(self, "logger"):
+                    self.logger.exception("UI update failed in on_worker_finished")
+                _reenable()
+            finally:
+                if hasattr(self, "timer") and not self.timer.isActive():
+                    self.timer.start(100)
+                if hasattr(self, "video_frame"):
+                    self.video_frame.setFocus()
+                self.activateWindow()
+                self.setFocus()
+
+        class _ProbeBridge(QObject):
+            done = pyqtSignal(object)
+        self._probe_bridge = _ProbeBridge()
+        self._probe_bridge.done.connect(_on_worker_finished)
+
+        def _thread_target():
+            result = _bg_worker(path)
+            self._probe_bridge.done.emit(result)
+        t = threading.Thread(target=_thread_target, daemon=True)
+        t.start()
+
     def on_progress(self, value: int):
         if self.progress_bar.maximum() == 0:
             self.progress_bar.setRange(0, 100)

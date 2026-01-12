@@ -25,6 +25,7 @@ def _get_logger():
     project_root = str(Path(__file__).resolve().parents[1])
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
+
     from system.logger import setup_logger as setup_main_logger
     return setup_main_logger(project_root, "Video_Merger.log", "Video_Merger")
 

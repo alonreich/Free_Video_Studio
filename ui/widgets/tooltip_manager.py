@@ -21,10 +21,10 @@ class ToolTipManager(QObject):
             if tooltip_text:
                 offset = QPoint(20, -40) 
                 QToolTip.showText(QCursor.pos() + offset, tooltip_text, obj)
-            return True
+            return False 
         elif event.type() == QEvent.Leave:
             QToolTip.hideText()
-            return True
+            return False
         elif event.type() == QEvent.MouseButtonPress:
             QToolTip.hideText()
         return super().eventFilter(obj, event)

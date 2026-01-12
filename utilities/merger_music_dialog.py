@@ -20,6 +20,7 @@ class MusicDialogHandler:
                 self.logger.error("Failed to patch VLC player with directsound/volume: %s", e)
                 return None
         setattr(self.parent, "_vlc_setup_hook", _configure_dialog_player)
+
         import ui.widgets.music_offset_dialog as _mod_mdlg
         _orig_lead = getattr(_mod_mdlg, "PREVIEW_VISUAL_LEAD_MS", 0)
         try:

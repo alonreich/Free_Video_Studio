@@ -6,18 +6,13 @@ class PortraitMaskOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
-            Qt.Tool |
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.original_video_resolution = "1920x1080"
         self.current_video_frame_size = None
         self.setHidden(True)
-
 
     def set_video_info(self, resolution_str: str, frame_size):
         if self.original_video_resolution != resolution_str or self.current_video_frame_size != frame_size:

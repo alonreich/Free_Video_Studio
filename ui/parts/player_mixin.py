@@ -18,15 +18,6 @@ class PlayerMixin:
         except Exception:
             pass
     
-    def _on_media_status_changed(self, status):
-        try:
-            from PyQt5.QtMultimedia import QMediaPlayer
-            if status == QMediaPlayer.EndOfMedia:
-                self._safe_stop_playback()
-        except Exception:
-            if int(status) == 7:
-                self._safe_stop_playback()
-    
     def _finish_seek_from_end(self):
         """Callback to finish the seek operation, re-enabling the UI."""
         self.vlc_player.pause()
@@ -54,17 +45,25 @@ class PlayerMixin:
             else:
                 self.vlc_player.play()
                 self.vlc_player.set_rate(self.playback_rate)
-    
-            def apply_rate_and_unmute():
-                try:
-                    self.vlc_player.set_rate(self.playback_rate)
-                    self.vlc_player.audio_set_mute(False)
-                    if hasattr(self, 'apply_master_volume'):
-                        self.apply_master_volume()
-                except Exception as e:
-                    if hasattr(self, 'logger'):
-                        self.logger.error(f"Error applying rate/unmute in toggle_play_pause: {e}")
-            QTimer.singleShot(250, apply_rate_and_unmute) 
+
+            def _wait_for_playing_state():
+                if self.vlc_player.is_playing():
+                    try:
+                        self.vlc_player.set_rate(self.playback_rate)
+                        self.vlc_player.audio_set_mute(False)
+                        if hasattr(self, 'apply_master_volume'):
+                            self.apply_master_volume()
+                    except Exception as e:
+                        self.logger.error(f"Error applying rate/unmute: {e}")
+                else:
+                    if not hasattr(self, '_retry_count'): self._retry_count = 0
+                    if self._retry_count < 10:
+                        self._retry_count += 1
+                        QTimer.singleShot(50, _wait_for_playing_state)
+                    else:
+                        self._retry_count = 0
+            self._retry_count = 0
+            QTimer.singleShot(10, _wait_for_playing_state)
             self.playPauseButton.setText("Pause")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
             if not self.timer.isActive():
@@ -105,15 +104,9 @@ class PlayerMixin:
             else:
                 self.vlc_player.set_time(target_ms)
         except Exception as e:
-            if hasattr(self, 'logger'):
-                self.logger.error(f"Seek failed: {e}")
-        except Exception as e:
-            try:
-                logger = getattr(self, 'logger', None)
-                if logger:
-                    logger.error("Error in set_vlc_position: %s", e)
-            except Exception:
-                pass
+            self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
+            if hasattr(self, "show_message"):
+                self.show_message("Player Error", f"Could not seek video: {e}")
     
     def _on_vlc_end_reached(self, event=None):
         """

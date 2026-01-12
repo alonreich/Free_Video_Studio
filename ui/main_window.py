@@ -124,6 +124,10 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
         self.bin_dir = os.path.join(self.base_dir, 'binaries')
         self.logger = setup_logger(self.base_dir, "Fortnite_Video_Software.log", "Main_App")
+        ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
+        if not os.path.exists(ffmpeg_exe):
+            QMessageBox.critical(None, "Fatal Error", f"ffmpeg.exe not found in binaries folder!\nPath: {ffmpeg_exe}\n\nThe application cannot function without this dependency.")
+            sys.exit(1)
         self.live_log_signal.connect(self.log_overlay_sink)
         self.video_ended_signal.connect(self._handle_video_end)
         try:
@@ -469,6 +473,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.logger.info("FILE: dialog canceled")
 
     def handle_file_selection(self, file_path):
+        """Loads a file, starts playback, and initiates duration polling."""
         try:
             player = getattr(self, "vlc_player", None)
             if player:
@@ -496,11 +501,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.last_dir = dir_path
         p = os.path.abspath(str(file_path))
         if not os.path.isfile(p):
-            status_method = getattr(self, '_safe_status', None) or getattr(self, 'set_status_text_with_color', None)
-            if status_method:
-                status_method("Selected file not found.", "red")
-            else:
-                self.logger.error("Selected file not found: %s", p)
+            self.logger.error("Selected file not found: %s", p)
             return
         media = self.vlc_instance.media_new_path(p)
         if media is None:
@@ -510,11 +511,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 mrl = "file:///" + p.replace("\\", "/")
             media = self.vlc_instance.media_new(mrl)
         if media is None:
-            status_method = getattr(self, '_safe_status', None) or getattr(self, 'set_status_text_with_color', None)
-            if status_method:
-                status_method("Failed to open media.", "red")
-            else:
-                self.logger.error("Failed to open media: %s", p)
+            self.logger.error("Failed to open media: %s", p)
             return
         self.vlc_player.set_media(media)
         self.vlc_player.video_set_scale(0)
@@ -523,20 +520,46 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 self.vlc_player.set_hwnd(int(self.video_surface.winId()))
         except Exception as hwnd_err:
             self.logger.error("Failed to set HWND for player: %s", hwnd_err)
+        
         self.vlc_player.play()
-        QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
+        
 
-        def apply_rate_and_volume():
-            try:
-                self.vlc_player.set_rate(self.playback_rate)
-                self.vlc_player.audio_set_mute(False)
-                self.apply_master_volume()
-                self.logger.info(f"Playback started at {self.playback_rate}x speed.")
-            except Exception as e:
-                self.logger.error(f"Error applying rate/volume after delay: {e}")
-        QTimer.singleShot(100, apply_rate_and_volume)
+        toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
+        if toggle_method:
+            QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
+
+
+        self._poll_retries = 0
+        QTimer.singleShot(100, self._poll_for_duration)
+        
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
+
+    def _poll_for_duration(self):
+        """Repeatedly checks VLC for valid duration to update timeline slider."""
+        try:
+
+            self.vlc_player.set_rate(self.playback_rate)
+            self.vlc_player.audio_set_mute(False)
+            if hasattr(self, 'apply_master_volume'):
+                self.apply_master_volume()
+
+
+            dur = 0
+            if self.vlc_player.get_media():
+                dur = self.vlc_player.get_media().get_duration()
+            
+            if dur > 0:
+                self.positionSlider.setRange(0, dur)
+                self.positionSlider.set_duration_ms(dur)
+                self.logger.info(f"Timeline updated: Duration {dur}ms found via VLC.")
+            else:
+
+                if self._poll_retries < 20:
+                    self._poll_retries += 1
+                    QTimer.singleShot(100, self._poll_for_duration)
+        except Exception as e:
+            self.logger.error(f"Error in duration polling: {e}")
 
     def reset_app_state(self):
         """Resets the UI and state so a new file can be loaded fresh."""
@@ -656,18 +679,12 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             pass
         setattr(self, '_is_playing', False)
 
-    def _on_media_status(self, status):
-        try:
-            from PyQt5.QtMultimedia import QMediaPlayer
-            end_status = QMediaPlayer.EndOfMedia
-        except Exception:
-            from PyQt6.QtMultimedia import QMediaPlayer
-            end_status = QMediaPlayer.MediaStatus.EndOfMedia
-        if status == end_status:
-            self._reset_player_after_end()
-
     def _on_position_changed(self, pos_ms):
         try:
+            if hasattr(self, 'positionSlider') and not self.positionSlider.isSliderDown():
+                self.positionSlider.blockSignals(True)
+                self.positionSlider.setValue(pos_ms)
+                self.positionSlider.blockSignals(False)
             p = getattr(self, 'vlc_player', None)
             if not p:
                 return

@@ -3,8 +3,8 @@ import sys
 import tokenize
 import re
 import ctypes
-RED = '\033[91m'
-GREEN = '\033[92m'
+RED = '\033[41m\033[97m'
+GREEN = '\033[42m\033[97m'
 CYAN = '\033[96m'
 RESET = '\033[0m'
 
@@ -70,35 +70,55 @@ def analyze_comments(filepath):
                 stripped = line.strip()
                 if stripped.startswith('#'):
                     actions[i] = {'action': 'DELETE', 'type': 'COMMENT', 'line': i + 1, 'content': stripped}
-        cite_pattern = r'\s*\[cite:\s*[0-9,\s\-]+\]'
+        cite_pattern = r'\s*\+\]'
         for i, line in enumerate(lines):
             if i in actions: continue
             if 'cite:' in line:
                 new_line = re.sub(cite_pattern, '', line)
                 if new_line != line:
                     actions[i] = {'action': 'EDIT', 'type': 'CITATION', 'line': i + 1, 'content': 'Removed', 'new_content': new_line}
-        for i, line in enumerate(lines):
-            if i in actions: continue 
-            if not line.strip():
-                next_content = any(l.strip() for l in lines[i+1:])
-                if not next_content:
-                    actions[i] = {'action': 'DELETE', 'type': 'EMPTY LINE', 'line': i + 1, 'content': '<Trailing Empty>'}
-                    continue
-                should_keep = False
-                for j in range(i + 1, len(lines)):
-                    next_line = lines[j].strip()
-                    if next_line:
-                        if next_line.startswith(('def ', 'class ', 'import ', 'from ', '"""', "'''", '#')):
-                            should_keep = True
-                        break
-                if not should_keep:
-                    actions[i] = {'action': 'DELETE', 'type': 'EMPTY LINE', 'line': i + 1, 'content': '<Excessive Empty>'}
+        
+
         for i, line in enumerate(lines):
             if i in actions or i == 0: continue
             stripped = line.lstrip()
-            if stripped.startswith(('def ', 'class ')):
-                if lines[i-1].strip():
+            
+
+            if stripped.startswith(('def ', 'class ', 'import ', 'from ')):
+                prev_line = lines[i-1]
+                prev_stripped = prev_line.strip()
+                
+
+                if prev_stripped:
+
+                    if stripped.startswith(('import ', 'from ')) and prev_stripped.startswith(('import ', 'from ')):
+                        continue
+
+                    if prev_stripped.endswith(':'):
+                        continue
+
+                    if prev_stripped.startswith('@'):
+                        continue
+                        
+
                     actions[i] = {'action': 'EDIT', 'type': 'MISSING NEWLINE', 'line': i + 1, 'content': 'Add Blank Line Above', 'new_content': '\n' + line}
+                
+
+                else:
+                    prev = i - 1
+                    empties = []
+
+                    while prev >= 0 and not lines[prev].strip():
+                        if prev in actions: break
+                        empties.append(prev)
+                        prev -= 1
+                    
+
+                    if len(empties) > 1:
+
+                        for idx in empties[1:]: 
+                            actions[idx] = {'action': 'DELETE', 'type': 'EXCESSIVE SPACE', 'line': idx + 1, 'content': '<Excessive Empty>'}
+
         return [v for k, v in sorted(actions.items())]
     except Exception as e:
         return []

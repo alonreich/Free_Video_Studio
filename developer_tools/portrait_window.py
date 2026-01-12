@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QLabel, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem,
     QDialog, QTextEdit, QMessageBox, QGraphicsItem
 )
+
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer
 from PyQt5.QtGui import QPainter
 from utils import PersistentWindowMixin

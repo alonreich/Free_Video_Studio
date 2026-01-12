@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QApplication,
 )
+
 from PyQt5.QtCore import (
     QByteArray,
     Qt,
@@ -480,8 +481,6 @@ class CustomFileDialog(QFileDialog):
                         raise OSError("Windows Shell delete failed.")
             except Exception as e:
                 failed.append((p, str(e)))
-            except Exception as e:
-                failed.append((p, str(e)))
         try:
             self.setDirectory(self.directory())
         except Exception:
@@ -558,14 +557,18 @@ class CustomFileDialog(QFileDialog):
 
     def get_windows_quick_access(self):
         try:
+
+            ps_script = (
+                "$s = New-Object -ComObject Shell.Application; "
+                "$s.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | "
+                "ForEach-Object { $_.Path }"
+            )
             cmd = [
                 "powershell",
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                "$s = New-Object -ComObject Shell.Application; "
-                "$s.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | "
-                "ForEach-Object { $_.Path }",
+                ps_script
             ]
             result = subprocess.run(
                 cmd,
@@ -643,6 +646,7 @@ class CustomFileDialog(QFileDialog):
 
     def closeEvent(self, event):
         super().closeEvent(event)
+
 from PyQt5.QtWidgets import QStyledItemDelegate
 from PyQt5.QtCore import QSize
 

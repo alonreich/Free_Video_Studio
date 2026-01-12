@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 )
+
 from PyQt5.QtCore import Qt
 from utilities.merger_ui_widgets import MergerUIWidgetsMixin
 

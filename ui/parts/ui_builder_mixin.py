@@ -7,10 +7,14 @@ from PyQt5.QtWidgets import (QGridLayout, QMessageBox, QSizePolicy, QHBoxLayout,
                              QVBoxLayout, QFrame, QSlider, QLabel, QStyle,
                              QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
                              QProgressBar, QComboBox, QWidget, QStyleOptionSpinBox, QStackedLayout)
+
 from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
-from ui.widgets.portrait_mask_overlay import PortraitMaskOverlay
+try:
+    from ui.widgets.portrait_mask_overlay import PortraitMaskOverlay
+except ImportError:
+    PortraitMaskOverlay = None
 
 class ClickableSpinBox(QDoubleSpinBox):
 
@@ -397,8 +401,11 @@ class UiBuilderMixin:
         self.video_surface.setAttribute(Qt.WA_NativeWindow)
         _center_row.addWidget(self.video_surface)
         video_layout.addWidget(self.video_viewport_container, stretch=1)
-        self.portrait_mask_overlay = PortraitMaskOverlay(self.video_frame)
-        self.portrait_mask_overlay.hide()
+        if PortraitMaskOverlay:
+            self.portrait_mask_overlay = PortraitMaskOverlay(self.video_frame)
+            self.portrait_mask_overlay.hide()
+        else:
+            self.portrait_mask_overlay = None
         self.video_surface.installEventFilter(self)
         video_and_volume_layout.addWidget(self.video_frame, stretch=1)
         player_col.addLayout(video_and_volume_layout)
@@ -989,8 +996,11 @@ class UiBuilderMixin:
             res = "1920x1080"
         if hasattr(self, "mobile_checkbox") and self.mobile_checkbox.isChecked():
             if self.video_surface.isVisible():
-                global_pos = self.video_surface.mapToGlobal(self.video_surface.rect().topLeft())
-                self.portrait_mask_overlay.setGeometry(global_pos.x(), global_pos.y(), self.video_surface.width(), self.video_surface.height())
+                top_left = self.video_surface.mapToGlobal(self.video_surface.rect().topLeft())
+                self.portrait_mask_overlay.setGeometry(
+                    top_left.x(), top_left.y(), 
+                    self.video_surface.width(), self.video_surface.height()
+                )
             self.portrait_mask_overlay.set_video_info(res, self.video_surface.size())
             self.portrait_mask_overlay.setVisible(True)
             self.portrait_mask_overlay.raise_()

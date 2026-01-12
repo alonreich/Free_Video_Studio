@@ -128,6 +128,7 @@ class MusicOffsetDialog(QDialog):
         self._caret.setStyleSheet("background:#3498db;")
         self._caret.hide()
         self._restore_geometry()
+
         import threading
         threading.Thread(target=self._init_assets, args=(float(initial_offset or 0.0),), daemon=True).start()
     @property
@@ -227,6 +228,7 @@ class MusicOffsetDialog(QDialog):
         self._total_ms = dur_ms
 
         def _apply_init():
+            if not self.isVisible(): return
             self.slider.setRange(0, self._total_ms)
             self.slider.set_duration_ms(self._total_ms)
             self.slider.setValue(max(0, min(self._total_ms, int(initial_offset * 1000.0 + 0.5))))
@@ -281,6 +283,7 @@ class MusicOffsetDialog(QDialog):
         try:
             self._player = self._vlc.media_player_new()
             m = self._vlc.media_new(self._mpath)
+
             import threading
             threading.Thread(target=m.parse, daemon=True).start()
             self._player.set_media(m)
