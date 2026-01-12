@@ -3,7 +3,6 @@ import sys
 import subprocess
 
 class MediaProber:
-
     def __init__(self, bin_dir, input_path):
         self.bin_dir = bin_dir
         self.input_path = input_path

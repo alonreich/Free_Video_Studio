@@ -5,7 +5,6 @@ from PyQt5.QtWidgets import QLabel, QPushButton
 from utilities.merger_utils import _load_conf, _save_conf
 
 class MergerWindowLogic:
-
     def __init__(self, window):
         self.window = window
 

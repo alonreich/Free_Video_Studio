@@ -2,7 +2,6 @@ import os
 import json
 
 class VideoConfig:
-
     def __init__(self, base_dir):
         self.base_dir = base_dir
         self.bin_dir = os.path.join(self.base_dir, 'binaries')

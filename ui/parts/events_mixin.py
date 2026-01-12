@@ -2,7 +2,6 @@ from PyQt5.QtCore import QEvent, Qt, QRect, QTimer
 from PyQt5.QtGui import QPainter, QColor, QFont, QPen
 
 class EventsMixin:
-
     def mousePressEvent(self, event):
         """Force keyboard focus back to the main window to enable shortcuts."""
         try:
@@ -20,62 +19,49 @@ class EventsMixin:
             p = QPainter(self._overlay)
             try:
                 p.setRenderHint(QPainter.Antialiasing)
-                p.fillRect(self._overlay.rect(), QColor(0, 0, 0, 165))
+                p.fillRect(self._overlay.rect(), QColor(0, 0, 0, 180))
                 panel = self._graph.geometry()
-                p.fillRect(panel, QColor(12, 22, 32, 235))
-                p.setPen(QColor(190, 190, 190))
-                p.setBrush(Qt.NoBrush)
-                p.drawRect(panel.adjusted(0, 0, -1, -1))
-                f = QFont(self.font()); f.setPointSize(11); p.setFont(f)
-                left = panel.left() + 80
-                top = panel.top() + 24
-                right = panel.right() - 16
-                bottom = panel.bottom() - 16
-                w = max(1, right - left)
-                h = max(1, bottom - top)
-                gap = 12
-                bands = 4
-                band_h = (h - gap * (bands - 1)) // bands
-
-                def band_rect(row: int):
-                    y0 = top + row * (band_h + gap)
-                    return QRect(left, y0, w, band_h)
-
-                def draw_band_frame(r: QRect):
-                    pen_axes = QPen(QColor(230,230,230)); pen_axes.setWidth(2)
-                    p.setPen(pen_axes); p.drawRect(r)
-                    pen_grid = QPen(QColor(130,130,130)); pen_grid.setStyle(Qt.DashLine)
-                    p.setPen(pen_grid); p.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
+                f = QFont("Consolas", 10, QFont.Bold); p.setFont(f)
+                left, top = panel.left() + 110, panel.top() + 10
+                right, bottom = panel.right() - 20, panel.bottom() - 10
+                w, h = max(1, right - left), max(1, bottom - top)
+                gap_y, bands = 20, 4
+                band_h = (h - gap_y * (bands - 1)) // bands
+                total_seconds = len(getattr(self, "_cpu_hist", [])) * 2
+                time_str = f"{total_seconds//60:02d}:{total_seconds%60:02d}"
 
                 def plot_band(hist, label, color, row):
-                    r = band_rect(row)
-                    draw_band_frame(r)
-                    last = int(list(hist)[-1]) if hist else 0
-                    p.setPen(QColor(240,240,240))
-                    p.drawText(panel.left() + 12, r.top() + 14, label)
-                    p.drawText(r.right() - 36, r.top() + 14, f"{last}%")
-                    vals = list(hist)[-(r.width()-2):] if hist else []
-                    if not vals:
-                        return
-                    plot_left = r.left() + 1
-                    plot_right = r.right() - 1
-                    plot_w = max(1, plot_right - plot_left)
-                    scale_h = r.height() - 18
-                    base_y = r.bottom() - 8
-                    pen_line = QPen(color); pen_line.setWidth(2); p.setPen(pen_line)
-                    prev = None
-                    pad = plot_w - len(vals)
-                    for i, v in enumerate(vals):
-                        x = plot_left + max(0, pad) + i
-                        v = max(0, min(100, int(v)))
-                        y = base_y - int((v/100.0) * scale_h)
-                        if prev: p.drawLine(prev[0], prev[1], x, y)
-                        prev = (x, y)
-                    p.drawEllipse(prev[0]-2, prev[1]-2, 4, 4)
-                plot_band(self._cpu_hist,  "CPU %",   QColor(70, 210, 255), 0)
-                plot_band(self._gpu_hist,  "GPU %",   QColor(80, 255, 150), 1)
-                plot_band(self._mem_hist,  "MEM %",   QColor(255, 165, 90),  2)
-                plot_band(self._iops_hist, "IOPS %",  QColor(255, 210, 80),  3)
+                    y0 = top + row * (band_h + gap_y)
+                    r_lane = QRect(left, y0, w, band_h)
+                    p.setPen(QPen(QColor(255, 255, 255, 60), 2))
+                    p.drawLine(left - 15, y0, left - 15, y0 + band_h + 10)
+                    last_val = int(list(hist)[-1]) if hist else 0
+                    p.setPen(QColor(200, 200, 200))
+                    p.drawText(panel.left() + 5, y0 + 12, label)
+                    f_big = QFont("Consolas", 14, QFont.Bold); p.setFont(f_big)
+                    p.setPen(color)
+                    p.drawText(panel.left() + 5, y0 + 35, f"{last_val}%")
+                    p.setFont(f)
+                    p.setPen(QColor(100, 100, 100))
+                    p.drawText(panel.left() + 5, y0 + 55, f"T: {time_str}")
+                    p.setPen(QPen(QColor(255, 255, 255, 20), 1))
+                    p.drawLine(left, y0 + band_h, right, y0 + band_h)
+                    vals = list(hist) if hist else []
+                    if not vals: return
+                    bar_gap = 4
+                    max_bars = w // (20 + bar_gap)
+                    visible_vals = vals[-max_bars:]
+                    actual_bar_w = max(20, min(30, (w // len(visible_vals)) - bar_gap)) if visible_vals else 20
+                    for i, v in enumerate(visible_vals):
+                        bx = left + i * (actual_bar_w + bar_gap)
+                        bh = int((max(2, v) / 100.0) * band_h)
+                        p.setPen(QPen(color.darker(150), 1))
+                        p.setBrush(color)
+                        p.drawRect(bx, r_lane.bottom() - bh, actual_bar_w, bh)
+                plot_band(self._cpu_hist,  "SYSTEM CPU", QColor(0, 230, 255), 0)
+                plot_band(self._gpu_hist,  "NVIDIA GPU", QColor(0, 255, 130), 1)
+                plot_band(self._mem_hist,  "MEMORY USE", QColor(255, 180, 0),  2)
+                plot_band(self._iops_hist, "DISK I/O",   QColor(255, 80, 80),  3)
             finally:
                 p.end()
             return True

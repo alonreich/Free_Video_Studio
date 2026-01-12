@@ -7,7 +7,6 @@ from utilities.merger_utils import _human, _get_logger
 from utilities.merger_ffmpeg_process import FFMpegProcessMixin
 
 class FFMpegHandler(FFMpegProcessMixin):
-
     def __init__(self, parent):
         self.parent = parent
         self.logger = _get_logger()

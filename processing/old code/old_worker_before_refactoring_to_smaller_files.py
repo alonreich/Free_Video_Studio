@@ -11,7 +11,6 @@ from PyQt5.QtCore import QThread
 from PyQt5.QtGui import QFont, QFontMetrics
 
 class ProcessThread(QThread):
-
     def _popen(self, cmd):
         startupinfo = None
         creationflags = 0

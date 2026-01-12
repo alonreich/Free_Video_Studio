@@ -3,7 +3,6 @@ from PyQt5.QtGui import QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect
 
 class PortraitMaskOverlay(QWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)

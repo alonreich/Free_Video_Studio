@@ -4,7 +4,6 @@ from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtWidgets import QStyle
 
 class PlayerMixin:
-
     def _safe_stop_playback(self):
         try:
             if getattr(self, "player", None):

@@ -3,8 +3,8 @@ import sys
 import tokenize
 import re
 import ctypes
-RED = '\033[41m\033[97m'
-GREEN = '\033[42m\033[97m'
+RED = '\033[48;5;52m\033[97;1m'
+GREEN = '\033[48;5;22m\033[97m'
 CYAN = '\033[96m'
 RESET = '\033[0m'
 
@@ -77,48 +77,37 @@ def analyze_comments(filepath):
                 new_line = re.sub(cite_pattern, '', line)
                 if new_line != line:
                     actions[i] = {'action': 'EDIT', 'type': 'CITATION', 'line': i + 1, 'content': 'Removed', 'new_content': new_line}
-        
-
         for i, line in enumerate(lines):
             if i in actions or i == 0: continue
             stripped = line.lstrip()
-            
-
+            if not stripped: continue
+            prev = i - 1
+            empties = []
+            while prev >= 0 and not lines[prev].strip():
+                if prev in actions: break
+                empties.append(prev)
+                prev -= 1
+            prev_content = lines[prev].strip() if prev >= 0 else ""
             if stripped.startswith(('def ', 'class ', 'import ', 'from ')):
-                prev_line = lines[i-1]
-                prev_stripped = prev_line.strip()
-                
-
-                if prev_stripped:
-
-                    if stripped.startswith(('import ', 'from ')) and prev_stripped.startswith(('import ', 'from ')):
-                        continue
-
-                    if prev_stripped.endswith(':'):
-                        continue
-
-                    if prev_stripped.startswith('@'):
-                        continue
-                        
-
-                    actions[i] = {'action': 'EDIT', 'type': 'MISSING NEWLINE', 'line': i + 1, 'content': 'Add Blank Line Above', 'new_content': '\n' + line}
-                
-
-                else:
-                    prev = i - 1
-                    empties = []
-
-                    while prev >= 0 and not lines[prev].strip():
-                        if prev in actions: break
-                        empties.append(prev)
-                        prev -= 1
-                    
-
-                    if len(empties) > 1:
-
-                        for idx in empties[1:]: 
+                is_import = stripped.startswith(('import ', 'from '))
+                prev_is_import = prev_content.startswith(('import ', 'from '))
+                should_have_empty = True
+                if prev < 0: should_have_empty = False
+                if prev_content.endswith(':'): should_have_empty = False
+                if prev_content.startswith('@'): should_have_empty = False
+                if is_import and prev_is_import: should_have_empty = False
+                if should_have_empty:
+                    if not empties:
+                        actions[i] = {'action': 'EDIT', 'type': 'MISSING NEWLINE', 'line': i + 1, 'content': 'Add Blank Line Above', 'new_content': '\n' + line}
+                    elif len(empties) > 1:
+                        for idx in empties[1:]:
                             actions[idx] = {'action': 'DELETE', 'type': 'EXCESSIVE SPACE', 'line': idx + 1, 'content': '<Excessive Empty>'}
-
+                else:
+                    for idx in empties:
+                        actions[idx] = {'action': 'DELETE', 'type': 'UNNECESSARY EMPTY', 'line': idx + 1, 'content': '<Unnecessary Empty>'}
+            else:
+                for idx in empties:
+                    actions[idx] = {'action': 'DELETE', 'type': 'UNNECESSARY EMPTY', 'line': idx + 1, 'content': '<Unnecessary Empty>'}
         return [v for k, v in sorted(actions.items())]
     except Exception as e:
         return []

@@ -3,7 +3,6 @@ from PyQt5.QtGui import QPainter, QColor
 from PyQt5.QtWidgets import QListWidget, QAbstractItemView
 
 class DraggableListWidget(QListWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragDropMode(QAbstractItemView.InternalMove)

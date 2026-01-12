@@ -2,7 +2,6 @@ import os
 from .system_utils import create_subprocess
 
 class ConcatProcessor:
-
     def __init__(self, ffmpeg_path, logger, base_dir, temp_dir):
         self.ffmpeg_path = ffmpeg_path
         self.logger = logger

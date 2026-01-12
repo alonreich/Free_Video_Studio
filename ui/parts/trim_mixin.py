@@ -1,7 +1,6 @@
 from PyQt5.QtWidgets import QStyle
 
 class TrimMixin:
-
     def _update_trim_inputs(self):
         """Update spinbox limits based on the original duration."""
         if not hasattr(self, "start_minute_input"): return

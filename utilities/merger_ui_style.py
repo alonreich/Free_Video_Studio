@@ -1,5 +1,4 @@
 class MergerUIStyleMixin:
-
     def set_style(self):
         """Applies a dark theme stylesheet similar to the main app."""
         self.parent.setStyleSheet("""

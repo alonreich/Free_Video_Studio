@@ -3,7 +3,6 @@ from PyQt5.QtGui import QPainter, QFontMetrics, QPen, QColor
 from PyQt5.QtWidgets import QSlider, QToolTip
 
 class TimelineSlider(QSlider):
-
     def __init__(self, orientation=Qt.Horizontal, parent=None):
         super().__init__(orientation, parent)
         self._duration_ms = 0

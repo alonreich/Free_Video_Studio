@@ -3,7 +3,6 @@ import time
 from .system_utils import create_subprocess, monitor_ffmpeg_progress
 
 class IntroProcessor:
-
     def __init__(self, ffmpeg_path, logger, encoder_mgr, temp_dir):
         self.ffmpeg_path = ffmpeg_path
         self.logger = logger

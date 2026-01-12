@@ -3,7 +3,6 @@ from PyQt5.QtCore import Qt, QPoint, QRect
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap
 
 class DrawWidget(QWidget):
-
     def __init__(self, parent=None):
         super(DrawWidget, self).__init__(parent)
         self.begin = QPoint()

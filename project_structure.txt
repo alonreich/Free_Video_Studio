@@ -35,87 +35,91 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 ├── !!!_Ouput_Video_Files_!!!/: Default output directory for processed videos.
 │
 ├── advanced/: A separate, multi-track video editor application.
-│   ├── (Content from .\advanced\project_structure.txt)
+│   ├── (Content from .\advanced\project_structure.txt)
 │
 ├── binaries/: Contains all the necessary binaries for the application to run (ffmpeg, vlc, etc.).
 │
 ├── config/: Contains configuration files for the applications.
 │
 ├── developer_tools/: Tools for development purposes.
-│   ├── app_handlers.py: Handles events for the crop tool application.
-│   ├── cleaner.py: A script to clean python files by removing comments.
-│   ├── config.py: Configuration for the developer tools.
-│   ├── crop_tools.py: The main entry point for the crop tool application.
-│   ├── crop_widgets.py: Widgets used in the crop tool.
-│   ├── graphics_items.py: Custom graphics items for the crop tool.
-│   ├── Keyboard_Mixing.py: A mixin for keyboard shortcuts.
-│   ├── logger_setup.py: Sets up the logger for the developer tools.
-│   ├── media_processor.py: Processes media for the crop tool.
-│   ├── portrait_window.py: The portrait window for the crop tool.
-│   ├── ui_setup.py: Sets up the UI for the crop tool.
-│   └── utils.py: Utility functions for the developer tools.
+│   ├── app_handlers.py: Handles events for the crop tool application.
+│   ├── cleaner.py: A script to clean python files by removing comments.
+│   ├── config.py: Configuration for the developer tools.
+│   ├── crop_tools.py: The main entry point for the crop tool application.
+│   ├── crop_widgets.py: Widgets used in the crop tool.
+│   ├── graphics_items.py: Custom graphics items for the crop tool.
+│   ├── Keyboard_Mixing.py: A mixin for keyboard shortcuts.
+│   ├── logger_setup.py: Sets up the logger for the developer tools.
+│   ├── media_processor.py: Processes media for the crop tool.
+│   ├── portrait_window.py: The portrait window for the crop tool.
+│   ├── ui_setup.py: Sets up the UI for the crop tool.
+│   └── utils.py: Utility functions for the developer tools.
 │
 ├── icons/: Contains application icons.
-│   └── Video_Icon_File.ico
+│   └── Video_Icon_File.ico
 │
 ├── logs/: Directory for application log files.
 │
 ├── mp3/: Directory for background music MP3 files.
 │
 ├── processing/: The core video processing logic.
-│   ├── bitrate_logic.py: Calculates the video bitrate based on quality settings.
-│   ├── crops_coordinations.conf: Configuration for crop coordinates and overlays.
-│   ├── encoder_settings.py: This file is intentionally left blank. Encoder settings have been moved to ffmpeg_utils.py.
-│   ├── ffmpeg_utils.py: Utility functions for running ffmpeg processes.
-│   ├── filter_generators.py: Generates complex ffmpeg filter strings.
-│   └── worker.py: The main worker thread for video processing.
+│   ├── config_data.py: Manages video configuration, crop coordinates, and quality settings.
+│   ├── crops_coordinations.conf: Configuration file for external crop coordinates (referenced by config_data.py).
+│   ├── encoders.py: Manages hardware/CPU encoder selection and codec flags.
+│   ├── filter_builder.py: Constructs complex FFmpeg filter graphs for video/audio processing.
+│   ├── media_utils.py: Utilities for media probing (ffprobe) and bitrate calculations.
+│   ├── step_concat.py: Handles the final concatenation of video parts.
+│   ├── step_intro.py: Generates the intro sequence for the video.
+│   ├── system_utils.py: System-level utilities for subprocess handling, time parsing, and progress monitoring.
+│   ├── text_ops.py: Handles text formatting, wrapping, and bidirectional (Hebrew) support.
+│   └── worker.py: The central worker thread orchestrating the rendering pipeline.
 │
 ├── system/: System-level modules for the main application.
-│   ├── config.py: Manages application configuration.
-│   └── logger.py: Sets up the logger for the application.
+│   ├── config.py: Manages application configuration.
+│   └── logger.py: Sets up the logger for the application.
 │
 ├── ui/: The user interface for the main application.
-│   ├── main_window.py: The main window of the application.
-│   ├── parts/: Mixins for the main window.
-│   │   ├── events_mixin.py: Mixin for handling events.
-│   │   ├── ffmpeg_mixin.py: Mixin for handling ffmpeg processes.
-│   │   ├── keyboard_mixin.py: Mixin for handling keyboard shortcuts.
-│   │   ├── music_mixin.py: Mixin for handling background music.
-│   │   ├── phase_overlay_mixin.py: Mixin for handling the processing phase overlay.
-│   │   ├── player_mixin.py: Mixin for handling the video player.
-│   │   ├── trim_mixin.py: Mixin for handling video trimming.
-│   │   ├── ui_builder_mixin.py: Mixin for building the UI.
-│   │   └── volume_mixin.py: Mixin for handling volume controls.
-│   └── widgets/: Custom widgets for the UI.
-│       ├── clickable_button.py: A button with a custom click event.
-│       ├── custom_file_dialog.py: A custom file dialog.
-│       ├── draggable_list_widget.py: A list widget with drag and drop functionality.
-│       ├── drop_area.py: A frame that accepts file drops.
-│       ├── music_offset_dialog.py: A dialog for setting the music offset.
-│       ├── portrait_mask_overlay.py: An overlay for the portrait mode.
-│       ├── slider_container.py: A container for the timeline slider.
-│       ├── timeline_slider.py: A custom slider for the timeline.
-│       ├── tooltip_manager.py: Manages tooltips for widgets.
-│       └── trimmed_slider.py: A slider with trim handles.
+│   ├── main_window.py: The main window of the application.
+│   ├── parts/: Mixins for the main window.
+│   │   ├── events_mixin.py: Mixin for handling events.
+│   │   ├── ffmpeg_mixin.py: Mixin for handling ffmpeg processes.
+│   │   ├── keyboard_mixin.py: Mixin for handling keyboard shortcuts.
+│   │   ├── music_mixin.py: Mixin for handling background music.
+│   │   ├── phase_overlay_mixin.py: Mixin for handling the processing phase overlay.
+│   │   ├── player_mixin.py: Mixin for handling the video player.
+│   │   ├── trim_mixin.py: Mixin for handling video trimming.
+│   │   ├── ui_builder_mixin.py: Mixin for building the UI.
+│   │   └── volume_mixin.py: Mixin for handling volume controls.
+│   └── widgets/: Custom widgets for the UI.
+│       ├── clickable_button.py: A button with a custom click event.
+│       ├── custom_file_dialog.py: A custom file dialog.
+│       ├── draggable_list_widget.py: A list widget with drag and drop functionality.
+│       ├── drop_area.py: A frame that accepts file drops.
+│       ├── music_offset_dialog.py: A dialog for setting the music offset.
+│       ├── portrait_mask_overlay.py: An overlay for the portrait mode.
+│       ├── slider_container.py: A container for the timeline slider.
+│       ├── timeline_slider.py: A custom slider for the timeline.
+│       ├── tooltip_manager.py: Manages tooltips for widgets.
+│       └── trimmed_slider.py: A slider with trim handles.
 │
 └── utilities/: The Video Merger application.
-    ├── merger_ffmpeg_process.py: Handles the ffmpeg process for the merger.
-    ├── merger_ffmpeg.py: The main ffmpeg handler for the merger.
-    ├── merger_handlers_buttons.py: Handlers for the buttons in the merger.
-    ├── merger_handlers_dialogs.py: Handlers for the dialogs in the merger.
-    ├── merger_handlers_list.py: Handlers for the list widget in the merger.
-    ├── merger_handlers_main.py: The main event handler for the merger.
-    ├── merger_handlers_preview.py: Handlers for the preview in the merger.
-    ├── merger_music_dialog.py: The music dialog for the merger.
-    ├── merger_music.py: Handles music for the merger.
-    ├── merger_ui_badge.py: The badge for the UI in the merger.
-    ├── merger_ui_build.py: Builds the UI for the merger.
-    ├── merger_ui_main.py: The main UI for the merger.
-    ├── merger_ui_overlay.py: The overlay for the UI in the merger.
-    ├── merger_ui_style.py: The style for the UI in the merger.
-    ├── merger_ui_widgets.py: Widgets for the UI in the merger.
-    ├── merger_ui.py: The main UI module for the merger.
-    ├── merger_utils.py: Utility functions for the merger.
-    ├── merger_window_logic.py: The logic for the merger window.
-    ├── merger_window.py: The main window for the merger.
-    └── video_merger.py: Main entry point for the Video Merger application.
+    ├── merger_ffmpeg_process.py: Handles the ffmpeg process for the merger.
+    ├── merger_ffmpeg.py: The main ffmpeg handler for the merger.
+    ├── merger_handlers_buttons.py: Handlers for the buttons in the merger.
+    ├── merger_handlers_dialogs.py: Handlers for the dialogs in the merger.
+    ├── merger_handlers_list.py: Handlers for the list widget in the merger.
+    ├── merger_handlers_main.py: The main event handler for the merger.
+    ├── merger_handlers_preview.py: Handlers for the preview in the merger.
+    ├── merger_music_dialog.py: The music dialog for the merger.
+    ├── merger_music.py: Handles music for the merger.
+    ├── merger_ui_badge.py: The badge for the UI in the merger.
+    ├── merger_ui_build.py: Builds the UI for the merger.
+    ├── merger_ui_main.py: The main UI for the merger.
+    ├── merger_ui_overlay.py: The overlay for the UI in the merger.
+    ├── merger_ui_style.py: The style for the UI in the merger.
+    ├── merger_ui_widgets.py: Widgets for the UI in the merger.
+    ├── merger_ui.py: The main UI module for the merger.
+    ├── merger_utils.py: Utility functions for the merger.
+    ├── merger_window_logic.py: The logic for the merger window.
+    ├── merger_window.py: The main window for the merger.
+    └── video_merger.py: Main entry point for the Video Merger application.

@@ -11,7 +11,6 @@ from portrait_window import PortraitWindow
 from utils import cleanup_temp_snapshots
 
 class CropAppHandlers:
-
     def connect_signals(self):
         self.play_pause_button.clicked.connect(self.play_pause)
         self.open_button.clicked.connect(self.open_file)

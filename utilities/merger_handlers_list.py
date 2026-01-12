@@ -5,7 +5,6 @@ from utilities.merger_utils import _human
 from utilities.merger_handlers_buttons import MergerHandlersButtonsMixin
 
 class MergerHandlersListMixin(MergerHandlersButtonsMixin):
-
     def on_merge_clicked(self):
         try:
             self.parent.btn_merge.setEnabled(False)

@@ -26,7 +26,6 @@ from ui.parts.ffmpeg_mixin import FfmpegMixin
 from ui.parts.keyboard_mixin import KeyboardMixin
 
 class _QtLiveLogHandler(logging.Handler):
-
     def __init__(self, ui_owner):
         super().__init__()
         self.ui = ui_owner
@@ -176,7 +175,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         except Exception:
             pass
         try:
-
             def _unraisable(hook):
                 self.logger.error("UNRAISABLE: %s", hook)
             sys.unraisablehook = _unraisable
@@ -338,9 +336,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.end_second_input.setValue(end_s)
             if self.add_music_checkbox.isChecked():
                 self.positionSlider.set_music_times(start_sec, end_sec)
-                if hasattr(self, "music_offset_input"):
-                    self.music_offset_input.setValue(start_sec)
-                self.logger.info(f"MUSIC: trim automatically adjusted to match video trim.")
+                self.logger.info(f"MUSIC: trim visual update (offset preserved).")
         finally:
             self.start_minute_input.blockSignals(False)
             self.start_second_input.blockSignals(False)
@@ -520,41 +516,30 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 self.vlc_player.set_hwnd(int(self.video_surface.winId()))
         except Exception as hwnd_err:
             self.logger.error("Failed to set HWND for player: %s", hwnd_err)
-        
         self.vlc_player.play()
-        
-
         toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
         if toggle_method:
             QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
-
-
         self._poll_retries = 0
         QTimer.singleShot(100, self._poll_for_duration)
-        
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
 
     def _poll_for_duration(self):
         """Repeatedly checks VLC for valid duration to update timeline slider."""
         try:
-
             self.vlc_player.set_rate(self.playback_rate)
             self.vlc_player.audio_set_mute(False)
             if hasattr(self, 'apply_master_volume'):
                 self.apply_master_volume()
-
-
             dur = 0
             if self.vlc_player.get_media():
                 dur = self.vlc_player.get_media().get_duration()
-            
             if dur > 0:
                 self.positionSlider.setRange(0, dur)
                 self.positionSlider.set_duration_ms(dur)
                 self.logger.info(f"Timeline updated: Duration {dur}ms found via VLC.")
             else:
-
                 if self._poll_retries < 20:
                     self._poll_retries += 1
                     QTimer.singleShot(100, self._poll_for_duration)

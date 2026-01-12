@@ -6,7 +6,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 
 class MergerUIWidgetsMixin:
-
     def create_center_buttons(self):
         center = QHBoxLayout()
         center.setContentsMargins(0, 0, 0, 0)

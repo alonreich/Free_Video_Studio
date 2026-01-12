@@ -12,7 +12,6 @@ from .step_intro import IntroProcessor
 from .step_concat import ConcatProcessor
 
 class ProcessThread(QThread):
-
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
                 script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
                 is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
@@ -178,7 +177,8 @@ class ProcessThread(QThread):
                 '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}",
                 '-i', self.input_path,
             ]
-            if has_bg: cmd += ['-i', self.bg_music_path]
+            if has_bg:
+                cmd += ['-i', self.bg_music_path]
             cmd += vcodec + [
                 '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
                 '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
@@ -200,7 +200,8 @@ class ProcessThread(QThread):
                 for enc in self.encoder_mgr.get_fallback_list():
                     self.status_update_signal.emit(f"Hardware failure. Trying {enc}...")
                     cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_path]
-                    if has_bg: cmd_retry += ['-i', self.bg_music_path]
+                    if has_bg:
+                        cmd_retry += ['-ss', f"{self.bg_music_offset:.3f}", '-i', self.bg_music_path]
                     if enc == "libx264":
                         cmd_retry += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
                     else:

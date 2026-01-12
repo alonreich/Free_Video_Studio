@@ -2,8 +2,9 @@ import os
 import sys
 import tempfile
 import subprocess
-from PyQt5.QtCore import Qt, QTimer, QEvent
-from PyQt5.QtGui import QPixmap
+import traceback
+from PyQt5.QtCore import Qt, QTimer, QEvent, pyqtSignal
+from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSizePolicy
 from ui.widgets.trimmed_slider import TrimmedSlider
 try:
@@ -13,9 +14,11 @@ except Exception:
 PREVIEW_VISUAL_LEAD_MS = 1100
 
 class MusicOffsetDialog(QDialog):
+    _ui_call = pyqtSignal(object)
 
     def __init__(self, parent, vlc_instance, audio_path: str, initial_offset: float, bin_dir: str):
         super().__init__(parent)
+        self._ui_call.connect(self._run_ui_call)
         self.setWindowTitle("Choose Background Music Start")
         self.setModal(True)
         self._vlc = vlc_instance
@@ -40,7 +43,7 @@ class MusicOffsetDialog(QDialog):
         self.wave.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.wave.setAlignment(Qt.AlignCenter)
         self.wave.setScaledContents(False)
-        self.wave.setStyleSheet("background: black;")
+        self.wave.setStyleSheet("background: black; color: #999; font-weight: bold;")
         self.wave.installEventFilter(self)
         v.addWidget(self.wave)
         self.slider = TrimmedSlider(self)
@@ -132,7 +135,6 @@ class MusicOffsetDialog(QDialog):
         import threading
         threading.Thread(target=self._init_assets, args=(float(initial_offset or 0.0),), daemon=True).start()
     @property
-
     def selected_offset(self):
         return float(self.slider.value()) / 1000.0
 
@@ -224,42 +226,78 @@ class MusicOffsetDialog(QDialog):
 
     def _init_assets(self, initial_offset: float):
         dur_ms = self._probe_duration_ms()
-        if dur_ms <= 0: dur_ms = 1
+        if dur_ms <= 0:
+            dur_ms = 1
         self._total_ms = dur_ms
 
         def _apply_init():
-            if not self.isVisible(): return
+            if not self.isVisible():
+                return
             self.slider.setRange(0, self._total_ms)
             self.slider.set_duration_ms(self._total_ms)
             self.slider.setValue(max(0, min(self._total_ms, int(initial_offset * 1000.0 + 0.5))))
-        QTimer.singleShot(0, _apply_init)
+        self._post_ui(_apply_init)
         try:
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-                self._temp_png_path = tf.name
+            if not os.path.exists(self._mpath):
+                raise FileNotFoundError(f"Audio file missing: {self._mpath}")
+            ffmpeg_exe = self._ffmpeg()
+            if os.path.sep in ffmpeg_exe and not os.path.exists(ffmpeg_exe):
+                raise FileNotFoundError(f"FFmpeg binary missing at: {ffmpeg_exe}")
+            tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            self._temp_png_path = tf.name
+            tf.close()
+            input_abs = os.path.abspath(self._mpath)
+            output_abs = os.path.abspath(self._temp_png_path)
             cmd = [
-                self._ffmpeg(), "-hide_banner", "-loglevel", "error",
-                "-copyts", "-start_at_zero",
-                "-i", self._mpath,
+                ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", input_abs,
                 "-frames:v", "1",
-                "-filter_complex",
-                "volume=4.0,aresample=48000,pan=mono|c0=0.5*c0+0.5*c1,showwavespic=s=2400x380:split_channels=0:colors=0x387c00",
-                "-y", self._temp_png_path
+                "-filter_complex", "volume=5.0,showwavespic=s=1200x300:colors=0x387c00",
+                output_abs
             ]
-            subprocess.run(cmd, check=True, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            )
+            dbg = (
+                "Waveform DEBUG\n"
+                f"ffmpeg: {ffmpeg_exe}\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"rc: {result.returncode}\n"
+                f"stdout: {result.stdout.strip()}\n"
+                f"stderr: {result.stderr.strip()}\n"
+                f"out: {output_abs}\n"
+                f"out_exists: {os.path.exists(output_abs)}\n"
+                f"out_size: {(os.path.getsize(output_abs) if os.path.exists(output_abs) else -1)}\n"
+            )
+            print(dbg)
+            if result.returncode != 0:
+                raise RuntimeError(dbg[:800])
+            if not os.path.exists(output_abs) or os.path.getsize(output_abs) == 0:
+                raise RuntimeError(dbg[:800])
 
             def _apply_wave():
                 pm = QPixmap(self._temp_png_path)
                 if pm.isNull():
-                    self.wave.setText("Error: Could not load waveform image.")
+                    self.wave.setText("Error: Generated waveform is invalid.")
                 else:
                     self._pm_src = pm
                     self._refresh_wave_scaled()
                 self._sync_caret()
-            QTimer.singleShot(0, _apply_wave)
-        except Exception:
-            QTimer.singleShot(0, lambda: self.wave.setText("Error: Waveform generation failed."))
+            self._post_ui(_apply_wave)
+        except subprocess.TimeoutExpired:
+            self._post_ui(lambda: self.wave.setText("Error: Waveform generation timed out."))
             self._pm_src = None
-        QTimer.singleShot(0, self._sync_caret)
+        except Exception as e:
+            traceback.print_exc()
+            err_msg = f"Error: {str(e)}"
+            self._post_ui(lambda: self.wave.setText(err_msg))
+            self._pm_src = None
+        self._post_ui(self._sync_caret)
 
     def _refresh_wave_scaled(self):
         try:
@@ -422,7 +460,6 @@ class MusicOffsetDialog(QDialog):
             pass
 
     def _on_vlc_ended(self, event=None):
-
         def _ui():
             try:
                 self._timer.stop()
@@ -465,3 +502,15 @@ class MusicOffsetDialog(QDialog):
             cm.save_config(cfg)
         except Exception:
             pass
+
+    def _run_ui_call(self, fn):
+        try:
+            fn()
+        except Exception:
+            traceback.print_exc()
+
+    def _post_ui(self, fn):
+        try:
+            self._ui_call.emit(fn)
+        except Exception:
+            traceback.print_exc()

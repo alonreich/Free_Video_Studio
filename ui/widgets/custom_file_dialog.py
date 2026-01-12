@@ -31,7 +31,6 @@ from PyQt5.QtCore import (
 )
 
 class RubberBandHelper(QObject):
-
     def __init__(self, tree_view: QTreeView):
         super().__init__(tree_view)
         self._tree = tree_view
@@ -163,7 +162,6 @@ class CenterHeaderProxyStyle(QProxyStyle):
         super().drawControl(element, option, painter, widget)
 
 class CenterAlignedTreeView(QTreeView):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._align_timer = None
@@ -188,7 +186,6 @@ class CenterAlignedTreeView(QTreeView):
             pass
 
 class CustomFileDialog(QFileDialog):
-
     def __init__(self, *args, config=None, **kwargs):
         super(CustomFileDialog, self).__init__(*args, **kwargs)
         self.config = config
@@ -557,7 +554,6 @@ class CustomFileDialog(QFileDialog):
 
     def get_windows_quick_access(self):
         try:
-
             ps_script = (
                 "$s = New-Object -ComObject Shell.Application; "
                 "$s.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | "
@@ -651,7 +647,6 @@ from PyQt5.QtWidgets import QStyledItemDelegate
 from PyQt5.QtCore import QSize
 
 class _CenteredTextDelegate(QStyledItemDelegate):
-
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.displayAlignment = Qt.AlignCenter

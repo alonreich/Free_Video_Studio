@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 
 class FFMpegProcessMixin:
-
     def _process_ffmpeg_output(self):
         """Extracts and displays the current progress from FFmpeg's stderr output."""
         try:

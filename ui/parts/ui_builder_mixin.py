@@ -17,7 +17,6 @@ except ImportError:
     PortraitMaskOverlay = None
 
 class ClickableSpinBox(QDoubleSpinBox):
-
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             opt = QStyleOptionSpinBox()
@@ -30,7 +29,6 @@ class ClickableSpinBox(QDoubleSpinBox):
         super().mousePressEvent(event)
 
 class UiBuilderMixin:
-
     def _pick_thumbnail_from_current_frame(self):
         """
         Capture the current absolute player time (seconds) as the desired
@@ -843,7 +841,7 @@ class UiBuilderMixin:
         self.music_volume_slider.setFocusPolicy(Qt.NoFocus)
         self.music_volume_slider.installEventFilter(self)
         self.music_volume_slider.setFixedHeight(170)
-        eff_default = 80
+        eff_default = 100
         raw = self.music_volume_slider.maximum() + self.music_volume_slider.minimum() - eff_default
         _knob = self.positionSlider.palette().highlight().color().name()
         self.music_volume_slider.setStyleSheet(f"""
@@ -896,7 +894,7 @@ class UiBuilderMixin:
         init_raw = int(self.music_volume_slider.value())
         init_eff = self._music_eff(init_raw)
         self.music_volume_label.setText(f"{init_eff}%")
-        self.music_volume_badge = QLabel("80%", self)
+        self.music_volume_badge = QLabel("100%", self)
         self.music_volume_badge.setObjectName("musicVolumeBadge")
         self.music_volume_badge.setStyleSheet(
             "color: white; background: rgba(0,0,0,160); padding: 2px 6px; "

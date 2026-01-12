@@ -28,7 +28,6 @@ PID_FILE_NAME = "fortnite_video_software_app.pid"
 PID_FILE_PATH = os.path.join(tempfile.gettempdir(), PID_FILE_NAME)
 
 class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHandlers):
-
     def __init__(self, logger_instance, file_path=None):
         super().__init__()
         self.logger = logger_instance

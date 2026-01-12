@@ -11,7 +11,6 @@ from graphics_items import ResizablePixmapItem
 from config import PORTRAIT_WINDOW_STYLESHEET
 
 class FinishedDialog(QDialog):
-
     def __init__(self, data_string, parent=None):
         super(FinishedDialog, self).__init__(parent)
         self.setWindowTitle("Crop Information")
@@ -52,7 +51,6 @@ class FinishedDialog(QDialog):
         self.flash_count += 1
 
 class PortraitView(QGraphicsView):
-
     def keyPressEvent(self, event):
         selected_items = self.scene().selectedItems()
         if selected_items:
@@ -78,7 +76,6 @@ class PortraitView(QGraphicsView):
         super().keyPressEvent(event)
 
 class PortraitWindow(PersistentWindowMixin, QWidget):
-
     def __init__(self, original_resolution, config_path, parent=None):
         super(PortraitWindow, self).__init__(parent)
         self.original_resolution = original_resolution

@@ -1,7 +1,6 @@
 from PyQt5.QtWidgets import QMessageBox
 
 class MergerHandlersButtonsMixin:
-
     def update_button_states(self):
         n = self.parent.listw.count()
         is_processing = self.parent.ffmpeg_handler.process is not None

@@ -5,7 +5,6 @@ from utilities.merger_utils import _mp3_dir, _ffprobe
 from utilities.merger_music_dialog import MusicDialogHandler
 
 class MusicHandler(MusicDialogHandler):
-
     def __init__(self, parent):
         self.parent = parent
         self.logger = parent.logger

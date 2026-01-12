@@ -8,7 +8,6 @@ import subprocess
 from utilities.merger_utils import _human
 
 class MergerHandlersDialogsMixin:
-
     def open_folder(self, path: str):
         folder_path = str(Path(path))
         if not folder_path or not os.path.isdir(folder_path):

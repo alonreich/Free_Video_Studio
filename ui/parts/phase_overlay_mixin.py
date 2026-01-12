@@ -11,7 +11,6 @@ from PyQt5.QtWidgets import QWidget, QPlainTextEdit
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
 class PhaseOverlayMixin:
-
     def _append_live_log(self, line: str) -> None:
         """Appends a log line to the overlay's live_log widget."""
         try:
@@ -32,12 +31,11 @@ class PhaseOverlayMixin:
         if getattr(self, "_overlay", None):
             return
         self._overlay = QWidget(self)
-        self._overlay.setWindowFlags(Qt.SubWindow | Qt.FramelessWindowHint)
+        self._overlay.setWindowFlags(Qt.FramelessWindowHint)
         self._overlay.setAttribute(Qt.WA_NoSystemBackground, True)
         self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self._overlay.hide()
         self._graph = QWidget(self._overlay)
-        self._graph.setFixedSize(946, 364)
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)
         self._graph.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.live_log = QPlainTextEdit(self._overlay)
@@ -73,28 +71,30 @@ class PhaseOverlayMixin:
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
-            self._overlay.setGeometry(self.rect())
+            main_rect = self.rect()
+            self._overlay.setGeometry(main_rect)
             self._overlay.raise_()
-            for w in (getattr(self, "process_button", None), getattr(self, "cancel_button", None), getattr(self, "progress_bar", None)):
+            mask_region = QRegion(main_rect)
+            for w_name in ["process_button", "cancel_button", "progress_bar"]:
+                w = getattr(self, w_name, None)
                 if w and w.isVisible():
+                    tl = w.mapToGlobal(w.rect().topLeft())
+                    local_tl = self._overlay.mapFromGlobal(tl)
+                    w_rect = QRect(local_tl, w.size())
+                    mask_region = mask_region.subtracted(QRegion(w_rect))
                     w.raise_()
-            if not hasattr(self, "video_frame"):
+            self._overlay.setMask(mask_region)
+            margin_x = 40
+            margin_y = 60
+            spacing = 20
+            avail_w = main_rect.width() - (2 * margin_x)
+            avail_h = main_rect.height() - (2 * margin_y)
+            if avail_w < 100 or avail_h < 100: 
                 return
-            vf_topleft_global = self.video_frame.mapToGlobal(self.video_frame.rect().topLeft())
-            vf_topleft_local  = self._overlay.mapFromGlobal(vf_topleft_global)
-            vf_geom = QRect(vf_topleft_local, self.video_frame.size())
-            graph_h_ratio = 0.65
-            log_h_ratio   = 0.35
-            graph_h = int(vf_geom.height() * graph_h_ratio)
-            log_h   = int(vf_geom.height() * log_h_ratio)
-            spacing = 18
-            if graph_h > 0 and log_h > 0:
-                graph_h = int((vf_geom.height() - spacing) * graph_h_ratio)
-                log_h   = vf_geom.height() - graph_h - spacing
-            else:
-                spacing = 0
-            self._graph.setGeometry(vf_geom.x(), vf_geom.y(), vf_geom.width(), graph_h)
-            self.live_log.setGeometry(vf_geom.x(), vf_geom.y() + graph_h + spacing, vf_geom.width(), log_h)
+            graph_h = int(avail_h * 0.65)
+            log_h = avail_h - graph_h - spacing
+            self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
+            self.live_log.setGeometry(margin_x, margin_y + graph_h + spacing, avail_w, log_h)
         except Exception:
             pass
 

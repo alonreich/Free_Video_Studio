@@ -18,7 +18,6 @@ def fix_hebrew_text(text: str) -> str:
     return final_text
 
 def apply_bidi_formatting(text: str) -> str:
-
     def replacer(m):
         return "\u2066" + m.group(1) + "\u2069"
     txt_with_ltr_numbers = re.sub(
@@ -33,7 +32,6 @@ def apply_bidi_formatting(text: str) -> str:
         return "\u2066" + txt_with_ltr_numbers + "\u2069"
 
 class TextWrapper:
-
     def __init__(self, config):
         self.cfg = config
         self.MAX_LINE_W = config.wrap_at_px

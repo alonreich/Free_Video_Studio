@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
 from processing.worker import ProcessThread
 
 class FfmpegMixin:
-
     def _quit_application(self, dialog_to_close):
         """Accepts the dialog first, then quits the application, ensuring state is saved."""
         try:

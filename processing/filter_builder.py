@@ -1,7 +1,6 @@
 import os
 
 class FilterBuilder:
-
     def __init__(self, config, logger):
         self.cfg = config
         self.logger = logger
@@ -78,14 +77,11 @@ class FilterBuilder:
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px):
         ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\\''")
-        
-
         font_check = os.path.join(self.cfg.bin_dir, 'arial.ttf')
         if not os.path.exists(font_check) and os.path.exists("C:/Windows/Fonts/arial.ttf"):
             font_path = "C:/Windows/Fonts/arial.ttf"
         else:
             font_path = font_check
-
         font_path = font_path.replace("\\", "/").replace(":", "\\:")
         drawtext_parts = [
             f"drawtext=fontfile='{font_path}'",
@@ -118,25 +114,17 @@ class FilterBuilder:
             out_start = max(0.0, duration - 1.5)
             a1_chain += f",afade=t=in:st=0:d=1.5,afade=t=out:st={out_start:.3f}:d=1.5"
         chain.append(f"[1:a]{a1_chain}[a_music_prepared]")
-        chain.append("[a_main_speed_corrected]asplit=3[a_main_final][a_trig_spectral][a_trig_vol]")
-        chain.append("[a_trig_spectral]asplit=3[t_raw_low][t_raw_mid][t_raw_high]")
-        chain.append("[t_raw_low]lowpass=f=250[t_low]")
-        chain.append("[t_raw_mid]highpass=f=250,lowpass=f=4000[t_mid]")
-        chain.append("[t_raw_high]highpass=f=4000[t_high]")
-        chain.append("[a_music_prepared]asplit=3[m_raw_low][m_raw_mid][m_raw_high]")
-        chain.append("[m_raw_low]lowpass=f=250[m_low]")
-        chain.append("[m_raw_mid]highpass=f=250,lowpass=f=4000[m_mid]")
-        chain.append("[m_raw_high]highpass=f=4000[m_high]")
-        duck_params = "threshold=0.1:ratio=3:attack=5:release=200"
-        chain.append(f"[m_low][t_low]sidechaincompress={duck_params}[m_low_ducked]")
-        chain.append(f"[m_mid][t_mid]sidechaincompress={duck_params}[m_mid_ducked]")
-        chain.append(f"[m_high][t_high]sidechaincompress={duck_params}[m_high_ducked]")
-        chain.append("[m_low_ducked][m_mid_ducked][m_high_ducked]amix=inputs=3:weights=1 1 1:normalize=0[a_music_carved]")
+        chain.append(f"[a_music_prepared]asplit=2[mus_base][mus_to_filter]")
+        chain.append(f"[mus_base]lowpass=f=150[mus_low]")
+        chain.append(f"[mus_to_filter]highpass=f=150[mus_high]")
+        chain.append(f"[a_main_speed_corrected]asplit=2[game_out][game_trig]")
+        chain.append(f"[game_trig]highpass=f=150[trig_high]")
+        duck_params = "threshold=0.15:ratio=2.5:attack=5:release=150"
+        chain.append(f"[mus_high][trig_high]sidechaincompress={duck_params}[mus_high_ducked]")
+        chain.append(f"[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
         chain.append(
-            f"[a_music_carved][a_trig_vol]sidechaincompress=threshold=0.2:ratio=1.5:attack=30:release=500[a_music_final_ready]"
-        )
-        chain.append(
-            "[a_main_final][a_music_final_ready]"
-            "amix=inputs=2:duration=first:dropout_transition=3,aresample=48000[acore]"
+            "[game_out][a_music_reconstructed]"
+            "amix=inputs=2:duration=first:dropout_transition=3,"
+            "alimiter=limit=0.95:attack=5:release=50:asc=1,aresample=48000[acore]"
         )
         return chain

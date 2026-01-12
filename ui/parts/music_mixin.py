@@ -11,7 +11,6 @@ from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_offset_dialog import MusicOffsetDialog
 
 class MusicMixin:
-
     def _mp3_dir(self):
         """Return the absolute path to the project's central MP3 folder."""
         d = os.path.join(self.base_dir, "mp3")
@@ -100,10 +99,14 @@ class MusicMixin:
                 self.music_offset_input.setEnabled(False)
                 self.music_offset_input.setVisible(False)
         else:
-            self.music_combo.addItem("— Select an MP3 —", "")
             for name, path in mf:
                 self.music_combo.addItem(name, path)
-            self.music_combo.setCurrentIndex(0)
+            self.music_combo.setCurrentIndex(-1)
+            self.music_combo.setEditable(True)
+            self.music_combo.setInsertPolicy(self.music_combo.NoInsert)
+            self.music_combo.completer().setFilterMode(Qt.MatchContains)
+            self.music_combo.completer().setCompletionMode(self.music_combo.completer().PopupCompletion)
+            self.music_combo.lineEdit().setPlaceholderText("-          Select an MP3          -")
             self.music_combo.setEnabled(True)
             self.music_volume_slider.setEnabled(False)
             if hasattr(self, "music_volume_label"):
@@ -123,27 +126,27 @@ class MusicMixin:
         self.music_combo.setVisible(enable)
         self.music_combo.setEnabled(enable)
         self.music_volume_slider.setVisible(enable)
-        self.music_offset_input.setVisible(enable and self.music_combo.currentIndex() > 0)
+        self.music_offset_input.setVisible(enable and self.music_combo.currentIndex() >= 0)
         if hasattr(self, "music_volume_label"):
             self.music_volume_label.setVisible(enable)
         if enable:
             self.volume_shortcut_target = 'music'
             self.logger.info("SHORTCUT: Volume keys now control MUSIC volume")
-            if self.music_volume_slider.value() < 10:
-                self.music_volume_slider.setValue(20)
+            if self.music_volume_slider.value() > 0:
+                self.music_volume_slider.setValue(0)
             self.music_volume_slider.setEnabled(True)
         else:
             self.music_volume_slider.setEnabled(False)
-            if self.music_combo.currentIndex() != 0:
-                self.music_combo.setCurrentIndex(0)
+            if self.music_combo.currentIndex() != -1:
+                self.music_combo.setCurrentIndex(-1)
     
     def _on_music_selected(self, index: int):
-        if not self._music_files or index <= 0:
+        if not self._music_files or index < 0:
             self.music_offset_input.setVisible(False)
             self.positionSlider.reset_music_times()
             return
-        if self.music_volume_slider.value() in (0, 35):
-            self.music_volume_slider.setValue(20)
+        if self.music_volume_slider.value() != 0:
+            self.music_volume_slider.setValue(0)
         try:
             p = self.music_combo.currentData()
             if not p:
@@ -176,24 +179,18 @@ class MusicMixin:
         try:
             current_offset = self._get_music_offset()
             dlg = MusicOffsetDialog(self, self.vlc_instance, path, current_offset, self.bin_dir)
-            
-
             geom_key = 'music_dialog_geom'
             saved_geom = self.config_manager.config.get(geom_key)
             if isinstance(saved_geom, dict):
                 dlg.resize(max(900, saved_geom.get('w', 1200)), max(260, saved_geom.get('h', 350)))
                 if saved_geom.get('x', -1) != -1:
                     dlg.move(saved_geom.get('x', 0), saved_geom.get('y', 0))
-
             if dlg.exec_() == QDialog.Accepted:
                 self.music_offset_input.setValue(dlg.selected_offset)
-
-
             g = dlg.geometry()
             cfg = dict(self.config_manager.config)
             cfg[geom_key] = {'x': g.x(), 'y': g.y(), 'w': g.width(), 'h': g.height()}
             self.config_manager.save_config(cfg)
-
         except Exception as e:
             self.logger.error(f"Failed to open music offset dialog: {e}")
 

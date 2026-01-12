@@ -2,7 +2,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QStyleOptionSlider, QStyle
 
 class MergerUIBadgeMixin:
-
     def _update_music_badge(self):
         try:
             if not self.parent.music_volume_slider.isVisible():

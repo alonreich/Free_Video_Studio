@@ -1,14 +1,12 @@
 import os
 
 class EncoderManager:
-
     def __init__(self, logger):
         self.logger = logger
         env_enc = os.environ.get('VIDEO_HW_ENCODER')
         if env_enc:
             self.hw_encoder = env_enc
         else:
-
             import shutil
             self.hw_encoder = 'libx264'
             if shutil.which('nvidia-smi'):
