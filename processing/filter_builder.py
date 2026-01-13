@@ -96,28 +96,21 @@ class FilterBuilder:
     def build_audio_chain(self, have_bg, bg_volume, bg_offset, duration, disable_fades, audio_filter_cmd, vfade_in_d=0, vfade_out_d=0, vfade_out_st=0):
         chain = []
         audio_src_node = "[0:a]"
-
         if audio_filter_cmd:
             main_audio_filter = audio_filter_cmd
         else:
             main_audio_filter = "anull"
-
         if vfade_in_d > 0:
             main_audio_filter += f",afade=t=in:st=0:d={vfade_in_d:.3f}"
-
         if vfade_out_d > 0:
             main_audio_filter += f",afade=t=out:st={vfade_out_st:.3f}:d={vfade_out_d:.3f}"
-
         chain.append(f"{audio_src_node}{main_audio_filter},aresample=48000,asetpts=PTS-STARTPTS[a_main_speed_corrected]")
-        
         if not have_bg:
             chain.append("[a_main_speed_corrected]anull[acore]")
             return chain
-
         vol = bg_volume if bg_volume is not None else 0.35
         vol = max(0.0, min(1.0, float(vol)))
         mo = max(0.0, float(bg_offset or 0.0))
-        
         a1_chain = (
             f"atrim=start={mo:.3f}:duration={duration:.3f},"
             f"asetpts=PTS-STARTPTS,volume={vol:.4f},aresample=48000"
@@ -126,7 +119,6 @@ class FilterBuilder:
             FADE_DUR = self.cfg.fade_duration
             out_start = max(0.0, duration - FADE_DUR)
             a1_chain += f",afade=t=in:st=0:d={FADE_DUR},afade=t=out:st={out_start:.3f}:d={FADE_DUR}"
-
         chain.append(f"[1:a]{a1_chain}[a_music_prepared]")
         chain.append(f"[a_music_prepared]asplit=2[mus_base][mus_to_filter]")
         chain.append(f"[mus_base]lowpass=f=150[mus_low]")

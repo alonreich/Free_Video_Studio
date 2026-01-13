@@ -33,7 +33,7 @@ class PhaseOverlayMixin:
         self._overlay = QWidget(self)
         self._overlay.setWindowFlags(Qt.FramelessWindowHint)
         self._overlay.setAttribute(Qt.WA_NoSystemBackground, True)
-        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._overlay.hide()
         self._graph = QWidget(self._overlay)
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)

@@ -35,23 +35,29 @@ class EventsMixin:
                     r_lane = QRect(left, y0, w, band_h)
                     p.setPen(QPen(QColor(255, 255, 255, 60), 2))
                     p.drawLine(left - 15, y0, left - 15, y0 + band_h + 10)
+                    text_block_h = 50 
+                    text_start_y = y0 + (band_h - text_block_h) // 2
                     last_val = int(list(hist)[-1]) if hist else 0
                     p.setPen(QColor(200, 200, 200))
-                    p.drawText(panel.left() + 5, y0 + 12, label)
+                    p.drawText(panel.left() + 5, text_start_y + 10, label)
                     f_big = QFont("Consolas", 14, QFont.Bold); p.setFont(f_big)
                     p.setPen(color)
-                    p.drawText(panel.left() + 5, y0 + 35, f"{last_val}%")
+                    p.drawText(panel.left() + 5, text_start_y + 32, f"{last_val}%")
                     p.setFont(f)
                     p.setPen(QColor(100, 100, 100))
-                    p.drawText(panel.left() + 5, y0 + 55, f"T: {time_str}")
+                    p.drawText(panel.left() + 5, text_start_y + 50, f"T: {time_str}")
                     p.setPen(QPen(QColor(255, 255, 255, 20), 1))
                     p.drawLine(left, y0 + band_h, right, y0 + band_h)
+                    if row < 3:
+                        sep_y = y0 + band_h + (gap_y // 2)
+                        p.setPen(QPen(QColor(60, 70, 80), 1))
+                        p.drawLine(panel.left(), sep_y, panel.right(), sep_y)
                     vals = list(hist) if hist else []
                     if not vals: return
-                    bar_gap = 4
-                    max_bars = w // (20 + bar_gap)
+                    bar_gap = 9 
+                    max_bars = w // (15 + bar_gap) 
                     visible_vals = vals[-max_bars:]
-                    actual_bar_w = max(20, min(30, (w // len(visible_vals)) - bar_gap)) if visible_vals else 20
+                    actual_bar_w = max(15, min(25, (w // len(visible_vals)) - bar_gap)) if visible_vals else 15
                     for i, v in enumerate(visible_vals):
                         bx = left + i * (actual_bar_w + bar_gap)
                         bh = int((max(2, v) / 100.0) * band_h)

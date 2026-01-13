@@ -105,7 +105,6 @@ class ProcessThread(QThread):
                 vfade_out_st /= self.speed_factor
             else:
                 in_t_speed_adjusted = in_t
-
             self.duration_corrected = max(0.0, in_t_speed_adjusted)
             if self.is_mobile_format and self.portrait_text:
                 fix_hebrew_text(self.portrait_text)
