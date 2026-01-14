@@ -184,13 +184,14 @@ Info "[download] $zipURL"
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
     $binDir = Join-Path $installPath "binaries"
     if (Test-Path $binDir) {
-        $dlls = Get-ChildItem -Path $binDir -Filter "*.dll"
-        foreach ($dll in $dlls) {
-            if ($dll.Length -lt 2KB) { # It's a pointer file, not the real binary
-                Info "[LFS Fix] Downloading real binary for: $($dll.Name)..."
-                $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/binaries/$($dll.Name)"
-                if (-not (Get-FileSmart -Url $rawUrl -OutFile $dll.FullName -TimeoutSec 1800)) {
-                    Write-Host "Failed to download LFS file: $($dll.Name)" -ForegroundColor Red
+        # Changed filter to *.* to capture .exe and .dll LFS pointers
+        $lfsFiles = Get-ChildItem -Path $binDir -File -Recurse
+        foreach ($f in $lfsFiles) {
+            if ($f.Length -lt 5KB) { # LFS pointers are usually < 1KB; 5KB is safe
+                Info "[LFS Fix] Downloading real binary: $($f.Name)..."
+                $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/binaries/$($f.Name)"
+                if (-not (Get-FileSmart -Url $rawUrl -OutFile $f.FullName -TimeoutSec 1800)) {
+                    Write-Host "Failed to download: $($f.Name)" -ForegroundColor Red
                 }
             }
         }
@@ -247,7 +248,7 @@ echo [pip] Targeting: Direct Python Executable >> %LOG% 2>&1
 echo [pip] Upgrading pip (Direct)...
 $cmd -m pip install --upgrade pip --timeout 300 --retries 3 >> %LOG% 2>&1
 echo [pip] Installing packages (Direct)...
-$cmd -m pip install PyQt5 psutil python-vlc pypiwin32 python-mpv send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
+$cmd -m pip install PyQt5 psutil python-vlc send2trash --timeout 900 --retries 3 --no-warn-script-location >> %LOG% 2>&1
 if %errorlevel% neq 0 echo [!] Failed Direct Install (Exit Code %errorlevel%) >> %LOG% 2>&1
 "@
         }
@@ -303,10 +304,8 @@ try{
     if(Test-Path $iconPath){ New-ItemProperty -Path $RegPath -Name "Icon" -Value $iconPath -PropertyType String -Force | Out-Null }
     New-Item -Path $CmdPath -ItemType Directory -Force | Out-Null
     Set-Item -Path $CmdPath -Value $CmdValue | Out-Null
-    Write-Host " [Refresh] Restarting Explorer to apply icon..." -ForegroundColor DarkGray
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-    if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer }
+    Write-Host " [Refresh] Broadcasting environment change..." -ForegroundColor DarkGray
+    Broadcast-EnvChange
     $verbOK=$true
 } catch { $verbOK=$false }
 Step 7 ("Cleaned old keys and registered 'SystemFileAssociations' (Strong Fix)"+$(if($verbOK){" "}else{" - errors occurred"})) $verbOK

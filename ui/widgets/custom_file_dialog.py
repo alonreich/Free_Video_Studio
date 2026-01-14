@@ -28,6 +28,7 @@ from PyQt5.QtCore import (
     QEvent,
     QObject,
     QTimer,
+    QMimeData,
 )
 
 class RubberBandHelper(QObject):
@@ -193,6 +194,7 @@ class CustomFileDialog(QFileDialog):
         self._rb_helper = None
         self.tree_view = None
         self._header_style = None
+        self._cut_file_paths = set()
         self._init_dialog_flags()
         self._init_modes()
         self._init_title()
@@ -329,6 +331,7 @@ class CustomFileDialog(QFileDialog):
     def _bind_tree_view(self):
         self.tree_view = self.findChild(QTreeView)
         if self.tree_view:
+            self.tree_view.setSortingEnabled(True)
             header = self.tree_view.header()
             self.restore_state(header)
             self.tree_view.setUniformRowHeights(True)
@@ -362,7 +365,7 @@ class CustomFileDialog(QFileDialog):
             view = obj
             if not isinstance(obj, (QTreeView, QListView)):
                 view = obj.parent()
-            self._show_delete_menu(view, event.globalPos())
+            self._show_context_menu(view, event.globalPos())
             return True
         if event.type() in (QEvent.KeyPress, QEvent.ShortcutOverride):
             if hasattr(event, 'key') and event.key() == Qt.Key_Delete:
@@ -373,16 +376,25 @@ class CustomFileDialog(QFileDialog):
                 return True
         return super().eventFilter(obj, event)
 
-    def _show_delete_menu(self, view, global_pos):
+    def _show_context_menu(self, view, global_pos):
         paths = self._selected_paths_from_view(view)
         menu = QMenu(view)
+        act_cut = None
+        act_copy = None
+        act_paste = None
         act_play = None
         act_rename = None
         act_new_folder = None
         act_delete = None
         if paths:
+            act_cut = menu.addAction("Cut")
+            act_copy = menu.addAction("Copy")
+            menu.addSeparator()
             act_play = menu.addAction("▶   Preview Play the Video    ▶")
             menu.addSeparator()
+        clipboard = QApplication.clipboard()
+        if clipboard.mimeData().hasUrls():
+            act_paste = menu.addAction("Paste")
         if len(paths) == 1:
             act_rename = menu.addAction("          Rename the File")
             menu.addSeparator()
@@ -391,7 +403,13 @@ class CustomFileDialog(QFileDialog):
             menu.addSeparator()
             act_delete = menu.addAction("        ⛔    Delete File   ⛔")
         chosen = menu.exec_(global_pos)
-        if chosen == act_new_folder:
+        if chosen == act_cut:
+            self._cut_files(paths)
+        elif chosen == act_copy:
+            self._copy_files(paths)
+        elif chosen == act_paste:
+            self._paste_files()
+        elif chosen == act_new_folder:
             self._create_new_folder()
         elif paths and chosen == act_play:
             self._play_video(paths)
@@ -399,6 +417,86 @@ class CustomFileDialog(QFileDialog):
             self._delete_selected_files_silent()
         elif paths and len(paths) == 1 and chosen == act_rename:
             self._rename_file(paths[0])
+    
+    def _cut_files(self, paths):
+        if not paths:
+            return
+        self._copy_files(paths, is_cut=True)
+
+    def _copy_files(self, paths, is_cut=False):
+        if not paths:
+            return
+        if self._cut_file_paths:
+            self._cut_file_paths.clear()
+            self.tree_view.viewport().update()
+        mime_data = QMimeData()
+        urls = [QUrl.fromLocalFile(p) for p in paths]
+        mime_data.setUrls(urls)
+        if is_cut:
+            mime_data.setData("application/x-qt-cut-files", QByteArray(b"1"))
+            self._cut_file_paths.update(paths)
+            self.tree_view.viewport().update()
+        clipboard = QApplication.clipboard()
+        clipboard.setMimeData(mime_data)
+
+    def _paste_files(self):
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        if not mime_data.hasUrls():
+            return
+        is_cut = mime_data.hasFormat("application/x-qt-cut-files")
+        source_paths = [url.toLocalFile() for url in mime_data.urls()]
+        dest_dir = self.directory().absolutePath()
+        for src_path in source_paths:
+            if not os.path.exists(src_path):
+                continue
+            base_name = os.path.basename(src_path)
+            dest_path = os.path.join(dest_dir, base_name)
+            if os.path.exists(dest_path) and src_path.lower() != dest_path.lower():
+                action = self._handle_overwrite(base_name)
+                if action == "skip":
+                    continue
+                elif action == "rename":
+                    name, ext = os.path.splitext(base_name)
+                    i = 1
+                    while True:
+                        new_name = f"{name} ({i}){ext}"
+                        new_dest_path = os.path.join(dest_dir, new_name)
+                        if not os.path.exists(new_dest_path):
+                            dest_path = new_dest_path
+                            break
+                        i += 1
+            try:
+                if is_cut:
+                    shutil.move(src_path, dest_path)
+                else:
+                    if os.path.isdir(src_path):
+                        shutil.copytree(src_path, dest_path)
+                    else:
+                        shutil.copy(src_path, dest_path)
+            except Exception as e:
+                QMessageBox.warning(self, "Paste Error", f"Could not paste file:\n{src_path}\n\nError: {e}")
+        if is_cut:
+            self._cut_file_paths.clear()
+        self.setDirectory(self.directory())
+        self.tree_view.viewport().update()
+
+    def _handle_overwrite(self, file_name):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Confirm Overwrite")
+        msg_box.setText(f"The destination already has a file named '{file_name}'.")
+        msg_box.setInformativeText("Do you want to replace it?")
+        overwrite_btn = msg_box.addButton("Overwrite", QMessageBox.AcceptRole)
+        skip_btn = msg_box.addButton("Skip", QMessageBox.RejectRole)
+        rename_btn = msg_box.addButton("Rename", QMessageBox.ActionRole)
+        msg_box.setDefaultButton(overwrite_btn)
+        msg_box.exec_()
+        if msg_box.clickedButton() == skip_btn:
+            return "skip"
+        elif msg_box.clickedButton() == rename_btn:
+            return "rename"
+        else:
+            return "overwrite"
 
     def _create_new_folder(self):
         current_dir = self.directory().absolutePath()
@@ -644,12 +742,21 @@ class CustomFileDialog(QFileDialog):
         super().closeEvent(event)
 
 from PyQt5.QtWidgets import QStyledItemDelegate
+from PyQt5.QtGui import QColor, QPalette
 from PyQt5.QtCore import QSize
 
 class _CenteredTextDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.displayAlignment = Qt.AlignCenter
+        dialog = self.parent().parent()
+        if not hasattr(dialog, "_cut_file_paths"):
+            return
+        model = index.model()
+        if model:
+            file_path = model.filePath(index)
+            if file_path in dialog._cut_file_paths:
+                option.palette.setColor(QPalette.Text, QColor("#808080"))
 
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)

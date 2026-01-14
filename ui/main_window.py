@@ -570,6 +570,14 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         try:
             if self.add_music_checkbox.isChecked():
                 self.add_music_checkbox.setChecked(False)
+            music_player = getattr(self, "vlc_music_player", None)
+            if music_player and music_player.is_playing():
+                music_player.stop()
+            if music_player:
+                current_media = music_player.get_media()
+                if current_media:
+                    current_media.release()
+                music_player.set_media(None)
         except AttributeError:
             pass
         self.drop_label.setText("Drag & Drop\r\nVideo File Here:")
@@ -612,6 +620,13 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
             self.logger.warning("App closing during process. Killing ffmpeg...")
             self.process_thread.cancel()
+        try:
+            if hasattr(self, "vlc_player"):
+                self.vlc_player.stop()
+            if hasattr(self, "vlc_music_player"):
+                self.vlc_music_player.stop()
+        except Exception as e:
+            self.logger.error("Failed to stop VLC players on close: %s", e)
         self._save_app_state_and_config()
         super().closeEvent(event)
 

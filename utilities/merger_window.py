@@ -3,41 +3,69 @@ import os
 import subprocess
 from pathlib import Path
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QApplication, QListWidget, QLabel, QPushButton
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent
 from PyQt5.QtGui import QIcon
 from utilities.merger_ui import MergerUI
 from utilities.merger_handlers_main import MergerHandlers
 from utilities.merger_ffmpeg import FFMpegHandler
-from utilities.merger_music import MusicHandler
 from utilities.merger_utils import _get_logger
 from utilities.merger_window_logic import MergerWindowLogic
 from ui.widgets.draggable_list_widget import DraggableListWidget
+from ui.parts.music_mixin import MusicMixin
 
-class VideoMergerWindow(QMainWindow):
+class DummyPositionSlider:
+    """A mock object to satisfy MusicMixin's dependency on positionSlider."""
+
+    def set_music_visible(self, visible): pass
+
+    def reset_music_times(self): pass
+
+    def set_music_times(self, start, end): pass
+
+class ConfigManagerAdapter:
+    def __init__(self, merger_window_instance):
+        self.window = merger_window_instance
+    @property
+    def config(self):
+        return self.window._cfg
+    
+    def save_config(self, cfg_data):
+        self.window._cfg.update(cfg_data)
+
+class VideoMergerWindow(QMainWindow, MusicMixin):
     MAX_FILES = 20
     status_updated = pyqtSignal(str)
     return_to_main = pyqtSignal()
 
     def __init__(self, ffmpeg_path: str | None = None, parent: QMainWindow | None = None, vlc_instance=None, bin_dir: str = '', config_manager=None, base_dir: str = ''):
         super().__init__(parent)
+        self._loaded = False
         self.base_dir = base_dir
         self.ffmpeg = ffmpeg_path or "ffmpeg"
         self.vlc_instance = vlc_instance
         self.bin_dir = bin_dir
-        self.config_manager = config_manager
+        self.trim_start = None
+        self.trim_end = None
+        self.original_duration = 0.0
+        self.positionSlider = DummyPositionSlider()
+        self.config_manager = ConfigManagerAdapter(self)
         self.logger = _get_logger()
         self.ui_handler = MergerUI(self)
         self.event_handler = MergerHandlers(self)
         self.ffmpeg_handler = FFMpegHandler(self)
-        self.music_handler = MusicHandler(self)
         self.logic_handler = MergerWindowLogic(self)
         self.init_ui()
         self.connect_signals()
-        self.logic_handler.load_config()
-        self.music_handler._scan_mp3_folder()
+        self._scan_mp3_folder()
         self.event_handler.update_button_states()
-        QTimer.singleShot(0, self.ui_handler._update_music_badge)
         self.logger.info("OPEN: Video Merger window created")
+
+    def showEvent(self, event: QEvent):
+        """Load config only when the window is first shown."""
+        if not self._loaded:
+            self._loaded = True
+            self.logic_handler.load_config()
+        super().showEvent(event)
 
     def init_ui(self):
         self.setWindowTitle("Video Merger")
@@ -65,9 +93,10 @@ class VideoMergerWindow(QMainWindow):
         self.listw.model().rowsRemoved.connect(self.event_handler.update_button_states)
         self.listw.model().rowsMoved.connect(self.event_handler.update_button_states)
         self.listw.model().rowsMoved.connect(self.event_handler.on_rows_moved)
-        self.add_music_checkbox.toggled.connect(self.music_handler._on_add_music_toggled)
-        self.music_combo.currentIndexChanged.connect(self.music_handler._on_music_selected)
-        self.music_volume_slider.valueChanged.connect(self.music_handler._on_music_volume_changed)
+        self.add_music_checkbox.toggled.connect(self._on_add_music_toggled)
+        self.music_combo.currentIndexChanged.connect(self._on_music_selected)
+        self.music_volume_slider.valueChanged.connect(self._on_music_volume_changed)
+        self.music_volume_slider.valueChanged.connect(self._update_music_badge)
         self.listw.itemSelectionChanged.connect(self.event_handler.on_selection_changed)
 
     def closeEvent(self, e):

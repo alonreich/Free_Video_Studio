@@ -2,7 +2,7 @@
 # "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install --upgrade pip
 
 # To install manually the pip packages:
-# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc pypiwin32 pynput opencv-python PyQtWebEngine audioop-lts
+# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
 
 import os, sys, tempfile, psutil
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'

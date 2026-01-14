@@ -6,14 +6,14 @@ from PyQt5.QtWidgets import QStyle
 class PlayerMixin:
     def _safe_stop_playback(self):
         try:
-            if getattr(self, "player", None):
-                self.player.stop()
-                self.player.setPosition(0)
-            if getattr(self, "play_button", None):
-                self.play_button.setChecked(False)
-                self.play_button.setText("Play")
-            if getattr(self, "position_slider", None):
-                self.position_slider.setValue(0)
+            if getattr(self, "vlc_player", None):
+                self.vlc_player.stop()
+            if getattr(self, "vlc_music_player", None):
+                self.vlc_music_player.stop()
+            if getattr(self, "playPauseButton", None):
+                self.playPauseButton.setText("Play")
+            if getattr(self, "positionSlider", None):
+                self.positionSlider.setValue(0)
         except Exception:
             pass
     
@@ -24,45 +24,34 @@ class PlayerMixin:
         self._is_seeking_from_end = False
     
     def toggle_play_pause(self):
-        """Toggles play/pause, handling restarts from the end and ignoring clicks during seeks."""
-        if getattr(self, '_is_seeking_from_end', False):
-            return
-        if not getattr(self, "input_file_path", None):
-            return
+        """Toggles play/pause for video and syncs music player."""
+        if getattr(self, '_is_seeking_from_end', False): return
+        if not getattr(self, "input_file_path", None): return
         player_state = self.vlc_player.get_state()
+        music_player = getattr(self, 'vlc_music_player', None)
         if player_state == vlc.State.Playing:
             self.vlc_player.pause()
+            if music_player:
+                music_player.pause()
             self.playPauseButton.setText("Play")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             if self.timer.isActive():
                 self.timer.stop()
         else:
+            if music_player and self.add_music_checkbox.isChecked():
+                self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
             pos = self.vlc_player.get_position()
             if player_state == vlc.State.Ended or (player_state == vlc.State.Paused and pos >= 0.999):
                 self.vlc_player.stop()
+                if music_player:
+                    music_player.stop()
                 self.vlc_player.play()
+                self.set_vlc_position(self.trim_start * 1000 if self.trim_start is not None else 0)
             else:
                 self.vlc_player.play()
-                self.vlc_player.set_rate(self.playback_rate)
-
-            def _wait_for_playing_state():
-                if self.vlc_player.is_playing():
-                    try:
-                        self.vlc_player.set_rate(self.playback_rate)
-                        self.vlc_player.audio_set_mute(False)
-                        if hasattr(self, 'apply_master_volume'):
-                            self.apply_master_volume()
-                    except Exception as e:
-                        self.logger.error(f"Error applying rate/unmute: {e}")
-                else:
-                    if not hasattr(self, '_retry_count'): self._retry_count = 0
-                    if self._retry_count < 10:
-                        self._retry_count += 1
-                        QTimer.singleShot(50, _wait_for_playing_state)
-                    else:
-                        self._retry_count = 0
-            self._retry_count = 0
-            QTimer.singleShot(10, _wait_for_playing_state)
+                if music_player and self.add_music_checkbox.isChecked():
+                    music_player.play()
+            self.vlc_player.set_rate(self.playback_rate)
             self.playPauseButton.setText("Pause")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
             if not self.timer.isActive():
@@ -89,10 +78,24 @@ class PlayerMixin:
                 self.playPauseButton.setText(label)
                 self.playPauseButton.setIcon(self.style().standardIcon(icon))
     
-    def set_vlc_position(self, position):
-        """Sets the player position safely, ensuring no timer-fight occurs."""
+    def set_vlc_position(self, position, sync_only=False):
+        """Sets the player position and syncs the music player."""
         try:
             target_ms = int(position)
+            music_player = getattr(self, 'vlc_music_player', None)
+            if music_player and self.add_music_checkbox.isChecked():
+                m_timeline_start_sec = self.trim_start if self.trim_start is not None else 0.0
+                m_file_offset_sec = self._get_music_offset()
+                music_target_sec = (target_ms / 1000.0) - m_timeline_start_sec + m_file_offset_sec
+                if music_target_sec >= 0:
+                    music_target_ms = int(music_target_sec * 1000)
+                    if self.vlc_player.is_playing() and not music_player.is_playing():
+                        music_player.play()
+                    music_player.set_time(music_target_ms)
+                else:
+                    music_player.pause()
+            if sync_only:
+                return
             state = self.vlc_player.get_state()
             if state in (vlc.State.Stopped, vlc.State.Ended):
                 self._is_seeking_from_end = True

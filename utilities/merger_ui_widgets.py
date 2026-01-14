@@ -11,15 +11,15 @@ class MergerUIWidgetsMixin:
         center.setContentsMargins(0, 0, 0, 0)
         center.setSpacing(14)
         self.parent.btn_add = QPushButton("Add Videos")
-        self.parent.btn_add.setFixedSize(185, 40)
+        self.parent.btn_remove = QPushButton("Remove Selected Video")
+        self.parent.btn_clear = QPushButton("Remove All Videos")
+        buttons = [self.parent.btn_add, self.parent.btn_remove, self.parent.btn_clear]
+        for btn in buttons:
+            btn.setFixedSize(155, 34)
         self.parent.btn_add.setObjectName("aux-btn")
         self.parent.btn_add.clicked.connect(self.parent.add_videos)
-        self.parent.btn_remove = QPushButton("Remove Selected Video")
-        self.parent.btn_remove.setFixedSize(185, 40)
         self.parent.btn_remove.setObjectName("danger-btn")
         self.parent.btn_remove.clicked.connect(self.parent.remove_selected)
-        self.parent.btn_clear = QPushButton("Remove All Videos")
-        self.parent.btn_clear.setFixedSize(160, 40)
         self.parent.btn_clear.setObjectName("danger-btn")
         self.parent.btn_clear.clicked.connect(self.parent.listw.clear)
         center.addWidget(self.parent.btn_add)
@@ -29,7 +29,7 @@ class MergerUIWidgetsMixin:
 
     def create_merge_row(self):
         self.parent.btn_back = QPushButton("Return to Main App")
-        self.parent.btn_back.setFixedSize(185, 40)
+        self.parent.btn_back.setFixedSize(157, 24)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
         merge_row = QHBoxLayout()
@@ -39,7 +39,7 @@ class MergerUIWidgetsMixin:
         merge_row.addStretch(1)
         self.parent.btn_merge = QPushButton("Merge Videos")
         self.parent.btn_merge.setObjectName("mergeButton")
-        self.parent.btn_merge.setFixedSize(260, 48)
+        self.parent.btn_merge.setFixedSize(221, 41)
         self.parent._merge_btn_base_css = (
             "background-color: #59A06D;"
             "color: black;"
@@ -100,33 +100,48 @@ class MergerUIWidgetsMixin:
         self.parent.music_volume_slider.setInvertedAppearance(True)
         eff_default = int(25)
         self.parent.music_volume_slider.setValue(eff_default)
-        _knob = "#7289da"
         self.parent.music_volume_slider.setStyleSheet(f"""
-            QSlider#musicVolumeSlider {{
-            padding: 0px; border: 0; background: transparent;
-            }}
-            QSlider#musicVolumeSlider::groove:vertical {{
-            margin: 0px; border: 1px solid #3498db;
+        QSlider#musicVolumeSlider::groove:vertical {{
+            border: 1px solid #1f2a36;
             background: qlineargradient(x1:0, y1:1, x2:0, y2:0,
                 stop:0   #e64c4c,
                 stop:0.25 #f7a8a8,
                 stop:0.50 #f2f2f2,
                 stop:0.75 #7bcf43,
                 stop:1   #009b00);
-            width: 22px;
-            border-radius: 6px;
-            }}
-            QSlider#musicVolumeSlider::handle:vertical {{
-            background: {_knob};
-            border: 1px solid #5c5c5c;
-            width: 30px; height: 30px;
-            margin: -2px 0;
-            border-radius: 6px;
-            }}
-            QSlider#musicVolumeSlider::sub-page:vertical,
-            QSlider#musicVolumeSlider::add-page:vertical {{
-            background: transparent;
-            }}
+            width: 30px;
+            border-radius: 3px;
+        }}
+        QSlider#musicVolumeSlider::handle:vertical {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #455A64,
+                stop:0.40 #455A64,
+                stop:0.42 #90A4AE, stop:0.44 #90A4AE,
+                stop:0.46 #455A64,
+                stop:0.48 #455A64,
+                stop:0.50 #90A4AE, stop:0.52 #90A4AE,
+                stop:0.54 #455A64,
+                stop:0.56 #455A64,
+                stop:0.58 #90A4AE, stop:0.60 #90A4AE,
+                stop:0.62 #455A64, stop:1 #455A64);
+            border: 1px solid #1f2a36;
+            width: 36px; 
+            height: 40px; 
+            margin: 0 -3px;
+            border-radius: 4px;
+        }}
+        QSlider#musicVolumeSlider::handle:vertical:hover {{
+            border: 1px solid #90A4AE;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #546E7A,
+                stop:0.40 #546E7A, stop:0.42 #CFD8DC, stop:0.44 #CFD8DC,
+                stop:0.46 #546E7A, stop:0.48 #546E7A, stop:0.50 #CFD8DC, stop:0.52 #CFD8DC,
+                stop:0.54 #546E7A, stop:0.56 #546E7A, stop:0.58 #CFD8DC, stop:0.60 #CFD8DC,
+                stop:0.62 #546E7A, stop:1 #546E7A);
+        }}
+        QSlider#musicVolumeSlider::sub-page:vertical,
+        QSlider#musicVolumeSlider::add-page:vertical {{ background: transparent;
+        }}
         """)
         self.parent.music_volume_label = QLabel(f"{eff_default}%")
         self.parent.music_volume_label.setAlignment(Qt.AlignHCenter)

@@ -7,7 +7,7 @@ def _proj_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 def _conf_path() -> Path:
-    return _proj_root() / "config" / "main_app.conf"
+    return _proj_root() / "config" / "merger_app.conf"
 
 def _human(n_bytes: int) -> str:
     units = ["B","KB","MB","GB","TB"]
@@ -31,18 +31,29 @@ def _get_logger():
 
 def _load_conf() -> dict:
     p = _conf_path()
+    logger = _get_logger()
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+        if p.exists():
+            content = p.read_text(encoding="utf-8")
+            cfg = json.loads(content)
+            logger.info(f"Loaded config from {p}: {cfg}")
+            return cfg
+        else:
+            logger.info(f"Config file not found: {p}")
+            return {}
+    except Exception as e:
+        logger.error(f"Failed to load config from {p}: {e}")
         return {}
 
 def _save_conf(cfg: dict) -> None:
     p = _conf_path()
+    logger = _get_logger()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+        logger.info(f"Saved config to {p}: {cfg}")
+    except Exception as e:
+        logger.error(f"Failed to save config to {p}: {e}")
 
 def _mp3_dir() -> Path:
     """Return the absolute path to the project's central MP3 folder."""

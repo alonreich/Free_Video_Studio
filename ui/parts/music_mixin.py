@@ -5,7 +5,7 @@ import tempfile
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPixmap, QPainter, QColor
 from PyQt5.QtWidgets import (QStyleOptionSlider, QStyle, QDialog, QVBoxLayout,
-                             QLabel, QHBoxLayout, QPushButton, QWidget, QSlider, QApplication)
+                            QLabel, QHBoxLayout, QPushButton, QWidget, QSlider, QApplication)
 
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_offset_dialog import MusicOffsetDialog
@@ -46,15 +46,18 @@ class MusicMixin:
             opt.upsideDown    = not s.invertedAppearance()
             opt.rect          = s.rect()
             handle = s.style().subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, s)
-            parent = s.parentWidget() or self
-            handle_center = handle.center()
-            pt = s.mapTo(parent, handle_center)
             self.music_volume_badge.setText(f"{self._music_eff(int(s.value()))}%")
             self.music_volume_badge.adjustSize()
-            x = s.x() + s.width() + 8
-            y = pt.y() - (self.music_volume_badge.height() // 2)
-            y = max(2, min((parent.height() - self.music_volume_badge.height() - 2), y))
+            global_top_right = s.mapToGlobal(s.rect().topRight())
+            parent_top_right = self.mapFromGlobal(global_top_right)
+            x = parent_top_right.x() + 8
+            handle_center_global = s.mapToGlobal(handle.center())
+            handle_center_parent = self.mapFromGlobal(handle_center_global)
+            y = handle_center_parent.y() - (self.music_volume_badge.height() // 2)
+            parent_height = self.height()
+            y = max(2, min((parent_height - self.music_volume_badge.height() - 2), y))
             self.music_volume_badge.move(x, y)
+            self.music_volume_badge.raise_()
             self.music_volume_badge.show()
         except Exception:
             pass
@@ -152,7 +155,9 @@ class MusicMixin:
             if not p:
                 return
             self.music_offset_input.setValue(0.0)
-            self.positionSlider.set_music_times(self.trim_start or 0.0, self.trim_end or self.original_duration)
+            current_trim_start = self.trim_start if self.trim_start is not None else 0.0
+            current_trim_end = self.trim_end if self.trim_end is not None else self.original_duration
+            self.positionSlider.set_music_times(current_trim_start, current_trim_end)
             dur = self._probe_audio_duration(p)
             self.music_offset_input.setRange(0.0, max(0.0, dur - 0.01))
             self.volume_shortcut_target = 'music'
@@ -160,17 +165,22 @@ class MusicMixin:
             self.music_volume_slider.setEnabled(True)
             if hasattr(self, "music_volume_label"):
                 self.music_volume_label.setVisible(True)
-            self.music_offset_input.setEnabled(True)
-            self.music_offset_input.setVisible(True)
-            initial = 0.0
-            self.logger.info("MUSIC: open offset dialog | file='%s' | initial=%.3fs | vol_eff=%d%%",
-                             os.path.basename(p), initial, self._music_eff())
-            self._open_music_offset_dialog(p)
-            offset = self._get_music_offset()
-            music_end = (self.trim_end or self.original_duration)
-            self.positionSlider.set_music_times(offset, music_end)
-            self.logger.info("MUSIC: selected | file='%s' | start=%.3fs | vol_eff=%d%%",
-                             os.path.basename(p), offset, self._music_eff())
+                self.music_offset_input.setEnabled(True)
+                self.music_offset_input.setVisible(True)
+                initial = 0.0
+                self.logger.info("MUSIC: open offset dialog |file='%s' | initial=%.3fs | vol_eff=%d%%",
+                                os.path.basename(p), initial, self._music_eff())
+                self._open_music_offset_dialog(p)
+                if not hasattr(self, 'vlc_music_player') or self.vlc_music_player is None:
+                    self.vlc_music_player = self.vlc_instance.media_player_new()
+                media = self.vlc_instance.media_new(p)
+                self.vlc_music_player.set_media(media)
+                self.vlc_music_player.audio_set_volume(self._music_eff())
+                t_start = self.trim_start if self.trim_start is not None else 0.0
+                t_end = self.trim_end if self.trim_end is not None else self.original_duration
+                self.positionSlider.set_music_times(t_start, t_end)
+                self.logger.info("MUSIC: selected | file='%s' | visual_start=%.3fs | vol_eff=%d%%",
+                                os.path.basename(p), t_start, self._music_eff())
         except Exception as e:
             self.logger.error(f"Error in _on_music_selected: {e}")
 
@@ -230,6 +240,8 @@ class MusicMixin:
                 self.music_volume_label.setText(f"{eff}%")
             if hasattr(self, "_update_music_badge"):
                 self._update_music_badge()
+            if hasattr(self, 'vlc_music_player') and self.vlc_music_player:
+                self.vlc_music_player.audio_set_volume(eff)
             try:
                 cfg = dict(self.config_manager.config)
                 cfg['music_volume'] = eff

@@ -6,10 +6,10 @@ class MergerUIStyleMixin:
                 background-color: #2c3e50;
                 color: #ecf0f1;
                 font-family: "Helvetica Neue", Arial, sans-serif;
-                font-size: 13px;
+                font-size: 11px;
             }
             QLabel#titleLabel {
-                font-size: 18px;
+                font-size: 17px;
                 font-weight: bold;
                 color: #3498db;
                 padding-bottom: 10px;
@@ -85,6 +85,7 @@ class MergerUIStyleMixin:
                 border-radius: 8px;
                 padding: 8px;
                 outline: 0;
+                font-size: 9px;
             }
             QListWidget::item {
                 padding: 0;
@@ -99,11 +100,15 @@ class MergerUIStyleMixin:
                 background-color: #4a667a; border: 1px solid #3498db; border-radius: 5px;
                 padding: 4px 8px; min-height: 24px; color: #ecf0f1;
             }
-            QComboBox::drop-down { border: none; }
-            QComboBox::down-arrow { image: url(none); }
+            QComboBox::drop-down {
+                width: 22px; /* Increased by 7px */
+            }
             QComboBox QAbstractItemView {
                 background-color: #34495e; border: 1px solid #4a667a; selection-background-color: #3498db;
                 color: #ecf0f1;
+            }
+            QComboBox QAbstractItemView::vertical-scrollbar {
+                width: 37px; /* Increased by 15px */
             }
             QDoubleSpinBox {
                 background-color: #4a667a; border: 1px solid #3498db; border-radius: 5px;

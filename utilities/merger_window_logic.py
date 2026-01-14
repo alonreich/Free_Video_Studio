@@ -25,17 +25,13 @@ class MergerWindowLogic:
     def save_config(self):
         try:
             g = {"x": self.window.x(), "y": self.window.y(), "w": self.window.width(), "h": self.window.height()}
-            save_cfg = self.window.config_manager.config if self.window.config_manager else self.window._cfg
-            save_cfg["geometry"]  = g
-            save_cfg["last_dir"]  = self.window._last_dir
-            save_cfg["last_out_dir"] = self.window._last_out_dir
-            save_cfg["last_music_volume"] = self.window.music_handler._music_eff()
-            self.window.logger.info(f"Saving last_dir: {self.window._last_dir}")
-            self.window.logger.info(f"Saving last_out_dir: {self.window._last_out_dir}")
-            if self.window.config_manager:
-                self.window.config_manager.save_config(save_cfg)
-            else:
-                _save_conf(save_cfg)
+            self.window._cfg["geometry"]  = g
+            self.window._cfg["last_dir"]  = self.window._last_dir
+            self.window._cfg["last_out_dir"] = self.window._last_out_dir
+            if hasattr(self.window, '_music_eff'):
+                self.window._cfg["last_music_volume"] = self.window._music_eff()
+            self.window.logger.info(f"Saving config to merger_app.conf")
+            _save_conf(self.window._cfg)
         except Exception as err:
             self.window.logger.error("Error saving config in merger closeEvent: %s", err)
 

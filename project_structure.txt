@@ -6,14 +6,15 @@ a quick video gpu based software editor which is free of use, free of advertisem
 The app is devided into 4 different parts/apps: Video Compressor, Video Merger, Crop Tool, and Advanced Video Editor.
 
 
-
-
-
 # General Project Guidelines:
-# 1. Each code/script file should not exceed 200 lines of code.
-# 2. This file should be updated with any changes to the project structure.
+# 1. Each code/script file should not exceed 150 - 200 lines of code. Device logic into multiple seperate files where each file will contain no more than 150 - 200 lines of code each.
+# 2. This file .\project_structure.txt should be updated with any changes or any work on the app, or generally on the project structure to always keeep it up to date.
 # 3. Video tempo and sound of the original video temp changes according to the speed multiplier(Preview of the video changes accord as well), however, background music NEVER changes tempo/rythm.
-
+# 4. The main volume of the video is consider to be the main source of audio which needed to protect from the music with both "Volume Ducking" and also "EQ Ducking"
+#		The Percentage of volume ducking is implemented threshold=0.15:ratio=2.5 This means when the main audio goes above -16.5 dB (0.15), the background music volume is compressed at a 2.5:1 ratio.
+#		The EQ carving is done by splitting the music at 150 Hz. The volume ducking (sidechain compression) is then applied only to the music frequencies above 150 Hz (mus_high_ducked).
+#		The bass frequencies below 150 Hz (mus_low) are not ducked. This protects the bassline of the music while carving out space in the mid/high frequencies,
+#		for the main audio (which is also filtered to be above 150 Hz for the trigger).
 
 
 
@@ -66,7 +67,7 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 │   ├── config_data.py: Manages video configuration, crop coordinates, and quality settings.
 │   ├── crops_coordinations.conf: Configuration file for external crop coordinates (referenced by config_data.py).
 │   ├── encoders.py: Manages hardware/CPU encoder selection and codec flags.
-│   ├── filter_builder.py: Constructs complex FFmpeg filter graphs for video/audio processing.
+│   ├── filter_builder.py: Constructs complex FFmpeg filter graphs for video/audio processing. Responsible for Volume Ducking + EQ Ducking/Carving.
 │   ├── media_utils.py: Utilities for media probing (ffprobe) and bitrate calculations.
 │   ├── step_concat.py: Handles the final concatenation of video parts.
 │   ├── step_intro.py: Generates the intro sequence for the video.
