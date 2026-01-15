@@ -3,6 +3,7 @@ import sys
 import tokenize
 import re
 import ctypes
+from multiprocessing import Pool, cpu_count
 RED = '\033[48;5;52m\033[97;1m'
 GREEN = '\033[48;5;22m\033[97m'
 CYAN = '\033[96m'
@@ -13,6 +14,8 @@ class RECT(ctypes.Structure):
 
 def center_console():
     try:
+        try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except: ctypes.windll.user32.SetProcessDPIAware()
         user32 = ctypes.windll.user32
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if not hwnd: return
@@ -22,13 +25,15 @@ def center_console():
         win_h = rect.bottom - rect.top
         screen_w = user32.GetSystemMetrics(0)
         screen_h = user32.GetSystemMetrics(1)
-        x = max(0, (screen_w - win_w) // 2)
-        y = max(0, (screen_h - win_h) // 2)
-        user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004)
+        x = (screen_w - win_w) // 2
+        y = (screen_h - win_h) // 2
+        user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0040)
     except: pass
 EXCLUDE_FOLDERS = ['.git', '__pycache__', '.idea', 'venv', 'env', 'cache', 'project']
 EXCLUDE_FILES = ['__init__.py', 'app.py']
 EXCLUDE_EXTS = ['.txt', '.log', '.json']
+PY_REGEX = re.compile(r'^(\s*)(def|class)\s+(.*?)\s*:?\s*$')
+PS_REGEX = re.compile(r'^(\s*)(function|class)\s+(.*?)\s*\{?\s*$')
 
 def get_target_files(root_dir):
     targets = []
@@ -236,6 +241,49 @@ def fix_syntax(filepath):
         print(f"Fix failed: {e}")
         return False
 
+def analyze_duplicates(filepath):
+    """Worker function: Scans a file while tracking class scope."""
+    _, ext = os.path.splitext(filepath)
+    regex = PY_REGEX if ext == '.py' else PS_REGEX
+    found = {}
+    duplicates = []
+    current_class = "GLOBAL"
+    class_indent = -1
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            for i, line in enumerate(f, 1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith(('#', '//')): continue
+                match = regex.match(line)
+                if match:
+                    indent, keyword, signature = match.groups()
+                    current_indent = len(indent)
+                    clean_sig = " ".join(signature.split())
+                    if keyword == 'class':
+                        current_class = clean_sig
+                        class_indent = current_indent
+                    else:
+                        if current_indent <= class_indent:
+                            current_class = "GLOBAL"
+                            class_indent = -1
+                    key = (current_class, keyword, clean_sig)
+                    if key not in found:
+                        found[key] = []
+                    found[key].append(i)
+        for (scope, kw, sig), lines in found.items():
+            if len(lines) > 1:
+                duplicates.append({
+                    'file': os.path.basename(filepath),
+                    'scope': scope,
+                    'type': kw.upper(),
+                    'signature': sig,
+                    'lines': ", ".join(map(str, lines)),
+                    'path': os.path.dirname(filepath)
+                })
+    except Exception:
+        pass
+    return duplicates
+
 def print_table(title, data, headers):
     if not data:
         print(f"\n{title}: No issues found.")
@@ -260,7 +308,9 @@ def print_table(title, data, headers):
     print(sep + "\n")
 
 def main():
-    os.system('mode con: cols=225 lines=60')
+    os.system('title Code Cleaner Tool')
+    os.system('mode con: cols=225 lines=55')
+    ctypes.windll.kernel32.Sleep(200)
     center_console()
     target_dir = os.getcwd()
     print(f"Target: {target_dir}")
@@ -303,6 +353,16 @@ def main():
             print("Syntax fixes applied.")
         else:
             print("Skipping syntax fixes.")
+    print(f"\n{CYAN}Scanning {len(files)} files for Scope-Specific Duplicates...{RESET}")
+    current_files = [f for f in files if os.path.exists(f)]
+    with Pool(processes=cpu_count()) as pool:
+        results = pool.map(analyze_duplicates, current_files)
+    flat_data = [item for sublist in results for item in sublist]
+    if flat_data:
+        table3_data = [[d['file'], d['scope'], d['type'], d['signature'], d['lines'], d['path'][-40:]] for d in flat_data]
+        print_table("TABLE 3: Scope-Aware Duplicates (Report Only)", table3_data, ["File", "Parent Scope", "Type", "Signature", "Lines", "Directory"])
+    else:
+        print(f"\nTABLE 3: Scope-Aware Duplicates: No duplicates found within the same scope.")
     input("\nPress Enter to exit...")
     print("\nDone.")
 if __name__ == "__main__":

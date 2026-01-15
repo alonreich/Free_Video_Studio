@@ -125,7 +125,8 @@ class MusicMixin:
         enable = checked and have_files
         self.positionSlider.set_music_visible(enable)
         if not enable:
-            self.positionSlider.reset_music_times()
+            self._reset_music_player()
+
         self.music_combo.setVisible(enable)
         self.music_combo.setEnabled(enable)
         self.music_volume_slider.setVisible(enable)
@@ -140,8 +141,6 @@ class MusicMixin:
             self.music_volume_slider.setEnabled(True)
         else:
             self.music_volume_slider.setEnabled(False)
-            if self.music_combo.currentIndex() != -1:
-                self.music_combo.setCurrentIndex(-1)
     
     def _on_music_selected(self, index: int):
         if not self._music_files or index < 0:
@@ -155,9 +154,15 @@ class MusicMixin:
             if not p:
                 return
             self.music_offset_input.setValue(0.0)
+            
+            # Initialize music timeline to match video trim
             current_trim_start = self.trim_start if self.trim_start is not None else 0.0
             current_trim_end = self.trim_end if self.trim_end is not None else self.original_duration
             self.positionSlider.set_music_times(current_trim_start, current_trim_end)
+            self.music_timeline_start_sec = current_trim_start
+            self.music_timeline_end_sec = current_trim_end
+            self.logger.info(f"MUSIC_DEBUG: _on_music_selected - Timeline SET to {self.music_timeline_start_sec:.2f}s - {self.music_timeline_end_sec:.2f}s (before dialog)")
+            
             dur = self._probe_audio_duration(p)
             self.music_offset_input.setRange(0.0, max(0.0, dur - 0.01))
             self.volume_shortcut_target = 'music'
@@ -171,21 +176,23 @@ class MusicMixin:
                 self.logger.info("MUSIC: open offset dialog |file='%s' | initial=%.3fs | vol_eff=%d%%",
                                 os.path.basename(p), initial, self._music_eff())
                 self._open_music_offset_dialog(p)
+                self.logger.info(f"MUSIC_DEBUG: _on_music_selected - Timeline AFTER dialog: {self.music_timeline_start_sec:.2f}s - {self.music_timeline_end_sec:.2f}s")
                 if not hasattr(self, 'vlc_music_player') or self.vlc_music_player is None:
                     self.vlc_music_player = self.vlc_instance.media_player_new()
                 media = self.vlc_instance.media_new(p)
                 self.vlc_music_player.set_media(media)
                 self.vlc_music_player.audio_set_volume(self._music_eff())
-                t_start = self.trim_start if self.trim_start is not None else 0.0
-                t_end = self.trim_end if self.trim_end is not None else self.original_duration
-                self.positionSlider.set_music_times(t_start, t_end)
+                
+                # Re-set visuals, as they are now initialized
+                self.positionSlider.set_music_times(self.music_timeline_start_sec, self.music_timeline_end_sec)
                 self.logger.info("MUSIC: selected | file='%s' | visual_start=%.3fs | vol_eff=%d%%",
-                                os.path.basename(p), t_start, self._music_eff())
+                                os.path.basename(p), self.music_timeline_start_sec, self._music_eff())
         except Exception as e:
             self.logger.error(f"Error in _on_music_selected: {e}")
 
     def _open_music_offset_dialog(self, path: str):
         """Uses the dedicated MusicOffsetDialog to handle music offset selection."""
+        self.logger.info(f"MUSIC_DEBUG: _open_music_offset_dialog - Entry. Timeline: {self.music_timeline_start_sec:.2f}s - {self.music_timeline_end_sec:.2f}s")
         try:
             current_offset = self._get_music_offset()
             dlg = MusicOffsetDialog(self, self.vlc_instance, path, current_offset, self.bin_dir)
@@ -224,7 +231,43 @@ class MusicMixin:
             return float(self.music_offset_input.value())
         except:
             return 0.0
+
+    def _get_music_params(self):
+        """Bundles all music-related settings for the rendering engine."""
+        if not self.add_music_checkbox.isChecked():
+            return None
+        
+        path, volume = self._get_selected_music()
+        if not path:
+            return None
+            
+        return {
+            "path": path,
+            "volume": volume,
+            "file_offset_sec": self._get_music_offset(),
+            "timeline_start_sec": self.music_timeline_start_sec,
+            "timeline_end_sec": self.music_timeline_end_sec,
+        }
     
+    def _reset_music_player(self):
+        """Stops and releases the music player, resetting its state."""
+        if hasattr(self, 'vlc_music_player') and self.vlc_music_player:
+            self.vlc_music_player.stop()
+            self.vlc_music_player.release()
+            self.vlc_music_player = None
+        
+        # Clear timeline attributes
+        self.music_timeline_start_sec = None
+        self.music_timeline_end_sec = None
+
+        if hasattr(self, 'music_combo'):
+            self.music_combo.setCurrentIndex(-1)
+        if hasattr(self, 'music_offset_input'):
+            self.music_offset_input.setValue(0.0)
+            self.music_offset_input.setVisible(False)
+        if hasattr(self, 'positionSlider'):
+            self.positionSlider.reset_music_times()
+
     def _music_eff(self, raw=None):
         """Map slider value -> 0..100 respecting invertedAppearance."""
         val = self.music_volume_slider.value() if raw is None else raw

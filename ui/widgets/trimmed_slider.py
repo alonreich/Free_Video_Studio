@@ -196,29 +196,35 @@ class TrimmedSlider(QSlider):
         if self._dragging_music_handle:
             new_val = self._map_pos_to_value(e.pos().x())
             new_time_sec = (new_val / self.maximum()) * (self._duration_ms / 1000.0) if self.maximum() > 0 else 0
-            snap_threshold_px = 5
-            trim_start_px = self._map_value_to_pos(self.trimmed_start * 1000) if self.trimmed_start else 0
-            trim_end_px = self._map_value_to_pos(self.trimmed_end * 1000) if self.trimmed_end else 0
+            
+            # Define video trim boundaries
+            video_trim_start = self.trimmed_start if self.trimmed_start is not None else 0.0
+            video_trim_end = self.trimmed_end if self.trimmed_end is not None else (self._duration_ms / 1000.0)
+
             if self._dragging_music_handle == 'body':
                 duration = self.music_end_sec - self.music_start_sec
                 new_start_sec = new_time_sec + self._music_drag_offset_sec
-                new_end_sec = new_start_sec + duration
-                if self.trimmed_start and abs(self._map_value_to_pos(new_start_sec * 1000) - trim_start_px) < snap_threshold_px:
-                    new_start_sec = self.trimmed_start
-                if self.trimmed_end and abs(self._map_value_to_pos(new_end_sec * 1000) - trim_end_px) < snap_threshold_px:
-                    new_end_sec = self.trimmed_end
-                    new_start_sec = new_end_sec - duration
-                self.music_start_sec = max(0.0, new_start_sec)
+
+                # Constrain start and end to video trim boundaries
+                new_start_sec = max(video_trim_start, new_start_sec)
+                if new_start_sec + duration > video_trim_end:
+                    new_start_sec = video_trim_end - duration
+                
+                self.music_start_sec = new_start_sec
                 self.music_end_sec = self.music_start_sec + duration
-            else:
-                if self._dragging_music_handle == 'start':
-                    if self.trimmed_start and abs(e.pos().x() - trim_start_px) < snap_threshold_px:
-                        new_time_sec = self.trimmed_start
-                    self.music_start_sec = min(max(0.0, new_time_sec), self.music_end_sec - 0.1)
-                elif self._dragging_music_handle == 'end':
-                    if self.trimmed_end and abs(e.pos().x() - trim_end_px) < snap_threshold_px:
-                        new_time_sec = self.trimmed_end
-                    self.music_end_sec = max(self.music_start_sec + 0.1, new_time_sec)
+
+            elif self._dragging_music_handle == 'start':
+                new_start_sec = new_time_sec
+                # Constrain to video trim start
+                new_start_sec = max(video_trim_start, new_start_sec)
+                self.music_start_sec = min(new_start_sec, self.music_end_sec - 0.1)
+
+            elif self._dragging_music_handle == 'end':
+                new_end_sec = new_time_sec
+                # Constrain to video trim end
+                new_end_sec = min(video_trim_end, new_end_sec)
+                self.music_end_sec = max(self.music_start_sec + 0.1, new_end_sec)
+
             self.music_trim_changed.emit(self.music_start_sec, self.music_end_sec)
             self.update()
             return

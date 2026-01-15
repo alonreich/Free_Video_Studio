@@ -1,5 +1,6 @@
 import sys
 import os
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
 

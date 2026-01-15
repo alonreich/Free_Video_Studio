@@ -75,6 +75,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         try:
             if getattr(self, "vlc_player", None):
                 self.vlc_player.stop()
+            if getattr(self, "vlc_music_player", None):
+                self.vlc_music_player.stop()
             self.positionSlider.blockSignals(True)
             self.positionSlider.setValue(self.positionSlider.maximum())
             self.positionSlider.blockSignals(False)
@@ -113,6 +115,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.volume_shortcut_target = 'main'
         self.trim_start = None
         self.trim_end = None
+        self.music_timeline_start_sec = None # Initialize
+        self.music_timeline_end_sec = None   # Initialize
         self.input_file_path = None
         self.original_duration = 0.0
         self.original_resolution = ""
@@ -229,6 +233,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.init_ui()
         self._scan_mp3_folder()
         self._update_window_size_in_title()
+        self._reset_music_player()
 
         def _seek_shortcut(offset_ms):
             if getattr(self, "input_file_path", None):
@@ -238,7 +243,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Left), self, lambda: _seek_shortcut(-5))
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Right), self, lambda: _seek_shortcut(5))
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
-        self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed)
+        self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed) # This is the key handler
+
         if file_path:
             self.handle_file_selection(file_path)
 
@@ -284,12 +290,15 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             QMessageBox.critical(self, "Launch Error", f"An unexpected error occurred:\n{e}")
 
     def _on_music_trim_changed(self, start_sec, end_sec):
-        """Handles music trim time changes from the slider."""
-        if hasattr(self, "music_offset_input"):
-            self.music_offset_input.blockSignals(True)
-            self.music_offset_input.setValue(start_sec)
-            self.music_offset_input.blockSignals(False)
-            self.logger.info(f"MUSIC: trim changed via slider to start={start_sec:.2f}s")
+        """Handles music timeline bar changes from the slider."""
+        self.music_timeline_start_sec = start_sec
+        self.music_timeline_end_sec = end_sec
+        
+        # Re-sync the player for live feedback
+        if hasattr(self, 'vlc_player') and self.vlc_player.is_playing():
+            self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
+            
+        self.logger.info(f"MUSIC: Timeline updated to start={start_sec:.2f}s, end={end_sec:.2f}s")
 
     def _update_window_size_in_title(self):
         self.setWindowTitle(f"{self._base_title}  —  {self.width()}x{self.height()}")
@@ -323,6 +332,33 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         """Handles trim time changes originating from the custom slider."""
         self.trim_start = start_sec
         self.trim_end = end_sec
+
+        # Enforce boundary rules for music timeline
+        if self.music_timeline_start_sec is not None and self.music_timeline_end_sec is not None and self.add_music_checkbox.isChecked():
+            video_start, video_end = start_sec, end_sec
+            video_dur = video_end - video_start
+            music_dur = self.music_timeline_end_sec - self.music_timeline_start_sec
+
+            # Clamp music duration if it's longer than the new video duration
+            if music_dur > video_dur:
+                music_dur = video_dur
+            
+            # Adjust start position to be within the new video boundaries
+            new_music_start = max(video_start, self.music_timeline_start_sec)
+            
+            # Adjust end position, ensuring the start doesn't get pushed past the end
+            if new_music_start + music_dur > video_end:
+                new_music_start = video_end - music_dur
+                
+            new_music_end = new_music_start + music_dur
+            
+            # Update the music timeline values and the slider UI
+            if (self.music_timeline_start_sec != new_music_start or self.music_timeline_end_sec != new_music_end):
+                self.music_timeline_start_sec = new_music_start
+                self.music_timeline_end_sec = new_music_end
+                self.positionSlider.set_music_times(new_music_start, new_music_end)
+                self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start:.2f}s, end={new_music_end:.2f}s")
+
         self.start_minute_input.blockSignals(True)
         self.start_second_input.blockSignals(True)
         self.end_minute_input.blockSignals(True)
@@ -334,9 +370,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             end_min, end_s = divmod(int(end_sec), 60)
             self.end_minute_input.setValue(end_min)
             self.end_second_input.setValue(end_s)
-            if self.add_music_checkbox.isChecked():
-                self.positionSlider.set_music_times(start_sec, end_sec)
-                self.logger.info(f"MUSIC: trim visual update (offset preserved).")
         finally:
             self.start_minute_input.blockSignals(False)
             self.start_second_input.blockSignals(False)
@@ -360,7 +393,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
 
     def set_style(self):
-        self.setStyleSheet("""
+        self.setStyleSheet('''
             QWidget {
                 background-color: #2c3e50;
                 color: #ecf0f1;
@@ -406,7 +439,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 color: #ecf0f1;
                 padding: 5px;
             }
-        """)
+        ''')
 
     def refresh_ui_styles(self):
         """
@@ -504,7 +537,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             try:
                 mrl = QUrl.fromLocalFile(p).toString()
             except Exception:
-                mrl = "file:///" + p.replace("\\", "/")
+                mrl = "file:///" + p.replace("\\\\", "/")
             media = self.vlc_instance.media_new(mrl)
         if media is None:
             self.logger.error("Failed to open media: %s", p)
@@ -567,17 +600,12 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.positionSlider.reset_music_times()
         except AttributeError:
             pass
+        
         try:
             if self.add_music_checkbox.isChecked():
                 self.add_music_checkbox.setChecked(False)
-            music_player = getattr(self, "vlc_music_player", None)
-            if music_player and music_player.is_playing():
-                music_player.stop()
-            if music_player:
-                current_media = music_player.get_media()
-                if current_media:
-                    current_media.release()
-                music_player.set_media(None)
+            else:
+                self._reset_music_player()
         except AttributeError:
             pass
         self.drop_label.setText("Drag & Drop\r\nVideo File Here:")

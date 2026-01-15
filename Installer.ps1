@@ -184,7 +184,6 @@ Info "[download] $zipURL"
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
     $binDir = Join-Path $installPath "binaries"
     if (Test-Path $binDir) {
-        # Changed filter to *.* to capture .exe and .dll LFS pointers
         $lfsFiles = Get-ChildItem -Path $binDir -File -Recurse
         foreach ($f in $lfsFiles) {
             if ($f.Length -lt 5KB) { # LFS pointers are usually < 1KB; 5KB is safe

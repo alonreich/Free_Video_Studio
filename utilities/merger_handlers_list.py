@@ -14,7 +14,7 @@ class MergerHandlersListMixin(MergerHandlersButtonsMixin):
             self.parent.btn_merge.setText("Processing…")
         except Exception:
             pass
-        self.parent.ffmpeg_handler.merge_now()
+        self.parent.start_merge_processing()
 
     def add_videos(self):
         start_dir = self.parent._last_dir if self.parent._last_dir and Path(self.parent._last_dir).exists() else str(Path.home() / "Downloads")

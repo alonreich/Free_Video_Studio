@@ -24,78 +24,115 @@ class PlayerMixin:
         self._is_seeking_from_end = False
     
     def toggle_play_pause(self):
-        """Toggles play/pause for video and syncs music player."""
-        if getattr(self, '_is_seeking_from_end', False): return
-        if not getattr(self, "input_file_path", None): return
-        player_state = self.vlc_player.get_state()
-        music_player = getattr(self, 'vlc_music_player', None)
-        if player_state == vlc.State.Playing:
-            self.vlc_player.pause()
-            if music_player:
-                music_player.pause()
-            self.playPauseButton.setText("Play")
-            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+        """Toggles play/pause for video and triggers music sync."""
+        if getattr(self, '_is_seeking_from_end', False) or not getattr(self, "input_file_path", None):
+            return
+
+        if self.vlc_player.is_playing():
+            # --- PAUSE ---
             if self.timer.isActive():
                 self.timer.stop()
+            self.vlc_player.pause()
+            # Immediately call sync function to ensure music also pauses
+            self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
+            self.playPauseButton.setText("Play")
+            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
-            if music_player and self.add_music_checkbox.isChecked():
-                self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
+            # --- PLAY ---
+            # Handle restarting from the end of the clip
             pos = self.vlc_player.get_position()
-            if player_state == vlc.State.Ended or (player_state == vlc.State.Paused and pos >= 0.999):
+            state = self.vlc_player.get_state()
+            if state == vlc.State.Ended or (state == vlc.State.Paused and pos >= 0.999):
                 self.vlc_player.stop()
-                if music_player:
-                    music_player.stop()
-                self.vlc_player.play()
+                if getattr(self, 'vlc_music_player', None):
+                    getattr(self, 'vlc_music_player', None).stop()
                 self.set_vlc_position(self.trim_start * 1000 if self.trim_start is not None else 0)
-            else:
-                self.vlc_player.play()
-                if music_player and self.add_music_checkbox.isChecked():
-                    music_player.play()
+
+            self.vlc_player.play()
             self.vlc_player.set_rate(self.playback_rate)
-            self.playPauseButton.setText("Pause")
-            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+            
+            # Start timer which will handle continuous music sync
             if not self.timer.isActive():
                 self.timer.start(50)
-    
+
+            self.playPauseButton.setText("Pause")
+            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+
     def update_player_state(self):
-        """Updates the UI slider position based on VLC playback time."""
+        """On a timer, updates UI slider and keeps music in sync."""
         if not self.vlc_player:
             return
+            
         slider = getattr(self, "positionSlider", None)
         if slider and (getattr(slider, "_is_pressed", False) or getattr(self, "_dragging_handle", None)):
             return
+
         current_time = self.vlc_player.get_time()
         if current_time >= 0:
+            # Update UI slider
             slider.blockSignals(True)
             slider.setValue(current_time)
             slider.blockSignals(False)
-            player_state = self.vlc_player.get_state()
-            is_currently_vlc_playing = (player_state == vlc.State.Playing)
+
+            # Keep music in sync
+            if getattr(self, 'vlc_music_player', None) and self.add_music_checkbox.isChecked():
+                self.set_vlc_position(current_time, sync_only=True)
+
+            # Update play/pause button state if it got out of sync
+            is_currently_vlc_playing = self.vlc_player.get_state() == vlc.State.Playing
             if is_currently_vlc_playing != self.is_playing:
                 self.is_playing = is_currently_vlc_playing
                 icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
                 label = "Pause" if self.is_playing else "Play"
                 self.playPauseButton.setText(label)
                 self.playPauseButton.setIcon(self.style().standardIcon(icon))
-    
+
     def set_vlc_position(self, position, sync_only=False):
-        """Sets the player position and syncs the music player."""
+        """Sets video player position AND syncs the music player state."""
         try:
             target_ms = int(position)
+            
+            # --- Music Sync Logic ---
             music_player = getattr(self, 'vlc_music_player', None)
             if music_player and self.add_music_checkbox.isChecked():
-                m_timeline_start_sec = self.trim_start if self.trim_start is not None else 0.0
-                m_file_offset_sec = self._get_music_offset()
-                music_target_sec = (target_ms / 1000.0) - m_timeline_start_sec + m_file_offset_sec
-                if music_target_sec >= 0:
-                    music_target_ms = int(music_target_sec * 1000)
-                    if self.vlc_player.is_playing() and not music_player.is_playing():
-                        music_player.play()
-                    music_player.set_time(music_target_ms)
+                if self.music_timeline_start_sec is not None and self.music_timeline_end_sec is not None:
+                    is_video_playing = self.vlc_player.get_state() == vlc.State.Playing
+                    music_start_sec = self.music_timeline_start_sec
+                    music_end_sec = self.music_timeline_end_sec
+                    
+                    is_within_music_bounds = (music_start_sec <= (target_ms / 1000.0) < music_end_sec)
+
+                    # Calculate target music time, regardless of play state, but only if within bounds
+                    time_into_music_clip_sec = (target_ms / 1000.0) - music_start_sec
+                    file_offset_sec = self._get_music_offset()
+                    music_target_in_file_ms = int((time_into_music_clip_sec + file_offset_sec) * 1000)
+
+                    # Always seek the music player to the correct position if within bounds
+                    # This ensures that if the user seeks while paused, the music player is ready
+                    # to play from the correct point when 'play' is pressed.
+                    if is_within_music_bounds and abs(music_player.get_time() - music_target_in_file_ms) > 400:
+                        self.logger.info(f"SYNC_SEEK: Always seeking music to {music_target_in_file_ms}ms (Offset: {file_offset_sec:.2f}s)")
+                        music_player.set_time(music_target_in_file_ms)
+                    
+                    # Now, decide if music should be playing or paused
+                    if is_video_playing and is_within_music_bounds:
+                        if not music_player.is_playing():
+                            self.logger.info(f"SYNC_PLAY: Conditions met. Playing music.")
+                            music_player.play()
+                    else:
+                        # If any condition fails, music must be paused
+                        if music_player.is_playing():
+                            self.logger.info("SYNC_PAUSE: Conditions not met. Pausing music.")
+                            music_player.pause()
                 else:
-                    music_player.pause()
+                    self.logger.warning("SYNC_WARN: Music timeline attributes are None. Cannot sync.")
+                    if music_player.is_playing():
+                        music_player.pause()
+            
+            # --- Video Seek Logic ---
             if sync_only:
                 return
+            
             state = self.vlc_player.get_state()
             if state in (vlc.State.Stopped, vlc.State.Ended):
                 self._is_seeking_from_end = True
@@ -105,6 +142,7 @@ class PlayerMixin:
                 QTimer.singleShot(250, self._finish_seek_from_end)
             else:
                 self.vlc_player.set_time(target_ms)
+
         except Exception as e:
             self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
             if hasattr(self, "show_message"):

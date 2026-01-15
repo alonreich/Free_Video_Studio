@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QMessageBox
 class MergerHandlersButtonsMixin:
     def update_button_states(self):
         n = self.parent.listw.count()
-        is_processing = self.parent.ffmpeg_handler.process is not None
+        is_processing = self.parent.is_processing
         selected_items = self.parent.listw.selectedItems()
         is_single_selection = len(selected_items) == 1
         self.parent.add_music_checkbox.setEnabled(not is_processing)

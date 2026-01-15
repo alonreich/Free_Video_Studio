@@ -17,6 +17,11 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 #		for the main audio (which is also filtered to be above 150 Hz for the trigger).
 
 
+# To upgrade pip manually:
+# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install --upgrade pip
+# To install manually the pip packages:
+# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
+
 
 # ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE
@@ -30,7 +35,7 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 ├── Find_and_Remove_Comments.py: A script to remove comments from python files.
 ├── Find_Duplications_Def_or_Class.py: A script to find duplicate definitions or classes in python files.
 ├── Fix OS Problems.cmd: A command script to fix OS related problems.
-├── Installer.ps1: A powershell script for installation.
+├── Installer.ps1: A powershell both one-click-installer and a one-click-updater script for installation.
 ├── z_Install_Fortnite_Video_Software.cmd: A command script for installation.
 │
 ├── !!!_Ouput_Video_Files_!!!/: Default output directory for processed videos.
@@ -106,6 +111,7 @@ The app is devided into 4 different parts/apps: Video Compressor, Video Merger, 
 └── utilities/: The Video Merger application.
     ├── merger_ffmpeg_process.py: Handles the ffmpeg process for the merger.
     ├── merger_ffmpeg.py: The main ffmpeg handler for the merger.
+    ├── filter_builder.py: Constructs complex FFmpeg filter graphs for video/audio processing. Responsible for Volume Ducking + EQ Ducking/Carving.
     ├── merger_handlers_buttons.py: Handlers for the buttons in the merger.
     ├── merger_handlers_dialogs.py: Handlers for the dialogs in the merger.
     ├── merger_handlers_list.py: Handlers for the list widget in the merger.

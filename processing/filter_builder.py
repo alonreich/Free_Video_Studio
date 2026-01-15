@@ -102,8 +102,6 @@ class FilterBuilder:
             main_audio_filter = "anull"
         if vfade_in_d > 0:
             main_audio_filter += f",afade=t=in:st=0:d={vfade_in_d:.3f}"
-        if vfade_out_d > 0:
-            main_audio_filter += f",afade=t=out:st={vfade_out_st:.3f}:d={vfade_out_d:.3f}"
         chain.append(f"{audio_src_node}{main_audio_filter},aresample=48000,asetpts=PTS-STARTPTS[a_main_speed_corrected]")
         if not have_bg:
             chain.append("[a_main_speed_corrected]anull[acore]")
@@ -124,9 +122,11 @@ class FilterBuilder:
         chain.append(f"[mus_base]lowpass=f=150[mus_low]")
         chain.append(f"[mus_to_filter]highpass=f=150[mus_high]")
         chain.append(f"[a_main_speed_corrected]asplit=2[game_out][game_trig]")
-        chain.append(f"[game_trig]highpass=f=150[trig_high]")
-        duck_params = "threshold=0.15:ratio=2.5:attack=5:release=150"
-        chain.append(f"[mus_high][trig_high]sidechaincompress={duck_params}[mus_high_ducked]")
+        kill_switch_start = max(0, duration - 3.5)
+        chain.append(f"[game_trig]afade=t=out:st={kill_switch_start:.3f}:d=0.5,highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
+        chain.append(f"[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
+        duck_params = "threshold=0.2:ratio=4:attack=1:release=400:detection=rms"
+        chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
         chain.append(f"[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
         chain.append(
             "[game_out][a_music_reconstructed]"

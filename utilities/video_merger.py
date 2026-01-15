@@ -1,5 +1,7 @@
 import sys
 import os
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+
 import ctypes
 from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
