@@ -333,6 +333,8 @@ class CustomFileDialog(QFileDialog):
         if self.tree_view:
             self.tree_view.setSortingEnabled(True)
             header = self.tree_view.header()
+            header.setSortIndicatorShown(True) # Ensure sort indicator is visible
+            header.sortIndicatorChanged.connect(self._save_sort_state) # Connect signal to save state
             self.restore_state(header)
             self.tree_view.setUniformRowHeights(True)
             try:
@@ -650,6 +652,12 @@ class CustomFileDialog(QFileDialog):
                 b.setObjectName("cancelButton")
         self.update()
 
+    def _save_sort_state(self, logicalIndex: int, order: Qt.SortOrder):
+        if self.config:
+            self.config.config["file_dialog_sort_column"] = logicalIndex
+            self.config.config["file_dialog_sort_order"] = int(order) # Convert SortOrder enum to int
+            self.config.save_config(self.config.config)
+
     def get_windows_quick_access(self):
         try:
             ps_script = (
@@ -686,6 +694,8 @@ class CustomFileDialog(QFileDialog):
             self.config.config["file_dialog_header_state"] = (
                 header.saveState().toBase64().data().decode()
             )
+            self.config.config["file_dialog_sort_column"] = header.sortIndicatorSection()
+            self.config.config["file_dialog_sort_order"] = int(header.sortIndicatorOrder())
         self.config.save_config(self.config.config)
 
     def restore_state(self, header):
@@ -702,6 +712,12 @@ class CustomFileDialog(QFileDialog):
             header.restoreState(QByteArray.fromBase64(header_state_b64.encode()))
         else:
             self.set_default_column_widths(header)
+        
+        # Explicitly restore sort order if available
+        sort_column = self.config.config.get("file_dialog_sort_column", -1)
+        sort_order = self.config.config.get("file_dialog_sort_order", Qt.AscendingOrder)
+        if sort_column != -1:
+            header.setSortIndicator(sort_column, Qt.SortOrder(sort_order))
 
     def set_default_state(self, header):
         self.set_default_position()

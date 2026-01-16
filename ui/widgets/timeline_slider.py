@@ -7,6 +7,7 @@ class TimelineSlider(QSlider):
         super().__init__(orientation, parent)
         self._duration_ms = 0
         self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
 
     def set_duration_ms(self, ms: int):
         self._duration_ms = max(0, int(ms))

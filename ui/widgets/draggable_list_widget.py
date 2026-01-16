@@ -7,6 +7,7 @@ class DraggableListWidget(QListWidget):
         super().__init__(parent)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.drop_indicator_rect = None
+        self.setCursor(Qt.PointingHandCursor)
 
     def dragMoveEvent(self, event):
         super().dragMoveEvent(event)

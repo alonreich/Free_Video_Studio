@@ -5,7 +5,7 @@ import subprocess
 import json
 import threading
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton)
 
@@ -152,7 +152,6 @@ class FfmpegMixin:
             self._safe_set_phase("Processing")
             self._show_processing_overlay()
             self._safe_status("Preparingâ€¦ (probing/seek)â€¦", "white")
-            QApplication.setOverrideCursor(Qt.WaitCursor)
             self.progress_update_signal.emit(0)
             cfg = dict(self.config_manager.config)
             cfg['last_speed'] = float(speed_factor)
@@ -213,7 +212,7 @@ class FfmpegMixin:
                 pass
     
     def on_process_finished(self, success, message):
-        button_size = (185, 45)
+        button_size = (225, 55)
         self.is_processing = False
         self._proc_start_ts = None
         self._phase_is_processing = False
@@ -239,7 +238,6 @@ class FfmpegMixin:
                 self._safe_status("Processing was canceled by the user.", "orange")
             else:
                 self._safe_set_phase("Error", ok=False)
-        QApplication.restoreOverrideCursor()
         self.status_update_signal.emit("Ready to process another video.")
         try:
             if success:
@@ -270,22 +268,27 @@ class FfmpegMixin:
             grid = QGridLayout()
             grid.setSpacing(40)
             grid.setContentsMargins(30, 50, 30, 50)
-            whatsapp_button = QPushButton("âœ†   Share via Whatsapp   âœ†")
+            whatsapp_button = QPushButton("✆   Share via Whatsapp   ✆")
+            whatsapp_button.setFont(QFont("Segoe UI Emoji", 10))
             whatsapp_button.setFixedSize(*button_size)
             whatsapp_button.setStyleSheet("background-color: #328742; color: white;")
+            whatsapp_button.setCursor(Qt.PointingHandCursor)
             whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), self._quit_application(dialog)))
             open_folder_button = QPushButton("Open Output Folder")
             open_folder_button.setFixedSize(*button_size)
             open_folder_button.setStyleSheet("background-color: #6c5f9e; color: white;")
+            open_folder_button.setCursor(Qt.PointingHandCursor)
             open_folder_button.clicked.connect(lambda: (
                 dialog.accept(),
                 self.open_folder(os.path.dirname(message)),
                 self._save_app_state_and_config(),
                 QCoreApplication.instance().quit()
             ))
-            new_file_button = QPushButton("ðŸ“‚   Upload a New File   ðŸ“‚")
+            new_file_button = QPushButton("📂   Upload a New File   📂")
+            new_file_button.setFont(QFont("Segoe UI Emoji", 10))
             new_file_button.setFixedSize(*button_size)
             new_file_button.setStyleSheet("background-color: #6c5f9e; color: white;")
+            new_file_button.setCursor(Qt.PointingHandCursor)
             new_file_button.clicked.connect(dialog.reject)
             grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
             grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
@@ -293,11 +296,13 @@ class FfmpegMixin:
             done_button = QPushButton("Done")
             done_button.setFixedSize(*button_size)
             done_button.setStyleSheet("background-color: #821e1e; color: white; padding: 8px 16px;")
+            done_button.setCursor(Qt.PointingHandCursor)
             done_button.clicked.connect(dialog.accept)
             grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
             finished_button = QPushButton("Close The App!\r\n(Exit)")
             finished_button.setFixedSize(*button_size)
             finished_button.setStyleSheet("background-color: #c90e0e; color: white; padding: 8px 16px;")
+            finished_button.setCursor(Qt.PointingHandCursor)
             finished_button.clicked.connect(lambda: self._quit_application(dialog)) 
             grid.addWidget(finished_button, 2, 0, 1, 3, alignment=Qt.AlignCenter)
             layout.addLayout(grid)

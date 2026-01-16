@@ -16,6 +16,7 @@ class MergerUIWidgetsMixin:
         buttons = [self.parent.btn_add, self.parent.btn_remove, self.parent.btn_clear]
         for btn in buttons:
             btn.setFixedSize(155, 34)
+            btn.setCursor(Qt.PointingHandCursor)
         self.parent.btn_add.setObjectName("aux-btn")
         self.parent.btn_remove.setObjectName("danger-btn")
         self.parent.btn_clear.setObjectName("danger-btn")
@@ -29,6 +30,7 @@ class MergerUIWidgetsMixin:
         self.parent.btn_back.setFixedSize(157, 24)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
+        self.parent.btn_back.setCursor(Qt.PointingHandCursor)
         self.parent.merge_row = QHBoxLayout()
         merge_wrap = QWidget()
         merge_wrap.setLayout(self.parent.merge_row)
@@ -46,6 +48,7 @@ class MergerUIWidgetsMixin:
             "padding: 6px 20px;"
         )
         self.parent.btn_merge.setStyleSheet(self.parent._merge_btn_base_css)
+        self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
         self.parent.btn_merge.clicked.connect(self.parent.on_merge_clicked)
         self.parent.merge_row.addWidget(self.parent.btn_merge)
         self.parent.merge_row.addStretch(1)
@@ -57,6 +60,7 @@ class MergerUIWidgetsMixin:
         music_layout.setSpacing(15)
         self.parent.add_music_checkbox = QCheckBox("Add Background Music")
         self.parent.add_music_checkbox.setToolTip("Toggle background MP3 mixing from the ./mp3 folder.")
+        self.parent.add_music_checkbox.setCursor(Qt.PointingHandCursor)
         self.parent.add_music_checkbox.setChecked(False)
         music_layout.addWidget(self.parent.add_music_checkbox)
         self.parent.music_combo = QComboBox()
@@ -69,6 +73,7 @@ class MergerUIWidgetsMixin:
         self.parent.music_combo.setMaximumWidth(400)
         self.parent.music_combo.setMinimumContentsLength(24)
         self.parent.music_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.parent.music_combo.setCursor(Qt.PointingHandCursor)
         self.parent.music_combo.setVisible(False)
         music_layout.addWidget(self.parent.music_combo)
         self.parent.music_offset_input = QDoubleSpinBox()
@@ -79,6 +84,7 @@ class MergerUIWidgetsMixin:
         self.parent.music_offset_input.setSingleStep(0.5)
         self.parent.music_offset_input.setRange(0.0, 0.0)
         self.parent.music_offset_input.setValue(0.0)
+        self.parent.music_offset_input.setCursor(Qt.PointingHandCursor)
         self.parent.music_offset_input.setVisible(False)
         music_layout.addWidget(self.parent.music_offset_input)
         music_slider_box = self.create_music_slider()
@@ -95,6 +101,7 @@ class MergerUIWidgetsMixin:
         self.parent.music_volume_slider.setFocusPolicy(Qt.NoFocus)
         self.parent.music_volume_slider.setMinimumHeight(150)
         self.parent.music_volume_slider.setInvertedAppearance(True)
+        self.parent.music_volume_slider.setCursor(Qt.PointingHandCursor)
         eff_default = int(25)
         self.parent.music_volume_slider.setValue(eff_default)
         self.parent.music_volume_slider.setStyleSheet(f"""

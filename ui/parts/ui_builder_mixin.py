@@ -318,6 +318,7 @@ class UiBuilderMixin:
         self.volume_slider.setTickPosition(QSlider.TicksBothSides)
         self.volume_slider.setTracking(True)
         self.volume_slider.setInvertedAppearance(True)
+        self.volume_slider.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.volume_slider, "Adjust Volume: ↑ / ↓\nLarge Step: Shift + ↑ / ↓")
         try:
             eff = int(self.config_manager.config.get('last_volume', 100))
@@ -439,6 +440,7 @@ class UiBuilderMixin:
         self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.playPauseButton.clicked.connect(self.toggle_play_pause)
         self.playPauseButton.setFocusPolicy(Qt.NoFocus)
+        self.playPauseButton.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.playPauseButton, "Spacebar")
         self.playPauseButton.setStyleSheet("""
             QPushButton {
@@ -472,6 +474,7 @@ class UiBuilderMixin:
         self.thumb_pick_btn.setStyleSheet(_std_btn_style)
         self.tooltip_manager.add_tooltip(self.thumb_pick_btn, "Select Custom Thumbnail Picture For Sharing")
         self.thumb_pick_btn.setFocusPolicy(Qt.NoFocus)
+        self.thumb_pick_btn.setCursor(Qt.PointingHandCursor)
         self.thumb_pick_btn.clicked.connect(self._pick_thumbnail_from_current_frame)
         _left_col = QVBoxLayout()
         _left_col.setContentsMargins(0, 0, 0, 0)
@@ -497,15 +500,18 @@ class UiBuilderMixin:
         self.start_trim_button.setStyleSheet(_std_btn_style)
         self.start_trim_button.clicked.connect(self.set_start_time)
         self.start_trim_button.setFocusPolicy(Qt.NoFocus)
+        self.start_trim_button.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.start_trim_button, "[")
         self.end_trim_button = QPushButton("Set End")
         self.end_trim_button.setObjectName("endTrimButton")
         self.end_trim_button.setStyleSheet(_std_btn_style)
         self.end_trim_button.clicked.connect(self.set_end_time)
         self.end_trim_button.setFocusPolicy(Qt.NoFocus)
+        self.end_trim_button.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.end_trim_button, "]")
         for spin in (self.start_minute_input, self.start_second_input, self.end_minute_input, self.end_second_input):
             spin.setMaximumWidth(48)
+            spin.setCursor(Qt.PointingHandCursor)
         self.start_trim_button.setFixedWidth(90)
         self.end_trim_button.setFixedWidth(90)
         self.playPauseButton.setFixedWidth(140)
@@ -539,6 +545,7 @@ class UiBuilderMixin:
             "padding:6px 12px; border-radius:6px;"
         )
         self.merge_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.merge_btn.setCursor(Qt.PointingHandCursor)
         self.merge_btn.clicked.connect(self.launch_video_merger)
         self.boss_hp_checkbox = QCheckBox("Boss HP")
         self.boss_hp_checkbox.setObjectName("bossHpCheckbox")
@@ -547,6 +554,7 @@ class UiBuilderMixin:
         self.boss_hp_checkbox.setStyleSheet("font-size: 10px; font-weight: normal;")
         self.boss_hp_checkbox.setChecked(False)
         self.boss_hp_checkbox.toggled.connect(self._on_boss_hp_toggled)
+        self.boss_hp_checkbox.setCursor(Qt.PointingHandCursor)
         trim_container = QHBoxLayout()
         trim_container.setContentsMargins(0, 0, 0, 0)
         trim_container.addWidget(self.thumb_pick_btn, 0, Qt.AlignLeft)
@@ -571,6 +579,7 @@ class UiBuilderMixin:
         self.quality_slider.setMinimumWidth(150)
         self.quality_slider.setMaximumWidth(300)
         self.quality_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.quality_slider.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.quality_slider,
             "Bad = 15MB\n"
             "Okay = 25MB\n"
@@ -653,6 +662,7 @@ class UiBuilderMixin:
         self._pulse_timer.timeout.connect(self._update_process_button_text)
         self._pulse_timer.start(750)
         self.process_button.setStyleSheet(self._original_process_btn_style)
+        self.process_button.setCursor(Qt.PointingHandCursor)
         self.process_button.clicked.connect(self._on_process_clicked)
         self.process_button.setEnabled(False)
         self.cancel_button = ClickableButton("Cancel")
@@ -683,6 +693,7 @@ class UiBuilderMixin:
         self.speed_spinbox.setValue(1.1)
         self.speed_spinbox.setMinimumWidth(0)
         self.speed_spinbox.setStyleSheet("font-size: 11px;")
+        self.speed_spinbox.setCursor(Qt.PointingHandCursor)
         self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
         self.speed_label = QLabel("Speed Multiplier")
         self.speed_label.setStyleSheet("font-size: 11px; font-weight: bold; margin-left: 10px; padding: 0; margin-right: 10px; padding: 0;")
@@ -695,6 +706,7 @@ class UiBuilderMixin:
         speed_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.mobile_checkbox = QCheckBox("Mobile Format (Portrait)")
         self.mobile_checkbox.setStyleSheet("font-size: 14px; font-weight: bold; margin-left: 0px; padding: 0; margin-right: 0px; padding: 0;")
+        self.mobile_checkbox.setCursor(Qt.PointingHandCursor)
         self.mobile_checkbox.setChecked(bool(self.config_manager.config.get('mobile_checked', False)))
         
         from PyQt5.QtWidgets import QLineEdit
@@ -705,6 +717,7 @@ class UiBuilderMixin:
         self.teammates_checkbox.setStyleSheet("font-size: 11px; margin-left: 15px; margin-right: 0px; padding: 0;")
         self.teammates_checkbox.setChecked(bool(self.config_manager.config.get('teammates_checked', False)))
         self.teammates_checkbox.toggled.connect(lambda c: self.logger.info("OPTION: Show Teammates Healthbar -> %s", c))
+        self.teammates_checkbox.setCursor(Qt.PointingHandCursor)
         self.no_fade_checkbox = QCheckBox("Disable Fade-In/Out", self)
         self.no_fade_checkbox.setChecked(False)
         _fm = QFontMetrics(self.no_fade_checkbox.font())
@@ -713,6 +726,7 @@ class UiBuilderMixin:
         self.no_fade_checkbox.toggled.connect(
             lambda c: self.logger.info("OPTION: Disable Fade-In/Out -> %s", c)
         )
+        self.no_fade_checkbox.setCursor(Qt.PointingHandCursor)
         is_mob = self.mobile_checkbox.isChecked()
         self.teammates_checkbox.setVisible(is_mob)
         self.teammates_checkbox.setEnabled(is_mob)
@@ -817,6 +831,7 @@ class UiBuilderMixin:
         self.drop_area.setObjectName("dropArea")
         self.drop_area.setFocusPolicy(Qt.NoFocus)
         self.drop_area.file_dropped.connect(self.handle_file_selection)
+        self.drop_area.setCursor(Qt.PointingHandCursor)
         drop_layout = QVBoxLayout(self.drop_area)
         drop_layout.setContentsMargins(0, 0, 0, 0)
         self.drop_label = QLabel("Drag & Drop\r\na Video File Here:")
@@ -845,6 +860,7 @@ class UiBuilderMixin:
         self.music_volume_slider.setVisible(True)
         self.music_volume_slider.setFocusPolicy(Qt.NoFocus)
         self.music_volume_slider.installEventFilter(self)
+        self.music_volume_slider.setCursor(Qt.PointingHandCursor)
         self.music_volume_slider.setFixedHeight(170)
         eff_default = 100
         raw = self.music_volume_slider.maximum() + self.music_volume_slider.minimum() - eff_default
@@ -914,10 +930,12 @@ class UiBuilderMixin:
         self.upload_button.clicked.connect(self.select_file)
         self.upload_button.setFixedHeight(55)
         self.upload_button.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px; padding: 7px;")
+        self.upload_button.setCursor(Qt.PointingHandCursor)
         right_col.addWidget(self.upload_button)
         self.add_music_checkbox = QCheckBox("Add Background Music")
         self.add_music_checkbox.setToolTip("Toggle background MP3 mixing from the ./mp3 folder.")
         self.add_music_checkbox.setChecked(False)
+        self.add_music_checkbox.setCursor(Qt.PointingHandCursor)
         self.add_music_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-right: 0px; margin-bottom: 20px; margin-left: 0px; padding: 0px;")
         right_col.addWidget(self.add_music_checkbox)
 
@@ -929,6 +947,7 @@ class UiBuilderMixin:
         self.add_music_checkbox.toggled.connect(_update_ui_positions)
         self.music_combo = QComboBox()
         self.music_combo.setFixedWidth(250)
+        self.music_combo.setCursor(Qt.PointingHandCursor)
         self.music_combo.setVisible(False)
         right_col.addWidget(self.music_combo)
         self.music_offset_input = QDoubleSpinBox()
@@ -937,6 +956,7 @@ class UiBuilderMixin:
         self.music_offset_input.setSingleStep(0.5)
         self.music_offset_input.setRange(0.0, 0.0)
         self.music_offset_input.setValue(0.0)
+        self.music_offset_input.setCursor(Qt.PointingHandCursor)
         self.music_offset_input.setVisible(False)
         right_col.addWidget(self.music_offset_input)
         right_col.addStretch(1)
@@ -950,6 +970,7 @@ class UiBuilderMixin:
             "padding:6px 12px; border-radius:6px;"
         )
         self.adv_editor_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.adv_editor_btn.setCursor(Qt.PointingHandCursor)
         self.adv_editor_btn.clicked.connect(self.launch_advanced_editor)
         bb.addWidget(self.adv_editor_btn, 0, Qt.AlignCenter)
         bb.addWidget(self.merge_btn, 0, Qt.AlignCenter)

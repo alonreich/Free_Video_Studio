@@ -176,7 +176,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.is_processing = True
         self._show_processing_overlay()
         self._pulse_timer.start(250)
-        QApplication.setOverrideCursor(Qt.WaitCursor)
         self.btn_merge.hide()
         self.btn_cancel_merge.show()
         self.btn_cancel_merge.setCursor(Qt.PointingHandCursor)
@@ -379,7 +378,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.is_processing = False
         self._hide_processing_overlay()
         self._pulse_timer.start(750)
-        QApplication.restoreOverrideCursor()
         self.btn_merge.show()
         self.btn_cancel_merge.unsetCursor()
         self.btn_cancel_merge.hide()
