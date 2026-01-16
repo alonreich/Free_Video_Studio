@@ -188,14 +188,16 @@ Info "[download] $zipURL"
             $lfsFiles = Get-ChildItem -Path $targetDir -File -Recurse
             foreach ($f in $lfsFiles) {
                 if ($f.Length -lt 5KB) {
-                    # --- FIX START: FORCE URL ENCODING ---
                     $safeName = [Uri]::EscapeDataString($f.Name)
                     $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/$folder/$safeName"
-                    # --- FIX END ---
-
+                    $tempName = "temp_download_" + [guid]::NewGuid().ToString()
+                    $tempFile = Join-Path $targetDir $tempName
                     Info "[LFS Fix] Downloading: $safeName"
-                    if (-not (Get-FileSmart -Url $rawUrl -OutFile $f.FullName -TimeoutSec 1800)) {
+                    if (Get-FileSmart -Url $rawUrl -OutFile $tempFile -TimeoutSec 1800) {
+                        Move-Item -Path $tempFile -Destination $f.FullName -Force
+                    } else {
                         Write-Host "Failed to download: $($f.Name)" -ForegroundColor Red
+                        if (Test-Path $tempFile) { Remove-Item $tempFile -Force }
                     }
                 }
             }
