@@ -189,8 +189,8 @@ Info "[download] $zipURL"
             foreach ($f in $lfsFiles) {
                 if ($f.Length -lt 5KB) { # LFS pointers are usually < 1KB
                     Info "[LFS Fix] Downloading real content ($folder): $($f.Name)..."
-                    # Note: raw/main url structure requires strict folder matching
-                    $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/$folder/$($f.Name)"
+                    $encodedName = [Uri]::EscapeDataString($f.Name)
+                    $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/$folder/$encodedName"
                     if (-not (Get-FileSmart -Url $rawUrl -OutFile $f.FullName -TimeoutSec 1800)) {
                         Write-Host "Failed to download: $($f.Name)" -ForegroundColor Red
                     }
