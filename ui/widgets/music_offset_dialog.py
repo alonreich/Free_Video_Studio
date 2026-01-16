@@ -21,6 +21,7 @@ class MusicOffsetDialog(QDialog):
         self._ui_call.connect(self._run_ui_call)
         self.setWindowTitle("Choose Background Music Start")
         self.setModal(True)
+        self.resize(1300, 350)
         self._vlc = vlc_instance
         self._mpath = audio_path
         self._bin = bin_dir
@@ -130,7 +131,6 @@ class MusicOffsetDialog(QDialog):
         self._caret = QLabel(self._overlay)
         self._caret.setStyleSheet("background:#3498db;")
         self._caret.hide()
-        self._restore_geometry()
 
         import threading
         threading.Thread(target=self._init_assets, args=(float(initial_offset or 0.0),), daemon=True).start()
@@ -183,7 +183,6 @@ class MusicOffsetDialog(QDialog):
                 os.remove(self._temp_png_path)
         except Exception:
             pass
-        self._save_geometry()
         super().closeEvent(e)
 
     def accept(self):
@@ -473,35 +472,6 @@ class MusicOffsetDialog(QDialog):
             except Exception:
                 pass
         QTimer.singleShot(0, _ui)
-
-    def _restore_geometry(self):
-        try:
-            parent_obj = self.parent()
-            cfg_key = "music_offset_dlg_geo"
-            cm = getattr(parent_obj, "config_manager", None)
-            cfg = getattr(cm, "config", None) if cm else {}
-            if not cfg:
-                cfg = getattr(parent_obj, "_cfg", {})
-            g = cfg.get(cfg_key, {}) if isinstance(cfg, dict) else {}
-            w, h = int(g.get("w", 1200)), int(g.get("h", 350))
-            x, y = int(g.get("x", -1)), int(g.get("y", -1))
-            self.resize(max(900, w), max(280, h))
-            if x >= 0 and y >= 0:
-                self.move(x, y)
-        except Exception:
-            self.resize(1200, 350)
-
-    def _save_geometry(self):
-        try:
-            parent_obj = self.parent()
-            cm = getattr(parent_obj, "config_manager", None)
-            if cm is None:
-                return
-            cfg = dict(cm.config)
-            cfg["music_offset_dlg_geo"] = {"x": self.x(), "y": self.y(), "w": self.width(), "h": self.height()}
-            cm.save_config(cfg)
-        except Exception:
-            pass
 
     def _run_ui_call(self, fn):
         try:

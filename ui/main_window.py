@@ -115,8 +115,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.volume_shortcut_target = 'main'
         self.trim_start = None
         self.trim_end = None
-        self.music_timeline_start_sec = None # Initialize
-        self.music_timeline_end_sec = None   # Initialize
+        self.music_timeline_start_sec = None
+        self.music_timeline_end_sec = None
         self.input_file_path = None
         self.original_duration = 0.0
         self.original_resolution = ""
@@ -243,8 +243,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Left), self, lambda: _seek_shortcut(-5))
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Right), self, lambda: _seek_shortcut(5))
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
-        self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed) # This is the key handler
-
+        self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed)
         if file_path:
             self.handle_file_selection(file_path)
 
@@ -293,11 +292,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         """Handles music timeline bar changes from the slider."""
         self.music_timeline_start_sec = start_sec
         self.music_timeline_end_sec = end_sec
-        
-        # Re-sync the player for live feedback
         if hasattr(self, 'vlc_player') and self.vlc_player.is_playing():
             self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
-            
         self.logger.info(f"MUSIC: Timeline updated to start={start_sec:.2f}s, end={end_sec:.2f}s")
 
     def _update_window_size_in_title(self):
@@ -332,33 +328,21 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         """Handles trim time changes originating from the custom slider."""
         self.trim_start = start_sec
         self.trim_end = end_sec
-
-        # Enforce boundary rules for music timeline
         if self.music_timeline_start_sec is not None and self.music_timeline_end_sec is not None and self.add_music_checkbox.isChecked():
             video_start, video_end = start_sec, end_sec
             video_dur = video_end - video_start
             music_dur = self.music_timeline_end_sec - self.music_timeline_start_sec
-
-            # Clamp music duration if it's longer than the new video duration
             if music_dur > video_dur:
                 music_dur = video_dur
-            
-            # Adjust start position to be within the new video boundaries
             new_music_start = max(video_start, self.music_timeline_start_sec)
-            
-            # Adjust end position, ensuring the start doesn't get pushed past the end
             if new_music_start + music_dur > video_end:
                 new_music_start = video_end - music_dur
-                
             new_music_end = new_music_start + music_dur
-            
-            # Update the music timeline values and the slider UI
             if (self.music_timeline_start_sec != new_music_start or self.music_timeline_end_sec != new_music_end):
                 self.music_timeline_start_sec = new_music_start
                 self.music_timeline_end_sec = new_music_end
                 self.positionSlider.set_music_times(new_music_start, new_music_end)
                 self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start:.2f}s, end={new_music_end:.2f}s")
-
         self.start_minute_input.blockSignals(True)
         self.start_second_input.blockSignals(True)
         self.end_minute_input.blockSignals(True)
@@ -600,7 +584,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.positionSlider.reset_music_times()
         except AttributeError:
             pass
-        
         try:
             if self.add_music_checkbox.isChecked():
                 self.add_music_checkbox.setChecked(False)

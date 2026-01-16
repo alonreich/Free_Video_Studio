@@ -1,6 +1,20 @@
 import re
 from PyQt5.QtGui import QFont, QFontMetrics
 
+def safe_text(text: str) -> str:
+    """
+    Sanitizes text for FFmpeg filter chains.
+    unlike 'fix_hebrew_text', this DOES NOT reverse text manually.
+    We rely on FFmpeg's native 'text_shaping=1' engine to handle Hebrew/BiDi.
+    """
+    if not text:
+        return ""
+    text = str(text)
+    text = text.replace("\\", "\\\\") 
+    text = text.replace("'", "'\''")
+    text = text.replace(":", "\\:")
+    return text
+
 def fix_hebrew_text(text: str) -> str:
     if not text:
         return ""

@@ -20,44 +20,65 @@ class VideoConfig:
         self.measure_fudge = 1.12
 
     def get_mobile_coordinates(self, logger=None):
-        crops_1080p = {
-            "loot": [339, 68, 1548, 976],
-            "stats": [215, 153, 1682, 20],
-            "normal_hp": [324, 50, 33, 979],
-            "boss_hp": [325, 46, 138, 981],
-            "team": [174, 161, 14, 801]
-        }
-        scales = {
-            "loot": 1.953,
-            "stats": 2.112,
-            "team": 1.61,
-            "normal_hp": 1.849,
-            "boss_hp": 1.615
-        }
-        overlays = {
-            "loot": {"x": 613, "y": 1659},
-            "stats": {"x": 829, "y": 0},
-            "team": {"x": 32, "y": 1434},
-            "normal_hp": {"x": 5, "y": 1681},
-            "boss_hp": {"x": 20, "y": 1701}
-        }
-        coords = {
-            "crops_1080p": crops_1080p,
-            "scales": scales,
-            "overlays": overlays
+        """
+        Retrieves crop coordinates.
+        1. Defines hardcoded DEFAULTS (100% HUD).
+        2. Checks for 'crops_coordinations.conf'.
+        3. If MISSING: Auto-generates the file with defaults so the user can edit it.
+        4. If EXISTS: Loads and merges it.
+        """
+        defaults = {
+            "crops_1080p": {
+                "loot": [339, 68, 1548, 976],
+                "stats": [215, 153, 1682, 20],
+                "normal_hp": [324, 50, 33, 979],
+                "boss_hp": [325, 46, 138, 981],
+                "team": [174, 161, 14, 801]
+            },
+            "scales": {
+                "loot": 1.953,
+                "stats": 2.112,
+                "team": 1.61,
+                "normal_hp": 1.849,
+                "boss_hp": 1.615
+            },
+            "overlays": {
+                "loot": {"x": 613, "y": 1659},
+                "stats": {"x": 829, "y": 0},
+                "team": {"x": 32, "y": 1434},
+                "normal_hp": {"x": 5, "y": 1681},
+                "boss_hp": {"x": 20, "y": 1701}
+            }
         }
         conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
-        if os.path.exists(conf_path):
+        if not os.path.exists(conf_path):
+            if logger:
+                logger.warning(f"Config missing at {conf_path}. Auto-generating defaults...")
             try:
-                with open(conf_path, 'r') as f:
-                    external_data = json.load(f)
-                    coords.update(external_data)
+                os.makedirs(os.path.dirname(conf_path), exist_ok=True)
+                with open(conf_path, 'w', encoding='utf-8') as f:
+                    json.dump(defaults, f, indent=4)
                 if logger:
-                    logger.info(f"Loaded crop config from {conf_path}")
+                    logger.info(f"Generated default crop config at {conf_path}")
             except Exception as e:
                 if logger:
-                    logger.error(f"Failed to load crop config, using defaults: {e}")
-        return coords
+                    logger.error(f"Failed to generate default config: {e}")
+        final_coords = defaults.copy()
+        try:
+            with open(conf_path, 'r', encoding='utf-8') as f:
+                external_data = json.load(f)
+                if "crops_1080p" in external_data:
+                    final_coords["crops_1080p"].update(external_data["crops_1080p"])
+                if "scales" in external_data:
+                    final_coords["scales"].update(external_data["scales"])
+                if "overlays" in external_data:
+                    final_coords["overlays"].update(external_data["overlays"])
+            if logger:
+                logger.info(f"Loaded crop config from {conf_path}")
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to load crop config, reverting to internal defaults: {e}")
+        return final_coords
 
     def get_quality_settings(self, quality_level, target_mb_override=None):
         try:

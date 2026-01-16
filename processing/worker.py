@@ -13,12 +13,13 @@ from .step_concat import ConcatProcessor
 
 class ProcessThread(QThread):
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
-                script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
-                is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
-                bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
-                disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None,
-                portrait_text: str = None):
+                 script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
+                 is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
+                 bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
+                 disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None,
+                 portrait_text: str = None, music_config=None):
         super().__init__()
+        self.music_config = music_config if music_config else {}
         self.input_path = input_path
         self.start_time = float(start_time)
         self.end_time = float(end_time)
@@ -47,7 +48,7 @@ class ProcessThread(QThread):
         self.config = VideoConfig(self.base_dir)
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level)
         self.text_wrapper = TextWrapper(self.config)
-        self.filter_builder = FilterBuilder(self.config, self.logger)
+        self.filter_builder = FilterBuilder(self.logger)
         self.encoder_mgr = EncoderManager(self.logger)
         self.prober = MediaProber(self.bin_dir, self.input_path)
         self.current_process = None
@@ -63,14 +64,23 @@ class ProcessThread(QThread):
             kill_process_tree(self.current_process.pid, self.logger)
 
     def run(self):
+        if self.bg_music_path:
+            self.music_config['path'] = self.bg_music_path
+            self.music_config['timeline_start_sec'] = self.start_time
+            self.music_config['file_offset_sec'] = self.bg_music_offset
+            if 'timeline_end_sec' not in self.music_config:
+                self.music_config['timeline_end_sec'] = self.start_time + self.duration
+            if 'volume' not in self.music_config:
+                self.music_config['volume'] = self.bg_music_volume
+            self.logger.info(f"AUDIO CONFIG: {self.music_config}")
         temp_dir = tempfile.gettempdir()
-        temp_log_path = os.path.join(temp_dir, f"ffmpeg2pass-{os.getpid()}-{int(time.time())}.log")
         core_path = None
         intro_path = None
         output_path = None
         ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
         try:
             if self.is_canceled: return
+            has_bg = (self.bg_music_path is not None)
             FADE_DUR = self.config.fade_duration
             EPS = self.config.epsilon
             in_ss = self.start_time
@@ -123,10 +133,15 @@ class ProcessThread(QThread):
                     self.finished_signal.emit(False, "Video duration is too short for target size.")
                     return
                 video_bitrate_kbps = 2500
+            MAX_SAFE_BITRATE = 35000
+            if video_bitrate_kbps > MAX_SAFE_BITRATE:
+                self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
+                video_bitrate_kbps = MAX_SAFE_BITRATE
             video_filter_cmd = ""
             if self.is_mobile_format:
+                mobile_coords = self.config.get_mobile_coordinates(self.logger)
                 video_filter_cmd = self.filter_builder.build_mobile_filter(
-                    self.original_resolution, self.is_boss_hp, self.show_teammates_overlay
+                    mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay
                 )
                 if self.portrait_text:
                     size, lines = self.text_wrapper.fit_and_wrap(self.portrait_text)
@@ -135,11 +150,13 @@ class ProcessThread(QThread):
                     textfile_path = os.path.join(temp_dir, f"drawtext-{os.getpid()}-{int(time.time())}.txt")
                     with open(textfile_path, "w", encoding="utf-8") as tf:
                         tf.write(final_text_content)
-                    video_filter_cmd = self.filter_builder.add_drawtext_filter(video_filter_cmd, textfile_path, size)
+                    video_filter_cmd = self.filter_builder.add_drawtext_filter(
+                        video_filter_cmd, textfile_path, size, self.config.line_spacing
+                    )
                     self.status_update_signal.emit("Applying Canvas Trick with Text.")
             else:
                 if self.keep_highest_res:
-                     target_res = "scale=iw:ih"
+                    target_res = "scale=iw:ih"
                 else:
                     if self.quality_level >= 2:
                         target_res = "scale='min(1920,iw)':-2"
@@ -158,11 +175,14 @@ class ProcessThread(QThread):
                     audio_speed_cmd = f"atempo={s:.3f}"
                 else:
                     audio_speed_cmd = f"rubberband=tempo={s:.3f}:pitch=1:formant=1"
-            has_bg = bool(self.bg_music_path)
             audio_chains = self.filter_builder.build_audio_chain(
-                has_bg, self.bg_music_volume, self.bg_music_offset, 
-                self.duration_corrected, self.disable_fades, audio_speed_cmd,
-                vfade_in_d, vfade_out_d, vfade_out_st
+                music_config=self.music_config,
+                video_start_time=self.start_time,
+                video_end_time=self.end_time,
+                speed_factor=self.speed_factor,
+                disable_fades=self.disable_fades,
+                vfade_in_d=vfade_in_d,
+                audio_filter_cmd=audio_speed_cmd
             )
             core_filters = []
             vcore_str = f"[0:v]{video_filter_cmd}," if video_filter_cmd else "[0:v]"
@@ -174,6 +194,9 @@ class ProcessThread(QThread):
             core_filters.extend(audio_chains)
             core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
             vcodec, rc_label = self.encoder_mgr.get_core_codec_flags(video_bitrate_kbps, eff_dur)
+            if 'h264_nvenc' in vcodec:
+                vcodec = ['-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', f'{video_bitrate_kbps}k']
+                rc_label = "Safe NVENC"
             self.status_update_signal.emit(f"Processing video ({rc_label}).")
             cmd = [
                 ffmpeg_path, '-y', '-hwaccel', 'auto',
@@ -184,7 +207,7 @@ class ProcessThread(QThread):
             if has_bg:
                 cmd += ['-i', self.bg_music_path]
             cmd += vcodec + [
-                '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+                '-movflags', '+faststart',
                 '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
                 '-filter_complex', ';'.join(core_filters),
                 '-map', '[vcore]', '-map', '[acore]', '-shortest',
@@ -196,16 +219,21 @@ class ProcessThread(QThread):
                 self.current_process, self.duration_corrected, 
                 self.progress_update_signal, lambda: self.is_canceled, self.logger
             )
-            self.current_process.wait()
+            try:
+                self.current_process.wait(timeout=5)
+            except Exception:
+                self.logger.error("FFmpeg process timed out after monitoring. Force killing.")
+                kill_process_tree(self.current_process.pid, self.logger)
             if self.is_canceled: return
             if self.current_process.returncode != 0:
                 self.logger.warning("Hardware failed. Retrying with fallback...")
                 success = False
                 for enc in self.encoder_mgr.get_fallback_list():
+                    if enc == 'h264_amf' and 'nvenc' in str(vcodec): continue 
                     self.status_update_signal.emit(f"Hardware failure. Trying {enc}...")
                     cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_path]
                     if has_bg:
-                        cmd_retry += ['-ss', f"{self.bg_music_offset:.3f}", '-i', self.bg_music_path]
+                        cmd_retry += ['-i', self.bg_music_path]
                     if enc == "libx264":
                         cmd_retry += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
                     else:
@@ -226,8 +254,8 @@ class ProcessThread(QThread):
                     return
             if self.intro_still_sec > 0:
                 if self.intro_abs_time is None and self.intro_from_midpoint:
-                     mid = (self.start_time + self.end_time) / 2.0
-                     self.intro_abs_time = float(mid)
+                    mid = (self.start_time + self.end_time) / 2.0
+                    self.intro_abs_time = float(mid)
                 if self.intro_abs_time is not None:
                     intro_proc = IntroProcessor(ffmpeg_path, self.logger, self.encoder_mgr, temp_dir)
                     intro_path = intro_proc.create_intro(

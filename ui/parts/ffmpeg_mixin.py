@@ -66,10 +66,22 @@ class FfmpegMixin:
     def cancel_processing(self):
         if not self.is_processing:
             return
-        self.logger.info("CANCEL: User clicked cancel button.")
-        self._save_app_state_and_config()
-        if self.process_thread and self.process_thread.isRunning():
+        self.logger.info("CANCEL: User clicked cancel button. Initiating kill sequence...")
+        if hasattr(self, "cancel_button"):
+            self.cancel_button.setEnabled(False)
+            self.cancel_button.setText("Stopping...")
+        QApplication.processEvents()
+        if hasattr(self, "process_thread") and self.process_thread and self.process_thread.isRunning():
             self.process_thread.cancel()
+            if not self.process_thread.wait(2500):
+                self.logger.warning("CANCEL: Process thread hung. Forcing termination.")
+                try:
+                    self.process_thread.terminate()
+                    self.process_thread.wait()
+                except Exception as e:
+                    self.logger.error(f"CANCEL: Error terminating thread: {e}")
+        self.on_process_finished(False, "Processing was canceled by the user.")
+        self._save_app_state_and_config()
     
     def start_processing(self):
         """
@@ -135,11 +147,11 @@ class FfmpegMixin:
             self.progress_bar.setRange(0, 0)
             self.progress_bar.setValue(0)
             self._pulse_timer.start()
-            self.process_button.setText("Processing…")
+            self.process_button.setText("Processingâ€¦")
             self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
             self._safe_set_phase("Processing")
             self._show_processing_overlay()
-            self._safe_status("Preparing… (probing/seek)…", "white")
+            self._safe_status("Preparingâ€¦ (probing/seek)â€¦", "white")
             QApplication.setOverrideCursor(Qt.WaitCursor)
             self.progress_update_signal.emit(0)
             cfg = dict(self.config_manager.config)
@@ -148,6 +160,15 @@ class FfmpegMixin:
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
             music_path, music_vol_linear = self._get_selected_music()
+            music_conf = {
+                'ducking_threshold': 0.15,
+                'ducking_ratio': 2.5,
+                'eq_enabled': True,
+                'main_vol': 1.0,
+                'music_vol': music_vol_linear if music_path else 1.0,
+                'timeline_start_sec': getattr(self, 'music_timeline_start_sec', None),
+                'timeline_end_sec': getattr(self, 'music_timeline_end_sec', None)
+            }
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
                 raw_text = self.portrait_text_input.text().strip()
@@ -161,14 +182,16 @@ class FfmpegMixin:
                 is_boss_hp=self.boss_hp_checkbox.isChecked(),
                 show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()),
                 quality_level=q_level,
-                bg_music_path=music_path, bg_music_volume=music_vol_linear,
+                bg_music_path=music_path, 
+                bg_music_volume=music_vol_linear,
                 bg_music_offset=self._get_music_offset(),
                 original_total_duration=self.original_duration,
                 disable_fades=self.no_fade_checkbox.isChecked(),
                 intro_still_sec=0.1,
                 intro_from_midpoint=(getattr(self, 'selected_intro_abs_time', None) is None),
                 intro_abs_time=getattr(self, 'selected_intro_abs_time', None),
-                portrait_text=p_text
+                portrait_text=p_text,
+                music_config=music_conf
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))
@@ -205,7 +228,7 @@ class FfmpegMixin:
         self.progress_bar.setValue(0)
         self.selected_intro_abs_time = None
         try:
-            self.thumb_pick_btn.setText("📸 Set Thumbnail 📸")
+            self.thumb_pick_btn.setText("ðŸ“¸ Set Thumbnail ðŸ“¸")
         except Exception:
             pass
         if success:
@@ -247,7 +270,7 @@ class FfmpegMixin:
             grid = QGridLayout()
             grid.setSpacing(40)
             grid.setContentsMargins(30, 50, 30, 50)
-            whatsapp_button = QPushButton("✆   Share via Whatsapp   ✆")
+            whatsapp_button = QPushButton("âœ†   Share via Whatsapp   âœ†")
             whatsapp_button.setFixedSize(*button_size)
             whatsapp_button.setStyleSheet("background-color: #328742; color: white;")
             whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), self._quit_application(dialog)))
@@ -260,7 +283,7 @@ class FfmpegMixin:
                 self._save_app_state_and_config(),
                 QCoreApplication.instance().quit()
             ))
-            new_file_button = QPushButton("📂   Upload a New File   📂")
+            new_file_button = QPushButton("ðŸ“‚   Upload a New File   ðŸ“‚")
             new_file_button.setFixedSize(*button_size)
             new_file_button.setStyleSheet("background-color: #6c5f9e; color: white;")
             new_file_button.clicked.connect(dialog.reject)

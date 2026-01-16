@@ -26,8 +26,8 @@ class EncoderManager:
         if video_bitrate_kbps is not None:
             kbps = int(video_bitrate_kbps)
             bitrate_arg = f'{kbps}k'
-            maxrate_arg = f'{int(kbps*1.05)}k'
-            bufsize_arg = f'{int(kbps*1.2)}k'
+            maxrate_arg = f'{int(kbps*2.0)}k'
+            bufsize_arg = f'{int(kbps*2.0)}k'
             vcodec += ['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg]
         vcodec += ['-g', '60', '-keyint_min', '60']
         if self.hw_encoder == 'h264_nvenc':

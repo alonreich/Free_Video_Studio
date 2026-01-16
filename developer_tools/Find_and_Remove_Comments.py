@@ -1,9 +1,16 @@
+WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
+
 import os
 import sys
 import tokenize
 import re
 import ctypes
 from multiprocessing import Pool, cpu_count
+try:
+    os.chdir(WORKING_DIRECTORY)
+except Exception as e:
+    print(f"Failed to change working directory: {e}")
+    sys.exit(1)
 RED = '\033[48;5;52m\033[97;1m'
 GREEN = '\033[48;5;22m\033[97m'
 CYAN = '\033[96m'

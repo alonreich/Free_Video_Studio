@@ -14,8 +14,8 @@ from utilities.merger_handlers_main import MergerHandlers
 from utilities.merger_utils import _get_logger, _human
 from utilities.merger_window_logic import MergerWindowLogic
 from ui.widgets.draggable_list_widget import DraggableListWidget
-from utilities.filter_builder import FilterBuilder
-from utilities.encoders import EncoderManager
+from processing.filter_builder import FilterBuilder
+from processing.encoders import EncoderManager
 from ui.parts.music_mixin import MusicMixin
 from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
 
@@ -209,34 +209,36 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                     QMessageBox.critical(self, "Error", f"Could not get duration of {os.path.basename(video_path)}.")
                     self._merge_finished()
                     return
-
-            class DummyConfig:
-                fade_duration = 1.0
-            filter_builder = FilterBuilder(DummyConfig(), self.logger)
+            filter_builder = FilterBuilder(self.logger)
             encoder_mgr = EncoderManager(self.logger)
+            music_cfg = {
+                'path': music_path,
+                'volume': music_vol,
+                'file_offset_sec': music_offset,
+                'timeline_start_sec': 0.0,
+                'timeline_end_sec': total_duration
+            }
             audio_chains = filter_builder.build_audio_chain(
-                have_bg=True,
-                bg_volume=music_vol,
-                bg_offset=music_offset,
-                duration=total_duration,
+                music_config=music_cfg,
+                video_start_time=0.0,
+                video_end_time=total_duration,
+                speed_factor=1.0,
                 disable_fades=False, 
+                vfade_in_d=0.0,
                 audio_filter_cmd=""
             )
             filter_complex_str = ";".join(audio_chains)
-            vcodec, rc_label = encoder_mgr.get_core_codec_flags(None, total_duration)
-            self.logger.info(f"Selected video encoder: {rc_label}")
+            self.logger.info("Video Mode: Stream Copy (Lossless Video, Re-encode Audio)")
             base_cmd.extend(["-i", music_path])
             self._cmd = base_cmd + [
                 "-filter_complex", filter_complex_str,
                 "-map", "0:v",
                 "-map", "[acore]",
-            ]
-            self._cmd.extend(vcodec)
-            self._cmd.extend([
+                "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest",
                 str(out_path)
-            ])
+            ]
         else:
             self.logger.info("MUSIC: No background music. Using fast stream copy.")
             self._cmd = base_cmd + [
