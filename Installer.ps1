@@ -182,20 +182,23 @@ Info "[download] $zipURL"
         Move-Item -LiteralPath $_.FullName -Destination $installPath -Force
     }
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-    $binDir = Join-Path $installPath "binaries"
-    if (Test-Path $binDir) {
-        $lfsFiles = Get-ChildItem -Path $binDir -File -Recurse
-        foreach ($f in $lfsFiles) {
-            if ($f.Length -lt 5KB) { # LFS pointers are usually < 1KB; 5KB is safe
-                Info "[LFS Fix] Downloading real binary: $($f.Name)..."
-                $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/binaries/$($f.Name)"
-                if (-not (Get-FileSmart -Url $rawUrl -OutFile $f.FullName -TimeoutSec 1800)) {
-                    Write-Host "Failed to download: $($f.Name)" -ForegroundColor Red
+    foreach ($folder in @("binaries", "MP3")) {
+        $targetDir = Join-Path $installPath $folder
+        if (Test-Path $targetDir) {
+            $lfsFiles = Get-ChildItem -Path $targetDir -File -Recurse
+            foreach ($f in $lfsFiles) {
+                if ($f.Length -lt 5KB) { # LFS pointers are usually < 1KB
+                    Info "[LFS Fix] Downloading real content ($folder): $($f.Name)..."
+                    # Note: raw/main url structure requires strict folder matching
+                    $rawUrl = "https://github.com/alonreich/Fortnite_Video_Software/raw/main/$folder/$($f.Name)"
+                    if (-not (Get-FileSmart -Url $rawUrl -OutFile $f.FullName -TimeoutSec 1800)) {
+                        Write-Host "Failed to download: $($f.Name)" -ForegroundColor Red
+                    }
                 }
             }
         }
     }
-    Step 2 "Fetched files and verified LFS binaries" $true
+    Step 2 "Fetched files and verified LFS binaries + MP3s" $true
 $oldMp3 = Join-Path $backupPath "mp3"
 $newMp3 = Join-Path $installPath "mp3"
 if ((Test-Path $oldMp3) -and (Test-Path $newMp3)) {
