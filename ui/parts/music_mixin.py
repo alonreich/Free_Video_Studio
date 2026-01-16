@@ -165,20 +165,24 @@ class MusicMixin:
             self.music_volume_slider.setEnabled(True)
             if hasattr(self, "music_volume_label"):
                 self.music_volume_label.setVisible(True)
-                self.music_offset_input.setEnabled(True)
-                self.music_offset_input.setVisible(True)
-                initial = 0.0
-                self.logger.info("MUSIC: open offset dialog |file='%s' | initial=%.3fs | vol_eff=%d%%",
-                                os.path.basename(p), initial, self._music_eff())
-                self._open_music_offset_dialog(p)
+            self.music_offset_input.setEnabled(True)
+            self.music_offset_input.setVisible(True)
+            initial = 0.0
+            self.logger.info("MUSIC: open offset dialog |file='%s' | initial=%.3fs | vol_eff=%d%%",
+                             os.path.basename(p), initial, self._music_eff())
+            self._open_music_offset_dialog(p)
+            if self.vlc_instance:
                 if not hasattr(self, 'vlc_music_player') or self.vlc_music_player is None:
                     self.vlc_music_player = self.vlc_instance.media_player_new()
-                media = self.vlc_instance.media_new(p)
-                self.vlc_music_player.set_media(media)
-                self.vlc_music_player.audio_set_volume(self._music_eff())
-                self.positionSlider.set_music_times(self.music_timeline_start_sec, self.music_timeline_end_sec)
-                self.logger.info("MUSIC: selected | file='%s' | visual_start=%.3fs | vol_eff=%d%%",
-                                os.path.basename(p), self.music_timeline_start_sec, self._music_eff())
+                if self.vlc_music_player:
+                    media = self.vlc_instance.media_new(p)
+                    self.vlc_music_player.set_media(media)
+                    self.vlc_music_player.audio_set_volume(self._music_eff())
+            else:
+                self.logger.warning("VLC Engine is dead (CPU mode?); skipping background music preview.")
+            self.positionSlider.set_music_times(self.music_timeline_start_sec, self.music_timeline_end_sec)
+            self.logger.info("MUSIC: selected | file='%s' | visual_start=%.3fs | vol_eff=%d%%",
+                             os.path.basename(p), self.music_timeline_start_sec, self._music_eff())
         except Exception as e:
             self.logger.error(f"Error in _on_music_selected: {e}")
 
@@ -186,7 +190,14 @@ class MusicMixin:
         """Uses the dedicated MusicOffsetDialog to handle music offset selection."""
         try:
             current_offset = self._get_music_offset()
-            dlg = MusicOffsetDialog(self, self.vlc_instance, path, current_offset, self.bin_dir)
+            dlg = MusicOffsetDialog(
+                self, 
+                self.vlc_instance, 
+                path, 
+                current_offset, 
+                self.bin_dir, 
+                hardware_strategy=getattr(self, 'hardware_strategy', 'CPU')
+            )
             geom_key = 'music_dialog_geom'
             saved_geom = self.config_manager.config.get(geom_key)
             if isinstance(saved_geom, dict):

@@ -107,9 +107,10 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 self.timer.stop()
         self.logger.info(f"Playback speed changed to {value}x. Player paused.")
 
-    def __init__(self, file_path=None):
+    def __init__(self, file_path=None, hardware_strategy="CPU"):
         super().__init__()
         self.playback_rate = 1.1
+        self.hardware_strategy = hardware_strategy
         self._is_seeking_from_end = False
         self.tooltip_manager = ToolTipManager(self)
         self.volume_shortcut_target = 'main'
@@ -141,6 +142,7 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         except Exception:
             pass
         self.logger.info("=== Application started ===")
+        self.logger.info(f"Initialized with Hardware Strategy: {self.hardware_strategy}")
 
         import tempfile, glob
         for pattern in ["core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log"]:
@@ -150,42 +152,15 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
                 except:
                     pass
         self.logger.info("RUN: cwd=%s | script_dir=%s", os.getcwd(), self.script_dir)
-        try:
-            import faulthandler, signal
-            fh_stream = None
-            for h in self.logger.handlers:
-                if isinstance(h, RotatingFileHandler):
-                    fh_stream = h.stream
-                    break
-            if fh_stream is not None:
-                faulthandler.enable(fh_stream)
-                for sig_name in ("SIGABRT", "SIGSEGV"):
-                    sig = getattr(signal, sig_name, None)
-                    if sig is not None:
-                        faulthandler.register(sig, file=fh_stream, all_threads=True, chain=True)
-        except Exception:
-            pass
-
-        def _excepthook(exc_type, exc, tb):
-            import traceback
-            self.logger.exception("UNCAUGHT EXCEPTION:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
-        sys.excepthook = _excepthook
-        try:
-            import threading
-
-            def _thread_excepthook(args):
-                self.logger.error("THREAD EXCEPTION: %s", args)
-            threading.excepthook = _thread_excepthook
-        except Exception:
-            pass
-        try:
-            def _unraisable(hook):
-                self.logger.error("UNRAISABLE: %s", hook)
-            sys.unraisablehook = _unraisable
-        except Exception:
-            pass
         self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser('~'))
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(self.bin_dir)
+            except Exception:
+                pass
+        plugin_path = os.path.join(self.bin_dir, "plugins")
+        plugin_path_arg = plugin_path.replace('\\', '/')
         vlc_args = [
             '--no-xlib',
             '--no-video-title-show',
@@ -195,21 +170,34 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             '--aout=directsound',
             '--verbose=-1',
         ]
-        self.vlc_instance = vlc.Instance(vlc_args)
-        self.vlc_player = self.vlc_instance.media_player_new()
+        if os.path.exists(plugin_path):
+            vlc_args.append(f"--plugin-path={plugin_path_arg}")
+            os.environ["VLC_PLUGIN_PATH"] = plugin_path
+        os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
+        self.vlc_player = None
         try:
-            em = self.vlc_player.event_manager()
-            if em:
-                em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached) 
+            self.vlc_instance = vlc.Instance(vlc_args)
+            if self.vlc_instance:
+                self.vlc_player = self.vlc_instance.media_player_new()
             else:
-                self.logger.warning("Could not get VLC event manager to attach EndReached handler.")
+                self.logger.error("VLC Instance creation returned None (Plugins still not found).")
         except Exception as e:
-            self.logger.error("Failed to attach VLC EndReached handler: %s", e)
-        try:
-            self.vlc_player.audio_set_mute(False)
-            self.apply_master_volume()
-        except Exception:
-            pass
+            self.logger.error(f"CRITICAL: VLC Failed to initialize. Error: {e}")
+            self.vlc_instance = None
+        if self.vlc_player:
+            try:
+                em = self.vlc_player.event_manager()
+                if em:
+                    em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached) 
+                else:
+                    self.logger.warning("Could not get VLC event manager.")
+            except Exception as e:
+                self.logger.error("Failed to attach VLC EndReached handler: %s", e)
+            try:
+                self.vlc_player.audio_set_mute(False)
+                self.apply_master_volume()
+            except Exception:
+                pass
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_player_state)
@@ -516,34 +504,40 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         if not os.path.isfile(p):
             self.logger.error("Selected file not found: %s", p)
             return
-        media = self.vlc_instance.media_new_path(p)
-        if media is None:
+        if self.vlc_instance and self.vlc_player:
+            media = self.vlc_instance.media_new_path(p)
+            if media is None:
+                try:
+                    mrl = QUrl.fromLocalFile(p).toString()
+                except Exception:
+                    mrl = "file:///" + p.replace("\\\\", "/")
+                media = self.vlc_instance.media_new(mrl)
+            if media is None:
+                self.logger.error("Failed to open media: %s", p)
+                return
+            self.vlc_player.set_media(media)
+            self.vlc_player.video_set_scale(0)
             try:
-                mrl = QUrl.fromLocalFile(p).toString()
-            except Exception:
-                mrl = "file:///" + p.replace("\\\\", "/")
-            media = self.vlc_instance.media_new(mrl)
-        if media is None:
-            self.logger.error("Failed to open media: %s", p)
-            return
-        self.vlc_player.set_media(media)
-        self.vlc_player.video_set_scale(0)
-        try:
-            if sys.platform.startswith('win'):
-                self.vlc_player.set_hwnd(int(self.video_surface.winId()))
-        except Exception as hwnd_err:
-            self.logger.error("Failed to set HWND for player: %s", hwnd_err)
-        self.vlc_player.play()
-        toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
-        if toggle_method:
-            QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
-        self._poll_retries = 0
-        QTimer.singleShot(100, self._poll_for_duration)
+                if sys.platform.startswith('win'):
+                    self.vlc_player.set_hwnd(int(self.video_surface.winId()))
+            except Exception as hwnd_err:
+                self.logger.error("Failed to set HWND for player: %s", hwnd_err)
+            self.vlc_player.play()
+            toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
+            if toggle_method:
+                QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
+            self._poll_retries = 0
+            QTimer.singleShot(100, self._poll_for_duration)
+        else:
+            self.logger.warning("VLC not available. Skipping playback. (CPU Mode)")
+            pass
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
 
     def _poll_for_duration(self):
         """Repeatedly checks VLC for valid duration to update timeline slider."""
+        if not getattr(self, "vlc_player", None):
+            return
         try:
             self.vlc_player.set_rate(self.playback_rate)
             self.vlc_player.audio_set_mute(False)
@@ -632,9 +626,9 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.logger.warning("App closing during process. Killing ffmpeg...")
             self.process_thread.cancel()
         try:
-            if hasattr(self, "vlc_player"):
+            if getattr(self, "vlc_player", None):
                 self.vlc_player.stop()
-            if hasattr(self, "vlc_music_player"):
+            if getattr(self, "vlc_music_player", None):
                 self.vlc_music_player.stop()
         except Exception as e:
             self.logger.error("Failed to stop VLC players on close: %s", e)
