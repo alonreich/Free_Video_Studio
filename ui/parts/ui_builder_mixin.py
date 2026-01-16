@@ -279,6 +279,11 @@ class UiBuilderMixin:
         if hasattr(self, "_center_timer"):
             self._center_timer.start(0)
 
+    def moveEvent(self, e):
+        super().moveEvent(e)
+        if hasattr(self, 'portrait_mask_overlay'):
+            self._update_portrait_mask_overlay_state()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if hasattr(self, "_center_timer"):
@@ -400,7 +405,7 @@ class UiBuilderMixin:
         _center_row.addWidget(self.video_surface)
         video_layout.addWidget(self.video_viewport_container, stretch=1)
         if PortraitMaskOverlay:
-            self.portrait_mask_overlay = PortraitMaskOverlay(self.video_frame)
+            self.portrait_mask_overlay = PortraitMaskOverlay(self)
             self.portrait_mask_overlay.hide()
         else:
             self.portrait_mask_overlay = None
@@ -987,21 +992,21 @@ class UiBuilderMixin:
         self._update_portrait_mask_overlay_state()
 
     def _update_portrait_mask_overlay_state(self):
-        if not hasattr(self, 'portrait_mask_overlay'):
+        if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay:
             return
         res = getattr(self, 'original_resolution', "1920x1080")
         if not res:
             res = "1920x1080"
-        if hasattr(self, "mobile_checkbox") and self.mobile_checkbox.isChecked():
+        is_mobile = hasattr(self, "mobile_checkbox") and self.mobile_checkbox.isChecked()
+        if is_mobile and self.input_file_path:
             if self.video_surface.isVisible():
                 top_left = self.video_surface.mapToGlobal(self.video_surface.rect().topLeft())
                 self.portrait_mask_overlay.setGeometry(
-                    top_left.x(), top_left.y(), 
+                    top_left.x(), top_left.y(),
                     self.video_surface.width(), self.video_surface.height()
                 )
             self.portrait_mask_overlay.set_video_info(res, self.video_surface.size())
             self.portrait_mask_overlay.setVisible(True)
             self.portrait_mask_overlay.raise_()
-            self.portrait_mask_overlay.update()
         else:
             self.portrait_mask_overlay.setVisible(False)

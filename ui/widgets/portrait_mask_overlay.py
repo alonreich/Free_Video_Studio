@@ -24,8 +24,10 @@ class PortraitMaskOverlay(QWidget):
             return
         painter = QPainter(self)
         try:
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             painter.setRenderHint(QPainter.Antialiasing)
+            painter.setCompositionMode(QPainter.CompositionMode_Clear)
+            painter.fillRect(self.rect(), Qt.transparent)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             try:
                 if not self.original_video_resolution:
                     orig_w, orig_h = 1920, 1080
