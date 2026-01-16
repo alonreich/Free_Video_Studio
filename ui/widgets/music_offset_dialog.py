@@ -23,6 +23,7 @@ class MusicOffsetDialog(QDialog):
         self.setWindowTitle("Choose Background Music Start")
         self.setModal(True)
         self.resize(1300, 350)
+        self.setMinimumSize(1000, 170)
         self._vlc = vlc_instance
         self._mpath = audio_path
         self._bin = bin_dir
