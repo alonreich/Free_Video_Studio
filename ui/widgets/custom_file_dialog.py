@@ -333,8 +333,8 @@ class CustomFileDialog(QFileDialog):
         if self.tree_view:
             self.tree_view.setSortingEnabled(True)
             header = self.tree_view.header()
-            header.setSortIndicatorShown(True) # Ensure sort indicator is visible
-            header.sortIndicatorChanged.connect(self._save_sort_state) # Connect signal to save state
+            header.setSortIndicatorShown(True)
+            header.sortIndicatorChanged.connect(self._save_sort_state)
             self.restore_state(header)
             self.tree_view.setUniformRowHeights(True)
             try:
@@ -655,7 +655,7 @@ class CustomFileDialog(QFileDialog):
     def _save_sort_state(self, logicalIndex: int, order: Qt.SortOrder):
         if self.config:
             self.config.config["file_dialog_sort_column"] = logicalIndex
-            self.config.config["file_dialog_sort_order"] = int(order) # Convert SortOrder enum to int
+            self.config.config["file_dialog_sort_order"] = int(order)
             self.config.save_config(self.config.config)
 
     def get_windows_quick_access(self):
@@ -712,8 +712,6 @@ class CustomFileDialog(QFileDialog):
             header.restoreState(QByteArray.fromBase64(header_state_b64.encode()))
         else:
             self.set_default_column_widths(header)
-        
-        # Explicitly restore sort order if available
         sort_column = self.config.config.get("file_dialog_sort_column", -1)
         sort_order = self.config.config.get("file_dialog_sort_order", Qt.AscendingOrder)
         if sort_column != -1:

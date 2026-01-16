@@ -162,7 +162,7 @@ if __name__ == "__main__":
         msg_box.setStyleSheet("QLabel{ font-weight: bold; color: red; }")
         msg_box.exec_()
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    ex = VideoCompressorApp(file_arg)
+    ex = VideoCompressorApp(file_arg, detected_mode)
     app.installEventFilter(ex)
     try:
         if icon_path and os.path.exists(icon_path):
