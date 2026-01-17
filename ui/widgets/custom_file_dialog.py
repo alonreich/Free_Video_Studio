@@ -1,6 +1,7 @@
 import subprocess
 import shutil
 import os
+import sys
 from PyQt5.QtWidgets import (
     QFileDialog,
     QDesktopWidget,
@@ -17,6 +18,7 @@ from PyQt5.QtWidgets import (
     QStyle,
     QInputDialog,
     QApplication,
+    QStyledItemDelegate,
 )
 
 from PyQt5.QtCore import (
@@ -29,7 +31,41 @@ from PyQt5.QtCore import (
     QObject,
     QTimer,
     QMimeData,
+    QSize,
 )
+
+from PyQt5.QtGui import (
+    QColor, 
+    QPalette
+)
+
+class _CenteredTextDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.displayAlignment = Qt.AlignCenter
+        dialog = self.parent()
+        while dialog:
+            if hasattr(dialog, "_cut_file_paths"):
+                break
+            dialog = dialog.parent()
+        if not dialog:
+            return
+        model = index.model()
+        idx = index
+        while hasattr(model, "sourceModel"):
+            source = model.sourceModel()
+            if not source:
+                break
+            idx = model.mapToSource(idx)
+            model = source
+        if hasattr(model, "filePath"):
+            file_path = model.filePath(idx)
+            if file_path in dialog._cut_file_paths:
+                option.palette.setColor(QPalette.Text, QColor("#808080"))
+
+    def sizeHint(self, option, index):
+        s = super().sizeHint(option, index)
+        return QSize(s.width(), s.height())
 
 class RubberBandHelper(QObject):
     def __init__(self, tree_view: QTreeView):
@@ -154,12 +190,60 @@ class RubberBandHelper(QObject):
 
 class CenterHeaderProxyStyle(QProxyStyle):
     """
-    Forces the header text to be centered, overriding the model's preference.
+    1. Hides the default system arrow.
+    2. Forces text to be DEAD CENTER by temporarily clearing the sort flag 
+       (preventing the style from shifting text to make room for the arrow).
+    3. Manually paints symmetric arrows on both sides.
     """
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PE_IndicatorHeaderArrow:
+            return 
+        super().drawPrimitive(element, option, painter, widget)
 
     def drawControl(self, element, option, painter, widget=None):
         if element == QStyle.CE_HeaderLabel:
+            original_indicator = 0
+            if hasattr(option, "sortIndicator"):
+                original_indicator = option.sortIndicator
+            option.sortIndicator = 0 
             option.textAlignment = Qt.AlignCenter
+            super().drawControl(element, option, painter, widget)
+            option.sortIndicator = original_indicator
+            if option.sortIndicator:
+                arrow_color = QColor("#ecf0f1")
+                painter.save()
+                painter.setRenderHint(painter.Antialiasing)
+                painter.setBrush(arrow_color)
+                painter.setPen(Qt.NoPen)
+                r = option.rect
+                cx = r.center().x()
+                cy = r.center().y()
+                fm = option.fontMetrics
+                text_width = fm.width(option.text)
+                padding = 26 
+                left_x = int(cx - (text_width / 2) - padding)
+                right_x = int(cx + (text_width / 2) + padding)
+                s = 4 
+                is_down = (option.sortIndicator == 2)
+                
+                def draw_arrow(x, y, down):
+                    if down:
+                        painter.drawConvexPolygon(
+                            QPoint(x - s, y - s),
+                            QPoint(x + s, y - s),
+                            QPoint(x, y + s)
+                        )
+                    else:
+                        painter.drawConvexPolygon(
+                            QPoint(x - s, y + s),
+                            QPoint(x + s, y + s),
+                            QPoint(x, y - s)
+                        )
+                draw_arrow(left_x, cy, is_down)
+                draw_arrow(right_x, cy, is_down)
+                painter.restore()
+            return
         super().drawControl(element, option, painter, widget)
 
 class CenterAlignedTreeView(QTreeView):
@@ -193,6 +277,7 @@ class CustomFileDialog(QFileDialog):
         self.setObjectName("CustomFileDialog")
         self._rb_helper = None
         self.tree_view = None
+        self._text_delegate = None 
         self._header_style = None
         self._cut_file_paths = set()
         self._init_dialog_flags()
@@ -231,6 +316,7 @@ class CustomFileDialog(QFileDialog):
                 background-color: #2a3c4d;
                 color: #ecf0f1;
                 padding: 4px;
+                padding-right: 24px;
                 border: 1px solid #1f2a36;
             }
             QFileDialog#CustomFileDialog QTreeView {
@@ -331,20 +417,29 @@ class CustomFileDialog(QFileDialog):
     def _bind_tree_view(self):
         self.tree_view = self.findChild(QTreeView)
         if self.tree_view:
-            self.tree_view.setSortingEnabled(True)
             header = self.tree_view.header()
+            self.tree_view.setSortingEnabled(True)
             header.setSortIndicatorShown(True)
+            header.setSectionsClickable(True)
+            header.setStretchLastSection(False)
             header.sortIndicatorChanged.connect(self._save_sort_state)
+            self._header_style = CenterHeaderProxyStyle(header.style())
+            header.setStyle(self._header_style)
+            header.setDefaultAlignment(Qt.AlignCenter)
             self.restore_state(header)
+            try:
+                col = header.sortIndicatorSection()
+                if col < 0:
+                    header.setSortIndicator(0, Qt.AscendingOrder)
+            except Exception:
+                pass
             self.tree_view.setUniformRowHeights(True)
             try:
                 self.tree_view.setAllColumnsShowFocus(True)
             except Exception:
                 pass
-            self.tree_view.setItemDelegate(_CenteredTextDelegate(self.tree_view))
-            self._header_style = CenterHeaderProxyStyle(header.style())
-            header.setStyle(self._header_style)
-            header.setDefaultAlignment(Qt.AlignCenter)
+            self._text_delegate = _CenteredTextDelegate(self.tree_view)
+            self.tree_view.setItemDelegate(self._text_delegate)
             if self.tree_view.model():
                 try:
                     self.tree_view.model().setReadOnly(False)
@@ -356,7 +451,6 @@ class CustomFileDialog(QFileDialog):
         self._install_silent_delete(self.list_view)
 
     def _install_silent_delete(self, view):
-        """Make Delete and context-menu Delete delete with no prompts."""
         if view is None:
             return
         view.installEventFilter(self)
@@ -389,14 +483,14 @@ class CustomFileDialog(QFileDialog):
         act_new_folder = None
         act_delete = None
         if paths:
-            act_cut = menu.addAction("Cut")
-            act_copy = menu.addAction("Copy")
+            act_cut = menu.addAction("        ✂️        Cut         ✂️")
+            act_copy = menu.addAction("      📄       Copy        📄")
             menu.addSeparator()
             act_play = menu.addAction("▶   Preview Play the Video    ▶")
             menu.addSeparator()
         clipboard = QApplication.clipboard()
         if clipboard.mimeData().hasUrls():
-            act_paste = menu.addAction("Paste")
+            act_paste = menu.addAction("      📋       Paste       📋")
         if len(paths) == 1:
             act_rename = menu.addAction("          Rename the File")
             menu.addSeparator()
@@ -531,7 +625,6 @@ class CustomFileDialog(QFileDialog):
             if hasattr(os, 'startfile'):
                 os.startfile(target)
             else:
-                import sys
                 opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
                 subprocess.Popen([opener, target])
         except Exception:
@@ -540,7 +633,6 @@ class CustomFileDialog(QFileDialog):
     def _delete_selected_files_silent(self):
         """
         Delete selected file(s) or folder(s) with NO confirmation.
-        If a file cannot be deleted (locked/in use/permission), show a prompt.
         """
         view = None
         if getattr(self, "tree_view", None) is not None and self.tree_view.hasFocus():
@@ -583,18 +675,13 @@ class CustomFileDialog(QFileDialog):
         except Exception:
             pass
         if failed:
-            msg = "Some items could not be deleted (they may be open in another program):\n\n"
+            msg = "Some items could not be deleted:\n\n"
             msg += "\n".join([f"- {p}\n  {err}" for p, err in failed[:8]])
             if len(failed) > 8:
                 msg += f"\n\n(and {len(failed) - 8} more...)"
             QMessageBox.warning(self, "Delete failed", msg)
 
     def _selected_paths_from_view(self, view):
-        """
-        Get currently selected paths directly from the view's model/selection,
-        because QFileDialog.selectedFiles() is often empty until accept().
-        Works for both QTreeView and QListView.
-        """
         if view is None:
             return []
         sm = view.selectionModel()
@@ -715,7 +802,11 @@ class CustomFileDialog(QFileDialog):
         sort_column = self.config.config.get("file_dialog_sort_column", -1)
         sort_order = self.config.config.get("file_dialog_sort_order", Qt.AscendingOrder)
         if sort_column != -1:
-            header.setSortIndicator(sort_column, Qt.SortOrder(sort_order))
+            try:
+                order = Qt.SortOrder(sort_order)
+            except Exception:
+                order = Qt.AscendingOrder
+            header.setSortIndicator(sort_column, order)
 
     def set_default_state(self, header):
         self.set_default_position()
@@ -743,10 +834,6 @@ class CustomFileDialog(QFileDialog):
         return super().selectedFiles()
 
     def done(self, result):
-        """
-        Override done to ensure clean exit and prevent ghosting.
-        This handles OK, Cancel, and 'X' uniformly.
-        """
         self.save_state()
         self.hide()
         QApplication.processEvents()
@@ -754,24 +841,14 @@ class CustomFileDialog(QFileDialog):
 
     def closeEvent(self, event):
         super().closeEvent(event)
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
 
-from PyQt5.QtWidgets import QStyledItemDelegate
-from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtCore import QSize
+    class MockConfig:
+        def __init__(self):
+            self.config = {}
 
-class _CenteredTextDelegate(QStyledItemDelegate):
-    def initStyleOption(self, option, index):
-        super().initStyleOption(option, index)
-        option.displayAlignment = Qt.AlignCenter
-        dialog = self.parent().parent()
-        if not hasattr(dialog, "_cut_file_paths"):
-            return
-        model = index.model()
-        if model:
-            file_path = model.filePath(index)
-            if file_path in dialog._cut_file_paths:
-                option.palette.setColor(QPalette.Text, QColor("#808080"))
-
-    def sizeHint(self, option, index):
-        s = super().sizeHint(option, index)
-        return QSize(s.width(), s.height())
+        def save_config(self, cfg):
+            pass
+    dialog = CustomFileDialog(config=MockConfig())
+    dialog.exec_()
