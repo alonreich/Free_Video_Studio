@@ -315,7 +315,8 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                 self.close()
                 return
             command = [sys.executable, app_py_path]
-            subprocess.Popen(command, cwd=self.base_dir, creationflags=subprocess.DETACHED_PROCESS)
+            creation_flags = 0x08000000 if sys.platform == "win32" else 0
+            subprocess.Popen(command, cwd=self.base_dir, creationflags=creation_flags)
             self.close()
         except Exception as e:
             self.logger.critical(f"ERROR: Failed to launch Main App. Error: {e}")

@@ -85,7 +85,8 @@ class FfmpegMixin:
     
     def start_processing(self):
         """
-        Starts the video processing sequence in a separate thread; never let exceptions kill the app.
+        Starts the video processing sequence in a separate thread;
+        never let exceptions kill the app.
         """
         try:
             if self.is_processing:
@@ -98,11 +99,22 @@ class FfmpegMixin:
                 self._safe_status("Unsupported input resolution.", "red")
                 return
             if self.trim_start is not None and self.trim_end is not None and self.trim_end > 0:
-                start_time = self.trim_start
-                end_time = self.trim_end
+                start_time = float(self.trim_start)
+                end_time = float(self.trim_end)
             else:
-                start_time = (self.start_minute_input.value() * 60) + self.start_second_input.value()
-                end_time   = (self.end_minute_input.value()   * 60) + self.end_second_input.value()
+                start_time = float((self.start_minute_input.value() * 60) + self.start_second_input.value())
+                end_time   = float((self.end_minute_input.value()   * 60) + self.end_second_input.value())
+            dur = float(self.original_duration or 0.0)
+            if dur <= 0.0:
+                 dur = 99999.0 
+            start_time = max(0.0, min(start_time, dur))
+            end_time   = max(0.0, min(end_time, dur))
+            MIN_DURATION = 0.5
+            if end_time < start_time + MIN_DURATION:
+                end_time = min(dur, start_time + MIN_DURATION)
+                if end_time < start_time + MIN_DURATION:
+                    start_time = max(0.0, end_time - MIN_DURATION)
+            self.trim_start, self.trim_end = start_time, end_time
             is_mobile_format = self.mobile_checkbox.isChecked()
             speed_factor = self.speed_spinbox.value()
             if speed_factor < 0.5 or speed_factor > 3.1:
@@ -110,19 +122,6 @@ class FfmpegMixin:
                 self.is_processing = False
                 self.process_button.setEnabled(True)
                 return
-            dur = float(self.original_duration or 0.0)
-            if dur <= 0.0:
-                self.show_message("Error", "Video duration unavailable yet. Please wait a moment and try again.")
-                return
-            if (start_time is None or start_time <= 0.0) and (end_time is None or end_time <= 0.0):
-                start_time, end_time = 0.0, dur
-            start_time = max(0.0, min(float(start_time), dur))
-            end_time   = max(0.0, min(float(end_time)  , dur))
-            eps = max(0.01, min(0.2, dur * 0.001))
-            end_time = min(dur, max(end_time, start_time + eps))
-            if end_time >= dur and start_time >= dur - eps:
-                start_time = max(0.0, dur - eps)
-            self.trim_start, self.trim_end = start_time, end_time
             self._update_trim_widgets_from_trim_times()
             self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
             music_path, music_vol_linear = self._get_selected_music()
@@ -147,11 +146,11 @@ class FfmpegMixin:
             self.progress_bar.setRange(0, 0)
             self.progress_bar.setValue(0)
             self._pulse_timer.start()
-            self.process_button.setText("Processingâ€¦")
+            self.process_button.setText("Processing...")
             self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
             self._safe_set_phase("Processing")
             self._show_processing_overlay()
-            self._safe_status("Preparingâ€¦ (probing/seek)â€¦", "white")
+            self._safe_status("Preparing... (probing/seek)...", "white")
             self.progress_update_signal.emit(0)
             cfg = dict(self.config_manager.config)
             cfg['last_speed'] = float(speed_factor)

@@ -15,6 +15,10 @@ class ConcatProcessor:
             files_to_concat.append(intro_path)
         if core_path and os.path.exists(core_path): 
             files_to_concat.append(core_path)
+        if not files_to_concat:
+            self.logger.error("ConcatProcessor: No valid input files (Intro/Core missing). Aborting.")
+            progress_signal.emit(100)
+            return None
         output_dir = os.path.join(self.base_dir, '!!!_Output_Video_Files_!!!')
         os.makedirs(output_dir, exist_ok=True)
         if not os.access(output_dir, os.W_OK):

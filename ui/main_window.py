@@ -167,7 +167,6 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             '--no-plugins-cache',
             '--file-caching=1000',
             '--audio-time-stretch',
-            '--aout=directsound',
             '--verbose=-1',
         ]
         if os.path.exists(plugin_path):
@@ -266,7 +265,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             return
         try:
             self.logger.info(f"ACTION: Launching Video Merger: {merger_path}")
-            subprocess.Popen([sys.executable, "-B", merger_path], cwd=self.base_dir)
+            creation_flags = 0x08000000 if sys.platform == "win32" else 0
+            subprocess.Popen([sys.executable, "-B", merger_path], cwd=self.base_dir, creationflags=creation_flags)
             self.logger.info("Merger launched successfully. Closing Main App.")
             self.close()
         except OSError as e:
@@ -696,8 +696,8 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             dur = int(p.duration() or 0)
             if dur > 0 and pos_ms >= max(0, dur - 200):
                 self._reset_player_after_end()
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.error(f"UI Error in _on_position_changed: {e}")
 
     def _on_state_changed(self, state):
         try:

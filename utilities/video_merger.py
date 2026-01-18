@@ -26,6 +26,10 @@ except ImportError as e:
 def main():
     if sys.platform.startswith("win"):
         try:
+            import ctypes
+            whnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if whnd != 0:
+                ctypes.windll.user32.ShowWindow(whnd, 0)
             myappid = 'FortniteVideoTool.VideoMerger.1.0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:

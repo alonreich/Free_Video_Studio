@@ -11,6 +11,18 @@ from .encoders import EncoderManager
 from .step_intro import IntroProcessor
 from .step_concat import ConcatProcessor
 
+class ProgressScaler:
+    """Helper to map a 0-100 progress signal to a specific sub-range (e.g., 0-90)."""
+
+    def __init__(self, real_signal, start_pct, range_pct):
+        self.real_signal = real_signal
+        self.start_pct = start_pct
+        self.range_pct = range_pct
+
+    def emit(self, val):
+        weighted_val = int(self.start_pct + (val / 100.0) * self.range_pct)
+        self.real_signal.emit(min(100, weighted_val))
+
 class ProcessThread(QThread):
     def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
                  script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
@@ -78,6 +90,9 @@ class ProcessThread(QThread):
         intro_path = None
         output_path = None
         ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
+        scaler_core = ProgressScaler(self.progress_update_signal, 0, 90)
+        scaler_intro = ProgressScaler(self.progress_update_signal, 90, 5)
+        scaler_concat = ProgressScaler(self.progress_update_signal, 95, 5)
         try:
             if self.is_canceled: return
             has_bg = (self.bg_music_path is not None)
@@ -107,7 +122,6 @@ class ProcessThread(QThread):
                     vfade_out_st = max(0.0, output_clip_dur_pre_speed - vfade_out_d)
                 else:
                     vfade_out_st = output_clip_dur_pre_speed
-            output_clip_dur_pre_speed = in_t
             if self.speed_factor != 1.0:
                 in_t_speed_adjusted = in_t / self.speed_factor
                 vfade_in_d /= self.speed_factor
@@ -217,7 +231,8 @@ class ProcessThread(QThread):
             self.current_process = create_subprocess(cmd, self.logger)
             monitor_ffmpeg_progress(
                 self.current_process, self.duration_corrected, 
-                self.progress_update_signal, lambda: self.is_canceled, self.logger
+                scaler_core,
+                lambda: self.is_canceled, self.logger
             )
             try:
                 self.current_process.wait(timeout=5)
@@ -261,13 +276,15 @@ class ProcessThread(QThread):
                     intro_path = intro_proc.create_intro(
                         self.input_path, self.intro_abs_time, self.intro_still_sec,
                         self.is_mobile_format, audio_kbps, video_bitrate_kbps,
-                        self.progress_update_signal, lambda: self.is_canceled
+                        scaler_intro,
+                        lambda: self.is_canceled
                     )
                     self.current_process = intro_proc.current_process
             concat_proc = ConcatProcessor(ffmpeg_path, self.logger, self.base_dir, temp_dir)
-            output_path = concat_proc.run_concat(intro_path, core_path, self.progress_update_signal)
+            output_path = concat_proc.run_concat(intro_path, core_path, scaler_concat)
             self.current_process = concat_proc.current_process
             if output_path:
+                self.progress_update_signal.emit(100)
                 self.finished_signal.emit(True, output_path)
             else:
                 self.finished_signal.emit(False, "Concat failed.")

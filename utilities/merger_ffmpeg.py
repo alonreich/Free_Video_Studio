@@ -4,10 +4,49 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from PyQt5.QtCore import QProcess, Qt
+from PyQt5.QtCore import QProcess, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import QMessageBox, QApplication
 from utilities.merger_utils import _human, _get_logger
 from utilities.merger_ffmpeg_process import FFMpegProcessMixin
+
+class ProbeWorker(QThread):
+    """Background worker to probe files without freezing UI."""
+    finished = pyqtSignal(list, bool)
+    progress = pyqtSignal(str)
+
+    def __init__(self, handler, paths):
+        super().__init__()
+        self.handler = handler
+        self.paths = paths
+
+    def run(self):
+        use_fallback = False
+        if not self.paths:
+            self.finished.emit([], False)
+            return
+        self.progress.emit("Analyzing 1/{}...".format(len(self.paths)))
+        first = self.handler._probe_file(self.paths[0])
+        if not first:
+            use_fallback = True
+        else:
+            ref_w = first.get('width')
+            ref_h = first.get('height')
+            ref_codec = first.get('codec_name')
+            ref_ar = first.get('sample_rate')
+            for i, p in enumerate(self.paths):
+                if i == 0: continue
+                self.progress.emit(f"Analyzing {i+1}/{len(self.paths)}...")
+                m = self.handler._probe_file(p)
+                if not m:
+                    use_fallback = True
+                    break
+                if (m.get('width') != ref_w or 
+                    m.get('height') != ref_h or 
+                    m.get('codec_name') != ref_codec or
+                    m.get('sample_rate') != ref_ar):
+                    use_fallback = True
+                    break
+        self.finished.emit(self.paths, use_fallback)
 
 class FFMpegHandler(FFMpegProcessMixin):
     def __init__(self, parent):
@@ -17,9 +56,10 @@ class FFMpegHandler(FFMpegProcessMixin):
         self._temp_dir = None
         self._output_path = ""
         self._cmd = []
+        self._probe_worker = None
 
     def _probe_file(self, path):
-        """Helper to get resolution and codec info safely."""
+        """Helper to get resolution, codec, and audio sample rate safely."""
         try:
             bin_dir = self.parent.bin_dir
             ffprobe = os.path.join(bin_dir, "ffprobe.exe")
@@ -27,8 +67,7 @@ class FFMpegHandler(FFMpegProcessMixin):
                 ffprobe = "ffprobe"
             cmd = [
                 ffprobe, "-v", "error", 
-                "-select_streams", "v:0", 
-                "-show_entries", "stream=width,height,codec_name,r_frame_rate", 
+                "-show_entries", "stream=width,height,codec_name,r_frame_rate,sample_rate", 
                 "-of", "json", path
             ]
             flags = 0
@@ -40,7 +79,21 @@ class FFMpegHandler(FFMpegProcessMixin):
             data = json.loads(r.stdout)
             if not data.get('streams'):
                 return None
-            return data['streams'][0]
+            vid = None
+            aud = None
+            for s in data['streams']:
+                if 'width' in s and 'height' in s and not vid:
+                    vid = s
+                if 'sample_rate' in s and not aud:
+                    aud = s
+            if not vid: 
+                return None
+            result = vid.copy()
+            if aud:
+                result['sample_rate'] = aud.get('sample_rate')
+            else:
+                result['sample_rate'] = "none"
+            return result
         except Exception as e:
             self.logger.error(f"Probe failed for {path}: {e}")
             return None
@@ -53,39 +106,34 @@ class FFMpegHandler(FFMpegProcessMixin):
         items = [self.parent.listw.item(i) for i in range(n)]
         paths = [it.data(Qt.UserRole) for it in items]
         self.parent.set_ui_busy(True)
+        self._probe_worker = ProbeWorker(self, paths)
         if hasattr(self.parent, "status_updated"):
-            self.parent.status_updated.emit("Analyzing input files compatibility...")
-        QApplication.processEvents()
-        first_meta = self._probe_file(paths[0])
-        use_fallback = False
-        if not first_meta:
-            self.logger.warning(f"Could not probe {paths[0]}, forcing transcode safety mode.")
-            use_fallback = True
-        else:
-            ref_w = first_meta.get('width')
-            ref_h = first_meta.get('height')
-            ref_codec = first_meta.get('codec_name')
-            for p in paths[1:]:
-                m = self._probe_file(p)
-                if not m:
-                    use_fallback = True
-                    break
-                if (m.get('width') != ref_w or 
-                    m.get('height') != ref_h or 
-                    m.get('codec_name') != ref_codec):
-                    use_fallback = True
-                    self.logger.info(f"Compatibility Mismatch detected in {os.path.basename(p)}. Switching to Smart Transcode.")
-                    break
-        last_out_dir = self.parent._last_out_dir if self.parent._last_out_dir and Path(self.parent._last_out_dir).exists() else str(Path.home() / "Downloads")
-        default_path = str(Path(last_out_dir) / "merged_video.mp4")
-        out_path, _ = self.parent.open_save_dialog(default_path)
-        if not out_path:
+            self._probe_worker.progress.connect(self.parent.status_updated.emit)
+        self._probe_worker.finished.connect(self._on_probe_finished)
+        self._probe_worker.start()
+
+    def _on_probe_finished(self, paths, use_fallback):
+        """Called when probing is complete. Resumes merge logic on main thread."""
+        try:
+            if use_fallback:
+                self.logger.info("Probe Result: Mismatch (Audio/Video). Switching to Smart Transcode.")
+            last_out_dir = self.parent._last_out_dir if self.parent._last_out_dir and Path(self.parent._last_out_dir).exists() else str(Path.home() / "Downloads")
+            default_path = str(Path(last_out_dir) / "merged_video.mp4")
+            out_path, _ = self.parent.open_save_dialog(default_path)
+            if not out_path:
+                self.parent.set_ui_busy(False)
+                return
+            self.parent._last_out_dir = str(Path(out_path).parent)
+            self.parent.logic_handler.save_config()
+            self._output_path = out_path
+            self._temp_dir = tempfile.TemporaryDirectory()
+            self._start_ffmpeg_process(paths, out_path, use_fallback)
+        except Exception as e:
+            self.logger.error(f"Error in merge setup: {e}")
             self.parent.set_ui_busy(False)
-            return
-        self.parent._last_out_dir = str(Path(out_path).parent)
-        self.parent.logic_handler.save_config()
-        self._output_path = out_path
-        self._temp_dir = tempfile.TemporaryDirectory()
+
+    def _start_ffmpeg_process(self, paths, out_path, use_fallback):
+        """Constructs and starts the FFmpeg process."""
         try:
             if hasattr(self.parent, "_get_selected_music"):
                 music_path, music_vol = self.parent._get_selected_music()

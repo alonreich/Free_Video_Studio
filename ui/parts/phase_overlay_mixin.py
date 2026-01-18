@@ -5,26 +5,66 @@ import sys
 import time
 from collections import deque
 import psutil
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal
 from PyQt5.QtGui import QRegion, QIcon
 from PyQt5.QtWidgets import QWidget, QPlainTextEdit
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
+class GpuWorker(QThread):
+    """Background worker to poll GPU stats without freezing the Main GUI."""
+    stats_updated = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
+        self._running = True
+
+    def stop(self):
+        self._running = False
+        self.wait()
+
+    def run(self):
+        while self._running:
+            gpu = 0
+            try:
+                if _ENABLE_SAFE_GPU_STATS:
+                    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    r = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.encoder", "--format=csv,noheader,nounits", "-i", "0"],
+                        capture_output=True, text=True, timeout=1.0, creationflags=flags
+                    )
+                    if r.returncode == 0:
+                        row = (r.stdout or "0,0").strip().splitlines()[0].split(",")
+                        gpu_core = int(row[0].strip() or 0)
+                        gpu_enc  = int(row[1].strip() or 0)
+                        gpu = max(0, min(100, max(gpu_core, gpu_enc)))
+            except Exception:
+                pass
+            self.stats_updated.emit(gpu)
+            for _ in range(20): 
+                if not self._running: break
+                time.sleep(0.1)
+
 class PhaseOverlayMixin:
     def _append_live_log(self, line: str) -> None:
-        """Appends a log line to the overlay's live_log widget."""
-        try:
-            if not getattr(self, "live_log", None):
-                return
-            if " | " in line:
-                parts = line.split(" | ")
-                line = parts[-1].strip()
-            self.live_log.appendPlainText(line)
+        """Buffers log lines and flushes them in batches to save CPU."""
+        if not getattr(self, "live_log", None):
+            return
+        if " | " in line:
+            parts = line.split(" | ")
+            line = parts[-1].strip()
+        if not hasattr(self, "_log_buffer"):
+            self._log_buffer = []
+        self._log_buffer.append(line)
+
+    def _flush_logs(self):
+        """Called by timer to dump buffered logs to UI."""
+        if hasattr(self, "_log_buffer") and self._log_buffer and getattr(self, "live_log", None):
+            chunk = "\n".join(self._log_buffer)
+            self._log_buffer.clear()
+            self.live_log.appendPlainText(chunk)
             self.live_log.verticalScrollBar().setValue(
                 self.live_log.verticalScrollBar().maximum()
             )
-        except Exception:
-            pass
 
     def _ensure_overlay_widgets(self) -> None:
         """Creates the (hidden) overlay, graph, and log widgets."""
@@ -52,10 +92,21 @@ class PhaseOverlayMixin:
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
             if not hasattr(self, nm):
                 setattr(self, nm, deque(maxlen=400))
+        self._log_buffer = []
+        self._log_flush_timer = QTimer(self)
+        self._log_flush_timer.setInterval(250)
+        self._log_flush_timer.timeout.connect(self._flush_logs)
+        self._log_flush_timer.start()
+        self._last_gpu_val = 0
+        self._gpu_worker = GpuWorker()
+        self._gpu_worker.stats_updated.connect(self._on_gpu_update)
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(2000)
         self._stats_timer.timeout.connect(self._sample_perf_counters_safe)
         self._overlay.installEventFilter(self)
+
+    def _on_gpu_update(self, val):
+        self._last_gpu_val = val
 
     def _resize_overlay(self) -> None:
         """Called by the main resizeEvent to resize/mask the overlay."""
@@ -108,6 +159,8 @@ class PhaseOverlayMixin:
             QTimer.singleShot(0, self._update_overlay_mask)
             self._sample_perf_counters_safe()
             self._stats_timer.start()
+            if hasattr(self, "_gpu_worker") and not self._gpu_worker.isRunning():
+                self._gpu_worker.start()
             if not getattr(self, "_color_pulse_timer", None):
                 self._color_pulse_timer = QTimer(self)
                 self._color_pulse_timer.setInterval(100)
@@ -121,6 +174,8 @@ class PhaseOverlayMixin:
         try:
             if getattr(self, "_stats_timer", None):
                 self._stats_timer.stop()
+            if hasattr(self, "_gpu_worker") and self._gpu_worker.isRunning():
+                self._gpu_worker.stop()
         except Exception:
             pass
         try:
@@ -163,7 +218,8 @@ class PhaseOverlayMixin:
                     border-radius: 15px;
                     margin-bottom: 6px;
                 }}
-                QPushButton:hover {{ background-color: #c8f7c5; }}
+                QPushButton:hover {{ background-color: #c8f7c5;
+                }}
             """)
             self.process_button.setText(current_text)
             self.process_button.setIcon(current_icon)
@@ -176,22 +232,7 @@ class PhaseOverlayMixin:
             cpu = int(psutil.cpu_percent(interval=None))
         except Exception:
             cpu = 0
-        gpu = 0
-        try:
-            if _ENABLE_SAFE_GPU_STATS:
-                r = subprocess.run(
-                    ["nvidia-smi",
-                    "--query-gpu=utilization.gpu,utilization.encoder",
-                    "--format=csv,noheader,nounits", "-i", "0"],
-                    capture_output=True, text=True, timeout=0.6,
-                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-                )
-                row = (r.stdout or "0,0").strip().splitlines()[0].split(",")
-                gpu_core = int(row[0].strip() or 0)
-                gpu_enc  = int(row[1].strip() or 0)
-                gpu = max(0, min(100, max(gpu_core, gpu_enc)))
-        except Exception:
-            gpu = 0
+        gpu = getattr(self, "_last_gpu_val", 0)
         try:
             mem = int(psutil.virtual_memory().percent)
         except Exception:

@@ -17,23 +17,31 @@ class FilterBuilder:
 
     def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates):
         coords_data = mobile_coords
-        loot_1080 = tuple(coords_data['crops_1080p']['loot'])
-        stats_1080 = tuple(coords_data['crops_1080p']['stats'])
-        team_1080 = tuple(coords_data['crops_1080p']['team'])
+        
+        def get_rect(section, key):
+            return tuple(coords_data.get(section, {}).get(key, [0,0,0,0]))
+        loot_1080 = get_rect('crops_1080p', 'loot')
+        stats_1080 = get_rect('crops_1080p', 'stats')
+        team_1080 = get_rect('crops_1080p', 'team')
+        scales = coords_data.get('scales', {})
+        overlays = coords_data.get('overlays', {})
         if is_boss_hp:
-            hp_1080 = tuple(coords_data['crops_1080p']['boss_hp'])
-            healthbar_scale = float(coords_data['scales']['boss_hp'])
-            hp_ov = coords_data['overlays']['boss_hp']
+            hp_1080 = get_rect('crops_1080p', 'boss_hp')
+            healthbar_scale = float(scales.get('boss_hp', 1.0))
+            hp_ov = overlays.get('boss_hp', {'x': 0, 'y': 0})
             self.logger.info("Using Boss HP coordinates.")
         else:
-            hp_1080 = tuple(coords_data['crops_1080p']['normal_hp'])
-            healthbar_scale = float(coords_data['scales']['normal_hp'])
-            hp_ov = coords_data['overlays']['normal_hp']
+            hp_1080 = get_rect('crops_1080p', 'normal_hp')
+            healthbar_scale = float(scales.get('normal_hp', 1.0))
+            hp_ov = overlays.get('normal_hp', {'x': 0, 'y': 0})
             self.logger.info("Using Normal HP coordinates.")
-        loot_scale = float(coords_data['scales']['loot'])
-        stats_scale = float(coords_data['scales']['stats'])
-        team_scale = float(coords_data['scales']['team'])
-        in_w, in_h = map(int, original_res_str.split('x'))
+        loot_scale = float(scales.get('loot', 1.0))
+        stats_scale = float(scales.get('stats', 1.0))
+        team_scale = float(scales.get('team', 1.0))
+        try:
+            in_w, in_h = map(int, original_res_str.split('x'))
+        except:
+            in_w, in_h = 1920, 1080
         scale_factor = in_h / 1080.0
         self.logger.info(f"Mobile Crop: Scale factor: {scale_factor:.4f} (Input: {in_w}x{in_h})")
 
@@ -51,12 +59,12 @@ class FilterBuilder:
         hp_s_str = f"scale={int(round(hp_1080[0] * healthbar_scale))}:{int(round(hp_1080[1] * healthbar_scale))}"
         stats_s_str = f"scale={int(round(stats_1080[0] * stats_scale))}:{int(round(stats_1080[1] * stats_scale))}"
         team_s_str = f"scale={int(round(team_1080[0] * team_scale))}:{int(round(team_1080[1] * team_scale))}"
-        lx = coords_data['overlays']['loot']['x']
-        ly = coords_data['overlays']['loot']['y']
-        sx = coords_data['overlays']['stats']['x']
-        sy = coords_data['overlays']['stats']['y']
-        hpx = hp_ov['x']
-        hpy = hp_ov['y']
+        lx = overlays.get('loot', {}).get('x', 0)
+        ly = overlays.get('loot', {}).get('y', 0)
+        sx = overlays.get('stats', {}).get('x', 0)
+        sy = overlays.get('stats', {}).get('y', 0)
+        hpx = hp_ov.get('x', 0)
+        hpy = hp_ov.get('y', 0)
         f_main = "[main]scale=1280:1920:force_original_aspect_ratio=increase,crop=1280:1920[main_cropped]"
         f_loot = f"[lootbar]crop={loot_crop},drawbox=t=2:c=black,{loot_s_str},format=yuva444p[lootbar_scaled]"
         f_hp = f"[healthbar]crop={hp_crop},drawbox=t=2:c=black,{hp_s_str},format=yuva444p[healthbar_scaled]"
@@ -66,8 +74,8 @@ class FilterBuilder:
         ov_2 = f"[t1][healthbar_scaled]overlay={hpx}:{hpy}[t2]"
         if show_teammates:
             ov_3 = f"[t2][stats_scaled]overlay={sx}:{sy}[t3]"
-            tx = coords_data['overlays']['team']['x']
-            ty = coords_data['overlays']['team']['y']
+            tx = overlays.get('team', {}).get('x', 0)
+            ty = overlays.get('team', {}).get('y', 0)
             f_team = f"[team]crop={team_crop},drawbox=t=2:c=black,{team_s_str},format=yuva444p[team_scaled]"
             video_filter_cmd = (
                 f"split=5[main][lootbar][healthbar][stats][team];"
@@ -88,8 +96,17 @@ class FilterBuilder:
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
         ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
-        font_path = "C:/Windows/Fonts/arial.ttf"
-        font_path = font_path.replace("\\", "/").replace(":", "\\:")
+        candidates = [
+            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
+            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Helvetica.ttc"
+        ]
+        font_path = "arial"
+        for c in candidates:
+            if os.path.exists(c):
+                font_path = c.replace("\\", "/").replace(":", "\\:")
+                break
         drawtext_parts = [
             f"drawtext=fontfile='{font_path}'",
             f"textfile='{ff_textfile}':reload=0:text_shaping=1",
