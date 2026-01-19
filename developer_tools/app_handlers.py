@@ -1,14 +1,13 @@
-from config import CROP_APP_STYLESHEET
 import os
-import sys
-import subprocess
+import json
 import logging
-from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import QRect, QTimer
-from PyQt5.Qt import QStyle
+from PyQt5.QtCore import QTimer
 from portrait_window import PortraitWindow
 from utils import cleanup_temp_snapshots
+from config import CROP_APP_STYLESHEET, HUD_ELEMENT_MAPPINGS
+from guidance_text import GUIDANCE_TEXT, HINT_TEXT
 
 class CropAppHandlers:
     def connect_signals(self):
@@ -16,92 +15,197 @@ class CropAppHandlers:
         self.open_button.clicked.connect(self.open_file)
         self.snapshot_button.clicked.connect(self.take_snapshot)
         self.back_button.clicked.connect(self.show_video_view)
-        self.send_crop_button.clicked.connect(self.trigger_portrait_add)
         self.reset_state_button.clicked.connect(self.reset_state)
         self.position_slider.sliderMoved.connect(self.set_position)
+        if hasattr(self, 'draw_widget'):
+            self.draw_widget.crop_role_selected.connect(self.handle_crop_completed)
+        if hasattr(self, 'complete_button'):
+            self.complete_button.clicked.connect(self.finish_and_save)
 
-    def get_title_info(self):
-        monitor_id = QApplication.desktop().screenNumber(self) + 1
-        geo = self.frameGeometry()
-        return (f"{self.base_title}          "
-                f"Monitor: {monitor_id}  |  "
-                f"Pos: {geo.x()},{geo.y()}  |  "
-                f"Size: {self.width()}x{self.height()}")
+    def set_style(self):
+        self.setStyleSheet(CROP_APP_STYLESHEET)
+
+    def update_wizard_step(self, step_num, instruction):
+        step_names = {
+            1: "STEP 1: LOAD VIDEO",
+            2: "STEP 2: TAKE SNAPSHOT",
+            3: "STEP 3: CROP HUD ELEMENTS",
+            4: "STEP 4: POSITION IN EDITOR",
+            5: "STEP 5: COMPLETE"
+        }
+        self.step_label.setText(step_names.get(step_num, f"STEP {step_num}:"))
+        self.instruction_label.setText(instruction)
+        self.update_guidance(step_num)
+        
+    def update_guidance(self, step_num):
+        if step_num in GUIDANCE_TEXT:
+            guidance = GUIDANCE_TEXT[step_num]
+            self.guidance_label.setText(guidance["title"])
+            self.next_step_label.setText(guidance["instruction"])
+        self.update_progress_tracker()
+        if step_num == 3:
+            next_element = self.get_next_element_to_configure()
+            if next_element:
+                QTimer.singleShot(100, lambda: self._show_element_hint(next_element))
+                
+    def _show_element_hint(self, element):
+        if element in HINT_TEXT:
+            if hasattr(self, 'hint_label'):
+                self.hint_label.setText(HINT_TEXT[element])
+                self.hint_label.setVisible(True)
+        
+    def update_progress_tracker(self):
+        if not hasattr(self, 'progress_labels') or not hasattr(self, 'hud_elements'):
+            return
+        
+        configured_display_names = self._get_configured_roles()
+        
+        for element in self.hud_elements:
+            if element not in self.progress_labels:
+                continue
+            label = self.progress_labels[element]
+            
+            is_configured = element in configured_display_names
+            
+            label.setProperty("class", "")
+            label.style().unpolish(label)
+            label.style().polish(label)
+            if is_configured:
+                label.setProperty("class", "completed")
+            elif element == self.get_next_element_to_configure():
+                label.setProperty("class", "current")
+            label.style().unpolish(label)
+            label.style().polish(label)
+            
+    def get_next_element_to_configure(self):
+        configured_display_names = self._get_configured_roles()
+        for element in self.hud_elements:
+            if element not in configured_display_names:
+                return element
+        return None
+
+    def _get_remaining_roles(self):
+        configured_display_names = self._get_configured_roles()
+        return [role for role in self.hud_elements if role not in configured_display_names]
+
+    def _get_configured_roles(self):
+        config_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        configured_tech_keys = set()
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+                if "crops_1080p" in data:
+                    configured_tech_keys = set(data["crops_1080p"].keys())
+        except (IOError, json.JSONDecodeError) as e:
+            self.logger.warning(f"Could not read or parse crop config: {e}")
+            pass
+        
+        return {display_name for tech_key, display_name in HUD_ELEMENT_MAPPINGS.items() if tech_key in configured_tech_keys}
+
+    def handle_crop_completed(self, pix, rect, role):
+        if not pix or not rect: return
+        
+        tech_key_map = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
+        tech_key = tech_key_map.get(role, "unknown")
+
+        if tech_key == "unknown": return
+        self.quick_save_crop(rect, tech_key)
+        self.launch_portrait_editor(pix, rect, role)
+        self.draw_widget.clear_selection()
+        self.draw_widget.set_roles(self.hud_elements, self._get_configured_roles())
+        remaining = self._get_remaining_roles()
+        if remaining:
+            next_element = self.get_next_element_to_configure()
+            if next_element:
+                self.update_wizard_step(3, f"✓ '{role}' saved. Next: {next_element}")
+            else:
+                self.update_wizard_step(3, f"✓ '{role}' saved. Draw another element.")
+        else:
+            self.update_wizard_step(5, "All HUD elements configured!")
+            self.show_completion_state()
+
+    def show_completion_state(self):
+        if hasattr(self, 'complete_button'):
+            self.complete_button.setVisible(True)
+        self.guidance_label.setText("All elements configured!")
+        self.next_step_label.setText("Review your work in the portrait editor, then click Finish & Save")
+        
+    def finish_and_save(self):
+        QMessageBox.information(self, "Configuration Complete", 
+            "All HUD elements have been configured and saved!")
+        if self.portrait_window:
+            self.portrait_window.close()
+            self.portrait_window = None
+        self.reset_state()
+
+    def quick_save_crop(self, rect, role):
+        self.logger.info(f"Saving coordinates for {role}...")
+        source_h = 1080
+        if self.media_processor.original_resolution:
+            try:
+                parts = self.media_processor.original_resolution.lower().split('x')
+                if len(parts) >= 2: source_h = int(parts[1])
+            except: pass
+        norm_factor = 1080.0 / float(source_h)
+        data = {"crops_1080p": {}, "scales": {}, "overlays": {}}
+        config_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f: data = json.load(f)
+        except: pass
+        if "crops_1080p" not in data: data["crops_1080p"] = {}
+        data["crops_1080p"][role] = [
+            int(round(rect.x() * norm_factor)), int(round(rect.y() * norm_factor)),
+            int(round(rect.width() * norm_factor)), int(round(rect.height() * norm_factor))
+        ]
+        with open(config_path, 'w') as f: json.dump(data, f, indent=4)
+
+    def launch_portrait_editor(self, pix, rect, role):
+        if self.background_crop_width <= 0: self.background_crop_width = 1920
+        try:
+            if self.portrait_window is None:
+                self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
+                self.portrait_window.destroyed.connect(lambda: setattr(self, 'portrait_window', None))
+            
+            if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
+                self.portrait_window.set_background_image(self.draw_widget.pixmap)
+
+            if not self.portrait_window.isVisible():
+                self.portrait_window.show()
+                self.portrait_window.raise_()
+            self.portrait_window.add_scissored_item(pix, rect, self.background_crop_width)
+            items = self.portrait_window.scene.selectedItems()
+            if items: items[0].set_role(role)
+            self.update_wizard_step(4, f"Adjust '{role}' position and size in the portrait editor")
+        except Exception as e:
+            self.logger.error(f"CRASH PREVENTED: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to open editor: {e}")
 
     def reset_state(self):
-        self.logger.info("Resetting application state.")
         if self.portrait_window:
             self.portrait_window.close()
             self.portrait_window = None
         self.media_processor.stop()
         self.media_processor.set_media_to_null()
         self.play_pause_button.setEnabled(False)
-        self.play_pause_button.setText("Play")
-        self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.snapshot_button.setEnabled(False)
-        self.snapshot_button.setText("Begin Crops")
-        self.send_crop_button.setVisible(False)
-        self.position_slider.setValue(0)
-        self.position_slider.setEnabled(False)
+        self.back_button.setVisible(False)
         self.draw_widget.clear_selection()
         self.draw_widget.setImage(None) 
         self.view_stack.setCurrentWidget(self.video_frame)
-        self.coordinates_label.setText("Crop coordinates will be shown here")
-        cleanup_temp_snapshots()
-        self.open_button.setFocus()
+        self.update_wizard_step(1, "Open a video file to begin the configuration wizard.")
+        if hasattr(self, 'complete_button'):
+            self.complete_button.setVisible(False)
+        self.update_progress_tracker()
 
     def play_pause(self):
-        self.logger.info("Play/Pause button clicked.")
         self.media_processor.play_pause()
-        QTimer.singleShot(50, self.update_play_pause_button)
-
-    def update_play_pause_button(self):
-        if self.media_processor.is_playing():
-            self.play_pause_button.setText("Pause")
-            self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
-        else:
-            self.play_pause_button.setText("Play")
-            self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-
-    def _launch_main_app(self):
-        self.logger.warning("Attempting to launch main app (app.py) - this is a debug/development feature.")
-        try:
-            app_path = os.path.join(self.base_dir, 'app.py')
-            if not os.path.exists(app_path):
-                self.logger.error("app.py not found, cannot launch.")
-                return
-            subprocess.Popen([sys.executable, app_path], cwd=self.base_dir)
-            self.close()
-        except Exception as e:
-            self.logger.error("Failed to launch main app.", exc_info=True)
-
-    def set_style(self):
-        self.setStyleSheet(CROP_APP_STYLESHEET)
-        self.snapshot_button.setStyleSheet("background-color: #148C14;")
-        self.send_crop_button.setStyleSheet("background-color: #e67e22; color: white; padding: 5px; border-radius: 6px; font-weight: bold; max-width: 120px;")
-
-    def trigger_portrait_add(self):
-        pix, rect = self.draw_widget.get_selection()
-        if pix and rect:
-            self.logger.info(f"Adding new scissored item to portrait window from crop rect: {rect}")
-            self.update_crop_coordinates_label(rect)
-            if self.portrait_window is None:
-                self.logger.info("Creating new PortraitWindow instance.")
-                self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
-            self.portrait_window.add_scissored_item(pix, rect, self.background_crop_width)
-            self.draw_widget.clear_selection()
-            self.portrait_window.show()
-        else:
-            self.logger.warning("Attempted to add to portrait, but no crop selection was made.")
-            self.coordinates_label.setText("Please draw a box first!")
+        QTimer.singleShot(50, lambda: self.play_pause_button.setText("Pause" if self.media_processor.is_playing() else "Play"))
 
     def open_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Video", self.last_dir, "Video Files (*.mp4 *.avi *.mkv)")
-        if file_path:
-            self.logger.info(f"File dialog opened and selected file: {file_path}")
-            self.load_file(file_path)
-        else:
-            self.logger.info("File dialog opened but no file was selected.")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Video", self.last_dir or "", "Video Files (*.mp4 *.avi *.mkv)")
+        if file_path: self.load_file(file_path)
 
     def load_file(self, file_path):
         self.last_dir = os.path.dirname(file_path)
@@ -111,81 +215,56 @@ class CropAppHandlers:
         self.snapshot_button.setText("Loading...")
         self.position_slider.setEnabled(True)
         self.show_video_view()
-
-        def enable_snap():
-            res = self.media_processor.original_resolution
-            self.logger.info(f"Media resolution determined: {res}")
-            self.coordinates_label.setText(f"Resolution: {res}" if res else "Could not get resolution.")
-            self.snapshot_button.setEnabled(True)
-            self.snapshot_button.setText("Begin Crops")
-        QTimer.singleShot(1000, enable_snap)
+        self.update_wizard_step(2, "Play/Pause to find a clear frame with visible HUD elements.")
+        QTimer.singleShot(1000, lambda: self.snapshot_button.setEnabled(True))
+        QTimer.singleShot(1000, lambda: self.snapshot_button.setText("2. TAKE SNAPSHOT"))
+        self.update_progress_tracker()
 
     def take_snapshot(self):
-        self.logger.info("Snapshot process initiated.")
-        self.coordinates_label.setText("Generating snapshot...")
-        QApplication.processEvents()
         if self.media_processor.media_player.is_playing():
             self.media_processor.stop()
             self.play_pause_button.setText("Play")
-            self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         success, message = self.media_processor.take_snapshot(self.snapshot_path)
-        self.logger.info(f"Snapshot result: Success={success}, Message='{message}'")
-        self.coordinates_label.setText(message)
-        if success:
-            self._show_draw_view()
+        if success: self._show_draw_view()
+        else: QMessageBox.warning(self, "Snapshot Error", message)
 
     def _show_draw_view(self):
-        self.logger.info("Showing draw view with new snapshot.")
         snapshot_pixmap = QPixmap(self.snapshot_path)
-        if snapshot_pixmap.isNull():
-            self.logger.error(f"Failed to load snapshot image from disk: {self.snapshot_path}")
-            self.coordinates_label.setText("Failed to load snapshot image.")
-            return
-        if self.portrait_window is None:
-            self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
+        if snapshot_pixmap.isNull(): return
+        try:
+            if self.portrait_window is None:
+                self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
+        except: pass
         target_aspect = 1080 / 1920
         img_aspect = snapshot_pixmap.width() / snapshot_pixmap.height()
-        if img_aspect > target_aspect:
-            h = snapshot_pixmap.height()
-            w = int(h * target_aspect)
-            x = (snapshot_pixmap.width() - w) // 2
-            y = 0
-        else:
-            w = snapshot_pixmap.width()
-            h = int(w / target_aspect)
-            x = 0
-            y = (snapshot_pixmap.height() - h) // 2
+        w = int(snapshot_pixmap.height() * target_aspect) if img_aspect > target_aspect else snapshot_pixmap.width()
         self.background_crop_width = w
-        center_crop_rect = QRect(x, y, w, h)
-        background_pixmap = snapshot_pixmap.copy(center_crop_rect)
-        self.portrait_window.set_background(background_pixmap)
-        self.portrait_window.show()
         self.draw_widget.setImage(self.snapshot_path)
+        self.draw_widget.set_roles(self.hud_elements, self._get_configured_roles())
+        next_element = self.get_next_element_to_configure()
+        if next_element:
+            self.update_wizard_step(3, f"Draw a box around the {next_element}")
+            self.guidance_label.setText(f"Draw box around {next_element}")
+            self.next_step_label.setText("Click & drag to select, then choose element type from menu")
+        else:
+            self.update_wizard_step(3, "All elements configured! You can still add more if needed.")
+            self.guidance_label.setText("All elements configured")
+            self.next_step_label.setText("You can still draw additional elements if needed")
+        self.update_progress_tracker()
         self.view_stack.setCurrentWidget(self.draw_widget)
-        self.send_crop_button.setVisible(True)
-        self.draw_widget.setFocus()
-        self.coordinates_label.setText("Ready to draw crops.")
+        self.back_button.setVisible(True)
 
     def show_video_view(self):
-        self.logger.info("Switching back to video view.")
         self.view_stack.setCurrentWidget(self.video_frame)
-        self.video_frame.setFocus()
-        self.send_crop_button.setVisible(False)
+        self.back_button.setVisible(False)
+        self.update_wizard_step(2, "Video View. Find a frame and take a snapshot.")
 
     def set_position(self, position):
-        self.logger.info(f"Slider position changed to: {position}")
         self.media_processor.set_position(position / 1000.0)
 
     def update_ui(self):
         if self.media_processor.media:
-            media_pos = int(self.media_processor.get_position() * 1000)
-            self.position_slider.setValue(media_pos)
-            if str(self.media_processor.get_state()) == 'State.Ended':
-                self.logger.info("Media reached end.")
-                self.media_processor.stop()
-                self.play_pause_button.setText("Play")
-                self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-                self.position_slider.setValue(0)
-
-    def update_crop_coordinates_label(self, rect):
-        self.coordinates_label.setText(f"Crop: x={rect.x()}, y={rect.y()}, w={rect.width()}, h={rect.height()}")
+            self.position_slider.setValue(int(self.media_processor.get_position() * 1000))
+           
+    def get_title_info(self):
+        return self.base_title

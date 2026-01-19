@@ -1,54 +1,16 @@
+import json
+import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem,
-    QDialog, QTextEdit, QMessageBox, QGraphicsItem
+    QGraphicsItem, QComboBox, QMessageBox, QFrame
 )
 
-from PyQt5.QtCore import Qt, QSize, QEvent, QTimer
-from PyQt5.QtGui import QPainter
+from PyQt5.QtCore import Qt, QTimer, QRectF
+from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPixmap
 from utils import PersistentWindowMixin
 from graphics_items import ResizablePixmapItem
-from config import PORTRAIT_WINDOW_STYLESHEET
-
-class FinishedDialog(QDialog):
-    def __init__(self, data_string, parent=None):
-        super(FinishedDialog, self).__init__(parent)
-        self.setWindowTitle("Crop Information")
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(400)
-        self.text_edit = QTextEdit(self)
-        self.text_edit.setReadOnly(True)
-        self.text_edit.setText(data_string)
-        self.copy_button = QPushButton("Copy to Clipboard", self)
-        self.copy_button.clicked.connect(self.copy_text)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.text_edit)
-        layout.addWidget(self.copy_button)
-        button_size = QSize(160, 40)
-        self.copy_button.setFixedSize(button_size)
-        self.setLayout(layout)
-
-    def copy_text(self):
-        QApplication.clipboard().setText(self.text_edit.toPlainText())
-        self.copy_button.setText("Copied!")
-        self.copy_button.setEnabled(False)
-        self.original_style = self.copy_button.styleSheet()
-        self.flash_timer = QTimer(self)
-        self.flash_count = 0
-        self.flash_timer.timeout.connect(self.flash_animation)
-        self.flash_timer.start(150)
-
-    def flash_animation(self):
-        if self.flash_count >= 4:
-            self.flash_timer.stop()
-            self.copy_button.setStyleSheet(self.original_style)
-            self.accept()
-            return
-        if self.flash_count % 2 == 0:
-            self.copy_button.setStyleSheet("background-color: #27ae60; color: white;")
-        else:
-            self.copy_button.setStyleSheet(self.original_style)
-        self.flash_count += 1
+from config import PORTRAIT_WINDOW_STYLESHEET, HUD_ELEMENT_MAPPINGS
 
 class PortraitView(QGraphicsView):
     def keyPressEvent(self, event):
@@ -56,178 +18,244 @@ class PortraitView(QGraphicsView):
         if selected_items:
             item = selected_items[0]
             delta = 1
+            if event.modifiers() & Qt.ShiftModifier: delta = 10
             key = event.key()
-            if key == Qt.Key_Up:
-                item.setPos(item.x(), item.y() - delta)
-                event.accept()
-                return
-            elif key == Qt.Key_Down:
-                item.setPos(item.x(), item.y() + delta)
-                event.accept()
-                return
-            elif key == Qt.Key_Left:
-                item.setPos(item.x() - delta, item.y())
-                event.accept()
-                return
-            elif key == Qt.Key_Right:
-                item.setPos(item.x() + delta, item.y())
-                event.accept()
-                return
-        super().keyPressEvent(event)
+            if key == Qt.Key_Up: item.moveBy(0, -delta); event.accept()
+            elif key == Qt.Key_Down: item.moveBy(0, delta); event.accept()
+            elif key == Qt.Key_Left: item.moveBy(-delta, 0); event.accept()
+            elif key == Qt.Key_Right: item.moveBy(delta, 0); event.accept()
+            else: super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
 
 class PortraitWindow(PersistentWindowMixin, QWidget):
     def __init__(self, original_resolution, config_path, parent=None):
         super(PortraitWindow, self).__init__(parent)
         self.original_resolution = original_resolution
-        self.base_title = "Portrait Composer"
-        self.setFixedSize(594, 1000)
+        self.base_title = "Portrait Composer (Auto-Save Active)"
+        self.setWindowFlags(Qt.Window | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setFixedSize(650, 900) 
         self.setup_persistence(
             config_path=config_path,
             settings_key='portrait_window_geometry',
-            default_geo={'x': 0, 'y': 0, 'w': 594, 'h': 1000},
+            default_geo={'x': 635, 'y': 90, 'w': 650, 'h': 900}, 
             title_info_provider=self.get_title_info
         )
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(0, 0, 1280, 1920)
+        self.scene.setBackgroundBrush(QColor("#050505"))
+        canvas_item = self.scene.addRect(0, 0, 1280, 1920, QPen(Qt.NoPen), QBrush(QColor("#1e1e1e")))
+        canvas_item.setZValue(-100)
+        left_danger = self.scene.addRect(0, 0, 100, 1920, QPen(Qt.NoPen), QBrush(QColor(231, 76, 60, 40)))
+        left_danger.setZValue(100)
+        right_danger = self.scene.addRect(1180, 0, 100, 1920, QPen(Qt.NoPen), QBrush(QColor(231, 76, 60, 40)))
+        right_danger.setZValue(100)
+        safe_pen = QPen(QColor("#2ecc71"), 3, Qt.DashLine)
+        safe_zone = self.scene.addRect(100, 0, 1080, 1920, safe_pen)
+        safe_zone.setZValue(101)
+        limit_pen = QPen(QColor("#34495e"), 6, Qt.SolidLine)
+        border = self.scene.addRect(0, 0, 1280, 1920, limit_pen)
+        border.setZValue(102)
+        self._add_guide_text("SAFE ZONE (VIDEO CONTENT)", 120, 50, "#2ecc71", 16)
+        self._add_guide_text("OBSCURED / DANGER", 15, 960, "#c0392b", 14, rotate=-90)
+        self._add_guide_text("OBSCURED / DANGER", 1225, 960, "#c0392b", 14, rotate=-90)
         self.view = PortraitView(self.scene, self)
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setRenderHint(QPainter.SmoothPixmapTransform)
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.finished_button = QPushButton("Show Cropping Coordinates")
-        self.finished_button.clicked.connect(self.on_finished)
-        self.finished_button.setEnabled(False)
-        self.delete_button = QPushButton("Delete Selected Piece")
+        self.role_map_rev = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
+        self.role_label = QLabel("Role: -")
+        self.role_label.setAlignment(Qt.AlignCenter)
+        self.has_background = False
+        self.background_item = None
+        self.status_label = QLabel("Ready")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setProperty("class", "status")
+        self.delete_button = QPushButton("Delete Selected")
         self.delete_button.clicked.connect(self.delete_selected)
         self.delete_button.setEnabled(False)
-        self.pos_label = QLabel("Position: ")
-        self.scale_label = QLabel("Size: ")
+        self.delete_button.setProperty("class", "warning")
+        self.done_button = QPushButton("✓ Done Organizing")
+        self.done_button.clicked.connect(self.on_done_clicked)
+        self.done_button.setProperty("class", "success")
+        self.instructions_label = QLabel("Arrange HUD elements in safe zone. Use arrow keys for fine adjustment.")
+        self.instructions_label.setProperty("class", "italic")
+        self.instructions_label.setAlignment(Qt.AlignCenter)
+        self.pos_label = QLabel("Pos: -")
+        self.pos_label.setProperty("class", "info")
+        self.scale_label = QLabel("Size: -")
+        self.scale_label.setProperty("class", "info")
         self.set_style()
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.view)
-        info_layout = QHBoxLayout()
-        info_layout.addWidget(self.pos_label)
-        info_layout.addWidget(self.scale_label)
-        layout.addLayout(info_layout)
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addWidget(self.finished_button)
-        buttons_layout.addWidget(self.delete_button)
-        layout.addLayout(buttons_layout)
-        button_size = QSize(184, 40)
-        self.finished_button.setFixedSize(button_size)
-        self.delete_button.setFixedSize(button_size)
-        self.setLayout(layout)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        top_bar = QFrame()
+        top_bar.setProperty("class", "header")
+        top_layout = QHBoxLayout(top_bar)
+        top_layout.addWidget(self.status_label)
+        main_layout.addWidget(top_bar)
+        main_layout.addWidget(self.view, 1)
+        controls = QFrame()
+        controls.setProperty("class", "footer")
+        ctrl_layout = QVBoxLayout(controls)
+        ctrl_layout.addWidget(self.instructions_label)
+        row1 = QHBoxLayout()
+        row1.addWidget(self.role_label)
+        row1.addWidget(self.delete_button)
+        ctrl_layout.addLayout(row1)
+        row2 = QHBoxLayout()
+        row2.addWidget(self.pos_label)
+        row2.addStretch()
+        row2.addWidget(self.scale_label)
+        ctrl_layout.addLayout(row2)
+        row3 = QHBoxLayout()
+        row3.addStretch()
+        row3.addWidget(self.done_button)
+        row3.addStretch()
+        ctrl_layout.addLayout(row3)
+        main_layout.addWidget(controls)
         self.scene.selectionChanged.connect(self.on_selection_changed)
-        self.on_selection_changed()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 
     def showEvent(self, event):
         super().showEvent(event)
         self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 
-    def get_title_info(self):
-        monitor_id = QApplication.desktop().screenNumber(self) + 1
-        pos = self.frameGeometry()
-        return (
-                f"Portrait "
-                f"mntr: {monitor_id}  |  "
-                f"Pos: x={pos.x()}, y={pos.y()}  |  "
-                f"Width: {self.width()}, Height: {self.height()}"
-        )
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 
-    def set_background(self, pixmap):
-        if not pixmap.isNull():
-            scaled_pixmap = pixmap.scaled(int(self.scene.width()), int(self.scene.height()), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-            bg_item = QGraphicsPixmapItem(scaled_pixmap)
-            bg_item.setPos(0, 0)
-            bg_item.setZValue(-1)
-            bg_item.setFlag(QGraphicsItem.ItemIsSelectable, False)
-            self.scene.addItem(bg_item)
+    def _add_guide_text(self, text, x, y, color, size=16, rotate=0):
+        t = self.scene.addText(text)
+        t.setDefaultTextColor(QColor(color))
+        t.setPos(x, y)
+        if rotate != 0:
+            t.setRotation(rotate)
+        font = QFont("Segoe UI", size, QFont.Bold)
+        t.setFont(font)
+        t.setOpacity(0.7)
+
+    def get_title_info(self):
+        return self.base_title
 
     def set_style(self):
         self.setStyleSheet(PORTRAIT_WINDOW_STYLESHEET)
 
     def on_selection_changed(self):
-        selected_items = self.scene.selectedItems()
-        are_items_selected = bool(selected_items)
-        self.finished_button.setEnabled(are_items_selected)
-        self.delete_button.setEnabled(are_items_selected)
-        if are_items_selected:
-            self.finished_button.setStyleSheet("background-color: #27ae60; color: white;")
-            self.delete_button.setStyleSheet("background-color: #c0392b; color: white;")
-            item = selected_items[0]
-            if len(selected_items) > 1:
-                for i in selected_items[1:]:
-                    i.setSelected(False)
+        selected = self.scene.selectedItems()
+        has_sel = bool(selected)
+        self.delete_button.setEnabled(has_sel)
+        if has_sel:
+            item = selected[0]
+            if len(selected) > 1:
+                for i in selected[1:]: i.setSelected(False)
             self.update_item_info(item)
+            if hasattr(item, 'assigned_role') and item.assigned_role:
+                self.role_label.setText(f"<b>Role:</b> {item.assigned_role}")
+            else:
+                self.role_label.setText("<b>Role:</b> -")
         else:
-            grey_style = "background-color: #95a5a6; color: #bdc3c7;"
-            self.finished_button.setStyleSheet(grey_style)
-            self.delete_button.setStyleSheet(grey_style)
-            self.pos_label.setText("Position: ")
-            self.scale_label.setText("Size: ")
+            self.role_label.setText("<b>Role:</b> -")
+            self.pos_label.setText("Pos: -")
+            self.scale_label.setText("Size: -")
+
+    def cleanup_duplicates(self, role, keep_item):
+        for item in self.scene.items():
+            if item != keep_item and isinstance(item, ResizablePixmapItem):
+                if getattr(item, 'assigned_role', None) == role:
+                    self.scene.removeItem(item)
 
     def add_scissored_item(self, pixmap, crop_rect, background_crop_width):
         item = ResizablePixmapItem(pixmap, crop_rect)
         if background_crop_width > 0:
-            visual_scale_factor = 1280 / background_crop_width
+            visual_scale_factor = 1280.0 / float(background_crop_width)
             item.current_width *= visual_scale_factor
             item.current_height *= visual_scale_factor
             item.update_handle_positions()
         self.scene.addItem(item)
-        item.setPos(self.scene.width()/2 - item.boundingRect().width()/2,
-                    self.scene.height()/2 - item.boundingRect().height()/2)
+        item.setPos((1280 - item.current_width)/2, (1920 - item.current_height)/2)
         item.setSelected(True)
+        item.item_changed.connect(lambda: self.on_item_modified(item))
+
+    def on_item_modified(self, item):
+        if item.isSelected():
+            self.update_item_info(item)
 
     def update_item_info(self, item):
-        pos = item.pos()
-        scale_x = 1280 / self.scene.width() 
-        scale_y = 1920 / self.scene.height() 
-        real_x = pos.x() * scale_x
-        real_y = pos.y() * scale_y
-        self.pos_label.setText(f"Pos (1280x1920): x={real_x:.0f}, y={real_y:.0f}")
-        current_w = item.boundingRect().width()
-        current_h = item.boundingRect().height()
-        real_w = current_w * scale_x
-        real_h = current_h * scale_y
-        self.scale_label.setText(f"Size: {real_w:.0f}x{real_h:.0f}")
+        self.pos_label.setText(f"Pos: {int(item.x())}, {int(item.y())}")
+        self.scale_label.setText(f"Size: {int(item.current_width)}x{int(item.current_height)}")
 
     def delete_selected(self):
         for item in self.scene.selectedItems():
             self.scene.removeItem(item)
         self.on_selection_changed()
 
-    def closeEvent(self, event):
-        if hasattr(self, 'parent_window') and self.parent_window:
-            self.parent_window.show()
-        super().closeEvent(event)
+    def snap_to_default(self, item, role):
+        pass
 
-    def on_finished(self):
-        data = []
-        data.append(f"Original Video Resolution: {getattr(self, 'original_resolution', 'N/A')}")
-        data.append("Target Canvas: 1280x1920")
-        selected_items = self.scene.selectedItems()
-        if not selected_items:
-            QMessageBox.information(self, "No Item Selected", "Please select a cropped piece to show its coordinates.")
-            return
-        item = selected_items[0]
-        if isinstance(item, ResizablePixmapItem):
-            data.append("---")
+    def save_to_config(self, item, role):
+        """Calculates 1:1 coordinates and saves to JSON."""
+        try:
             crop_rect = item.crop_rect
-            data.append(f"SOURCE CROP (Original): crop={crop_rect.width()}:{crop_rect.height()}:{crop_rect.x()}:{crop_rect.y()}")
-            pos = item.pos()
-            scale_x = 1280 / self.scene.width() 
-            scale_y = 1920 / self.scene.height() 
-            real_x = pos.x() * scale_x
-            real_y = pos.y() * scale_y
-            current_rect = item.boundingRect()
-            target_w = current_rect.width() * scale_x
-            target_h = current_rect.height() * scale_y
-            data.append(f"FFMPEG COMMANDS (1:1 Match):")
-            data.append(f"  filter: scale={target_w:.0f}:{target_h:.0f}")
-            data.append(f"  overlay: {real_x:.0f}:{real_y:.0f}")
-        dialog = FinishedDialog("\n".join(data), self)
-        dialog.exec_()
+            overlay_x = int(round(item.x()))
+            overlay_y = int(round(item.y()))
+            scale_factor = round(item.current_width / crop_rect.width(), 3)
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(self.config_path)))
+            real_conf_path = os.path.join(base_dir, 'processing', 'crops_coordinations.conf')
+            data = {"crops_1080p": {}, "scales": {}, "overlays": {}}
+            if os.path.exists(real_conf_path):
+                try:
+                    with open(real_conf_path, 'r') as f:
+                        data = json.load(f)
+                except:
+                    pass
+            if "crops_1080p" not in data: data["crops_1080p"] = {}
+            if "scales" not in data: data["scales"] = {}
+            if "overlays" not in data: data["overlays"] = {}
+            data["crops_1080p"][role] = [crop_rect.x(), crop_rect.y(), crop_rect.width(), crop_rect.height()]
+            data["scales"][role] = scale_factor
+            data["overlays"][role] = {"x": overlay_x, "y": overlay_y}
+            with open(real_conf_path, 'w') as f:
+                json.dump(data, f, indent=4)
+            self.status_label.setText(f"SAVED: {role.upper()} (Scale: {scale_factor})")
+            self.status_label.setStyleSheet("color: #2ecc71; font-weight: bold; font-size: 14px;")
+            QTimer.singleShot(2000, lambda: self.status_label.setStyleSheet("color: #777; font-weight: bold; font-size: 12px;"))
+            QTimer.singleShot(2000, lambda: self.status_label.setText("Ready"))
+        except Exception as e:
+            self.status_label.setText(f"SAVE ERROR: {str(e)}")
+            self.status_label.setStyleSheet("color: red; font-weight: bold;")
+
+    def on_done_clicked(self):
+        """Handle done button click."""
+        self.status_label.setText("✓ All elements organized!")
+        self.status_label.setStyleSheet("color: #2ecc71; font-weight: bold; font-size: 14px;")
+        QTimer.singleShot(1500, lambda: self.status_label.setText("Ready"))
+        QTimer.singleShot(1500, lambda: self.status_label.setStyleSheet("color: #777; font-weight: bold; font-size: 12px;"))
+        pass
+
+    def set_background_image(self, full_pixmap):
+        """
+        Takes the full 16:9 1080p snapshot and simulates how it looks in the 9:16 
+        portrait video (zoomed/cropped center), with a dimming overlay.
+        """
+        if full_pixmap.isNull(): return
+        target_w, target_h = 1280, 1920
+        src_w = full_pixmap.width()
+        src_h = full_pixmap.height()
+        scale = target_h / src_h 
+        new_w = int(src_w * scale)
+        new_h = int(src_h * scale)
+        scaled_pix = full_pixmap.scaled(new_w, new_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        crop_x = (new_w - target_w) // 2
+        final_bg = scaled_pix.copy(crop_x, 0, target_w, target_h)
+        dimmed = QPixmap(final_bg.size())
+        dimmed.fill(Qt.transparent)
+        painter = QPainter(dimmed)
+        painter.drawPixmap(0, 0, final_bg)
+        painter.fillRect(dimmed.rect(), QColor(0, 0, 0, 80))
+        painter.end()
+        if self.background_item:
+            self.scene.removeItem(self.background_item)
+        self.background_item = QGraphicsPixmapItem(dimmed)
+        self.background_item.setZValue(-80)
+        self.scene.addItem(self.background_item)
+        self.has_background = True

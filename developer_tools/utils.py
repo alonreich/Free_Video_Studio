@@ -36,19 +36,28 @@ class PersistentWindowMixin:
             if geom:
                 self.move(geom['x'], geom['y'])
                 self.resize(geom.get('w', self.default_geo.get('w')), 
-                            geom.get('h', self.default_geo.get('h')))
+                           geom.get('h', self.default_geo.get('h')))
             else:
-                self.move(self.default_geo['x'], self.default_geo['y'])
-                self.resize(self.default_geo['w'], self.default_geo['h'])
+                self._apply_default_center()
             if self.settings_key == 'window_geometry' and 'last_directory' in settings:
                 self.last_dir = settings['last_directory']
             self.update_title()
             return
         except (FileNotFoundError, json.JSONDecodeError):
-            pass
-        self.move(self.default_geo['x'], self.default_geo['y'])
-        self.resize(self.default_geo['w'], self.default_geo['h'])
-        self.update_title()
+            self._apply_default_center()
+            self.update_title()
+
+    def _apply_default_center(self):
+        """Centers window with 100px padding on the current screen."""
+        screen_geo = QApplication.desktop().screenGeometry()
+        avail_w = screen_geo.width() - 200
+        avail_h = screen_geo.height() - 200
+        w = max(self.default_geo['w'], min(avail_w, 1600))
+        h = max(self.default_geo['h'], min(avail_h, 900))
+        x = screen_geo.x() + (screen_geo.width() - w) // 2
+        y = screen_geo.y() + (screen_geo.height() - h) // 2
+        self.move(x, y)
+        self.resize(w, h)
 
     def save_geometry(self):
         config_dir = os.path.dirname(self.config_path)

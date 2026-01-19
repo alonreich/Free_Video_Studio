@@ -5,7 +5,9 @@
 # "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
 
 import os, sys, tempfile, psutil
+# Prevent __pycache__ creation
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = ''  # Disable __pycache__ in Python 3.8+
 sys.dont_write_bytecode = True
 try:
     import audioop

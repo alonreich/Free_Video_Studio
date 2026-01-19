@@ -180,8 +180,8 @@ class FilterBuilder:
             chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
             chain.append(
                 "[game_out][a_music_reconstructed]"
-                "amix=inputs=2:duration=first:dropout_transition=3,"
-                "alimiter=limit=0.95:attack=5:release=50:asc=1[acore_pre_limiter]"
+                "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
+                "alimiter=limit=0.95:attack=5:release=50[acore_pre_limiter]"
             )
             chain.append("[acore_pre_limiter]aresample=48000[acore]")
         else:

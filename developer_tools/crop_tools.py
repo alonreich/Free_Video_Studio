@@ -1,6 +1,8 @@
 import sys
 import os
+import traceback
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = ''
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
 
@@ -8,7 +10,6 @@ import ctypes
 import tempfile
 import subprocess
 import psutil
-import logging
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import Qt, QTimer
 from utils import PersistentWindowMixin
@@ -18,6 +19,25 @@ from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
 from config import CROP_APP_STYLESHEET
 from logger_setup import setup_logger
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    """Handle unhandled exceptions and log them"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    print(f"UNHANDLED EXCEPTION: {error_msg}")
+    logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    crash_log_path = os.path.join(logs_dir, 'crash.log')
+    with open(crash_log_path, 'a', encoding='utf-8') as f:
+        f.write(f"=== CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+        f.write(error_msg)
+        f.write("\n" + "="*50 + "\n\n")
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
+sys.excepthook = global_exception_handler
+
+import time
 try:
     import win32gui
     import win32process
@@ -32,7 +52,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def __init__(self, logger_instance, file_path=None):
         super().__init__()
         self.logger = logger_instance
-        self.base_title = "Crop Tool"
+        self.base_title = "Crop Tool - Wizard Mode"
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, '..'))
         self.config_path = os.path.join(self.base_dir, 'Config', 'crop_tool.conf')
@@ -50,13 +70,16 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_ui)
         self.timer.start()
-        self.set_style()
+        if hasattr(self, 'set_style'):
+            self.set_style()
+        else:
+            self.setStyleSheet(CROP_APP_STYLESHEET)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
         self.setup_persistence(
             config_path=self.config_path,
             settings_key='window_geometry',
-            default_geo={'x': 83, 'y': 39, 'w': 1665, 'h': 922},
+            default_geo={'x': 83, 'y': 39, 'w': 1600, 'h': 900},
             title_info_provider=self.get_title_info
         )
         if file_path and os.path.exists(file_path):
@@ -138,15 +161,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         super().closeEvent(event)
 
 def main():
-    try:
-        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 0)
-            ctypes.windll.kernel32.FreeConsole()
-    except Exception:
-        pass
-    sys.stdout = open(os.devnull, 'w')
-    sys.stderr = open(os.devnull, 'w')
     logger = setup_logger()
     logger.info("Application starting...")
     sys.dont_write_bytecode = True
