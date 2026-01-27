@@ -53,8 +53,16 @@ class MediaProcessor:
         return self.media_player.get_position()
 
     def set_position(self, position):
+        logger.info(f"set_position called with position={position}")
         if self.media_player.is_seekable():
+            logger.info(f"Media is seekable, seeking to {position}")
+        else:
+            logger.warning(f"Media reports not seekable, but attempting seek anyway")
+        try:
             self.media_player.set_position(position)
+            logger.info(f"Seek command sent to VLC")
+        except Exception as e:
+            logger.error(f"Failed to seek: {e}")
 
     def stop(self):
         logger.info("Stopping media.")
@@ -102,9 +110,10 @@ class MediaProcessor:
                 self.original_resolution = f"{w}x{h}"
                 logger.info(f"VLC fallback got resolution: {self.original_resolution}")
 
-    def take_snapshot(self, snapshot_path):
+    def take_snapshot(self, snapshot_path, preferred_time=None):
         if self.is_playing():
-            self.play_pause()
+            logger.info("Pausing video for snapshot")
+            self.media_player.pause()
         if not self.media or not self.input_file_path:
             logger.warning("take_snapshot failed: No media or input file path.")
             return False, "No media loaded."
@@ -113,7 +122,10 @@ class MediaProcessor:
             return False, "Please wait for video information."
         try:
             ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
-            curr_time = max(0, self.media_player.get_time() / 1000.0)
+            if preferred_time is None:
+                curr_time = max(0, self.media_player.get_time() / 1000.0)
+            else:
+                curr_time = max(0, preferred_time)
             cmd = [
                 ffmpeg_path, '-ss', f"{curr_time:.3f}", '-i', self.input_file_path,
                 '-frames:v', '1', '-q:v', '2', '-update', '1', '-y', snapshot_path

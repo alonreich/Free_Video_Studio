@@ -98,23 +98,24 @@ class FfmpegMixin:
             if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
                 self._safe_status("Unsupported input resolution.", "red")
                 return
-            if self.trim_start is not None and self.trim_end is not None and self.trim_end > 0:
-                start_time = float(self.trim_start)
-                end_time = float(self.trim_end)
+            if self.trim_start_ms > 0 or self.trim_end_ms > 0:
+                start_time_ms = self.trim_start_ms
+                end_time_ms = self.trim_end_ms
             else:
-                start_time = float((self.start_minute_input.value() * 60) + self.start_second_input.value())
-                end_time   = float((self.end_minute_input.value()   * 60) + self.end_second_input.value())
-            dur = float(self.original_duration or 0.0)
-            if dur <= 0.0:
-                 dur = 99999.0 
-            start_time = max(0.0, min(start_time, dur))
-            end_time   = max(0.0, min(end_time, dur))
-            MIN_DURATION = 0.5
-            if end_time < start_time + MIN_DURATION:
-                end_time = min(dur, start_time + MIN_DURATION)
-                if end_time < start_time + MIN_DURATION:
-                    start_time = max(0.0, end_time - MIN_DURATION)
-            self.trim_start, self.trim_end = start_time, end_time
+                start_time_ms = (self.start_minute_input.value() * 60 * 1000) + (self.start_second_input.value() * 1000) + self.start_ms_input.value()
+                end_time_ms = (self.end_minute_input.value() * 60 * 1000) + (self.end_second_input.value() * 1000) + self.end_ms_input.value()
+            total_duration_ms = self.original_duration_ms
+            if total_duration_ms <= 0:
+                total_duration_ms = 99999 * 1000
+            start_time_ms = max(0, min(start_time_ms, total_duration_ms))
+            end_time_ms = max(0, min(end_time_ms, total_duration_ms))
+            MIN_DURATION_MS = 500
+            if end_time_ms < start_time_ms + MIN_DURATION_MS:
+                end_time_ms = min(total_duration_ms, start_time_ms + MIN_DURATION_MS)
+                if end_time_ms < start_time_ms + MIN_DURATION_MS:
+                    start_time_ms = max(0, end_time_ms - MIN_DURATION_MS)
+            self.trim_start_ms = start_time_ms
+            self.trim_end_ms = end_time_ms
             is_mobile_format = self.mobile_checkbox.isChecked()
             speed_factor = self.speed_spinbox.value()
             if speed_factor < 0.5 or speed_factor > 3.1:
@@ -123,13 +124,13 @@ class FfmpegMixin:
                 self.process_button.setEnabled(True)
                 return
             self._update_trim_widgets_from_trim_times()
-            self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
+            self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
             music_path, music_vol_linear = self._get_selected_music()
             q_level = int(self.quality_slider.value())
             self.logger.info(
-                "PROCESS: clicked at %s | start=%.3fs end=%.3fs speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | music=%s vol=%.2f",
+                "PROCESS: clicked at %s | start=%dms end=%dms speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | music=%s vol=%.2f",
                 time.strftime("%Y-%m-%d %H:%M:%S"),
-                start_time, end_time, speed_factor,
+                start_time_ms, end_time_ms, speed_factor,
                 is_mobile_format, self.teammates_checkbox.isChecked(), self.boss_hp_checkbox.isChecked(),
                 q_level,
                 self.no_fade_checkbox.isChecked(),
@@ -164,16 +165,20 @@ class FfmpegMixin:
                 'eq_enabled': True,
                 'main_vol': 1.0,
                 'music_vol': music_vol_linear if music_path else 1.0,
-                'timeline_start_sec': getattr(self, 'music_timeline_start_sec', None),
-                'timeline_end_sec': getattr(self, 'music_timeline_end_sec', None)
+                'timeline_start_ms': getattr(self, 'music_timeline_start_ms', 0),
+                'timeline_end_ms': getattr(self, 'music_timeline_end_ms', 0)
             }
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
                 raw_text = self.portrait_text_input.text().strip()
                 if raw_text:
                     p_text = raw_text
+            intro_abs_time = getattr(self, 'selected_intro_abs_time', 0.0)
+            if intro_abs_time is None:
+                intro_abs_time = 0.0
+            intro_abs_time_ms = int(intro_abs_time * 1000)
             self.process_thread = ProcessThread(
-                self.input_file_path, start_time, end_time, self.original_resolution,
+                self.input_file_path, start_time_ms, end_time_ms, self.original_resolution,
                 is_mobile_format, speed_factor, self.script_dir,
                 self.progress_update_signal, self.status_update_signal, self.process_finished_signal,
                 self.logger,
@@ -182,12 +187,12 @@ class FfmpegMixin:
                 quality_level=q_level,
                 bg_music_path=music_path, 
                 bg_music_volume=music_vol_linear,
-                bg_music_offset=self._get_music_offset(),
-                original_total_duration=self.original_duration,
+                bg_music_offset_ms=int(self._get_music_offset() * 1000),
+                original_total_duration_ms=self.original_duration_ms,
                 disable_fades=self.no_fade_checkbox.isChecked(),
                 intro_still_sec=0.1,
-                intro_from_midpoint=(getattr(self, 'selected_intro_abs_time', None) is None),
-                intro_abs_time=getattr(self, 'selected_intro_abs_time', None),
+                intro_from_midpoint=(intro_abs_time_ms <= 0),
+                intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None,
                 portrait_text=p_text,
                 music_config=music_conf
             )
@@ -358,45 +363,26 @@ class FfmpegMixin:
                     self.logger.error(f"Probe failed: {res_or_err}")
                 _reenable()
                 return
-            if duration_s <= 0.0 or not res_or_err:
+            duration_ms = int(duration_s * 1000)
+            if duration_ms <= 0 or not res_or_err:
                 self._safe_status("Video analysis failed (invalid metadata).", "red")
                 _reenable()
                 return
             try:
-                self.original_duration = duration_s
+                self.original_duration_ms = duration_ms
                 self.original_resolution = res_or_err
-                ms = int(self.original_duration * 1000)
-                self.positionSlider.setRange(0, ms)
-                self.positionSlider.set_duration_ms(ms)
-                total_minutes = int(self.original_duration) // 60
-                max_seconds = int(self.original_duration) % 60
-                self.start_minute_input.setRange(0, total_minutes)
-                self.start_second_input.setRange(0, 59)
-                self.end_minute_input.setRange(0, total_minutes)
-                self.end_second_input.setRange(0, 59)
-                self.start_minute_input.blockSignals(True)
-                self.start_second_input.blockSignals(True)
-                self.end_minute_input.blockSignals(True)
-                self.end_second_input.blockSignals(True)
-                try:
-                    self.start_minute_input.setValue(0)
-                    self.start_second_input.setValue(0)
-                    self.end_minute_input.setValue(total_minutes)
-                    self.end_second_input.setValue(max_seconds)
-                finally:
-                    self.start_minute_input.blockSignals(False)
-                    self.start_second_input.blockSignals(False)
-                    self.end_minute_input.blockSignals(False)
-                    self.end_second_input.blockSignals(False)
+                self.positionSlider.setRange(0, duration_ms)
+                self.positionSlider.set_duration_ms(duration_ms)
+                self._update_trim_inputs()
                 if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
                     self._safe_status(f"Note: Odd resolution ({self.original_resolution})", "orange")
                 self._safe_set_duration_text(
-                    f"Duration: {self.original_duration:.0f} s | Res: {self.original_resolution}"
+                    f"Duration: {duration_s:.2f} s | Res: {self.original_resolution}"
                 )
-                self.trim_start = 0.0
-                self.trim_end = self.original_duration
+                self.trim_start_ms = 0
+                self.trim_end_ms = duration_ms
                 self._update_trim_widgets_from_trim_times()
-                self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
+                self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
                 self._safe_status("Video loaded.", "white")
                 _reenable()
             except Exception as e:

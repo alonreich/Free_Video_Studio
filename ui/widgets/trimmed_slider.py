@@ -3,17 +3,16 @@ from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor, QP
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle, QToolTip, QApplication
 
 class TrimmedSlider(QSlider):
-    trim_times_changed = pyqtSignal(float, float)
-    music_trim_changed = pyqtSignal(float, float)
+    trim_times_changed = pyqtSignal(int, int)
+    music_trim_changed = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
-        print("DEBUG: Timeline __init__ CALLED. If you see this, the object exists.")
         super().__init__(Qt.Horizontal, parent)
         self.music_v_offset = -6
-        self.trimmed_start = None
-        self.trimmed_end = None
-        self.music_start_sec = None
-        self.music_end_sec = None
+        self.trimmed_start_ms = 0
+        self.trimmed_end_ms = 0
+        self.music_start_ms = 0
+        self.music_end_ms = 0
         self._duration_ms = 0
         self.setMouseTracking(True)
         self.setMinimumHeight(40)
@@ -43,12 +42,11 @@ class TrimmedSlider(QSlider):
         self._hovering_handle = None
         self._dragging_music_handle = None
         self._hovering_music_handle = None
-        self._music_drag_offset_sec = 0
+        self._music_drag_offset_ms = 0
 
     def set_duration_ms(self, ms: int):
         new_ms = max(0, int(ms))
         if self._duration_ms != new_ms:
-            print(f"DEBUG: TrimmedSlider duration updated: {self._duration_ms} -> {new_ms} ms")
             self._duration_ms = new_ms
             self.update()
 
@@ -58,15 +56,15 @@ class TrimmedSlider(QSlider):
             self.reset_music_times()
         self.update()
 
-    def set_music_times(self, start_sec: float, end_sec: float):
-        self.music_start_sec = start_sec
-        self.music_end_sec = end_sec
+    def set_music_times(self, start_ms: int, end_ms: int):
+        self.music_start_ms = start_ms
+        self.music_end_ms = end_ms
         self.update()
 
     def reset_music_times(self):
-        if self.music_start_sec is not None or self.music_end_sec is not None:
-            self.music_start_sec = None
-            self.music_end_sec = None
+        if self.music_start_ms != 0 or self.music_end_ms != 0:
+            self.music_start_ms = 0
+            self.music_end_ms = 0
             self.update()
 
     def get_playhead_center_x(self):
@@ -108,12 +106,11 @@ class TrimmedSlider(QSlider):
         ratio = max(0.0, min(1.0, ratio))
         return int(groove.left() + ratio * span)
 
-    def _get_handle_rect(self, handle_type, time_sec=None):
+    def _get_handle_rect(self, handle_type, time_ms=None):
         if self._duration_ms <= 0: return QRect()
-        if time_sec is None:
-            time_sec = self.trimmed_start if handle_type == 'start' else self.trimmed_end
-        if time_sec is None: return QRect()
-        x = self._map_value_to_pos(time_sec * 1000)
+        if time_ms is None:
+            time_ms = self.trimmed_start_ms if handle_type == 'start' else self.trimmed_end_ms
+        x = self._map_value_to_pos(time_ms)
         groove = self._get_groove_rect()
         trim_handle_width = 8
         trim_rect_h = groove.height() + 26
@@ -121,9 +118,9 @@ class TrimmedSlider(QSlider):
         return QRect(x - (trim_handle_width//2), trim_rect_y, trim_handle_width, trim_rect_h)
 
     def _get_music_handle_rect(self, handle_type):
-        time_sec = self.music_start_sec if handle_type == 'start' else self.music_end_sec
-        if time_sec is None or not self._show_music: return QRect()
-        x = self._map_value_to_pos(time_sec * 1000)
+        time_ms = self.music_start_ms if handle_type == 'start' else self.music_end_ms
+        if time_ms <= 0 or not self._show_music: return QRect()
+        x = self._map_value_to_pos(time_ms)
         handle_size = 30
         y_center = self._get_groove_rect().center().y() + self.music_v_offset
         y_pos = y_center - (handle_size / 2)
@@ -153,8 +150,8 @@ class TrimmedSlider(QSlider):
                     return
                 if music_line_rect.contains(e.pos()):
                     self._dragging_music_handle = 'body'
-                    click_time_sec = (self._map_pos_to_value(e.pos().x()) / self.maximum()) * (self._duration_ms / 1000.0)
-                    self._music_drag_offset_sec = self.music_start_sec - click_time_sec
+                    click_time_ms = self._map_pos_to_value(e.pos().x())
+                    self._music_drag_offset_ms = self.music_start_ms - click_time_ms
                     self.update()
                     return
             playhead_rect = self._get_playhead_rect()
@@ -194,27 +191,26 @@ class TrimmedSlider(QSlider):
 
     def mouseMoveEvent(self, e):
         if self._dragging_music_handle:
-            new_val = self._map_pos_to_value(e.pos().x())
-            new_time_sec = (new_val / self.maximum()) * (self._duration_ms / 1000.0) if self.maximum() > 0 else 0
-            video_trim_start = self.trimmed_start if self.trimmed_start is not None else 0.0
-            video_trim_end = self.trimmed_end if self.trimmed_end is not None else (self._duration_ms / 1000.0)
+            new_val_ms = self._map_pos_to_value(e.pos().x())
+            video_trim_start_ms = self.trimmed_start_ms
+            video_trim_end_ms = self.trimmed_end_ms if self.trimmed_end_ms > 0 else self._duration_ms
             if self._dragging_music_handle == 'body':
-                duration = self.music_end_sec - self.music_start_sec
-                new_start_sec = new_time_sec + self._music_drag_offset_sec
-                new_start_sec = max(video_trim_start, new_start_sec)
-                if new_start_sec + duration > video_trim_end:
-                    new_start_sec = video_trim_end - duration
-                self.music_start_sec = new_start_sec
-                self.music_end_sec = self.music_start_sec + duration
+                duration_ms = self.music_end_ms - self.music_start_ms
+                new_start_ms = new_val_ms + self._music_drag_offset_ms
+                new_start_ms = max(video_trim_start_ms, new_start_ms)
+                if new_start_ms + duration_ms > video_trim_end_ms:
+                    new_start_ms = video_trim_end_ms - duration_ms
+                self.music_start_ms = new_start_ms
+                self.music_end_ms = self.music_start_ms + duration_ms
             elif self._dragging_music_handle == 'start':
-                new_start_sec = new_time_sec
-                new_start_sec = max(video_trim_start, new_start_sec)
-                self.music_start_sec = min(new_start_sec, self.music_end_sec - 0.1)
+                new_start_ms = new_val_ms
+                new_start_ms = max(video_trim_start_ms, new_start_ms)
+                self.music_start_ms = min(new_start_ms, self.music_end_ms - 100)
             elif self._dragging_music_handle == 'end':
-                new_end_sec = new_time_sec
-                new_end_sec = min(video_trim_end, new_end_sec)
-                self.music_end_sec = max(self.music_start_sec + 0.1, new_end_sec)
-            self.music_trim_changed.emit(self.music_start_sec, self.music_end_sec)
+                new_end_ms = new_val_ms
+                new_end_ms = min(video_trim_end_ms, new_end_ms)
+                self.music_end_ms = max(self.music_start_ms + 100, new_end_ms)
+            self.music_trim_changed.emit(self.music_start_ms, self.music_end_ms)
             self.update()
             return
         if self._dragging_handle == 'playhead':
@@ -225,20 +221,19 @@ class TrimmedSlider(QSlider):
                 self.update()
             return
         elif self._dragging_handle in ('start', 'end'):
-            new_val = self._map_pos_to_value(e.pos().x())
-            new_time_sec = (new_val / self.maximum()) * (self._duration_ms / 1000.0) if self.maximum() > 0 else 0
-            new_start = self.trimmed_start
-            new_end = self.trimmed_end
+            new_time_ms = self._map_pos_to_value(e.pos().x())
+            new_start = self.trimmed_start_ms
+            new_end = self.trimmed_end_ms
             if self._dragging_handle == 'start':
-                new_start = min(new_time_sec, (self.trimmed_end or 0) - 0.01)
-                new_start = max(0.0, new_start)
+                new_start = min(new_time_ms, self.trimmed_end_ms - 10)
+                new_start = max(0, new_start)
             elif self._dragging_handle == 'end':
-                new_end = max(new_time_sec, (self.trimmed_start or 0) + 0.01)
-                new_end = min(self._duration_ms / 1000.0, new_end)
-            if new_start != self.trimmed_start or new_end != self.trimmed_end:
-                self.trimmed_start = new_start
-                self.trimmed_end = new_end
-                self.trim_times_changed.emit(self.trimmed_start, self.trimmed_end)
+                new_end = max(new_time_ms, self.trimmed_start_ms + 10)
+                new_end = min(self._duration_ms, new_end)
+            if new_start != self.trimmed_start_ms or new_end != self.trimmed_end_ms:
+                self.trimmed_start_ms = new_start
+                self.trimmed_end_ms = new_end
+                self.trim_times_changed.emit(self.trimmed_start_ms, self.trimmed_end_ms)
             self.update()
             return
         new_hover_handle = None
@@ -285,17 +280,17 @@ class TrimmedSlider(QSlider):
         self._dragging_handle = None
         self._dragging_music_handle = None
 
-    def set_trim_times(self, start, end):
-        self.trimmed_start = start
-        self.trimmed_end = end
+    def set_trim_times(self, start_ms, end_ms):
+        self.trimmed_start_ms = start_ms
+        self.trimmed_end_ms = end_ms
         self.update()
-        self.trim_times_changed.emit(start, end)
+        self.trim_times_changed.emit(start_ms, end_ms)
 
     def _get_music_line_rect(self):
-        if self.music_start_sec is None or self.music_end_sec is None or not self._show_music:
+        if self.music_start_ms <= 0 or self.music_end_ms <= 0 or not self._show_music:
             return QRect()
-        start_x = self._map_value_to_pos(self.music_start_sec * 1000)
-        end_x = self._map_value_to_pos(self.music_end_sec * 1000)
+        start_x = self._map_value_to_pos(self.music_start_ms)
+        end_x = self._map_value_to_pos(self.music_end_ms)
         line_height = 12
         y_center = self._get_groove_rect().center().y() + self.music_v_offset
         y_pos = y_center - (line_height / 2)
@@ -310,17 +305,16 @@ class TrimmedSlider(QSlider):
             p.setPen(Qt.NoPen)
             p.setBrush(QColor("#3d3d3d"))
             p.drawRoundedRect(groove_rect, 2, 2)
-            if self.trimmed_start is not None and self.trimmed_end is not None and self._duration_ms > 0:
+            if self.trimmed_start_ms >= 0 and self.trimmed_end_ms > 0 and self._duration_ms > 0:
                 fill_color = QColor("#59B1D5")
                 fill_color.setAlpha(150)
                 p.setBrush(fill_color)
-                kept_left = self._map_value_to_pos(self.trimmed_start * 1000)
-                kept_right = self._map_value_to_pos(self.trimmed_end * 1000)
-                if kept_left > kept_right:
-                    kept_left, kept_right = kept_right, kept_left
+                kept_left = self._map_value_to_pos(self.trimmed_start_ms)
+                kept_right = self._map_value_to_pos(self.trimmed_end_ms)
+                if kept_left > kept_right: kept_left, kept_right = kept_right, kept_left
                 kept_rect = QRect(kept_left, groove_rect.y(), kept_right - kept_left, groove_rect.height())
                 p.drawRect(kept_rect)
-            if self._show_music and self.music_start_sec is not None and self.music_end_sec is not None:
+            if self._show_music and self.music_start_ms >= 0 and self.music_end_ms > 0:
                 music_color = QColor(255, 105, 180, 77)
                 p.setBrush(music_color)
                 p.setPen(Qt.NoPen)
@@ -382,11 +376,9 @@ class TrimmedSlider(QSlider):
                 if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
                     c1 = c1.lighter(120)
                     c2 = c2.lighter(120)
-                g.setColorAt(0.0, c1)
-                g.setColorAt(0.4, c1)
+                g.setColorAt(0.0, c1); g.setColorAt(0.4, c1)
                 g.setColorAt(0.5, c2)
-                g.setColorAt(0.6, c1)
-                g.setColorAt(1.0, c1)
+                g.setColorAt(0.6, c1); g.setColorAt(1.0, c1)
                 p.setBrush(QBrush(g))
                 p.drawRoundedRect(knob_rect, 4, 4)
             if self._show_music:

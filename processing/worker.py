@@ -24,18 +24,18 @@ class ProgressScaler:
         self.real_signal.emit(min(100, weighted_val))
 
 class ProcessThread(QThread):
-    def __init__(self, input_path, start_time, end_time, original_resolution, is_mobile_format, speed_factor,
+    def __init__(self, input_path, start_time_ms, end_time_ms, original_resolution, is_mobile_format, speed_factor,
                  script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
                  is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
-                 bg_music_path=None, bg_music_volume=None, bg_music_offset=0.0, original_total_duration=0.0,
-                 disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time: float = None,
+                 bg_music_path=None, bg_music_volume=None, bg_music_offset_ms=0, original_total_duration_ms=0,
+                 disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time_ms: int = None,
                  portrait_text: str = None, music_config=None):
         super().__init__()
         self.music_config = music_config if music_config else {}
         self.input_path = input_path
-        self.start_time = float(start_time)
-        self.end_time = float(end_time)
-        self.duration = self.end_time - self.start_time
+        self.start_time_ms = int(start_time_ms)
+        self.end_time_ms = int(end_time_ms)
+        self.duration_ms = self.end_time_ms - self.start_time_ms
         self.original_resolution = original_resolution
         self.is_mobile_format = is_mobile_format
         self.speed_factor = float(speed_factor)
@@ -48,15 +48,15 @@ class ProcessThread(QThread):
         self.logger = logger
         self.bg_music_path = bg_music_path if (bg_music_path and os.path.isfile(bg_music_path)) else None
         self.bg_music_volume = float(bg_music_volume) if bg_music_volume is not None else None
-        self.bg_music_offset = float(bg_music_offset or 0.0)
+        self.bg_music_offset_ms = int(bg_music_offset_ms or 0)
         self.portrait_text = portrait_text
         self.is_boss_hp = is_boss_hp
         self.show_teammates_overlay = bool(show_teammates_overlay)
         self.disable_fades = bool(disable_fades)
         self.intro_from_midpoint = bool(intro_from_midpoint)
         self.intro_still_sec = float(intro_still_sec or 0.0)
-        self.intro_abs_time = float(intro_abs_time) if intro_abs_time is not None else None
-        self.original_total_duration = float(original_total_duration or 0.0)
+        self.intro_abs_time_ms = int(intro_abs_time_ms) if intro_abs_time_ms is not None else None
+        self.original_total_duration_ms = int(original_total_duration_ms or 0)
         self.config = VideoConfig(self.base_dir)
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level)
         self.text_wrapper = TextWrapper(self.config)
@@ -65,9 +65,7 @@ class ProcessThread(QThread):
         self.prober = MediaProber(self.bin_dir, self.input_path)
         self.current_process = None
         self.is_canceled = False
-        self.start_time_corrected = self.start_time / self.speed_factor if self.speed_factor != 1.0 else self.start_time
-        user_duration = self.duration / self.speed_factor if self.speed_factor != 1.0 else self.duration
-        self.duration_corrected = max(0.0, user_duration)
+        self.duration_corrected_sec = (self.duration_ms / self.speed_factor / 1000.0) if self.speed_factor != 1.0 else (self.duration_ms / 1000.0)
 
     def cancel(self):
         self.logger.info("Cancellation requested.")
@@ -76,12 +74,18 @@ class ProcessThread(QThread):
             kill_process_tree(self.current_process.pid, self.logger)
 
     def run(self):
+        if 'timeline_start_ms' in self.music_config:
+            self.music_config['timeline_start_sec'] = self.music_config.pop('timeline_start_ms') / 1000.0
+        if 'timeline_end_ms' in self.music_config:
+            self.music_config['timeline_end_sec'] = self.music_config.pop('timeline_end_ms') / 1000.0
+        if 'file_offset_ms' in self.music_config:
+            self.music_config['file_offset_sec'] = self.music_config.pop('file_offset_ms') / 1000.0
         if self.bg_music_path:
             self.music_config['path'] = self.bg_music_path
-            self.music_config['timeline_start_sec'] = self.start_time
-            self.music_config['file_offset_sec'] = self.bg_music_offset
+            self.music_config['timeline_start_sec'] = self.start_time_ms / 1000.0
+            self.music_config['file_offset_sec'] = self.bg_music_offset_ms / 1000.0
             if 'timeline_end_sec' not in self.music_config:
-                self.music_config['timeline_end_sec'] = self.start_time + self.duration
+                self.music_config['timeline_end_sec'] = self.end_time_ms / 1000.0
             if 'volume' not in self.music_config:
                 self.music_config['volume'] = self.bg_music_volume
             self.logger.info(f"AUDIO CONFIG: {self.music_config}")
@@ -96,40 +100,24 @@ class ProcessThread(QThread):
         try:
             if self.is_canceled: return
             has_bg = (self.bg_music_path is not None)
-            FADE_DUR = self.config.fade_duration
-            EPS = self.config.epsilon
-            in_ss = self.start_time
-            in_t = self.duration
-            vfade_in_d = 0.0
-            vfade_out_d = 0.0
-            vfade_out_st = 0.0
+            fade_dur_ms = int(self.config.fade_duration * 1000)
+            clip_start_ms = self.start_time_ms
+            clip_end_ms = self.end_time_ms
+            source_cut_start_ms = self.start_time_ms
+            source_cut_end_ms = self.end_time_ms
+            vfade_in_duration_ms = 0
+            vfade_out_duration_ms = 0
             if not self.disable_fades:
-                if self.start_time < FADE_DUR - EPS:
-                    in_ss = self.start_time
-                    vfade_in_d = 0.0
-                else:
-                    in_ss = self.start_time - FADE_DUR
-                    vfade_in_d = FADE_DUR
-                if self.original_total_duration > 0 and (self.end_time > self.original_total_duration - FADE_DUR):
-                    adj_end = self.original_total_duration
-                    vfade_out_d = 0.0
-                else:
-                    adj_end = self.end_time + FADE_DUR
-                    vfade_out_d = FADE_DUR
-                in_t = max(0.0, adj_end - in_ss)
-                output_clip_dur_pre_speed = in_t
-                if vfade_out_d > 0:
-                    vfade_out_st = max(0.0, output_clip_dur_pre_speed - vfade_out_d)
-                else:
-                    vfade_out_st = output_clip_dur_pre_speed
-            if self.speed_factor != 1.0:
-                in_t_speed_adjusted = in_t / self.speed_factor
-                vfade_in_d /= self.speed_factor
-                vfade_out_d /= self.speed_factor
-                vfade_out_st /= self.speed_factor
-            else:
-                in_t_speed_adjusted = in_t
-            self.duration_corrected = max(0.0, in_t_speed_adjusted)
+                if clip_start_ms >= fade_dur_ms:
+                    source_cut_start_ms = clip_start_ms - fade_dur_ms
+                    vfade_in_duration_ms = fade_dur_ms
+                if self.original_total_duration_ms > 0 and (clip_end_ms <= self.original_total_duration_ms - fade_dur_ms):
+                    source_cut_end_ms = clip_end_ms + fade_dur_ms
+                    vfade_out_duration_ms = fade_dur_ms
+            source_cut_duration_ms = source_cut_end_ms - source_cut_start_ms
+            final_clip_duration_ms = int(source_cut_duration_ms / self.speed_factor)
+            vfade_out_start_ms = final_clip_duration_ms - int(vfade_out_duration_ms / self.speed_factor)
+            self.duration_corrected_sec = final_clip_duration_ms / 1000.0
             if self.is_mobile_format and self.portrait_text:
                 fix_hebrew_text(self.portrait_text)
             audio_kbps = 256
@@ -137,10 +125,10 @@ class ProcessThread(QThread):
             if probed_kbps:
                 audio_kbps = probed_kbps
                 self.status_update_signal.emit(f"Audio bitrate: preserving source ~{audio_kbps} kbps.")
-            intro_len_size = max(0.0, self.intro_still_sec) if self.intro_still_sec > 0 else 0.0
-            eff_dur = self.duration_corrected + intro_len_size
+            intro_len_sec = max(0.0, self.intro_still_sec) if self.intro_still_sec > 0 else 0.0
+            eff_dur_sec = self.duration_corrected_sec + intro_len_sec
             video_bitrate_kbps = calculate_video_bitrate(
-                self.input_path, eff_dur, audio_kbps, self.target_mb, self.keep_highest_res
+                self.input_path, eff_dur_sec, audio_kbps, self.target_mb, self.keep_highest_res
             )
             if video_bitrate_kbps is None:
                 if not self.keep_highest_res:
@@ -170,18 +158,17 @@ class ProcessThread(QThread):
                     self.status_update_signal.emit("Applying Canvas Trick with Text.")
             else:
                 if self.keep_highest_res:
-                    target_res = "scale=iw:ih"
+                    target_res = "scale=iw:ih:flags=bilinear"
                 else:
                     if self.quality_level >= 2:
-                        target_res = "scale='min(1920,iw)':-2"
-                        if video_bitrate_kbps < 800: target_res = "scale='min(1280,iw)':-2"
+                        target_res = "scale='min(1920,iw)':-2:flags=bilinear"
+                        if video_bitrate_kbps < 800: target_res = "scale='min(1280,iw)':-2:flags=bilinear"
                     elif self.quality_level == 1:
-                        target_res = "scale='min(1280,iw)':-2"
+                        target_res = "scale='min(1280,iw)':-2:flags=bilinear"
                     else:
-                        target_res = "scale='min(960,iw)':-2"
+                        target_res = "scale='min(960,iw)':-2:flags=bilinear"
                 video_filter_cmd = f"fps=60,{target_res}"
-            if self.speed_factor != 1.0:
-                video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
+            video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
             audio_speed_cmd = ""
             if self.speed_factor != 1.0:
                 s = self.speed_factor
@@ -191,90 +178,88 @@ class ProcessThread(QThread):
                     audio_speed_cmd = f"rubberband=tempo={s:.3f}:pitch=1:formant=1"
             audio_chains = self.filter_builder.build_audio_chain(
                 music_config=self.music_config,
-                video_start_time=self.start_time,
-                video_end_time=self.end_time,
+                video_start_time=self.start_time_ms / 1000.0,
+                video_end_time=self.end_time_ms / 1000.0,
                 speed_factor=self.speed_factor,
                 disable_fades=self.disable_fades,
-                vfade_in_d=vfade_in_d,
+                vfade_in_d=int(vfade_in_duration_ms / self.speed_factor) / 1000.0,
                 audio_filter_cmd=audio_speed_cmd
             )
             core_filters = []
-            vcore_str = f"[0:v]{video_filter_cmd}," if video_filter_cmd else "[0:v]"
+            vcore_str = f"[0:v]{video_filter_cmd},"
             if not self.disable_fades:
-                 vcore_str += f"fade=t=in:st=0:d={vfade_in_d:.3f},fade=t=out:st={vfade_out_st:.3f}:d={vfade_out_d:.3f},"
+                 vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
+                 vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
+                 vfade_out_start_sec = vfade_out_start_ms / 1000.0
+                 if vfade_in_sec > 0:
+                     vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
+                 if vfade_out_sec > 0:
+                     vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
             core_filters.append(
-                f"{vcore_str}format=yuv420p,trim=duration={self.duration_corrected:.6f},setpts=PTS-STARTPTS,setsar=1,fps=60[vcore]"
+                f"{vcore_str}format=yuv420p,trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1,fps=60[vcore]"
             )
             core_filters.extend(audio_chains)
             core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
-            vcodec, rc_label = self.encoder_mgr.get_core_codec_flags(video_bitrate_kbps, eff_dur)
-            if 'h264_nvenc' in vcodec:
-                vcodec = ['-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', f'{video_bitrate_kbps}k']
-                rc_label = "Safe NVENC"
-            self.status_update_signal.emit(f"Processing video ({rc_label}).")
-            cmd = [
-                ffmpeg_path, '-y', '-hwaccel', 'auto',
-                '-progress', 'pipe:1',
-                '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}",
-                '-i', self.input_path,
-            ]
-            if has_bg:
-                cmd += ['-i', self.bg_music_path]
-            cmd += vcodec + [
-                '-movflags', '+faststart',
-                '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
-                '-filter_complex', ';'.join(core_filters),
-                '-map', '[vcore]', '-map', '[acore]', '-shortest',
-                core_path
-            ]
-            self.logger.info(f"STEP 1/3 CORE")
-            self.current_process = create_subprocess(cmd, self.logger)
-            monitor_ffmpeg_progress(
-                self.current_process, self.duration_corrected, 
-                scaler_core,
-                lambda: self.is_canceled, self.logger
-            )
-            try:
-                self.current_process.wait(timeout=5)
-            except Exception:
-                self.logger.error("FFmpeg process timed out after monitoring. Force killing.")
-                kill_process_tree(self.current_process.pid, self.logger)
-            if self.is_canceled: return
-            if self.current_process.returncode != 0:
-                self.logger.warning("Hardware failed. Retrying with fallback...")
-                success = False
-                for enc in self.encoder_mgr.get_fallback_list():
-                    if enc == 'h264_amf' and 'nvenc' in str(vcodec): continue 
-                    self.status_update_signal.emit(f"Hardware failure. Trying {enc}...")
-                    cmd_retry = [ffmpeg_path, '-y', '-ss', f"{in_ss:.3f}", '-t', f"{in_t:.3f}", '-i', self.input_path]
-                    if has_bg:
-                        cmd_retry += ['-i', self.bg_music_path]
-                    if enc == "libx264":
-                        cmd_retry += ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
-                    else:
-                        cmd_retry += ['-c:v', enc, '-b:v', f'{video_bitrate_kbps}k']
-                    cmd_retry += [
-                        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-                        '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
-                        '-filter_complex', ';'.join(core_filters),
-                        '-map', '[vcore]', '-map', '[acore]', '-shortest', core_path
-                    ]
-                    retry_proc = create_subprocess(cmd_retry, self.logger)
-                    retry_proc.wait()
-                    if retry_proc.returncode == 0:
-                        success = True
+            current_encoder = self.encoder_mgr.get_initial_encoder()
+
+            def run_ffmpeg_command(encoder_name):
+                vcodec, rc_label = self.encoder_mgr.get_codec_flags(encoder_name, video_bitrate_kbps, eff_dur_sec)
+                self.status_update_signal.emit(f"Processing video ({rc_label})...")
+                cmd = [
+                    ffmpeg_path, '-y', '-hwaccel', 'auto',
+                    '-progress', 'pipe:1',
+                    '-ss', f"{source_cut_start_ms / 1000.0:.3f}", 
+                    '-t', f"{source_cut_duration_ms / 1000.0:.3f}",
+                    '-i', self.input_path,
+                ]
+                if has_bg:
+                    cmd.extend(['-i', self.bg_music_path])
+                cmd.extend(vcodec)
+                cmd.extend([
+                    '-movflags', '+faststart',
+                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
+                    '-filter_complex', ';'.join(core_filters),
+                    '-map', '[vcore]', '-map', '[acore]', '-shortest',
+                    core_path
+                ])
+                self.logger.info(f"Attempting encode with '{encoder_name}'...")
+                self.current_process = create_subprocess(cmd, self.logger)
+                monitor_ffmpeg_progress(
+                    self.current_process, self.duration_corrected_sec, 
+                    scaler_core,
+                    lambda: self.is_canceled, self.logger
+                )
+                try:
+                    self.current_process.wait(timeout=5)
+                except Exception:
+                    self.logger.error("FFmpeg process timed out. Force killing.")
+                    kill_process_tree(self.current_process.pid, self.logger)
+                return self.current_process.returncode == 0
+            success = run_ffmpeg_command(current_encoder)
+            if not self.is_canceled and not success:
+                self.logger.warning(f"Initial encoder '{current_encoder}' failed. Starting fallback process.")
+                fallback_encoders = self.encoder_mgr.get_fallback_list(failed_encoder=current_encoder)
+                for fallback_encoder in fallback_encoders:
+                    if self.is_canceled: break
+                    self.status_update_signal.emit(f"Trying fallback: {fallback_encoder}...")
+                    success = run_ffmpeg_command(fallback_encoder)
+                    if success:
+                        self.logger.info(f"Fallback to '{fallback_encoder}' succeeded.")
                         break
-                if not success:
-                    self.finished_signal.emit(False, "All encoders failed.")
-                    return
+                    else:
+                        self.logger.warning(f"Fallback encoder '{fallback_encoder}' also failed.")
+            if self.is_canceled: return
+            if not success:
+                self.finished_signal.emit(False, "All available encoders failed.")
+                return
             if self.intro_still_sec > 0:
-                if self.intro_abs_time is None and self.intro_from_midpoint:
-                    mid = (self.start_time + self.end_time) / 2.0
-                    self.intro_abs_time = float(mid)
-                if self.intro_abs_time is not None:
+                intro_time_ms = self.intro_abs_time_ms
+                if intro_time_ms is None and self.intro_from_midpoint:
+                    intro_time_ms = (self.start_time_ms + self.end_time_ms) // 2
+                if intro_time_ms is not None:
                     intro_proc = IntroProcessor(ffmpeg_path, self.logger, self.encoder_mgr, temp_dir)
                     intro_path = intro_proc.create_intro(
-                        self.input_path, self.intro_abs_time, self.intro_still_sec,
+                        self.input_path, intro_time_ms / 1000.0, self.intro_still_sec,
                         self.is_mobile_format, audio_kbps, video_bitrate_kbps,
                         scaler_intro,
                         lambda: self.is_canceled

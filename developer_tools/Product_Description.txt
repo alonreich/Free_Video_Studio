@@ -1,0 +1,24 @@
+# Project Vision: Fortnite Video Crop Coordinate Configurator
+
+## 1. Core Purpose
+This application is a configuration tool designed to work with a separate video processing application. Its primary goal is to allow a user to define the exact coordinates of Heads-Up Display (HUD) elements from a Fortnite gameplay video. These coordinates are then saved to a configuration file, which the main processing app uses to create perfectly cropped 9:16 portrait-mode videos.
+
+## 2. Core Workflow
+The user workflow is as follows:
+1.  **Load Video:** The user starts by loading a video file (`.mp4`, `.avi`, `.mkv`). The application is designed to work exclusively with video files.
+2.  **Find Reference Frame:** The user uses video playback controls (play, pause, seek slider) to find a clear frame where all necessary HUD elements are visible.
+3.  **Take Snapshot:** The user clicks "Take Snapshot" to freeze the video frame and enter the main cropping interface.
+4.  **Define Crop Regions:** The user has two methods to define a crop area for a HUD element:
+    *   **Manual Drawing:** Click and drag to draw a rectangle around an element.
+    *   **Magic Wand Tool:** After taking a snapshot, the user can click the "Magic Wand" button. This triggers an analysis of the entire video to find all static regions. The user can then click one of these suggested regions to select it.
+5.  **Tag Element:** After defining a rectangle, the user assigns a role to it (e.g., "Loot Area", "Mini Map", "Own Health Bar", etc.).
+6.  **Fine-Tune in Portrait Composer:** Immediately after an element is tagged, a separate "Portrait Composer" window appears. This window shows the cropped element on a 9:16 canvas. The element is initially placed by default (e.g., snapped to a corner). The user can drag to move and use handles to resize the element to define its final position and scale in the portrait output. **Crucially, changes made to the element's position and scale within this window are not saved until the user explicitly clicks the "✅ FINISH & SAVE CROP CONFIGURATION" button. At this point, the application updates the central JSON configuration file with the new overlay position and scale for all elements configured in this session.** This window will remain on top of other applications to ensure it is not missed.
+7.  **Repeat:** The user repeats steps 4-6 for all HUD elements they wish to configure.
+8.  please avoid comments in the code completely.
+9.  please avoid allowing use of any sort of cache for example no __pycache__ folders creation whatsoever.
+
+## 3. Key Features & Logic
+*   **Undo/Redo:** The creation of a crop is an undoable action. The user can press `Ctrl+Z` to remove a crop they just made and `Ctrl+Y` to add it back.
+*   **Configuration Management:** All coordinates are saved to a central JSON configuration file. The application surgically updates this file, modifying only the data for the specific element being worked on at that moment.
+*   **Coordinate Validation:** The system includes validation checks to prevent the saving of invalid coordinates, such as a crop that is outside the bounds of the source video. If validation fails, the user is notified with an error message.
+*   **Guided UI:** The application features a step-by-step sidebar and a tutorial system to guide the user through the configuration process.

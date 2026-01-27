@@ -55,17 +55,17 @@ class FilterBuilder:
         loot_crop = f"{loot[0]}:{loot[1]}:{loot[2]}:{loot[3]}"
         stats_crop = f"{stats[0]}:{stats[1]}:{stats[2]}:{stats[3]}"
         team_crop = f"{team[0]}:{team[1]}:{team[2]}:{team[3]}"
-        loot_s_str = f"scale={int(round(loot_1080[0] * loot_scale))}:{int(round(loot_1080[1] * loot_scale))}"
-        hp_s_str = f"scale={int(round(hp_1080[0] * healthbar_scale))}:{int(round(hp_1080[1] * healthbar_scale))}"
-        stats_s_str = f"scale={int(round(stats_1080[0] * stats_scale))}:{int(round(stats_1080[1] * stats_scale))}"
-        team_s_str = f"scale={int(round(team_1080[0] * team_scale))}:{int(round(team_1080[1] * team_scale))}"
+        loot_s_str = f"scale={int(round(loot_1080[0] * loot_scale))}:{int(round(loot_1080[1] * loot_scale))}:flags=bilinear"
+        hp_s_str = f"scale={int(round(hp_1080[0] * healthbar_scale))}:{int(round(hp_1080[1] * healthbar_scale))}:flags=bilinear"
+        stats_s_str = f"scale={int(round(stats_1080[0] * stats_scale))}:{int(round(stats_1080[1] * stats_scale))}:flags=bilinear"
+        team_s_str = f"scale={int(round(team_1080[0] * team_scale))}:{int(round(team_1080[1] * team_scale))}:flags=bilinear"
         lx = overlays.get('loot', {}).get('x', 0)
         ly = overlays.get('loot', {}).get('y', 0)
         sx = overlays.get('stats', {}).get('x', 0)
         sy = overlays.get('stats', {}).get('y', 0)
         hpx = hp_ov.get('x', 0)
         hpy = hp_ov.get('y', 0)
-        f_main = "[main]scale=1280:1920:force_original_aspect_ratio=increase,crop=1280:1920[main_cropped]"
+        f_main = "[main]scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920[main_cropped]"
         f_loot = f"[lootbar]crop={loot_crop},drawbox=t=2:c=black,{loot_s_str},format=yuva444p[lootbar_scaled]"
         f_hp = f"[healthbar]crop={hp_crop},drawbox=t=2:c=black,{hp_s_str},format=yuva444p[healthbar_scaled]"
         f_stats = f"[stats]crop={stats_crop},drawbox=t=2:c=black,{stats_s_str},format=yuva444p[stats_scaled]"

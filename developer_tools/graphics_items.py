@@ -38,6 +38,10 @@ class ResizablePixmapItem(QGraphicsObject):
     def paint(self, painter, option, widget):
         painter.drawPixmap(QRectF(0, 0, self.current_width, self.current_height), 
                             self.original_pixmap, QRectF(self.original_pixmap.rect()))
+        border_pen = QPen(QColor("#000000"), 2)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(0, 0, int(self.current_width), int(self.current_height))
         if self.assigned_role:
             title_text = self.assigned_role.upper()
             font = painter.font()
@@ -64,7 +68,7 @@ class ResizablePixmapItem(QGraphicsObject):
             pen.setDashOffset(self.ant_dash_offset)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(0, 0, self.current_width, self.current_height)
+            painter.drawRect(0, 0, int(self.current_width), int(self.current_height))
 
     def set_role(self, role):
         if role == "-- Select Role --":

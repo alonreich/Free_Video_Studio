@@ -1,0 +1,83 @@
+Plan to fix 20 audit issues:
+
+1. Config read/write race condition
+   - Modify config_manager to use a shared cache with versioning
+   - Ensure processing reads via ConfigManager with lock
+   - Add config version stamp to detect stale reads
+
+2. Undo/redo stack corruption
+   - Freeze undo stack during processing
+   - Validate actions before execution
+   - Implement tombstone for deleted resources
+
+3. Coordinate transformation rounding errors
+   - Use floating-point with epsilon rounding
+   - Store transformed coordinates as floats in config
+   - Validate against target resolution
+
+4. Lock file deadlock
+   - Use OS-level advisory locks (fcntl/msvcrt)
+   - Implement lock timeout with forced release
+
+5. State manager transaction rollback on cancel
+   - Ensure cancel signal triggers rollback
+   - Add transaction lifecycle hooks to UI events
+
+6. Missing validation of crop coordinates
+   - Validate rects in config_manager.save_crop_coordinates
+   - Clamp to source dimensions
+
+7. Overlay positions not clamped to screen bounds
+   - Enforce bounds in filter_builder.build_mobile_filter
+
+8. Music ducking filter chain timing mismatch
+   - Recalculate audio durations using rational timebase
+   - Add padding filters to match lengths
+
+9. FFmpeg process hang on invalid output path
+   - Pre-validate output path write permissions
+   - Implement watchdog thread with kill timeout
+
+10. Resource manager temp file cleanup failure
+    - Use named temporary files with delete=True
+    - Register with atexit; periodic cleanup daemon
+
+11. UI unresponsive during long processing
+    - Ensure QThread yields control regularly
+    - Use QApplication.processEvents in tight loops
+
+12. Magic wand tool OpenCV dependency
+    - Remove button entirely if OpenCV not found
+    - Provide fallback manual crop UI
+
+13. Snapshot race condition
+    - Use queue for snapshot requests
+    - Atomic file operations with unique names
+
+14. Video playback crash if VLC DLLs not loaded
+    - Fallback to FFmpeg-based preview
+    - Robust DLL loading with error recovery
+
+15. Config migration failure on malformed JSON
+    - Read with try-except, keep backup
+    - Provide UI to restore from backup
+
+16. Duplicate coordinate scaling logic
+    - Centralize scaling math in a single module
+    - Both sides import the same function
+
+17. No sanity check for scale factor zero
+    - Validate scale > epsilon in config_manager.update_scale_factor
+    - Default to 1.0
+
+18. Undo actions referencing deleted objects
+    - Store serializable state (dict) instead of live objects
+    - Recreate objects on redo
+
+19. Rapid clicks on buttons
+    - Debounce button clicks
+    - Disable UI during operation; use operation-specific mutex
+
+20. Silent corruption if config file empty
+    - Validate file size and JSON decode on load
+    - Auto-restore from backup if invalid

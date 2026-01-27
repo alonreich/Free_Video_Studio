@@ -2,7 +2,7 @@ import sys
 import os
 import traceback
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-os.environ['PYTHONPYCACHEPREFIX'] = ''
+os.environ['PYTHONPYCACHEPREFIX'] = os.devnull
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
 
@@ -19,6 +19,7 @@ from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
 from config import CROP_APP_STYLESHEET
 from logger_setup import setup_logger
+from enhanced_logger import get_enhanced_logger
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):
     """Handle unhandled exceptions and log them"""
@@ -52,6 +53,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def __init__(self, logger_instance, file_path=None):
         super().__init__()
         self.logger = logger_instance
+        self.enhanced_logger = get_enhanced_logger(self.logger)
         self.base_title = "Crop Tool - Wizard Mode"
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, '..'))

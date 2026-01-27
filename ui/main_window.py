@@ -10,7 +10,11 @@ from logging.handlers import RotatingFileHandler
 import vlc
 from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QWidget, QStyle, QFileDialog, QMessageBox, QShortcut
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
+                             QMessageBox, QShortcut, QStatusBar, QLabel)
+
+from PyQt5.QtCore import QObject, QThread
+import tempfile, glob
 from system.config import ConfigManager
 from system.logger import setup_logger
 from ui.widgets.tooltip_manager import ToolTipManager
@@ -38,12 +42,52 @@ class _QtLiveLogHandler(logging.Handler):
         except Exception:
             pass
 
-class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, QWidget):
+class CleanupWorker(QObject):
+    """Worker to clean up old temporary files in the background."""
+
+    def run(self):
+        try:
+            temp_dir = tempfile.gettempdir()
+            patterns = ["core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log", "drawtext-*.txt"]
+            for pattern in patterns:
+                for old_file in glob.glob(os.path.join(temp_dir, pattern)):
+                    try:
+                        os.remove(old_file)
+                    except OSError:
+                        pass
+        except Exception:
+            pass
+
+class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin):
     progress_update_signal = pyqtSignal(int)
     status_update_signal = pyqtSignal(str)
     process_finished_signal = pyqtSignal(bool, str)
     live_log_signal = pyqtSignal(str)
     video_ended_signal = pyqtSignal()
+
+    def on_hardware_scan_finished(self, detected_mode: str):
+        """Receives the result from the background hardware scan."""
+        if not hasattr(self, 'status_bar'):
+            return
+        self.hardware_strategy = detected_mode
+        self.logger.info(f"Hardware Strategy finalized: {self.hardware_strategy}")
+        if self.hardware_strategy == "CPU":
+            self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
+        else:
+            self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
+
+    def show_status_warning(self, message: str):
+        """Displays a permanent warning message in the status bar."""
+        try:
+            if not hasattr(self, 'status_bar_warning_label'):
+                self.status_bar_warning_label = QLabel(message)
+                self.status_bar_warning_label.setStyleSheet("color: #f39c12; font-weight: bold; padding-left: 10px;")
+                self.status_bar.addPermanentWidget(self.status_bar_warning_label)
+            self.status_bar_warning_label.setText(message)
+            self.status_bar_warning_label.show()
+            self.logger.warning(f"StatusBar NOTIFICATION: {message}")
+        except Exception as e:
+            self.logger.error(f"Failed to show status bar warning: {e}")
 
     def on_phase_update(self, phase: str) -> None:
         """
@@ -109,29 +153,45 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
 
     def __init__(self, file_path=None, hardware_strategy="CPU"):
         super().__init__()
-        self.playback_rate = 1.1
-        self.hardware_strategy = hardware_strategy
-        self._is_seeking_from_end = False
-        self.tooltip_manager = ToolTipManager(self)
-        self.volume_shortcut_target = 'main'
-        self.trim_start = None
-        self.trim_end = None
-        self.music_timeline_start_sec = None
-        self.music_timeline_end_sec = None
-        self.input_file_path = None
-        self.original_duration = 0.0
-        self.original_resolution = ""
-        self.is_playing = False
-        self.is_processing = False
-        self.script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(
-            os.path.abspath(__file__))
+        self.script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
         self.bin_dir = os.path.join(self.base_dir, 'binaries')
         self.logger = setup_logger(self.base_dir, "Fortnite_Video_Software.log", "Main_App")
-        ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
-        if not os.path.exists(ffmpeg_exe):
-            QMessageBox.critical(None, "Fatal Error", f"ffmpeg.exe not found in binaries folder!\nPath: {ffmpeg_exe}\n\nThe application cannot function without this dependency.")
-            sys.exit(1)
+        self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.tooltip_manager = ToolTipManager(self)
+        self.init_ui()
+        self.playback_rate = 1.1
+        self.hardware_strategy = hardware_strategy
+        self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser('~'))
+        self.trim_start_ms = 0
+        self.trim_end_ms = 0
+        self.trim_start = 0.0
+        self.trim_end = 0.0
+        self.music_timeline_start_ms = 0
+        self.music_timeline_end_ms = 0
+        self.input_file_path = None
+        self.original_duration_ms = 0
+        self.original_resolution = ""
+        self.is_playing = False
+        self.is_processing = False
+        self._is_seeking_from_end = False
+        self.volume_shortcut_target = 'main'
+        self._phase_is_processing = False
+        self._phase_dots = 1
+        self._base_title = "Fortnite Video Compressor"
+        self._music_files = []
+        self.set_style()
+        self.setWindowTitle(self._base_title)
+        if self.hardware_strategy == "Scanning...":
+            self.status_bar.showMessage("🔎 Scanning for compatible hardware...")
+        elif self.hardware_strategy == "CPU":
+            self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
+        else:
+            self.status_bar.showMessage("Ready.", 5000)
         self.live_log_signal.connect(self.log_overlay_sink)
         self.video_ended_signal.connect(self._handle_video_end)
         try:
@@ -143,84 +203,24 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             pass
         self.logger.info("=== Application started ===")
         self.logger.info(f"Initialized with Hardware Strategy: {self.hardware_strategy}")
-
-        import tempfile, glob
-        for pattern in ["core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log"]:
-            for old_file in glob.glob(os.path.join(tempfile.gettempdir(), pattern)):
-                try:
-                    os.remove(old_file)
-                except:
-                    pass
-        self.logger.info("RUN: cwd=%s | script_dir=%s", os.getcwd(), self.script_dir)
-        self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))
-        self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser('~'))
-        if hasattr(os, 'add_dll_directory'):
-            try:
-                os.add_dll_directory(self.bin_dir)
-            except Exception:
-                pass
-        plugin_path = os.path.join(self.bin_dir, "plugins")
-        plugin_path_arg = plugin_path.replace('\\', '/')
-        vlc_args = [
-            '--no-xlib',
-            '--no-video-title-show',
-            '--no-plugins-cache',
-            '--file-caching=1000',
-            '--audio-time-stretch',
-            '--verbose=-1',
-        ]
-        if os.path.exists(plugin_path):
-            vlc_args.append(f"--plugin-path={plugin_path_arg}")
-            os.environ["VLC_PLUGIN_PATH"] = plugin_path
-        os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
-        self.vlc_player = None
-        try:
-            self.vlc_instance = vlc.Instance(vlc_args)
-            if self.vlc_instance:
-                self.vlc_player = self.vlc_instance.media_player_new()
-            else:
-                self.logger.error("VLC Instance creation returned None (Plugins still not found).")
-        except Exception as e:
-            self.logger.error(f"CRITICAL: VLC Failed to initialize. Error: {e}")
-            self.vlc_instance = None
-        if self.vlc_player:
-            try:
-                em = self.vlc_player.event_manager()
-                if em:
-                    em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached) 
-                else:
-                    self.logger.warning("Could not get VLC event manager.")
-            except Exception as e:
-                self.logger.error("Failed to attach VLC EndReached handler: %s", e)
-            try:
-                self.vlc_player.audio_set_mute(False)
-                self.apply_master_volume()
-            except Exception:
-                pass
+        self._setup_vlc()
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_player_state)
-        self._phase_is_processing = False
-        self._phase_dots = 1
-        self._base_title = "Fortnite Video Compressor"
-        self.setWindowTitle(self._base_title)
         geom = self.config_manager.config.get('window_geometry')
         if geom and isinstance(geom, dict):
-            x = geom.get('x', 100)
-            y = geom.get('y', 100)
-            w = geom.get('w', 700)
-            h = geom.get('h', 700)
+            from PyQt5.QtWidgets import QApplication
+            screen = QApplication.primaryScreen().availableGeometry()
+            w = min(geom.get('w', 1150), screen.width())
+            h = min(geom.get('h', 700), screen.height())
+            x = max(screen.x(), min(geom.get('x', 0), screen.right() - w))
+            y = max(screen.y(), min(geom.get('y', 0), screen.bottom() - h))
             self.setGeometry(x, y, w, h)
-            self.setMinimumSize(1150, 575)
         else:
-            self.setGeometry(200, 200, 1150, 575)
-            self.setMinimumSize(1150, 575)
-        self._music_files = []
-        self.set_style()
-        self.init_ui()
+            self.setGeometry(200, 200, 1150, 700)
+        self.setMinimumSize(1150, 575)
         self._scan_mp3_folder()
         self._update_window_size_in_title()
-        self._reset_music_player()
 
         def _seek_shortcut(offset_ms):
             if getattr(self, "input_file_path", None):
@@ -233,13 +233,124 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed)
         if file_path:
             self.handle_file_selection(file_path)
+        self.cleanup_thread = QThread()
+        self.cleanup_worker = CleanupWorker()
+        self.cleanup_worker.moveToThread(self.cleanup_thread)
+        self.cleanup_thread.started.connect(self.cleanup_worker.run)
+        self.cleanup_thread.finished.connect(self.cleanup_worker.deleteLater)
+        self.cleanup_thread.finished.connect(self.cleanup_thread.deleteLater)
+        self.cleanup_thread.start()
+    @property
+    def original_duration(self):
+        """Return original duration in seconds (float)."""
+        return self.original_duration_ms / 1000.0 if self.original_duration_ms else 0.0
+
+    def _setup_vlc(self):
+        """Initializes the VLC instance and player."""
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(self.bin_dir)
+            except Exception: pass
+        plugin_path = os.path.join(self.bin_dir, "plugins")
+        vlc_args = [
+            '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
+            '--file-caching=1000', '--audio-time-stretch', '--verbose=-1',
+        ]
+        if os.path.exists(plugin_path):
+            vlc_args.append(f"--plugin-path={plugin_path.replace('\\', '/')}")
+            os.environ["VLC_PLUGIN_PATH"] = plugin_path
+        os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
+        self.vlc_player = None
+        try:
+            self.vlc_instance = vlc.Instance(vlc_args)
+            if self.vlc_instance:
+                self.vlc_player = self.vlc_instance.media_player_new()
+            else:
+                self.logger.error("VLC Instance creation returned None.")
+        except Exception as e:
+            self.logger.error(f"CRITICAL: VLC Failed to initialize. Error: {e}")
+            self.vlc_instance = None
+        if self.vlc_player:
+            try:
+                em = self.vlc_player.event_manager()
+                if em:
+                    em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached)
+                    em.event_attach(vlc.EventType.MediaPlayerMediaChanged, self._on_duration_changed)
+                    em.event_attach(vlc.EventType.MediaDurationChanged, self._on_duration_changed)
+                else:
+                    self.logger.warning("Could not get VLC event manager.")
+            except Exception as e:
+                self.logger.error("Failed to attach VLC event handlers: %s", e)
+            try:
+                self.vlc_player.audio_set_mute(False)
+                self.apply_master_volume()
+            except Exception: pass
+    
+    def _on_duration_changed(self, event, player=None):
+        """Event handler for when media duration becomes available."""
+        try:
+            player = player or self.vlc_player
+            duration_ms = player.get_media().get_duration()
+            if duration_ms > 0:
+                self.positionSlider.setRange(0, duration_ms)
+                self.positionSlider.set_duration_ms(duration_ms)
+                self.logger.info(f"VLC Event: Duration changed to {duration_ms}ms.")
+        except Exception as e:
+            self.logger.error(f"Error in _on_duration_changed event handler: {e}")
 
     def keyPressEvent(self, event):
         """Handle key presses for shortcuts."""
         if event.key() == Qt.Key_F11:
             self.launch_advanced_editor()
+        elif event.key() == Qt.Key_F12:
+            self.launch_crop_tool()
         else:
             super().keyPressEvent(event)
+
+    def launch_crop_tool(self):
+        """Launches the crop tool application with a heartbeat check."""
+        try:
+            self.logger.info("ACTION: Launching Crop Tool via F12...")
+            script_path = os.path.join(self.base_dir, 'developer_tools', 'crop_tools.py')
+            if not os.path.exists(script_path):
+                raise FileNotFoundError(f"Crop Tool script not found at: {script_path}")
+            command = [sys.executable, "-B", script_path]
+            if self.input_file_path:
+                command.append(self.input_file_path)
+            env = os.environ.copy()
+            env["PYTHONPATH"] = self.base_dir + os.pathsep + env.get("PYTHONPATH", "")
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            proc = subprocess.Popen(
+                command, 
+                cwd=self.base_dir, 
+                env=env,
+                creationflags=creation_flags,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True
+            )
+            QTimer.singleShot(1500, lambda: self._finalize_switch(proc))
+        except Exception as e:
+            self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}")
+            QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool.\n\nError: {e}")
+
+    def _finalize_switch(self, proc):
+        """Checks if child process is still alive before closing parent."""
+        if proc.poll() is None:
+            self.logger.info("Crop Tool launched successfully (PID: %s). Closing Main App.", proc.pid)
+            self.close()
+        else:
+            error_output = "No output captured."
+            try:
+                error_output = proc.stderr.read()
+                if not error_output:
+                    error_output = proc.stdout.read()
+            except Exception as e:
+                error_output = f"Could not read stderr/stdout: {e}"
+            self.logger.error(f"Crop Tool crashed on startup (Exit Code: {proc.poll()}).\nOutput:\n{error_output}")
+            QMessageBox.critical(self, "Launch Error", f"The Crop Tool crashed immediately after starting.\n\nReason: {error_output}")
 
     def launch_advanced_editor(self):
         """Launches the advanced video editor application."""
@@ -276,13 +387,13 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             self.logger.critical(f"Unexpected error launching merger: {e}")
             QMessageBox.critical(self, "Launch Error", f"An unexpected error occurred:\n{e}")
 
-    def _on_music_trim_changed(self, start_sec, end_sec):
-        """Handles music timeline bar changes from the slider."""
-        self.music_timeline_start_sec = start_sec
-        self.music_timeline_end_sec = end_sec
+    def _on_music_trim_changed(self, start_ms, end_ms):
+        """Handles music timeline bar changes from the slider (in ms)."""
+        self.music_timeline_start_ms = start_ms
+        self.music_timeline_end_ms = end_ms
         if hasattr(self, 'vlc_player') and self.vlc_player.is_playing():
             self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
-        self.logger.info(f"MUSIC: Timeline updated to start={start_sec:.2f}s, end={end_sec:.2f}s")
+        self.logger.info(f"MUSIC: Timeline updated to start={start_ms/1000.0:.2f}s, end={end_ms/1000.0:.2f}s")
 
     def _update_window_size_in_title(self):
         self.setWindowTitle(f"{self._base_title}  —  {self.width()}x{self.height()}")
@@ -312,41 +423,25 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
         except Exception:
             pass
 
-    def _on_slider_trim_changed(self, start_sec, end_sec):
-        """Handles trim time changes originating from the custom slider."""
-        self.trim_start = start_sec
-        self.trim_end = end_sec
-        if self.music_timeline_start_sec is not None and self.music_timeline_end_sec is not None and self.add_music_checkbox.isChecked():
-            video_start, video_end = start_sec, end_sec
-            video_dur = video_end - video_start
-            music_dur = self.music_timeline_end_sec - self.music_timeline_start_sec
-            if music_dur > video_dur:
-                music_dur = video_dur
-            new_music_start = max(video_start, self.music_timeline_start_sec)
-            if new_music_start + music_dur > video_end:
-                new_music_start = video_end - music_dur
-            new_music_end = new_music_start + music_dur
-            if (self.music_timeline_start_sec != new_music_start or self.music_timeline_end_sec != new_music_end):
-                self.music_timeline_start_sec = new_music_start
-                self.music_timeline_end_sec = new_music_end
-                self.positionSlider.set_music_times(new_music_start, new_music_end)
-                self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start:.2f}s, end={new_music_end:.2f}s")
-        self.start_minute_input.blockSignals(True)
-        self.start_second_input.blockSignals(True)
-        self.end_minute_input.blockSignals(True)
-        self.end_second_input.blockSignals(True)
-        try:
-            start_min, start_s = divmod(int(start_sec), 60)
-            self.start_minute_input.setValue(start_min)
-            self.start_second_input.setValue(start_s)
-            end_min, end_s = divmod(int(end_sec), 60)
-            self.end_minute_input.setValue(end_min)
-            self.end_second_input.setValue(end_s)
-        finally:
-            self.start_minute_input.blockSignals(False)
-            self.start_second_input.blockSignals(False)
-            self.end_minute_input.blockSignals(False)
-            self.end_second_input.blockSignals(False)
+    def _on_slider_trim_changed(self, start_ms, end_ms):
+        """Handles trim time changes from the custom slider (in ms)."""
+        self.trim_start_ms = start_ms
+        self.trim_end_ms = end_ms
+        if self.music_timeline_start_ms > 0 and self.music_timeline_end_ms > 0 and self.add_music_checkbox.isChecked():
+            video_dur_ms = end_ms - start_ms
+            music_dur_ms = self.music_timeline_end_ms - self.music_timeline_start_ms
+            if music_dur_ms > video_dur_ms:
+                music_dur_ms = video_dur_ms
+            new_music_start_ms = max(start_ms, self.music_timeline_start_ms)
+            if new_music_start_ms + music_dur_ms > end_ms:
+                new_music_start_ms = end_ms - music_dur_ms
+            new_music_end_ms = new_music_start_ms + music_dur_ms
+            if (self.music_timeline_start_ms != new_music_start_ms or self.music_timeline_end_ms != new_music_end_ms):
+                self.music_timeline_start_ms = new_music_start_ms
+                self.music_timeline_end_ms = new_music_end_ms
+                self.positionSlider.set_music_times(new_music_start_ms, new_music_end_ms)
+                self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start_ms/1000.0:.2f}s, end={new_music_end_ms/1000.0:.2f}s")
+        self._update_trim_widgets_from_trim_times()
 
     def _on_trim_spin_changed(self):
         dur = float(self.original_duration or 0.0)
@@ -526,43 +621,19 @@ class VideoCompressorApp(UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerM
             toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
             if toggle_method:
                 QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
-            self._poll_retries = 0
-            QTimer.singleShot(100, self._poll_for_duration)
         else:
             self.logger.warning("VLC not available. Skipping playback. (CPU Mode)")
             pass
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
 
-    def _poll_for_duration(self):
-        """Repeatedly checks VLC for valid duration to update timeline slider."""
-        if not getattr(self, "vlc_player", None):
-            return
-        try:
-            self.vlc_player.set_rate(self.playback_rate)
-            self.vlc_player.audio_set_mute(False)
-            if hasattr(self, 'apply_master_volume'):
-                self.apply_master_volume()
-            dur = 0
-            if self.vlc_player.get_media():
-                dur = self.vlc_player.get_media().get_duration()
-            if dur > 0:
-                self.positionSlider.setRange(0, dur)
-                self.positionSlider.set_duration_ms(dur)
-                self.logger.info(f"Timeline updated: Duration {dur}ms found via VLC.")
-            else:
-                if self._poll_retries < 20:
-                    self._poll_retries += 1
-                    QTimer.singleShot(100, self._poll_for_duration)
-        except Exception as e:
-            self.logger.error(f"Error in duration polling: {e}")
-
     def reset_app_state(self):
         """Resets the UI and state so a new file can be loaded fresh."""
         self.input_file_path = None
         self.original_resolution = None
-        self.trim_start = 0.0
-        self.trim_end = 0.0
+        self.original_duration_ms = 0
+        self.trim_start_ms = 0
+        self.trim_end_ms = 0
         self.process_button.setEnabled(False)
         self.progress_update_signal.emit(0)
         self.on_phase_update("Please upload a new video file.")

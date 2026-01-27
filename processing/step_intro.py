@@ -20,10 +20,11 @@ class IntroProcessor:
             f"anullsrc=r=48000:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
         )
         if is_mobile:
-            intro_filter = f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,{base_intro}"
+            intro_filter = f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1080:1920,{base_intro}"
         else:
             intro_filter = f"[0:v]{base_intro}"
-        vcodec_intro = self.encoder_mgr.get_intro_codec_flags(video_bitrate_kbps)
+        enc_name = self.encoder_mgr.get_initial_encoder()
+        vcodec_intro, _ = self.encoder_mgr.get_codec_flags(enc_name, video_bitrate_kbps, 5.0)
         intro_cmd = [
             self.ffmpeg_path, "-y", "-hwaccel", "auto",
             "-progress", "pipe:1",

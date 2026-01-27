@@ -18,7 +18,7 @@ except ImportError:
     except ImportError:
         pass
 from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget
-from PyQt5.QtCore import QCoreApplication
+from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
 import subprocess, ctypes
 
@@ -27,6 +27,21 @@ BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 PLUGINS   = os.path.join(BIN_DIR, 'plugins')
 PID_FILE_NAME = "fortnite_video_software_app.pid"
 PID_FILE_PATH = os.path.join(tempfile.gettempdir(), PID_FILE_NAME)
+
+class HardwareWorker(QObject):
+    """
+    Worker thread to offload slow hardware capability checks from the main UI thread.
+    """
+    finished = pyqtSignal(str)
+
+    def __init__(self, ffmpeg_path):
+        super().__init__()
+        self.ffmpeg_path = ffmpeg_path
+
+    def run(self):
+        """Performs the hardware scan and emits the result."""
+        detected_mode = determine_hardware_strategy(self.ffmpeg_path)
+        self.finished.emit(detected_mode)
 
 def write_pid_file():
     print(f"DEBUG: Attempting to write PID {os.getpid()} to {PID_FILE_PATH}")
@@ -72,7 +87,8 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             startupinfo=startupinfo,
-            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+            timeout=15 # Add a timeout to prevent indefinite hangs
         )
         if result.returncode == 0:
             print(f"DEBUG: Encoder '{encoder_name}' is WORKING.")
@@ -80,7 +96,7 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
         else:
             print(f"DEBUG: Encoder '{encoder_name}' failed test.")
             return False
-    except Exception as e:
+    except (subprocess.TimeoutExpired, Exception) as e:
         print(f"DEBUG: Exception testing '{encoder_name}': {e}")
         return False
 
@@ -152,19 +168,9 @@ if __name__ == "__main__":
             app.setWindowIcon(QIcon(icon_path))
     except Exception:
         pass
-    detected_mode = determine_hardware_strategy(ffmpeg_path)
-    print(f"DEBUG: Hardware Strategy Selected: {detected_mode}")
-    if detected_mode == "CPU":
-        msg_box = QMessageBox()
-        msg_box.setIcon(QMessageBox.Critical)
-        msg_box.setWindowTitle("No GPU Found")
-        msg_box.setText(
-            "No GPU was found, this session will be run by CPU only (Slower Experience)."
-        )
-        msg_box.setStyleSheet("QLabel{ font-weight: bold; color: red; }")
-        msg_box.exec_()
+    
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    ex = VideoCompressorApp(file_arg, detected_mode)
+    ex = VideoCompressorApp(file_arg, "Scanning...")
     app.installEventFilter(ex)
     try:
         if icon_path and os.path.exists(icon_path):
@@ -172,6 +178,18 @@ if __name__ == "__main__":
     except Exception:
         pass
     ex.show()
+
+    # Setup and start background hardware check
+    hw_thread = QThread()
+    hw_worker = HardwareWorker(ffmpeg_path)
+    hw_worker.moveToThread(hw_thread)
+    hw_thread.started.connect(hw_worker.run)
+    hw_worker.finished.connect(ex.on_hardware_scan_finished)
+    hw_worker.finished.connect(hw_thread.quit)
+    hw_worker.finished.connect(hw_worker.deleteLater)
+    hw_thread.finished.connect(hw_thread.deleteLater)
+    hw_thread.start()
+
     print("DEBUG: Main window shown. Entering app.exec_().")
     ret = app.exec_()
     print(f"DEBUG: app.exec_() returned with code: {ret}. App is exiting.")
