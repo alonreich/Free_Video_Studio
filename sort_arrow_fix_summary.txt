@@ -1,0 +1,3 @@
+- Modified `ui/widgets/custom_file_dialog.py`:
+  - In `CenterHeaderProxyStyle`, changed the sort indicator check from `option.sortIndicator == 2` to `option.sortIndicator == 1`.
+  - This corrects the direction of the custom-drawn sort arrows to match the standard behavior (UP for ascending, DOWN for descending), resolving the visual bug where they were inverted.

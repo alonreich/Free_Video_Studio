@@ -151,7 +151,7 @@ if __name__ == "__main__":
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                pass
+                ctypes.windll.user32.ShowWindow(hwnd, 0) # 0 = SW_HIDE
         except Exception:
             pass
     icon_path = ""

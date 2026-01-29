@@ -1,0 +1,3 @@
+- Modified app.py:
+  - Replaced pass with ctypes.windll.user32.ShowWindow(hwnd, 0) within the Windows-specific console hiding logic.
+  - This change hides the black Python command console when the application starts.

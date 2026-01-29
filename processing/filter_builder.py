@@ -213,37 +213,27 @@ class FilterBuilder:
         return video_filter_cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
-        parts = video_filter_cmd.split(';')
-        last_filter_part = parts[-1]
-        if 'scale=1080' in last_filter_part:
-            input_tag = last_filter_part.split(']')[0] + ']'
-            parts = parts[:-1]
-            ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
-            candidates = [
-                os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
-                os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/System/Library/Fonts/Helvetica.ttc"
-            ]
-            font_path = "arial"
-            for c in candidates:
-                if os.path.exists(c):
-                    font_path = c.replace("\\", "/").replace(":", "\\:")
-                    break
-            drawtext_parts = [
-                f"drawtext=fontfile='{font_path}'",
-                f"textfile='{ff_textfile}':reload=0:text_shaping=1",
-                f"fontcolor=white:fontsize={int(font_px)}",
-                f"x=(w-text_w)/2:y=40:line_spacing={line_spacing}",
-                f"shadowcolor=black:shadowx=3:shadowy=3"
-            ]
-            drawtext_str = ":".join(drawtext_parts)
-            new_last_filter = f"{input_tag}{drawtext_str}[vwithtext]"
-            parts.append(new_last_filter)
-            parts.append("[vwithtext]" + last_filter_part.split(']', 1)[1])
-            return ';'.join(parts)
-        else:
-            return video_filter_cmd + "," + self._drawtext("", 0, 0, 0, "", "")
+        ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
+        candidates = [
+            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
+            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Helvetica.ttc"
+        ]
+        font_path = "arial"
+        for c in candidates:
+            if os.path.exists(c):
+                font_path = c.replace("\\", "/").replace(":", "\\:")
+                break
+        drawtext_parts = [
+            f"drawtext=fontfile='{font_path}'",
+            f"textfile='{ff_textfile}':reload=0:text_shaping=1",
+            f"fontcolor=white:fontsize={int(font_px)}",
+            f"x=(w-text_w)/2:y=(150-text_h)/2:line_spacing={line_spacing}",
+            f"shadowcolor=black:shadowx=3:shadowy=3"
+        ]
+        drawtext_str = ":".join(drawtext_parts)
+        return video_filter_cmd + "," + drawtext_str
 
     def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd):
         chain = []

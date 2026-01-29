@@ -225,7 +225,7 @@ class CenterHeaderProxyStyle(QProxyStyle):
                 left_x = int(cx - (text_width / 2) - padding)
                 right_x = int(cx + (text_width / 2) + padding)
                 s = 4 
-                is_down = (option.sortIndicator == 2)
+                is_down = (option.sortIndicator == 1)
                 
                 def draw_arrow(x, y, down):
                     if down:
