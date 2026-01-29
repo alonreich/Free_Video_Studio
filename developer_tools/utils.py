@@ -1,7 +1,8 @@
 import os
 import tempfile
 import json
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QSettings, QByteArray, QTimer
+from PyQt5.QtWidgets import QApplication
 
 def cleanup_temp_snapshots():
     """Removes temporary snapshot files from the temp directory."""
@@ -49,7 +50,11 @@ class PersistentWindowMixin:
 
     def _apply_default_center(self):
         """Centers window with 100px padding on the current screen."""
-        screen_geo = QApplication.desktop().screenGeometry()
+        app_instance = QApplication.instance()
+        if app_instance is None:
+            print("Warning: QApplication instance not found when trying to center window.")
+            return
+        screen_geo = app_instance.desktop().screenGeometry()
         avail_w = screen_geo.width() - 200
         avail_h = screen_geo.height() - 200
         w = max(self.default_geo['w'], min(avail_w, 1600))

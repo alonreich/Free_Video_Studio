@@ -222,6 +222,7 @@ class ProcessThread(QThread):
                     '-map', '[vcore]', '-map', '[acore]', '-shortest',
                     core_path
                 ])
+                self.logger.info(f"Full FFmpeg command: {' '.join(cmd)}")
                 self.logger.info(f"Attempting encode with '{encoder_name}'...")
                 self.current_process = create_subprocess(cmd, self.logger)
                 monitor_ffmpeg_progress(

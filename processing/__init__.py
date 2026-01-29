@@ -8,12 +8,10 @@ import sys
 import tempfile
 import shutil
 
-# Prevent Python from creating __pycache__ directories and .pyc files
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(tempfile.gettempdir(), 'pycache_disabled')
 sys.dont_write_bytecode = True
 
-# Clean up any existing __pycache__ directories in this module's path
 def cleanup_pycache():
     """Remove any __pycache__ directories in the current directory and subdirectories."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +36,6 @@ cleanup_pycache()
 from typing import Dict, Any, Optional, Callable
 from PyQt5.QtCore import QObject, pyqtSignal
 
-# Re-export core components
 from .config_data import VideoConfig
 from .media_utils import MediaProber
 from .filter_builder import FilterBuilder
@@ -49,7 +46,6 @@ from .step_intro import IntroProcessor
 from .step_concat import ConcatProcessor
 from .worker import ProcessThread
 
-# Import state and resource managers if available
 try:
     from state_manager import get_state_manager, OperationType, with_transaction
     STATE_MANAGER_AVAILABLE = True
@@ -113,7 +109,7 @@ class ProcessingJob:
         self.original_total_duration = float(original_total_duration)
         self.music_config = music_config if music_config else {}
         
-        # Derived properties
+
         self.duration = self.end_time - self.start_time
 
 
@@ -133,7 +129,7 @@ class ProcessingResult:
         self.processing_time = processing_time
         self.output_size = output_size
         
-        # Additional metadata
+
         self.metadata: Dict[str, Any] = {}
 
 
@@ -143,12 +139,12 @@ class ProcessingManager(QObject):
     Provides a clean interface for starting, monitoring, and controlling jobs.
     """
     
-    # Signals for job progress and completion
-    job_started = pyqtSignal(str)  # job_id
-    job_progress = pyqtSignal(str, int, str)  # job_id, progress_percentage, status_message
-    job_completed = pyqtSignal(str, ProcessingResult)  # job_id, result
-    job_error = pyqtSignal(str, str)  # job_id, error_message
-    job_cancelled = pyqtSignal(str)  # job_id
+
+    job_started = pyqtSignal(str)
+    job_progress = pyqtSignal(str, int, str)
+    job_completed = pyqtSignal(str, ProcessingResult)
+    job_error = pyqtSignal(str, str)
+    job_cancelled = pyqtSignal(str)
     
     def __init__(self, base_dir: str, logger=None):
         super().__init__()
@@ -158,7 +154,7 @@ class ProcessingManager(QObject):
         self._jobs: Dict[str, ProcessThread] = {}
         self._job_results: Dict[str, ProcessingResult] = {}
         
-        # Initialize subsystems
+
         self.config = VideoConfig(base_dir)
         self.encoder_mgr = EncoderManager(logger)
         self.filter_builder = FilterBuilder(logger)
@@ -180,19 +176,19 @@ class ProcessingManager(QObject):
         if job_id is None:
             job_id = f"job_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         
-        # Create progress tracking signals
+
         from PyQt5.QtCore import pyqtSignal as Signal
         
-        # Create the worker thread
+
         script_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Define signal handlers
+
         def progress_handler(progress: int):
             status = self._get_status_for_progress(progress)
             self.job_progress.emit(job_id, progress, status)
         
         def status_handler(message: str):
-            self.job_progress.emit(job_id, -1, message)  # -1 indicates status-only update
+            self.job_progress.emit(job_id, -1, message)
         
         def finished_handler(success: bool, output_path: str):
             result = ProcessingResult(
@@ -206,11 +202,11 @@ class ProcessingManager(QObject):
             else:
                 self.job_error.emit(job_id, result.error_message or "Unknown error")
             
-            # Clean up job reference
+
             if job_id in self._jobs:
                 del self._jobs[job_id]
         
-        # Create the thread with proper type handling AND unit conversion (Sec -> MS)
+
         thread_kwargs = {
             'input_path': job.input_path,
             'start_time_ms': int(job.start_time * 1000),
@@ -236,7 +232,7 @@ class ProcessingManager(QObject):
             'music_config': job.music_config
         }
         
-        # Add optional parameters only if they have values
+
         if job.intro_abs_time is not None:
             thread_kwargs['intro_abs_time_ms'] = int(job.intro_abs_time * 1000)
         
@@ -245,7 +241,7 @@ class ProcessingManager(QObject):
         
         thread = ProcessThread(**thread_kwargs)
         
-        # Store and start the job
+
         self._jobs[job_id] = thread
         self.job_started.emit(job_id)
         thread.start()
@@ -259,7 +255,7 @@ class ProcessingManager(QObject):
             thread.cancel()
             self.job_cancelled.emit(job_id)
             
-            # Clean up after a short delay
+
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(1000, lambda: self._cleanup_job(job_id))
             return True
@@ -325,17 +321,17 @@ class ProcessingManager(QObject):
             "warnings": []
         }
         
-        # Check input file exists
+
         if not os.path.exists(job.input_path):
             validation_results["valid"] = False
             validation_results["errors"].append(f"Input file not found: {job.input_path}")
         
-        # Check duration is positive
+
         if job.duration <= 0:
             validation_results["valid"] = False
             validation_results["errors"].append("Duration must be positive")
         
-        # Check resolution format
+
         try:
             if 'x' in job.original_resolution:
                 w, h = map(int, job.original_resolution.split('x'))
@@ -344,18 +340,17 @@ class ProcessingManager(QObject):
         except ValueError:
             validation_results["warnings"].append("Could not parse resolution, using default")
         
-        # Check speed factor range
+
         if job.speed_factor < 0.25 or job.speed_factor > 4.0:
             validation_results["warnings"].append(f"Speed factor {job.speed_factor} is outside recommended range (0.25-4.0)")
         
-        # Check quality level
+
         if job.quality_level < 0 or job.quality_level > 3:
             validation_results["warnings"].append(f"Quality level {job.quality_level} is outside valid range (0-3)")
         
         return validation_results
 
 
-# Convenience function to create a processing manager
 def create_processing_manager(base_dir: Optional[str] = None, logger=None):
     """
     Create a ProcessingManager instance.
@@ -368,7 +363,7 @@ def create_processing_manager(base_dir: Optional[str] = None, logger=None):
         ProcessingManager instance
     """
     if base_dir is None:
-        # Auto-detect base directory
+
         import sys
         script_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.abspath(os.path.join(script_dir, '..'))
@@ -376,7 +371,6 @@ def create_processing_manager(base_dir: Optional[str] = None, logger=None):
     return ProcessingManager(base_dir, logger)
 
 
-# Export the main interface
 __all__ = [
     'ProcessingJob',
     'ProcessingResult',

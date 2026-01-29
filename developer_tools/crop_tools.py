@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import traceback
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
@@ -20,24 +20,7 @@ from app_handlers import CropAppHandlers
 from config import CROP_APP_STYLESHEET
 from logger_setup import setup_logger
 from enhanced_logger import get_enhanced_logger
-
-def global_exception_handler(exc_type, exc_value, exc_traceback):
-    """Handle unhandled exceptions and log them"""
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-    print(f"UNHANDLED EXCEPTION: {error_msg}")
-    logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
-    os.makedirs(logs_dir, exist_ok=True)
-    crash_log_path = os.path.join(logs_dir, 'crash.log')
-    with open(crash_log_path, 'a', encoding='utf-8') as f:
-        f.write(f"=== CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-        f.write(error_msg)
-        f.write("\n" + "="*50 + "\n\n")
-    sys.__excepthook__(exc_type, exc_value, exc_traceback)
-sys.excepthook = global_exception_handler
-
+from config_manager import get_config_manager
 import time
 try:
     import win32gui
@@ -57,7 +40,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.base_title = "Crop Tool - Wizard Mode"
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, '..'))
-        self.config_path = os.path.join(self.base_dir, 'Config', 'crop_tool.conf')
+        self.config_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        self.config_manager = get_config_manager(self.config_path, self.logger)
         self.last_dir = None
         self.bin_dir = os.path.abspath(os.path.join(self.base_dir, 'binaries'))
         self.snapshot_path = os.path.join(tempfile.gettempdir(), "snapshot.png")
@@ -81,7 +65,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.setup_persistence(
             config_path=self.config_path,
             settings_key='window_geometry',
-            default_geo={'x': 83, 'y': 39, 'w': 1600, 'h': 900},
+            default_geo={'x': 100, 'y': 100, 'w': 1280, 'h': 720},
             title_info_provider=self.get_title_info
         )
         if file_path and os.path.exists(file_path):
@@ -104,9 +88,13 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                             self._bring_app_to_foreground(pid)
                         main_app_found = True
                     else:
-                        self.logger.warning(f"A process with PID {pid} exists, but it's not the main app. Stale PID file?")
+                        self.logger.warning(f"A process with PID {pid} exists, but it's not the main app. Removing stale PID file.")
+                        try: os.remove(PID_FILE_PATH)
+                        except OSError: pass
                 else:
-                    self.logger.info(f"PID from file does not exist. Stale PID file.")
+                    self.logger.info(f"PID from file does not exist. Removing stale PID file.")
+                    try: os.remove(PID_FILE_PATH)
+                    except OSError: pass
             except (ValueError, FileNotFoundError, psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
                 self.logger.warning(f"Error reading or verifying PID file: {e}. Assuming app is not running.")
         else:
@@ -114,9 +102,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not main_app_found:
             self.logger.info("Main app not found or PID was stale. Launching it now.")
             try:
-                command = [sys.executable, main_app_path]
+                executable = sys.executable.replace("python.exe", "pythonw.exe")
+                if not os.path.exists(executable):
+                    executable = sys.executable
+                command = [executable, main_app_path]
                 flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-                subprocess.Popen(command, creationflags=flags)
+                subprocess.Popen(command, creationflags=flags, cwd=self.base_dir)
                 self.logger.info(f"Launched app.py: {main_app_path}")
             except Exception as e:
                 self.logger.error(f"Failed to launch app.py: {e}")
@@ -165,7 +156,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 def main():
     logger = setup_logger()
     logger.info("Application starting...")
-    sys.dont_write_bytecode = True
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     BIN_DIR = os.path.join(BASE_DIR, 'binaries')
     PLUGINS_DIR = os.path.join(BIN_DIR, 'plugins')

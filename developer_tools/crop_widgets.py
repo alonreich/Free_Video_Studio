@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QMenu, QAction
+﻿from PyQt5.QtWidgets import QWidget, QMenu, QAction
 from PyQt5.QtCore import Qt, QPoint, QRect, pyqtSignal, QRectF, QPointF, QSize, QTimer
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap, QPainterPath
 from config import HUD_ELEMENT_MAPPINGS
@@ -157,12 +157,27 @@ class DrawWidget(QWidget):
             vbar.setValue(max(vbar.minimum(), min(vbar.value(), vbar.maximum())))
 
     def _map_to_image(self, pos):
-        return QPointF(pos.x() / self.zoom, pos.y() / self.zoom)
-
+        """Map a widget position to image coordinates.
+        Previously this function ignored the offset of the scaled image within the
+        widget, causing the selection rectangle to be offset when the image was
+        letterboxed or centered. Subtract the image rect top-left before
+        dividing by the zoom level.
+        """
+        return QPointF(
+            (pos.x() - self._img_rect.x()) / self.zoom,
+            (pos.y() - self._img_rect.y()) / self.zoom
+        )
+    
     def _map_rect_to_display(self, rect_img):
+        """Map an image-space rectangle to widget coordinates.
+        The previous implementation did not account for the offset of the
+        displayed image within the widget. We add the top-left offset of
+        `_img_rect` so that the display rectangle aligns with the drawn
+        pixmap.
+        """
         return QRect(
-            int(rect_img.x() * self.zoom),
-            int(rect_img.y() * self.zoom),
+            int(self._img_rect.x() + rect_img.x() * self.zoom),
+            int(self._img_rect.y() + rect_img.y() * self.zoom),
             int(rect_img.width() * self.zoom),
             int(rect_img.height() * self.zoom)
         )
@@ -221,17 +236,23 @@ class DrawWidget(QWidget):
         if self.mode in ['drawing', 'resizing', 'moving'] and not self.pixmap.isNull():
             self.draw_magnifier(painter)
         elif self._crop_rect_img.isNull() and not self.pixmap.isNull():
-            overlay_rect = QRect(0, 0, 820, 180)
+            overlay_rect = QRect(0, 0, 820, 260)
             overlay_rect.moveCenter(self.rect().center())
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor("#000000"))
             painter.drawRoundedRect(overlay_rect, 12, 12)
             painter.setPen(QColor("#FBBF24"))
             font = painter.font()
-            font.setPointSize(24)
+            font.setPointSize(20)
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(overlay_rect, Qt.AlignCenter, "🎯\n\nCLICK & DRAG TO CROP A HUD ELEMENT")
+            instruction_text = (
+                "🎯\n\n"
+                "CLICK & DRAG TO CROP A HUD ELEMENT\n"
+                "Right click inside the box to select HUD element\n"
+                "Press ESC to return to video"
+            )
+            painter.drawText(overlay_rect, Qt.AlignCenter | Qt.TextWordWrap, instruction_text)
 
     def draw_magnifier(self, painter):
         if self._cache_pix is None or self._cache_pix.isNull(): 
@@ -311,7 +332,6 @@ class DrawWidget(QWidget):
                 self._drawing_start_img = img_pos
                 self._drawing_rect_img = QRectF(img_pos, img_pos)
                 self.mode = 'drawing'
-                self._smart_zoom_start(img_pos)
             self.update()
 
     def mouseMoveEvent(self, event):
@@ -338,7 +358,6 @@ class DrawWidget(QWidget):
             self.end = event.pos()
             img_pos = self._map_to_image(event.pos())
             self._drawing_rect_img = QRectF(self._drawing_start_img, img_pos).normalized()
-            self._smart_zoom_update(img_pos)
         elif self.mode == 'moving':
             if not self._crop_rect_img.isNull():
                 delta = (event.pos() - self.last_mouse_pos)
@@ -376,7 +395,6 @@ class DrawWidget(QWidget):
                 else:
                     self._show_confirm_button()
                     self._zoom_to_crop()
-                self._smart_zoom_reset()
             self.mode = 'none'
             self.resize_edge = None
             self._drawing_rect_img = QRectF()
@@ -392,12 +410,25 @@ class DrawWidget(QWidget):
 
     def get_handle_at(self, pos):
         r = self._map_rect_to_display(self._crop_rect_img)
-        if r.isNull(): return None
-        if (pos - r.topLeft()).manhattanLength() < 15: return 'top_left'
-        if (pos - r.bottomRight()).manhattanLength() < 15: return 'bottom_right'
+        if r.isNull():
+            return None
+        if (pos - r.topLeft()).manhattanLength() < 15:
+            return 'top_left'
+        if (pos - r.topRight()).manhattanLength() < 15:
+            return 'top_right'
+        if (pos - r.bottomLeft()).manhattanLength() < 15:
+            return 'bottom_left'
+        if (pos - r.bottomRight()).manhattanLength() < 15:
+            return 'bottom_right'
         return None
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            parent_window = self.window()
+            if hasattr(parent_window, 'show_video_view'):
+                parent_window.show_video_view()
+            self.clear_selection()
+            return
         if self._crop_rect_img.isNull() or not self._crop_rect_img.isValid():
             return super().keyPressEvent(event)
         delta = 1
@@ -463,13 +494,13 @@ class DrawWidget(QWidget):
         viewport = self.scroll_area.viewport().size()
         if viewport.width() <= 0 or viewport.height() <= 0:
             return
-        target_zoom_x = viewport.width() * 0.5 / max(10, self._crop_rect_img.width())
-        target_zoom_y = viewport.height() * 0.5 / max(10, self._crop_rect_img.height())
+        target_zoom_x = viewport.width() * 0.4 / max(10, self._crop_rect_img.width())
+        target_zoom_y = viewport.height() * 0.4 / max(10, self._crop_rect_img.height())
         target_zoom = min(target_zoom_x, target_zoom_y, self.max_zoom)
         current_crop_width_display = self._crop_rect_img.width() * self.zoom
         current_crop_height_display = self._crop_rect_img.height() * self.zoom
-        if (current_crop_width_display > viewport.width() * 0.4 and 
-            current_crop_height_display > viewport.height() * 0.4):
+        if (current_crop_width_display > viewport.width() * 0.3 and 
+            current_crop_height_display > viewport.height() * 0.3):
             self._center_on_crop()
             return
         target_zoom = max(self.min_zoom, min(self.max_zoom, target_zoom))
@@ -481,17 +512,21 @@ class DrawWidget(QWidget):
         self.update()
 
     def _center_on_crop(self):
-        """Center scrollbars on the crop rectangle."""
+        """Center scrollbars on the crop rectangle with smart edge handling."""
         if self._crop_rect_img.isNull() or not self.scroll_area:
             return
         rect_display = self._map_rect_to_display(self._crop_rect_img)
         viewport = self.scroll_area.viewport().size()
         hbar = self.scroll_area.horizontalScrollBar()
         vbar = self.scroll_area.verticalScrollBar()
-        target_x = rect_display.center().x() - viewport.width() // 2
-        target_y = rect_display.center().y() - viewport.height() // 2
-        hbar.setValue(max(hbar.minimum(), min(target_x, hbar.maximum())))
-        vbar.setValue(max(vbar.minimum(), min(target_y, vbar.maximum())))
+        ideal_x = rect_display.center().x() - viewport.width() / 2.0
+        ideal_y = rect_display.center().y() - viewport.height() / 2.0
+        max_scroll_x = max(0, self.width() - viewport.width())
+        max_scroll_y = max(0, self.height() - viewport.height())
+        target_x = int(max(0, min(ideal_x, max_scroll_x)))
+        target_y = int(max(0, min(ideal_y, max_scroll_y)))
+        hbar.setValue(target_x)
+        vbar.setValue(target_y)
 
     def _clamp_scroll(self):
         """Ensure scrollbars do not show void (empty space) beyond image edges."""

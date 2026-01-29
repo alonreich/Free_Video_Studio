@@ -1,5 +1,60 @@
-import os
+﻿import os
+from typing import Tuple
 from .text_ops import safe_text
+TARGET_W = 1280
+TARGET_H = 1920
+CONTENT_W = 1080
+CONTENT_H = 1620
+
+def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
+                                        original_resolution: str) -> Tuple[float, float, float, float]:
+    if not original_resolution:
+        return rect
+    try:
+        in_w, in_h = map(int, original_resolution.split('x'))
+        if in_w <= 0 or in_h <= 0:
+            return rect
+    except (ValueError, AttributeError):
+        return rect
+    x_content, y_content, w_content, h_content = rect
+    scale_factor = TARGET_W / CONTENT_W
+    x_scaled = x_content * scale_factor
+    y_scaled = y_content * scale_factor
+    w_scaled = w_content * scale_factor
+    h_scaled = h_content * scale_factor
+    scale_w = TARGET_W / in_w
+    scale_h = TARGET_H / in_h
+    scale = max(scale_w, scale_h)
+    scaled_w = in_w * scale
+    scaled_h = in_h * scale
+    crop_x = max(0, (scaled_w - TARGET_W) / 2)
+    crop_y = max(0, (scaled_h - TARGET_H) / 2)
+    x_uncropped = x_scaled + crop_x
+    y_uncropped = y_scaled + crop_y
+    x_original = x_uncropped / scale
+    y_original = y_uncropped / scale
+    w_original = w_scaled / scale
+    h_original = h_scaled / scale
+    w_original = max(1.0, min(w_original, in_w))
+    h_original = max(1.0, min(h_original, in_h))
+    x_original = max(0.0, min(x_original, in_w - w_original))
+    y_original = max(0.0, min(y_original, in_h - h_original))
+    return (x_original, y_original, w_original, h_original)
+
+def inverse_transform_from_content_area_int(rect: Tuple[int, int, int, int],
+                                            original_resolution: str) -> Tuple[int, int, int, int]:
+    x, y, w, h = rect
+    fx, fy, fw, fh = inverse_transform_from_content_area(
+        (float(x), float(y), float(w), float(h)), original_resolution
+    )
+    EPSILON = 0.001
+    return (
+        int(round(fx + EPSILON)),
+        int(round(fy + EPSILON)),
+        int(round(fw + EPSILON)),
+        int(round(fh + EPSILON))
+    )
+COORDINATE_MATH_AVAILABLE = True
 
 class FilterBuilder:
     def __init__(self, logger):
@@ -42,15 +97,69 @@ class FilterBuilder:
             in_w, in_h = map(int, original_res_str.split('x'))
         except:
             in_w, in_h = 1920, 1080
+        if not is_boss_hp and hp_1080[0] > in_w:
+            self.logger.warning("Detected oversized 'normal_hp' coordinates. Attempting to correct by down-scaling.")
+            w, h, x, y = hp_1080
+            w = w / healthbar_scale
+            h = h / healthbar_scale
+            hp_1080 = (w, h, x, y)
+        stats_1080 = get_rect('crops_1080p', 'stats')
+        if stats_1080[0] > in_w:
+            self.logger.warning("Detected oversized 'stats' coordinates. Attempting to correct by down-scaling.")
+            w, h, x, y = stats_1080
+            w = w / stats_scale
+            h = h / stats_scale
+            stats_1080 = (w, h, x, y)
         scale_factor = in_h / 1080.0
         self.logger.info(f"Mobile Crop: Scale factor: {scale_factor:.4f} (Input: {in_w}x{in_h})")
 
         def scale_box(box, s):
-            return tuple((int(round(v * s)) // 2) * 2 for v in box)
-        hp = scale_box(hp_1080, scale_factor)
-        loot = scale_box(loot_1080, scale_factor)
-        stats = scale_box(stats_1080, scale_factor)
-        team = scale_box(team_1080, scale_factor)
+            new_box = []
+            for i, v in enumerate(box):
+                scaled_v = int(round(v * s))
+                even_v = (scaled_v // 2) * 2
+                if i < 2 and v > 0 and even_v <= 0:
+                    even_v = 2
+                new_box.append(even_v)
+            return tuple(new_box)
+        if COORDINATE_MATH_AVAILABLE:
+            try:
+                def inverse_transform_crop(crop_1080):
+                    w, h, x, y = crop_1080
+                    transformed = inverse_transform_from_content_area_int((x, y, w, h), original_res_str)
+                    return (transformed[2], transformed[3], transformed[0], transformed[1])
+                hp_original = inverse_transform_crop(hp_1080)
+                loot_original = inverse_transform_crop(loot_1080)
+                stats_original = inverse_transform_crop(stats_1080)
+                team_original = inverse_transform_crop(team_1080)
+
+                def safe_clamp_and_scale(original_coords):
+                    w, h, x, y = original_coords
+                    x = max(0, x)
+                    y = max(0, y)
+                    return scale_box((w, h, x, y), 1.0)
+                hp = safe_clamp_and_scale(hp_original)
+                loot = safe_clamp_and_scale(loot_original)
+                stats = safe_clamp_and_scale(stats_original)
+                team = safe_clamp_and_scale(team_original)
+                self.logger.info(f"Using inverse transformed coordinates for cropping (with safety clamp)")
+            except Exception as e:
+                self.logger.warning(f"Inverse transformation failed: {e}. Falling back to old method.")
+
+                def safe_scale_box(box, s):
+                    w, h, x, y = box
+                    x = max(0, x)
+                    y = max(0, y)
+                    return scale_box((w, h, x, y), s)
+                hp = safe_scale_box(hp_1080, scale_factor)
+                loot = safe_scale_box(loot_1080, scale_factor)
+                stats = safe_scale_box(stats_1080, scale_factor)
+                team = safe_scale_box(team_1080, scale_factor)
+        else:
+            hp = scale_box(hp_1080, scale_factor)
+            loot = scale_box(loot_1080, scale_factor)
+            stats = scale_box(stats_1080, scale_factor)
+            team = scale_box(team_1080, scale_factor)
         hp_crop = f"{hp[0]}:{hp[1]}:{hp[2]}:{hp[3]}"
         loot_crop = f"{loot[0]}:{loot[1]}:{loot[2]}:{loot[3]}"
         stats_crop = f"{stats[0]}:{stats[1]}:{stats[2]}:{stats[3]}"
@@ -59,12 +168,19 @@ class FilterBuilder:
         hp_s_str = f"scale={int(round(hp_1080[0] * healthbar_scale))}:{int(round(hp_1080[1] * healthbar_scale))}:flags=bilinear"
         stats_s_str = f"scale={int(round(stats_1080[0] * stats_scale))}:{int(round(stats_1080[1] * stats_scale))}:flags=bilinear"
         team_s_str = f"scale={int(round(team_1080[0] * team_scale))}:{int(round(team_1080[1] * team_scale))}:flags=bilinear"
-        lx = overlays.get('loot', {}).get('x', 0)
-        ly = overlays.get('loot', {}).get('y', 0)
-        sx = overlays.get('stats', {}).get('x', 0)
-        sy = overlays.get('stats', {}).get('y', 0)
-        hpx = hp_ov.get('x', 0)
-        hpy = hp_ov.get('y', 0)
+        BACKEND_SCALE = 1280.0 / 1080.0
+        lx_raw = overlays.get('loot', {}).get('x', 0)
+        ly_raw = overlays.get('loot', {}).get('y', 0)
+        sx_raw = overlays.get('stats', {}).get('x', 0)
+        sy_raw = overlays.get('stats', {}).get('y', 0)
+        hpx_raw = hp_ov.get('x', 0)
+        hpy_raw = hp_ov.get('y', 0)
+        lx = int(round(lx_raw * BACKEND_SCALE))
+        ly = int(round(ly_raw * BACKEND_SCALE))
+        sx = int(round(sx_raw * BACKEND_SCALE))
+        sy = int(round(sy_raw * BACKEND_SCALE))
+        hpx = int(round(hpx_raw * BACKEND_SCALE))
+        hpy = int(round(hpy_raw * BACKEND_SCALE))
         f_main = "[main]scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920[main_cropped]"
         f_loot = f"[lootbar]crop={loot_crop},drawbox=t=2:c=black,{loot_s_str},format=yuva444p[lootbar_scaled]"
         f_hp = f"[healthbar]crop={hp_crop},drawbox=t=2:c=black,{hp_s_str},format=yuva444p[healthbar_scaled]"
@@ -74,48 +190,60 @@ class FilterBuilder:
         ov_2 = f"[t1][healthbar_scaled]overlay={hpx}:{hpy}[t2]"
         if show_teammates:
             ov_3 = f"[t2][stats_scaled]overlay={sx}:{sy}[t3]"
-            tx = overlays.get('team', {}).get('x', 0)
-            ty = overlays.get('team', {}).get('y', 0)
+            tx_raw = overlays.get('team', {}).get('x', 0)
+            ty_raw = overlays.get('team', {}).get('y', 0)
+            tx = int(round(tx_raw * BACKEND_SCALE))
+            ty = int(round(ty_raw * BACKEND_SCALE))
             f_team = f"[team]crop={team_crop},drawbox=t=2:c=black,{team_s_str},format=yuva444p[team_scaled]"
             video_filter_cmd = (
                 f"split=5[main][lootbar][healthbar][stats][team];"
                 f"{common_filters};"
                 f"{f_team};"
                 f"{ov_1};{ov_2};{ov_3};"
-                f"[t3][team_scaled]overlay={tx}:{ty}"
+                f"[t3][team_scaled]overlay={tx}:{ty}[vpreout]"
             )
         else:
-            ov_3 = f"[t2][stats_scaled]overlay={sx}:{sy}"
+            ov_3 = f"[t2][stats_scaled]overlay={sx}:{sy}[vpreout]"
             video_filter_cmd = (
                 f"split=4[main][lootbar][healthbar][stats];"
                 f"{common_filters};"
                 f"{ov_1};{ov_2};{ov_3}"
             )
-        video_filter_cmd += ",scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+        video_filter_cmd += ";[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
         return video_filter_cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
-        ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
-        candidates = [
-            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
-            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/System/Library/Fonts/Helvetica.ttc"
-        ]
-        font_path = "arial"
-        for c in candidates:
-            if os.path.exists(c):
-                font_path = c.replace("\\", "/").replace(":", "\\:")
-                break
-        drawtext_parts = [
-            f"drawtext=fontfile='{font_path}'",
-            f"textfile='{ff_textfile}':reload=0:text_shaping=1",
-            f"fontcolor=white:fontsize={int(font_px)}",
-            f"x=(w-text_w)/2:y=40:line_spacing={line_spacing}",
-            f"shadowcolor=black:shadowx=3:shadowy=3"
-        ]
-        drawtext_str = ":".join(drawtext_parts)
-        return video_filter_cmd + "," + drawtext_str
+        parts = video_filter_cmd.split(';')
+        last_filter_part = parts[-1]
+        if 'scale=1080' in last_filter_part:
+            input_tag = last_filter_part.split(']')[0] + ']'
+            parts = parts[:-1]
+            ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
+            candidates = [
+                os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
+                os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/System/Library/Fonts/Helvetica.ttc"
+            ]
+            font_path = "arial"
+            for c in candidates:
+                if os.path.exists(c):
+                    font_path = c.replace("\\", "/").replace(":", "\\:")
+                    break
+            drawtext_parts = [
+                f"drawtext=fontfile='{font_path}'",
+                f"textfile='{ff_textfile}':reload=0:text_shaping=1",
+                f"fontcolor=white:fontsize={int(font_px)}",
+                f"x=(w-text_w)/2:y=40:line_spacing={line_spacing}",
+                f"shadowcolor=black:shadowx=3:shadowy=3"
+            ]
+            drawtext_str = ":".join(drawtext_parts)
+            new_last_filter = f"{input_tag}{drawtext_str}[vwithtext]"
+            parts.append(new_last_filter)
+            parts.append("[vwithtext]" + last_filter_part.split(']', 1)[1])
+            return ';'.join(parts)
+        else:
+            return video_filter_cmd + "," + self._drawtext("", 0, 0, 0, "", "")
 
     def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd):
         chain = []

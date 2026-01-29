@@ -1,4 +1,4 @@
-r"""
+﻿r"""
 Unified configuration manager for Fortnite Video Software.
 Ensures consistent configuration structure between crop tool and processing module.
 """
@@ -15,8 +15,7 @@ from PyQt5.QtCore import QRect, QObject, pyqtSignal
 from coordinate_math import (
     transform_to_content_area_int,
     validate_crop_rect,
-    clamp_overlay_position,
-    scale_rect_int
+    clamp_overlay_position
 )
 try:
     from validation_system import ValidationLevel, ValidationFeedback, ValidationRule
@@ -35,12 +34,29 @@ class ConfigObserver(QObject):
 
 class ConfigManager:
     """Manages configuration files with validation, consistency checks, and atomic operations."""
-    REQUIRED_SECTIONS = ["crops", "crops_1080p", "scales", "overlays"]
+    REQUIRED_SECTIONS = ["crops_1080p", "scales", "overlays"]
     DEFAULT_VALUES = {
-        "crops": {},
-        "crops_1080p": {},
-        "scales": {},
-        "overlays": {}
+        "crops_1080p": {
+            "loot": [300, 100, 700, 1400],
+            "stats": [800, 30, 100, 50],
+            "normal_hp": [40, 150, 20, 1400],
+            "boss_hp": [60, 200, 20, 1400],
+            "team": [200, 400, 50, 100]
+        },
+        "scales": {
+            "loot": 1.5,
+            "stats": 1.2,
+            "team": 1.3,
+            "normal_hp": 1.4,
+            "boss_hp": 1.5
+        },
+        "overlays": {
+            "loot": {"x": 600, "y": 1600},
+            "stats": {"x": 100, "y": 50},
+            "team": {"x": 50, "y": 100},
+            "normal_hp": {"x": 20, "y": 1400},
+            "boss_hp": {"x": 20, "y": 1400}
+        }
     }
     
     def __init__(self, config_path: str, logger: Optional[logging.Logger] = None):
@@ -127,13 +143,11 @@ class ConfigManager:
         try:
             config = self.load_config()
             tech_keys = set()
-            tech_keys.update(config["crops"].keys())
             tech_keys.update(config["crops_1080p"].keys())
             tech_keys.update(config["scales"].keys())
             tech_keys.update(config["overlays"].keys())
             for key in tech_keys:
-                if (key not in config["crops"] or 
-                    key not in config["crops_1080p"] or 
+                if (key not in config["crops_1080p"] or 
                     key not in config["scales"] or 
                     key not in config["overlays"]):
                     return False
@@ -152,9 +166,7 @@ class ConfigManager:
                 if section not in config:
                     config[section] = {}
                 if key not in config[section]:
-                    if section == "crops":
-                        config[section][key] = [0, 0, 100, 100]
-                    elif section == "crops_1080p":
+                    if section == "crops_1080p":
                         config[section][key] = [0, 0, 100, 100]
                     elif section == "scales":
                         config[section][key] = 1.0
@@ -362,35 +374,6 @@ class ConfigManager:
         self._last_file_mtime = current_mtime
         return config
     
-    def update_config_atomic(self, update_function) -> bool:
-        """
-        Thread-safe read-modify-write operation (Priority 2).
-        Locks the file, loads data, applies update_function, and saves.
-        """
-        if not self._acquire_lock():
-            self.logger.error(f"Could not acquire lock for atomic update: {self.config_path}")
-            return False
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-            else:
-                config = self.DEFAULT_VALUES.copy()
-            if update_function(config):
-                temp_fd, temp_path = tempfile.mkstemp(
-                    suffix='.tmp', prefix=os.path.basename(self.config_path) + '.', dir=os.path.dirname(self.config_path)
-                )
-                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=4)
-                os.replace(temp_path, self.config_path)
-                return True
-            return False
-        except Exception as e:
-            self.logger.error(f"Atomic update failed: {e}")
-            return False
-        finally:
-            self._release_lock()
-
     def save_config(self, config: Dict[str, Any], enforce_consistency: bool = True) -> bool:
         """Save configuration to file atomically with validation and locking."""
         transaction = None
@@ -437,7 +420,7 @@ class ConfigManager:
                 self.logger.info(f"File: {self.config_path}")
                 self.logger.info(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
                 self.logger.info(f"Sections: {', '.join(self.REQUIRED_SECTIONS)}")
-                self.logger.info(f"Configured elements: {len(config['crops'])}")
+                self.logger.info(f"Configured elements: {len(config['crops_1080p'])}")
                 self.logger.info("FULL JSON CONFIGURATION FILE CONTENTS:")
                 self.logger.info("-" * 40)
                 self.logger.info(json.dumps(config, indent=2))
@@ -452,12 +435,12 @@ class ConfigManager:
                         self.logger.warning(f"Backup retained due to verification failure: {verify_error}")
                 success = True
                 old_config = self._last_known_config
-                new_keys = set(config["crops"].keys())
-                old_keys = set(old_config.get("crops", {}).keys())
+                new_keys = set(config["crops_1080p"].keys())
+                old_keys = set(old_config.get("crops_1080p", {}).keys())
                 for key in new_keys:
                     if key in old_keys:
-                        old_crop = old_config.get("crops", {}).get(key)
-                        new_crop = config["crops"].get(key)
+                        old_crop = old_config.get("crops_1080p", {}).get(key)
+                        new_crop = config["crops_1080p"].get(key)
                         if old_crop != new_crop:
                             self._observer.config_changed.emit(key)
                     else:
@@ -506,45 +489,23 @@ class ConfigManager:
     
     def save_crop_coordinates(self, tech_key: str, rect: QRect, original_resolution: str) -> bool:
         """
-        Saves the raw, original crop coordinates for a given HUD element.
-        Uses centralized coordinate math for transformation and validation.
-        Args:
-            tech_key: Technical key for the HUD element (e.g., 'loot', 'stats')
-            rect: QRect with crop coordinates in original resolution
-            original_resolution: Original video resolution as "WxH"
-        Returns:
-            True if successful, False otherwise
+        Saves crop coordinates using the same transformation as filter_builder.py.
+        Transforms coordinates from original resolution to 1080p portrait content area,
+        then converts to [width, height, x, y] format expected by filter_builder.
         """
         try:
+            if rect.width() <= 0 or rect.height() <= 0:
+                 self.logger.error(f"Invalid crop rectangle for {tech_key}: {rect}")
+                 return False
             rect_tuple = (rect.x(), rect.y(), rect.width(), rect.height())
-            is_valid, error_msg = validate_crop_rect(rect_tuple, original_resolution)
-            if not is_valid:
-                self.logger.error(f"Invalid crop rectangle for {tech_key}: {error_msg}")
-                return False
-            if original_resolution:
-                try:
-                    in_w, in_h = map(int, original_resolution.split('x'))
-                    if rect.x() < 0 or rect.y() < 0 or rect.x() + rect.width() > in_w or rect.y() + rect.height() > in_h:
-                        self.logger.warning(f"Crop rectangle {rect} exceeds source dimensions {in_w}x{in_h}, clamping")
-                        rect = QRect(
-                            max(0, min(rect.x(), in_w - 1)),
-                            max(0, min(rect.y(), in_h - 1)),
-                            max(1, min(rect.width(), in_w - rect.x())),
-                            max(1, min(rect.height(), in_h - rect.y()))
-                        )
-                except ValueError:
-                    pass
+            transformed = transform_to_content_area_int(rect_tuple, original_resolution)
+            x_content, y_content, w_content, h_content = transformed
+            normalized_rect = [w_content, h_content, x_content, y_content]
             config = self.load_config()
-            original_rect = [rect.x(), rect.y(), rect.width(), rect.height()]
-            config["crops"][tech_key] = original_rect
-            scaled_rect = self._transform_coordinates_rational(rect, original_resolution)
-            config["crops_1080p"][tech_key] = scaled_rect
+            config["crops_1080p"][tech_key] = normalized_rect
             success = self.save_config(config, enforce_consistency=True)
             if success:
-                self.logger.info(
-                    f"Saved crop coordinates for {tech_key}: "
-                    f"original={original_rect}, scaled={scaled_rect}"
-                )
+                self.logger.info(f"Saved TRANSFORMED crop coordinates for {tech_key}: {normalized_rect} (from original {original_resolution})")
                 return True
             else:
                 self.logger.error(f"Failed to save crop coordinates for {tech_key}")
@@ -554,16 +515,24 @@ class ConfigManager:
             return False
 
     def delete_crop_coordinates(self, tech_key: str) -> bool:
-        """Deletes all coordinate data for a given technical key."""
+        """
+        [FIX #2] Zero-outs configuration data instead of deleting keys.
+        Deleting keys causes the processing engine to fall back to hardcoded defaults (Ghost Elements).
+        """
         config_data = self.get_current_config_data()
         changes_made = False
-        for section in ['crops', 'crops_1080p']:
-            if tech_key in config_data.get(section, {}):
-                del config_data[section][tech_key]
-                changes_made = True
+        if 'crops_1080p' in config_data and tech_key in config_data['crops_1080p']:
+            config_data['crops_1080p'][tech_key] = [0, 0, 0, 0]
+            changes_made = True
+        if 'scales' in config_data and tech_key in config_data['scales']:
+            config_data['scales'][tech_key] = 0.0
+            changes_made = True
+        if 'overlays' in config_data and tech_key in config_data['overlays']:
+            config_data['overlays'][tech_key] = {"x": 0, "y": 0}
+            changes_made = True
         if changes_made:
-            self.logger.info(f"Deleted crop data for tech_key: {tech_key}")
-            return self.save_config(config_data)
+            self.logger.info(f"Zeroed-out configuration data for tech_key: {tech_key} (Prevents default fallback)")
+            return self.save_config(config_data, enforce_consistency=True)
         return True
     
     def update_overlay_position(self, tech_key: str, x: int, y: int) -> bool:
@@ -571,8 +540,8 @@ class ConfigManager:
         Update overlay position for a HUD element with clamping to screen bounds.
         Args:
             tech_key: Technical key for the HUD element
-            x: X coordinate in portrait window
-            y: Y coordinate in portrait window
+            x: X coordinate in 1080x1920 portrait space (as shown in portrait window)
+            y: Y coordinate in 1080x1920 portrait space (0-1920, where 0-150 is text area)
         Returns:
             True if successful, False otherwise
         """
@@ -582,18 +551,22 @@ class ConfigManager:
             if not scaled_rect or len(scaled_rect) < 4:
                 self.logger.warning(f"Overlay update ignored: missing crop_1080p for {tech_key}")
                 return False
-            width, height = scaled_rect[2], scaled_rect[3]
+            width, height = scaled_rect[0], scaled_rect[1]
             if width <= 1 or height <= 1:
                 self.logger.warning(f"Overlay update ignored: invalid crop size for {tech_key}")
                 return False
             scale = config.get("scales", {}).get(tech_key, 1.0)
             scaled_width = int(round(width * scale))
             scaled_height = int(round(height * scale))
-            clamped_x, clamped_y = clamp_overlay_position(x, y, scaled_width, scaled_height)
+            BACKEND_SCALE = 1280.0 / 1080.0
+            x_scaled = int(round(x * BACKEND_SCALE))
+            y_scaled = int(round(y * BACKEND_SCALE))
+            clamped_x_scaled, clamped_y_scaled = clamp_overlay_position(x_scaled, y_scaled, scaled_width, scaled_height)
+            clamped_x = int(round(clamped_x_scaled / BACKEND_SCALE))
+            clamped_y = int(round(clamped_y_scaled / BACKEND_SCALE))
             if clamped_x != x or clamped_y != y:
-                self.logger.debug(f"Overlay position clamped from ({x},{y}) to ({clamped_x},{clamped_y})")
-            x, y = clamped_x, clamped_y
-            config["overlays"][tech_key] = {"x": x, "y": y}
+                self.logger.debug(f"Overlay position clamped from ({x},{y}) to ({clamped_x},{clamped_y}) in portrait space")
+            config["overlays"][tech_key] = {"x": clamped_x, "y": clamped_y}
             return self.save_config(config)
         except Exception as e:
             self.logger.error(f"Error updating overlay position for {tech_key}: {e}")
@@ -630,7 +603,6 @@ class ConfigManager:
         """
         config = self.load_config()
         return {
-            "crop": config["crops"].get(tech_key, [0, 0, 100, 100]),
             "crop_1080p": config["crops_1080p"].get(tech_key, [0, 0, 100, 100]),
             "scale": config["scales"].get(tech_key, 1.0),
             "overlay": config["overlays"].get(tech_key, {"x": 0, "y": 0})
@@ -650,13 +622,10 @@ class ConfigManager:
             elif not isinstance(config[section], dict):
                 issues.append(f"Section {section} should be a dictionary")
         tech_keys: set[str] = set()
-        tech_keys.update(config["crops"].keys())
         tech_keys.update(config["crops_1080p"].keys())
         tech_keys.update(config["scales"].keys())
         tech_keys.update(config["overlays"].keys())
         for key in tech_keys:
-            if key not in config["crops"]:
-                issues.append(f"Key '{key}' missing in 'crops' section")
             if key not in config["crops_1080p"]:
                 issues.append(f"Key '{key}' missing in 'crops_1080p' section")
             if key not in config["scales"]:
@@ -676,33 +645,18 @@ class ConfigManager:
     def get_configured_elements(self) -> List[str]:
         """Get list of configured HUD element technical keys."""
         config = self.load_config()
-        return list(config["crops"].keys())
+        return list(config["crops_1080p"].keys())
     
     def is_element_configured(self, tech_key: str) -> bool:
         """Check if a HUD element is fully configured."""
         config = self.load_config()
-        return (tech_key in config["crops"] and 
-                tech_key in config["crops_1080p"] and
+        return (tech_key in config["crops_1080p"] and
                 tech_key in config["scales"] and
                 tech_key in config["overlays"])
 
     def get_current_config_data(self) -> Dict[str, Any]:
         """Returns the entire current configuration data."""
         return self.load_config()
-
-    def load_draft_data(self, draft_data: Dict[str, Any]) -> bool:
-        """
-        Overwrites the current configuration with data from a draft.
-        Args:
-            draft_data: A dictionary containing the configuration to load.
-        Returns:
-            True if successful, False otherwise.
-        """
-        self.logger.info("Loading configuration data from draft...")
-        if not isinstance(draft_data, dict) or not all(k in draft_data for k in self.REQUIRED_SECTIONS):
-            self.logger.error("Draft data is malformed or missing required sections.")
-            return False
-        return self.save_config(draft_data)
 _config_manager_instances: Dict[str, ConfigManager] = {}
 
 def get_config_manager(config_path: Optional[str] = None, logger: Optional[logging.Logger] = None) -> ConfigManager:

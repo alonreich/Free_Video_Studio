@@ -11,10 +11,10 @@ class HUDExtractor:
         self._load_anchors()
 
     def _load_anchors(self):
-        """Loads anchor template images from the 'anchors' directory."""
-        anchor_dir = 'anchors'
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        anchor_dir = os.path.join(script_dir, 'anchors')
         if not os.path.isdir(anchor_dir):
-            self.logger.error(f"Anchor directory '{anchor_dir}' not found. HUDExtractor cannot function.")
+            self.logger.error(f"Anchor directory not found: {anchor_dir}")
             return
         anchor_files = {
             'loot_start': 'ref_keybind_1.png',
@@ -27,11 +27,11 @@ class HUDExtractor:
             if os.path.exists(path):
                 self.anchors[key] = cv2.imread(path, 0)
                 if self.anchors[key] is None:
-                    self.logger.error(f"Failed to load anchor image '{path}'. Check file integrity.")
+                    self.logger.error(f"Failed to load anchor: {filename}")
                 else:
-                    self.logger.info(f"Successfully loaded anchor: '{key}' from '{path}'")
+                    self.logger.info(f"Loaded anchor: {key}")
             else:
-                self.logger.warning(f"Anchor image not found for '{key}' at path '{path}'. This module will be disabled.")
+                self.logger.warning(f"Missing anchor file: {filename}")
                 self.anchors[key] = None
     
     def find_anchor(self, frame_gray, anchor_key, threshold=0.8):
@@ -50,12 +50,14 @@ class HUDExtractor:
     def _extract_loot_module(self, frame_gray, frame_color):
         """
         Extracts the 5-slot weapon/item bar from the bottom-right.
-        Uses keybinds for 'slot 1' and 'slot 5' as anchors.
         """
+        if self.anchors.get('loot_start') is None or self.anchors.get('loot_end') is None:
+             self.logger.error("Missing required anchor images for Loot extraction.")
+             return None
         p1 = self.find_anchor(frame_gray, 'loot_start')
         p5 = self.find_anchor(frame_gray, 'loot_end')
         if p1 is None or p5 is None:
-            self.logger.warning("Could not find loot anchors. Skipping loot module extraction.")
+            self.logger.warning("Could not find loot anchors in image. Skipping loot module extraction.")
             return None
         slot1_anchor_h, slot1_anchor_w = self.anchors['loot_start'].shape
         slot5_anchor_h, slot5_anchor_w = self.anchors['loot_end'].shape
@@ -104,16 +106,15 @@ class HUDExtractor:
         return QRect(x1, y1, crop_width, crop_height)
 
     def extract_all(self, snapshot_path):
-        """
-        Main extraction method. Takes a single frame (snapshot) and runs all modules.
-        Returns a list of QRects for each successfully found element.
-        """
+        valid_anchors = [k for k, v in self.anchors.items() if v is not None]
+        if not valid_anchors:
+            raise FileNotFoundError("CRITICAL: No reference images found in 'anchors' folder. Magic Wand cannot function.")
         if not os.path.exists(snapshot_path):
             self.logger.error(f"Snapshot path does not exist: {snapshot_path}")
             return []
         frame_color = cv2.imread(snapshot_path)
         if frame_color is None:
-            self.logger.error(f"Failed to read image from snapshot path: {snapshot_path}")
+            self.logger.error(f"Failed to read image: {snapshot_path}")
             return []
         frame_gray = cv2.cvtColor(frame_color, cv2.COLOR_BGR2GRAY)
         rois = []
@@ -126,7 +127,7 @@ class HUDExtractor:
         map_roi = self._extract_map_stats_module(frame_gray, frame_color)
         if map_roi:
             rois.append(map_roi)
-        self.logger.info(f"HUDExtractor found {len(rois)} regions of interest.")
+        self.logger.info(f"HUDExtractor found {len(rois)} regions.")
         return rois
 
 class MagicWand:
@@ -166,6 +167,15 @@ class MagicWandWorker(QObject):
     def run(self):
         """Execute the detection and emit signals."""
         try:
+            regions = self.magic_wand.detect_static_hud_regions(self.snapshot_path)
+            if not regions:
+                self.error.emit("No HUD elements detected. Please try a frame with clearer HUD visibility or use Manual Drawing.")
+            else:
+                self.finished.emit(regions)
+        except Exception as e:
+            if self.magic_wand.logger:
+                self.magic_wand.logger.error(f"Magic Wand thread (HUDExtractor) crashed: {e}", exc_info=True)
+            self.error.emit(f"Magic Wand analysis failed. Please try Manual Drawing. Error: {e}")
             regions = self.magic_wand.detect_static_hud_regions(self.snapshot_path)
             self.finished.emit(regions)
         except Exception as e:

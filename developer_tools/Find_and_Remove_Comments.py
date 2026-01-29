@@ -2,6 +2,9 @@ WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
 
 import os
 import sys
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+sys.dont_write_bytecode = True
+
 import tokenize
 import re
 import ctypes
@@ -60,7 +63,7 @@ def analyze_comments(filepath):
     if ext not in ['.py', '.ps1']:
         return []
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
         actions = {} 
         if ext == '.py':
@@ -127,10 +130,10 @@ def analyze_comments(filepath):
 def nuke_comments(filepath, items):
     try:
         print(f"\n{CYAN}Cleaning Comments/Empty Lines in: {filepath}{RESET}")
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
         action_map = {item['line'] - 1: item for item in items}
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, 'w', encoding='utf-8-sig') as f:
             for i, line in enumerate(lines):
                 if i in action_map:
                     act = action_map[i]
@@ -158,7 +161,7 @@ def nuke_comments(filepath, items):
 def check_syntax(filepath):
     _, ext = os.path.splitext(filepath)
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             source = f.read()
         if '\t' in source:
              return "Indentation: File contains Tabs"
@@ -241,7 +244,7 @@ def fix_syntax(filepath):
             print("  No changes needed.")
         else:
             print("-" * 40)
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, 'w', encoding='utf-8-sig') as f:
             f.writelines(final_lines)
         return True
     except Exception as e:

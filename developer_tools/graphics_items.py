@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QGraphicsObject, QGraphicsRectItem, QGraphicsItem
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QTimer
+﻿from PyQt5.QtWidgets import QGraphicsObject, QGraphicsRectItem, QGraphicsItem
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QBrush, QColor, QPen
 
 class ResizablePixmapItem(QGraphicsObject):
@@ -108,9 +108,18 @@ class ResizablePixmapItem(QGraphicsObject):
         if self.is_resizing_br:
             delta = event.pos() - self.resize_start_pos
             new_width = self.start_width + delta.x()
-            aspect = self.original_pixmap.width() / self.original_pixmap.height()
-            if aspect > 0:
-                new_height = new_width / aspect
+            if self.scene():
+                right_bound = self.scene().sceneRect().right()
+                max_width = right_bound - self.pos().x()
+                new_width = min(new_width, max_width)
+            aspect = self.original_pixmap.height() / self.original_pixmap.width() if self.original_pixmap.width() > 0 else 0
+            new_height = new_width * aspect
+            if self.scene():
+                bottom_bound = 1770
+                max_height = bottom_bound - self.pos().y()
+                if new_height > max_height:
+                    new_height = max_height
+                    new_width = new_height / aspect if aspect > 0 else 0
             if new_width > 20 and new_height > 20:
                 self.prepareGeometryChange()
                 self.current_width = new_width
@@ -119,19 +128,28 @@ class ResizablePixmapItem(QGraphicsObject):
                 self.item_changed.emit()
         elif self.is_resizing_tl:
             delta = event.pos() - self.resize_start_pos
-            new_width = self.start_width - delta.x()
-            aspect = self.original_pixmap.width() / self.original_pixmap.height()
-            if aspect > 0:
-                new_height = new_width / aspect
-                if new_width > 20 and new_height > 20:
-                    self.prepareGeometryChange()
-                    self.current_width = new_width
-                    self.current_height = new_height
-                    new_pos_x = self.start_pos.x() + delta.x()
-                    new_pos_y = self.start_pos.y() + (self.start_height - new_height)
-                    self.setPos(new_pos_x, new_pos_y)
-                    self.update_handle_positions()
-                    self.item_changed.emit()
+            new_pos_x = self.start_pos.x() + delta.x()
+            if self.scene():
+                new_pos_x = max(self.scene().sceneRect().left(), new_pos_x)
+            clamped_delta_x = new_pos_x - self.start_pos.x()
+            new_width = self.start_width - clamped_delta_x
+            aspect = self.original_pixmap.height() / self.original_pixmap.width() if self.original_pixmap.width() > 0 else 0
+            new_height = new_width * aspect
+            new_pos_y = self.start_pos.y() + (self.start_height - new_height)
+            if self.scene():
+                 top_bound = self.scene().sceneRect().top() + 150
+                 if new_pos_y < top_bound:
+                     new_pos_y = top_bound
+                     new_height = self.start_pos.y() - new_pos_y + self.start_height
+                     new_width = new_height / aspect if aspect > 0 else 0
+                     new_pos_x = self.start_pos.x() + (self.start_width - new_width)
+            if new_width > 20 and new_height > 20:
+                self.prepareGeometryChange()
+                self.current_width = new_width
+                self.current_height = new_height
+                self.setPos(new_pos_x, new_pos_y)
+                self.update_handle_positions()
+                self.item_changed.emit()
         else:
             super(ResizablePixmapItem, self).mouseMoveEvent(event)
 
@@ -142,9 +160,34 @@ class ResizablePixmapItem(QGraphicsObject):
         self.item_changed.emit()
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemSelectedHasChanged:
-            if value: self.ant_timer.start(100)
-            else: self.ant_timer.stop()
-        elif change == QGraphicsItem.ItemPositionHasChanged:
-            self.item_changed.emit()
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            new_pos = value
+            scene_rect = self.scene().sceneRect()
+            left_bound = scene_rect.left()
+            right_bound = scene_rect.right() - self.current_width
+            top_bound = scene_rect.top() + 150
+            bottom_bound = 1770 - self.current_height
+            SNAP_THRESHOLD = 5
+            if abs(new_pos.x() - left_bound) <= SNAP_THRESHOLD:
+                final_x = left_bound
+            elif abs(new_pos.x() - right_bound) <= SNAP_THRESHOLD:
+                final_x = right_bound
+            else:
+                final_x = max(left_bound, min(new_pos.x(), right_bound))
+            if abs(new_pos.y() - top_bound) <= SNAP_THRESHOLD:
+                final_y = top_bound
+            elif abs(new_pos.y() - bottom_bound) <= SNAP_THRESHOLD:
+                final_y = bottom_bound
+            else:
+                final_y = max(top_bound, min(new_pos.y(), bottom_bound))
+            corrected_pos = QPointF(final_x, final_y)
+            if self.pos() != corrected_pos:
+                self.item_changed.emit()
+            if corrected_pos != value:
+                return corrected_pos
+        elif change == QGraphicsItem.ItemSelectedHasChanged:
+            if value:
+                self.ant_timer.start(100)
+            else:
+                self.ant_timer.stop()
         return super(ResizablePixmapItem, self).itemChange(change, value)

@@ -1,0 +1,76 @@
+{
+    "crops_1080p": {
+        "loot": [
+            1549,
+            977,
+            337,
+            66
+        ],
+        "stats": [
+            2246,
+            29,
+            285,
+            204
+        ],
+        "normal_hp": [
+            2064,
+            1302,
+            457,
+            88
+        ],
+        "boss_hp": [
+            325,
+            46,
+            138,
+            981
+        ],
+        "team": [
+            852,
+            444,
+            235,
+            312
+        ]
+    },
+    "scales": {
+        "loot": 1.423,
+        "stats": 1.435,
+        "team": 1.61,
+        "normal_hp": 1.525,
+        "boss_hp": 1.615
+    },
+    "overlays": {
+        "loot": {
+            "x": 629,
+            "y": 1687
+        },
+        "stats": {
+            "x": 865,
+            "y": 2
+        },
+        "team": {
+            "x": 32,
+            "y": 1434
+        },
+        "normal_hp": {
+            "x": 573,
+            "y": 1827
+        },
+        "boss_hp": {
+            "x": 20,
+            "y": 1701
+        }
+    },
+    "window_geometry": {
+        "x": 131,
+        "y": 54,
+        "w": 1600,
+        "h": 880
+    },
+    "last_directory": "C:/Users/user/AppData/Local/Temp/Highlights/Fortnite",
+    "portrait_window_geometry": {
+        "x": 162,
+        "y": 162,
+        "w": 1600,
+        "h": 880
+    }
+}

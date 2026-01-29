@@ -1,13 +1,8 @@
-# To upgrade pip manually:
-# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install --upgrade pip
 
-# To install manually the pip packages:
-# "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
 
 import os, sys, tempfile, psutil
-# Prevent __pycache__ creation
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-os.environ['PYTHONPYCACHEPREFIX'] = ''  # Disable __pycache__ in Python 3.8+
+os.environ['PYTHONPYCACHEPREFIX'] = ''
 sys.dont_write_bytecode = True
 try:
     import audioop
@@ -88,7 +83,7 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
             stderr=subprocess.PIPE,
             startupinfo=startupinfo,
             creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-            timeout=15 # Add a timeout to prevent indefinite hangs
+            timeout=15
         )
         if result.returncode == 0:
             print(f"DEBUG: Encoder '{encoder_name}' is WORKING.")
@@ -179,7 +174,7 @@ if __name__ == "__main__":
         pass
     ex.show()
 
-    # Setup and start background hardware check
+
     hw_thread = QThread()
     hw_worker = HardwareWorker(ffmpeg_path)
     hw_worker.moveToThread(hw_thread)

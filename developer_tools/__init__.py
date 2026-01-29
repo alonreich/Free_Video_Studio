@@ -8,12 +8,10 @@ import sys
 import tempfile
 import shutil
 
-# Prevent Python from creating __pycache__ directories and .pyc files
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(tempfile.gettempdir(), 'pycache_disabled')
 sys.dont_write_bytecode = True
 
-# Clean up any existing __pycache__ directories in this package's path
 def cleanup_pycache():
     """Remove any __pycache__ directories in the current directory and subdirectories."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +33,6 @@ def cleanup_pycache():
 
 cleanup_pycache()
 
-# Import key modules to make them available
 from .config import *
 from .utils import *
 from .coordinate_math import *
