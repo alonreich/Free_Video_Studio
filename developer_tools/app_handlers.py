@@ -182,6 +182,8 @@ class CropAppHandlers:
                 self.portrait_window = PortraitWindow(self.media_processor.original_resolution, self.config_path)
                 self.portrait_window.destroyed.connect(lambda: setattr(self, 'portrait_window', None))
                 self.portrait_window.done_organizing.connect(self.finish_and_save)
+            if hasattr(self, 'draw_widget') and not self.draw_widget.pixmap.isNull():
+                self.portrait_window.set_background_image(self.draw_widget.pixmap)
 
             def set_focus_on_portrait():
                 if self.portrait_window:
