@@ -134,7 +134,7 @@ class CropAppHandlers:
         self.wand_worker.finished.connect(self.wand_thread.quit)
         self.wand_worker.finished.connect(self.wand_worker.deleteLater)
         self.wand_thread.finished.connect(self.wand_thread.deleteLater)
-        self.wand_thread.error.connect(lambda err: QMessageBox.warning(self, "Error", str(err)))
+        self.wand_worker.error.connect(lambda err: QMessageBox.warning(self, "Magic Wand Error", str(err)))
         self.wand_thread.start()
 
     def _on_magic_wand_finished(self, regions):
@@ -220,6 +220,8 @@ class CropAppHandlers:
         self.update_wizard_step(1, "Open a video file to begin the configuration wizard.")
         if hasattr(self, 'complete_button'):
             self.complete_button.setVisible(False)
+        if hasattr(self, 'magic_wand_button'):
+            self.magic_wand_button.setVisible(False)
         self._magic_wand_candidates = None
         self.update_progress_tracker()
 
@@ -234,6 +236,7 @@ class CropAppHandlers:
             self.play_pause_button.setText("⏸ PAUSE")
         else:
             self.play_pause_button.setText("▶ PLAY")
+        self.play_pause_button.repaint()
 
     def open_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Video", self.last_dir or "", "Video Files (*.mp4 *.avi *.mkv)")
@@ -247,7 +250,7 @@ class CropAppHandlers:
             resolution = self.media_processor.original_resolution or "unknown"
             enhanced_logger.log_video_loaded(file_path, resolution)
         self.play_pause_button.setEnabled(True)
-        self.play_pause_button.setText("⏸ PAUSE")
+        self.play_pause_button.setText("▶ PLAY")
         self.snapshot_button.setEnabled(False)
         self.snapshot_button.setText("Loading...")
         self.position_slider.setEnabled(True)
@@ -260,7 +263,7 @@ class CropAppHandlers:
             if total_ms > 0 and has_res:
                 self.snapshot_button.setEnabled(True)
                 if hasattr(self, 'magic_wand_button'):
-                     self.magic_wand_button.setEnabled(True)
+                     self.magic_wand_button.setEnabled(False)
                 self.snapshot_button.setText("START CROPPING")
                 self.position_slider.setRange(0, total_ms)
                 self.position_slider.setSingleStep(33)
@@ -398,6 +401,9 @@ class CropAppHandlers:
         self._snapshot_processing = False
         self.snapshot_button.setEnabled(True)
         self.snapshot_button.setText("RETAKE SNAPSHOT")
+        if hasattr(self, 'magic_wand_button'):
+            self.magic_wand_button.setEnabled(True)
+            self.magic_wand_button.setVisible(True)
 
     def show_video_view(self):
         self.view_stack.setCurrentWidget(self.video_frame)

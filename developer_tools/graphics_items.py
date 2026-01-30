@@ -83,7 +83,9 @@ class ResizablePixmapItem(QGraphicsObject):
         self.handle_tl.setPos(-offset, -offset)
 
     def hoverMoveEvent(self, event):
-        if self.handle_br.isUnderMouse() or self.handle_tl.isUnderMouse():
+        if self.handle_br.isUnderMouse():
+            self.setCursor(Qt.SizeFDiagCursor)
+        elif self.handle_tl.isUnderMouse():
             self.setCursor(Qt.SizeFDiagCursor)
         else:
             self.setCursor(Qt.ArrowCursor)

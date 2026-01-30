@@ -176,9 +176,3 @@ class MagicWandWorker(QObject):
             if self.magic_wand.logger:
                 self.magic_wand.logger.error(f"Magic Wand thread (HUDExtractor) crashed: {e}", exc_info=True)
             self.error.emit(f"Magic Wand analysis failed. Please try Manual Drawing. Error: {e}")
-            regions = self.magic_wand.detect_static_hud_regions(self.snapshot_path)
-            self.finished.emit(regions)
-        except Exception as e:
-            if self.magic_wand.logger:
-                self.magic_wand.logger.error(f"Magic Wand thread (HUDExtractor) crashed: {e}", exc_info=True)
-            self.error.emit(f"Magic Wand analysis failed: {e}")

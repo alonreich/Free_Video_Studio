@@ -25,7 +25,7 @@ class DrawWidget(QWidget):
         self.all_roles = []
         self.configured_roles = set()
         self.zoom = 1.0
-        self.min_zoom = 0.25
+        self.min_zoom = 0.5
         self.max_zoom = 4.0
         self.scroll_area = None
         self._panning = False
@@ -49,6 +49,11 @@ class DrawWidget(QWidget):
         self._smart_zoom_direction = None
         self._smart_zoom_phase = 0
         self._smart_zoom_threshold = 50
+        self.guidance_blink_on = True
+        self.guidance_blink_timer = QTimer(self)
+        self.guidance_blink_timer.setInterval(700)
+        self.guidance_blink_timer.timeout.connect(self._toggle_guidance_blink)
+        self.guidance_blink_timer.start()
 
     def set_scroll_area(self, scroll_area):
         self.scroll_area = scroll_area
@@ -95,6 +100,7 @@ class DrawWidget(QWidget):
         scale_x = viewport.width() / float(self.pixmap.width())
         scale_y = viewport.height() / float(self.pixmap.height())
         self.zoom = min(scale_x, scale_y, 1.0)
+        self.min_zoom = self.zoom
         self._has_fit = True
         self._cache_pix = None
         self._update_scaled_pixmap()
@@ -235,19 +241,19 @@ class DrawWidget(QWidget):
                 self._draw_confirm_button(painter, rect_to_draw)
         if self.mode in ['drawing', 'resizing', 'moving'] and not self.pixmap.isNull():
             self.draw_magnifier(painter)
-        elif self._crop_rect_img.isNull() and not self.pixmap.isNull():
-            overlay_rect = QRect(0, 0, 820, 260)
+        elif self._crop_rect_img.isNull() and not self.pixmap.isNull() and self.guidance_blink_on:
+            overlay_rect = QRect(0, 0, 780, 180)
             overlay_rect.moveCenter(self.rect().center())
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor("#000000"))
             painter.drawRoundedRect(overlay_rect, 12, 12)
             painter.setPen(QColor("#FBBF24"))
             font = painter.font()
-            font.setPointSize(20)
+            font.setPointSize(18)
             font.setBold(True)
             painter.setFont(font)
             instruction_text = (
-                "🎯\n\n"
+                "🎯\n"
                 "CLICK & DRAG TO CROP A HUD ELEMENT\n"
                 "Right click inside the box to select HUD element\n"
                 "Press ESC to return to video"
@@ -338,7 +344,14 @@ class DrawWidget(QWidget):
         self.cursor_pos = event.pos()
         handle = self.get_handle_at(event.pos())
         if handle:
-            self.setCursor(Qt.SizeFDiagCursor)
+            if handle == 'top_left':
+                self.setCursor(Qt.SizeFDiagCursor)
+            elif handle == 'top_right':
+                self.setCursor(Qt.SizeBDiagCursor)
+            elif handle == 'bottom_left':
+                self.setCursor(Qt.SizeBDiagCursor)
+            elif handle == 'bottom_right':
+                self.setCursor(Qt.SizeFDiagCursor)
         elif self._hit_confirm_button(event.pos()):
             self.confirm_button_hover = True
             if not self._panning:
@@ -357,7 +370,8 @@ class DrawWidget(QWidget):
         if self.mode == 'drawing': 
             self.end = event.pos()
             img_pos = self._map_to_image(event.pos())
-            self._drawing_rect_img = QRectF(self._drawing_start_img, img_pos).normalized()
+            drawing_rect = QRectF(self._drawing_start_img, img_pos).normalized()
+            self._drawing_rect_img = self._clamp_rect_to_image(drawing_rect)
         elif self.mode == 'moving':
             if not self._crop_rect_img.isNull():
                 delta = (event.pos() - self.last_mouse_pos)
@@ -476,6 +490,11 @@ class DrawWidget(QWidget):
         if self._should_draw_confirm_button():
             self.update()
 
+    def _toggle_guidance_blink(self):
+        self.guidance_blink_on = not self.guidance_blink_on
+        if self._crop_rect_img.isNull() and not self.pixmap.isNull():
+            self.update()
+
     def _show_confirm_button(self):
         if not self.confirm_blink_timer.isActive():
             self.confirm_blink_timer.start()
@@ -488,14 +507,14 @@ class DrawWidget(QWidget):
         self.confirm_blink_timer.stop()
 
     def _zoom_to_crop(self):
-        """Zoom and center view on the crop rectangle - less aggressive."""
+        """Zoom and center view on the crop rectangle - increased zoom factor."""
         if self._crop_rect_img.isNull() or not self.scroll_area:
             return
         viewport = self.scroll_area.viewport().size()
         if viewport.width() <= 0 or viewport.height() <= 0:
             return
-        target_zoom_x = viewport.width() * 0.4 / max(10, self._crop_rect_img.width())
-        target_zoom_y = viewport.height() * 0.4 / max(10, self._crop_rect_img.height())
+        target_zoom_x = viewport.width() * 0.6 / max(10, self._crop_rect_img.width())
+        target_zoom_y = viewport.height() * 0.6 / max(10, self._crop_rect_img.height())
         target_zoom = min(target_zoom_x, target_zoom_y, self.max_zoom)
         current_crop_width_display = self._crop_rect_img.width() * self.zoom
         current_crop_height_display = self._crop_rect_img.height() * self.zoom
@@ -508,7 +527,7 @@ class DrawWidget(QWidget):
             self.zoom = target_zoom
             self._cache_pix = None
             self._update_scaled_pixmap()
-        self._center_on_crop()
+        self._center_on_crop_with_edge_focus()
         self.update()
 
     def _center_on_crop(self):
@@ -525,6 +544,39 @@ class DrawWidget(QWidget):
         max_scroll_y = max(0, self.height() - viewport.height())
         target_x = int(max(0, min(ideal_x, max_scroll_x)))
         target_y = int(max(0, min(ideal_y, max_scroll_y)))
+        hbar.setValue(target_x)
+        vbar.setValue(target_y)
+    
+    def _center_on_crop_with_edge_focus(self):
+        """Center on crop with edge focus - scrolls all the way to edges when crop is in corners."""
+        if self._crop_rect_img.isNull() or not self.scroll_area:
+            return
+        rect_display = self._map_rect_to_display(self._crop_rect_img)
+        viewport = self.scroll_area.viewport().size()
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        crop_center_x = rect_display.center().x()
+        crop_center_y = rect_display.center().y()
+        img_width = self._img_rect.width()
+        img_height = self._img_rect.height()
+        left_threshold = img_width * 0.2
+        right_threshold = img_width * 0.8
+        top_threshold = img_height * 0.2
+        bottom_threshold = img_height * 0.8
+        if crop_center_x < left_threshold:
+            target_x = max(0, rect_display.left() - 20)
+        elif crop_center_x > right_threshold:
+            target_x = min(self.width() - viewport.width(), rect_display.right() - viewport.width() + 20)
+        else:
+            target_x = crop_center_x - viewport.width() / 2.0
+        if crop_center_y < top_threshold:
+            target_y = max(0, rect_display.top() - 20)
+        elif crop_center_y > bottom_threshold:
+            target_y = min(self.height() - viewport.height(), rect_display.bottom() - viewport.height() + 20)
+        else:
+            target_y = crop_center_y - viewport.height() / 2.0
+        target_x = int(max(0, min(target_x, self.width() - viewport.width())))
+        target_y = int(max(0, min(target_y, self.height() - viewport.height())))
         hbar.setValue(target_x)
         vbar.setValue(target_y)
 
@@ -611,14 +663,18 @@ class DrawWidget(QWidget):
         img_height = self.pixmap.height()
         center_x = rect_img.center().x() / img_width
         center_y = rect_img.center().y() / img_height
-        if center_x > 0.7 and center_y > 0.7:
+        if center_x < 0.3 and center_y > 0.7:
+            aspect_ratio = rect_img.height() / max(1, rect_img.width())
+            if aspect_ratio > 2.0:
+                return "Boss HP (For When You Are The Boss Character)"
+            else:
+                return "Own Health Bar (HP)"
+        elif center_x > 0.7 and center_y > 0.7:
             return "Loot Area"
-        elif center_x < 0.3 and center_y > 0.7:
-            return "Normal HP"
         elif center_x > 0.7 and center_y < 0.3:
-            return "Minimap"
+            return "Mini Map + Stats"
         elif center_x < 0.3 and center_y < 0.3:
-            return "Teammates"
+            return "Teammates health Bars (HP)"
         else:
             return None
 
@@ -632,15 +688,16 @@ class DrawWidget(QWidget):
                 border-radius: 6px;
                 padding: 6px;
                 font-family: 'Segoe UI', sans-serif;
-                font-size: 13px;
-                min-width: 220px;
-                max-width: 280px;
+                font-size: 11px;  /* Decreased by 1 point for regular items (was 12px) */
+                min-width: 280px;  /* Increased by 30px (was 250px) */
+                max-width: 340px;  /* Increased by 30px (was 310px) */
             }
             QMenu::item { 
                 padding: 8px 20px; 
                 border-radius: 4px;
                 margin: 2px;
                 font-weight: 500;
+                text-align: center;  /* Center align all items */
             }
             QMenu::item:selected { 
                 background-color: #2563EB; 
@@ -652,14 +709,43 @@ class DrawWidget(QWidget):
                 background-color: transparent;
                 font-weight: normal;
             }
+            /* Special styling for suggested role */
+            QMenu::item.suggested-item {
+                font-weight: bold;
+                color: #FBBF24;  /* Yellow color for emphasis */
+                background-color: rgba(251, 191, 36, 0.1);  /* Light yellow background */
+                border-left: 3px solid #FBBF24;
+            }
+            QMenu::item.suggested-item:selected {
+                background-color: #2563EB;
+                color: white;
+                border-left: 3px solid #FBBF24;
+            }
             QMenu::separator {
                 height: 1px;
                 background-color: #374151;
                 margin: 6px 8px;
             }
+            /* Special styling for header */
+            QMenu::item.header-item {
+                font-size: 15px;  /* Increased by 1 point (was 14px) */
+                font-weight: bold;
+                color: #0A7C6F;  /* Green color same as TEAMMATES HEALTH BARS (HP) */
+                background-color: transparent;
+                text-align: center;
+            }
+            /* Special styling for cancel */
+            QMenu::item.cancel-item {
+                font-size: 15px;  /* Increased by 1 point (was 14px) */
+                background-color: #bfa624;  /* Same as RESET ALL button color */
+                color: black;
+                text-align: center;
+                font-weight: bold;
+            }
         """)
         header = QAction("SELECT HUD ELEMENT", self)
         header.setEnabled(False)
+        header.setProperty("class", "header-item")
         menu.addAction(header)
         menu.addSeparator()
         if not self.all_roles:
@@ -673,7 +759,15 @@ class DrawWidget(QWidget):
                 enhanced_logger = get_enhanced_logger()
                 if enhanced_logger and enhanced_logger.crop_logger:
                     enhanced_logger.crop_logger.info(f"AUTO-DETECTION SUGGESTION: {suggested_role} based on position")
-            for role in self.all_roles:
+            roles_to_display = []
+            if suggested_role and suggested_role in self.all_roles:
+                roles_to_display.append(suggested_role)
+                for role in self.all_roles:
+                    if role != suggested_role:
+                        roles_to_display.append(role)
+            else:
+                roles_to_display = self.all_roles
+            for role in roles_to_display:
                 is_configured = role in self.configured_roles
                 text = role
                 if is_configured:
@@ -681,10 +775,13 @@ class DrawWidget(QWidget):
                 if role == suggested_role:
                     text = "★ " + text
                 action = QAction(text, self)
+                if role == suggested_role:
+                    action.setProperty("class", "suggested-item")
                 action.triggered.connect(lambda checked, r=role: self.confirm_selection(r))
                 menu.addAction(action)
         menu.addSeparator()
         cancel_action = QAction("Cancel", self)
+        cancel_action.setProperty("class", "cancel-item")
         cancel_action.triggered.connect(self.clear_selection)
         menu.addAction(cancel_action)
         menu.exec_(global_pos)

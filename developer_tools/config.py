@@ -212,56 +212,84 @@ QRadioButton::indicator:checked {
     border: 2px solid #2563EB;
 }
 QScrollBar:vertical {
-    background: #F3F4F6;
-    width: 26px;
-    border-radius: 6px;
+    background: #1F2937;
+    width: 16px;
+    border-radius: 8px;
+    border: 1px solid #374151;
 }
 QScrollBar::handle:vertical {
-    background: #000000;
-    border-radius: 6px;
-    min-height: 32px;
+    background: #4B5563;
+    border-radius: 8px;
+    min-height: 40px;
+    border: 2px solid #1F2937;
 }
 QScrollBar::handle:vertical:hover {
-    background: #1a1a1a;
+    background: #6B7280;
+    border: 2px solid #374151;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    background: #D1D5DB;
-    height: 26px;
+    background: #374151;
+    height: 16px;
     subcontrol-origin: margin;
+    border-radius: 8px;
 }
 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
-    border: 6px solid transparent;
+    background: #2563EB;
+    border: 2px solid #1F2937;
+    border-radius: 6px;
+    width: 12px;
+    height: 12px;
 }
-QScrollBar::up-arrow:vertical { border-bottom-color: #1F2937; }
-QScrollBar::down-arrow:vertical { border-top-color: #1F2937; }
+QScrollBar::up-arrow:vertical { 
+    image: url(icons/arrow-up.png);
+    subcontrol-position: top;
+}
+QScrollBar::down-arrow:vertical { 
+    image: url(icons/arrow-down.png);
+    subcontrol-position: bottom;
+}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-    background: #F3F4F6;
+    background: #1F2937;
 }
 QScrollBar:horizontal {
-    background: #F3F4F6;
-    height: 26px;
-    border-radius: 6px;
+    background: #1F2937;
+    height: 16px;
+    border-radius: 8px;
+    border: 1px solid #374151;
 }
 QScrollBar::handle:horizontal {
-    background: #000000;
-    border-radius: 6px;
-    min-width: 32px;
+    background: #4B5563;
+    border-radius: 8px;
+    min-width: 40px;
+    border: 2px solid #1F2937;
 }
 QScrollBar::handle:horizontal:hover {
-    background: #1a1a1a;
+    background: #6B7280;
+    border: 2px solid #374151;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    background: #D1D5DB;
-    width: 26px;
+    background: #374151;
+    width: 16px;
     subcontrol-origin: margin;
+    border-radius: 8px;
 }
 QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {
-    border: 6px solid transparent;
+    background: #2563EB;
+    border: 2px solid #1F2937;
+    border-radius: 6px;
+    width: 12px;
+    height: 12px;
 }
-QScrollBar::left-arrow:horizontal { border-right-color: #1F2937; }
-QScrollBar::right-arrow:horizontal { border-left-color: #1F2937; }
+QScrollBar::left-arrow:horizontal { 
+    image: url(icons/arrow-left.png);
+    subcontrol-position: left;
+}
+QScrollBar::right-arrow:horizontal { 
+    image: url(icons/arrow-right.png);
+    subcontrol-position: right;
+}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-    background: #F3F4F6;
+    background: #1F2937;
 }
 """
 PORTRAIT_WINDOW_STYLESHEET = UNIFIED_STYLESHEET

@@ -179,11 +179,11 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
     def __init__(self, original_resolution, config_path, parent=None):
         super(PortraitWindow, self).__init__(parent)
         self.original_resolution = original_resolution
-        self.base_title = "Portrait Composer (Auto-Save Active)"
+        self.base_title = "Portrait 1280x1920"
         self.setWindowFlags(Qt.Window)
-        self.resize(450, 800)
-        self.setMinimumSize(400, 700)
-        self.setup_persistence(config_path, 'portrait_window_geometry', {'x': 635, 'y': 90, 'w': 650, 'h': 800}, self.get_title_info)
+        self.resize(750, 800)
+        self.setMinimumSize(700, 700)
+        self.setup_persistence(config_path, 'portrait_window_geometry', {'x': 635, 'y': 90, 'w': 750, 'h': 800}, self.get_title_info)
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(0, 0, 1080, 1920)
         self.scene.setBackgroundBrush(QColor("#1e1e1e"))
@@ -207,26 +207,34 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
         self.toggle_ph_btn = QPushButton("Hide Existing")
         self.toggle_ph_btn.setCheckable(True)
         self.toggle_ph_btn.clicked.connect(self.toggle_placeholders)
-        self.toggle_ph_btn.setFixedSize(100, 40)
+        self.toggle_ph_btn.setToolTip("Toggle visibility of existing configured elements")
+        self.toggle_ph_btn.setFixedSize(150, 40)
+        self.toggle_ph_btn.setCursor(Qt.PointingHandCursor)
         self.delete_button = QPushButton("DELETE SELECTED")
         self.delete_button.clicked.connect(self.delete_selected)
         self.delete_button.setEnabled(False)
         self.delete_button.setProperty("class", "danger")
-        self.delete_button.setFixedSize(130, 40)
+        self.delete_button.setToolTip("Delete selected HUD element (DEL key)")
+        self.delete_button.setFixedSize(150, 40)
+        self.delete_button.setCursor(Qt.PointingHandCursor)
         self.undo_button = QPushButton("UNDO")
         self.undo_button.clicked.connect(self.undo)
         self.undo_button.setProperty("class", "neutral")
-        self.undo_button.setToolTip("Ctrl+Z")
-        self.undo_button.setFixedSize(120, 40)
+        self.undo_button.setToolTip("Undo last action (Ctrl+Z)")
+        self.undo_button.setFixedSize(150, 40)
+        self.undo_button.setCursor(Qt.PointingHandCursor)
         self.redo_button = QPushButton("REDO")
         self.redo_button.clicked.connect(self.redo)
         self.redo_button.setProperty("class", "neutral")
-        self.redo_button.setToolTip("Ctrl+Y")
-        self.redo_button.setFixedSize(120, 40)
+        self.redo_button.setToolTip("Redo last undone action (Ctrl+Y)")
+        self.redo_button.setFixedSize(150, 40)
+        self.redo_button.setCursor(Qt.PointingHandCursor)
         self.done_button = QPushButton("FINISH && SAVE")
         self.done_button.clicked.connect(self.on_done_clicked)
         self.done_button.setProperty("class", "accent")
-        self.done_button.setFixedSize(120, 40)
+        self.done_button.setToolTip("Save all changes and close portrait window")
+        self.done_button.setFixedSize(150, 40)
+        self.done_button.setCursor(Qt.PointingHandCursor)
         self.set_style()
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -236,6 +244,8 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
         top_layout.addWidget(self.status_label)
         top_layout.addStretch()
         top_layout.addWidget(self.toggle_ph_btn)
+        top_layout.addWidget(self.done_button)
+        top_layout.addStretch()
         main_layout.addWidget(top_bar)
         main_layout.addWidget(self.view, 1)
         controls = QFrame()
@@ -248,7 +258,6 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
         ctrl_layout.addWidget(self.undo_button)
         ctrl_layout.addWidget(self.redo_button)
         ctrl_layout.addStretch()
-        ctrl_layout.addWidget(self.done_button)
         main_layout.addWidget(controls)
         self.scene.selectionChanged.connect(self.on_selection_changed)
         self.update_undo_redo_buttons()
@@ -279,8 +288,8 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
                     w = (crop[2] * scale) / BACKEND_SCALE
                     h = (crop[3] * scale) / BACKEND_SCALE
                     rect_item = QGraphicsRectItem(x, y, w, h)
-                    rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
-                    rect_item.setPen(QPen(QColor(150, 150, 150), 1, Qt.DashLine))
+                    rect_item.setBrush(QBrush(QColor(100, 100, 100, 180)))
+                    rect_item.setPen(QPen(QColor(255, 255, 255), 2, Qt.DashLine))
                     rect_item.setZValue(-10)
                     display_name = inv_map.get(tech_key, tech_key)
                     text = QGraphicsSimpleTextItem(f"Existing: {display_name}", rect_item)
@@ -335,7 +344,11 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
         self.scene.clearSelection()
         item.setSelected(True)
         item.item_changed.connect(lambda: self.on_item_modified(item))
-        self.register_undo_action("Add item", lambda: self.scene.removeItem(item), lambda: self.scene.addItem(item))
+        item_id = id(item)
+        self.register_undo_action("Add item", 
+            lambda item_id=item_id: self._undo_add_item(item_id),
+            lambda item_id=item_id: self._redo_add_item(item_id, pixmap, crop_rect, role)
+        )
         if role:
             item.assigned_role = role
             self.modified_roles.add(role)
@@ -406,7 +419,7 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
             if not tech_key: continue
 
             from PyQt5.QtCore import QRect
-            from developer_tools.coordinate_math import transform_to_content_area_int
+            from coordinate_math import transform_to_content_area_int
             crop_rect = item.crop_rect
             rect = QRect(crop_rect.x(), crop_rect.y(), crop_rect.width(), crop_rect.height())
             success = self.config_manager.save_crop_coordinates(
@@ -521,6 +534,39 @@ class PortraitWindow(PersistentWindowMixin, QWidget):
             self.status_label.setText("Redo performed")
             QTimer.singleShot(1500, lambda: self.status_label.setText("Ready"))
         self.update_undo_redo_buttons()
+
+    def _undo_add_item(self, item_id):
+        """Helper method to undo adding an item."""
+        for item in self.scene.items():
+            if id(item) == item_id:
+                self.scene.removeItem(item)
+                return True
+        return False
+
+    def _redo_add_item(self, item_id, pixmap, crop_rect, role):
+        """Helper method to redo adding an item."""
+        for item in self.scene.items():
+            if id(item) == item_id:
+                return True
+        item = ResizablePixmapItem(pixmap, crop_rect)
+        item.current_width *= 1.2
+        item.current_height *= 1.2
+        item.update_handle_positions()
+        self.scene.addItem(item)
+        z_val = 0
+        if role:
+            tech_key_map = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
+            tech_key = tech_key_map.get(role, 'unknown')
+            z_val = Z_ORDER_MAP.get(tech_key, 50)
+        item.setZValue(z_val)
+        if role:
+            item.setPos(self._default_position_for_role(role, item.current_width, item.current_height))
+            item.assigned_role = role
+            self.modified_roles.add(role)
+        else:
+            item.setPos((1080 - item.current_width)/2, (1920 - item.current_height)/2)
+        item.item_changed.connect(lambda: self.on_item_modified(item))
+        return True
 
     def update_undo_redo_buttons(self):
         self.undo_button.setEnabled(self.state_manager.can_undo())

@@ -6,20 +6,22 @@ This desktop application, built specifically for Windows, works alongside a sepa
 ## 2. Core Workflow
 1. **Load Sample Video:** The user loads a single video file (`.mp4`, `.avi`, `.mkv`). The tool is intended for one video at a time and supports only video file types.
 2. **Navigate to a Reference Frame:** Video playback controls—play, pause, a seek bar, and keyboard shortcuts such as left/right arrow keys for frame‑accurate seeking—help the user find a frame where all HUD elements are clearly visible.
-3. **Take a Snapshot:** Clicking “Take Snapshot” freezes the current frame and opens the cropping interface.
+3. **Take a Snapshot:** Clicking "START CROPPING" freezes the current frame and opens the cropping interface.
 4. **Define Crop Regions:** The user can mark a HUD element in two ways:
    * **Manual Drawing:** Click and drag to draw a rectangle around the HUD component.
-   * **Magic Wand/Static Region Detection:** After taking a snapshot, clicking the “Magic Wand” button triggers a full‑video analysis to locate static regions. These suggested regions are overlaid on the snapshot; clicking one selects that area for cropping.
-5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several common preset roles (such as “Mini Map”, “Health Bar”, “Shield”, “Loot Area”). These presets reflect typical Fortnite HUD components and streamline the configuration process.
-6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, a separate “Portrait Composer” window appears, showing the selected element on a 9:16 canvas. The element is auto‑placed (e.g., snapped to a default corner). The user can drag it to reposition and use handles to resize it, defining its final scale and location within the portrait layout. Changes are not committed until the user clicks **“✅ FINISH & SAVE CROP CONFIGURATION”**. This window stays on top of other applications to avoid accidental closure.
-7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component that the user wants to appear in the portrait video. The application updates the shared JSON configuration file only for the element currently being edited, leaving other entries untouched.
+   * **Magic Wand/Template Matching:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers template matching using anchor images to detect common Fortnite HUD elements (Loot Area, Mini Map + Stats, Health Bar, Teammates Health). Suggested regions are overlaid on the snapshot; the user can cycle through detected regions.
+5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", or "Teammates health Bars (HP)". Note: Health Bar includes both health and shield components as they are combined in Fortnite.
+6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, focus shifts to a separate "Portrait Composer" window (titled "Portrait 1280x1920"), showing the selected element on a 9:16 canvas. The element is auto‑placed based on its role (e.g., loot goes bottom-right, health goes bottom-left). The user can drag it to reposition and use handles to resize it, defining its final scale and location within the portrait layout. **NOTHING IS SAVED UNTIL** the user clicks **"FINISH & SAVE"**.
+7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component that the user wants to appear in the portrait video. When saving, the application surgically updates only the HUD elements that were present in the portrait composer, leaving other configured elements untouched.
 
 ## 3. Key Features & Logic
-* **Undo/Redo:** Cropping actions can be undone or redone via `Ctrl+Z` and `Ctrl+Y`.
-* **Configuration Management:** The application writes all coordinate and placement data to a single JSON file in `..\processing\`, updating only the relevant element’s section.
-* **Coordinate Validation:** Crops are validated to ensure they lie within the video frame; invalid coordinates trigger an error and are not saved.
-* **Guided UI:** A sidebar lists each step, and an optional tutorial overlay explains the workflow for first‑time users.
-* **Preset HUD Roles:** Common HUD roles are preconfigured so users don’t need to type labels manually.
-* **No Caching or Comments:** To adhere to project constraints, the implementation must avoid generating any cache files (e.g., `__pycache__`) and exclude code comments entirely.
-* **Fortnite‑Specific:** The tool is currently tailored for Fortnite and does not support other games or integration with video editing suites.
-* **Accessibility:** The interface supports keyboard navigation (e.g., arrow keys for frame seeking) to accommodate a wider range of users.
+* **Undo/Redo:** Cropping actions can be undone or redone via `Ctrl+Z` and `Ctrl+Y` (with functional undo/redo buttons).
+* **Configuration Management:** The application writes coordinate and placement data to a JSON file in `..\processing\` **only when the user clicks "FINISH & SAVE"**. It performs surgical updates—modifying only elements present in the portrait composer while preserving others.
+* **Coordinate Validation:** Crops are validated to ensure they lie within the video frame; invalid coordinates trigger an error.
+* **Guided UI:** A blinking text overlay appears at each step to guide the user on what to do next. No sidebar is used.
+* **Preset HUD Roles:** Fortnite-specific HUD roles are preconfigured: Loot Area, Mini Map + Stats, Own Health Bar (HP), Boss HP, Teammates health Bars (HP).
+* **No Caching:** The implementation avoids generating cache files (e.g., `__pycache__`) using environment variables.
+* **Fortnite‑Specific:** The tool is tailored for Fortnite with game-specific HUD detection and does not support other games.
+* **Accessibility:** The interface supports keyboard navigation (arrow keys for frame seeking and element movement in portrait composer).
+* **Zoom Limits:** Both landscape and portrait windows prevent zooming out beyond the point where black voids/empty space would appear around the image.
+* **UI Consistency:** All buttons have consistent heights, colors, and sizing. Window titles are standardized: "Crop Tool Wizard" for main window, "Portrait 1280x1920" for portrait composer.

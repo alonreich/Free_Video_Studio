@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+﻿from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QSlider, QStackedWidget, QComboBox, QFrame, QGridLayout, QProgressBar, QScrollArea
 )
@@ -9,7 +9,7 @@ from config import HUD_ELEMENT_MAPPINGS
 
 class Ui_CropApp:
     def setupUi(self, CropAppWindow):
-        CropAppWindow.setWindowTitle(CropAppWindow.base_title)
+        CropAppWindow.setWindowTitle("Crop Tool Wizard")
         CropAppWindow.resize(1600, 900)
         CropAppWindow.main_layout = QVBoxLayout(CropAppWindow)
         CropAppWindow.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -34,34 +34,35 @@ class Ui_CropApp:
         for i, element in enumerate(CropAppWindow.hud_elements):
             label = QLabel(element.upper())
             label.setAlignment(Qt.AlignCenter)
-            label.setFixedHeight(40)
+            label.setFixedHeight(30)
             label.setStyleSheet("""
                 QLabel {
-                    background-color: #0D9488;
+                    background-color: #0A7C6F;
                     color: #F0FDFA;
-                    padding: 4px 10px;
-                    border-radius: 6px;
+                    padding: 2px 8px;
+                    border-radius: 4px;
                     font-weight: 700;
-                    font-size: 12px;
-                    border: 1px solid #0F766E;
+                    font-size: 10px;
+                    border: 1px solid #065F56;
+                    min-width: 120px;
                 }
                 QLabel.completed {
-                    background-color: #0F766E;
+                    background-color: #065F56;
                     color: white;
-                    border: 1px solid #115E59;
+                    border: 1px solid #054C44;
                 }
                 QLabel.current {
-                    background-color: #14B8A6;
+                    background-color: #0D9488;
                     color: white;
-                    border: 1px solid #0F766E;
+                    border: 1px solid #0A7C6F;
                 }
             """)
-            progress_layout.addWidget(label)
+            progress_layout.addWidget(label, 0, Qt.AlignCenter)
             CropAppWindow.progress_labels[element] = label
             if i < len(CropAppWindow.hud_elements) - 1:
                 arrow = QLabel("→")
-                arrow.setStyleSheet("background: transparent; color: #4B5563; font-size: 16px; font-weight: 900;")
-                progress_layout.addWidget(arrow)
+                arrow.setStyleSheet("background: transparent; color: #4B5563; font-size: 14px; font-weight: 900; margin: 0 5px;")
+                progress_layout.addWidget(arrow, 0, Qt.AlignCenter)
         progress_layout.addStretch()
         wizard_layout.addWidget(progress_frame)
         CropAppWindow.progress_bar = QProgressBar()
@@ -117,34 +118,39 @@ class Ui_CropApp:
         """)
         controls_layout = QHBoxLayout(CropAppWindow.controls_frame)
         controls_layout.setSpacing(20)
-        video_controls = QHBoxLayout()
-        video_controls.setSpacing(10)
+        left_controls = QHBoxLayout()
+        left_controls.setSpacing(10)
         CropAppWindow.open_button = QPushButton("UPLOAD VIDEO")
         self.style_button(CropAppWindow.open_button, primary=True, large=True)
         CropAppWindow.open_button.setFixedSize(150, 40)
+        left_controls.addWidget(CropAppWindow.open_button)
+        CropAppWindow.snapshot_button = QPushButton("START CROPPING")
+        CropAppWindow.snapshot_button.setEnabled(False)
+        self.style_button(CropAppWindow.snapshot_button, accent=True)
+        CropAppWindow.snapshot_button.setFixedSize(160, 40)
+        left_controls.addWidget(CropAppWindow.snapshot_button)
+        CropAppWindow.magic_wand_button = QPushButton("🪄 MAGIC WAND")
+        CropAppWindow.magic_wand_button.setEnabled(False)
+        CropAppWindow.magic_wand_button.setVisible(False)
+        self.style_button(CropAppWindow.magic_wand_button, primary=True)
+        CropAppWindow.magic_wand_button.setFixedSize(150, 40)
+        left_controls.addWidget(CropAppWindow.magic_wand_button)
         CropAppWindow.play_pause_button = QPushButton("▶ PLAY")
         CropAppWindow.play_pause_button.setEnabled(False)
         self.style_button(CropAppWindow.play_pause_button)
         CropAppWindow.play_pause_button.setFixedSize(120, 40)
-        CropAppWindow.snapshot_button = QPushButton("START CROPPING")
-        CropAppWindow.snapshot_button.setEnabled(False)
-        self.style_button(CropAppWindow.snapshot_button, accent=True)
-        CropAppWindow.snapshot_button.setFixedSize(170, 40)
-        CropAppWindow.magic_wand_button = QPushButton("🪄 MAGIC WAND")
-        CropAppWindow.magic_wand_button.setEnabled(False) 
-        self.style_button(CropAppWindow.magic_wand_button, primary=True)
-        CropAppWindow.magic_wand_button.setFixedSize(150, 40)
-        video_controls.addWidget(CropAppWindow.open_button)
-        video_controls.addWidget(CropAppWindow.play_pause_button)
-        video_controls.addWidget(CropAppWindow.snapshot_button)
-        video_controls.addWidget(CropAppWindow.magic_wand_button)
-        controls_layout.addLayout(video_controls)
+        right_controls = QHBoxLayout()
+        right_controls.setSpacing(10)
+        controls_layout.addLayout(left_controls)
         controls_layout.addStretch(1)
+        controls_layout.addWidget(CropAppWindow.play_pause_button)
+        controls_layout.addStretch(1)
+        controls_layout.addLayout(right_controls)
         action_controls = QHBoxLayout()
         action_controls.setSpacing(10)
         CropAppWindow.return_button = QPushButton("RETURN TO MAIN APP")
         self.style_button(CropAppWindow.return_button)
-        CropAppWindow.return_button.setFixedSize(130, 70)
+        CropAppWindow.return_button.setFixedSize(130, 40)
         CropAppWindow.return_button.setStyleSheet("background-color: #bfa624; color: black; text-align: center; font-size: 11px; font-weight: bold; padding: 5px;")
         CropAppWindow.reset_state_button = QPushButton("RESET ALL")
         self.style_button(CropAppWindow.reset_state_button, danger=True)
