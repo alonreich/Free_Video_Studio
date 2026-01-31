@@ -208,7 +208,7 @@ class FFMpegHandler(FFMpegProcessMixin):
         except Exception as ex:
             self.logger.debug(f"Failed to get music selection: {ex}")
             music_path, music_vol = None, 0.0
-        music_offset = self.parent.music_offset_input.value()
+        music_offset = self.parent.music_offset_input.value() if hasattr(self.parent, 'music_offset_input') else 0.0
         encoder_manager = EncoderManager(self.logger)
         encoder_flags, encoder_label = encoder_manager.get_codec_flags(
             encoder_manager.get_initial_encoder(),

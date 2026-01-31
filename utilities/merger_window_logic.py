@@ -137,17 +137,34 @@ class MergerWindowLogic:
             return
         d1 = i1.data(Qt.UserRole)
         d2 = i2.data(Qt.UserRole)
+        w1 = listw.itemWidget(i1)
+        w2 = listw.itemWidget(i2)
+        if row < new_row:
+            listw.takeItem(row)
+            listw.insertItem(new_row - 1, i1)
+            listw.takeItem(new_row - 1)
+            listw.insertItem(row, i2)
+        else:
+            listw.takeItem(row)
+            listw.insertItem(new_row, i1)
+            listw.takeItem(new_row + 1)
+            listw.insertItem(row, i2)
         i1.setData(Qt.UserRole, d2)
         i2.setData(Qt.UserRole, d1)
         t1 = i1.toolTip()
         t2 = i2.toolTip()
         i1.setToolTip(t2)
         i2.setToolTip(t1)
-        
-        def update_widget(item, path):
-            w = listw.itemWidget(item)
-            if not w: return
+        if w1:
+            listw.setItemWidget(i2, w1)
+        if w2:
+            listw.setItemWidget(i1, w2)
 
+        def update_widget_content(item, path, is_original_widget=True):
+            w = listw.itemWidget(item)
+            if not w: 
+                return
+            
             from PyQt5.QtWidgets import QLabel, QPushButton
             lbl = w.findChild(QLabel, "fileLabel")
             if lbl:
@@ -156,10 +173,15 @@ class MergerWindowLogic:
             btn = w.findChild(QPushButton, "playButton")
             if btn:
                 btn.setProperty("path", path)
-        update_widget(i1, d2)
-        update_widget(i2, d1)
+            w.updateGeometry()
+            w.update()
+        update_widget_content(i1, d2, True)
+        update_widget_content(i2, d1, True)
         listw.clearSelection()
         listw.setCurrentRow(new_row)
         if listw.item(new_row):
             listw.item(new_row).setSelected(True)
         listw.viewport().update()
+        listw.updateGeometry()
+        if hasattr(self.window, 'event_handler') and hasattr(self.window.event_handler, 'update_button_states'):
+            self.window.event_handler.update_button_states()

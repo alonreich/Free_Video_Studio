@@ -21,6 +21,7 @@ from processing.filter_builder import FilterBuilder
 from processing.encoders import EncoderManager
 from ui.parts.music_mixin import MusicMixin
 from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
+from utilities.merger_unified_music_widget import UnifiedMusicWidget
 
 class MusicSliderMock:
     """Mock object to satisfy MusicMixin dependency safely."""
@@ -233,6 +234,17 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         safe_disconnect(getattr(self.add_music_checkbox, 'toggled', None) if hasattr(self, 'add_music_checkbox') else None)
         safe_disconnect(getattr(self.music_combo, 'currentIndexChanged', None) if hasattr(self, 'music_combo') else None)
         safe_disconnect(getattr(self.music_volume_slider, 'valueChanged', None) if hasattr(self, 'music_volume_slider') else None)
+        if hasattr(self, 'unified_music_widget'):
+            safe_disconnect(getattr(self.unified_music_widget.music_toggled, 'connect', None))
+            safe_disconnect(getattr(self.unified_music_widget.track_selected, 'connect', None))
+            safe_disconnect(getattr(self.unified_music_widget.volume_changed, 'connect', None))
+            safe_disconnect(getattr(self.unified_music_widget.offset_changed, 'connect', None))
+            safe_disconnect(getattr(self.unified_music_widget.advanced_requested, 'connect', None))
+            self.unified_music_widget.music_toggled.connect(self._on_unified_music_toggled)
+            self.unified_music_widget.track_selected.connect(self._on_unified_track_selected)
+            self.unified_music_widget.volume_changed.connect(self._on_unified_volume_changed)
+            self.unified_music_widget.offset_changed.connect(self._on_unified_offset_changed)
+            self.unified_music_widget.advanced_requested.connect(self._on_unified_advanced_requested)
         self.listw.itemSelectionChanged.connect(self.event_handler.update_button_states)
         self.status_updated.connect(self.handle_status_update)
         self.listw.model().rowsInserted.connect(self.event_handler.update_button_states)
@@ -757,3 +769,92 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
 
     def eventFilter(self, obj, event):
         return super().eventFilter(obj, event)
+
+    def _scan_mp3_folder(self):
+        """Scan MP3 folder and load tracks into unified music widget."""
+        if hasattr(self, 'unified_music_widget'):
+            mp3_folder = os.path.join(self.base_dir, 'mp3')
+            self.unified_music_widget.load_tracks(mp3_folder)
+    
+    def _get_selected_music(self):
+        """Get selected music track and volume from unified widget."""
+        if hasattr(self, 'unified_music_widget'):
+            track_path = self.unified_music_widget.get_selected_track()
+            volume = self.unified_music_widget.get_volume()
+            return track_path, volume
+        return None, 0
+    
+    def _on_add_music_toggled(self, checked):
+        """Handle music toggle state change."""
+        pass
+    
+    def _on_music_selected(self, index):
+        """Handle music track selection."""
+        pass
+    
+    def _on_music_volume_changed(self, value):
+        """Handle music volume change."""
+        pass
+    
+    def _update_music_badge(self, value):
+        """Update music volume badge."""
+        pass
+    
+    def _reset_music_player(self):
+        """Reset music player state."""
+        pass
+    
+    def _music_eff(self):
+        """Get music volume effect value."""
+        if hasattr(self, 'unified_music_widget'):
+            return self.unified_music_widget.get_volume() / 100.0
+        return 0.25
+    
+    def preview_music_track(self, track_path):
+        """Preview a music track (stub for future implementation)."""
+        self.logger.info(f"Would preview track: {track_path}")
+        QMessageBox.information(self, "Preview", f"Would play preview of: {os.path.basename(track_path)}")
+
+    def _on_unified_music_toggled(self, enabled):
+        """Handle unified music widget toggle signal."""
+        self.logger.info(f"Unified music toggled: {enabled}")
+        if hasattr(self, 'add_music_checkbox'):
+            self.add_music_checkbox.setChecked(enabled)
+    
+    def _on_unified_track_selected(self, track_path):
+        """Handle unified music widget track selection signal."""
+        self.logger.info(f"Unified track selected: {track_path}")
+        if hasattr(self, 'music_combo'):
+            if track_path:
+                for i in range(self.music_combo.count()):
+                    if self.music_combo.itemData(i) == track_path:
+                        self.music_combo.setCurrentIndex(i)
+                        break
+    
+    def _on_unified_volume_changed(self, volume):
+        """Handle unified music widget volume change signal."""
+        self.logger.info(f"Unified volume changed: {volume}")
+        if hasattr(self, 'music_volume_slider'):
+            self.music_volume_slider.setValue(volume)
+    
+    def _on_unified_offset_changed(self, offset):
+        """Handle unified music widget offset change signal."""
+        self.logger.info(f"Unified offset changed: {offset}")
+        if hasattr(self, 'music_offset_input'):
+            self.music_offset_input.setValue(offset)
+    
+    def _on_unified_advanced_requested(self):
+        """Handle unified music widget advanced dialog request."""
+        self.logger.info("Unified advanced dialog requested")
+
+        from utilities.merger_music_dialog import MusicDialog
+        dialog = MusicDialog(self)
+        if dialog.exec_():
+            if hasattr(self, 'unified_music_widget'):
+                selected_track = dialog.get_selected_track()
+                volume = dialog.get_volume()
+                offset = dialog.get_offset()
+                if selected_track:
+                    self.unified_music_widget.set_selected_track(selected_track)
+                    self.unified_music_widget.set_volume(volume)
+                    self.unified_music_widget.set_offset(offset)

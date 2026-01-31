@@ -4,6 +4,7 @@
 )
 
 from PyQt5.QtCore import Qt
+from utilities.merger_unified_music_widget import UnifiedMusicWidget
 
 class MergerUIWidgetsMixin:
     def create_center_buttons(self):
@@ -72,109 +73,20 @@ class MergerUIWidgetsMixin:
         return merge_wrap
 
     def create_music_layout(self):
+        """Create unified music widget layout."""
         music_layout = QHBoxLayout()
         music_layout.setSpacing(15)
-        self.parent.add_music_checkbox = QCheckBox("Add Background Music")
-        self.parent.add_music_checkbox.setToolTip("Toggle background MP3 mixing from the ./mp3 folder.")
-        self.parent.add_music_checkbox.setCursor(Qt.PointingHandCursor)
-        self.parent.add_music_checkbox.setChecked(False)
-        music_layout.addWidget(self.parent.add_music_checkbox)
-        self.parent.music_combo = QComboBox()
-        try:
-            self.parent.music_combo.setElideMode(Qt.ElideMiddle)
-        except Exception:
-            pass
-        self.parent.music_combo.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        self.parent.music_combo.setMinimumWidth(400)
-        self.parent.music_combo.setMaximumWidth(400)
-        self.parent.music_combo.setMinimumContentsLength(24)
-        self.parent.music_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.parent.music_combo.setCursor(Qt.PointingHandCursor)
-        self.parent.music_combo.setVisible(False)
-        music_layout.addWidget(self.parent.music_combo)
-        self.parent.music_offset_input = QDoubleSpinBox()
-        self.parent.music_offset_input.setPrefix("Music Start (s): ")
-        self.parent.music_offset_input.setMinimumWidth(180)
-        self.parent.music_offset_input.setMaximumWidth(180)
-        self.parent.music_offset_input.setDecimals(3)
-        self.parent.music_offset_input.setSingleStep(0.1)
-        self.parent.music_offset_input.setRange(0.0, 0.0)
-        self.parent.music_offset_input.setValue(0.0)
-        self.parent.music_offset_input.setCursor(Qt.PointingHandCursor)
-        self.parent.music_offset_input.setVisible(False)
-        music_layout.addWidget(self.parent.music_offset_input)
-        music_slider_box = self.create_music_slider()
-        music_layout.addLayout(music_slider_box)
+        self.parent.unified_music_widget = UnifiedMusicWidget(self.parent)
+        music_layout.addWidget(self.parent.unified_music_widget)
+        self.parent.add_music_checkbox = self.parent.unified_music_widget.toggle_button
+        self.parent.music_combo = self.parent.unified_music_widget.track_combo
+        self.parent.music_offset_input = self.parent.unified_music_widget.offset_spin
+        self.parent.music_volume_slider = self.parent.unified_music_widget.volume_slider
+        self.parent.music_volume_label = self.parent.unified_music_widget.volume_label
         return music_layout
 
     def create_music_slider(self):
-        self.parent.music_volume_slider = QSlider(Qt.Vertical, self.parent)
-        self.parent.music_volume_slider.setObjectName("musicVolumeSlider")
-        self.parent.music_volume_slider.setRange(0, 100)
-        self.parent.music_volume_slider.setTickInterval(1)
-        self.parent.music_volume_slider.setTracking(True)
-        self.parent.music_volume_slider.setVisible(False)
-        self.parent.music_volume_slider.setFocusPolicy(Qt.NoFocus)
-        self.parent.music_volume_slider.setMinimumHeight(150)
-        self.parent.music_volume_slider.setInvertedAppearance(True)
-        self.parent.music_volume_slider.setCursor(Qt.PointingHandCursor)
-        eff_default = int(25)
-        self.parent.music_volume_slider.setValue(eff_default)
-        self.parent.music_volume_slider.setStyleSheet(f"""
-        QSlider#musicVolumeSlider::groove:vertical {{
-            border: 1px solid #1f2a36;
-            background: qlineargradient(x1:0, y1:1, x2:0, y2:0,
-                stop:0   #e64c4c,
-                stop:0.25 #f7a8a8,
-                stop:0.50 #f2f2f2,
-                stop:0.75 #7bcf43,
-                stop:1   #009b00);
-            width: 30px;
-            border-radius: 3px;
-        }}
-        QSlider#musicVolumeSlider::handle:vertical {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 #455A64,
-                stop:0.40 #455A64,
-                stop:0.42 #90A4AE, stop:0.44 #90A4AE,
-                stop:0.46 #455A64,
-                stop:0.48 #455A64,
-                stop:0.50 #90A4AE, stop:0.52 #90A4AE,
-                stop:0.54 #455A64,
-                stop:0.56 #455A64,
-                stop:0.58 #90A4AE, stop:0.60 #90A4AE,
-                stop:0.62 #455A64, stop:1 #455A64);
-            border: 1px solid #1f2a36;
-            width: 36px; 
-            height: 40px; 
-            margin: 0 -3px;
-            border-radius: 4px;
-        }}
-        QSlider#musicVolumeSlider::handle:vertical:hover {{
-            border: 1px solid #90A4AE;
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 #546E7A,
-                stop:0.40 #546E7A, stop:0.42 #CFD8DC, stop:0.44 #CFD8DC,
-                stop:0.46 #546E7A, stop:0.48 #546E7A, stop:0.50 #CFD8DC, stop:0.52 #CFD8DC,
-                stop:0.54 #546E7A, stop:0.56 #546E7A, stop:0.58 #CFD8DC, stop:0.60 #CFD8DC,
-                stop:0.62 #546E7A, stop:1 #546E7A);
-        }}
-        QSlider#musicVolumeSlider::sub-page:vertical,
-        QSlider#musicVolumeSlider::add-page:vertical {{ background: transparent;
-        }}
-        """)
-        self.parent.music_volume_label = QLabel(f"{eff_default}%")
-        self.parent.music_volume_label.setAlignment(Qt.AlignHCenter)
-        self.parent.music_volume_label.setVisible(False)
-        self.parent.music_volume_badge = QLabel(f"{eff_default}%", self.parent)
-        self.parent.music_volume_badge.setObjectName("musicVolumeBadge")
-        self.parent.music_volume_badge.setStyleSheet(
-            "color: white; background: rgba(0,0,0,160); padding: 2px 6px; "
-            "border-radius: 6px; font-weight: bold;"
-        )
-        self.parent.music_volume_badge.hide()
+        """Legacy method kept for compatibility - returns empty layout."""
         music_slider_box = QVBoxLayout()
         music_slider_box.setSpacing(2)
-        music_slider_box.addWidget(self.parent.music_volume_slider, 0, Qt.AlignHCenter)
-        music_slider_box.addWidget(self.parent.music_volume_label, 0, Qt.AlignHCenter)
         return music_slider_box
