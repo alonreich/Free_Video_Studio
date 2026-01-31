@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 import tempfile
@@ -153,11 +153,27 @@ class MusicMixin:
             if not p:
                 return
             self.music_offset_input.setValue(0.0)
-            current_trim_start = self.trim_start if self.trim_start is not None else 0.0
-            current_trim_end = self.trim_end if self.trim_end is not None else self.original_duration
-            self.positionSlider.set_music_times(current_trim_start, current_trim_end)
-            self.music_timeline_start_sec = current_trim_start
-            self.music_timeline_end_sec = current_trim_end
+            if hasattr(self, 'trim_start_ms'):
+                current_trim_start_ms = self.trim_start_ms
+            elif hasattr(self, 'trim_start') and self.trim_start is not None:
+                current_trim_start_ms = self.trim_start * 1000
+            else:
+                current_trim_start_ms = 0
+            if hasattr(self, 'trim_end_ms') and self.trim_end_ms > 0:
+                current_trim_end_ms = self.trim_end_ms
+            elif hasattr(self, 'trim_end') and self.trim_end is not None and self.trim_end > 0:
+                current_trim_end_ms = self.trim_end * 1000
+            elif hasattr(self, 'original_duration_ms'):
+                current_trim_end_ms = self.original_duration_ms
+            elif hasattr(self, 'original_duration') and self.original_duration > 0:
+                current_trim_end_ms = self.original_duration * 1000
+            else:
+                current_trim_end_ms = 0
+            self.positionSlider.set_music_times(current_trim_start_ms, current_trim_end_ms)
+            self.music_timeline_start_ms = current_trim_start_ms
+            self.music_timeline_end_ms = current_trim_end_ms
+            self.music_timeline_start_sec = current_trim_start_ms / 1000.0
+            self.music_timeline_end_sec = current_trim_end_ms / 1000.0
             dur = self._probe_audio_duration(p)
             self.music_offset_input.setRange(0.0, max(0.0, dur - 0.01))
             self.volume_shortcut_target = 'music'
@@ -180,7 +196,7 @@ class MusicMixin:
                     self.vlc_music_player.audio_set_volume(self._music_eff())
             else:
                 self.logger.warning("VLC Engine is dead (CPU mode?); skipping background music preview.")
-            self.positionSlider.set_music_times(self.music_timeline_start_sec, self.music_timeline_end_sec)
+            self.positionSlider.set_music_times(self.music_timeline_start_ms, self.music_timeline_end_ms)
             self.logger.info("MUSIC: selected | file='%s' | visual_start=%.3fs | vol_eff=%d%%",
                              os.path.basename(p), self.music_timeline_start_sec, self._music_eff())
         except Exception as e:
@@ -237,6 +253,10 @@ class MusicMixin:
             return float(self.music_offset_input.value())
         except:
             return 0.0
+
+    def _get_music_offset_ms(self):
+        """Returns the music file start offset in milliseconds."""
+        return self._get_music_offset() * 1000
 
     def _get_music_params(self):
         """Bundles all music-related settings for the rendering engine."""

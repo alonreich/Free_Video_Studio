@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt
 from PyQt5.QtWidgets import QLabel, QPushButton
@@ -17,21 +17,40 @@ class MergerWindowLogic:
         try:
             g = self.window._cfg.get("geometry", {})
             if g:
-                self.window.move(int(g.get("x", self.window.x())), int(g.get("y", self.window.y())))
-                self.window.resize(int(g.get("w", self.window.width())), int(g.get("h", self.window.height())))
-        except Exception:
-            pass
+                x = int(g.get("x", self.window.x()))
+                y = int(g.get("y", self.window.y()))
+                w = int(g.get("w", self.window.width()))
+                h = int(g.get("h", self.window.height()))
+                screen = self.window.screen()
+                if screen:
+                    screen_geometry = screen.availableGeometry()
+                    x = max(screen_geometry.left(), min(x, screen_geometry.right() - w))
+                    y = max(screen_geometry.top(), min(y, screen_geometry.bottom() - h))
+                    w = max(800, min(w, screen_geometry.width()))
+                    h = max(600, min(h, screen_geometry.height()))
+                self.window.move(x, y)
+                self.window.resize(w, h)
+                self.window.logger.info(f"Restored window geometry: {x},{y} {w}x{h}")
+        except Exception as ex:
+            self.window.logger.debug(f"Failed to restore window geometry: {ex}")
 
     def save_config(self):
+        """Thread-safe configuration saving with atomic write."""
         try:
-            g = {"x": self.window.x(), "y": self.window.y(), "w": self.window.width(), "h": self.window.height()}
-            self.window._cfg["geometry"]  = g
-            self.window._cfg["last_dir"]  = self.window._last_dir
-            self.window._cfg["last_out_dir"] = self.window._last_out_dir
+            config_copy = self.window._cfg.copy()
+            config_copy["geometry"] = {
+                "x": self.window.x(),
+                "y": self.window.y(),
+                "w": self.window.width(),
+                "h": self.window.height()
+            }
+            config_copy["last_dir"] = self.window._last_dir
+            config_copy["last_out_dir"] = self.window._last_out_dir
             if hasattr(self.window, '_music_eff'):
-                self.window._cfg["last_music_volume"] = self.window._music_eff()
-            self.window.logger.info(f"Saving config to merger_app.conf")
-            _save_conf(self.window._cfg)
+                config_copy["last_music_volume"] = self.window._music_eff()
+            self.window.logger.info("Saving config to merger_app.conf")
+            _save_conf(config_copy)
+            self.window._cfg = config_copy
         except Exception as err:
             self.window.logger.error("Error saving config in merger closeEvent: %s", err)
 
@@ -60,46 +79,87 @@ class MergerWindowLogic:
             ghost1.move(r1.topLeft()); ghost1.show()
             ghost2.move(r2.topLeft()); ghost2.show()
             w1.setVisible(False); w2.setVisible(False)
-            a1 = QPropertyAnimation(ghost1, b"pos", self.window); a1.setDuration(140)
-            a2 = QPropertyAnimation(ghost2, b"pos", self.window); a2.setDuration(140)
+            a1 = QPropertyAnimation(ghost1, b"pos", self.window); a1.setDuration(280)
+            a2 = QPropertyAnimation(ghost2, b"pos", self.window); a2.setDuration(280)
             a1.setStartValue(r1.topLeft()); a1.setEndValue(r2.topLeft()); a1.setEasingCurve(QEasingCurve.InOutQuad)
             a2.setStartValue(r2.topLeft()); a2.setEndValue(r1.topLeft()); a2.setEasingCurve(QEasingCurve.InOutQuad)
             self.window._animating = True
 
+            def _cleanup_animation():
+                """Safe cleanup of animation resources."""
+                try:
+                    if w1: w1.setVisible(True)
+                    if w2: w2.setVisible(True)
+                    if ghost1: ghost1.deleteLater()
+                    if ghost2: ghost2.deleteLater()
+                    if a1: a1.deleteLater()
+                    if a2: a2.deleteLater()
+                except Exception as ex:
+                    self.window.logger.debug(f"Error cleaning up animation: {ex}")
+                finally:
+                    self.window._animating = False
+
             def _finish():
                 try:
                     self.perform_swap(row, new_row)
+                except Exception as ex:
+                    self.window.logger.debug(f"Error during swap animation finish: {ex}")
                 finally:
-                    try:
-                        w1.setVisible(True); w2.setVisible(True)
-                        ghost1.deleteLater(); ghost2.deleteLater()
-                    except Exception:
-                        pass
-                    self.window._animating = False
-            a2.finished.connect(_finish)
-            a1.start(); a2.start()
-            return True
-        except Exception:
+                    _cleanup_animation()
+            animations_completed = [False, False]
+            
+            def _on_animation_finished(anim_index):
+                animations_completed[anim_index] = True
+                if all(animations_completed):
+                    _finish()
+            a1.finished.connect(lambda: _on_animation_finished(0))
+            a2.finished.connect(lambda: _on_animation_finished(1))
+            try:
+                a1.start()
+                a2.start()
+                return True
+            except Exception as ex:
+                self.window.logger.debug(f"Animation start failed: {ex}")
+                _cleanup_animation()
+                return False
+        except Exception as ex:
+            self.window.logger.debug(f"Animation setup failed: {ex}")
+            if hasattr(self.window, '_animating'):
+                self.window._animating = False
             return False
 
     def perform_swap(self, row, new_row):
-        i1, i2 = self.window.listw.item(row), self.window.listw.item(new_row)
+        """Robustly swaps two items in the list widget by updating their content."""
+        listw = self.window.listw
+        i1 = listw.item(row)
+        i2 = listw.item(new_row)
         if not i1 or not i2:
             return
-        p1, p2 = i1.data(Qt.UserRole), i2.data(Qt.UserRole)
-        i1.setData(Qt.UserRole, p2); i2.setData(Qt.UserRole, p1)
-        i1.setToolTip(p2);           i2.setToolTip(p1)
-        w1 = self.window.listw.itemWidget(i1)
-        if w1:
-            lbl = w1.findChild(QLabel, "fileLabel") or w1.findChild(QLabel)
-            if lbl: lbl.setText(os.path.basename(p2))
-            btn = w1.findChild(QPushButton, "playButton")
-            if btn: btn.setProperty("path", p2)
-        w2 = self.window.listw.itemWidget(i2)
-        if w2:
-            lbl = w2.findChild(QLabel, "fileLabel") or w2.findChild(QLabel)
-            if lbl: lbl.setText(os.path.basename(p1))
-            btn = w2.findChild(QPushButton, "playButton")
-            if btn: btn.setProperty("path", p1)
-        self.window.listw.setCurrentRow(new_row)
-        self.window.listw.viewport().update()
+        d1 = i1.data(Qt.UserRole)
+        d2 = i2.data(Qt.UserRole)
+        i1.setData(Qt.UserRole, d2)
+        i2.setData(Qt.UserRole, d1)
+        t1 = i1.toolTip()
+        t2 = i2.toolTip()
+        i1.setToolTip(t2)
+        i2.setToolTip(t1)
+        
+        def update_widget(item, path):
+            w = listw.itemWidget(item)
+            if not w: return
+
+            from PyQt5.QtWidgets import QLabel, QPushButton
+            lbl = w.findChild(QLabel, "fileLabel")
+            if lbl:
+                lbl.setText(os.path.basename(path))
+                lbl.setToolTip(path)
+            btn = w.findChild(QPushButton, "playButton")
+            if btn:
+                btn.setProperty("path", path)
+        update_widget(i1, d2)
+        update_widget(i2, d1)
+        listw.clearSelection()
+        listw.setCurrentRow(new_row)
+        if listw.item(new_row):
+            listw.item(new_row).setSelected(True)
+        listw.viewport().update()

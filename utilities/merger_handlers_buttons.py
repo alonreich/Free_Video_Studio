@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMessageBox
+﻿from PyQt5.QtWidgets import QMessageBox
 
 class MergerHandlersButtonsMixin:
     def update_button_states(self):
@@ -14,6 +14,8 @@ class MergerHandlersButtonsMixin:
         self.parent.btn_remove.setEnabled(bool(selected_items) and not is_processing)
         self.parent.btn_clear.setEnabled(n > 0 and not is_processing)
         self.parent.btn_add.setEnabled(not is_processing and n < self.parent.MAX_FILES)
+        self.parent.btn_back.setEnabled(not is_processing)
+        self.parent.listw.setEnabled(not is_processing)
         if is_single_selection and not is_processing:
             current_row = self.parent.listw.row(selected_items[0])
             self.parent.btn_up.setEnabled(current_row > 0)
@@ -24,8 +26,8 @@ class MergerHandlersButtonsMixin:
         if is_processing:
             self.parent.status_label.setText("Processing merge... Please wait.")
         elif n == 0:
-            self.parent.status_label.setText("Ready. Add 2 to 20 videos to begin.")
+            self.parent.status_label.setText("Ready. Add 2 to 100 videos to begin.")
         elif n < 2:
-            self.parent.status_label.setText(f"Waiting for more videos. Currently {n}/20.")
+            self.parent.status_label.setText(f"Waiting for more videos. Currently {n}/100.")
         else:
             self.parent.status_label.setText(f"Ready to merge {n} videos. Order is set.")

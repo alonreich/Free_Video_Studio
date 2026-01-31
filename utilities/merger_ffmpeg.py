@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import json
 import os
 import tempfile
@@ -8,6 +8,7 @@ from PyQt5.QtCore import QProcess, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import QMessageBox, QApplication
 from utilities.merger_utils import _human, _get_logger
 from utilities.merger_ffmpeg_process import FFMpegProcessMixin
+from processing.encoders import EncoderManager
 
 class ProbeWorker(QThread):
     """Background worker to probe files without freezing UI."""
@@ -132,6 +133,69 @@ class FFMpegHandler(FFMpegProcessMixin):
             self.logger.error(f"Error in merge setup: {e}")
             self.parent.set_ui_busy(False)
 
+    def _get_target_resolution(self, paths):
+        """Determine target resolution based on input videos with bounds checking."""
+        default_resolution = (1920, 1080)
+        max_resolution = (8192, 4320)
+        min_resolution = (64, 64)
+        resolutions = []
+        for path in paths:
+            probe_data = self._probe_file(path)
+            if probe_data and 'width' in probe_data and 'height' in probe_data:
+                width = probe_data.get('width')
+                height = probe_data.get('height')
+                if width and height:
+                    width = max(min_resolution[0], min(width, max_resolution[0]))
+                    height = max(min_resolution[1], min(height, max_resolution[1]))
+                    width = width if width % 2 == 0 else width + 1
+                    height = height if height % 2 == 0 else height + 1
+                    resolutions.append((width, height))
+        if not resolutions:
+            return default_resolution
+
+        from collections import Counter
+        resolution_counts = Counter(resolutions)
+        most_common = resolution_counts.most_common(1)
+        if most_common:
+            target_w, target_h = most_common[0][0]
+            target_w = max(min_resolution[0], min(target_w, max_resolution[0]))
+            target_h = max(min_resolution[1], min(target_h, max_resolution[1]))
+            target_w = target_w if target_w % 2 == 0 else target_w + 1
+            target_h = target_h if target_h % 2 == 0 else target_h + 1
+            return (target_w, target_h)
+        return default_resolution
+    
+    def _get_target_framerate(self, paths):
+        """Determine target framerate based on input videos."""
+        default_fps = 30
+        framerates = []
+        for path in paths:
+            probe_data = self._probe_file(path)
+            if probe_data and 'r_frame_rate' in probe_data:
+                r_frame_rate = probe_data.get('r_frame_rate')
+                if r_frame_rate and '/' in r_frame_rate:
+                    try:
+                        num, den = map(int, r_frame_rate.split('/'))
+                        if den != 0:
+                            fps = num / den
+                            framerates.append(fps)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+        if not framerates:
+            return default_fps
+
+        from collections import Counter
+        standard_framerates = [24, 25, 30, 48, 50, 60]
+        rounded_framerates = []
+        for fps in framerates:
+            closest = min(standard_framerates, key=lambda x: abs(x - fps))
+            rounded_framerates.append(closest)
+        framerate_counts = Counter(rounded_framerates)
+        most_common = framerate_counts.most_common(1)
+        if most_common:
+            return most_common[0][0]
+        return default_fps
+    
     def _start_ffmpeg_process(self, paths, out_path, use_fallback):
         """Constructs and starts the FFmpeg process."""
         try:
@@ -141,11 +205,21 @@ class FFMpegHandler(FFMpegProcessMixin):
                 music_path, music_vol = self.parent.music_handler.get_selected_music()
             else:
                 music_path, music_vol = None, 0.0
-        except Exception:
+        except Exception as ex:
+            self.logger.debug(f"Failed to get music selection: {ex}")
             music_path, music_vol = None, 0.0
         music_offset = self.parent.music_offset_input.value()
+        encoder_manager = EncoderManager(self.logger)
+        encoder_flags, encoder_label = encoder_manager.get_codec_flags(
+            encoder_manager.get_initial_encoder(),
+            video_bitrate_kbps=None,
+            effective_duration_sec=0.0
+        )
+        self.logger.info(f"Using encoder: {encoder_label}")
         if use_fallback:
-            self.logger.info("MODE: Smart Merge (Transcode) - Standardizing to 1080p/60fps.")
+            target_resolution = self._get_target_resolution(paths)
+            target_fps = self._get_target_framerate(paths)
+            self.logger.info(f"MODE: Smart Merge (Transcode) - Standardizing to {target_resolution[0]}x{target_resolution[1]}/{target_fps}fps.")
             cmd = [self.parent.ffmpeg, "-y"]
             for p in paths:
                 cmd.extend(["-i", p])
@@ -155,9 +229,9 @@ class FFMpegHandler(FFMpegProcessMixin):
             filter_chains = []
             concat_v = []
             concat_a = []
-            tgt_w, tgt_h = 1920, 1080
+            tgt_w, tgt_h = target_resolution
             for i in range(len(paths)):
-                vf = f"[{i}:v]scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=decrease,pad={tgt_w}:{tgt_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=60,format=yuv420p[v{i}]"
+                vf = f"[{i}:v]scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=decrease,pad={tgt_w}:{tgt_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={target_fps},format=yuv420p[v{i}]"
                 filter_chains.append(vf)
                 concat_v.append(f"[v{i}]")
                 concat_a.append(f"[{i}:a]")
@@ -175,7 +249,7 @@ class FFMpegHandler(FFMpegProcessMixin):
                 "-filter_complex", ";".join(filter_chains),
                 "-map", "[v_concat]",
                 "-map", final_map_a,
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                *encoder_flags,
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest",
                 str(out_path)
@@ -209,8 +283,8 @@ class FFMpegHandler(FFMpegProcessMixin):
                 sz = Path(f).stat().st_size
                 total_in += sz
                 inputs_log.append({"path": f, "size": _human(sz)})
-            except:
-                pass
+            except Exception as ex:
+                self.logger.debug(f"Failed to get file size for {f}: {ex}")
         self.logger.info("MERGE_START: output='%s'", self._output_path)
         self.logger.info("MERGE_INPUTS: %s", inputs_log)
         self.logger.info("MERGE_CMD: %s", " ".join(self._cmd))

@@ -53,7 +53,8 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 │   ├── media_processor.py: Processes media for the crop tool.
 │   ├── portrait_window.py: The portrait window for the crop tool.
 │   ├── ui_setup.py: Sets up the UI for the crop tool.
-│   └── utils.py: Utility functions for the developer tools.
+│   ├── utils.py: Utility functions for the developer tools.
+│   ├── audio_compressor.py: Tool for audio compression.
 │
 ├── icons/: Contains application icons.
 │   └── Video_Icon_File.ico

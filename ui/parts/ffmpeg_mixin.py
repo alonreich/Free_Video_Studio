@@ -1,10 +1,10 @@
-import os
+﻿import os
 import sys
 import time
 import subprocess
 import json
 import threading
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QAbstractAnimation
 from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton)
@@ -231,7 +231,7 @@ class FfmpegMixin:
         self.progress_bar.setValue(0)
         self.selected_intro_abs_time = None
         try:
-            self.thumb_pick_btn.setText("ðŸ“¸ Set Thumbnail ðŸ“¸")
+            self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
         except Exception:
             pass
         if success:
@@ -262,7 +262,11 @@ class FfmpegMixin:
             pass
         if success:
             output_dir = os.path.dirname(message)
-            dialog = QDialog(self)
+
+            class FinishedDialog(QDialog):
+                def closeEvent(self, e):
+                    self.accept()
+            dialog = FinishedDialog(self)
             dialog.setWindowTitle("Done! Video Processed Successfully!")
             dialog.setModal(True)
             dialog.resize(int(self.width() * 0.5), 100)
@@ -272,13 +276,13 @@ class FfmpegMixin:
             grid = QGridLayout()
             grid.setSpacing(40)
             grid.setContentsMargins(30, 50, 30, 50)
-            whatsapp_button = QPushButton("✆   Share via Whatsapp   ✆")
+            whatsapp_button = QPushButton("✆   SHARE VIA WHATSAPP   ✆")
             whatsapp_button.setFont(QFont("Segoe UI Emoji", 10))
             whatsapp_button.setFixedSize(*button_size)
             whatsapp_button.setStyleSheet("background-color: #328742; color: white;")
             whatsapp_button.setCursor(Qt.PointingHandCursor)
             whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), self._quit_application(dialog)))
-            open_folder_button = QPushButton("Open Output Folder")
+            open_folder_button = QPushButton("OPEN OUTPUT FOLDER")
             open_folder_button.setFixedSize(*button_size)
             open_folder_button.setStyleSheet("background-color: #6c5f9e; color: white;")
             open_folder_button.setCursor(Qt.PointingHandCursor)
@@ -288,7 +292,7 @@ class FfmpegMixin:
                 self._save_app_state_and_config(),
                 QCoreApplication.instance().quit()
             ))
-            new_file_button = QPushButton("📂   Upload a New File   📂")
+            new_file_button = QPushButton("📂   UPLOAD A NEW FILE   📂")
             new_file_button.setFont(QFont("Segoe UI Emoji", 10))
             new_file_button.setFixedSize(*button_size)
             new_file_button.setStyleSheet("background-color: #6c5f9e; color: white;")
@@ -297,13 +301,13 @@ class FfmpegMixin:
             grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
             grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
             grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)
-            done_button = QPushButton("Done")
+            done_button = QPushButton("DONE")
             done_button.setFixedSize(*button_size)
             done_button.setStyleSheet("background-color: #821e1e; color: white; padding: 8px 16px;")
             done_button.setCursor(Qt.PointingHandCursor)
             done_button.clicked.connect(dialog.accept)
             grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
-            finished_button = QPushButton("Close The App!\r\n(Exit)")
+            finished_button = QPushButton("CLOSE THE APP!\r\n(EXIT)")
             finished_button.setFixedSize(*button_size)
             finished_button.setStyleSheet("background-color: #c90e0e; color: white; padding: 8px 16px;")
             finished_button.setCursor(Qt.PointingHandCursor)
@@ -311,6 +315,13 @@ class FfmpegMixin:
             grid.addWidget(finished_button, 2, 0, 1, 3, alignment=Qt.AlignCenter)
             layout.addLayout(grid)
             dialog.setLayout(layout)
+            anim = QPropertyAnimation(dialog, b"windowOpacity")
+            anim.setDuration(1200)
+            anim.setStartValue(1.0)
+            anim.setKeyValueAt(0.5, 0.75)
+            anim.setEndValue(1.0)
+            anim.setLoopCount(-1)
+            anim.start()
             result = dialog.exec_()
             if hasattr(self, '_update_portrait_mask_overlay_state'):
                 self._update_portrait_mask_overlay_state()

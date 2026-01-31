@@ -1,4 +1,4 @@
-import faulthandler
+﻿import faulthandler
 import logging
 import os
 import signal
@@ -125,9 +125,10 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.positionSlider.setValue(self.positionSlider.maximum())
             self.positionSlider.blockSignals(False)
             if getattr(self, "playPauseButton", None):
-                self.playPauseButton.setText("Play")
+                self.playPauseButton.setText("PLAY")
                 self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
+            self.wants_to_play = False
             self.timer.stop()
         except Exception as e:
             if hasattr(self, "logger"):
@@ -144,7 +145,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.playback_rate = value
         if self.vlc_player and self.vlc_player.is_playing():
             self.vlc_player.pause()
-            self.playPauseButton.setText("Play")
+            self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
             if self.timer.isActive():
@@ -178,6 +179,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.original_resolution = ""
         self.is_playing = False
         self.is_processing = False
+        self.wants_to_play = False
         self._is_seeking_from_end = False
         self.volume_shortcut_target = 'main'
         self._phase_is_processing = False
@@ -376,7 +378,9 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             return
         try:
             self.logger.info(f"ACTION: Launching Video Merger: {merger_path}")
-            creation_flags = 0x08000000 if sys.platform == "win32" else 0
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
             subprocess.Popen([sys.executable, "-B", merger_path], cwd=self.base_dir, creationflags=creation_flags)
             self.logger.info("Merger launched successfully. Closing Main App.")
             self.close()
@@ -442,22 +446,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 self.positionSlider.set_music_times(new_music_start_ms, new_music_end_ms)
                 self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start_ms/1000.0:.2f}s, end={new_music_end_ms/1000.0:.2f}s")
         self._update_trim_widgets_from_trim_times()
-
-    def _on_trim_spin_changed(self):
-        dur = float(self.original_duration or 0.0)
-        start = (self.start_minute_input.value() * 60) + self.start_second_input.value()
-        end   = (self.end_minute_input.value()   * 60) + self.end_second_input.value()
-        if dur > 0.0:
-            if start <= 0.0 and end <= 0.0:
-                start, end = 0.0, dur
-            start = max(0.0, min(start, dur))
-            end   = max(0.0, min(end,   dur))
-            eps = max(0.01, min(0.2, dur * 0.001))
-            end = min(dur, max(end, start + eps))
-            if end >= dur and start >= dur - eps:
-                start = max(0.0, dur - eps)
-        self.trim_start, self.trim_end = start, end
-        self.positionSlider.set_trim_times(self.trim_start, self.trim_end)
 
     def set_style(self):
         self.setStyleSheet('''

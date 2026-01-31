@@ -287,7 +287,7 @@ class TrimmedSlider(QSlider):
         self.trim_times_changed.emit(start_ms, end_ms)
 
     def _get_music_line_rect(self):
-        if self.music_start_ms <= 0 or self.music_end_ms <= 0 or not self._show_music:
+        if self.music_end_ms <= 0 or not self._show_music:
             return QRect()
         start_x = self._map_value_to_pos(self.music_start_ms)
         end_x = self._map_value_to_pos(self.music_end_ms)

@@ -1,14 +1,78 @@
-import math
+﻿import math
 import shutil
 import subprocess
 import sys
 import time
 from collections import deque
 import psutil
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal
 from PyQt5.QtGui import QRegion, QIcon
 from PyQt5.QtWidgets import QWidget, QPlainTextEdit
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
+
+class StatsWorker(QThread):
+    stats_ready = pyqtSignal(int, int, int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.running = True
+        self._iops_prev = None
+        self._iops_dyn_max = 1.0
+
+    def stop(self):
+        self.running = False
+        self.wait()
+
+    def run(self):
+        while self.running:
+            try:
+                try:
+                    cpu = int(psutil.cpu_percent(interval=0.5))
+                except Exception:
+                    cpu = 0
+                gpu = 0
+                try:
+                    if _ENABLE_SAFE_GPU_STATS:
+                        r = subprocess.run(
+                            ["nvidia-smi",
+                            "--query-gpu=utilization.gpu,utilization.encoder",
+                            "--format=csv,noheader,nounits", "-i", "0"],
+                            capture_output=True, text=True, timeout=0.6,
+                            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+                        )
+                        row = (r.stdout or "0,0").strip().splitlines()[0].split(",")
+                        gpu_core = int(row[0].strip() or 0)
+                        gpu_enc  = int(row[1].strip() or 0)
+                        gpu = max(0, min(100, max(gpu_core, gpu_enc)))
+                except Exception:
+                    gpu = 0
+                try:
+                    mem = int(psutil.virtual_memory().percent)
+                except Exception:
+                    mem = 0
+                try:
+                    now = time.time()
+                    cur = psutil.disk_io_counters()
+                    cur_ops = int(getattr(cur, "read_count", 0)) + int(getattr(cur, "write_count", 0))
+                    if self._iops_prev is None:
+                        iops = 0.0
+                    else:
+                        dt = max(1e-3, now - self._iops_prev["ts"])
+                        iops = max(0.0, (cur_ops - self._iops_prev["ops"]) / dt)
+                    self._iops_prev = {"ts": now, "ops": cur_ops}
+                    dyn = max(1.0, float(self._iops_dyn_max))
+                    if iops > dyn * 0.98:
+                        dyn = iops * 1.25
+                    self._iops_dyn_max = dyn
+                    iops_pct = int(max(0, min(100, round(100.0 * iops / dyn))))
+                except Exception:
+                    iops_pct = 0
+                self.stats_ready.emit(cpu, gpu, mem, iops_pct)
+            except Exception:
+                pass
+            for _ in range(15):
+                if not self.running: break
+                time.sleep(0.1)
 
 class MergerPhaseOverlayMixin:
     def _append_live_log(self, line: str) -> None:
@@ -50,9 +114,7 @@ class MergerPhaseOverlayMixin:
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
             if not hasattr(self, nm):
                 setattr(self, nm, deque(maxlen=400))
-        self._stats_timer = QTimer(self)
-        self._stats_timer.setInterval(2000)
-        self._stats_timer.timeout.connect(self._sample_perf_counters_safe)
+        self._stats_worker = None
         self._overlay.installEventFilter(self)
 
     def _resize_overlay(self) -> None:
@@ -104,8 +166,10 @@ class MergerPhaseOverlayMixin:
             self._overlay.show()
             self._overlay.raise_()
             QTimer.singleShot(0, self._update_overlay_mask)
-            self._sample_perf_counters_safe()
-            self._stats_timer.start()
+            if self._stats_worker is None:
+                self._stats_worker = StatsWorker(self)
+                self._stats_worker.stats_ready.connect(self._on_stats_ready)
+                self._stats_worker.start()
             if hasattr(self, "_color_pulse_timer"):
                 self._color_pulse_timer.start()
         except Exception:
@@ -114,8 +178,9 @@ class MergerPhaseOverlayMixin:
     def _hide_processing_overlay(self) -> None:
         """Hides overlay, stops timers, and restores button style."""
         try:
-            if getattr(self, "_stats_timer", None):
-                self._stats_timer.stop()
+            if self._stats_worker:
+                self._stats_worker.stop()
+                self._stats_worker = None
             if hasattr(self, "_color_pulse_timer"):
                 self._color_pulse_timer.stop()
         except Exception:
@@ -126,53 +191,14 @@ class MergerPhaseOverlayMixin:
         except Exception:
             pass
 
-    def _sample_perf_counters_safe(self):
-        """Gathers CPU/GPU/etc stats and updates the graph data."""
-        try:
-            cpu = int(psutil.cpu_percent(interval=None))
-        except Exception:
-            cpu = 0
-        gpu = 0
-        try:
-            if _ENABLE_SAFE_GPU_STATS:
-                r = subprocess.run(
-                    ["nvidia-smi",
-                    "--query-gpu=utilization.gpu,utilization.encoder",
-                    "--format=csv,noheader,nounits", "-i", "0"],
-                    capture_output=True, text=True, timeout=0.6,
-                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
-                )
-                row = (r.stdout or "0,0").strip().splitlines()[0].split(",")
-                gpu_core = int(row[0].strip() or 0)
-                gpu_enc  = int(row[1].strip() or 0)
-                gpu = max(0, min(100, max(gpu_core, gpu_enc)))
-        except Exception:
-            gpu = 0
-        try:
-            mem = int(psutil.virtual_memory().percent)
-        except Exception:
-            mem = 0
-        try:
-            now = time.time()
-            cur = psutil.disk_io_counters()
-            cur_ops = int(getattr(cur, "read_count", 0)) + int(getattr(cur, "write_count", 0))
-            prev = getattr(self, "_iops_prev", None)
-            if prev is None:
-                iops = 0.0
-            else:
-                dt = max(1e-3, now - prev["ts"])
-                iops = max(0.0, (cur_ops - prev["ops"]) / dt)
-            self._iops_prev = {"ts": now, "ops": cur_ops}
-            dyn = max(1.0, float(getattr(self, "_iops_dyn_max", 1.0)))
-            if iops > dyn * 0.98:
-                dyn = iops * 1.25
-            self._iops_dyn_max = dyn
-            iops_pct = int(max(0, min(100, round(100.0 * iops / dyn))))
-        except Exception:
-            iops_pct = 0
+    def _on_stats_ready(self, cpu, gpu, mem, iops):
+        """Callback for stats worker."""
         self._cpu_hist.append(cpu)
         self._gpu_hist.append(gpu)
-        self._iops_hist.append(iops_pct)
         self._mem_hist.append(mem)
+        self._iops_hist.append(iops)
         if getattr(self, "_graph", None) and self._graph.isVisible():
             self._graph.update()
+
+    def _sample_perf_counters_safe(self):
+        pass

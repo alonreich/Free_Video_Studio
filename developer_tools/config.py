@@ -1,296 +1,388 @@
-HUD_ELEMENT_MAPPINGS = {
+﻿HUD_ELEMENT_MAPPINGS = {
     "loot": "Loot Area",
     "stats": "Mini Map + Stats",
     "normal_hp": "Own Health Bar (HP)",
     "boss_hp": "Boss HP (For When You Are The Boss Character)",
     "team": "Teammates health Bars (HP)"
 }
-UNIFIED_STYLESHEET = """
-QWidget {
-    background-color: #111827;
-    color: #F9FAFB;
+
+class UI_COLORS:
+    BACKGROUND_DARK = "#111827"
+    BACKGROUND_MEDIUM = "#1F2937"
+    BACKGROUND_LIGHT = "#374151"
+    TEXT_PRIMARY = "#F9FAFB"
+    TEXT_SECONDARY = "#E5E7EB"
+    TEXT_DISABLED = "#9CA3AF"
+    TEXT_ACCENT = "#2563EB"
+    TEXT_WARNING = "#FBBF24"
+    TEXT_DANGER = "#FEE2E2"
+    BORDER_DARK = "#374151"
+    BORDER_MEDIUM = "#4B5563"
+    BORDER_ACCENT = "#2563EB"
+    BORDER_DANGER = "#991B1B"
+    BUTTON_DEFAULT = "#374151"
+    BUTTON_HOVER = "#4B5563"
+    BUTTON_PRESSED = "#1F2937"
+    BUTTON_DISABLED = "#6B7280"
+    PRIMARY = "#2563EB"
+    PRIMARY_HOVER = "#3B82F6"
+    PRIMARY_PRESSED = "#1D4ED8"
+    PRIMARY_BORDER = "#1E3A8A"
+    SUCCESS = "#10B981"
+    SUCCESS_HOVER = "#34D399"
+    SUCCESS_PRESSED = "#059669"
+    SUCCESS_BORDER = "#047857"
+    WARNING = "#F59E0B"
+    WARNING_HOVER = "#FBBF24"
+    WARNING_PRESSED = "#D97706"
+    WARNING_BORDER = "#92400E"
+    DANGER = "#7F1D1D"
+    DANGER_HOVER = "#991B1B"
+    DANGER_PRESSED = "#5B0F0F"
+    DANGER_BORDER = "#4C0519"
+    ACCENT = "#0D9488"
+    ACCENT_HOVER = "#14B8A6"
+    ACCENT_PRESSED = "#0F766E"
+    ACCENT_BORDER = "#0F766E"
+    OVERLAY_DIM = "rgba(0, 0, 0, 120)"
+    TRANSPARENT = "transparent"
+    HANDLE_BLUE = "#3498db"
+    HANDLE_ORANGE = "#e67e22"
+    MARCHING_ANTS = "white"
+    SELECTION_GREEN = "#10B981"
+
+class UI_LAYOUT:
+    WIZARD_HEADER_HEIGHT = 130
+    PROGRESS_BAR_HEIGHT = 18
+    TIME_LABEL_WIDTH = 60
+    BUTTON_HEIGHT = 40
+    BUTTON_PADDING_H = "8px 20px"
+    BUTTON_FONT_SIZE = "13px"
+    BUTTON_BORDER_RADIUS = "8px"
+    BUTTON_BORDER_BOTTOM_WIDTH = "3px"
+    BUTTON_LARGE_PADDING_H = "10px 24px"
+    BUTTON_LARGE_FONT_SIZE = "14px"
+    SCROLLBAR_SIZE = "16px"
+    SCROLLBAR_HANDLE_MIN_LENGTH = "40px"
+    SCROLLBAR_BORDER_RADIUS = "8px"
+    SCROLLBAR_HANDLE_BORDER = "2px"
+    PORTRAIT_TOOLBAR_MARGINS = "5px"
+    PORTRAIT_TOOLBAR_SPACING = "5px"
+    PORTRAIT_TOOLBAR_BORDER_RADIUS = "8px"
+    GRAPHICS_HANDLE_SIZE = 25
+    GRAPHICS_TEXT_PADDING = 40
+    GRAPHICS_TEXT_HEIGHT_PAD = 10
+    GRAPHICS_TEXT_FONT_SIZE = 28
+    GRAPHICS_TEXT_OFFSET_Y = 15
+    GRAPHICS_ITEM_MIN_SIZE = 20
+    PORTRAIT_TOP_BAR_HEIGHT = 150
+    PORTRAIT_BASE_WIDTH = 1080
+    PORTRAIT_BASE_HEIGHT = 1920
+
+class UI_BEHAVIOR:
+    SNAP_THRESHOLD = 5
+    ANT_DASH_PATTERN = "6, 6"
+    ANT_DASH_INTERVAL = 100
+    MAGNIFIER_SIZE = 180
+    MAGNIFIER_ZOOM = 3.0
+    MAGNIFIER_OFFSET = 60
+    MAGNIFIER_CURSOR_CROSS_SIZE = 10
+    MAGNIFIER_BORDER_WIDTH = 3
+    MAGNIFIER_BORDER_COLOR = "#00FF00"
+    MAGNIFIER_CROSS_COLOR = "red"
+    SNAPSHOT_RETRY_INTERVAL_MS = 100
+    SNAPSHOT_MAX_RETRIES = 20
+    SLIDER_UPDATE_INTERVAL_MS = 100
+    VIDEO_VIEW_GUIDANCE_BLINK_INTERVAL = 700
+Z_ORDER_MAP = {
+    'main': 0,
+    'loot': 10,
+    'normal_hp': 20,
+    'boss_hp': 20,
+    'stats': 30,
+    'team': 40
+}
+UNIFIED_STYLESHEET = f"""
+QWidget {{
+    background-color: {UI_COLORS.BACKGROUND_DARK};
+    color: {UI_COLORS.TEXT_PRIMARY};
     font-family: 'Segoe UI', 'Inter', -apple-system, sans-serif;
     font-size: 14px;
     border: none;
-}
-QLabel { 
-    color: #E5E7EB;
+}}
+QLabel {{ 
+    color: {UI_COLORS.TEXT_SECONDARY};
     font-weight: 500;
     padding: 4px;
-}
-QLabel.title {
-    color: #FFFFFF;
+}}
+QLabel.title {{
+    color: {UI_COLORS.TEXT_PRIMARY};
     font-weight: 700;
     font-size: 16px;
-}
-QLabel.status { color: #9CA3AF; font-weight: 600; }
-QLabel.info { color: #9CA3AF; }
-QLabel.italic { font-style: italic; color: #60A5FA; }
-QSlider::groove:horizontal { 
-    border: 1px solid #374151; 
+}}
+QLabel.status {{ color: {UI_COLORS.TEXT_DISABLED}; font-weight: 600; }}
+QLabel.info {{ color: {UI_COLORS.TEXT_DISABLED}; }}
+QLabel.italic {{ font-style: italic; color: {UI_COLORS.TEXT_ACCENT}; }}
+QSlider::groove:horizontal {{ 
+    border: 1px solid {UI_COLORS.BORDER_DARK}; 
     height: 16px; 
-    background: #1F2937; 
+    background: {UI_COLORS.BACKGROUND_MEDIUM}; 
     margin: 2px 0; 
     border-radius: 4px;
-}
-QSlider::handle:horizontal { 
-    background: #2563EB;
-    border: 2px solid #FFFFFF; 
+}}
+QSlider::handle:horizontal {{ 
+    background: {UI_COLORS.PRIMARY};
+    border: 2px solid {UI_COLORS.TEXT_PRIMARY}; 
     width: 22px; 
     height: 40px;
     margin: -12px 0; 
     border-radius: 11px;
-}
-QSlider::handle:horizontal:hover { 
-    background: #3B82F6; 
-    border: 2px solid #FFFFFF;
-}
-QProgressBar {
-    border: 1px solid #374151;
+}}
+QSlider::handle:horizontal:hover {{ 
+    background: {UI_COLORS.PRIMARY_HOVER}; 
+    border: 2px solid {UI_COLORS.TEXT_PRIMARY};
+}}
+QProgressBar {{
+    border: 1px solid {UI_COLORS.BORDER_DARK};
     border-radius: 6px;
-    background-color: #111827;
+    background-color: {UI_COLORS.BACKGROUND_DARK};
     text-align: center;
-    color: #E5E7EB;
-    height: 18px;
-}
-QProgressBar::chunk {
-    background-color: #2563EB;
+    color: {UI_COLORS.TEXT_SECONDARY};
+    height: {UI_LAYOUT.PROGRESS_BAR_HEIGHT}px;
+}}
+QProgressBar::chunk {{
+    background-color: {UI_COLORS.PRIMARY};
     border-radius: 6px;
-}
-QPushButton { 
-    background-color: #374151; 
-    color: #FFFFFF;
-    border: 1px solid #4B5563;
-    padding: 8px 20px;
-    border-radius: 8px;
+}}
+QPushButton {{ 
+    background-color: {UI_COLORS.BUTTON_DEFAULT}; 
+    color: {UI_COLORS.TEXT_PRIMARY};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    padding: {UI_LAYOUT.BUTTON_PADDING_H};
+    border-radius: {UI_LAYOUT.BUTTON_BORDER_RADIUS};
     font-weight: 600; 
-    font-size: 13px;
-    height: 40px;
-    border-bottom: 3px solid #111827;
-}
-QPushButton:hover { 
-    background-color: #4B5563; 
-    border: 1px solid #6B7280;
-    border-bottom: 3px solid #111827;
-}
-QPushButton:pressed { 
-    background-color: #1F2937;
-    border: 1px solid #4B5563;
-    border-bottom: 1px solid #4B5563;
+    font-size: {UI_LAYOUT.BUTTON_FONT_SIZE};
+    height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.BACKGROUND_DARK};
+}}
+QPushButton:hover {{ 
+    background-color: {UI_COLORS.BUTTON_HOVER}; 
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.BACKGROUND_DARK};
+}}
+QPushButton:pressed {{ 
+    background-color: {UI_COLORS.BUTTON_PRESSED};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    border-bottom: 1px solid {UI_COLORS.BORDER_MEDIUM};
     padding-top: 9px;
     padding-left: 21px;
-}
-QPushButton:disabled {
-    background-color: #6B7280;
-    color: #9CA3AF;
-}
-QPushButton.primary {
-    background-color: #2563EB; color: white;
-    border-bottom: 3px solid #1E3A8A;
-}
-QPushButton.primary:hover {
-    background-color: #3B82F6;
-}
-QPushButton.primary:pressed {
-    background-color: #1D4ED8;
-    border-bottom: 1px solid #1D4ED8;
-}
-QPushButton.success {
-    background-color: #10B981; color: white;
-    border-bottom: 3px solid #047857;
-}
-QPushButton.success:hover {
-    background-color: #34D399;
-}
-QPushButton.success:pressed {
-    background-color: #059669;
-    border-bottom: 1px solid #059669;
-}
-QPushButton.warning {
-    background-color: #F59E0B; color: white;
-    border-bottom: 3px solid #92400E;
-}
-QPushButton.warning:hover {
-    background-color: #FBBF24;
-}
-QPushButton.warning:pressed {
-    background-color: #D97706;
-    border-bottom: 1px solid #D97706;
-}
-QPushButton.danger {
-    background-color: #7F1D1D; color: #FEE2E2;
-    border: 1px solid #991B1B;
-    border-bottom: 3px solid #4C0519;
-}
-QPushButton.danger:hover {
-    background-color: #991B1B;
-    border: 1px solid #B91C1C;
-    border-bottom: 3px solid #4C0519;
-}
-QPushButton.danger:pressed {
-    background-color: #5B0F0F;
-    border: 1px solid #5B0F0F;
-    border-bottom: 1px solid #5B0F0F;
-}
-QPushButton.accent {
-    background-color: #0D9488; color: white;
-    border-bottom: 3px solid #0F766E;
-}
-QPushButton.accent:hover {
-    background-color: #14B8A6;
-}
-QPushButton.accent:pressed {
-    background-color: #0F766E;
-    border-bottom: 1px solid #0F766E;
-}
-QPushButton.large {
-    padding: 8px 24px;
-    font-size: 14px;
-}
-QComboBox {
-    background-color: #1F2937;
-    color: #FFFFFF;
-    border: 1px solid #374151;
-    padding: 8px 12px;
-    border-radius: 6px;
-    min-height: 36px;
-    font-size: 13px;
-}
-QComboBox:hover {
-    border: 1px solid #2563EB;
-    background-color: #374151;
-}
-QComboBox::drop-down { 
-    border: 0px;
-    width: 24px;
-}
-QComboBox QAbstractItemView {
-    background-color: #1F2937;
-    color: #E5E7EB;
-    border: 1px solid #374151;
-    selection-background-color: #2563EB;
-}
-QFrame.container {
-    background-color: #1F2937;
-    border-radius: 8px;
-    border: 1px solid #374151;
-}
-QFrame.header {
-    background-color: #1F2937;
-    border-bottom: 2px solid #2563EB;
-}
-QFrame.footer {
-    background-color: #1F2937;
-    padding: 10px;
-}
-QLineEdit {
-    background-color: #1F2937;
-    color: #FFFFFF;
-    border: 1px solid #374151;
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 13px;
-}
-QLineEdit:focus {
-    border: 1px solid #2563EB;
-    background-color: #374151;
-}
-QCheckBox, QRadioButton {
-    color: #E5E7EB;
+}}
+QPushButton:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+}}
+QPushButton.primary {{
+    background-color: {UI_COLORS.PRIMARY}; color: {UI_COLORS.TEXT_PRIMARY};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.PRIMARY_BORDER};
+}}
+QPushButton.primary:hover {{
+    background-color: {UI_COLORS.PRIMARY_HOVER};
+}}
+QPushButton.primary:pressed {{
+    background-color: {UI_COLORS.PRIMARY_PRESSED};
+    border-bottom: 1px solid {UI_COLORS.PRIMARY_PRESSED};
+}}
+QPushButton.success {{
+    background-color: {UI_COLORS.SUCCESS}; color: {UI_COLORS.TEXT_PRIMARY};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.SUCCESS_BORDER};
+}}
+QPushButton.success:hover {{
+    background-color: {UI_COLORS.SUCCESS_HOVER};
+}}
+QPushButton.success:pressed {{
+    background-color: {UI_COLORS.SUCCESS_PRESSED};
+    border-bottom: 1px solid {UI_COLORS.SUCCESS_PRESSED};
+}}
+QPushButton.warning {{
+    background-color: {UI_COLORS.WARNING}; color: {UI_COLORS.TEXT_PRIMARY};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.WARNING_BORDER};
+}}
+QPushButton.warning:hover {{
+    background-color: {UI_COLORS.WARNING_HOVER};
+}}
+QPushButton.warning:pressed {{
+    background-color: {UI_COLORS.WARNING_PRESSED};
+    border-bottom: 1px solid {UI_COLORS.WARNING_PRESSED};
+}}
+QPushButton.danger {{
+    background-color: {UI_COLORS.DANGER}; color: {UI_COLORS.TEXT_DANGER};
+    border: 1px solid {UI_COLORS.DANGER_BORDER};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.DANGER_BORDER};
+}}
+QPushButton.danger:hover {{
+    background-color: {UI_COLORS.DANGER_HOVER};
+    border: 1px solid {UI_COLORS.DANGER_BORDER};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.DANGER_BORDER};
+}}
+QPushButton.danger:pressed {{
+    background-color: {UI_COLORS.DANGER_PRESSED};
+    border: 1px solid {UI_COLORS.DANGER_PRESSED};
+    border-bottom: 1px solid {UI_COLORS.DANGER_PRESSED};
+}}
+QPushButton.accent {{
+    background-color: {UI_COLORS.ACCENT}; color: {UI_COLORS.TEXT_PRIMARY};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.ACCENT_BORDER};
+}}
+QPushButton.accent:hover {{
+    background-color: {UI_COLORS.ACCENT_HOVER};
+}}
+QPushButton.accent:pressed {{
+    background-color: {UI_COLORS.ACCENT_PRESSED};
+    border-bottom: 1px solid {UI_COLORS.ACCENT_PRESSED};
+}}
+QCheckBox {{
+    color: {UI_COLORS.TEXT_PRIMARY};
     spacing: 8px;
-}
-QCheckBox::indicator, QRadioButton::indicator {
+    font-weight: bold;
+}}
+QCheckBox::indicator {{
     width: 18px;
     height: 18px;
-}
-QCheckBox::indicator:checked {
-    background-color: #2563EB;
-    border: 2px solid #2563EB;
-}
-QRadioButton::indicator:checked {
-    background-color: #2563EB;
-    border: 2px solid #2563EB;
-}
-QScrollBar:vertical {
-    background: #1F2937;
-    width: 16px;
-    border-radius: 8px;
-    border: 1px solid #374151;
-}
-QScrollBar::handle:vertical {
-    background: #4B5563;
-    border-radius: 8px;
-    min-height: 40px;
-    border: 2px solid #1F2937;
-}
-QScrollBar::handle:vertical:hover {
-    background: #6B7280;
-    border: 2px solid #374151;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    background: #374151;
-    height: 16px;
+    border: 2px solid {UI_COLORS.BORDER_MEDIUM};
+    border-radius: 4px;
+    background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {UI_COLORS.PRIMARY};
+    border: 2px solid {UI_COLORS.PRIMARY};
+    image: url(./icons/check_white.png); /* Assuming an icon for checked state */
+}}
+QCheckBox::indicator:hover {{
+    border-color: {UI_COLORS.PRIMARY};
+}}
+QScrollBar:vertical {{
+    background: {UI_COLORS.BACKGROUND_MEDIUM};
+    width: {UI_LAYOUT.SCROLLBAR_SIZE};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    border: 1px solid {UI_COLORS.BORDER_DARK};
+}}
+QScrollBar::handle:vertical {{
+    background: {UI_COLORS.BORDER_MEDIUM};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    min-height: {UI_LAYOUT.SCROLLBAR_HANDLE_MIN_LENGTH};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
+}}
+QScrollBar::handle:vertical:hover {{
+    background: {UI_COLORS.BUTTON_HOVER};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BORDER_DARK};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    background: {UI_COLORS.BACKGROUND_LIGHT};
+    height: {UI_LAYOUT.SCROLLBAR_SIZE};
     subcontrol-origin: margin;
-    border-radius: 8px;
-}
-QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
-    background: #2563EB;
-    border: 2px solid #1F2937;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+}}
+QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{
+    background: {UI_COLORS.PRIMARY};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
     border-radius: 6px;
     width: 12px;
     height: 12px;
-}
-QScrollBar::up-arrow:vertical { 
-    image: url(icons/arrow-up.png);
-    subcontrol-position: top;
-}
-QScrollBar::down-arrow:vertical { 
-    image: url(icons/arrow-down.png);
-    subcontrol-position: bottom;
-}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-    background: #1F2937;
-}
-QScrollBar:horizontal {
-    background: #1F2937;
-    height: 16px;
-    border-radius: 8px;
-    border: 1px solid #374151;
-}
-QScrollBar::handle:horizontal {
-    background: #4B5563;
-    border-radius: 8px;
-    min-width: 40px;
-    border: 2px solid #1F2937;
-}
-QScrollBar::handle:horizontal:hover {
-    background: #6B7280;
-    border: 2px solid #374151;
-}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    background: #374151;
-    width: 16px;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: {UI_COLORS.BACKGROUND_MEDIUM};
+}}
+QScrollBar:horizontal {{
+    background: {UI_COLORS.BACKGROUND_MEDIUM};
+    height: {UI_LAYOUT.SCROLLBAR_SIZE};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    border: 1px solid {UI_COLORS.BORDER_DARK};
+}}
+QScrollBar::handle:horizontal {{
+    background: {UI_COLORS.BORDER_MEDIUM};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    min-width: {UI_LAYOUT.SCROLLBAR_HANDLE_MIN_LENGTH};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {UI_COLORS.BUTTON_HOVER};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BORDER_DARK};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    background: {UI_COLORS.BACKGROUND_LIGHT};
+    width: {UI_LAYOUT.SCROLLBAR_SIZE};
     subcontrol-origin: margin;
-    border-radius: 8px;
-}
-QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {
-    background: #2563EB;
-    border: 2px solid #1F2937;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+}}
+QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {{
+    background: {UI_COLORS.PRIMARY};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
     border-radius: 6px;
     width: 12px;
     height: 12px;
-}
-QScrollBar::left-arrow:horizontal { 
-    image: url(icons/arrow-left.png);
-    subcontrol-position: left;
-}
-QScrollBar::right-arrow:horizontal { 
-    image: url(icons/arrow-right.png);
-    subcontrol-position: right;
-}
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-    background: #1F2937;
-}
+}}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: {UI_COLORS.BACKGROUND_MEDIUM};
+}}
+#wizardFrame {{
+    background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+    border-bottom: 2px solid {UI_COLORS.BORDER_DARK};
+}}
+#progressLabel {{
+    background-color: {UI_COLORS.BACKGROUND_LIGHT};
+    color: {UI_COLORS.TEXT_SECONDARY};
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 10px;
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    min-width: 120px;
+}}
+#progressLabel.completed {{
+    background-color: {UI_COLORS.SUCCESS_PRESSED};
+    color: {UI_COLORS.TEXT_PRIMARY};
+    border-color: {UI_COLORS.SUCCESS_BORDER};
+}}
+#progressLabel.current {{
+    background-color: {UI_COLORS.PRIMARY_PRESSED};
+    color: {UI_COLORS.TEXT_PRIMARY};
+    border-color: {UI_COLORS.PRIMARY};
+}}
+#controlsFrame, #portraitFooter {{
+    background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+    padding: 10px;
+    border-top: 1px solid {UI_COLORS.BORDER_DARK};
+}}
+#portraitHeader {{
+    background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+    padding: 10px;
+    border-bottom: 1px solid {UI_COLORS.BORDER_DARK};
+}}
+#portraitPane {{
+    background-color: {UI_COLORS.BACKGROUND_DARK};
+    border-left: 1px solid {UI_COLORS.BORDER_DARK};
+}}
+#roleToolbar {{
+    background-color: {UI_COLORS.OVERLAY_DIM};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    border-radius: {UI_LAYOUT.PORTRAIT_TOOLBAR_BORDER_RADIUS};
+}}
+#roleToolbar QPushButton {{
+    background-color: {UI_COLORS.BUTTON_DEFAULT};
+    color: {UI_COLORS.TEXT_PRIMARY};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-weight: bold;
+    font-size: 11px;
+    height: auto; /* Allow toolbar buttons to size naturally */
+}}
+#roleToolbar QPushButton:hover {{
+    background-color: {UI_COLORS.BUTTON_HOVER};
+}}
+#roleToolbar QPushButton:pressed {{
+    background-color: {UI_COLORS.BUTTON_PRESSED};
+}}
 """
 PORTRAIT_WINDOW_STYLESHEET = UNIFIED_STYLESHEET
 CROP_APP_STYLESHEET = UNIFIED_STYLESHEET

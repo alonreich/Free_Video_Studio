@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+﻿from PyQt5.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QCheckBox,
     QComboBox, QDoubleSpinBox, QSlider, QSizePolicy, QVBoxLayout, QWidget
 )
@@ -40,12 +40,28 @@ class MergerUIWidgetsMixin:
         self.parent.btn_merge.setObjectName("mergeButton")
         self.parent.btn_merge.setFixedSize(221, 41)
         self.parent._merge_btn_base_css = (
-            "background-color: #59A06D;"
-            "color: black;"
-            "font-weight: bold;"
-            "font-size: 16px;"
-            "border-radius: 15px;"
-            "padding: 6px 20px;"
+            "QPushButton#mergeButton {"
+            "  background-color: #59A06D;"
+            "  color: black;"
+            "  font-weight: bold;"
+            "  font-size: 16px;"
+            "  border-radius: 15px;"
+            "  padding: 6px 20px;"
+            "  border: 2px solid #3d7a4d;"
+            "}"
+            "QPushButton#mergeButton:hover {"
+            "  background-color: #6bb47d;"
+            "  border: 2px solid #4d8a5d;"
+            "}"
+            "QPushButton#mergeButton:pressed {"
+            "  background-color: #4d8a5d;"
+            "  border: 2px solid #3d7a4d;"
+            "}"
+            "QPushButton#mergeButton:disabled {"
+            "  background-color: #7a8a7d;"
+            "  color: #555555;"
+            "  border: 2px solid #6a7a6d;"
+            "}"
         )
         self.parent.btn_merge.setStyleSheet(self.parent._merge_btn_base_css)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
@@ -80,8 +96,8 @@ class MergerUIWidgetsMixin:
         self.parent.music_offset_input.setPrefix("Music Start (s): ")
         self.parent.music_offset_input.setMinimumWidth(180)
         self.parent.music_offset_input.setMaximumWidth(180)
-        self.parent.music_offset_input.setDecimals(2)
-        self.parent.music_offset_input.setSingleStep(0.5)
+        self.parent.music_offset_input.setDecimals(3)
+        self.parent.music_offset_input.setSingleStep(0.1)
         self.parent.music_offset_input.setRange(0.0, 0.0)
         self.parent.music_offset_input.setValue(0.0)
         self.parent.music_offset_input.setCursor(Qt.PointingHandCursor)

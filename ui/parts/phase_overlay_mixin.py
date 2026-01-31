@@ -153,6 +153,9 @@ class PhaseOverlayMixin:
         """Shows the overlay and starts stats/pulse timers."""
         self._ensure_overlay_widgets()
         try:
+            for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
+                if hasattr(self, nm):
+                    getattr(self, nm).clear()
             self._overlay.setGeometry(self.rect())
             self._overlay.show()
             self._overlay.raise_()
@@ -214,7 +217,7 @@ class PhaseOverlayMixin:
                     background-color: rgb({r},{g},{b});
                     color: black;
                     font-weight: bold;
-                    font-size: 16px;
+                    font-size: 14px;
                     border-radius: 15px;
                     margin-bottom: 6px;
                 }}

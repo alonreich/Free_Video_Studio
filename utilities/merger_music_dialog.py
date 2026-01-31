@@ -31,8 +31,8 @@ class MusicDialogHandler:
             if saved_geo and len(saved_geo) == 4:
                 try:
                     dlg.setGeometry(*saved_geo)
-                except Exception:
-                    pass
+                except Exception as ex:
+                    self.logger.debug(f"Failed to restore music dialog geometry: {ex}")
             dlg.show()
             dlg.raise_()
             dlg.activateWindow()

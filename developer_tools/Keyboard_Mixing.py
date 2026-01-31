@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+﻿from PyQt5.QtCore import Qt
 
 class KeyboardShortcutMixin:
     def keyPressEvent(self, event):
@@ -16,25 +16,11 @@ class KeyboardShortcutMixin:
                     return
         if key in [Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right]:
             if not event.isAutoRepeat():
-                if (hasattr(self, 'view_stack') and 
-                    hasattr(self, 'draw_widget') and 
-                    self.view_stack.currentWidget() == self.draw_widget and
-                    hasattr(self.draw_widget, '_crop_rect') and
-                    not self.draw_widget._crop_rect.isNull()):
-                    self.arrow_key_press_counter += 1
-                    if self.arrow_key_press_counter % 2 == 0:
-                        delta = 1 
-                        if key == Qt.Key_Up:
-                            self.draw_widget._crop_rect.translate(0, -delta)
-                        elif key == Qt.Key_Down:
-                            self.draw_widget._crop_rect.translate(0, delta)
-                        elif key == Qt.Key_Left:
-                            self.draw_widget._crop_rect.translate(-delta, 0)
-                        elif key == Qt.Key_Right:
-                            self.draw_widget._crop_rect.translate(delta, 0)
-                        self.draw_widget.update()
-                        if hasattr(self, 'update_crop_coordinates_label'):
-                            self.update_crop_coordinates_label(self.draw_widget._crop_rect)
-                    event.accept()
+                if (hasattr(self, 'view_stack') and
+                    hasattr(self, 'draw_scroll_area') and
+                    self.view_stack.currentWidget() == self.draw_scroll_area and
+                    hasattr(self, 'draw_widget') and
+                    hasattr(self.draw_widget, 'handle_key_press')):
+                    self.draw_widget.handle_key_press(event)
                     return
         super().keyPressEvent(event)

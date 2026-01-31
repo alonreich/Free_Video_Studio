@@ -1,7 +1,15 @@
-import os
+﻿import os
 import subprocess
 import sys
-import vlc
+try:
+    import vlc
+except ImportError:
+    raise ImportError(
+        "VLC is not installed or could not be found. "
+        "This application requires a VLC installation to function. "
+        "Please install VLC from https://www.videolan.org/vlc/"
+    )
+
 import logging
 from PyQt5.QtCore import QTimer
 logger = logging.getLogger(__name__)
@@ -12,7 +20,7 @@ class MediaProcessor:
         logger.info("Initializing MediaProcessor...")
         vlc_args = [
             '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-            '--file-caching=200', '--aout=directsound', '--verbose=-1'
+            '--file-caching=200', '--aout=directsound', '--verbose=2'
         ]
         self.vlc_instance = vlc.Instance(vlc_args)
         self.media_player = self.vlc_instance.media_player_new()
@@ -23,6 +31,8 @@ class MediaProcessor:
 
     def load_media(self, file_path, video_frame_winId):
         logger.info(f"Loading media from: {file_path}")
+        if self.media:
+            self.media.release()
         self.input_file_path = file_path
         self.media = self.vlc_instance.media_new(file_path)
         self.media_player.set_media(self.media)
@@ -56,13 +66,13 @@ class MediaProcessor:
         logger.info(f"set_position called with position={position}")
         if self.media_player.is_seekable():
             logger.info(f"Media is seekable, seeking to {position}")
+            try:
+                self.media_player.set_position(position)
+                logger.info(f"Seek command sent to VLC")
+            except Exception as e:
+                logger.error(f"Failed to seek: {e}")
         else:
-            logger.warning(f"Media reports not seekable, but attempting seek anyway")
-        try:
-            self.media_player.set_position(position)
-            logger.info(f"Seek command sent to VLC")
-        except Exception as e:
-            logger.error(f"Failed to seek: {e}")
+            logger.warning(f"Media reports not seekable, cannot seek.")
 
     def stop(self):
         logger.info("Stopping media.")
@@ -71,6 +81,8 @@ class MediaProcessor:
     def set_media_to_null(self):
         logger.info("Unloading media.")
         self.media_player.set_media(None)
+        if self.media:
+            self.media.release()
         self.media = None
         self.original_resolution = None
         self.input_file_path = None

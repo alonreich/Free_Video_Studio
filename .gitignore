@@ -4,6 +4,7 @@ logs/
 config/
 __pycache__/
 advanced/
+mpv_advanced/
 *.mp4
 *.mp3
 !mp3/Cool Dance Background Music (No CopyRights).mp3

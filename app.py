@@ -1,8 +1,10 @@
 
 
 import os, sys, tempfile, psutil
+# Prevent creation of __pycache__ folders
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-os.environ['PYTHONPYCACHEPREFIX'] = ''
+# Use a non-existent directory to prevent cache creation
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 sys.dont_write_bytecode = True
 try:
     import audioop
@@ -151,7 +153,9 @@ if __name__ == "__main__":
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 0) # 0 = SW_HIDE
+                # Show the console window instead of hiding it
+                # 1 = SW_SHOWNORMAL, 5 = SW_SHOW, 9 = SW_RESTORE
+                ctypes.windll.user32.ShowWindow(hwnd, 5)
         except Exception:
             pass
     icon_path = ""

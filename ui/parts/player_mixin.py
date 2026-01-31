@@ -1,4 +1,4 @@
-import vlc
+﻿import vlc
 from PyQt5.QtCore import QTimer
 from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtWidgets import QStyle
@@ -11,7 +11,7 @@ class PlayerMixin:
             if getattr(self, "vlc_music_player", None):
                 self.vlc_music_player.stop()
             if getattr(self, "playPauseButton", None):
-                self.playPauseButton.setText("Play")
+                self.playPauseButton.setText("PLAY")
             if getattr(self, "positionSlider", None):
                 self.positionSlider.setValue(0)
         except Exception:
@@ -31,8 +31,9 @@ class PlayerMixin:
             if self.timer.isActive():
                 self.timer.stop()
             self.vlc_player.pause()
+            self.wants_to_play = False
             self.set_vlc_position(self.vlc_player.get_time(), sync_only=True, force_pause=True)
-            self.playPauseButton.setText("Play")
+            self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
             state = self.vlc_player.get_state()
@@ -41,11 +42,12 @@ class PlayerMixin:
                 if getattr(self, 'vlc_music_player', None):
                     getattr(self, 'vlc_music_player', None).stop()
                 self.set_vlc_position(self.trim_start_ms)
+            self.wants_to_play = True
             self.vlc_player.play()
             self.vlc_player.set_rate(self.playback_rate)
             if not self.timer.isActive():
                 self.timer.start(50)
-            self.playPauseButton.setText("Pause")
+            self.playPauseButton.setText("PAUSE")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
 
     def update_player_state(self):
@@ -68,7 +70,7 @@ class PlayerMixin:
             if is_currently_vlc_playing != getattr(self, "is_playing", None):
                 self.is_playing = is_currently_vlc_playing
                 icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
-                label = "Pause" if self.is_playing else "Play"
+                label = "PAUSE" if self.is_playing else "PLAY"
                 if getattr(self, "playPauseButton", None):
                     self.playPauseButton.setText(label)
                     self.playPauseButton.setIcon(self.style().standardIcon(icon))
@@ -79,19 +81,21 @@ class PlayerMixin:
             target_ms = int(position_ms)
             music_player = getattr(self, 'vlc_music_player', None)
             if music_player and self.add_music_checkbox.isChecked():
-                if self.music_timeline_start_ms > 0 and self.music_timeline_end_ms > 0:
-                    is_video_playing = not force_pause and (self.vlc_player.get_state() == vlc.State.Playing)
+                if self.music_timeline_start_ms >= 0 and self.music_timeline_end_ms > 0:
+                    is_video_playing = not force_pause and getattr(self, 'wants_to_play', False)
                     is_within_music_bounds = self.music_timeline_start_ms <= target_ms < self.music_timeline_end_ms
+                    if is_video_playing and is_within_music_bounds:
+                        if not music_player.is_playing():
+                            music_player.play()
+                    else:
+                        if music_player.is_playing():
+                            music_player.pause()
                     if is_within_music_bounds:
                         time_into_music_clip_ms = target_ms - self.music_timeline_start_ms
                         file_offset_ms = self._get_music_offset_ms() 
-                        music_target_in_file_ms = time_into_music_clip_ms + file_offset_ms
+                        music_target_in_file_ms = int(time_into_music_clip_ms + file_offset_ms)
                         if abs(music_player.get_time() - music_target_in_file_ms) > 400:
                             music_player.set_time(music_target_in_file_ms)
-                    if is_video_playing and is_within_music_bounds:
-                        if not music_player.is_playing(): music_player.play()
-                    else:
-                        if music_player.is_playing(): music_player.pause()
                 else:
                     if music_player.is_playing(): music_player.pause()
             if not sync_only:

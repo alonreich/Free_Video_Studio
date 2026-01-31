@@ -51,7 +51,7 @@ class UiBuilderMixin:
             self.selected_intro_abs_time = pos_s
             mm = int(self.selected_intro_abs_time // 60)
             ss = self.selected_intro_abs_time % 60.0
-            label = f"📸 Thumbnail\n Set: {mm:02d}:{ss:05.2f}"
+            label = f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"
             self.thumb_pick_btn.setText(label)
             if hasattr(self, "logger"):
                 self.logger.info("THUMB: user picked thumbnail at %.3fs (absolute timeline, within trim)", self.selected_intro_abs_time)
@@ -73,15 +73,16 @@ class UiBuilderMixin:
             self._pulse_phase = (getattr(self, "_pulse_phase", 0) + 1) % 8
             if getattr(self, "is_processing", False):
                 dots = "." * (1 + (self._pulse_phase // 2))
-                text = f"Processing{dots}"
-                spinner = "◐◓◑◒"
-                glyph = spinner[(self._pulse_phase // 2) % len(spinner)]
-                px = 26
+                text = f"PROCESSING{dots}"
+                spinner = "⣾⣽⣻⢿⡿⣟⣯⣷"
+                glyph = spinner[self._pulse_phase % len(spinner)]
+                px = 24
                 pm = QPixmap(px, px)
                 pm.fill(Qt.transparent)
                 p = QPainter(pm)
                 f = QFont(self.font())
-                f.setPointSize(px)
+                f.setPixelSize(14)
+                f.setBold(True)
                 p.setFont(f)
                 p.setPen(Qt.black)
                 p.drawText(pm.rect(), Qt.AlignCenter, glyph)
@@ -90,7 +91,7 @@ class UiBuilderMixin:
                 self.process_button.setIcon(QIcon(pm))
                 self.process_button.setIconSize(QSize(px, px))
             else:
-                self.process_button.setText("Process Video")
+                self.process_button.setText("PROCESS VIDEO")
                 self.process_button.setIcon(QIcon())
         except Exception:
             pass
@@ -435,7 +436,7 @@ class UiBuilderMixin:
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.raise_()
         player_col.addWidget(self.positionSlider)
-        self.playPauseButton = QPushButton("Play")
+        self.playPauseButton = QPushButton("PLAY")
         self.playPauseButton.setObjectName("playPauseButton")
         self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.playPauseButton.clicked.connect(self.toggle_play_pause)
@@ -469,7 +470,7 @@ class UiBuilderMixin:
             QPushButton:hover { background-color: #2980b9; }
             QPushButton:pressed { background-color: #1f5f7a; }
         """
-        self.thumb_pick_btn = QPushButton("📸 Set Thumbnail 📸")
+        self.thumb_pick_btn = QPushButton("📸 SET THUMBNAIL 📸")
         self.thumb_pick_btn.setObjectName("thumbPickBtn")
         self.thumb_pick_btn.setStyleSheet(_std_btn_style)
         self.tooltip_manager.add_tooltip(self.thumb_pick_btn, "Select Custom Thumbnail Picture For Sharing")
@@ -501,14 +502,14 @@ class UiBuilderMixin:
         self.end_minute_input.valueChanged.connect(self._on_trim_spin_changed)
         self.end_second_input.valueChanged.connect(self._on_trim_spin_changed)
         self.end_ms_input.valueChanged.connect(self._on_trim_spin_changed)
-        self.start_trim_button = QPushButton("Set Start")
+        self.start_trim_button = QPushButton("SET START")
         self.start_trim_button.setObjectName("startTrimButton")
         self.start_trim_button.setStyleSheet(_std_btn_style)
         self.start_trim_button.clicked.connect(self.set_start_time)
         self.start_trim_button.setFocusPolicy(Qt.NoFocus)
         self.start_trim_button.setCursor(Qt.PointingHandCursor)
         self.tooltip_manager.add_tooltip(self.start_trim_button, "[")
-        self.end_trim_button = QPushButton("Set End")
+        self.end_trim_button = QPushButton("SET END")
         self.end_trim_button.setObjectName("endTrimButton")
         self.end_trim_button.setStyleSheet(_std_btn_style)
         self.end_trim_button.clicked.connect(self.set_end_time)
@@ -551,7 +552,7 @@ class UiBuilderMixin:
         trim_layout.addSpacing(14)
         trim_layout.addWidget(self.end_trim_button)
         trim_layout.addLayout(end_group)
-        self.merge_btn = QPushButton("Merge Multiple \nVideos Into One")
+        self.merge_btn = QPushButton("VIDEO MERGER")
         self.merge_btn.setStyleSheet(
             "background-color: #bfa624; color: black; font-weight:600;"
             "padding:6px 12px; border-radius:6px;"
@@ -652,16 +653,16 @@ class UiBuilderMixin:
             self.quality_value_label.setText(titles[idx])
             self.logger.info(f"OPTION: Video Output Quality -> {titles[idx]}")
         self.quality_slider.valueChanged.connect(_on_quality_changed)
-        self.process_button = QPushButton("Process Video")
+        self.process_button = QPushButton("PROCESS VIDEO")
         self.process_button.setObjectName("processButton")
-        self.process_button.setFixedSize(200, 70)
+        self.process_button.setFixedSize(150, 65)
         self.tooltip_manager.add_tooltip(self.process_button, "Enter")
         self._original_process_btn_style = """
             QPushButton {
-                background-color: #2ab22a;
+                background-color: #146314;
                 color: black;
                 font-weight: bold;
-                font-size: 16px;
+                font-size: 14px;
                 border-radius: 15px;
                 margin-bottom: 6px;
             }
@@ -677,15 +678,15 @@ class UiBuilderMixin:
         self.process_button.setCursor(Qt.PointingHandCursor)
         self.process_button.clicked.connect(self._on_process_clicked)
         self.process_button.setEnabled(False)
-        self.cancel_button = ClickableButton("Cancel")
+        self.cancel_button = ClickableButton("CANCEL")
         self.cancel_button.setObjectName("cancelButton")
-        self.cancel_button.setFixedSize(200, 70)
+        self.cancel_button.setFixedSize(150, 65)
         self.cancel_button.setStyleSheet("""
             QPushButton {
                 background-color: #c0392b;
                 color: white;
                 font-weight: bold;
-                font-size: 16px;
+                font-size: 14px;
                 border-radius: 15px;
                 margin-bottom: 6px;
             }
@@ -822,7 +823,7 @@ class UiBuilderMixin:
         self.status_update_signal.connect(self.on_phase_update)
         self.process_finished_signal.connect(self.on_process_finished)
         self.selected_intro_abs_time = None
-        self.thumb_pick_btn.setText("📸 Set Thumbnail 📸")
+        self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
 
         def _mirror_overlay_progress(pct: int):
             try:
@@ -938,7 +939,7 @@ class UiBuilderMixin:
         slider_vbox.addWidget(self.music_volume_label)
         drop_slider_row.addLayout(slider_vbox)
         right_col.addLayout(drop_slider_row)
-        self.upload_button = QPushButton("📂 Upload Video File 📂")
+        self.upload_button = QPushButton("📂 UPLOAD VIDEO FILE 📂")
         self.upload_button.clicked.connect(self.select_file)
         self.upload_button.setFixedHeight(55)
         self.upload_button.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px; padding: 7px;")
@@ -976,7 +977,15 @@ class UiBuilderMixin:
         bottom_box.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         bb = QVBoxLayout(bottom_box)
         bb.setSpacing(25)
-        self.adv_editor_btn = QPushButton("Advanced\n Video Editor")
+        self.crop_tool_btn = QPushButton("CROP SETTING")
+        self.crop_tool_btn.setStyleSheet(
+            "background-color: #bfa624; color: black; font-weight:600;"
+            "padding:6px 12px; border-radius:6px;"
+        )
+        self.crop_tool_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.crop_tool_btn.setCursor(Qt.PointingHandCursor)
+        self.crop_tool_btn.clicked.connect(self.launch_crop_tool)
+        self.adv_editor_btn = QPushButton("ADVANCED\n VIDEO EDITOR")
         self.adv_editor_btn.setStyleSheet(
             "background-color: #bfa624; color: black; font-weight:600;"
             "padding:6px 12px; border-radius:6px;"
@@ -984,8 +993,9 @@ class UiBuilderMixin:
         self.adv_editor_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.adv_editor_btn.setCursor(Qt.PointingHandCursor)
         self.adv_editor_btn.clicked.connect(self.launch_advanced_editor)
-        bb.addWidget(self.adv_editor_btn, 0, Qt.AlignCenter)
         bb.addWidget(self.merge_btn, 0, Qt.AlignCenter)
+        bb.addWidget(self.crop_tool_btn, 0, Qt.AlignCenter)
+        bb.addWidget(self.adv_editor_btn, 0, Qt.AlignCenter)
         bb.addWidget(self.no_fade_checkbox, 0, Qt.AlignRight)
         right_col.addWidget(bottom_box, 0, Qt.AlignBottom | Qt.AlignRight)
         self.music_volume_slider.valueChanged.connect(self._on_music_volume_changed)
