@@ -1,4 +1,4 @@
-import os
+﻿import os
 import subprocess
 import re
 import shutil
@@ -13,14 +13,14 @@ class MergerEngine(QThread):
     - Handles Audio Resampling to prevent mix failures.
     - Non-blocking I/O.
     """
-    progress = pyqtSignal(int, str) # percent, time_str
-    finished = pyqtSignal(bool, str) # success, msg
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
 
     def __init__(self, ffmpeg_path, cmd_base, output_path, total_duration_sec=0, use_gpu=False):
         super().__init__()
         self.ffmpeg_path = ffmpeg_path
-        self.cmd_base = cmd_base # Base command BEFORE encoding flags
+        self.cmd_base = cmd_base
         self.output_path = output_path
         self.total_duration = max(1.0, float(total_duration_sec))
         self.use_gpu = use_gpu
@@ -35,14 +35,11 @@ class MergerEngine(QThread):
         """
         if not self.use_gpu:
             return ["-c:v", "libx264", "-preset", "medium", "-crf", "23"]
-            
         try:
-            # Probe encoders
             cmd = [self.ffmpeg_path, "-hide_banner", "-encoders"]
             flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             res = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
             out = res.stdout
-            
             if "h264_nvenc" in out:
                 self.logger.info("GPU: NVIDIA NVENC detected.")
                 return ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23"]
@@ -54,32 +51,19 @@ class MergerEngine(QThread):
                 return ["-c:v", "h264_qsv", "-global_quality", "23"]
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
-
         return ["-c:v", "libx264", "-preset", "medium", "-crf", "23"]
 
     def run(self):
         self._is_cancelled = False
-        
-        # Finalize Command
         cmd = list(self.cmd_base)
-        
-        # Audio Standardization (Fixes #3 - 44.1k Downgrade -> 48k Standard)
-        # Fixes #70 - Sample Rate Mismatch
         cmd.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "192k"])
-        
-        # Video Encoding (Fixes #92 - GPU Support, Fix #4 - Invisible GPU)
         cmd.extend(self._detect_gpu_encoder())
-        
-        # Output
         cmd.append(str(self.output_path))
-        
         self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")
-        
         startupinfo = None
         if os.name == 'nt':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
         try:
             self._process = subprocess.Popen(
                 cmd,
@@ -95,18 +79,13 @@ class MergerEngine(QThread):
         except Exception as e:
             self.finished.emit(False, f"Failed to start FFmpeg: {e}")
             return
-
-        # Output parsing loop
-        # Fixes #21 (Deadlock) and #16 (Truncation)
         log_buffer = []
         while True:
             if self._is_cancelled:
                 break
-            
             line = self._process.stdout.readline()
             if not line and self._process.poll() is not None:
                 break
-            
             if line:
                 line = line.strip()
                 self.log_line.emit(line)
@@ -114,13 +93,10 @@ class MergerEngine(QThread):
                 if "Error" in line or "Failed" in line:
                     log_buffer.append(line)
                     if len(log_buffer) > 10: log_buffer.pop(0)
-
-        # Cleanup
         if self._is_cancelled:
             self._kill_process()
             self.finished.emit(False, "Cancelled by user.")
             return
-
         rc = self._process.poll()
         if rc == 0:
             if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:

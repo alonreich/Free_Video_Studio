@@ -1,4 +1,4 @@
-import os
+﻿import os
 import tempfile
 import time
 from PyQt5.QtCore import QThread
@@ -29,7 +29,7 @@ class ProcessThread(QThread):
                  is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
                  bg_music_path=None, bg_music_volume=None, bg_music_offset_ms=0, original_total_duration_ms=0,
                  disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time_ms: int = None,
-                 portrait_text: str = None, music_config=None):
+                 portrait_text: str = None, music_config=None, speed_segments=None):
         super().__init__()
         self.music_config = music_config if music_config else {}
         self.input_path = input_path
@@ -39,6 +39,7 @@ class ProcessThread(QThread):
         self.original_resolution = original_resolution
         self.is_mobile_format = is_mobile_format
         self.speed_factor = float(speed_factor)
+        self.speed_segments = speed_segments if speed_segments else []
         self.script_dir = script_dir
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
         self.bin_dir = os.path.join(self.base_dir, 'binaries')
@@ -116,8 +117,23 @@ class ProcessThread(QThread):
                     vfade_out_duration_ms = fade_dur_ms
             source_cut_duration_ms = source_cut_end_ms - source_cut_start_ms
             final_clip_duration_ms = int(source_cut_duration_ms / self.speed_factor)
-            vfade_out_start_ms = final_clip_duration_ms - int(vfade_out_duration_ms / self.speed_factor)
-            self.duration_corrected_sec = final_clip_duration_ms / 1000.0
+            granular_video_label = "[0:v]"
+            granular_audio_label = None
+            granular_filter_str = ""
+            if self.speed_segments:
+                g_str, g_v, g_a, g_dur = self.filter_builder.build_granular_speed_chain(
+                    self.input_path, source_cut_duration_ms, self.speed_segments, self.speed_factor
+                )
+                granular_filter_str = g_str + ";"
+                granular_video_label = g_v
+                granular_audio_label = g_a
+                self.duration_corrected_sec = g_dur
+                vfade_out_sec = vfade_out_duration_ms / 1000.0 / self.speed_factor
+                final_clip_duration_ms = int(self.duration_corrected_sec * 1000)
+                vfade_out_start_ms = final_clip_duration_ms - int(vfade_out_duration_ms / self.speed_factor)
+            else:
+                vfade_out_start_ms = final_clip_duration_ms - int(vfade_out_duration_ms / self.speed_factor)
+                self.duration_corrected_sec = final_clip_duration_ms / 1000.0
             if self.is_mobile_format and self.portrait_text:
                 fix_hebrew_text(self.portrait_text)
             audio_kbps = 256
@@ -142,7 +158,6 @@ class ProcessThread(QThread):
             video_filter_cmd = ""
             current_encoder = self.encoder_mgr.get_initial_encoder()
             is_nvidia_flow = (current_encoder == 'h264_nvenc')
-            
             if self.is_mobile_format:
                 mobile_coords = self.config.get_mobile_coordinates(self.logger)
                 video_filter_cmd = self.filter_builder.build_mobile_filter(
@@ -160,30 +175,24 @@ class ProcessThread(QThread):
                     )
                     self.status_update_signal.emit("Applying Canvas Trick with Text.")
             else:
-                # Standard Desktop Processing
                 target_w = 1920
                 if not self.keep_highest_res:
                     if self.quality_level == 1: target_w = 1280
                     elif self.quality_level < 1: target_w = 960
                     elif video_bitrate_kbps < 800: target_w = 1280
-                
                 if is_nvidia_flow:
-                    # Optimized CUDA pipeline for resizing
                     target_res = self.filter_builder.build_nvidia_resize(target_w, -2, self.keep_highest_res)
-                    # Note: We omit 'fps=60' in CUDA path to avoid software download penalty. 
-                    # We will rely on output frame rate enforcement if needed, or source frame rate.
                     video_filter_cmd = f"{target_res}" 
                 else:
-                    # Standard CPU pipeline
                     if self.keep_highest_res:
                         target_res = "scale=iw:ih:flags=bilinear"
                     else:
                         target_res = f"scale='min({target_w},iw)':-2:flags=bilinear"
                     video_filter_cmd = f"fps=60,{target_res}"
-
-            video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
+            if not self.speed_segments:
+                video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
             audio_speed_cmd = ""
-            if self.speed_factor != 1.0:
+            if not self.speed_segments and self.speed_factor != 1.0:
                 s = self.speed_factor
                 if 0.5 <= s <= 2.0:
                     audio_speed_cmd = f"atempo={s:.3f}"
@@ -198,8 +207,14 @@ class ProcessThread(QThread):
                 vfade_in_d=int(vfade_in_duration_ms / self.speed_factor) / 1000.0,
                 audio_filter_cmd=audio_speed_cmd
             )
+            if self.speed_segments and granular_audio_label:
+                first_filter = audio_chains[0]
+                if first_filter.startswith("[0:a]"):
+                     audio_chains[0] = first_filter.replace("[0:a]", granular_audio_label)
             core_filters = []
-            vcore_str = f"[0:v]{video_filter_cmd},"
+            if granular_filter_str:
+                core_filters.append(granular_filter_str)
+            vcore_str = f"{granular_video_label}{video_filter_cmd},"
             if not self.disable_fades:
                  vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
                  vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
@@ -208,31 +223,19 @@ class ProcessThread(QThread):
                      vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
                  if vfade_out_sec > 0:
                      vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
-            
-            # Use NV12 for NVIDIA flow to match encoder expectation, YUV420P for others
             pixel_fmt = "nv12" if is_nvidia_flow and not self.is_mobile_format else "yuv420p"
-            
             core_filters.append(
                 f"{vcore_str}format={pixel_fmt},trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1[vcore]"
             )
-            # Note: Removed explicit 'fps=60' from the end of the chain to prevent software bottleneck in NVIDIA flow.
-            # If standard flow needs it, it was added earlier in video_filter_cmd.
-            
             core_filters.extend(audio_chains)
             core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
-            
-            # We already fetched current_encoder above
 
             def run_ffmpeg_command(encoder_name):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(encoder_name, video_bitrate_kbps, eff_dur_sec)
                 self.status_update_signal.emit(f"Processing video ({rc_label})...")
-                
-                # Dynamic Hardware Acceleration Flags
                 hw_flags = ['-hwaccel', 'auto']
                 if encoder_name == 'h264_nvenc' and not self.is_mobile_format:
-                     # Force CUDA decoder -> CUDA frames for our scale_cuda filter
                      hw_flags = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
-                
                 cmd = [
                     ffmpeg_path, '-y'] + hw_flags + [
                     '-progress', 'pipe:1',
@@ -251,10 +254,7 @@ class ProcessThread(QThread):
                     core_path
                 ])
                 if not is_nvidia_flow or self.is_mobile_format:
-                     # Enforce fps=60 via output flag for non-cuda-filter flows if needed
-                     # cmd.extend(['-r', '60']) 
                      pass
-
                 self.logger.info(f"Full FFmpeg command: {' '.join(cmd)}")
                 self.logger.info(f"Attempting encode with '{encoder_name}'...")
                 self.current_process = create_subprocess(cmd, self.logger)

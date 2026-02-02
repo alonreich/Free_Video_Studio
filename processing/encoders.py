@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 class EncoderManager:
     """
@@ -59,15 +59,14 @@ class EncoderManager:
             vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
-            # Optimized for fast-paced motion and high quality
             vcodec.extend([
                 '-rc', 'vbr',
                 '-tune', 'hq', 
-                '-preset', 'p5',       # Balanced High Quality (faster than p6)
-                '-rc-lookahead', '20', # Moderate lookahead
-                '-spatial-aq', '1',    # Spatial Adaptive Quantization
-                '-temporal-aq', '1',   # Temporal Adaptive Quantization
-                '-bf', '3',            # Allow B-frames for efficiency
+                '-preset', 'p5',
+                '-rc-lookahead', '20',
+                '-spatial-aq', '1',
+                '-temporal-aq', '1',
+                '-bf', '3',
                 '-b_ref_mode', 'middle',
                 '-forced-idr', '1'
             ])

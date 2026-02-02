@@ -90,7 +90,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 self.timer.stop()
 
             from ui.widgets.granular_speed_editor import GranularSpeedEditor
-            dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments)
+            current_base_speed = self.speed_spinbox.value()
+            dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=current_base_speed)
             if dlg.exec_() == QDialog.Accepted:
                 self.speed_segments = dlg.speed_segments
                 self.logger.info(f"Granular Speed: Updated with {len(self.speed_segments)} segments.")

@@ -102,7 +102,11 @@ class PlayerMixin:
                         time_into_music_clip_ms = target_ms - self.music_timeline_start_ms
                         file_offset_ms = self._get_music_offset_ms() 
                         music_target_in_file_ms = int(time_into_music_clip_ms + file_offset_ms)
-                        if abs(music_player.get_time() - music_target_in_file_ms) > 400:
+                        should_sync = True
+                        if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked():
+                            if sync_only and not force_pause:
+                                should_sync = False
+                        if should_sync and abs(music_player.get_time() - music_target_in_file_ms) > 400:
                             music_player.set_time(music_target_in_file_ms)
                 else:
                     if music_player.is_playing(): music_player.pause()

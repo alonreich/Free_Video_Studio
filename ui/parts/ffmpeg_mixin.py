@@ -194,7 +194,8 @@ class FfmpegMixin:
                 intro_from_midpoint=(intro_abs_time_ms <= 0),
                 intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None,
                 portrait_text=p_text,
-                music_config=music_conf
+                music_config=music_conf,
+                speed_segments=getattr(self, 'speed_segments', None)
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))

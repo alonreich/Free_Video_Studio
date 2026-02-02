@@ -13,7 +13,7 @@ class GranularTimelineSlider(TrimmedSlider):
         self.segments = []
         self.pending_start = -1
         self.pending_end = -1
-        self.pending_speed = 1.0
+        self.pending_speed = 1.1
 
     def set_segments(self, segments):
         self.segments = segments
@@ -106,12 +106,12 @@ class GranularTimelineSlider(TrimmedSlider):
 
     def _draw_segment_on_groove(self, p, groove_rect, start_ms, end_ms, speed, is_pending=False):
         if end_ms <= start_ms: return
-        if speed > 1.1:
+        if speed > 1.15:
             seg_color = QColor("#3498db")
-        elif speed < 1.1:
+        elif speed < 1.05:
             seg_color = QColor("#e74c3c")
         else:
-            seg_color = QColor("#95a5a6") 
+            seg_color = QColor("#95a5a6")
         alpha = 76
         if is_pending:
             alpha = 100
@@ -131,12 +131,13 @@ class GranularTimelineSlider(TrimmedSlider):
             p.drawRect(seg_rect)
 
 class GranularSpeedEditor(QDialog):
-    def __init__(self, input_file_path, parent=None, initial_segments=None):
+    def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1):
         super().__init__(parent)
         self.setWindowTitle("Granular Speed Editor")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.input_file_path = input_file_path
         self.parent_app = parent
+        self.base_speed = float(base_speed)
         self.speed_segments = list(initial_segments) if initial_segments else []
         self.vlc_instance = vlc.Instance()
         self.vlc_player = self.vlc_instance.media_player_new()
@@ -334,7 +335,7 @@ class GranularSpeedEditor(QDialog):
             self.update_playback_speed(t)
     
     def update_playback_speed(self, current_time):
-        target_speed = 1.0
+        target_speed = self.base_speed
         in_pending = False
         if self.timeline.trimmed_start_ms <= current_time < self.timeline.trimmed_end_ms:
              target_speed = self.speed_spin.value()

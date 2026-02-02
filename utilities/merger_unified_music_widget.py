@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unified Music Widget for improved UX flow.
 Implements a single "Music" button with dropdown arrow and integrated controls.
 """
@@ -38,7 +38,6 @@ class UnifiedMusicWidget(QWidget):
         """Load track usage history from config."""
         self._track_settings = {}
         self._last_used_track = ""
-        # Could integrate with parent config here
         
     def setup_ui(self):
         """Setup the unified music widget UI."""
@@ -48,8 +47,6 @@ class UnifiedMusicWidget(QWidget):
         button_row = QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(2)
-        
-        # Main Toggle Button
         self.toggle_button = QPushButton("Music: Off")
         self.toggle_button.setObjectName("musicToggleButton")
         self.toggle_button.setCheckable(True)
@@ -57,29 +54,21 @@ class UnifiedMusicWidget(QWidget):
         self.toggle_button.setFixedSize(120, 34)
         self.toggle_button.setCursor(Qt.PointingHandCursor)
         self.toggle_button.setToolTip("Toggle background music on/off")
-        
-        # Dropdown Arrow
         self.dropdown_button = QToolButton()
         self.dropdown_button.setText("▼")
         self.dropdown_button.setFixedSize(24, 34)
         self.dropdown_button.setCursor(Qt.PointingHandCursor)
         self.dropdown_button.setToolTip("Show music settings")
-        
         button_row.addWidget(self.toggle_button)
         button_row.addWidget(self.dropdown_button)
-        
-        # Dropdown Panel
         self.dropdown_panel = QFrame()
         self.dropdown_panel.setObjectName("musicDropdownPanel")
         self.dropdown_panel.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self.dropdown_panel.setVisible(False)
         self.dropdown_panel.setMaximumHeight(300)
-        
         panel_layout = QVBoxLayout(self.dropdown_panel)
         panel_layout.setContentsMargins(12, 12, 12, 12)
         panel_layout.setSpacing(8)
-        
-        # Track Selection
         track_row = QHBoxLayout()
         track_row.setSpacing(8)
         track_label = QLabel("Track:")
@@ -90,8 +79,6 @@ class UnifiedMusicWidget(QWidget):
         self.track_combo.setCursor(Qt.PointingHandCursor)
         track_row.addWidget(track_label)
         track_row.addWidget(self.track_combo, 1)
-        
-        # Volume Control
         volume_row = QHBoxLayout()
         volume_row.setSpacing(8)
         volume_label = QLabel("Vol:")
@@ -107,8 +94,6 @@ class UnifiedMusicWidget(QWidget):
         volume_row.addWidget(volume_label)
         volume_row.addWidget(self.volume_slider, 1)
         volume_row.addWidget(self.volume_label)
-        
-        # Offset Control
         offset_row = QHBoxLayout()
         offset_row.setSpacing(8)
         offset_label = QLabel("Start:")
@@ -125,19 +110,15 @@ class UnifiedMusicWidget(QWidget):
         offset_row.addWidget(offset_label)
         offset_row.addWidget(self.offset_spin)
         offset_row.addStretch(1)
-        
-        # Advanced Button
         self.advanced_button = QPushButton("Preview / Edit")
         self.advanced_button.setObjectName("musicAdvancedButton")
         self.advanced_button.setFixedSize(120, 24)
         self.advanced_button.setCursor(Qt.PointingHandCursor)
         self.advanced_button.setToolTip("Preview track or select specific segment")
-        
         panel_layout.addLayout(track_row)
         panel_layout.addLayout(volume_row)
         panel_layout.addLayout(offset_row)
         panel_layout.addWidget(self.advanced_button, 0, Qt.AlignRight)
-        
         main_layout.addLayout(button_row)
         main_layout.addWidget(self.dropdown_panel)
         self.setup_styles()
@@ -197,11 +178,7 @@ class UnifiedMusicWidget(QWidget):
     def on_toggle_changed(self, checked):
         self.music_toggled.emit(checked)
         self._set_controls_enabled(checked)
-        
-        # Logic Fix #19: Update button text
         self.update_button_text()
-        
-        # UX Fix #4: Don't auto-close dropdown if we just enabled it
         if checked and not self._is_expanded:
             self.toggle_dropdown()
             
@@ -235,14 +212,12 @@ class UnifiedMusicWidget(QWidget):
                 self.track_selected.emit(path)
 
     def browse_music_file(self):
-        # Fix #10: Unvalidated Music Files - restrict extensions
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Music File", str(Path.home() / "Music"), 
             "Audio Files (*.mp3 *.wav *.aac *.m4a *.flac *.ogg)"
         )
         if path:
             filename = os.path.basename(path)
-            # Insert before "Browse..."
             idx = self.track_combo.count() - 1
             self.track_combo.insertItem(idx, filename, path)
             self.track_combo.setCurrentIndex(idx)
@@ -263,12 +238,10 @@ class UnifiedMusicWidget(QWidget):
         self.track_combo.blockSignals(True)
         self.track_combo.clear()
         self.track_combo.addItem("No Track Selected", "")
-        
         if os.path.exists(mp3_folder):
             for file in sorted(os.listdir(mp3_folder)):
                 if file.lower().endswith(('.mp3', '.wav', '.aac', '.m4a')):
                     self.track_combo.addItem(file, os.path.join(mp3_folder, file))
-                    
         self.track_combo.addItem("Browse...", "BROWSE_ACTION")
         self.track_combo.blockSignals(False)
 

@@ -1,9 +1,7 @@
-import json
+﻿import json
 from pathlib import Path
 import sys
 import os
-
-# Enforce no-cache policy
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
@@ -62,6 +60,7 @@ def _save_conf(cfg: dict) -> None:
     logger = _get_logger()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
+
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=str(p.parent), prefix=f"{p.name}.tmp.", delete=False) as tmp_file:
             tmp_path = tmp_file.name
@@ -91,14 +90,14 @@ def _ffprobe(ffmpeg_path) -> str:
                 return str(p)
     except Exception:
         pass
-    return "ffprobe" # System PATH fallback
+    return "ffprobe"
 
 def get_disk_free_space(path_str):
     """Returns free space in bytes for the drive containing path."""
     try:
         return shutil.disk_usage(os.path.dirname(os.path.abspath(path_str))).free
     except Exception:
-        return 10**12 # Assume 1TB if check fails to avoid blocking
+        return 10**12
 
 def escape_ffmpeg_path(path: str) -> str:
     """
@@ -106,7 +105,6 @@ def escape_ffmpeg_path(path: str) -> str:
     Single quotes are the main enemy. 
     ' -> '\'' 
     """
-    # Windows paths need forward slashes in concat files for safety
     p = path.replace('\\', '/')
     return p.replace("'", "'\\''")
 

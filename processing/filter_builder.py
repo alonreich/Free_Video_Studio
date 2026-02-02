@@ -75,23 +75,13 @@ class FilterBuilder:
         Builds a CUDA-accelerated scaling filter.
         """
         if keep_highest_res:
-            return "scale_cuda=format=nv12" # Pass-through format, no resize
-        
-        # Similar logic to standard scale: maintain aspect ratio
-        # scale_cuda doesn't support the 'min(1920,iw)' syntax directly in the same way 
-        # combined with expressions easily, but we can use simple exact numbers if we calculated them.
-        # However, scale_cuda DOES support w:h.
-        
-        # We will assume target_w/target_h are calculated or we use the -2 logic.
-        # For simplicity in this targeted optimization:
+            return "scale_cuda=format=nv12"
         if target_w == 1920:
              return "scale_cuda=1920:-2:interp_algo=lanczos:format=nv12"
         elif target_w == 1280:
              return "scale_cuda=1280:-2:interp_algo=lanczos:format=nv12"
         elif target_w == 960:
              return "scale_cuda=960:-2:interp_algo=lanczos:format=nv12"
-        
-        # Fallback for dynamic/unknowns
         return f"scale_cuda={target_w}:-2:interp_algo=lanczos:format=nv12"
 
     def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates):
@@ -258,6 +248,77 @@ class FilterBuilder:
         ]
         drawtext_str = ":".join(drawtext_parts)
         return video_filter_cmd + "," + drawtext_str
+
+    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed):
+        """
+        Builds a complex filter chain for variable speed segments.
+        Returns:
+            video_filter_complex_str: The full complex filter string.
+            v_label: The output video pad label (e.g., "[v_speed_out]").
+            a_label: The output audio pad label (e.g., "[a_speed_out]").
+            final_duration_sec: The calculated total duration of the retimed video.
+        """
+        segments = sorted(speed_segments, key=lambda x: x['start'])
+        chunks = []
+        current_time = 0.0
+        total_duration_sec = duration_ms / 1000.0
+        for seg in segments:
+            seg_start = seg['start'] / 1000.0
+            seg_end = seg['end'] / 1000.0
+            seg_speed = float(seg['speed'])
+            if seg_start > current_time:
+                chunks.append({
+                    'start': current_time,
+                    'end': seg_start,
+                    'speed': float(base_speed)
+                })
+            chunks.append({
+                'start': seg_start,
+                'end': seg_end,
+                'speed': seg_speed
+            })
+            current_time = seg_end
+        if current_time < total_duration_sec:
+            chunks.append({
+                'start': current_time,
+                'end': total_duration_sec,
+                'speed': float(base_speed)
+            })
+        filter_parts = []
+        v_pads = []
+        a_pads = []
+        final_duration = 0.0
+        for i, chunk in enumerate(chunks):
+            start = chunk['start']
+            end = chunk['end']
+            speed = chunk['speed']
+            dur = end - start
+            if dur <= 0: continue
+            final_duration += (dur / speed)
+            filter_parts.append(
+                f"[0:v]trim=start={start:.4f}:end={end:.4f},setpts=(PTS-STARTPTS)/{speed:.4f}[v_chunk_{i}]"
+            )
+            v_pads.append(f"[v_chunk_{i}]")
+            audio_speed_cmd = ""
+            if 0.5 <= speed <= 2.0:
+                audio_speed_cmd = f"atempo={speed:.3f}"
+            else:
+                audio_speed_cmd = f"rubberband=tempo={speed:.3f}:pitch=1:formant=1"
+            filter_parts.append(
+                f"[0:a]atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{audio_speed_cmd}[a_chunk_{i}]"
+            )
+            a_pads.append(f"[a_chunk_{i}]")
+        n_chunks = len(v_pads)
+        v_concat_in = "".join(v_pads)
+        a_concat_in = "".join(a_pads)
+        filter_parts.append(
+            f"{v_concat_in}concat=n={n_chunks}:v=1:a=0[v_speed_out]"
+        )
+        filter_parts.append(
+            f"{a_concat_in}concat=n={n_chunks}:v=0:a=1[a_speed_out]"
+        )
+        full_filter = ";".join(filter_parts)
+        return full_filter, "[v_speed_out]", "[a_speed_out]", final_duration
 
     def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd):
         chain = []
