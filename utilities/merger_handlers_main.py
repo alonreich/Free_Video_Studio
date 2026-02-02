@@ -7,3 +7,4 @@ class MergerHandlers(MergerHandlersListMixin, MergerHandlersDialogsMixin, Merger
     def __init__(self, parent):
         self.parent = parent
         self.logger = parent.logger
+        MergerHandlersListMixin.__init__(self)

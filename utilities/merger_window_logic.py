@@ -8,6 +8,15 @@ class MergerWindowLogic:
     def __init__(self, window):
         self.window = window
 
+    def _is_widget_alive(self, widget):
+        if not widget:
+            return False
+        try:
+            _ = widget.isVisible()
+            return True
+        except RuntimeError:
+            return False
+
     def load_config(self):
         self.window._cfg = _load_conf()
         self.window._last_dir = self.window._cfg.get("last_dir", str(Path.home() / "Downloads"))
@@ -54,33 +63,56 @@ class MergerWindowLogic:
         except Exception as err:
             self.window.logger.error("Error saving config in merger closeEvent: %s", err)
 
+    def get_last_dir(self):
+        return getattr(self.window, "_last_dir", str(Path.home()))
+
+    def set_last_dir(self, path):
+        self.window._last_dir = path
+
+    def get_last_out_dir(self):
+        return getattr(self.window, "_last_out_dir", str(Path.home()))
+
+    def set_last_out_dir(self, path):
+        self.window._last_out_dir = path
+
     def can_anim(self, row, new_row):
         if row == new_row or not (0 <= row < self.window.listw.count()) or not (0 <= new_row < self.window.listw.count()):
             return False
         if getattr(self.window, "_animating", False):
             return False
-        if not self.window.listw.itemWidget(self.window.listw.item(row)) or not self.window.listw.itemWidget(self.window.listw.item(new_row)):
+        w_row = self.window.listw.itemWidget(self.window.listw.item(row))
+        w_new = self.window.listw.itemWidget(self.window.listw.item(new_row))
+        if not self._is_widget_alive(w_row) or not self._is_widget_alive(w_new):
             return False
         return True
 
     def start_swap_animation(self, row, new_row):
+        ghost1 = None
+        ghost2 = None
+        a1 = None
+        a2 = None
         try:
             v = self.window.listw.viewport()
             it1, it2 = self.window.listw.item(row), self.window.listw.item(new_row)
             w1, w2 = self.window.listw.itemWidget(it1), self.window.listw.itemWidget(it2)
+            if not self._is_widget_alive(w1) or not self._is_widget_alive(w2):
+                return False
             r1 = self.window.listw.visualItemRect(it1)
             r2 = self.window.listw.visualItemRect(it2)
             if r1.isNull() or r2.isNull():
                 return False
-            pm1 = w1.grab()
-            pm2 = w2.grab()
+            try:
+                pm1 = w1.grab()
+                pm2 = w2.grab()
+            except RuntimeError:
+                return False
             ghost1 = QLabel(v); ghost1.setPixmap(pm1); ghost1.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             ghost2 = QLabel(v); ghost2.setPixmap(pm2); ghost2.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             ghost1.move(r1.topLeft()); ghost1.show()
             ghost2.move(r2.topLeft()); ghost2.show()
             w1.setVisible(False); w2.setVisible(False)
-            a1 = QPropertyAnimation(ghost1, b"pos", self.window); a1.setDuration(280)
-            a2 = QPropertyAnimation(ghost2, b"pos", self.window); a2.setDuration(280)
+            a1 = QPropertyAnimation(ghost1, b"pos", self.window); a1.setDuration(150)
+            a2 = QPropertyAnimation(ghost2, b"pos", self.window); a2.setDuration(150)
             a1.setStartValue(r1.topLeft()); a1.setEndValue(r2.topLeft()); a1.setEasingCurve(QEasingCurve.InOutQuad)
             a2.setStartValue(r2.topLeft()); a2.setEndValue(r1.topLeft()); a2.setEasingCurve(QEasingCurve.InOutQuad)
             self.window._animating = True
@@ -129,59 +161,83 @@ class MergerWindowLogic:
             return False
 
     def perform_swap(self, row, new_row):
-        """Robustly swaps two items in the list widget by updating their content."""
+        """Redirects swap to move, as swapping neighbors is effectively a move."""
+        self.perform_move(row, new_row)
+        
+    def perform_move(self, from_row, to_row, rebuild_widget: bool = False):
+        """Robustly moves an item from from_row to to_row (insertion)."""
         listw = self.window.listw
-        i1 = listw.item(row)
-        i2 = listw.item(new_row)
-        if not i1 or not i2:
+        if from_row == to_row or from_row < 0 or to_row < 0 or from_row >= listw.count() or to_row >= listw.count():
             return
-        d1 = i1.data(Qt.UserRole)
-        d2 = i2.data(Qt.UserRole)
-        w1 = listw.itemWidget(i1)
-        w2 = listw.itemWidget(i2)
-        if row < new_row:
-            listw.takeItem(row)
-            listw.insertItem(new_row - 1, i1)
-            listw.takeItem(new_row - 1)
-            listw.insertItem(row, i2)
-        else:
-            listw.takeItem(row)
-            listw.insertItem(new_row, i1)
-            listw.takeItem(new_row + 1)
-            listw.insertItem(row, i2)
-        i1.setData(Qt.UserRole, d2)
-        i2.setData(Qt.UserRole, d1)
-        t1 = i1.toolTip()
-        t2 = i2.toolTip()
-        i1.setToolTip(t2)
-        i2.setToolTip(t1)
-        if w1:
-            listw.setItemWidget(i2, w1)
-        if w2:
-            listw.setItemWidget(i1, w2)
-
-        def update_widget_content(item, path, is_original_widget=True):
-            w = listw.itemWidget(item)
-            if not w: 
+        if from_row < to_row:
+            to_row -= 1
+        if from_row == to_row:
+            return
+        updates_prev = listw.updatesEnabled()
+        listw.setUpdatesEnabled(False)
+        blocker = None
+        try:
+            from PyQt5.QtCore import QSignalBlocker
+            blocker = QSignalBlocker(listw)
+        except Exception:
+            blocker = None
+        try:
+            item = listw.item(from_row)
+            if not item:
                 return
-            
-            from PyQt5.QtWidgets import QLabel, QPushButton
-            lbl = w.findChild(QLabel, "fileLabel")
-            if lbl:
-                lbl.setText(os.path.basename(path))
-                lbl.setToolTip(path)
-            btn = w.findChild(QPushButton, "playButton")
-            if btn:
-                btn.setProperty("path", path)
-            w.updateGeometry()
-            w.update()
-        update_widget_content(i1, d2, True)
-        update_widget_content(i2, d1, True)
-        listw.clearSelection()
-        listw.setCurrentRow(new_row)
-        if listw.item(new_row):
-            listw.item(new_row).setSelected(True)
-        listw.viewport().update()
-        listw.updateGeometry()
-        if hasattr(self.window, 'event_handler') and hasattr(self.window.event_handler, 'update_button_states'):
-            self.window.event_handler.update_button_states()
+            path = item.data(Qt.UserRole)
+            probe_data = item.data(Qt.UserRole + 1)
+            self.window.logger.info(f"LOGIC: Moving item '{os.path.basename(str(path))}' from index {from_row} to {to_row}.")
+            existing_widget = None if rebuild_widget else listw.itemWidget(item)
+            if existing_widget and self._is_widget_alive(existing_widget):
+                try:
+                    existing_widget.setParent(self.window)
+                except RuntimeError:
+                    existing_widget = None
+            else:
+                existing_widget = None
+            listw.takeItem(from_row)
+            if rebuild_widget:
+                from PyQt5.QtWidgets import QListWidgetItem
+                new_item = QListWidgetItem()
+                new_item.setToolTip(path)
+                new_item.setData(Qt.UserRole, path)
+                if probe_data:
+                    new_item.setData(Qt.UserRole + 1, probe_data)
+                listw.insertItem(to_row, new_item)
+                item = new_item
+            else:
+                listw.insertItem(to_row, item)
+            if existing_widget and not rebuild_widget:
+                try:
+                    existing_widget.setVisible(True)
+                    item.setSizeHint(existing_widget.sizeHint())
+                    listw.setItemWidget(item, existing_widget)
+                except RuntimeError:
+                    existing_widget = None
+            if not existing_widget:
+                w = self.window.make_item_widget(path)
+                if probe_data:
+                    try:
+                        from utilities.merger_handlers_list import _human_time
+                        dur = float(probe_data.get('format', {}).get('duration', 0))
+                        if dur > 0: w.set_duration_label(_human_time(dur))
+                        streams = probe_data.get('streams', [])
+                        vid = next((s for s in streams if s.get('width')), None)
+                        if vid: w.set_resolution_label(f"{vid['width']}x{vid['height']}")
+                    except: pass
+                item.setSizeHint(w.sizeHint())
+                listw.setItemWidget(item, w)
+            listw.clearSelection()
+            item.setSelected(True)
+            listw.setCurrentItem(item)
+            listw.doItemsLayout()
+            if hasattr(self.window.event_handler, 'update_button_states'):
+                self.window.event_handler.update_button_states()
+        finally:
+            if blocker is not None:
+                try:
+                    blocker.unblock()
+                except Exception:
+                    pass
+            listw.setUpdatesEnabled(updates_prev)

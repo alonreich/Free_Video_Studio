@@ -1,18 +1,18 @@
 class MergerUIStyleMixin:
     def set_style(self):
-        """Applies a dark theme stylesheet similar to the main app."""
+        """Applies a modernized dark theme stylesheet."""
         self.parent.setStyleSheet("""
             QMainWindow, QWidget {
                 background-color: #2c3e50;
                 color: #ecf0f1;
-                font-family: "Helvetica Neue", Arial, sans-serif;
-                font-size: 11px;
+                font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+                font-size: 13px; /* Fix #48: Increased font size */
             }
             QLabel#titleLabel {
-                font-size: 17px;
+                font-size: 18px;
                 font-weight: bold;
                 color: #3498db;
-                padding-bottom: 10px;
+                padding-bottom: 12px;
             }
             QPushButton {
                 background-color: #3498db;
@@ -20,22 +20,22 @@ class MergerUIStyleMixin:
                 border: none;
                 padding: 8px 16px;
                 border-radius: 6px;
-                font-weight: bold;
-                min-height: 20px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background-color: #2980b9;
             }
-            QPushButton[class="move-btn"] {
-                 background-color: #2b7089;
-                 color: white;
-            }
-            QPushButton[class="move-btn"]:hover {
-                 background-color: #3b8099;
-            }
             QPushButton:disabled {
                 background-color: #566573;
                 color: #aeb6bf;
+            }
+            /* Fix #80: Removed non-standard [class=...] selectors */
+            QPushButton#moveUpBtn, QPushButton#moveDownBtn {
+                 background-color: #2b7089;
+                 font-size: 14px;
+            }
+            QPushButton#moveUpBtn:hover, QPushButton#moveDownBtn:hover {
+                 background-color: #3b8099;
             }
             QPushButton#aux-btn {
                  background-color: #2b7089;
@@ -44,84 +44,62 @@ class MergerUIStyleMixin:
                  background-color: #3b8099;
             }
             QPushButton#danger-btn {
-                 background-color: #d96a6a;
-                 color: #ffffff;
+                 background-color: #e74c3c;
             }
             QPushButton#danger-btn:hover {
-                 background-color: #c05252;
+                 background-color: #c0392b;
             }
             QPushButton#mergeButton {
-                background-color: #2ecc71;
-                color: #1e242d;
-                font-weight: bold;
-                padding: 10px 25px;
+                background-color: #27ae60;
+                color: white;
+                font-size: 16px;
+                padding: 12px 30px;
                 border-radius: 8px;
             }
             QPushButton#mergeButton:hover {
-                background-color: #48e68e;
-            }
-            QPushButton#mergeButton:disabled {
-                 background-color: #566573;
-                 color: #aeb6bf;
+                background-color: #2ecc71;
             }
             QPushButton#returnButton {
-                background-color: #bfa624;
-                color: black;
-                font-weight: 600;
-                padding: 6px 12px;
-                border-radius: 6px;
-                min-height: 35px;
+                background-color: #f39c12;
+                color: #2c3e50;
             }
             QPushButton#returnButton:hover {
-                 background-color: #dcbd2f;
-            }
-            QPushButton#returnButton:disabled {
-                 background-color: #566573;
-                 color: #aeb6bf;
+                 background-color: #f1c40f;
             }
             QListWidget {
                 background-color: #34495e;
-                border: 1px solid #4a667a;
+                border: 2px solid #4a667a;
                 border-radius: 8px;
                 padding: 8px;
-                outline: 0;
-                font-size: 9px;
+                font-size: 12px;
+                outline: none;
             }
             QListWidget::item {
-                padding: 0;
-                margin: 2px 0;
-                border: 0;
-                background: transparent;
-                color: #ecf0f1;
+                border-bottom: 1px solid #2c3e50;
+                padding: 4px;
             }
-            QCheckBox { spacing: 8px; }
-            QCheckBox::indicator { width: 16px; height: 16px; }
-            QComboBox {
-                background-color: #4a667a; border: 1px solid #3498db; border-radius: 5px;
-                padding: 4px 8px; min-height: 24px; color: #ecf0f1;
+            QListWidget::item:selected {
+                background-color: #2980b9;
+                border-radius: 4px;
             }
-            QComboBox::drop-down {
-                width: 22px; /* Increased by 7px */
+            QComboBox, QDoubleSpinBox {
+                background-color: #34495e;
+                border: 1px solid #5d6d7e;
+                border-radius: 4px;
+                padding: 6px;
+                min-height: 24px;
             }
-            QComboBox QAbstractItemView {
-                background-color: #34495e; border: 1px solid #4a667a; selection-background-color: #3498db;
-                color: #ecf0f1;
+            QScrollBar:vertical {
+                background: #2c3e50;
+                width: 14px; /* Fix #28: Reduced scrollbar width */
+                margin: 0;
             }
-            QComboBox QAbstractItemView::vertical-scrollbar {
-                width: 37px; /* Increased by 15px */
+            QScrollBar::handle:vertical {
+                background: #5d6d7e;
+                min-height: 20px;
+                border-radius: 7px;
             }
-            QDoubleSpinBox {
-                background-color: #4a667a; border: 1px solid #3498db; border-radius: 5px;
-                padding: 4px 6px; min-height: 24px; color: #ecf0f1;
-            }
-            QSlider::groove:vertical {
-                border: 1px solid #4a4a4a; background: #333; width: 16px; border-radius: 6px;
-            }
-            QSlider::handle:vertical {
-                 background: #7289da; border: 1px solid #5c5c5c;
-                 height: 18px; margin: 0 -2px; border-radius: 6px;
-            }
-            QLabel {
-                 padding: 0; margin: 0;
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)

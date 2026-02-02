@@ -140,6 +140,9 @@ class ProcessThread(QThread):
                 self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
             video_filter_cmd = ""
+            current_encoder = self.encoder_mgr.get_initial_encoder()
+            is_nvidia_flow = (current_encoder == 'h264_nvenc')
+            
             if self.is_mobile_format:
                 mobile_coords = self.config.get_mobile_coordinates(self.logger)
                 video_filter_cmd = self.filter_builder.build_mobile_filter(
@@ -157,17 +160,27 @@ class ProcessThread(QThread):
                     )
                     self.status_update_signal.emit("Applying Canvas Trick with Text.")
             else:
-                if self.keep_highest_res:
-                    target_res = "scale=iw:ih:flags=bilinear"
+                # Standard Desktop Processing
+                target_w = 1920
+                if not self.keep_highest_res:
+                    if self.quality_level == 1: target_w = 1280
+                    elif self.quality_level < 1: target_w = 960
+                    elif video_bitrate_kbps < 800: target_w = 1280
+                
+                if is_nvidia_flow:
+                    # Optimized CUDA pipeline for resizing
+                    target_res = self.filter_builder.build_nvidia_resize(target_w, -2, self.keep_highest_res)
+                    # Note: We omit 'fps=60' in CUDA path to avoid software download penalty. 
+                    # We will rely on output frame rate enforcement if needed, or source frame rate.
+                    video_filter_cmd = f"{target_res}" 
                 else:
-                    if self.quality_level >= 2:
-                        target_res = "scale='min(1920,iw)':-2:flags=bilinear"
-                        if video_bitrate_kbps < 800: target_res = "scale='min(1280,iw)':-2:flags=bilinear"
-                    elif self.quality_level == 1:
-                        target_res = "scale='min(1280,iw)':-2:flags=bilinear"
+                    # Standard CPU pipeline
+                    if self.keep_highest_res:
+                        target_res = "scale=iw:ih:flags=bilinear"
                     else:
-                        target_res = "scale='min(960,iw)':-2:flags=bilinear"
-                video_filter_cmd = f"fps=60,{target_res}"
+                        target_res = f"scale='min({target_w},iw)':-2:flags=bilinear"
+                    video_filter_cmd = f"fps=60,{target_res}"
+
             video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
             audio_speed_cmd = ""
             if self.speed_factor != 1.0:
@@ -195,18 +208,33 @@ class ProcessThread(QThread):
                      vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
                  if vfade_out_sec > 0:
                      vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
+            
+            # Use NV12 for NVIDIA flow to match encoder expectation, YUV420P for others
+            pixel_fmt = "nv12" if is_nvidia_flow and not self.is_mobile_format else "yuv420p"
+            
             core_filters.append(
-                f"{vcore_str}format=yuv420p,trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1,fps=60[vcore]"
+                f"{vcore_str}format={pixel_fmt},trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1[vcore]"
             )
+            # Note: Removed explicit 'fps=60' from the end of the chain to prevent software bottleneck in NVIDIA flow.
+            # If standard flow needs it, it was added earlier in video_filter_cmd.
+            
             core_filters.extend(audio_chains)
             core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
-            current_encoder = self.encoder_mgr.get_initial_encoder()
+            
+            # We already fetched current_encoder above
 
             def run_ffmpeg_command(encoder_name):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(encoder_name, video_bitrate_kbps, eff_dur_sec)
                 self.status_update_signal.emit(f"Processing video ({rc_label})...")
+                
+                # Dynamic Hardware Acceleration Flags
+                hw_flags = ['-hwaccel', 'auto']
+                if encoder_name == 'h264_nvenc' and not self.is_mobile_format:
+                     # Force CUDA decoder -> CUDA frames for our scale_cuda filter
+                     hw_flags = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
+                
                 cmd = [
-                    ffmpeg_path, '-y', '-hwaccel', 'auto',
+                    ffmpeg_path, '-y'] + hw_flags + [
                     '-progress', 'pipe:1',
                     '-ss', f"{source_cut_start_ms / 1000.0:.3f}", 
                     '-t', f"{source_cut_duration_ms / 1000.0:.3f}",
@@ -222,6 +250,11 @@ class ProcessThread(QThread):
                     '-map', '[vcore]', '-map', '[acore]', '-shortest',
                     core_path
                 ])
+                if not is_nvidia_flow or self.is_mobile_format:
+                     # Enforce fps=60 via output flag for non-cuda-filter flows if needed
+                     # cmd.extend(['-r', '60']) 
+                     pass
+
                 self.logger.info(f"Full FFmpeg command: {' '.join(cmd)}")
                 self.logger.info(f"Attempting encode with '{encoder_name}'...")
                 self.current_process = create_subprocess(cmd, self.logger)

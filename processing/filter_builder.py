@@ -70,6 +70,30 @@ class FilterBuilder:
             f"x={x}:y={y}:shadowcolor=black@0.6:shadowx=2:shadowy=2"
         )
 
+    def build_nvidia_resize(self, target_w, target_h, keep_highest_res=False):
+        """
+        Builds a CUDA-accelerated scaling filter.
+        """
+        if keep_highest_res:
+            return "scale_cuda=format=nv12" # Pass-through format, no resize
+        
+        # Similar logic to standard scale: maintain aspect ratio
+        # scale_cuda doesn't support the 'min(1920,iw)' syntax directly in the same way 
+        # combined with expressions easily, but we can use simple exact numbers if we calculated them.
+        # However, scale_cuda DOES support w:h.
+        
+        # We will assume target_w/target_h are calculated or we use the -2 logic.
+        # For simplicity in this targeted optimization:
+        if target_w == 1920:
+             return "scale_cuda=1920:-2:interp_algo=lanczos:format=nv12"
+        elif target_w == 1280:
+             return "scale_cuda=1280:-2:interp_algo=lanczos:format=nv12"
+        elif target_w == 960:
+             return "scale_cuda=960:-2:interp_algo=lanczos:format=nv12"
+        
+        # Fallback for dynamic/unknowns
+        return f"scale_cuda={target_w}:-2:interp_algo=lanczos:format=nv12"
+
     def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates):
         coords_data = mobile_coords
         

@@ -40,7 +40,7 @@ class MusicDialogHandler:
             res = dlg.exec_()
             g = dlg.geometry()
             self.parent._cfg["music_dialog_geometry"] = [g.x(), g.y(), g.width(), g.height()]
-            self.parent.save_config()
+            self.parent.logic_handler.save_config()
             if res == QDialog.Accepted:
                 self.parent.music_offset_input.setValue(dlg.selected_offset)
         except Exception as e:

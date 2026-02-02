@@ -7,6 +7,8 @@ class DraggableListWidget(QListWidget):
         super().__init__(parent)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.drop_indicator_rect = None
+        self.drop_preview_rect = None
+        self.enable_custom_drop_preview = False
         self.setCursor(Qt.PointingHandCursor)
         self.auto_scroll_timer = QTimer()
         self.auto_scroll_timer.timeout.connect(self._auto_scroll)
@@ -21,22 +23,40 @@ class DraggableListWidget(QListWidget):
         self.setSelectionMode(QAbstractItemView.SingleSelection)
 
     def dragMoveEvent(self, event):
-        super().dragMoveEvent(event)
-        index = self.indexAt(event.pos())
-        pos = self.dropIndicatorPosition()
-        if not index.isValid() or pos == QAbstractItemView.OnItem or pos == QAbstractItemView.OnViewport:
+        try:
+            super().dragMoveEvent(event)
+            if not self.enable_custom_drop_preview:
+                return
+            index = self.indexAt(event.pos())
+            pos = self.dropIndicatorPosition()
             self.drop_indicator_rect = None
-        else:
+            self.drop_preview_rect = None
+            if not index.isValid() or pos == QAbstractItemView.OnViewport:
+                if self.viewport():
+                    self.viewport().update()
+                return
             rect = self.visualRect(index)
-            item_height = 40
+            if rect.isNull():
+                return
+            item_height = max(24, rect.height())
+            if pos == QAbstractItemView.OnItem:
+                pos = QAbstractItemView.AboveItem if event.pos().y() < rect.center().y() else QAbstractItemView.BelowItem
             if pos == QAbstractItemView.AboveItem:
-                self.drop_indicator_rect = QRect(rect.left(), rect.top() - item_height, rect.width(), item_height)
+                self.drop_indicator_rect = QRect(rect.left(), rect.top() - 2, rect.width(), 4)
+                self.drop_preview_rect = QRect(rect.left(), rect.top() - item_height, rect.width(), item_height)
             elif pos == QAbstractItemView.BelowItem:
-                self.drop_indicator_rect = QRect(rect.left(), rect.bottom(), rect.width(), item_height)
-            else:
-                self.drop_indicator_rect = None
-        self._handle_auto_scroll_during_drag(event.pos())
-        self.viewport().update()
+                self.drop_indicator_rect = QRect(rect.left(), rect.bottom() - 2, rect.width(), 4)
+                self.drop_preview_rect = QRect(rect.left(), rect.bottom(), rect.width(), item_height)
+            self._handle_auto_scroll_during_drag(event.pos())
+            if self.viewport():
+                self.viewport().update()
+        except Exception:
+            self.drop_indicator_rect = None
+            self.drop_preview_rect = None
+            self.auto_scroll_timer.stop()
+            self.auto_scroll_direction = 0
+            if self.viewport():
+                self.viewport().update()
 
     def _handle_auto_scroll_during_drag(self, pos):
         """Handle auto-scrolling when dragging near top or bottom edges with predictive scrolling."""
@@ -77,37 +97,51 @@ class DraggableListWidget(QListWidget):
 
     def dragLeaveEvent(self, event):
         self.drop_indicator_rect = None
+        self.drop_preview_rect = None
         self.auto_scroll_timer.stop()
         self.auto_scroll_direction = 0
-        self.viewport().update()
+        if self.viewport():
+            self.viewport().update()
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event):
         self.drop_indicator_rect = None
+        self.drop_preview_rect = None
         self.auto_scroll_timer.stop()
         self.auto_scroll_direction = 0
         super().dropEvent(event)
-        self.viewport().update()
+        if self.viewport():
+            self.viewport().update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self.drop_indicator_rect:
-            painter = QPainter(self.viewport())
-            gradient = QLinearGradient(self.drop_indicator_rect.topLeft(), self.drop_indicator_rect.bottomLeft())
-            gradient.setColorAt(0, QColor(66, 174, 255, 230))
-            gradient.setColorAt(1, QColor(0, 120, 215, 230))
-            painter.fillRect(self.drop_indicator_rect, gradient)
-            border_color = QColor(255, 255, 255, 255)
-            pen = painter.pen()
-            pen.setColor(border_color)
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.drawRect(self.drop_indicator_rect.adjusted(0, 0, -1, -1))
-            highlight_rect = self.drop_indicator_rect.adjusted(1, 1, -2, -2)
-            highlight_gradient = QLinearGradient(highlight_rect.topLeft(), highlight_rect.bottomLeft())
-            highlight_gradient.setColorAt(0, QColor(255, 255, 255, 100))
-            highlight_gradient.setColorAt(1, QColor(255, 255, 255, 30))
-            pen.setWidth(1)
-            pen.setColor(QColor(255, 255, 255, 150))
-            painter.setPen(pen)
-            painter.drawRect(highlight_rect)
+        if not self.enable_custom_drop_preview:
+            return
+        if not self.viewport():
+            return
+        preview_rect = self.drop_preview_rect if self.drop_preview_rect and self.drop_preview_rect.isValid() else None
+        indicator_rect = self.drop_indicator_rect if self.drop_indicator_rect and self.drop_indicator_rect.isValid() else None
+        if not preview_rect and not indicator_rect:
+            return
+        painter = QPainter(self.viewport())
+        try:
+            if preview_rect:
+                preview_color = QColor(80, 140, 220, 90)
+                painter.fillRect(preview_rect, preview_color)
+                pen = painter.pen()
+                pen.setColor(QColor(120, 180, 255, 170))
+                pen.setWidth(1)
+                painter.setPen(pen)
+                painter.drawRect(preview_rect.adjusted(0, 0, -1, -1))
+            if indicator_rect:
+                gradient = QLinearGradient(indicator_rect.topLeft(), indicator_rect.bottomLeft())
+                gradient.setColorAt(0, QColor(0, 170, 255, 255))
+                gradient.setColorAt(1, QColor(0, 110, 200, 255))
+                painter.fillRect(indicator_rect, gradient)
+                pen = painter.pen()
+                pen.setColor(QColor(255, 255, 255, 220))
+                pen.setWidth(1)
+                painter.setPen(pen)
+                painter.drawRect(indicator_rect.adjusted(0, 0, -1, -1))
+        finally:
+            painter.end()

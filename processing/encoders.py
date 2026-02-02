@@ -59,14 +59,19 @@ class EncoderManager:
             vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
-            strict_size = (effective_duration_sec <= 20.0)
-            vcodec.extend(['-forced-idr', '1', '-b_ref_mode', 'disabled'])
-            if strict_size:
-                vcodec.extend(['-rc', 'cbr', '-tune', 'hq', '-rc-lookahead', '0', '-bf', '0'])
-                rc_label = "NVENC CBR"
-            else:
-                vcodec.extend(['-rc', 'vbr', '-tune', 'hq', '-multipass', '2', '-rc-lookahead', '8', '-bf', '1'])
-                rc_label = "NVENC VBR"
+            # Optimized for fast-paced motion and high quality
+            vcodec.extend([
+                '-rc', 'vbr',
+                '-tune', 'hq', 
+                '-preset', 'p5',       # Balanced High Quality (faster than p6)
+                '-rc-lookahead', '20', # Moderate lookahead
+                '-spatial-aq', '1',    # Spatial Adaptive Quantization
+                '-temporal-aq', '1',   # Temporal Adaptive Quantization
+                '-bf', '3',            # Allow B-frames for efficiency
+                '-b_ref_mode', 'middle',
+                '-forced-idr', '1'
+            ])
+            rc_label = "NVENC VBR (HQ)"
         elif encoder_name == 'h264_amf':
             vcodec.extend(['-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak'])
             rc_label = "AMD AMF"

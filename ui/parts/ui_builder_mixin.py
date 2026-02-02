@@ -96,6 +96,11 @@ class UiBuilderMixin:
         except Exception:
             pass
 
+    def _handle_granular_click(self):
+        """Delegates granular checkbox click to main window logic."""
+        if hasattr(self, 'open_granular_speed_dialog'):
+            self.open_granular_speed_dialog()
+
     def _safe_add_to_grid(self, layout, w, r=None, c=None, rs=1, cs=1, align=Qt.Alignment()):
         """Add widget whether layout is QGridLayout or QBoxLayout/etc."""
         try:
@@ -787,6 +792,11 @@ class UiBuilderMixin:
         right_group.setAlignment(Qt.AlignVCenter)
         right_group.addWidget(self.quality_container, 0)
         right_group.addStretch(1)
+        self.granular_checkbox = QCheckBox("Granular Speed")
+        self.granular_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; margin-right: 8px;")
+        self.granular_checkbox.setCursor(Qt.PointingHandCursor)
+        self.granular_checkbox.clicked.connect(self._handle_granular_click)
+        right_group.addWidget(self.granular_checkbox, 0)
         right_group.addWidget(speed_widget, 0)
         self.right_group_widget = QWidget(); self.right_group_widget.setLayout(right_group)
         self.right_group_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)

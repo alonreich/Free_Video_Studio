@@ -11,7 +11,7 @@ import vlc
 from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
-                             QMessageBox, QShortcut, QStatusBar, QLabel)
+                             QMessageBox, QShortcut, QStatusBar, QLabel, QDialog)
 
 from PyQt5.QtCore import QObject, QThread
 import tempfile, glob
@@ -64,6 +64,45 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     process_finished_signal = pyqtSignal(bool, str)
     live_log_signal = pyqtSignal(str)
     video_ended_signal = pyqtSignal()
+
+    def open_granular_speed_dialog(self):
+        """Opens the Granular Speed Editor dialog."""
+        try:
+            if not self.input_file_path:
+                 self.granular_checkbox.setChecked(False)
+                 QMessageBox.warning(self, "No Video", "Please load a video first.")
+                 return
+            if not self.granular_checkbox.isChecked():
+                if self.speed_segments:
+                    reply = QMessageBox.question(self, "Disable Granular Speed", 
+                        "This will clear your speed segments. Continue?", QMessageBox.Yes | QMessageBox.No)
+                    if reply == QMessageBox.No:
+                        self.granular_checkbox.setChecked(True)
+                        return
+                self.speed_segments = []
+                return
+            if self.vlc_player:
+                self.vlc_player.stop()
+            self.playPauseButton.setText("PLAY")
+            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            self.is_playing = False
+            if self.timer.isActive():
+                self.timer.stop()
+
+            from ui.widgets.granular_speed_editor import GranularSpeedEditor
+            dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments)
+            if dlg.exec_() == QDialog.Accepted:
+                self.speed_segments = dlg.speed_segments
+                self.logger.info(f"Granular Speed: Updated with {len(self.speed_segments)} segments.")
+                if not self.speed_segments:
+                    self.granular_checkbox.setChecked(False) 
+            else:
+                if not self.speed_segments:
+                    self.granular_checkbox.setChecked(False)
+        except Exception as e:
+            self.logger.critical(f"CRITICAL: Error in Granular Speed Dialog: {e}\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "Error", f"An error occurred opening the editor:\n{e}")
+            self.granular_checkbox.setChecked(False)
 
     def on_hardware_scan_finished(self, detected_mode: str):
         """Receives the result from the background hardware scan."""
@@ -166,6 +205,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.tooltip_manager = ToolTipManager(self)
         self.init_ui()
         self.playback_rate = 1.1
+        self.speed_segments = []
         self.hardware_strategy = hardware_strategy
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser('~'))
         self.trim_start_ms = 0
@@ -625,10 +665,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.process_button.setEnabled(False)
         self.progress_update_signal.emit(0)
         self.on_phase_update("Please upload a new video file.")
-        try:
-            self.quality_slider.setValue(2)
-        except AttributeError:
-            pass
         try:
             self.positionSlider.setRange(0, 0)
             self.positionSlider.setValue(0)

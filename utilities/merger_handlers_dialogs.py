@@ -23,6 +23,8 @@ class MergerHandlersDialogsMixin:
             self.logger.info("OPEN_FOLDER: Opened %s", folder_path)
         except Exception as e:
             self.logger.error("OPEN_FOLDER: Failed to open folder %s | Error: %s", folder_path, e)
+            if hasattr(self.parent, "set_status_message"):
+                self.parent.set_status_message("Failed to open output folder", "color: #ff6b6b; font-weight: bold;", 3000)
 
     def show_success_dialog(self, output_path):
         dialog = QDialog(self.parent)

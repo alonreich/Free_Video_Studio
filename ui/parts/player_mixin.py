@@ -66,6 +66,14 @@ class PlayerMixin:
             if getattr(self, 'vlc_music_player', None) and self.add_music_checkbox.isChecked() and not getattr(self, 'vlc_music_player').is_playing():
                  if self.music_timeline_start_ms <= current_time < self.music_timeline_end_ms:
                     self.set_vlc_position(current_time, sync_only=True)
+            if hasattr(self, 'speed_segments') and self.speed_segments and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
+                target_speed = self.playback_rate
+                for seg in self.speed_segments:
+                    if seg['start'] <= current_time < seg['end']:
+                        target_speed = seg['speed']
+                        break
+                if abs(self.vlc_player.get_rate() - target_speed) > 0.05:
+                    self.vlc_player.set_rate(target_speed)
             is_currently_vlc_playing = self.vlc_player.get_state() == vlc.State.Playing
             if is_currently_vlc_playing != getattr(self, "is_playing", None):
                 self.is_playing = is_currently_vlc_playing
