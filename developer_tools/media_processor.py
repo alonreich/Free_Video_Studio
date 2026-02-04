@@ -1,6 +1,16 @@
 ﻿import os
 import subprocess
 import sys
+import logging
+import tempfile
+import contextlib
+from PyQt5.QtCore import QTimer
+os.environ['VLC_VERBOSE'] = '-1'
+os.environ['VLC_QUIET'] = '1'
+os.environ['VLC_DEBUG'] = '0'
+script_dir = os.path.dirname(os.path.abspath(__file__))
+binaries_dir = os.path.abspath(os.path.join(script_dir, '..', 'binaries'))
+os.environ['VLC_PLUGIN_PATH'] = os.path.join(binaries_dir, 'plugins') if os.path.exists(os.path.join(binaries_dir, 'plugins')) else ''
 try:
     import vlc
 except ImportError:
@@ -9,20 +19,43 @@ except ImportError:
         "This application requires a VLC installation to function. "
         "Please install VLC from https://www.videolan.org/vlc/"
     )
-
-import logging
-from PyQt5.QtCore import QTimer
 logger = logging.getLogger(__name__)
+
+def _suppress_vlc_output():
+    """Context manager to suppress stdout and stderr during VLC initialization."""
+    @contextlib.contextmanager
+    def suppress_output():
+        with open(os.devnull, 'w') as null:
+            with contextlib.redirect_stdout(null), contextlib.redirect_stderr(null):
+                yield
+    return suppress_output()
 
 class MediaProcessor:
     def __init__(self, bin_dir):
         self.bin_dir = bin_dir
         logger.info("Initializing MediaProcessor...")
+        os.environ['VLC_VERBOSE'] = '0'
+        os.environ['VLC_QUIET'] = '1'
+        os.environ['VLC_DEBUG'] = '0'
         vlc_args = [
             '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-            '--file-caching=200', '--aout=directsound', '--verbose=2'
+            '--file-caching=200', '--aout=directsound', '--verbose=0',
+            '--quiet', '--no-stats', '--no-lua', '--no-interact',
+            '--logfile=NUL'
         ]
-        self.vlc_instance = vlc.Instance(vlc_args)
+        with _suppress_vlc_output():
+            self.vlc_instance = vlc.Instance(vlc_args)
+        if not self.vlc_instance:
+            logger.warning("Enhanced VLC args failed, trying minimal args")
+            fallback_args = [
+                '--intf=dummy', '--vout=dummy', '--aout=directsound',
+                '--no-xlib', '--no-video-title-show', '--quiet',
+                '--verbose=0', '--no-stats', '--logfile=NUL'
+            ]
+            with _suppress_vlc_output():
+                self.vlc_instance = vlc.Instance(fallback_args)
+        if not self.vlc_instance:
+            raise RuntimeError("Failed to create VLC instance")
         self.media_player = self.vlc_instance.media_player_new()
         self.media = None
         self.original_resolution = None
@@ -91,27 +124,49 @@ class MediaProcessor:
         if not file_path or not os.path.exists(file_path):
             logger.warning(f"get_video_info failed: file path not provided or does not exist: {file_path}")
             return None
-        QTimer.singleShot(500, lambda: self._fetch_vlc_resolution())
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
-            if not os.path.exists(ffprobe_path):
-                logger.error(f"ffprobe.exe not found at {ffprobe_path}")
-                return None
-            cmd = [
-                ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x',
-                file_path
-            ]
-            logger.info(f"Executing ffprobe command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True,
-                                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-            res_string = result.stdout.strip()
-            if res_string:
-                self.original_resolution = res_string
-                logger.info(f"ffprobe got resolution: {res_string}")
-                return self.original_resolution
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logger.error(f"ffprobe command failed for {file_path}.", exc_info=True)
+            if os.path.exists(ffprobe_path):
+                cmd = [
+                    ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height', '-of', 'json',
+                    file_path
+                ]
+                logger.info(f"Executing ffprobe (JSON) command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True,
+                                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+
+                import json
+                data = json.loads(result.stdout)
+                streams = data.get('streams', [])
+                if streams:
+                    w = streams[0].get('width')
+                    h = streams[0].get('height')
+                    if w and h:
+                        self.original_resolution = f"{w}x{h}"
+                        logger.info(f"ffprobe (JSON) got resolution: {self.original_resolution}")
+                        return self.original_resolution
+        except Exception as e:
+             logger.warning(f"ffprobe (JSON) failed: {e}")
+        try:
+            ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
+            if os.path.exists(ffprobe_path):
+                cmd = [
+                    ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x',
+                    file_path
+                ]
+                logger.info(f"Executing ffprobe (CSV) command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True,
+                                        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
+                res_string = result.stdout.strip()
+                if res_string:
+                    self.original_resolution = res_string
+                    logger.info(f"ffprobe (CSV) got resolution: {res_string}")
+                    return self.original_resolution
+        except Exception as e:
+            logger.error(f"ffprobe (CSV) failed: {e}")
+        QTimer.singleShot(500, lambda: self._fetch_vlc_resolution())
         return None
 
     def _fetch_vlc_resolution(self):
@@ -145,6 +200,9 @@ class MediaProcessor:
             logger.info(f"Executing FFmpeg command: {' '.join(cmd)}")
             subprocess.run(
                 cmd, check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
                 creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             )
             logger.info(f"Successfully created snapshot at {snapshot_path}")

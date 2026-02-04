@@ -32,7 +32,7 @@ def setup_environment(base_dir):
         logger = logging.getLogger("Video_Merger")
         logger.error(f"Primary logger setup failed: {e}")
     try:
-        crash_log = open(os.path.join(base_dir, "hard_crash_trace.txt"), "w", encoding="utf-8")
+        crash_log = open(os.path.join(base_dir, 'logs', 'Video_Merger_hard_crash_trace.log'), "w", encoding="utf-8")
         faulthandler.enable(file=crash_log, all_threads=True)
     except Exception:
         faulthandler.enable()

@@ -96,6 +96,36 @@ class EnhancedCropLogger:
         self.crop_logger.info(f"Rectangle: {self._rect_to_str(rect)}")
         self.crop_logger.info("=" * 50)
 
+    def log_button_click(self, button_name, context=None):
+        """Log a generic button click with optional context."""
+        msg = f"BUTTON CLICKED | '{button_name}'"
+        if context:
+            msg += f" | Context: {context}"
+        self.crop_logger.info(msg)
+
+    def log_user_action(self, action_name, details=None):
+        """Log a general user action with optional details."""
+        msg = f"USER ACTION | {action_name}"
+        if details:
+            msg += f" | Details: {details}"
+        self.crop_logger.info(msg)
+
+    def log_snapshot_taken(self, timestamp_sec, file_path):
+        """Log when a snapshot is successfully taken."""
+        self.crop_logger.info(
+            f"SNAPSHOT CAPTURED | Source Video Time: {timestamp_sec:.2f}s | "
+            f"Saved to: {file_path}"
+        )
+
+    def log_hud_crop_details(self, role, landscape_rect, portrait_pos, portrait_size):
+        """Log the full transformation of a HUD element from landscape to portrait."""
+        self.crop_logger.info("-" * 60)
+        self.crop_logger.info(f"HUD CROP COMPLETED: {role}")
+        self.crop_logger.info(f"  Landscape Rect: {self._rect_to_str(landscape_rect)}")
+        self.crop_logger.info(f"  Portrait Pos:   ({int(portrait_pos.x())}, {int(portrait_pos.y())})")
+        self.crop_logger.info(f"  Portrait Size:  {int(portrait_size[0])}x{int(portrait_size[1])}")
+        self.crop_logger.info("-" * 60)
+
     def log_video_loaded(self, file_path: str, resolution: str):
         """Logs when a new video file is loaded into the application."""
         self.crop_logger.info(f"VIDEO LOADED | Path: '{file_path}' | Resolution: {resolution}")

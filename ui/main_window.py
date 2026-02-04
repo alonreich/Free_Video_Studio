@@ -81,18 +81,37 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                         return
                 self.speed_segments = []
                 return
+            current_ms = 0
             if self.vlc_player:
+                current_ms = self.vlc_player.get_time()
+                if current_ms < 0: current_ms = 0
                 self.vlc_player.stop()
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
             if self.timer.isActive():
                 self.timer.stop()
+            if hasattr(self, 'video_frame'):
+                self.video_frame.setVisible(False)
 
             from ui.widgets.granular_speed_editor import GranularSpeedEditor
             current_base_speed = self.speed_spinbox.value()
-            dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=current_base_speed)
-            if dlg.exec_() == QDialog.Accepted:
+            dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, 
+                                      base_speed=current_base_speed, start_time_ms=current_ms)
+            result = dlg.exec_()
+            if hasattr(self, 'video_frame'):
+                self.video_frame.setVisible(True)
+            if self.vlc_player.get_media() is None:
+                import vlc
+                media = self.vlc_instance.media_new(self.input_file_path)
+                self.vlc_player.set_media(media)
+                if sys.platform.startswith('linux'):
+                    self.vlc_player.set_xwindow(self.video_surface.winId())
+                elif sys.platform == "win32":
+                    self.vlc_player.set_hwnd(self.video_surface.winId())
+                elif sys.platform == "darwin":
+                    self.vlc_player.set_nsobject(self.video_surface.winId())
+            if result == QDialog.Accepted:
                 self.speed_segments = dlg.speed_segments
                 self.logger.info(f"Granular Speed: Updated with {len(self.speed_segments)} segments.")
                 if not self.speed_segments:
@@ -100,10 +119,17 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             else:
                 if not self.speed_segments:
                     self.granular_checkbox.setChecked(False)
+            resume_time = dlg.last_position_ms
+            if resume_time < 0: resume_time = 0
+            self.vlc_player.play()
+            self.vlc_player.pause()
+            self.set_vlc_position(resume_time)
         except Exception as e:
             self.logger.critical(f"CRITICAL: Error in Granular Speed Dialog: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"An error occurred opening the editor:\n{e}")
             self.granular_checkbox.setChecked(False)
+            if hasattr(self, 'video_frame'):
+                self.video_frame.setVisible(True)
 
     def on_hardware_scan_finished(self, detected_mode: str):
         """Receives the result from the background hardware scan."""
@@ -362,19 +388,16 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 command.append(self.input_file_path)
             env = os.environ.copy()
             env["PYTHONPATH"] = self.base_dir + os.pathsep + env.get("PYTHONPATH", "")
-            creation_flags = 0
-            if sys.platform == "win32":
-                creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            self.logger.info(f"Command: {command}")
             proc = subprocess.Popen(
                 command, 
                 cwd=self.base_dir, 
                 env=env,
-                creationflags=creation_flags,
                 stderr=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 text=True
             )
-            QTimer.singleShot(1500, lambda: self._finalize_switch(proc))
+            QTimer.singleShot(3000, lambda: self._finalize_switch(proc))
         except Exception as e:
             self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool.\n\nError: {e}")

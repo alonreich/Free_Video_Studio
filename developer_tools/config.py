@@ -5,6 +5,12 @@
     "boss_hp": "Boss HP (For When You Are The Boss Character)",
     "team": "Teammates health Bars (HP)"
 }
+HUD_ELEMENT_KEYS_BY_NAME = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
+
+def get_tech_key_from_role(role: str) -> str:
+    if not role:
+        return "unknown"
+    return HUD_ELEMENT_KEYS_BY_NAME.get(role, "unknown")
 
 class UI_COLORS:
     BACKGROUND_DARK = "#111827"
@@ -53,16 +59,16 @@ class UI_COLORS:
 
 class UI_LAYOUT:
     WIZARD_HEADER_HEIGHT = 130
-    PROGRESS_BAR_HEIGHT = 18
+    PROGRESS_BAR_HEIGHT = 25
     TIME_LABEL_WIDTH = 60
-    BUTTON_HEIGHT = 40
-    BUTTON_PADDING_H = "8px 20px"
-    BUTTON_FONT_SIZE = "13px"
-    BUTTON_BORDER_RADIUS = "8px"
+    BUTTON_HEIGHT = 32
+    BUTTON_PADDING_H = "1px 10px"
+    BUTTON_FONT_SIZE = "11px"
+    BUTTON_BORDER_RADIUS = "3px"
     BUTTON_BORDER_BOTTOM_WIDTH = "3px"
-    BUTTON_LARGE_PADDING_H = "10px 24px"
-    BUTTON_LARGE_FONT_SIZE = "14px"
-    SCROLLBAR_SIZE = "16px"
+    BUTTON_LARGE_PADDING_H = "2px 12px"
+    BUTTON_LARGE_FONT_SIZE = "12px"
+    SCROLLBAR_SIZE = "22px"
     SCROLLBAR_HANDLE_MIN_LENGTH = "40px"
     SCROLLBAR_BORDER_RADIUS = "8px"
     SCROLLBAR_HANDLE_BORDER = "2px"
@@ -78,9 +84,13 @@ class UI_LAYOUT:
     PORTRAIT_TOP_BAR_HEIGHT = 150
     PORTRAIT_BASE_WIDTH = 1080
     PORTRAIT_BASE_HEIGHT = 1920
+    PORTRAIT_BOTTOM_PADDING = 150
+    ROLE_TOOLBAR_PADDING = 16
+    ROLE_TOOLBAR_OFFSET = 12
+    ROLE_TOOLBAR_EDGE_MARGIN = 8
 
 class UI_BEHAVIOR:
-    SNAP_THRESHOLD = 5
+    SNAP_THRESHOLD = 15
     ANT_DASH_PATTERN = "6, 6"
     ANT_DASH_INTERVAL = 100
     MAGNIFIER_SIZE = 180
@@ -94,6 +104,11 @@ class UI_BEHAVIOR:
     SNAPSHOT_MAX_RETRIES = 20
     SLIDER_UPDATE_INTERVAL_MS = 100
     VIDEO_VIEW_GUIDANCE_BLINK_INTERVAL = 700
+    MAGIC_WAND_MAX_SECONDS = 8
+    MAGIC_WAND_PREVIEW_DELAY_MS = 450
+    UNDO_COALESCE_WINDOW_MS = 400
+    SELECTION_MIN_SIZE = 10
+    KEYBOARD_NUDGE_STEP = 0.5
 Z_ORDER_MAP = {
     'main': 0,
     'loot': 10,
@@ -162,7 +177,8 @@ QPushButton {{
     border-radius: {UI_LAYOUT.BUTTON_BORDER_RADIUS};
     font-weight: 600; 
     font-size: {UI_LAYOUT.BUTTON_FONT_SIZE};
-    height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    min-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    max-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
     border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.BACKGROUND_DARK};
 }}
 QPushButton:hover {{ 
@@ -174,12 +190,16 @@ QPushButton:pressed {{
     background-color: {UI_COLORS.BUTTON_PRESSED};
     border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     border-bottom: 1px solid {UI_COLORS.BORDER_MEDIUM};
-    padding-top: 9px;
-    padding-left: 21px;
+    padding-top: 2px;
+    padding-left: 12px;
 }}
 QPushButton:disabled {{
     background-color: {UI_COLORS.BUTTON_DISABLED};
     color: {UI_COLORS.TEXT_DISABLED};
+}}
+QPushButton:checked {{
+    background-color: {UI_COLORS.ACCENT};
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.ACCENT_BORDER};
 }}
 QPushButton.primary {{
     background-color: {UI_COLORS.PRIMARY}; color: {UI_COLORS.TEXT_PRIMARY};
@@ -278,13 +298,14 @@ QScrollBar::handle:vertical:hover {{
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     background: {UI_COLORS.BACKGROUND_LIGHT};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     height: {UI_LAYOUT.SCROLLBAR_SIZE};
     subcontrol-origin: margin;
     border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
 }}
 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{
-    background: {UI_COLORS.PRIMARY};
-    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
+    background: {UI_COLORS.TEXT_PRIMARY};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.PRIMARY};
     border-radius: 6px;
     width: 12px;
     height: 12px;
@@ -310,13 +331,14 @@ QScrollBar::handle:horizontal:hover {{
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     background: {UI_COLORS.BACKGROUND_LIGHT};
+    border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     width: {UI_LAYOUT.SCROLLBAR_SIZE};
     subcontrol-origin: margin;
     border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
 }}
 QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {{
-    background: {UI_COLORS.PRIMARY};
-    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.BACKGROUND_MEDIUM};
+    background: {UI_COLORS.TEXT_PRIMARY};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid {UI_COLORS.PRIMARY};
     border-radius: 6px;
     width: 12px;
     height: 12px;
@@ -350,12 +372,12 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 }}
 #controlsFrame, #portraitFooter {{
     background-color: {UI_COLORS.BACKGROUND_MEDIUM};
-    padding: 10px;
+    padding: 4px;
     border-top: 1px solid {UI_COLORS.BORDER_DARK};
 }}
 #portraitHeader {{
     background-color: {UI_COLORS.BACKGROUND_MEDIUM};
-    padding: 10px;
+    padding: 4px;
     border-bottom: 1px solid {UI_COLORS.BORDER_DARK};
 }}
 #portraitPane {{
@@ -367,6 +389,18 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     border-radius: {UI_LAYOUT.PORTRAIT_TOOLBAR_BORDER_RADIUS};
 }}
+#uploadHintContainer {{
+    background-color: #000000;
+    border: 2px solid #7DD3FC;
+    border-radius: 10px;
+}}
+#uploadHintLabel {{
+    color: #7DD3FC;
+    font-family: Arial;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 6px 18px;
+}}
 #roleToolbar QPushButton {{
     background-color: {UI_COLORS.BUTTON_DEFAULT};
     color: {UI_COLORS.TEXT_PRIMARY};
@@ -375,7 +409,8 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     padding: 6px 10px;
     font-weight: bold;
     font-size: 11px;
-    height: auto; /* Allow toolbar buttons to size naturally */
+    min-height: 35px;
+    max-height: 35px;
 }}
 #roleToolbar QPushButton:hover {{
     background-color: {UI_COLORS.BUTTON_HOVER};
@@ -386,6 +421,21 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 """
 PORTRAIT_WINDOW_STYLESHEET = UNIFIED_STYLESHEET
 CROP_APP_STYLESHEET = UNIFIED_STYLESHEET
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

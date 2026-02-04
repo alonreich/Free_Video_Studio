@@ -155,49 +155,30 @@ class ProcessThread(QThread):
             if video_bitrate_kbps > MAX_SAFE_BITRATE:
                 self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
-            video_filter_cmd = ""
             current_encoder = self.encoder_mgr.get_initial_encoder()
-            is_nvidia_flow = (current_encoder == 'h264_nvenc')
-            if self.is_mobile_format:
-                mobile_coords = self.config.get_mobile_coordinates(self.logger)
-                video_filter_cmd = self.filter_builder.build_mobile_filter(
-                    mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay
-                )
-                if self.portrait_text:
-                    size, lines = self.text_wrapper.fit_and_wrap(self.portrait_text)
-                    txt_wrapped = "\n".join(lines)
-                    final_text_content = apply_bidi_formatting(txt_wrapped)
-                    textfile_path = os.path.join(temp_dir, f"drawtext-{os.getpid()}-{int(time.time())}.txt")
-                    with open(textfile_path, "w", encoding="utf-8") as tf:
-                        tf.write(final_text_content)
-                    video_filter_cmd = self.filter_builder.add_drawtext_filter(
-                        video_filter_cmd, textfile_path, size, self.config.line_spacing
-                    )
-                    self.status_update_signal.emit("Applying Canvas Trick with Text.")
-            else:
-                target_w = 1920
-                if not self.keep_highest_res:
-                    if self.quality_level == 1: target_w = 1280
-                    elif self.quality_level < 1: target_w = 960
-                    elif video_bitrate_kbps < 800: target_w = 1280
-                if is_nvidia_flow:
-                    target_res = self.filter_builder.build_nvidia_resize(target_w, -2, self.keep_highest_res)
-                    video_filter_cmd = f"{target_res}" 
-                else:
-                    if self.keep_highest_res:
-                        target_res = "scale=iw:ih:flags=bilinear"
-                    else:
-                        target_res = f"scale='min({target_w},iw)':-2:flags=bilinear"
-                    video_filter_cmd = f"fps=60,{target_res}"
-            if not self.speed_segments:
-                video_filter_cmd += f",setpts=PTS/{self.speed_factor}"
+            textfile_path = None
+            size = None
+            if self.is_mobile_format and self.portrait_text:
+                size, lines = self.text_wrapper.fit_and_wrap(self.portrait_text)
+                txt_wrapped = "\n".join(lines)
+                final_text_content = apply_bidi_formatting(txt_wrapped)
+                textfile_path = os.path.join(temp_dir, f"drawtext-{os.getpid()}-{int(time.time())}.txt")
+                with open(textfile_path, "w", encoding="utf-8") as tf:
+                    tf.write(final_text_content)
+                self.status_update_signal.emit("Applying Canvas Trick with Text.")
             audio_speed_cmd = ""
             if not self.speed_segments and self.speed_factor != 1.0:
                 s = self.speed_factor
-                if 0.5 <= s <= 2.0:
-                    audio_speed_cmd = f"atempo={s:.3f}"
-                else:
-                    audio_speed_cmd = f"rubberband=tempo={s:.3f}:pitch=1:formant=1"
+                audio_speed_filters = []
+                temp_speed = s
+                while temp_speed < 0.5:
+                    audio_speed_filters.append("atempo=0.5")
+                    temp_speed /= 0.5
+                while temp_speed > 2.0:
+                    audio_speed_filters.append("atempo=2.0")
+                    temp_speed /= 2.0
+                audio_speed_filters.append(f"atempo={temp_speed:.4f}")
+                audio_speed_cmd = ",".join(audio_speed_filters)
             audio_chains = self.filter_builder.build_audio_chain(
                 music_config=self.music_config,
                 video_start_time=self.start_time_ms / 1000.0,
@@ -211,31 +192,52 @@ class ProcessThread(QThread):
                 first_filter = audio_chains[0]
                 if first_filter.startswith("[0:a]"):
                      audio_chains[0] = first_filter.replace("[0:a]", granular_audio_label)
-            core_filters = []
-            if granular_filter_str:
-                core_filters.append(granular_filter_str)
-            vcore_str = f"{granular_video_label}{video_filter_cmd},"
-            if not self.disable_fades:
-                 vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
-                 vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
-                 vfade_out_start_sec = vfade_out_start_ms / 1000.0
-                 if vfade_in_sec > 0:
-                     vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
-                 if vfade_out_sec > 0:
-                     vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
-            pixel_fmt = "nv12" if is_nvidia_flow and not self.is_mobile_format else "yuv420p"
-            core_filters.append(
-                f"{vcore_str}format={pixel_fmt},trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1[vcore]"
-            )
-            core_filters.extend(audio_chains)
             core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
 
             def run_ffmpeg_command(encoder_name):
+                attempt_is_nvidia = (encoder_name == 'h264_nvenc')
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(encoder_name, video_bitrate_kbps, eff_dur_sec)
+                if self.is_mobile_format:
+                    mobile_coords = self.config.get_mobile_coordinates(self.logger)
+                    v_filter_cmd = self.filter_builder.build_mobile_filter(
+                        mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay
+                    )
+                    if self.portrait_text:
+                        v_filter_cmd = self.filter_builder.add_drawtext_filter(
+                            v_filter_cmd, textfile_path, size, self.config.line_spacing
+                        )
+                else:
+                    t_w = 1920
+                    if not self.keep_highest_res:
+                        if self.quality_level == 1: t_w = 1280
+                        elif self.quality_level < 1: t_w = 960
+                        elif video_bitrate_kbps < 800: t_w = 1280
+                    if self.keep_highest_res:
+                        target_res = "scale=iw:ih:flags=bilinear"
+                    else:
+                        target_res = f"scale='min({t_w},iw)':-2:flags=bilinear"
+                    v_filter_cmd = f"fps=60,{target_res}"
+                if not self.speed_segments:
+                    v_filter_cmd += f",setpts=PTS/{self.speed_factor}"
+                attempt_core_filters = []
+                if granular_filter_str:
+                    attempt_core_filters.append(granular_filter_str)
+                vcore_str = f"{granular_video_label}{v_filter_cmd},"
+                if not self.disable_fades:
+                     vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
+                     vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
+                     vfade_out_start_sec = vfade_out_start_ms / 1000.0
+                     if vfade_in_sec > 0:
+                         vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
+                     if vfade_out_sec > 0:
+                         vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
+                p_fmt = "yuv420p"
+                attempt_core_filters.append(
+                    f"{vcore_str}format={p_fmt},trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1[vcore]"
+                )
+                attempt_core_filters.extend(audio_chains)
                 self.status_update_signal.emit(f"Processing video ({rc_label})...")
-                hw_flags = ['-hwaccel', 'auto']
-                if encoder_name == 'h264_nvenc' and not self.is_mobile_format:
-                     hw_flags = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
+                hw_flags = []
                 cmd = [
                     ffmpeg_path, '-y'] + hw_flags + [
                     '-progress', 'pipe:1',
@@ -249,12 +251,10 @@ class ProcessThread(QThread):
                 cmd.extend([
                     '-movflags', '+faststart',
                     '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
-                    '-filter_complex', ';'.join(core_filters),
+                    '-filter_complex', ';'.join(attempt_core_filters),
                     '-map', '[vcore]', '-map', '[acore]', '-shortest',
                     core_path
                 ])
-                if not is_nvidia_flow or self.is_mobile_format:
-                     pass
                 self.logger.info(f"Full FFmpeg command: {' '.join(cmd)}")
                 self.logger.info(f"Attempting encode with '{encoder_name}'...")
                 self.current_process = create_subprocess(cmd, self.logger)

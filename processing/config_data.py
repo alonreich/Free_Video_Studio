@@ -20,37 +20,53 @@ class VideoConfig:
         self.measure_fudge = 1.12
 
     def get_mobile_coordinates(self, logger=None):
-        defaults = {
+        conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        default_conf_data = {
             "crops_1080p": {
-                "loot": [339, 68, 1548, 976],
-                "stats": [215, 153, 1682, 20],
-                "normal_hp": [324, 50, 33, 979],
-                "boss_hp": [325, 46, 138, 981],
-                "team": [174, 161, 14, 801]
+                "loot": [506, 96, 1422, 1466],
+                "stats": [317, 228, 1631, 33],
+                "normal_hp": [464, 102, -840, 1473],
+                "boss_hp": [0, 0, 0, 0],
+                "team": [639, 333, 176, 234]
             },
             "scales": {
-                "loot": 1.953, "stats": 2.112, "team": 1.61, "normal_hp": 1.849, "boss_hp": 1.615
+                "loot": 1.2931,
+                "stats": 1.4886,
+                "team": 1.61,
+                "normal_hp": 1.1847,
+                "boss_hp": 0.0
             },
             "overlays": {
-                "loot": {"x": 613, "y": 1659}, "stats": {"x": 829, "y": 0}, "team": {"x": 32, "y": 1434},
-                "normal_hp": {"x": 5, "y": 1681}, "boss_hp": {"x": 20, "y": 1701}
+                "loot": {"x": 509, "y": 1406},
+                "stats": {"x": 682, "y": 0},
+                "team": {"x": 32, "y": 1434},
+                "normal_hp": {"x": 31, "y": 1410},
+                "boss_hp": {"x": 0, "y": 0}
+            },
+            "window_geometry": {
+                "x": 71, "y": 43, "w": 1600, "h": 880
+            },
+            "last_directory": "C:/Users/user/AppData/Local/Temp/Highlights/Fortnite",
+            "portrait_window_geometry": {
+                "x": 595, "y": 90, "w": 700, "h": 880
             }
         }
-        conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
-        final_coords = defaults.copy()
-        if os.path.exists(conf_path):
+        if not os.path.exists(conf_path):
+            if logger: logger.info(f"Config missing at {conf_path}, creating with defaults.")
             try:
-                with open(conf_path, 'r', encoding='utf-8') as f:
-                    external_data = json.load(f)
-                    for section in ["crops_1080p", "scales", "overlays"]:
-                        if section in external_data:
-                            final_coords[section].update(external_data[section])
-                if logger: logger.info(f"Loaded crop config from {conf_path}")
+                with open(conf_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_conf_data, f, indent=4)
             except Exception as e:
-                if logger: logger.error(f"Failed to load crop config: {e}")
-        else:
-             if logger: logger.warning(f"Config missing at {conf_path}, using defaults")
-        return final_coords
+                if logger: logger.error(f"Failed to create default config: {e}")
+                return default_conf_data
+        try:
+            with open(conf_path, 'r', encoding='utf-8') as f:
+                loaded_data = json.load(f)
+            if logger: logger.info(f"Loaded crop config from {conf_path}")
+            return loaded_data
+        except Exception as e:
+            if logger: logger.error(f"Failed to load crop config: {e}. Returning defaults.")
+            return default_conf_data
 
     def get_quality_settings(self, quality_level, target_mb_override=None):
         try:

@@ -1,4 +1,4 @@
-import cv2
+﻿import cv2
 import numpy as np
 import os
 import logging
@@ -52,58 +52,60 @@ class HUDExtractor:
         Extracts the 5-slot weapon/item bar from the bottom-right.
         """
         if self.anchors.get('loot_start') is None or self.anchors.get('loot_end') is None:
-             self.logger.error("Missing required anchor images for Loot extraction.")
              return None
-        p1 = self.find_anchor(frame_gray, 'loot_start')
-        p5 = self.find_anchor(frame_gray, 'loot_end')
+        p1 = self.find_anchor(frame_gray, 'loot_start', threshold=0.6)
+        p5 = self.find_anchor(frame_gray, 'loot_end', threshold=0.6)
         if p1 is None or p5 is None:
-            self.logger.warning("Could not find loot anchors in image. Skipping loot module extraction.")
             return None
         slot1_anchor_h, slot1_anchor_w = self.anchors['loot_start'].shape
         slot5_anchor_h, slot5_anchor_w = self.anchors['loot_end'].shape
-        single_slot_width = slot5_anchor_w + 20
-        y_offset = -100
-        crop_height = 120
         x1 = p1[0]
-        y1 = p1[1] + y_offset
-        width = (p5[0] - p1[0]) + single_slot_width
-        return QRect(x1, y1, width, crop_height)
+        y1 = p1[1] - 100
+        width = (p5[0] - p1[0]) + slot5_anchor_w + 20
+        height = 120
+        img_h, img_w = frame_gray.shape
+        x1 = max(0, min(x1, img_w - 10))
+        y1 = max(0, min(y1, img_h - 10))
+        width = max(10, min(width, img_w - x1))
+        height = max(10, min(height, img_h - y1))
+        return QRect(int(x1), int(y1), int(width), int(height))
 
     def _extract_hp_module(self, frame_gray, frame_color):
         """
         Extracts the Health and Shield bars from the bottom-left.
-        Uses the HP or Shield icon as an anchor.
         """
-        hp_anchor_pos = self.find_anchor(frame_gray, 'hp_icon')
+        hp_anchor_pos = self.find_anchor(frame_gray, 'hp_icon', threshold=0.6)
         if hp_anchor_pos is None:
-            self.logger.warning("Could not find HP anchor. Skipping HP module extraction.")
             return None
         anchor_h, anchor_w = self.anchors['hp_icon'].shape
-        x_offset = anchor_w // 2
-        y_offset = -20
-        crop_width = 400
-        crop_height = 100
-        x1 = hp_anchor_pos[0] + x_offset
-        y1 = hp_anchor_pos[1] + y_offset
-        return QRect(x1, y1, crop_width, crop_height)
+        x1 = hp_anchor_pos[0] + (anchor_w // 2)
+        y1 = hp_anchor_pos[1] - 20
+        width = 400
+        height = 100
+        img_h, img_w = frame_gray.shape
+        x1 = max(0, min(x1, img_w - 10))
+        y1 = max(0, min(y1, img_h - 10))
+        width = max(10, min(width, img_w - x1))
+        height = max(10, min(height, img_h - y1))
+        return QRect(int(x1), int(y1), int(width), int(height))
 
     def _extract_map_stats_module(self, frame_gray, frame_color):
         """
         Extracts the Minimap and adjacent stats from the top-right.
-        Uses the minimap border as an anchor.
         """
-        map_anchor_pos = self.find_anchor(frame_gray, 'map_edge', threshold=0.7)
+        map_anchor_pos = self.find_anchor(frame_gray, 'map_edge', threshold=0.6)
         if map_anchor_pos is None:
-            self.logger.warning("Could not find Map anchor. Skipping Map/Stats module extraction.")
             return None
-        anchor_h, anchor_w = self.anchors['map_edge'].shape
-        x_offset = -20
-        y_offset = -10
-        crop_width = 350
-        crop_height = 450
-        x1 = map_anchor_pos[0] + x_offset
-        y1 = map_anchor_pos[1] + y_offset
-        return QRect(x1, y1, crop_width, crop_height)
+        x1 = map_anchor_pos[0] - 20
+        y1 = map_anchor_pos[1] - 10
+        width = 350
+        height = 450
+        img_h, img_w = frame_gray.shape
+        x1 = max(0, min(x1, img_w - 10))
+        y1 = max(0, min(y1, img_h - 10))
+        width = max(10, min(width, img_w - x1))
+        height = max(10, min(height, img_h - y1))
+        return QRect(int(x1), int(y1), int(width), int(height))
 
     def extract_all(self, snapshot_path):
         valid_anchors = [k for k, v in self.anchors.items() if v is not None]
@@ -112,21 +114,30 @@ class HUDExtractor:
         if not os.path.exists(snapshot_path):
             self.logger.error(f"Snapshot path does not exist: {snapshot_path}")
             return []
-        frame_color = cv2.imread(snapshot_path)
+        frame_color = cv2.imread(snapshot_path, cv2.IMREAD_COLOR)
         if frame_color is None:
             self.logger.error(f"Failed to read image: {snapshot_path}")
             return []
         frame_gray = cv2.cvtColor(frame_color, cv2.COLOR_BGR2GRAY)
         rois = []
-        loot_roi = self._extract_loot_module(frame_gray, frame_color)
-        if loot_roi:
-            rois.append(loot_roi)
-        hp_roi = self._extract_hp_module(frame_gray, frame_color)
-        if hp_roi:
-            rois.append(hp_roi)
-        map_roi = self._extract_map_stats_module(frame_gray, frame_color)
-        if map_roi:
-            rois.append(map_roi)
+        try:
+            loot_roi = self._extract_loot_module(frame_gray, frame_color)
+            if loot_roi:
+                rois.append(loot_roi)
+        except Exception as e:
+            self.logger.warning(f"Loot extraction failed: {e}")
+        try:
+            hp_roi = self._extract_hp_module(frame_gray, frame_color)
+            if hp_roi:
+                rois.append(hp_roi)
+        except Exception as e:
+            self.logger.warning(f"HP extraction failed: {e}")
+        try:
+            map_roi = self._extract_map_stats_module(frame_gray, frame_color)
+            if map_roi:
+                rois.append(map_roi)
+        except Exception as e:
+            self.logger.warning(f"Map extraction failed: {e}")
         self.logger.info(f"HUDExtractor found {len(rois)} regions.")
         return rois
 

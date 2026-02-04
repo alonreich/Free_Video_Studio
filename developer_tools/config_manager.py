@@ -12,11 +12,16 @@ import time
 import copy
 from typing import Dict, Any, Optional, List
 from PyQt5.QtCore import QRect, QObject, pyqtSignal
-from coordinate_math import (
-    transform_to_content_area_int,
-    validate_crop_rect,
-    clamp_overlay_position
-)
+try:
+    from .coordinate_math import (
+        transform_to_content_area_int,
+        clamp_overlay_position
+    )
+except ImportError:
+    from coordinate_math import (
+        transform_to_content_area_int,
+        clamp_overlay_position
+    )
 try:
     from validation_system import ValidationLevel, ValidationFeedback, ValidationRule
     VALIDATION_SYSTEM_AVAILABLE = True
@@ -34,28 +39,35 @@ class ConfigObserver(QObject):
 
 class ConfigManager:
     """Manages configuration files with validation, consistency checks, and atomic operations."""
-    REQUIRED_SECTIONS = ["crops_1080p", "scales", "overlays"]
+    REQUIRED_SECTIONS = ["crops_1080p", "scales", "overlays", "z_orders"]
     DEFAULT_VALUES = {
         "crops_1080p": {
-            "loot": [300, 100, 700, 1400],
-            "stats": [800, 30, 100, 50],
-            "normal_hp": [40, 150, 20, 1400],
-            "boss_hp": [60, 200, 20, 1400],
-            "team": [200, 400, 50, 100]
+            "loot": [506, 96, 1422, 1466],
+            "stats": [317, 228, 1631, 33],
+            "normal_hp": [464, 102, -840, 1473],
+            "boss_hp": [0, 0, 0, 0],
+            "team": [639, 333, 176, 234]
         },
         "scales": {
-            "loot": 1.5,
-            "stats": 1.2,
-            "team": 1.3,
-            "normal_hp": 1.4,
-            "boss_hp": 1.5
+            "loot": 1.2931,
+            "stats": 1.4886,
+            "team": 1.61,
+            "normal_hp": 1.1847,
+            "boss_hp": 0.0
         },
         "overlays": {
-            "loot": {"x": 600, "y": 1600},
-            "stats": {"x": 100, "y": 50},
-            "team": {"x": 50, "y": 100},
-            "normal_hp": {"x": 20, "y": 1400},
-            "boss_hp": {"x": 20, "y": 1400}
+            "loot": {"x": 509, "y": 1406},
+            "stats": {"x": 682, "y": 0},
+            "team": {"x": 32, "y": 1434},
+            "normal_hp": {"x": 31, "y": 1410},
+            "boss_hp": {"x": 0, "y": 0}
+        },
+        "z_orders": {
+            "loot": 10,
+            "normal_hp": 20,
+            "boss_hp": 20,
+            "stats": 30,
+            "team": 40
         }
     }
     
@@ -146,10 +158,12 @@ class ConfigManager:
             tech_keys.update(config["crops_1080p"].keys())
             tech_keys.update(config["scales"].keys())
             tech_keys.update(config["overlays"].keys())
+            tech_keys.update(config["z_orders"].keys())
             for key in tech_keys:
                 if (key not in config["crops_1080p"] or 
                     key not in config["scales"] or 
-                    key not in config["overlays"]):
+                    key not in config["overlays"] or
+                    key not in config["z_orders"]):
                     return False
             return True
         except Exception:
@@ -172,13 +186,57 @@ class ConfigManager:
                         config[section][key] = 1.0
                     elif section == "overlays":
                         config[section][key] = {"x": 0, "y": 0}
+                    elif section == "z_orders":
+                        config[section][key] = 10
                     self.logger.debug(f"Added missing key '{key}' to section '{section}'")
+
+    def _filter_hud_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        clean = {}
+        for section in self.REQUIRED_SECTIONS:
+            section_value = config.get(section, {}) if isinstance(config, dict) else {}
+            clean[section] = section_value if isinstance(section_value, dict) else {}
+        return clean
+
+    def _sanitize_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        clean = self._filter_hud_config(config)
+        for key, rect in list(clean.get("crops_1080p", {}).items()):
+            if not isinstance(rect, list) or len(rect) < 4:
+                clean["crops_1080p"][key] = [0, 0, 0, 0]
+                continue
+            try:
+                clean["crops_1080p"][key] = [int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])]
+            except Exception:
+                clean["crops_1080p"][key] = [0, 0, 0, 0]
+        for key, scale in list(clean.get("scales", {}).items()):
+            try:
+                scale_val = float(scale)
+                if scale_val < 0:
+                    scale_val = 0.0
+                clean["scales"][key] = round(scale_val, 4)
+            except Exception:
+                clean["scales"][key] = 1.0
+        for key, overlay in list(clean.get("overlays", {}).items()):
+            if not isinstance(overlay, dict):
+                clean["overlays"][key] = {"x": 0, "y": 0}
+                continue
+            try:
+                x_val = int(overlay.get("x", 0))
+                y_val = int(overlay.get("y", 0))
+                clean["overlays"][key] = {"x": x_val, "y": y_val}
+            except Exception:
+                clean["overlays"][key] = {"x": 0, "y": 0}
+        for key, z_val in list(clean.get("z_orders", {}).items()):
+            try:
+                clean["z_orders"][key] = int(z_val)
+            except Exception:
+                clean["z_orders"][key] = 10
+        self._enforce_cross_section_consistency(clean)
+        return clean
         
     def _acquire_lock(self, timeout_seconds: int = 5) -> bool:
         """Acquire a file lock with improved deadlock prevention and watchdog timeout."""
 
         import psutil
-        import threading
         import sys
         current_pid = os.getpid()
         start_time = time.time()
@@ -311,16 +369,8 @@ class ConfigManager:
                 try:
                     with open(self.config_path, 'r', encoding='utf-8') as f:
                         file_config = json.load(f)
-                    config = self.DEFAULT_VALUES.copy()
                     if isinstance(file_config, dict):
-                        for section in self.REQUIRED_SECTIONS:
-                            if section in file_config:
-                                config[section] = file_config[section]
-                            else:
-                                self.logger.warning(f"Missing section '{section}' in config, using defaults")
-                        for key, value in file_config.items():
-                            if key not in self.REQUIRED_SECTIONS:
-                                config[key] = value
+                        config = self._sanitize_config(file_config)
                         self._last_known_config = copy.deepcopy(config)
                         self._last_file_mtime = current_mtime
                         return config
@@ -328,7 +378,7 @@ class ConfigManager:
                     self.logger.warning(f"Fallback read failed after lock error: {e}")
             self.logger.warning("Lock unavailable; returning last known config")
             return copy.deepcopy(self._last_known_config)
-        config = self.DEFAULT_VALUES.copy()
+        config = copy.deepcopy(self.DEFAULT_VALUES)
         try:
             if os.path.exists(self.config_path):
                 file_size = os.path.getsize(self.config_path)
@@ -356,14 +406,7 @@ class ConfigManager:
                     if not isinstance(file_config, dict):
                         self.logger.error(f"Config file {self.config_path} does not contain a JSON object, using defaults")
                         return config
-                    for section in self.REQUIRED_SECTIONS:
-                        if section in file_config:
-                            config[section] = file_config[section]
-                        else:
-                            self.logger.warning(f"Missing section '{section}' in config, using defaults")
-                    for key, value in file_config.items():
-                        if key not in self.REQUIRED_SECTIONS:
-                            config[key] = value
+                    config = self._sanitize_config(file_config)
                 except (json.JSONDecodeError, OSError) as e:
                     self.logger.error(f"Failed to load config from {self.config_path}: {e}")
             else:
@@ -394,10 +437,7 @@ class ConfigManager:
         backup_path = None
         success = False
         try:
-            for section in self.REQUIRED_SECTIONS:
-                if section not in config:
-                    config[section] = self.DEFAULT_VALUES[section]
-                    self.logger.warning(f"Added missing section '{section}' to config")
+            config = self._sanitize_config(config)
             if enforce_consistency:
                 self._enforce_cross_section_consistency(config)
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
@@ -476,13 +516,7 @@ class ConfigManager:
             if success:
                 self._last_known_config = copy.deepcopy(config)
 
-    def _transform_coordinates_rational(self, rect: QRect, original_resolution: str) -> List[int]:
-        """
-        Transform coordinates from original video to 1080p portrait content area (1080x1620).
-        Uses centralized coordinate math to ensure consistency with filter_builder.
-        Returns [x, y, width, height] in 1080p portrait content area coordinates (y=0..1620).
-        Note: The final overlay positions have y offset +150 for padding.
-        """
+    def transform_crop_rect(self, rect: QRect, original_resolution: str) -> List[int]:
         rect_tuple = (rect.x(), rect.y(), rect.width(), rect.height())
         transformed = transform_to_content_area_int(rect_tuple, original_resolution)
         return list(transformed)
@@ -500,7 +534,7 @@ class ConfigManager:
             rect_tuple = (rect.x(), rect.y(), rect.width(), rect.height())
             transformed = transform_to_content_area_int(rect_tuple, original_resolution)
             x_content, y_content, w_content, h_content = transformed
-            normalized_rect = [w_content, h_content, x_content, y_content]
+            normalized_rect = [int(w_content), int(h_content), int(x_content), int(y_content)]
             config = self.load_config()
             config["crops_1080p"][tech_key] = normalized_rect
             success = self.save_config(config, enforce_consistency=True)
@@ -529,6 +563,9 @@ class ConfigManager:
             changes_made = True
         if 'overlays' in config_data and tech_key in config_data['overlays']:
             config_data['overlays'][tech_key] = {"x": 0, "y": 0}
+            changes_made = True
+        if 'z_orders' in config_data and tech_key in config_data['z_orders']:
+            config_data['z_orders'][tech_key] = 10
             changes_made = True
         if changes_made:
             self.logger.info(f"Zeroed-out configuration data for tech_key: {tech_key} (Prevents default fallback)")
@@ -559,9 +596,16 @@ class ConfigManager:
             scaled_width = int(round(width * scale))
             scaled_height = int(round(height * scale))
             BACKEND_SCALE = 1280.0 / 1080.0
-            x_scaled = int(round(x * BACKEND_SCALE))
-            y_scaled = int(round(y * BACKEND_SCALE))
-            clamped_x_scaled, clamped_y_scaled = clamp_overlay_position(x_scaled, y_scaled, scaled_width, scaled_height)
+            x_scaled = x * BACKEND_SCALE
+            y_scaled = y * BACKEND_SCALE
+            clamped_x_scaled, clamped_y_scaled = clamp_overlay_position(
+                int(round(x_scaled)),
+                int(round(y_scaled)),
+                scaled_width,
+                scaled_height,
+                padding_top=150,
+                padding_bottom=0
+            )
             clamped_x = int(round(clamped_x_scaled / BACKEND_SCALE))
             clamped_y = int(round(clamped_y_scaled / BACKEND_SCALE))
             if clamped_x != x or clamped_y != y:
@@ -632,6 +676,20 @@ class ConfigManager:
                 issues.append(f"Key '{key}' missing in 'scales' section")
             if key not in config["overlays"]:
                 issues.append(f"Key '{key}' missing in 'overlays' section")
+            if key not in config["z_orders"]:
+                issues.append(f"Key '{key}' missing in 'z_orders' section")
+            rect = config["crops_1080p"].get(key)
+            if not isinstance(rect, list) or len(rect) < 4:
+                issues.append(f"Invalid crop data for '{key}'")
+            scale_val = config["scales"].get(key)
+            if not isinstance(scale_val, (int, float)):
+                issues.append(f"Invalid scale value for '{key}'")
+            overlay_val = config["overlays"].get(key)
+            if not isinstance(overlay_val, dict) or "x" not in overlay_val or "y" not in overlay_val:
+                issues.append(f"Invalid overlay data for '{key}'")
+            z_val = config["z_orders"].get(key)
+            if not isinstance(z_val, int):
+                issues.append(f"Invalid z-order value for '{key}'")
         if self.validation_feedback:
             try:
                 validation_results = self.validation_feedback.check_all_rules({})
@@ -643,16 +701,24 @@ class ConfigManager:
         return issues
     
     def get_configured_elements(self) -> List[str]:
-        """Get list of configured HUD element technical keys."""
+        """Get list of configured HUD element technical keys (non-zero data only)."""
         config = self.load_config()
-        return list(config["crops_1080p"].keys())
+        configured = []
+        for key, rect in config.get("crops_1080p", {}).items():
+            if not isinstance(rect, list) or len(rect) < 4:
+                continue
+            width, height = rect[0], rect[1]
+            scale_val = config.get("scales", {}).get(key, 0.0)
+            if width > 1 and height > 1 and float(scale_val) > 0:
+                configured.append(key)
+        return configured
     
     def is_element_configured(self, tech_key: str) -> bool:
         """Check if a HUD element is fully configured."""
         config = self.load_config()
-        return (tech_key in config["crops_1080p"] and
-                tech_key in config["scales"] and
-                tech_key in config["overlays"])
+        rect = config.get("crops_1080p", {}).get(tech_key, [0, 0, 0, 0])
+        scale_val = config.get("scales", {}).get(tech_key, 0.0)
+        return bool(rect and len(rect) >= 4 and rect[0] > 1 and rect[1] > 1 and float(scale_val) > 0)
 
     def get_current_config_data(self) -> Dict[str, Any]:
         """Returns the entire current configuration data."""

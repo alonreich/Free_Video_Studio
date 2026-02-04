@@ -26,7 +26,7 @@ class IntroProcessor:
         enc_name = self.encoder_mgr.get_initial_encoder()
         vcodec_intro, _ = self.encoder_mgr.get_codec_flags(enc_name, video_bitrate_kbps, 5.0)
         intro_cmd = [
-            self.ffmpeg_path, "-y", "-hwaccel", "auto",
+            self.ffmpeg_path, "-y",
             "-progress", "pipe:1",
             "-ss", f"{intro_abs_time:.6f}", "-i", input_path, "-t", "0.2"
         ] + vcodec_intro + [

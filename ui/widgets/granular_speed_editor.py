@@ -131,7 +131,7 @@ class GranularTimelineSlider(TrimmedSlider):
             p.drawRect(seg_rect)
 
 class GranularSpeedEditor(QDialog):
-    def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1):
+    def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1, start_time_ms=0):
         super().__init__(parent)
         self.setWindowTitle("Granular Speed Editor")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -139,6 +139,10 @@ class GranularSpeedEditor(QDialog):
         self.parent_app = parent
         self.base_speed = float(base_speed)
         self.speed_segments = list(initial_segments) if initial_segments else []
+        self.start_time_ms = start_time_ms
+        self.last_position_ms = start_time_ms
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             self.parent_app.logger.info(f"GRANULAR: Opened editor. Base Speed: {base_speed}x. Start Time: {start_time_ms}ms")
         self.vlc_instance = vlc.Instance()
         self.vlc_player = self.vlc_instance.media_player_new()
         self.timer = QTimer(self)
@@ -281,7 +285,7 @@ class GranularSpeedEditor(QDialog):
         spin_row.addStretch()
         speed_container.addLayout(speed_label_row)
         speed_container.addLayout(spin_row)
-        self.add_seg_btn = QPushButton("ADD SEGMENT")
+        self.add_seg_btn = QPushButton("ADD NEW SPEED SEGMENT")
         self.add_seg_btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; border-radius: 8px; padding: 6px 12px; font-size: 11px;")
         self.add_seg_btn.setCursor(Qt.PointingHandCursor)
         self.add_seg_btn.clicked.connect(self.add_segment)
@@ -307,15 +311,26 @@ class GranularSpeedEditor(QDialog):
         self.timeline.set_segments(self.speed_segments)
         self.timeline.set_trim_times(0, self.duration)
         self.update_pending_visualization()
+        if self.start_time_ms > 0:
+            self.vlc_player.play()
+            self.vlc_player.set_time(int(self.start_time_ms))
+            self.vlc_player.pause()
+            self.play_btn.setText("PLAY")
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            self.timeline.setValue(int(self.start_time_ms))
 
     def toggle_play(self):
         if self.vlc_player.is_playing():
             self.pause_video()
+            if self.parent_app and hasattr(self.parent_app, 'logger'):
+                self.parent_app.logger.info("GRANULAR: User paused playback.")
         else:
             self.vlc_player.play()
             self.timer.start()
             self.play_btn.setText("PAUSE")
             self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+            if self.parent_app and hasattr(self.parent_app, 'logger'):
+                self.parent_app.logger.info("GRANULAR: User started playback.")
 
     def pause_video(self):
         if self.vlc_player.is_playing():
@@ -327,24 +342,22 @@ class GranularSpeedEditor(QDialog):
     def seek_video(self, pos):
         self.vlc_player.set_time(pos)
         self.update_playback_speed(pos)
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             pass
 
     def update_ui(self):
         if not self.timeline.isSliderDown():
             t = self.vlc_player.get_time()
             self.timeline.setValue(t)
             self.update_playback_speed(t)
+            self.last_position_ms = t
     
     def update_playback_speed(self, current_time):
         target_speed = self.base_speed
-        in_pending = False
-        if self.timeline.trimmed_start_ms <= current_time < self.timeline.trimmed_end_ms:
-             target_speed = self.speed_spin.value()
-             in_pending = True
-        if not in_pending:
-            for seg in self.speed_segments:
-                if seg['start'] <= current_time < seg['end']:
-                    target_speed = seg['speed']
-                    break
+        for seg in self.speed_segments:
+            if seg['start'] <= current_time < seg['end']:
+                target_speed = seg['speed']
+                break
         if abs(self.vlc_player.get_rate() - target_speed) > 0.05:
             self.vlc_player.set_rate(target_speed)
 
@@ -352,12 +365,16 @@ class GranularSpeedEditor(QDialog):
         t = self.vlc_player.get_time()
         self.timeline.set_trim_times(t, self.timeline.trimmed_end_ms)
         self.update_pending_visualization()
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             self.parent_app.logger.info(f"GRANULAR: Set pending start to {t}ms")
 
     def set_end(self):
         t = self.vlc_player.get_time()
         self.timeline.set_trim_times(self.timeline.trimmed_start_ms, t)
         self.update_pending_visualization()
         self.pause_video()
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             self.parent_app.logger.info(f"GRANULAR: Set pending end to {t}ms")
 
     def on_trim_changed(self, start, end):
         self.update_pending_visualization()
@@ -365,6 +382,8 @@ class GranularSpeedEditor(QDialog):
     def on_speed_changed(self, val):
         self.update_pending_visualization()
         self.pause_video()
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             self.parent_app.logger.info(f"GRANULAR: Changed pending speed to {val}x")
 
     def update_pending_visualization(self):
         self.timeline.set_pending_segment(
@@ -395,12 +414,25 @@ class GranularSpeedEditor(QDialog):
                 updated.append(seg)
         updated.append(new_seg)
         updated.sort(key=lambda x: x['start'])
-        self.speed_segments = updated
+        merged = []
+        if updated:
+            current = updated[0]
+            for next_seg in updated[1:]:
+                if abs(current['end'] - next_seg['start']) < 5 and abs(current['speed'] - next_seg['speed']) < 0.01:
+                    current['end'] = next_seg['end']
+                else:
+                    merged.append(current)
+                    current = next_seg
+            merged.append(current)
+        self.speed_segments = merged
         self.timeline.set_segments(self.speed_segments)
         if self.parent_app and hasattr(self.parent_app, 'logger'):
             self.parent_app.logger.info(f"GRANULAR: Added segment {start}-{end}ms @ {speed}x. Total segments: {len(self.speed_segments)}")
 
     def closeEvent(self, event):
         self.save_geometry()
+        self.last_position_ms = self.vlc_player.get_time()
         self.vlc_player.stop()
+        if self.parent_app and hasattr(self.parent_app, 'logger'):
+             self.parent_app.logger.info(f"GRANULAR: Closing editor. Returning to timestamp {self.last_position_ms}ms")
         super().closeEvent(event)

@@ -19,23 +19,59 @@ class StreamToLogger(object):
         self.logger = logger
         self.level = level
         self.linebuf = ''
+        self.processing = False
 
     def write(self, buf):
+        if self.processing:
+            return
         if not buf.strip():
             return
-        for line in buf.rstrip().splitlines():
-            if line:
-                self.logger.log(self.level, line.rstrip())
+        self.processing = True
+        try:
+            for line in buf.rstrip().splitlines():
+                if line:
+                    self.logger.log(self.level, line.rstrip())
+        except Exception:
+            pass
+        finally:
+            self.processing = False
 
     def flush(self):
         pass
+    
+    def fileno(self):
+        """
+        Return a file descriptor for compatibility with libraries that expect it.
+        Returns 1 for stdout-like streams, 2 for stderr-like streams.
+        """
+        if self.level == logging.INFO:
+            return 1
+        else:
+            return 2
+
+class SafeStreamHandler(logging.StreamHandler):
+    """
+    A StreamHandler that suppresses OSError during flush, 
+    common when dealing with Windows pipes or detached processes.
+    """
+
+    def flush(self):
+        try:
+            if self.stream and hasattr(self.stream, "flush"):
+                self.stream.flush()
+        except OSError:
+            pass
+        except Exception:
+            pass
 
 def setup_logger():
     """
     Initializes the shared base logger and redirects stdout/stderr to it.
     Then, it sets up and returns the EnhancedCropLogger.
     """
-    log_file_path = os.path.join(project_root, 'logs', "Crop_Tools.log")
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    log_file_path = os.path.join(parent_dir, 'logs', "Crop_Tools.log")
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
     base_logger = logging.getLogger("Crop_Tools_Base")
     base_logger.setLevel(logging.INFO)
@@ -46,9 +82,10 @@ def setup_logger():
     formatter = logging.Formatter('%(asctime)s | %(name)-12s | %(levelname)-8s | %(message)s')
     file_handler.setFormatter(formatter)
     base_logger.addHandler(file_handler)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    base_logger.addHandler(console_handler)
+    if original_stdout:
+        console_handler = SafeStreamHandler(original_stdout)
+        console_handler.setFormatter(formatter)
+        base_logger.addHandler(console_handler)
     sys.stdout = StreamToLogger(base_logger, logging.INFO)
     sys.stderr = StreamToLogger(base_logger, logging.ERROR)
     enhanced_logger_instance = EnhancedCropLogger(base_logger)

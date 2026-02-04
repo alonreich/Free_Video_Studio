@@ -19,6 +19,37 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 # To install packages: "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
 
 # ==============================================================================
+# COORDINATE SYSTEM & SCALING LOGIC (CRITICAL FOR AI AGENTS)
+# ==============================================================================
+# The Crop Tool and Processing Engine usage a unique "Scale-Out" architecture to ensure high quality.
+#
+# 1. THE UI SPACE (1080x1920):
+#    - The Crop Tool's Portrait View operates in a 1080x1920 coordinate space (CONTENT_W=1080).
+#    - The Top 150 pixels (y=0 to y=150) are STRICTLY RESERVED for the text/header canvas.
+#    - Users are prevented from moving HUD elements into this top area. This is INTENTIONAL.
+#    - The configuration file (crops_coordinations.conf) stores coordinates in this 1080p space.
+#
+# 2. THE PROCESSING SPACE (1280x1920):
+#    - The backend (filter_builder.py) scales the main video to 1280x1920 (TARGET_W=1280) first.
+#    - This scaling (1280p) is larger than the UI space (1080p).
+#    - Why? To allow the 1080p content to be "centered" or manipulated with high fidelity before final output.
+#
+# 3. THE TRANSFORMATION PIPELINE:
+#    - CONFIG -> BACKEND: Coordinates read from config (1080p) must be mapped to the 1280p canvas.
+#         a. X_canvas = X_config * BACKEND_SCALE
+#         b. Y_canvas = (Y_config - 150) * BACKEND_SCALE
+#         c. Element_Size = Size_UI * BACKEND_SCALE (Where Size_UI = Size_Orig * user_scale)
+#    - BACKEND -> FFmpeg:
+#         a. The *Source Crop* is calculated by INVERTING the 1080p transform back to Original Resolution (e.g. 1920x1080).
+#         b. The *Overlay Position* is calculated by scaling the config x,y (1080p) UP to 1280p space.
+#         c. The *Element Size* (scale=...) must ALSO be scaled UP to 1280p space to maintain relative size.
+#
+# 4. KEY TAKEAWAY:
+#    - If you see "1080" vs "1280" mismatches, check if it's the UI (1080) vs Backend (1280).
+#    - Do NOT remove the "Top Bar" restriction; it protects the text layer.
+#    - Do NOT change the scaling logic without understanding the Full Round-Trip (Original -> 1080p Config -> 1280p Canvas -> Final Video).
+
+# ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE
 # ==============================================================================
 .
@@ -29,7 +60,7 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 ├── .gitattributes: Specifies attributes for paths.
 ├── Fix OS Problems.cmd: A command script to fix OS related problems.
 ├── Installer.ps1: A PowerShell script for one-click installation and updates.
-├── z_Install_Fortnite_Video_Software.cmd: A command script for installation.
+├── z_Install_Fortnite_Video_Software.cmd: A command script to installation.
 │
 ├── !!!_Ouput_Video_Files_!!!/: Default output directory for processed videos.
 │

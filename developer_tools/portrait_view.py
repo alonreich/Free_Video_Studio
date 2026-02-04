@@ -18,12 +18,16 @@ class PortraitView(QGraphicsView):
         self.max_zoom = 4.0
         self.user_zoomed = False
         self._middle_dragging = False
+        self.snap_enabled = True
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+
+    def set_snap_enabled(self, enabled: bool):
+        self.snap_enabled = bool(enabled)
 
     def fit_to_scene(self):
         if not self.scene(): return
@@ -40,9 +44,17 @@ class PortraitView(QGraphicsView):
     def wheelEvent(self, event):
         angle = event.angleDelta().y()
         if angle == 0: return
+        view_rect = self.viewport().rect()
+        scene_rect = self.scene().sceneRect()
+        min_allowed_zoom = 0.1
+        if scene_rect.width() > 0 and scene_rect.height() > 0:
+            scale_w = view_rect.width() / scene_rect.width()
+            scale_h = view_rect.height() / scene_rect.height()
+            min_allowed_zoom = min(scale_w, scale_h)
         zoom_factor = 1.1 if angle > 0 else 1 / 1.1
-        new_zoom = max(self.min_zoom, min(self.max_zoom, self.zoom * zoom_factor))
-        if new_zoom == self.zoom: return
+        new_zoom = self.zoom * zoom_factor
+        new_zoom = max(min_allowed_zoom, min(self.max_zoom, new_zoom))
+        if abs(new_zoom - self.zoom) < 0.0001: return
         factor = new_zoom / self.zoom
         self.zoom = new_zoom
         self.scale(factor, factor)
@@ -93,29 +105,45 @@ class PortraitView(QGraphicsView):
                 self.parent().redo()
                 event.accept()
                 return
+        if event.key() == Qt.Key_Delete:
+            if hasattr(self.parent(), 'delete_selected'):
+                self.parent().delete_selected()
+                event.accept()
+                return
         selected_items = self.scene().selectedItems()
         if selected_items:
-            item = selected_items[0]
+            items_to_move = selected_items
             if event.modifiers() == Qt.ShiftModifier:
                 if event.key() == Qt.Key_Up:
-                    item.setZValue(item.zValue() + 1)
+                    for item in items_to_move:
+                        item.setZValue(item.zValue() + 1)
                     event.accept()
                     return
                 elif event.key() == Qt.Key_Down:
-                    item.setZValue(item.zValue() - 1)
+                    for item in items_to_move:
+                        item.setZValue(item.zValue() - 1)
                     event.accept()
                     return
-            delta = 1
+            delta = UI_BEHAVIOR.KEYBOARD_NUDGE_STEP
             key = event.key()
-            if key == Qt.Key_Up: item.moveBy(0, -delta)
-            elif key == Qt.Key_Down: item.moveBy(0, delta)
-            elif key == Qt.Key_Left: item.moveBy(-delta, 0)
-            elif key == Qt.Key_Right: item.moveBy(delta, 0)
+            if key == Qt.Key_Up:
+                for item in items_to_move:
+                    item.moveBy(0, -delta)
+            elif key == Qt.Key_Down:
+                for item in items_to_move:
+                    item.moveBy(0, delta)
+            elif key == Qt.Key_Left:
+                for item in items_to_move:
+                    item.moveBy(-delta, 0)
+            elif key == Qt.Key_Right:
+                for item in items_to_move:
+                    item.moveBy(delta, 0)
             else:
                 super().keyPressEvent(event)
                 return
             if hasattr(self.parent(), 'on_item_modified'):
-                self.parent().on_item_modified(item)
+                for item in items_to_move:
+                    self.parent().on_item_modified(item)
             event.accept()
         else:
             super().keyPressEvent(event)

@@ -18,11 +18,12 @@ def cleanup_temp_snapshots():
 class PersistentWindowMixin:
     """A mixin to provide common window geometry persistence."""
 
-    def setup_persistence(self, config_path, settings_key, default_geo, title_info_provider):
+    def setup_persistence(self, config_path, settings_key, default_geo, title_info_provider, extra_data_provider=None):
         self.config_path = config_path
         self.settings_key = settings_key
         self.default_geo = default_geo
         self.title_info_provider = title_info_provider
+        self.extra_data_provider = extra_data_provider
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
@@ -49,16 +50,19 @@ class PersistentWindowMixin:
             self.update_title()
 
     def _apply_default_center(self):
-        """Centers window with 100px padding on the current screen."""
+        """Centers window with 50px padding on the current screen."""
         app_instance = QApplication.instance()
         if app_instance is None:
             print("Warning: QApplication instance not found when trying to center window.")
             return
-        screen_geo = app_instance.desktop().screenGeometry()
-        avail_w = screen_geo.width() - 200
-        avail_h = screen_geo.height() - 200
-        w = max(self.default_geo['w'], min(avail_w, 1600))
-        h = max(self.default_geo['h'], min(avail_h, 900))
+        screen_geo = app_instance.primaryScreen().availableGeometry()
+        padding = 50
+        avail_w = max(200, screen_geo.width() - (padding * 2))
+        avail_h = max(200, screen_geo.height() - (padding * 2))
+        w = min(self.default_geo.get('w', avail_w), avail_w)
+        h = min(self.default_geo.get('h', avail_h), avail_h)
+        w = max(800, min(w, screen_geo.width()))
+        h = max(600, min(h, screen_geo.height()))
         x = screen_geo.x() + (screen_geo.width() - w) // 2
         y = screen_geo.y() + (screen_geo.height() - h) // 2
         self.move(x, y)
@@ -77,6 +81,13 @@ class PersistentWindowMixin:
         settings[self.settings_key] = {'x': geo.x(),'y': geo.y(),'w': self.width(),'h': self.height()}
         if self.settings_key == 'window_geometry' and hasattr(self, 'last_dir') and self.last_dir:
             settings['last_directory'] = self.last_dir
+        if self.extra_data_provider:
+            try:
+                extra_data = self.extra_data_provider()
+                if isinstance(extra_data, dict):
+                    settings.update(extra_data)
+            except Exception:
+                pass
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(settings, f, indent=4)

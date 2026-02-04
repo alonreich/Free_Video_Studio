@@ -3,6 +3,15 @@
 class KeyboardShortcutMixin:
     def keyPressEvent(self, event):
         key = event.key()
+        if event.modifiers() == Qt.ControlModifier:
+            if key == Qt.Key_Z and hasattr(self, 'undo'):
+                self.undo()
+                event.accept()
+                return
+            if key == Qt.Key_Y and hasattr(self, 'redo'):
+                self.redo()
+                event.accept()
+                return
         if key == Qt.Key_F12:
             if hasattr(self, '_launch_main_app') and callable(self._launch_main_app):
                 self._launch_main_app()

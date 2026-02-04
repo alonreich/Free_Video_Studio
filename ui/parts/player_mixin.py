@@ -100,13 +100,14 @@ class PlayerMixin:
                             music_player.pause()
                     if is_within_music_bounds:
                         time_into_music_clip_ms = target_ms - self.music_timeline_start_ms
+                        if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked() and hasattr(self, 'speed_segments'):
+                            base_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.0
+                            wall_time_current = self._calculate_wall_clock_time(target_ms, self.speed_segments, base_speed)
+                            wall_time_music_start = self._calculate_wall_clock_time(self.music_timeline_start_ms, self.speed_segments, base_speed)
+                            time_into_music_clip_ms = wall_time_current - wall_time_music_start
                         file_offset_ms = self._get_music_offset_ms() 
                         music_target_in_file_ms = int(time_into_music_clip_ms + file_offset_ms)
-                        should_sync = True
-                        if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked():
-                            if sync_only and not force_pause:
-                                should_sync = False
-                        if should_sync and abs(music_player.get_time() - music_target_in_file_ms) > 400:
+                        if abs(music_player.get_time() - music_target_in_file_ms) > 400:
                             music_player.set_time(music_target_in_file_ms)
                 else:
                     if music_player.is_playing(): music_player.pause()
@@ -115,6 +116,47 @@ class PlayerMixin:
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
+
+    def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
+        """
+        Calculates the real wall-clock time required to reach 'video_ms'
+        accounting for variable speed segments.
+        """
+        if not segments:
+            return video_ms / base_speed
+        sorted_segs = sorted(segments, key=lambda x: x['start'])
+        current_video_time = 0.0
+        accumulated_wall_time = 0.0
+        target = float(video_ms)
+        for seg in sorted_segs:
+            start = seg['start']
+            end = seg['end']
+            speed = seg['speed']
+            if start >= target:
+                break
+            if start > current_video_time:
+                gap_dur = start - current_video_time
+                if target < start:
+                    gap_dur = target - current_video_time
+                    accumulated_wall_time += gap_dur / base_speed
+                    current_video_time = target
+                    break
+                else:
+                    accumulated_wall_time += gap_dur / base_speed
+                    current_video_time = start
+            seg_dur = end - start
+            if target < end:
+                partial_dur = target - start
+                accumulated_wall_time += partial_dur / speed
+                current_video_time = target
+                break
+            else:
+                accumulated_wall_time += seg_dur / speed
+                current_video_time = end
+        if current_video_time < target:
+            remaining = target - current_video_time
+            accumulated_wall_time += remaining / base_speed
+        return accumulated_wall_time
     
     def _on_vlc_end_reached(self, event=None):
         """
