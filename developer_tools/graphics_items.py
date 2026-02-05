@@ -42,14 +42,10 @@ class ResizablePixmapItem(QGraphicsObject):
     def paint(self, painter, option, widget):
         painter.drawPixmap(QRectF(0, 0, self.current_width, self.current_height), 
                             self.original_pixmap, QRectF(self.original_pixmap.rect()))
-        
-        # Always draw the 2px black border OUTSIDE the content
-        # Draw rect shifted by 1px so the 2px pen (centered) covers -2 to 0 relative to content
         black_pen = QPen(Qt.black, 2)
         painter.setPen(black_pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(QRectF(-1, -1, self.current_width + 2, self.current_height + 2))
-
         if self.assigned_role:
             title_text = self.assigned_role.upper()
             font = painter.font()
@@ -144,8 +140,6 @@ class ResizablePixmapItem(QGraphicsObject):
                 self.current_width = new_width
                 self.current_height = new_height
                 self.update_handle_positions()
-                
-                # Force clamp position after resize to ensure bottom/right edges stay in bounds
                 self.setPos(self.itemChange(QGraphicsItem.ItemPositionChange, self.pos()))
                 self.item_changed.emit()
         elif self.is_resizing_tl:
@@ -270,16 +264,20 @@ class ResizablePixmapItem(QGraphicsObject):
                     d_l = abs(my_left - tx)
                     if d_l < min_x_dist:
                         min_x_dist = d_l
-                    if resize_edge == 'L': snapped_coord = tx
-                        else: final_x_val = tx
-                        active_snap_x = (tx, f"Align Left -> {t_label}")
+                    if resize_edge == 'L':
+                        snapped_coord = tx
+                    else:
+                        final_x_val = tx
+                    active_snap_x = (tx, f"Align Left -> {t_label}")
                 if resize_edge in [None, 'R']:
                     d_r = abs(my_right - tx)
                     if d_r < min_x_dist:
                         min_x_dist = d_r
-                    if resize_edge == 'R': snapped_coord = tx
-                        else: final_x_val = tx - my_w
-                        active_snap_x = (tx, f"Align Right -> {t_label}")
+                    if resize_edge == 'R':
+                        snapped_coord = tx
+                    else:
+                        final_x_val = tx - my_w
+                    active_snap_x = (tx, f"Align Right -> {t_label}")
                 if resize_edge is None:
                     d_c = abs(my_center_x - tx)
                     if d_c < min_x_dist:
@@ -294,16 +292,20 @@ class ResizablePixmapItem(QGraphicsObject):
                     d_t = abs(my_top - ty)
                     if d_t < min_y_dist:
                         min_y_dist = d_t
-                    if resize_edge == 'T': snapped_coord = ty
-                        else: final_y_val = ty
-                        active_snap_y = (ty, f"Align Top -> {t_label}")
+                    if resize_edge == 'T':
+                        snapped_coord = ty
+                    else:
+                        final_y_val = ty
+                    active_snap_y = (ty, f"Align Top -> {t_label}")
                 if resize_edge in [None, 'B']:
                     d_b = abs(my_bottom - ty)
                     if d_b < min_y_dist:
                         min_y_dist = d_b
-                    if resize_edge == 'B': snapped_coord = ty
-                        else: final_y_val = ty - my_h
-                        active_snap_y = (ty, f"Align Bottom -> {t_label}")
+                    if resize_edge == 'B':
+                        snapped_coord = ty
+                    else:
+                        final_y_val = ty - my_h
+                    active_snap_y = (ty, f"Align Bottom -> {t_label}")
                 if resize_edge is None:
                     d_c = abs(my_center_y - ty)
                     if d_c < min_y_dist:
@@ -350,130 +352,40 @@ class ResizablePixmapItem(QGraphicsObject):
             return snapped_coord
         return QPointF(final_x_val, final_y_val)
 
-        def itemChange(self, change, value):
-
-            if change == QGraphicsItem.ItemPositionChange and self.scene():
-
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            self.clear_guides()
+            new_pos = value
+            view = self.scene().views()[0] if self.scene().views() else None
+            snap_enabled = True
+            if view and hasattr(view, 'snap_enabled'):
+                snap_enabled = view.snap_enabled
+            if self.isSelected() and not self.is_resizing_br and not self.is_resizing_tl:
+                new_pos = self.calculate_snapping(value)
+            scene_rect = self.scene().sceneRect()
+            left_bound = scene_rect.left()
+            right_bound = scene_rect.right() - self.current_width
+            top_bound = scene_rect.top() + UI_LAYOUT.PORTRAIT_TOP_BAR_HEIGHT
+            bottom_bound = (UI_LAYOUT.PORTRAIT_BASE_HEIGHT - UI_LAYOUT.PORTRAIT_BOTTOM_PADDING) - self.current_height
+            final_x = max(left_bound, min(new_pos.x(), right_bound))
+            final_y = max(top_bound, min(new_pos.y(), bottom_bound))
+            corrected_pos = QPointF(final_x, final_y)
+            if self.pos() != corrected_pos:
+                self.item_changed.emit()
+            return corrected_pos
+        elif change == QGraphicsItem.ItemSelectedHasChanged:
+            if value and self.isVisible():
+                if self.scene() and self.scene().views():
+                    parent_view = self.scene().views()[0]
+                    if hasattr(parent_view.parent(), 'enhanced_logger') and parent_view.parent().enhanced_logger:
+                        parent_view.parent().enhanced_logger.log_user_action("Item Selected in Portrait", f"Role: {self.assigned_role or 'Unknown'}")
+                self.ant_timer.start(100)
+            else:
+                self.ant_timer.stop()
                 self.clear_guides()
-
-                new_pos = value
-
-                view = self.scene().views()[0] if self.scene().views() else None
-
-                snap_enabled = True
-
-                if view and hasattr(view, 'snap_enabled'):
-
-                    snap_enabled = view.snap_enabled
-
-                
-
-                if self.isSelected() and not self.is_resizing_br and not self.is_resizing_tl:
-
-                    new_pos = self.calculate_snapping(value)
-
-                
-
-                scene_rect = self.scene().sceneRect()
-
-                left_bound = scene_rect.left()
-
-                right_bound = scene_rect.right() - self.current_width
-
-                top_bound = scene_rect.top() + UI_LAYOUT.PORTRAIT_TOP_BAR_HEIGHT
-
-                bottom_bound = (UI_LAYOUT.PORTRAIT_BASE_HEIGHT - UI_LAYOUT.PORTRAIT_BOTTOM_PADDING) - self.current_height
-
-                
-
-                # CRITICAL CLAMP: Ensure element never leaves the 1080p content area
-
-                final_x = max(left_bound, min(new_pos.x(), right_bound))
-
-                final_y = max(top_bound, min(new_pos.y(), bottom_bound))
-
-                
-
-                            corrected_pos = QPointF(final_x, final_y)
-
-                
-
-                            if self.pos() != corrected_pos:
-
-                
-
-                                self.item_changed.emit()
-
-                
-
-                            return corrected_pos
-
-                
-
-                        elif change == QGraphicsItem.ItemSelectedHasChanged:
-
-                
-
-                            if value and self.isVisible():
-
-                
-
-                                if self.scene() and self.scene().views():
-
-                
-
-                                    parent_view = self.scene().views()[0]
-
-                
-
-                                    if hasattr(parent_view.parent(), 'enhanced_logger') and parent_view.parent().enhanced_logger:
-
-                
-
-                                        parent_view.parent().enhanced_logger.log_user_action("Item Selected in Portrait", f"Role: {self.assigned_role or 'Unknown'}")
-
-                
-
-                                self.ant_timer.start(100)
-
-                
-
-                            else:
-
-                
-
-                                self.ant_timer.stop()
-
-                
-
-                                self.clear_guides()
-
-                
-
-                        elif change == QGraphicsItem.ItemVisibleHasChanged:
-
-                
-
-                            if not value:
-
-                
-
-                                self.ant_timer.stop()
-
-                
-
-                            elif self.isSelected():
-
-                
-
-                                self.ant_timer.start(100)
-
-                
-
-                        return super(ResizablePixmapItem, self).itemChange(change, value)
-
-                
-
-                
-
-    
+        elif change == QGraphicsItem.ItemVisibleHasChanged:
+            if not value:
+                self.ant_timer.stop()
+            elif self.isSelected():
+                self.ant_timer.start(100)
+        return super(ResizablePixmapItem, self).itemChange(change, value)

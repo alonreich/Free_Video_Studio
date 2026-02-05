@@ -23,11 +23,13 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 # ==============================================================================
 # The Crop Tool and Processing Engine usage a unique "Scale-Out" architecture to ensure high quality.
 #
-# 1. THE UI SPACE (1080x1920):
-#    - The Crop Tool's Portrait View operates in a 1080x1920 coordinate space (CONTENT_W=1080).
+# 1. THE UI SPACE (1080x1920, WITH 1080x1620 CONTENT AREA):
+#    - The Crop Tool's Portrait View uses a 1080x1920 canvas.
 #    - The Top 150 pixels (y=0 to y=150) are STRICTLY RESERVED for the text/header canvas.
-#    - Users are prevented from moving HUD elements into this top area. This is INTENTIONAL.
-#    - The configuration file (crops_coordinations.conf) stores coordinates in this 1080p space.
+#    - HUD elements are constrained to the 1080x1620 CONTENT AREA (y=150..1920).
+#    - IMPORTANT: crops_coordinations.conf stores crop rectangles in the CONTENT AREA
+#      coordinate space (1080x1620), i.e., y is relative to the content area and does
+#      NOT include the top 150px padding. Overlay positions are stored in full 1080x1920.
 #
 # 2. THE PROCESSING SPACE (1280x1920):
 #    - The backend (filter_builder.py) scales the main video to 1280x1920 (TARGET_W=1280) first.
@@ -35,19 +37,23 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 #    - Why? To allow the 1080p content to be "centered" or manipulated with high fidelity before final output.
 #
 # 3. THE TRANSFORMATION PIPELINE:
-#    - CONFIG -> BACKEND: Coordinates read from config (1080p) must be mapped to the 1280p canvas.
-#         a. X_canvas = X_config * BACKEND_SCALE
-#         b. Y_canvas = (Y_config - 150) * BACKEND_SCALE
-#         c. Element_Size = Size_UI * BACKEND_SCALE (Where Size_UI = Size_Orig * user_scale)
+#    - CONFIG -> BACKEND (1280x1920 canvas):
+#         a. Crop Rect (content area): X_canvas = X_content * BACKEND_SCALE
+#         b. Crop Rect (content area): Y_canvas = Y_content * BACKEND_SCALE
+#         c. Element Size: Size_canvas = (Size_content * user_scale) * BACKEND_SCALE
 #    - BACKEND -> FFmpeg:
-#         a. The *Source Crop* is calculated by INVERTING the 1080p transform back to Original Resolution (e.g. 1920x1080).
-#         b. The *Overlay Position* is calculated by scaling the config x,y (1080p) UP to 1280p space.
-#         c. The *Element Size* (scale=...) must ALSO be scaled UP to 1280p space to maintain relative size.
+#         a. The *Source Crop* is computed by inverting the content-area transform back
+#            to the original resolution using the same scale+center-crop math as FFmpeg.
+#         b. The *Overlay Position* is computed by scaling overlay x,y from 1080x1920
+#            to 1280x1920, and then subtracting the 150px top padding after scaling.
+#         c. The *Element Size* is also scaled to 1280x1920 to preserve relative size.
 #
 # 4. KEY TAKEAWAY:
-#    - If you see "1080" vs "1280" mismatches, check if it's the UI (1080) vs Backend (1280).
-#    - Do NOT remove the "Top Bar" restriction; it protects the text layer.
-#    - Do NOT change the scaling logic without understanding the Full Round-Trip (Original -> 1080p Config -> 1280p Canvas -> Final Video).
+#    - Crop rectangles are stored in 1080x1620 content space; overlay positions are in 1080x1920.
+#    - The 150px top padding is applied ONLY to overlay positioning, not crop rectangles.
+#    - Do NOT remove the top-bar restriction; it protects the text layer.
+#    - Do NOT change the scaling logic without understanding the full round-trip:
+#      Original -> 1280x1920 (scale+crop) -> 1080x1620 content -> config -> back to original.
 
 # ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE

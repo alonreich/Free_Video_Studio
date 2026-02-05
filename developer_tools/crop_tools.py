@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
 )
 
 from PyQt5.QtCore import Qt, QTimer, QRectF, pyqtSignal, QPointF, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import QParallelAnimationGroup, QSequentialAnimationGroup
 from PyQt5.QtGui import QPainter, QColor, QFont, QBrush, QPixmap, QPen
 from utils import PersistentWindowMixin
 from Keyboard_Mixing import KeyboardShortcutMixin
@@ -72,14 +73,19 @@ class SummaryToast(QDialog):
             changed_label.setObjectName("changed")
             content_layout.addWidget(changed_label)
             for item in configured:
-                content_layout.addWidget(QLabel(f"  • {item}"))
+                item_label = QLabel(f"  • {item}")
+                item_label.setStyleSheet(f"color: {UI_COLORS.SUCCESS};")
+                content_layout.addWidget(item_label)
+        if configured and unchanged:
+            content_layout.addSpacing(60)
         if unchanged:
             unchanged_label = QLabel("Unchanged Elements:")
             unchanged_label.setObjectName("unchanged")
             content_layout.addWidget(unchanged_label)
             for item in unchanged:
-                content_layout.addWidget(QLabel(f"  • {item}"))
-        QTimer.singleShot(4000, self.accept)
+                item_label = QLabel(f"  • {item}")
+                item_label.setStyleSheet(f"color: {UI_COLORS.DANGER};")
+                content_layout.addWidget(item_label)
 
 class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHandlers):
     done_organizing = pyqtSignal()
@@ -551,13 +557,56 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not success:
             QMessageBox.critical(self, "Save", "Failed to save configuration. Please check logs.")
             return
-        SummaryToast(configured, unchanged, self).exec_()
+        summary_toast = SummaryToast(configured, unchanged, self)
+        summary_toast.show()
+        summary_toast.raise_()
+        summary_toast.activateWindow()
+        self._start_exit_sequence(summary_toast)
         self._dirty = False
         self._refresh_done_button()
         self.status_label.setText("Configuration saved")
         self.modified_roles.clear()
         if hasattr(self, 'done_organizing'):
             self.done_organizing.emit()
+
+    def _build_opacity_anim(self, widget, start, end, duration_ms):
+        anim = QPropertyAnimation(widget, b"windowOpacity")
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setDuration(duration_ms)
+        anim.setEasingCurve(QEasingCurve.InOutQuad)
+        return anim
+
+    def _start_exit_sequence(self, summary_dialog):
+        widgets = [w for w in (self, summary_dialog) if w]
+        if hasattr(self, '_exit_animation') and self._exit_animation:
+            self._exit_animation.stop()
+        blink_cycle_ms = 250
+        blink_cycles = 4
+        sequence = QSequentialAnimationGroup(self)
+        for _ in range(blink_cycles):
+            fade_out = QParallelAnimationGroup(sequence)
+            fade_in = QParallelAnimationGroup(sequence)
+            for widget in widgets:
+                fade_out.addAnimation(self._build_opacity_anim(widget, 1.0, 0.3, blink_cycle_ms))
+                fade_in.addAnimation(self._build_opacity_anim(widget, 0.3, 1.0, blink_cycle_ms))
+            sequence.addAnimation(fade_out)
+            sequence.addAnimation(fade_in)
+        fade_out_all = QParallelAnimationGroup(sequence)
+        for widget in widgets:
+            fade_out_all.addAnimation(self._build_opacity_anim(widget, 1.0, 0.0, 800))
+        sequence.addAnimation(fade_out_all)
+
+        def finalize_exit():
+            for widget in widgets:
+                widget.setWindowOpacity(1.0)
+            if summary_dialog:
+                summary_dialog.close()
+            self.close()
+            QApplication.instance().quit()
+        sequence.finished.connect(finalize_exit)
+        self._exit_animation = sequence
+        sequence.start()
 
     def set_background_image(self, full_pixmap):
         if full_pixmap.isNull(): return

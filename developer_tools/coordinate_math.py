@@ -32,27 +32,27 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
         in_w, in_h = map(int, original_resolution.split('x'))
         if in_w <= 0 or in_h <= 0:
             return rect
-        except (ValueError, AttributeError):
-            return rect
-        x, y, w, h = rect
-        scale_w = 1280.0 / in_w
-        scale_h = 1920.0 / in_h
-        scale = max(scale_w, scale_h)
-        scaled_w = in_w * scale
-        scaled_h = in_h * scale
-        crop_x = (scaled_w - 1280.0) / 2.0
-        crop_y = (scaled_h - 1920.0) / 2.0
-        rect_scaled_x = x * scale - crop_x
-        rect_scaled_y = y * scale - crop_y
-        rect_scaled_w = w * scale
-        rect_scaled_h = h * scale
-        final_x = rect_scaled_x * 1080.0 / 1280.0
-        final_y = rect_scaled_y * 1080.0 / 1280.0
-        final_w = rect_scaled_w * 1080.0 / 1280.0
-        final_h = rect_scaled_h * 1080.0 / 1280.0
-        final_w = max(0.0, final_w)
-        final_h = max(0.0, final_h)
-        return (final_x, final_y, final_w, final_h)
+    except (ValueError, AttributeError):
+        return rect
+    x, y, w, h = rect
+    scale_w = 1280.0 / in_w
+    scale_h = 1920.0 / in_h
+    scale = max(scale_w, scale_h)
+    scaled_w = in_w * scale
+    scaled_h = in_h * scale
+    crop_x = (scaled_w - 1280.0) / 2.0
+    crop_y = (scaled_h - 1920.0) / 2.0
+    rect_scaled_x = x * scale - crop_x
+    rect_scaled_y = y * scale - crop_y
+    rect_scaled_w = w * scale
+    rect_scaled_h = h * scale
+    final_x = rect_scaled_x * 1080.0 / 1280.0
+    final_y = rect_scaled_y * 1080.0 / 1280.0
+    final_w = rect_scaled_w * 1080.0 / 1280.0
+    final_h = rect_scaled_h * 1080.0 / 1280.0
+    final_w = max(0.0, final_w)
+    final_h = max(0.0, final_h)
+    return (final_x, final_y, final_w, final_h)
 
 def transform_to_content_area_int(rect: Tuple[int, int, int, int],
                                 original_resolution: str) -> Tuple[int, int, int, int]:
