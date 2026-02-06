@@ -78,7 +78,7 @@ def setup_logger():
     if base_logger.handlers:
         for handler in base_logger.handlers:
             base_logger.removeHandler(handler)
-    file_handler = logging.FileHandler(log_file_path)
+    file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
     formatter = logging.Formatter('%(asctime)s | %(name)-12s | %(levelname)-8s | %(message)s')
     file_handler.setFormatter(formatter)
     base_logger.addHandler(file_handler)

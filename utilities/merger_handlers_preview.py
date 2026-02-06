@@ -22,34 +22,69 @@ class MergerHandlersPreviewMixin:
         from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QFrame
         import os
         w = QWidget()
-        w.setStyleSheet("background-color:transparent;")
-        w.setFixedSize(700, 42)
+        w.setFixedHeight(52)
+        # Match the fixed size of the inner frame
+        w.setMinimumWidth(720) 
+        w.setStyleSheet("background: transparent;")
+        
         h = QHBoxLayout(w)
-        h.setContentsMargins(2, 2, 2, 2)
+        h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
+        h.addStretch(1)
+        
         frame = QFrame()
         frame.setObjectName("videoItemFrame")
-        frame.setFixedHeight(38)
-        frame.setStyleSheet("QFrame#videoItemFrame { background-color:#4a667a; border-radius:6px; border: 2px solid transparent; }")
+        # Use a fixed size for the block to guarantee consistency and prevent squashing
+        frame.setFixedSize(720, 42) 
+        frame.setStyleSheet("""
+            QFrame#videoItemFrame { 
+                background-color: #2c3e50; 
+                border: 2px solid #34495e; 
+                border-radius: 8px; 
+            }
+            QFrame#videoItemFrame:hover {
+                background-color: #34495e;
+                border-color: #3498db;
+            }
+        """)
+        
         frame_layout = QHBoxLayout(frame)
-        frame_layout.setContentsMargins(12, 2, 4, 2)
-        frame_layout.setSpacing(2)
+        frame_layout.setContentsMargins(15, 0, 10, 0)
+        frame_layout.setSpacing(10)
+        
         lbl = QLabel(os.path.basename(path))
         lbl.setObjectName("fileLabel")
-        lbl.setStyleSheet("font-size:13px; color: white; background-color: transparent; border: none;")
+        lbl.setStyleSheet("font-size:13px; font-weight: 600; color: #ecf0f1; background: transparent; border: none;")
         lbl.setToolTip(path)
         lbl.setWordWrap(False)
-        lbl.setMinimumWidth(120)
-        lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lbl.setFixedHeight(24)
-        btn = QPushButton("▶  Preview  ▶")
+        lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        btn = QPushButton("▶  PREVIEW  ▶")
         btn.setObjectName("playButton")
-        btn.setFixedSize(110, 30)
-        btn.setStyleSheet("background-color:#2c687e; color:white; border-radius:6px; font-size:12px; margin-right: 2px; padding: 1px; border: none;")
+        btn.setFixedSize(110, 28)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton#playButton {
+                background-color: #2980b9; 
+                color: white; 
+                border-radius: 6px; 
+                font-size: 10px; 
+                font-weight: bold;
+                border: none;
+            }
+            QPushButton#playButton:hover {
+                background-color: #3498db;
+            }
+        """)
         btn.setProperty("path", path)
         btn.clicked.connect(self.preview_clicked)
+        
         frame_layout.addWidget(lbl, 1)
         frame_layout.addWidget(btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        
         h.addWidget(frame)
+        h.addStretch(1)
+        
         w.video_frame = frame
         return w

@@ -8,7 +8,7 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 # General Project Guidelines:
 # 1. To maintain readability and focus, each code/script file should not exceed 150-200 lines. Logic should be divided into multiple separate files.
 # 2. This file (.\project_structure.txt) must be kept up-to-date, reflecting all changes in the project structure.
-# 3. Video tempo and audio pitch scale with the speed multiplier, but background music tempo remains constant.
+# 3. Video tempo scales with the speed multiplier, but audio pitch and background music tempo remain constant.
 # 4. To ensure dialogue and in-game sounds are clear, the main video's audio is protected using "Volume Ducking" and "EQ Ducking" against the background music.
 #    - Volume Ducking: When the main audio exceeds -16.5 dB (a threshold of 0.15), the background music volume is compressed at a 2.5:1 ratio.
 #    - EQ Ducking: The music is split at 150 Hz. Ducking is applied only to frequencies above 150 Hz, preserving the music's bassline while carving out space for the main audio.
@@ -121,43 +121,59 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 │   ├── parts/: Mixins for the main window.
 │   │   ├── events_mixin.py: Mixin for handling events.
 │   │   ├── ffmpeg_mixin.py: Mixin for handling ffmpeg processes.
-│   │   ├── keyboard_mixin.py: Mixin for handling keyboard shortcuts.
-│   │   ├── music_mixin.py: Mixin for handling background music.
-│   │   ├── phase_overlay_mixin.py: Mixin for handling the processing phase overlay.
-│   │   ├── player_mixin.py: Mixin for handling the video player.
-│   │   ├── trim_mixin.py: Mixin for handling video trimming.
-│   │   ├── ui_builder_mixin.py: Mixin for building the UI.
-│   │   └── volume_mixin.py: Mixin for handling volume controls.
-│   └── widgets/: Custom widgets for the UI.
-│       ├── clickable_button.py: A button with a custom click event.
-│       ├── custom_file_dialog.py: A custom file dialog.
-│       ├── draggable_list_widget.py: A list widget with drag and drop functionality.
-│       ├── drop_area.py: A frame that accepts file drops.
-│       ├── music_offset_dialog.py: A dialog for setting the music offset.
-│       ├── portrait_mask_overlay.py: An overlay for the portrait mode.
-│       ├── slider_container.py: A container for the timeline slider.
-│       ├── timeline_slider.py: A custom slider for the timeline.
-│       ├── tooltip_manager.py: Manages tooltips for widgets.
-│       └── trimmed_slider.py: A slider with trim handles.
-│
-└── utilities/: The Video Merger application.
-    ├── merger_ffmpeg_process.py: Handles the ffmpeg process for the merger.
-    ├── merger_ffmpeg.py: The main ffmpeg handler for the merger.
-    ├── merger_handlers_buttons.py: Handlers for the buttons in the merger.
-    ├── merger_handlers_dialogs.py: Handlers for the dialogs in the merger.
-    ├── merger_handlers_list.py: Handlers for the list widget in the merger.
-    ├── merger_handlers_main.py: The main event handler for the merger.
-    ├── merger_handlers_preview.py: Handlers for the preview in the merger.
-    ├── merger_music_dialog.py: The music dialog for the merger.
-    ├── merger_phase_overlay_mixin.py: A mixin for handling the processing phase overlay in the merger.
-    ├── merger_ui_badge.py: The badge for the UI in the merger.
-    ├── merger_ui_build.py: Builds the UI for the merger.
-    ├── merger_ui_main.py: The main UI for the merger.
-    ├── merger_ui_overlay.py: The overlay for the UI in the merger.
-    ├── merger_ui_style.py: The style for the UI in the merger.
-    ├── merger_ui_widgets.py: Widgets for the UI in the merger.
-    ├── merger_ui.py: The main UI module for the merger.
-    ├── merger_utils.py: Utility functions for the merger.
-    ├── merger_window_logic.py: The logic for the merger window.
-    ├── merger_window.py: The main window for the merger.
-    └── video_merger.py: Main entry point for the Video Merger application.
+
+
+
+
+
+# ==============================================================================
+# PRODUCTION SANITY TEST SUITE (STRICT QUALITY ASSURANCE)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. AI AGENT SANITY CHECK QUESTIONS (20 MOST IMPORTANT)
+# ------------------------------------------------------------------------------
+# 1. GPU PREFERENCE: Does the app always prioritize GPU (NVENC/AMF/QSV) over CPU for heavy encoding tasks?
+# 2. FAILBACK LOGIC: Does the app successfully fallback to CPU-only (libx264) if no compatible GPU is detected?
+# 3. MULTI-VENDOR GPU: Does the app work correctly on AMD and Intel GPUs, not just NVIDIA?
+# 4. AUDIO PARITY: Is the output audio quality identical or the closest possible match to the original source?
+# 5. RESIDUE CLEANUP: Are all temporary files (.mp4, .txt, .log) deleted from Temp, especially after clicking 'CANCEL'?
+# 6. ATEMPO LIMITS: Does the app strictly use 'atempo' for all speed changes, and stay within the 0.5x - 3.1x range?
+# 7. WAVELENGTH SOURCE: Is 'ffmpeg showwaves' used for audio visualizers? Is it more efficient than manual Python draws?
+# 8. PIP REDUCTION: Are unnecessary packages like 'pynput' or 'PyQtWebEngine' removed to keep the installation lean?
+# 9. BITRATE INTELLIGENCE: Do short videos (<5s) at 'Maximum' quality correctly avoid exceeding the source file size?
+# 10. MUSIC OFFSET MATH: Does the app accurately calculate music stop points when pink offset handles + Granular Speeds are used?
+# 11. ASPECT RATIO MATH: Do 16:9 sources at any resolution (720p to 4K) maintain perfect HUD anchor scaling?
+# 12. SHELL OVERFLOW: Are all FFmpeg complex filters passed via .txt script files to bypass Windows character limits?
+# 13. BIDI WRAPPING: Do mixed RTL/LTR Hebrew/English strings wrap correctly within the 150px top-bar?
+# 14. RESOURCE LEAKS: Is system memory (RAM) fully released after the 'ProcessThread' finishes a job?
+# 15. TEMPLATE MATCHING: Is 'Magic Wand' accuracy verified against the latest Fortnite season HUD reference images?
+# 16. STRATEGY FEEDBACK: Does the status bar correctly report the finalized hardware strategy (e.g., '✅ NVENC Enabled')?
+# 17. PROBE ROBUSTNESS: Does the app handle corrupted 0-byte or non-video files without crashing?
+# 18. CONFIG RECOVERY: Does the app reset to 1500x800 centered if the 'Config' folder or 'main_app.conf' is deleted?
+# 19. PERMISSION HANDLING: Does the app report an error if the output directory is read-only or protected?
+# 20. GPU PUSH: Can the processing (e.g., filters/scaling) be pushed further into the GPU pipeline (OpenCL/CUDA)?
+
+# ------------------------------------------------------------------------------
+# 2. MANUAL SANITY CHECK TASKS (20 MOST IMPORTANT)
+# ------------------------------------------------------------------------------
+# 1. QUALITY CHECK: Upload a video, move quality slider to 'Standard'. Verify output is approx 45MB.
+# 2. MUSIC MIX: Add MP3 background music. Verify processing succeeds and music is audible/ducked.
+# 3. SPEED SYNC: Set speed to 3.0. Verify video and audio remain perfectly synced until the very end.
+# 4. PORTRAIT BAD: Process 'Bad' quality in both Landscape and Portrait. Verify both are 10MB-15MB.
+# 5. MERGER TEST: Join 2 videos + music in Merger. Verify no audio pops or visual gaps at the transition.
+# 6. HIDDEN CONSOLE: Launch all 3 apps (Merger, Compressor, Crop). Verify NO black CMD windows appear.
+# 7. GHOST PROCESS: Open Editor -> Merger -> Close All. Verify no 'cmd.exe' or 'python.exe' remains in Task Manager.
+# 8. CONFIG RESET: Delete .\Config\ folder. Verify window centers and all settings return to defaults.
+# 9. MUSIC OVERLAP: Use music shorter than the video. Verify it stops/fades out before the video trim end.
+# 10. THUMBNAIL SPEED: Set 1.2x speed. Pick thumbnail. Verify the image matches the playhead frame exactly.
+# 11. GRANULAR EDIT: Edit segments, save, re-open. Verify segments are remembered and still editable.
+# 12. BOSS HP SHIFT: Toggle 'Boss HP'. Verify HUD crops in Portrait View shift to the correct boss positions.
+# 13. HOVER BADGES: Hover over Volume handles. Verify the % badge appears and updates correctly.
+# 14. CANCEL REACTION: Start processing and click 'CANCEL' immediately. Verify app returns to 'Ready'.
+# 15. HEBREW CENTERING: Type Hebrew in Mobile Format. Verify it is centered correctly in the final video.
+# 16. TRIM PRECISION: Drag trim handles to 0.1s precision. Verify FFmpeg cuts at the exact requested time.
+# 17. DRAG & DROP: Drop a file from a network drive or different partition. Verify it loads successfully.
+# 18. MULTI-MONITOR: Move app to Monitor 2. Open Editor. Verify it opens on Monitor 2, not Monitor 1.
+# 19. HARDWARE SCAN: Watch launch. Verify 'Scanning...' status bar message appears then changes to 'Ready'.
+# 20. APP SWITCHING: Use F11/F12 to jump between apps. Verify the current video file follows you.

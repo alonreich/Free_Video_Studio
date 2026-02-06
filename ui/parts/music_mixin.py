@@ -121,6 +121,7 @@ class MusicMixin:
     
     def _on_add_music_toggled(self, checked: bool):
         """Show/enable music controls only if files exist and checkbox checked."""
+        self.logger.info(f"USER: {'Enabled' if checked else 'Disabled'} background music mixing")
         have_files = bool(self._music_files)
         enable = checked and have_files
         self.positionSlider.set_music_visible(enable)
@@ -300,6 +301,7 @@ class MusicMixin:
         """Keep label/badge in effective % while the slider is inverted."""
         try:
             eff = self._music_eff(raw)
+            self.logger.info(f"USER: Adjusted music volume to {eff}%")
             if hasattr(self, "music_volume_label"):
                 self.music_volume_label.setText(f"{eff}%")
             if hasattr(self, "_update_music_badge"):

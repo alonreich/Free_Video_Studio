@@ -1,4 +1,5 @@
 ﻿import vlc
+import time
 from PyQt5.QtCore import QTimer
 from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtWidgets import QStyle
@@ -66,14 +67,28 @@ class PlayerMixin:
             if getattr(self, 'vlc_music_player', None) and self.add_music_checkbox.isChecked() and not getattr(self, 'vlc_music_player').is_playing():
                  if self.music_timeline_start_ms <= current_time < self.music_timeline_end_ms:
                     self.set_vlc_position(current_time, sync_only=True)
-            if hasattr(self, 'speed_segments') and self.speed_segments and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
-                target_speed = self.playback_rate
-                for seg in self.speed_segments:
-                    if seg['start'] <= current_time < seg['end']:
-                        target_speed = seg['speed']
-                        break
+            if hasattr(self, 'speed_segments') and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
+                target_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1
+                current_segment_index = -1
+                if self.speed_segments:
+                    for i, seg in enumerate(self.speed_segments):
+                        if seg['start'] <= current_time < seg['end']:
+                            target_speed = seg['speed']
+                            current_segment_index = i
+                            break
+                if not hasattr(self, '_last_rate_update_main'): self._last_rate_update_main = 0
+                now = time.time()
                 if abs(self.vlc_player.get_rate() - target_speed) > 0.05:
-                    self.vlc_player.set_rate(target_speed)
+                    if now - self._last_rate_update_main > 0.1:
+                        self.vlc_player.set_rate(target_speed)
+                        self._last_rate_update_main = now
+                        if hasattr(self, 'logger'):
+                            seg_info = f"Segment {current_segment_index}" if current_segment_index >= 0 else "Base"
+                            self.logger.info(f"PREVIEW: Switched to {target_speed}x ({seg_info}) at {current_time}ms")
+            elif not getattr(self, 'granular_checkbox', None) or not self.granular_checkbox.isChecked():
+                global_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1
+                if abs(self.vlc_player.get_rate() - global_speed) > 0.05:
+                    self.vlc_player.set_rate(global_speed)
             is_currently_vlc_playing = self.vlc_player.get_state() == vlc.State.Playing
             if is_currently_vlc_playing != getattr(self, "is_playing", None):
                 self.is_playing = is_currently_vlc_playing

@@ -21,7 +21,10 @@ class StatsWorker(QThread):
 
     def stop(self):
         self.running = False
-        self.wait()
+        self.quit()
+        if not self.wait(1000):
+            self.terminate()
+            self.wait()
 
     def run(self):
         while self.running:

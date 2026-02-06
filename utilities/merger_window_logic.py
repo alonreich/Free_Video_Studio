@@ -210,8 +210,9 @@ class MergerWindowLogic:
                 listw.insertItem(to_row, item)
             if existing_widget and not rebuild_widget:
                 try:
+                    from PyQt5.QtCore import QSize
                     existing_widget.setVisible(True)
-                    item.setSizeHint(existing_widget.sizeHint())
+                    item.setSizeHint(QSize(existing_widget.width(), 52))
                     listw.setItemWidget(item, existing_widget)
                 except RuntimeError:
                     existing_widget = None

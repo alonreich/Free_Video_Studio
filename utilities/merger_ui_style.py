@@ -50,14 +50,15 @@ class MergerUIStyleMixin:
                  background-color: #c0392b;
             }
             QPushButton#mergeButton {
-                background-color: #27ae60;
-                color: white;
+                background-color: #146314;
+                color: black;
                 font-size: 16px;
+                font-weight: bold;
                 padding: 12px 30px;
                 border-radius: 8px;
             }
             QPushButton#mergeButton:hover {
-                background-color: #2ecc71;
+                background-color: #c8f7c5;
             }
             QPushButton#returnButton {
                 background-color: #f39c12;
@@ -67,20 +68,21 @@ class MergerUIStyleMixin:
                  background-color: #f1c40f;
             }
             QListWidget {
-                background-color: #34495e;
-                border: 2px solid #4a667a;
-                border-radius: 8px;
-                padding: 8px;
-                font-size: 12px;
+                background-color: #1e2a36;
+                border: 2px solid #266b89;
+                border-radius: 12px;
+                padding: 5px;
                 outline: none;
             }
             QListWidget::item {
-                border-bottom: 1px solid #2c3e50;
-                padding: 4px;
+                background-color: transparent;
+                border: none;
+                margin: 2px 0px;
+                padding: 0px;
             }
             QListWidget::item:selected {
-                background-color: #2980b9;
-                border-radius: 4px;
+                background-color: rgba(52, 152, 219, 0.15);
+                border-radius: 10px;
             }
             QComboBox, QDoubleSpinBox {
                 background-color: #34495e;

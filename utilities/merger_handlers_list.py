@@ -16,12 +16,14 @@ class AddCommand(QUndoCommand):
 
     def redo(self):
         for entry in self.items_data:
+            path = entry["path"]
             self.parent.event_handler._add_single_item_internal(
-                entry["path"],
+                path,
                 row=entry.get("row"),
                 probe_data=entry.get("probe_data"),
                 f_hash=entry.get("f_hash")
             )
+            self.parent.logger.info(f"LIST: Added file '{os.path.basename(path)}' at row {entry.get('row')}")
 
     def undo(self):
         for entry in self.items_data:
@@ -30,6 +32,7 @@ class AddCommand(QUndoCommand):
                 it = self.list_widget.item(i)
                 if it.data(Qt.UserRole) == path:
                     self.list_widget.takeItem(i)
+                    self.parent.logger.info(f"UNDO: Removed file '{os.path.basename(path)}'")
                     break
 
 class RemoveCommand(QUndoCommand):
@@ -49,11 +52,13 @@ class RemoveCommand(QUndoCommand):
                 it = self.list_widget.item(i)
                 if it.data(Qt.UserRole) == path:
                     self.list_widget.takeItem(i)
+                    self.parent.logger.info(f"LIST: Removed file '{os.path.basename(path)}' from row {row}")
                     break
 
     def undo(self):
         for row, path, probe_data, f_hash in reversed(self.items_data):
             self.parent.event_handler._add_single_item_internal(path, row, probe_data, f_hash)
+            self.parent.logger.info(f"UNDO: Restored file '{os.path.basename(path)}' to row {row}")
 
 class MoveCommand(QUndoCommand):
     def __init__(self, parent, from_row, to_row):
@@ -64,9 +69,11 @@ class MoveCommand(QUndoCommand):
 
     def redo(self):
         self.parent.perform_move(self.from_row, self.to_row)
+        self.parent.logger.info(f"LIST: Moved item from index {self.from_row} to {self.to_row}")
 
     def undo(self):
         self.parent.perform_move(self.to_row, self.from_row)
+        self.parent.logger.info(f"UNDO: Moved item back from index {self.to_row} to {self.from_row}")
 
 class ClearCommand(QUndoCommand):
     def __init__(self, parent, items_data, list_widget):
@@ -77,15 +84,18 @@ class ClearCommand(QUndoCommand):
 
     def redo(self):
         self.list_widget.clear()
+        self.parent.logger.info(f"LIST: Cleared all {len(self.items_data)} items from list")
 
     def undo(self):
         for entry in self.items_data:
+            path = entry["path"]
             self.parent.event_handler._add_single_item_internal(
-                entry["path"],
+                path,
                 row=entry.get("row"),
                 probe_data=entry.get("probe_data"),
                 f_hash=entry.get("f_hash")
             )
+        self.parent.logger.info(f"UNDO: Restored {len(self.items_data)} items to list")
 
 class MergerHandlersListMixin:
     def __init__(self):
@@ -140,44 +150,55 @@ class MergerHandlersListMixin:
         probe_data = item.data(Qt.UserRole + 1)
         f_hash = item.data(Qt.UserRole + 2)
         row = self.parent.listw.row(item) + 1
-        new_row = self._add_single_item_internal(path, row, probe_data, f_hash)
         entry = {
             "path": path,
-            "row": new_row,
+            "row": row,
             "probe_data": probe_data,
             "f_hash": f_hash
         }
         self.undo_stack.push(AddCommand(self.parent, [entry], self.parent.listw))
 
     def on_merge_clicked(self):
+        self.parent.logger.info("USER: Clicked MERGE VIDEOS")
         self.parent.start_merge_processing()
 
     def add_videos(self):
         if self._loading_lock: return
+        self.parent.logger.info("USER: Clicked ADD VIDEOS")
         start_dir = self.parent.logic_handler.get_last_dir()
         files, _ = QFileDialog.getOpenFileNames(
             self.parent, "Select videos to merge", start_dir,
             "Videos (*.mp4 *.mov *.mkv *.m4v *.ts *.avi *.webm);;All Files (*)"
         )
-        if not files: return
+        if not files:
+            self.parent.logger.info("USER: Cancelled file selection")
+            return
+        self.parent.logger.info(f"USER: Selected {len(files)} files to add")
         self._start_file_loader(files)
 
     def add_folder(self):
         if self._loading_lock: return
+        self.parent.logger.info("USER: Clicked ADD FOLDER")
         start_dir = self.parent.logic_handler.get_last_dir()
         folder = QFileDialog.getExistingDirectory(self.parent, "Select Folder of Videos", start_dir)
-        if not folder: return
+        if not folder:
+            self.parent.logger.info("USER: Cancelled folder selection")
+            return
+        self.parent.logger.info(f"USER: Selected folder '{folder}'")
         exts = {'.mp4', '.mov', '.mkv', '.m4v', '.ts', '.avi', '.webm'}
         files = []
         try:
             for p in Path(folder).iterdir():
                 if p.is_file() and p.suffix.lower() in exts:
                     files.append(str(p))
-        except Exception:
+        except Exception as e:
+            self.parent.logger.error(f"ERROR: Failed to read folder: {e}")
             pass
         if not files:
+            self.parent.logger.info("USER: No valid videos found in folder")
             QMessageBox.information(self.parent, "No Videos", "No video files found in that folder.")
             return
+        self.parent.logger.info(f"USER: Found {len(files)} videos in folder")
         self._start_file_loader(sorted(files))
 
     def add_videos_from_list(self, files):
@@ -211,10 +232,10 @@ class MergerHandlersListMixin:
             self.parent.logic_handler.save_config()
 
     def _on_file_loaded(self, path, size, probe_data, f_hash):
-        row = self._add_single_item_internal(path, probe_data=probe_data, f_hash=f_hash)
+        current_idx = self.parent.listw.count() + len(self._pending_undo_items)
         self._pending_undo_items.append({
             "path": path,
-            "row": row,
+            "row": current_idx,
             "probe_data": probe_data,
             "f_hash": f_hash
         })
@@ -239,7 +260,8 @@ class MergerHandlersListMixin:
                 if vid:
                     w.set_resolution_label(f"{vid['width']}x{vid['height']}")
             except: pass
-        item.setSizeHint(w.sizeHint())
+        from PyQt5.QtCore import QSize
+        item.setSizeHint(QSize(w.width(), 52))
         if row is not None:
             self.parent.listw.insertItem(row, item)
             inserted_row = row
@@ -265,6 +287,7 @@ class MergerHandlersListMixin:
     def remove_selected(self):
         selected = self.parent.listw.selectedItems()
         if not selected: return
+        self.parent.logger.info(f"USER: Clicked REMOVE SELECTED ({len(selected)} items selected)")
         cmd = RemoveCommand(self.parent, selected, self.parent.listw)
         self.undo_stack.push(cmd)
         self.parent.event_handler.update_button_states()
@@ -273,6 +296,7 @@ class MergerHandlersListMixin:
 
     def clear_all(self):
         if self.parent.listw.count() == 0: return
+        self.parent.logger.info("USER: Clicked CLEAR ALL")
         items_data = []
         for i in range(self.parent.listw.count()):
             it = self.parent.listw.item(i)
@@ -289,6 +313,8 @@ class MergerHandlersListMixin:
     def move_item(self, direction: int):
         sel = self.parent.listw.selectedItems()
         if not sel: return
+        dir_name = "UP" if direction < 0 else "DOWN"
+        self.parent.logger.info(f"USER: Clicked MOVE {dir_name} ({len(sel)} items selected)")
         rows = sorted([self.parent.listw.row(i) for i in sel])
         if not rows: return
         if direction < 0:
@@ -305,7 +331,11 @@ class MergerHandlersListMixin:
         
     def on_drag_completed(self, start_row, end_row, path, tag):
         if start_row == end_row: return
-        self.undo_stack.push(MoveCommand(self.parent, start_row, end_row))
+        self.parent.logger.info(f"USER: Drag reordered '{os.path.basename(path)}' from row {start_row} to {end_row}")
+        # Clear undo stack to prevent state corruption during complex reordering
+        self.undo_stack.clear()
+        self.parent.logic_handler.save_config()
+        self.parent.event_handler.update_button_states()
 
     def on_rows_moved(self, sourceParent, sourceStart, sourceEnd, destinationParent, destinationRow):
         """

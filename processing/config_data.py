@@ -23,30 +23,30 @@ class VideoConfig:
         conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
         default_conf_data = {
             "crops_1080p": {
-                "loot": [506, 96, 1422, 1466],
-                "stats": [317, 228, 1631, 33],
-                "normal_hp": [464, 102, -840, 1473],
-                "boss_hp": [0, 0, 0, 0],
-                "team": [639, 333, 176, 234]
+                "loot": [400, 400, 680, 1220],
+                "stats": [350, 350, 730, 0],
+                "normal_hp": [450, 150, 30, 1470],
+                "boss_hp": [450, 150, 30, 1470],
+                "team": [300, 400, 30, 100]
             },
             "scales": {
-                "loot": 1.2931,
-                "stats": 1.4886,
-                "team": 1.61,
-                "normal_hp": 1.1847,
-                "boss_hp": 0.0
+                "loot": 1.0,
+                "stats": 1.0,
+                "team": 1.0,
+                "normal_hp": 1.0,
+                "boss_hp": 1.0
             },
             "overlays": {
-                "loot": {"x": 509, "y": 1406},
-                "stats": {"x": 682, "y": 0},
-                "team": {"x": 32, "y": 1434},
-                "normal_hp": {"x": 31, "y": 1410},
-                "boss_hp": {"x": 0, "y": 0}
+                "loot": {"x": 680, "y": 1370},
+                "stats": {"x": 730, "y": 150},
+                "team": {"x": 30, "y": 250},
+                "normal_hp": {"x": 30, "y": 1620},
+                "boss_hp": {"x": 30, "y": 1620}
             },
             "window_geometry": {
                 "x": 71, "y": 43, "w": 1600, "h": 880
             },
-            "last_directory": "C:/Users/user/AppData/Local/Temp/Highlights/Fortnite",
+            "last_directory": "C:/",
             "portrait_window_geometry": {
                 "x": 595, "y": 90, "w": 700, "h": 880
             }

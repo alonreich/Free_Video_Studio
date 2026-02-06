@@ -3,12 +3,26 @@ Centralized coordinate transformation math for Fortnite Video Software.
 Ensures consistent scaling between crop tool preview and final render.
 """
 
+import math
 from typing import Tuple
 TARGET_W = 1280
 TARGET_H = 1920
 CONTENT_W = 1080
 CONTENT_H = 1620
 PADDING_TOP = 150
+BACKEND_SCALE = 1280.0 / 1080.0
+
+def scale_round(val: float) -> int:
+    """Consistent rounding to nearest integer, avoiding banker's rounding."""
+    return int(math.floor(val + 0.5))
+
+def outward_round_rect(x: float, y: float, w: float, h: float) -> Tuple[int, int, int, int]:
+    """Rounds a rectangle outwards: floor top-left, ceil bottom-right. Guaranteed 1x1 min size."""
+    ix = int(math.floor(x))
+    iy = int(math.floor(y))
+    iw = max(1, int(math.ceil(x + w) - ix))
+    ih = max(1, int(math.ceil(y + h) - iy))
+    return ix, iy, iw, ih
 
 def transform_to_content_area(rect: Tuple[float, float, float, float],
                             original_resolution: str) -> Tuple[float, float, float, float]:
@@ -19,12 +33,6 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
     2. Crop to 1280:1920 (center crop)
     3. Scale to 1080:1620
     4. Pad to 1080:1920 (black bars top/bottom)
-    Args:
-        rect: (x, y, width, height) in original resolution coordinates
-        original_resolution: "WxH" string (e.g., "1920x1080")
-    Returns:
-        (x, y, width, height) in 1080p portrait content area coordinates (y=0..1620).
-        Note: The final overlay positions have y offset +150 for padding.
     """
     if not original_resolution:
         return rect
@@ -46,10 +54,11 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
     rect_scaled_y = y * scale - crop_y
     rect_scaled_w = w * scale
     rect_scaled_h = h * scale
-    final_x = rect_scaled_x * 1080.0 / 1280.0
-    final_y = rect_scaled_y * 1080.0 / 1280.0
-    final_w = rect_scaled_w * 1080.0 / 1280.0
-    final_h = rect_scaled_h * 1080.0 / 1280.0
+    ui_scale = 1080.0 / 1280.0
+    final_x = rect_scaled_x * ui_scale
+    final_y = rect_scaled_y * ui_scale
+    final_w = rect_scaled_w * ui_scale
+    final_h = rect_scaled_h * ui_scale
     final_w = max(0.0, final_w)
     final_h = max(0.0, final_h)
     return (final_x, final_y, final_w, final_h)
@@ -57,44 +66,34 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
 def transform_to_content_area_int(rect: Tuple[int, int, int, int],
                                 original_resolution: str) -> Tuple[int, int, int, int]:
     """
-    Integer version of transform_to_content_area with epsilon rounding.
-    Uses epsilon=0.001 to avoid floating-point rounding errors.
+    Integer version of transform_to_content_area with outward rounding.
     """
     x, y, w, h = rect
     fx, fy, fw, fh = transform_to_content_area((float(x), float(y), float(w), float(h)), original_resolution)
-    EPSILON = 0.001
+    ix, iy, iw, ih = outward_round_rect(fx, fy, fw, fh)
     return (
-        int(round(fx + EPSILON)),
-        int(round(fy + EPSILON)),
-        int(round(fw + EPSILON)),
-        int(round(fh + EPSILON))
+        int(ix),
+        int(iy),
+        int(iw),
+        int(ih)
     )
 
-def clamp_overlay_position(x: int, y: int, width: int, height: int, padding_top: int = 0, padding_bottom: int = 0) -> Tuple[int, int]:
+def clamp_overlay_position(x: int, y: int, width: int, height: int, padding_top_ui: int = 0, padding_bottom_ui: int = 0) -> Tuple[int, int]:
     """
-    Clamp overlay position to screen bounds in 1280x1920 space.
+    Clamp overlay position to screen bounds in 1280x1920 backend canvas space.
     Args:
         x, y: Proposed overlay position in 1280x1920 space (top-left corner)
         width, height: Scaled overlay dimensions in 1280x1920 space
-    Returns:
-        (clamped_x, clamped_y) ensuring overlay stays within visible area:
-        x in [0, 1280 - width] (full width of cropped frame)
-        y in [0, 1920 - height] (full height, no text padding in this space)
-        Note: The 150 pixel text padding is handled upstream in portrait_window.py
-            before coordinates are passed to this function.
+        padding_top_ui: Padding in UI space (e.g., 150)
     """
-    min_y = max(0, padding_top)
-    max_y = max(min_y, TARGET_H - height - padding_bottom)
+    min_y = int(math.floor(padding_top_ui * BACKEND_SCALE))
+    max_y = max(min_y, TARGET_H - height - int(math.ceil(padding_bottom_ui * BACKEND_SCALE)))
     clamped_x = max(0, min(x, TARGET_W - width))
     clamped_y = max(min_y, min(y, max_y))
     return clamped_x, clamped_y
 
 def validate_crop_rect(rect: Tuple[int, int, int, int],
                         original_resolution: str) -> Tuple[bool, str]:
-    """
-    Validate crop rectangle for sanity.
-    Returns (is_valid, error_message)
-    """
     x, y, w, h = rect
     if w <= 0 or h <= 0:
         return False, f"Invalid rectangle dimensions: {w}x{h}"
@@ -109,32 +108,19 @@ def validate_crop_rect(rect: Tuple[int, int, int, int],
     return True, ""
 
 def scale_rect(rect: Tuple[float, float, float, float], scale_factor: float) -> Tuple[float, float, float, float]:
-    """
-    Scale a rectangle by a scale factor.
-    """
     x, y, w, h = rect
     return (x, y, w * scale_factor, h * scale_factor)
 
 def scale_rect_int(rect: Tuple[int, int, int, int], scale_factor: float) -> Tuple[int, int, int, int]:
-    """
-    Integer version of scale_rect with epsilon rounding.
-    """
     x, y, w, h = rect
-    EPSILON = 0.001
-    scaled_w = int(round(w * scale_factor + EPSILON))
-    scaled_h = int(round(h * scale_factor + EPSILON))
+    scaled_w = int(math.ceil(w * scale_factor))
+    scaled_h = int(math.ceil(h * scale_factor))
     return (x, y, scaled_w, scaled_h)
 
 def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
                                         original_resolution: str) -> Tuple[float, float, float, float]:
     """
     Inverse transformation from 1080p portrait content area back to original video coordinates.
-    This reverses the steps in transform_to_content_area.
-    Args:
-        rect: (x, y, width, height) in 1080p portrait content area coordinates (y=0..1620)
-        original_resolution: "WxH" string (e.g., "1920x1080")
-    Returns:
-        (x, y, width, height) in original resolution coordinates
     """
     if not original_resolution:
         return rect
@@ -145,23 +131,23 @@ def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
     except (ValueError, AttributeError):
         return rect
     x_content, y_content, w_content, h_content = rect
-    x_scaled = x_content * 1280 / 1080
-    y_scaled = y_content * 1280 / 1080
-    w_scaled = w_content * 1280 / 1080
-    h_scaled = h_content * 1280 / 1080
-    scale_w = TARGET_W / in_w
-    scale_h = TARGET_H / in_h
+    x_canvas = x_content * BACKEND_SCALE
+    y_canvas = y_content * BACKEND_SCALE
+    w_canvas = w_content * BACKEND_SCALE
+    h_canvas = h_content * BACKEND_SCALE
+    scale_w = 1280.0 / in_w
+    scale_h = 1920.0 / in_h
     scale = max(scale_w, scale_h)
     scaled_w = in_w * scale
     scaled_h = in_h * scale
-    crop_x = max(0, (scaled_w - TARGET_W) / 2)
-    crop_y = max(0, (scaled_h - TARGET_H) / 2)
-    x_uncropped = x_scaled + crop_x
-    y_uncropped = y_scaled + crop_y
-    x_original = x_uncropped / scale
-    y_original = y_uncropped / scale
-    w_original = w_scaled / scale
-    h_original = h_scaled / scale
+    crop_x = (scaled_w - 1280.0) / 2.0
+    crop_y = (scaled_h - 1920.0) / 2.0
+    x_scaled = x_canvas + crop_x
+    y_scaled = y_canvas + crop_y
+    x_original = x_scaled / scale
+    y_original = y_scaled / scale
+    w_original = w_canvas / scale
+    h_original = h_canvas / scale
     w_original = max(1.0, min(w_original, in_w))
     h_original = max(1.0, min(h_original, in_h))
     x_original = max(0.0, min(x_original, in_w - w_original))
@@ -170,17 +156,9 @@ def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
 
 def inverse_transform_from_content_area_int(rect: Tuple[int, int, int, int],
                                             original_resolution: str) -> Tuple[int, int, int, int]:
-    """
-    Integer version of inverse_transform_from_content_area with epsilon rounding.
-    """
     x, y, w, h = rect
     fx, fy, fw, fh = inverse_transform_from_content_area(
         (float(x), float(y), float(w), float(h)), original_resolution
     )
-    EPSILON = 0.001
-    return (
-        int(round(fx + EPSILON)),
-        int(round(fy + EPSILON)),
-        int(round(fw + EPSILON)),
-        int(round(fh + EPSILON))
-    )
+    return outward_round_rect(fx, fy, fw, fh)
+

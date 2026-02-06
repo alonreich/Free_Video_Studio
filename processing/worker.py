@@ -83,8 +83,10 @@ class ProcessThread(QThread):
             self.music_config['file_offset_sec'] = self.music_config.pop('file_offset_ms') / 1000.0
         if self.bg_music_path:
             self.music_config['path'] = self.bg_music_path
-            self.music_config['timeline_start_sec'] = self.start_time_ms / 1000.0
-            self.music_config['file_offset_sec'] = self.bg_music_offset_ms / 1000.0
+            if 'timeline_start_sec' not in self.music_config:
+                self.music_config['timeline_start_sec'] = self.start_time_ms / 1000.0
+            if 'file_offset_sec' not in self.music_config:
+                self.music_config['file_offset_sec'] = self.bg_music_offset_ms / 1000.0
             if 'timeline_end_sec' not in self.music_config:
                 self.music_config['timeline_end_sec'] = self.end_time_ms / 1000.0
             if 'volume' not in self.music_config:
@@ -120,13 +122,16 @@ class ProcessThread(QThread):
             granular_video_label = "[0:v]"
             granular_audio_label = None
             granular_filter_str = ""
+            time_mapper = None
             if self.speed_segments:
-                g_str, g_v, g_a, g_dur = self.filter_builder.build_granular_speed_chain(
-                    self.input_path, source_cut_duration_ms, self.speed_segments, self.speed_factor
+                g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
+                    self.input_path, source_cut_duration_ms, self.speed_segments, self.speed_factor,
+                    source_cut_start_ms=source_cut_start_ms
                 )
-                granular_filter_str = g_str + ";"
+                granular_filter_str = g_str
                 granular_video_label = g_v
                 granular_audio_label = g_a
+                time_mapper = t_map
                 self.duration_corrected_sec = g_dur
                 vfade_out_sec = vfade_out_duration_ms / 1000.0 / self.speed_factor
                 final_clip_duration_ms = int(self.duration_corrected_sec * 1000)
@@ -181,12 +186,13 @@ class ProcessThread(QThread):
                 audio_speed_cmd = ",".join(audio_speed_filters)
             audio_chains = self.filter_builder.build_audio_chain(
                 music_config=self.music_config,
-                video_start_time=self.start_time_ms / 1000.0,
-                video_end_time=self.end_time_ms / 1000.0,
+                video_start_time=source_cut_start_ms / 1000.0,
+                video_end_time=source_cut_end_ms / 1000.0,
                 speed_factor=self.speed_factor,
                 disable_fades=self.disable_fades,
                 vfade_in_d=int(vfade_in_duration_ms / self.speed_factor) / 1000.0,
-                audio_filter_cmd=audio_speed_cmd
+                audio_filter_cmd=audio_speed_cmd,
+                time_mapper=time_mapper
             )
             if self.speed_segments and granular_audio_label:
                 first_filter = audio_chains[0]
@@ -248,14 +254,21 @@ class ProcessThread(QThread):
                 if has_bg:
                     cmd.extend(['-i', self.bg_music_path])
                 cmd.extend(vcodec)
+                complex_filter_str = ';'.join(attempt_core_filters)
+                filter_script_path = os.path.join(temp_dir, f"filter_complex-{os.getpid()}-{int(time.time())}.txt")
+                with open(filter_script_path, "w", encoding="utf-8") as f_script:
+                    f_script.write(complex_filter_str)
+                if 'filter_scripts' not in dir(self): self.filter_scripts = []
+                self.filter_scripts.append(filter_script_path)
                 cmd.extend([
                     '-movflags', '+faststart',
                     '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
-                    '-filter_complex', ';'.join(attempt_core_filters),
+                    '-filter_complex_script', filter_script_path,
                     '-map', '[vcore]', '-map', '[acore]', '-shortest',
                     core_path
                 ])
                 self.logger.info(f"Full FFmpeg command: {' '.join(cmd)}")
+                self.logger.info(f"Filter script content length: {len(complex_filter_str)}")
                 self.logger.info(f"Attempting encode with '{encoder_name}'...")
                 self.current_process = create_subprocess(cmd, self.logger)
                 monitor_ffmpeg_progress(
@@ -312,6 +325,11 @@ class ProcessThread(QThread):
                 self.logger.exception(f"Job FAILURE: {e}")
                 self.finished_signal.emit(False, f"Error: {e}")
         finally:
+            if hasattr(self, 'filter_scripts'):
+                for fs in self.filter_scripts:
+                    if fs and os.path.exists(fs):
+                        try: os.remove(fs)
+                        except: pass
             if self.is_canceled and output_path and os.path.exists(output_path):
                 try: os.remove(output_path)
                 except: pass

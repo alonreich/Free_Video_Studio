@@ -217,7 +217,7 @@ class FfmpegMixin:
                 pass
     
     def on_process_finished(self, success, message):
-        button_size = (225, 55)
+        button_size = (250, 55)
         self.is_processing = False
         self._proc_start_ts = None
         self._phase_is_processing = False
@@ -383,6 +383,8 @@ class FfmpegMixin:
             try:
                 self.original_duration_ms = duration_ms
                 self.original_resolution = res_or_err
+                if hasattr(self, 'resolution_label'):
+                    self.resolution_label.setText(self.original_resolution)
                 self.positionSlider.setRange(0, duration_ms)
                 self.positionSlider.set_duration_ms(duration_ms)
                 self._update_trim_inputs()

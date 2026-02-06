@@ -211,17 +211,17 @@ class EnhancedCropLogger:
                 self.crop_logger.info("Configured elements:")
                 for element in sorted(configured_elements):
                     display_name = HUD_ELEMENT_MAPPINGS.get(element, element)
-                    self.crop_logger.info(f"  ✓ {display_name} ({element})")
+                    self.crop_logger.info(f"  [X] {display_name} ({element})")
                 not_configured = all_possible_elements - configured_elements
                 if not_configured:
                     self.crop_logger.info("Not configured yet:")
                     for element in sorted(not_configured):
                         display_name = HUD_ELEMENT_MAPPINGS.get(element, element)
-                        self.crop_logger.info(f"  ○ {display_name} ({element})")
+                        self.crop_logger.info(f"  [ ] {display_name} ({element})")
             except ImportError:
                 self.crop_logger.info(f"Configured elements ({len(configured_elements)} total):")
                 for element in sorted(configured_elements):
-                    self.crop_logger.info(f"  ✓ {element}")
+                    self.crop_logger.info(f"  [X] {element}")
             self.crop_logger.info("-" * 40)
             self.crop_logger.info("=" * 80)
             if self.current_operation:

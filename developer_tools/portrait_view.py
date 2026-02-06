@@ -112,6 +112,13 @@ class PortraitView(QGraphicsView):
                 return
         selected_items = self.scene().selectedItems()
         if selected_items:
+            for item in selected_items:
+                if hasattr(item, '_snap_active'):
+                    item._snap_active = False
+                if hasattr(item, '_snap_target_pos'):
+                    item._snap_target_pos = None
+                if hasattr(item, '_snap_anim_pos'):
+                    item._snap_anim_pos = None
             items_to_move = selected_items
             if event.modifiers() == Qt.ShiftModifier:
                 if event.key() == Qt.Key_Up:

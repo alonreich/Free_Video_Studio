@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 from PyQt5.QtCore import Qt, QTimer, QSize, QEvent
@@ -796,6 +796,7 @@ class UiBuilderMixin:
         self.granular_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; margin-right: 8px;")
         self.granular_checkbox.setCursor(Qt.PointingHandCursor)
         self.granular_checkbox.clicked.connect(self._handle_granular_click)
+        self.tooltip_manager.add_tooltip(self.granular_checkbox, "Enable variable speed segments throughout the video.")
         right_group.addWidget(self.granular_checkbox, 0)
         right_group.addWidget(speed_widget, 0)
         self.right_group_widget = QWidget(); self.right_group_widget.setLayout(right_group)
@@ -833,7 +834,17 @@ class UiBuilderMixin:
             }
         """)
         self.progress_bar.setValue(0)
-        player_col.addWidget(self.progress_bar)
+        progress_layout = QHBoxLayout()
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(10)
+        self.resolution_label = QLabel("")
+        self.resolution_label.setObjectName("resolutionLabel")
+        self.resolution_label.setStyleSheet("color: #ecf0f1; font-size: 11px; font-weight: bold;")
+        self.resolution_label.setFixedWidth(100)
+        self.resolution_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        progress_layout.addWidget(self.progress_bar, stretch=1)
+        progress_layout.addWidget(self.resolution_label)
+        player_col.addLayout(progress_layout)
         self.progress_update_signal.connect(self.on_progress)
         self.status_update_signal.connect(self.on_phase_update)
         self.process_finished_signal.connect(self.on_process_finished)

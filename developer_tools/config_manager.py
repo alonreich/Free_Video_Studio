@@ -42,25 +42,25 @@ class ConfigManager:
     REQUIRED_SECTIONS = ["crops_1080p", "scales", "overlays", "z_orders"]
     DEFAULT_VALUES = {
         "crops_1080p": {
-            "loot": [506, 96, 1422, 1466],
-            "stats": [317, 228, 1631, 33],
-            "normal_hp": [464, 102, -840, 1473],
-            "boss_hp": [0, 0, 0, 0],
-            "team": [639, 333, 176, 234]
+            "loot": [400, 400, 680, 1220],
+            "stats": [350, 350, 730, 0],
+            "normal_hp": [450, 150, 30, 1470],
+            "boss_hp": [450, 150, 30, 1470],
+            "team": [300, 400, 30, 100]
         },
         "scales": {
-            "loot": 1.2931,
-            "stats": 1.4886,
-            "team": 1.61,
-            "normal_hp": 1.1847,
-            "boss_hp": 0.0
+            "loot": 1.0,
+            "stats": 1.0,
+            "team": 1.0,
+            "normal_hp": 1.0,
+            "boss_hp": 1.0
         },
         "overlays": {
-            "loot": {"x": 509, "y": 1406},
-            "stats": {"x": 682, "y": 0},
-            "team": {"x": 32, "y": 1434},
-            "normal_hp": {"x": 31, "y": 1410},
-            "boss_hp": {"x": 0, "y": 0}
+            "loot": {"x": 680, "y": 1370},
+            "stats": {"x": 730, "y": 150},
+            "team": {"x": 30, "y": 250},
+            "normal_hp": {"x": 30, "y": 1620},
+            "boss_hp": {"x": 30, "y": 1620}
         },
         "z_orders": {
             "loot": 10,
@@ -539,7 +539,10 @@ class ConfigManager:
             config["crops_1080p"][tech_key] = normalized_rect
             success = self.save_config(config, enforce_consistency=True)
             if success:
-                self.logger.info(f"Saved TRANSFORMED crop coordinates for {tech_key}: {normalized_rect} (from original {original_resolution})")
+                self.logger.info(
+                    f"Saved OUTWARD-ROUNDED crop coordinates for {tech_key}: {normalized_rect} "
+                    f"(from original {original_resolution})"
+                )
                 return True
             else:
                 self.logger.error(f"Failed to save crop coordinates for {tech_key}")
@@ -598,16 +601,18 @@ class ConfigManager:
             BACKEND_SCALE = 1280.0 / 1080.0
             x_scaled = x * BACKEND_SCALE
             y_scaled = y * BACKEND_SCALE
+
+            from .coordinate_math import scale_round
             clamped_x_scaled, clamped_y_scaled = clamp_overlay_position(
-                int(round(x_scaled)),
-                int(round(y_scaled)),
+                scale_round(x_scaled),
+                scale_round(y_scaled),
                 scaled_width,
                 scaled_height,
-                padding_top=150,
-                padding_bottom=0
+                padding_top_ui=150,
+                padding_bottom_ui=0
             )
-            clamped_x = int(round(clamped_x_scaled / BACKEND_SCALE))
-            clamped_y = int(round(clamped_y_scaled / BACKEND_SCALE))
+            clamped_x = scale_round(clamped_x_scaled / BACKEND_SCALE)
+            clamped_y = scale_round(clamped_y_scaled / BACKEND_SCALE)
             if clamped_x != x or clamped_y != y:
                 self.logger.debug(f"Overlay position clamped from ({x},{y}) to ({clamped_x},{clamped_y}) in portrait space")
             config["overlays"][tech_key] = {"x": clamped_x, "y": clamped_y}

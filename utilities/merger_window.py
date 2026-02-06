@@ -1,7 +1,6 @@
 ﻿from PyQt5.QtWidgets import QMainWindow, QFileDialog, QApplication, QListWidget, QLabel, QPushButton, QMessageBox, QInputDialog, QShortcut
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QProcess, QThread, QStandardPaths, QMutex, QMutexLocker
-from PyQt5.QtGui import QIcon, QKeySequence, QDesktopServices, QUrl
-from PyQt5.QtCore import QRect
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QProcess, QThread, QStandardPaths, QMutex, QMutexLocker, QRect, QUrl
+from PyQt5.QtGui import QIcon, QKeySequence, QDesktopServices
 import sys
 import os
 sys.dont_write_bytecode = True
@@ -71,6 +70,64 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         QTimer.singleShot(100, self._scan_mp3_folder)
         self.event_handler.update_button_states()
         self.logger.info("OPEN: Video Merger window created")
+
+    def create_draggable_list_widget(self):
+        return SimpleDraggableList(self)
+
+    def add_videos(self):
+        self.event_handler.add_videos()
+
+    def remove_selected(self):
+        self.logger.info("USER: Clicked REMOVE SELECTED")
+        self.event_handler.remove_selected()
+
+    def move_item(self, direction):
+        self.event_handler.move_item(direction)
+
+    def return_to_main_app(self):
+        self.logger.info("USER: Clicked RETURN TO MENU")
+        self.return_to_main.emit()
+
+    def perform_move(self, from_row, to_row, rebuild_widget=False):
+        self.logic_handler.perform_move(from_row, to_row, rebuild_widget)
+
+    def make_item_widget(self, path):
+        return self.event_handler.make_item_widget(path)
+
+    def set_ui_busy(self, busy: bool):
+        self.btn_add.setEnabled(not busy)
+        self.btn_add_folder.setEnabled(not busy)
+        self.btn_remove.setEnabled(not busy)
+        self.btn_clear.setEnabled(not busy)
+        self.btn_merge.setEnabled(not busy)
+        self.btn_back.setEnabled(not busy)
+        self.listw.setEnabled(not busy)
+
+    def _paint_graph_event(self, event):
+        from PyQt5.QtGui import QPainter, QColor
+        p = QPainter(self._graph)
+        try:
+            p.setRenderHint(QPainter.Antialiasing)
+            rect = self._graph.rect()
+            p.fillRect(rect, QColor(20, 20, 20, 200))
+            if hasattr(self, '_cpu_hist') and self._cpu_hist:
+                path = self._cpu_hist
+                if len(path) > 1:
+                    w = rect.width()
+                    h = rect.height()
+                    step = w / 50.0
+                    p.setPen(QColor(0, 255, 255))
+                    for i in range(min(len(path), 50) - 1):
+                        x1 = w - (i * step)
+                        y1 = h - (path[-(i+1)] / 100.0 * h)
+                        x2 = w - ((i+1) * step)
+                        y2 = h - (path[-(i+2)] / 100.0 * h)
+                        p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        except: pass
+        finally: p.end()
+
+    def setup_progress_visualization(self):
+        pass
 
     def _cleanup_stale_temps(self):
         """Clean up old temp directories from previous crashes (Fix #16)."""
@@ -175,13 +232,14 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
             if reply == QMessageBox.Yes:
+                self.logger.info("USER: Confirmed CLEAR ALL")
                 self.listw.clear()
                 self.set_status_message("List cleared", "color: #ff6b6b; font-weight: bold;", 2000)
+            else:
+                self.logger.info("USER: Cancelled CLEAR ALL")
 
     def closeEvent(self, event):
-        if self.engine and self.engine.isRunning():
-            self.engine.cancel()
-            self.engine.wait(2000)
+        self._stop_all_workers()
         if self.config_manager:
             self.logic_handler.save_config()
         if self.vlc_instance:
@@ -189,6 +247,24 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                  self.vlc_instance.release()
              except Exception: pass
         super().closeEvent(event)
+
+    def _stop_all_workers(self):
+        """Safely stops all background threads before exit."""
+        if hasattr(self, '_stats_worker') and self._stats_worker:
+            try:
+                self._stats_worker.stop()
+                self._stats_worker = None
+            except: pass
+        if self.engine and self.engine.isRunning():
+            try:
+                self.engine.cancel()
+                self.engine.wait(1000)
+            except: pass
+        if self._probe_worker and self._probe_worker.isRunning():
+            try:
+                self._probe_worker.cancel()
+                self._probe_worker.wait(500)
+            except: pass
 
     def handle_status_update(self, msg: str):
         self.set_status_message(f"Processing... {msg}", "color: #43b581; font-weight: normal;", 1500)
@@ -367,6 +443,7 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
 
     def cancel_processing(self):
         if self.request_cancellation():
+            self.logger.info("USER: Clicked CANCEL MERGE")
             self.set_status_message("Cancelling...", "color: #ffa500;", force=True)
             if self.engine and self.engine.isRunning():
                 self.engine.cancel()

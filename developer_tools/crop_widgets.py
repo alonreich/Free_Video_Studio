@@ -373,6 +373,69 @@ class DrawWidget(QWidget):
             self.setCursor(Qt.CrossCursor)
             self.update()
 
+    def _get_ideal_popup_rect(self, popup_size, margin=15):
+        if self._crop_rect_img.isNull(): return None, None, None
+        if self.scroll_area:
+            v_rect = self.scroll_area.viewport().rect()
+            tl = self.mapFrom(self.scroll_area.viewport(), v_rect.topLeft())
+            visible_rect = QRectF(QPointF(tl), QSizeF(v_rect.size()))
+        else:
+            visible_rect = QRectF(self.rect())
+        rect_display = self._selection_display_rect
+        if rect_display.isNull():
+            rect_display = self._map_rect_to_display(self._crop_rect_img)
+        pw, ph = popup_size.width(), popup_size.height()
+        gap = 20
+        forbidden_rect = rect_display.adjusted(-gap, -gap, gap, gap)
+
+        def clamp(val, min_val, max_val):
+            return max(min_val, min(val, max_val))
+
+        def candidate_for(side):
+            if side == "right":
+                x = rect_display.right() + gap
+                y = rect_display.center().y() - (ph / 2)
+                y = clamp(y, visible_rect.top() + margin, visible_rect.bottom() - ph - margin)
+            elif side == "left":
+                x = rect_display.left() - pw - gap
+                y = rect_display.center().y() - (ph / 2)
+                y = clamp(y, visible_rect.top() + margin, visible_rect.bottom() - ph - margin)
+            elif side == "bottom":
+                y = rect_display.bottom() + gap
+                x = rect_display.center().x() - (pw / 2)
+                x = clamp(x, visible_rect.left() + margin, visible_rect.right() - pw - margin)
+            else:
+                y = rect_display.top() - ph - gap
+                x = rect_display.center().x() - (pw / 2)
+                x = clamp(x, visible_rect.left() + margin, visible_rect.right() - pw - margin)
+            return QRectF(x, y, pw, ph)
+        space_left = rect_display.left() - visible_rect.left()
+        space_right = visible_rect.right() - rect_display.right()
+        space_top = rect_display.top() - visible_rect.top()
+        space_bottom = visible_rect.bottom() - rect_display.bottom()
+        h_order = sorted([("right", space_right), ("left", space_left)], key=lambda i: i[1], reverse=True)
+        v_order = sorted([("bottom", space_bottom), ("top", space_top)], key=lambda i: i[1], reverse=True)
+        prefer_horizontal = max(space_left, space_right) >= max(space_top, space_bottom)
+        side_order = [s for s, _ in (h_order + v_order if prefer_horizontal else v_order + h_order)]
+        chosen_rect = None
+        for side in side_order:
+            cand = candidate_for(side)
+            if visible_rect.contains(cand) and not cand.intersects(forbidden_rect):
+                chosen_rect = cand
+                break
+        if not chosen_rect:
+            for side in side_order:
+                cand = candidate_for(side)
+                if not cand.intersects(forbidden_rect):
+                    chosen_rect = cand
+                    break
+        if not chosen_rect:
+            cand = candidate_for("bottom")
+            if cand.intersects(forbidden_rect):
+                cand = candidate_for("top")
+            chosen_rect = cand
+        return chosen_rect, rect_display, visible_rect
+
     def _show_role_toolbar(self, move_only=False):
         if self._crop_rect_img.isNull(): return
         if not hasattr(self, '_all_roles') or not self._all_roles:
@@ -383,47 +446,9 @@ class DrawWidget(QWidget):
         if not move_only:
             self.role_toolbar.set_roles(self._all_roles, getattr(self, '_configured_roles', set()))
             self.role_toolbar.adjustSize()
-        if self.scroll_area:
-            v_rect = self.scroll_area.viewport().rect()
-            tl = self.mapFrom(self.scroll_area.viewport(), v_rect.topLeft())
-            visible_rect = QRectF(QPointF(tl), QSizeF(v_rect.size()))
-        else:
-            visible_rect = QRectF(self.rect())
-        rect_display = self._selection_display_rect
-        if rect_display.isNull():
-            rect_display = self._map_rect_to_display(self._crop_rect_img)
-        tb_w = self.role_toolbar.width()
-        tb_h = self.role_toolbar.height()
-        buffer = 30
-        margin = 15
-        space_left = rect_display.left() - visible_rect.left()
-        space_right = visible_rect.right() - rect_display.right()
-        space_top = rect_display.top() - visible_rect.top()
-        space_bottom = visible_rect.bottom() - rect_display.bottom()
-        use_horizontal = True
-        if (space_left < tb_w + buffer) and (space_right < tb_w + buffer):
-            if (space_top > tb_h + buffer) or (space_bottom > tb_h + buffer):
-                use_horizontal = False
-        if use_horizontal:
-            if space_right >= space_left:
-                x = rect_display.right() + buffer
-            else:
-                x = rect_display.left() - tb_w - buffer
-            y = rect_display.center().y() - (tb_h / 2)
-        else:
-            if space_bottom >= space_top:
-                y = rect_display.bottom() + buffer
-            else:
-                y = rect_display.top() - tb_h - buffer
-            x = rect_display.center().x() - (tb_w / 2)
-        x = max(visible_rect.left() + margin, min(x, visible_rect.right() - tb_w - margin))
-        y = max(visible_rect.top() + margin, min(y, visible_rect.bottom() - tb_h - margin))
-        final_rect = QRectF(x, y, tb_w, tb_h)
-        if final_rect.intersects(rect_display):
-            if space_bottom > space_top:
-                y = visible_rect.bottom() - tb_h - margin
-            else:
-                y = visible_rect.top() + margin
+        chosen_rect, rect_display, visible_rect = self._get_ideal_popup_rect(self.role_toolbar.size(), margin=15)
+        if not chosen_rect: return
+        x, y = chosen_rect.x(), chosen_rect.y()
         global_pos = self.mapToGlobal(QPoint(int(x), int(y)))
         self.role_toolbar.move(global_pos)
         self.role_toolbar.show()
@@ -439,7 +464,9 @@ class DrawWidget(QWidget):
             action = QAction(role.upper(), self._role_menu)
             action.setData(role)
             self._role_menu.addAction(action)
-        popup_pos = self.mapToGlobal(self._last_mouse_release_pos)
+        chosen_rect, _, _ = self._get_ideal_popup_rect(self._role_menu.sizeHint(), margin=10)
+        if not chosen_rect: return
+        popup_pos = self.mapToGlobal(QPoint(int(chosen_rect.x()), int(chosen_rect.y())))
         self._role_menu.popup(popup_pos)
 
     def _handle_role_menu_action(self, action):

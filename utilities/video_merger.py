@@ -115,7 +115,11 @@ def main():
             window.close()
         if hasattr(window, 'return_to_main'):
             window.return_to_main.connect(restart_main_app)
-        sys.exit(app.exec_())
+        
+        exit_code = app.exec_()
+        window.close()
+        del window
+        sys.exit(exit_code)
     except Exception as e:
         logger.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
         QMessageBox.critical(None, "Crash", f"An unexpected error occurred:\n{e}")

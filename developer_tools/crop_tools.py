@@ -30,6 +30,7 @@ from enhanced_logger import get_enhanced_logger
 from config_manager import get_config_manager
 from state_manager import get_state_manager
 from graphics_items import ResizablePixmapItem
+from coordinate_math import transform_to_content_area
 
 class SummaryToast(QDialog):
     def __init__(self, configured, unchanged, parent=None):
@@ -109,6 +110,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.modified_roles = set()
         self.placeholders_group = []
         self.background_item = None
+        self.snapshot_resolution = None
         self.background_dim_alpha = 90
         self._dirty = False
         self._loaded_file_path = None
@@ -146,7 +148,9 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.snap_toggle_button.clicked.connect(self._on_snap_toggle)
         self.show_placeholders_checkbox.stateChanged.connect(self.toggle_placeholders)
         self.portrait_scene.selectionChanged.connect(self.on_selection_changed)
-        self.done_button.setToolTip("Save HUD positions (adds * when unsaved)")
+        self.done_button.setToolTip(
+            "Save HUD positions (adds * when unsaved). Crops are saved with outward rounding."
+        )
         self.delete_button.setToolTip("Delete selected item(s) (Del)")
         self.undo_button.setToolTip("Undo last change (Ctrl+Z)")
         self.redo_button.setToolTip("Redo last undone change (Ctrl+Y)")
@@ -331,11 +335,19 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                     self.placeholders_group.remove(ph)
                     break
         item = ResizablePixmapItem(pixmap, crop_rect)
-        original_resolution = self.media_processor.original_resolution or "1920x1080"
-        transformed = self.config_manager.transform_crop_rect(crop_rect, original_resolution)
-        _, _, w_ui, h_ui = transformed
-        item.current_width = max(20, w_ui)
-        item.current_height = max(20, h_ui)
+        original_resolution = (
+            self.media_processor.original_resolution
+            or self.snapshot_resolution
+            or "1920x1080"
+        )
+        fx, fy, fw, fh = transform_to_content_area(
+            (crop_rect.x(), crop_rect.y(), crop_rect.width(), crop_rect.height()),
+            original_resolution
+        )
+        w_ui = max(20.0, fw)
+        h_ui = max(20.0, fh)
+        item.current_width = w_ui
+        item.current_height = h_ui
         item.update_handle_positions()
         self.portrait_scene.addItem(item)
         tech_key = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}.get(role, 'unknown')
@@ -564,7 +576,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._start_exit_sequence(summary_toast)
         self._dirty = False
         self._refresh_done_button()
-        self.status_label.setText("Configuration saved")
+        self.status_label.setText("Configuration saved (outward-rounded crops)")
         self.modified_roles.clear()
         if hasattr(self, 'done_organizing'):
             self.done_organizing.emit()

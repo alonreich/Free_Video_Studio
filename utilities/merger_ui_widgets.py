@@ -7,33 +7,11 @@ from utilities.merger_unified_music_widget import UnifiedMusicWidget
 
 class MergerUIWidgetsMixin:
     def create_center_buttons(self):
-        center = QHBoxLayout()
-        center.setContentsMargins(0, 0, 0, 0)
-        center.setSpacing(14)
-        self.parent.btn_add = QPushButton("Add Videos")
-        self.parent.btn_add.setObjectName("aux-btn")
-        self.parent.btn_add.setToolTip("Add video files to the end of the list")
-        self.parent.btn_add_folder = QPushButton("Add Folder")
-        self.parent.btn_add_folder.setObjectName("aux-btn")
-        self.parent.btn_add_folder.setToolTip("Add all videos from a folder")
-        self.parent.btn_add_folder.clicked.connect(self.parent.event_handler.add_folder)
-        self.parent.btn_remove = QPushButton("Remove Selected")
-        self.parent.btn_remove.setObjectName("danger-btn")
-        self.parent.btn_remove.setToolTip("Remove selected videos from the list (Delete key)")
-        self.parent.btn_clear = QPushButton("Clear All")
-        self.parent.btn_clear.setObjectName("danger-btn")
-        self.parent.btn_clear.setToolTip("Remove all videos from the list")
-        for btn in [self.parent.btn_add, self.parent.btn_add_folder, self.parent.btn_remove, self.parent.btn_clear]:
-            btn.setFixedSize(140, 40)
-            btn.setCursor(Qt.PointingHandCursor)
-        center.addWidget(self.parent.btn_add)
-        center.addWidget(self.parent.btn_add_folder)
-        center.addWidget(self.parent.btn_remove)
-        center.addWidget(self.parent.btn_clear)
-        return center
+        # Buttons moved to the main action row in setup_ui
+        return QHBoxLayout()
 
     def create_merge_row(self):
-        self.parent.btn_back = QPushButton("Return to Menu")
+        self.parent.btn_back = QPushButton("RETURN TO MENU")
         self.parent.btn_back.setFixedSize(160, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
@@ -44,7 +22,7 @@ class MergerUIWidgetsMixin:
         merge_wrap.setLayout(self.parent.merge_row)
         merge_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.parent.merge_row.addStretch(1)
-        self.parent.btn_merge = QPushButton("Merge Videos")
+        self.parent.btn_merge = QPushButton("MERGE VIDEOS")
         self.parent.btn_merge.setObjectName("mergeButton")
         self.parent.btn_merge.setFixedSize(240, 50)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
