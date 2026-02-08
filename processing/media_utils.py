@@ -39,6 +39,18 @@ class MediaProber:
         kbps = self.run_probe(args_format)
         return kbps
 
+    def get_sample_rate(self):
+        try:
+            base_cmd = [self.ffprobe_path, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate", "-of", "default=nw=1:nk=1"]
+            creationflags = 0
+            if sys.platform == "win32":
+                creationflags = subprocess.CREATE_NO_WINDOW
+            r = subprocess.run(base_cmd + [self.input_path], capture_output=True, text=True, check=True, creationflags=creationflags)
+            val = int(r.stdout.strip() or 48000)
+            return val
+        except Exception:
+            return 48000
+
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res):
     target_size_bits = 0
     is_max_quality = False
@@ -58,10 +70,6 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     video_bits = target_size_bits - audio_bits
     if duration <= 0: return None
     if video_bits <= 0:
-        if is_max_quality:
-            return 300
-        return None
+        return 300
     calculated_kbps = int(video_bits / (1024 * duration))
-    if is_max_quality:
-        return max(300, calculated_kbps)
-    return calculated_kbps
+    return max(300, calculated_kbps)

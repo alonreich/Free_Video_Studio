@@ -11,48 +11,58 @@ from PyQt5.QtGui import QIcon
 import subprocess
 import ctypes
 import shutil
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from system.utils import ProcessManager, LogManager, DependencyDoctor
+from system.state_transfer import StateTransfer
 
 def setup_environment(base_dir):
-    """Setup logging and paths."""
-    if base_dir not in sys.path:
-        sys.path.insert(0, base_dir)
-    logger = None
+    """Setup logging and paths using centralized utils."""
     try:
-        from system.logger import setup_logger
-        logger = setup_logger(base_dir, "Video_Merger.log", "Video_Merger")
-        logger.info("=== Early logger setup complete ===")
+        logger = LogManager.setup_logger(base_dir, "Video_Merger.log", "Video_Merger")
+        logger.info("=== Video Merger Environment Setup Complete ===")
+        return logger
     except Exception as e:
-        log_dir = os.path.join(base_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        logging.basicConfig(
-            filename=os.path.join(log_dir, "Video_Merger_fallback.log"),
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger("Video_Merger")
-        logger.error(f"Primary logger setup failed: {e}")
-    try:
-        crash_log = open(os.path.join(base_dir, 'logs', 'Video_Merger_hard_crash_trace.log'), "w", encoding="utf-8")
-        faulthandler.enable(file=crash_log, all_threads=True)
-    except Exception:
-        faulthandler.enable()
-    return logger
+        logger.error(f"Central logger setup failed: {e}")
+        return logger
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):
-    """Global exception handler (Fix #13)."""
+    """Global exception handler (Fix #13, #2)."""
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
     print(error_msg, file=sys.stderr)
     logging.getLogger("Video_Merger").critical(f"Unhandled Exception:\n{error_msg}")
     if QApplication.instance():
-        QMessageBox.critical(None, "Critical Error", 
-            f"An unexpected error occurred:\n{exc_value}\n\nSee log for details.")
+        error_summary = str(exc_value)
+        if isinstance(exc_value, ImportError):
+            error_summary = f"Missing module: {error_summary}"
+        elif isinstance(exc_value, FileNotFoundError):
+            error_summary = f"File not found: {error_summary}"
+        elif isinstance(exc_value, PermissionError):
+            error_summary = f"Permission denied: {error_summary}"
+        QMessageBox.critical(
+            None,
+            "Critical Error",
+            f"Something went wrong unexpectedly.\n\n"
+            f"Error: {error_summary}\n\n"
+            "Please restart the app. If the problem persists:\n"
+            "1. Check log file for details\n"
+            "2. Report bug using /reportbug command\n"
+            "3. Try different input files\n\n"
+            "Technical details were saved to the log file.",
+        )
 
 def main():
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
+    ProcessManager.kill_orphans()
+    ProcessManager.cleanup_temp_files(prefix="fvs_merger_")
     logger = setup_environment(BASE_DIR)
     sys.excepthook = global_exception_handler
-    if sys.platform.startswith("win"):
+    if sys.platform.startswith("win") and os.environ.get("FVS_DEBUG_CONSOLE", "0") == "1":
         try:
             kernel32 = ctypes.windll.kernel32
             if kernel32.GetConsoleWindow() == 0:
@@ -66,24 +76,20 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     logger.info("=== Video Merger Started ===")
-    try:
-        from system.config import ConfigManager
-        from utilities.merger_window import VideoMergerWindow
-    except ImportError as e:
-        QMessageBox.critical(None, "Import Error", f"Could not import project modules.\n{e}")
+    success, pid_handle = ProcessManager.acquire_pid_lock("fortnite_video_merger")
+    if not success:
+        QMessageBox.information(None, "Already Running", "Video Merger is already running.")
+        sys.exit(0)
+    is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)
+    if not is_valid_deps:
+        QMessageBox.critical(None, "Dependency Error", f"FFmpeg is missing: {dep_error}\nPlease run the Main App to diagnose.")
         sys.exit(1)
-    config_path = os.path.join(BASE_DIR, 'config', 'main_app.conf')
+
+    from system.config import ConfigManager
+    from utilities.merger_window import VideoMergerWindow
+    config_path = os.path.join(BASE_DIR, 'config', 'video_merger.conf')
     config_manager = ConfigManager(config_path)
     bin_dir = os.path.join(BASE_DIR, 'binaries')
-    ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    ffmpeg_path = os.path.join(bin_dir, ffmpeg_exe)
-    if not os.path.exists(ffmpeg_path):
-        if shutil.which(ffmpeg_exe):
-            ffmpeg_path = ffmpeg_exe
-        else:
-            logger.critical("FFmpeg not found.")
-            QMessageBox.critical(None, "Dependency Error", "FFmpeg not found. Please install FFmpeg or check 'binaries' folder.")
-            sys.exit(1)
     try:
         window = VideoMergerWindow(
             ffmpeg_path=ffmpeg_path,
@@ -93,20 +99,10 @@ def main():
             config_manager=config_manager,
             base_dir=BASE_DIR
         )
-        geo = config_manager.config.get('merger_window_geometry')
-        if geo and isinstance(geo, dict):
-            try:
-                screen = QApplication.primaryScreen().availableGeometry()
-                w = min(geo.get('w', 1000), screen.width())
-                h = min(geo.get('h', 700), screen.height())
-                x = max(screen.x(), min(geo.get('x', 100), screen.right() - w))
-                y = max(screen.y(), min(geo.get('y', 100), screen.bottom() - h))
-                window.setGeometry(x, y, w, h)
-            except Exception:
-                pass
         window.show()
         window.activateWindow()
         window.raise_()
+        session_data = StateTransfer.load_state()
 
         def restart_main_app():
             logger.info("Returning to Main App...")
@@ -115,14 +111,14 @@ def main():
             window.close()
         if hasattr(window, 'return_to_main'):
             window.return_to_main.connect(restart_main_app)
-        
         exit_code = app.exec_()
         window.close()
-        del window
+        if pid_handle: pid_handle.close()
         sys.exit(exit_code)
     except Exception as e:
         logger.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
         QMessageBox.critical(None, "Crash", f"An unexpected error occurred:\n{e}")
+        if pid_handle: pid_handle.close()
         sys.exit(1)
 if __name__ == "__main__":
     main()

@@ -12,8 +12,8 @@ class ResizablePixmapItem(QGraphicsObject):
         self.original_pixmap = pixmap 
         self.crop_rect = crop_rect
         self.assigned_role = None 
-        self.current_width = pixmap.width()
-        self.current_height = pixmap.height()
+        self.current_width = float(pixmap.width())
+        self.current_height = float(pixmap.height())
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
         self.handle_size = UI_LAYOUT.GRAPHICS_HANDLE_SIZE
@@ -23,6 +23,7 @@ class ResizablePixmapItem(QGraphicsObject):
         self.handle_tl = QGraphicsRectItem(QRectF(0, 0, self.handle_size, self.handle_size), self)
         self.handle_tl.setBrush(QBrush(QColor("#e67e22")))
         self.handle_tl.setPen(QPen(Qt.white, 2))
+        self.setZValue(50)
         self.update_handle_positions()
         self.is_resizing_br = False
         self.is_resizing_tl = False
@@ -48,48 +49,59 @@ class ResizablePixmapItem(QGraphicsObject):
         self.update()
 
     def boundingRect(self):
-        return QRectF(-30, -80, self.current_width + 60, self.current_height + 130)
+        margin = self.handle_size + 2
+        return QRectF(-margin, -margin, self.current_width + (margin * 2), self.current_height + (margin * 2) + 40)
 
     def paint(self, painter, option, widget):
         painter.drawPixmap(QRectF(0, 0, self.current_width, self.current_height), 
                             self.original_pixmap, QRectF(self.original_pixmap.rect()))
-        black_pen = QPen(Qt.black, 2)
+        black_pen = QPen(Qt.black, 1)
         painter.setPen(black_pen)
         painter.setBrush(Qt.NoBrush)
-        painter.drawRect(QRectF(-1, -1, self.current_width + 2, self.current_height + 2))
+        painter.drawRect(QRectF(-0.5, -0.5, self.current_width + 1, self.current_height + 1))
         if self.assigned_role:
             title_text = self.assigned_role.upper()
             font = painter.font()
             font.setBold(True)
-            font.setPixelSize(UI_LAYOUT.GRAPHICS_TEXT_FONT_SIZE)
+            target_font_size = max(10, int(self.current_height * 0.15))
+            target_font_size = min(target_font_size, UI_LAYOUT.GRAPHICS_TEXT_FONT_SIZE)
+            font.setPixelSize(target_font_size)
             painter.setFont(font)
             fm = painter.fontMetrics()
-            text_w = fm.width(title_text) + UI_LAYOUT.GRAPHICS_TEXT_PADDING
-            text_h = fm.height() + UI_LAYOUT.GRAPHICS_TEXT_HEIGHT_PAD
-            scene_y = self.scenePos().y()
-            center_x = (self.current_width - text_w) / 2
-            if scene_y > (UI_LAYOUT.PORTRAIT_BASE_HEIGHT / 2):
+            text_w = fm.horizontalAdvance(title_text) + (target_font_size * 1.5)
+            text_h = fm.height() + (target_font_size * 0.4)
+            scene_pos = self.scenePos()
+            if scene_pos.y() > (UI_LAYOUT.PORTRAIT_BASE_HEIGHT / 2):
                 draw_y = -text_h - 5
             else:
-                draw_y = self.current_height + UI_LAYOUT.GRAPHICS_TEXT_OFFSET_Y
+                draw_y = self.current_height + 5
+            center_x = (self.current_width - text_w) / 2
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 180))
-            painter.drawRoundedRect(QRectF(center_x, draw_y, text_w, text_h), 6, 6)
+            painter.setBrush(QColor(0, 0, 0, UI_COLORS.OPACITY_DIM_HIGH))
+            painter.drawRoundedRect(QRectF(center_x, draw_y, text_w, text_h), 4, 4)
             painter.setPen(QColor(UI_COLORS.TEXT_WARNING))
             painter.drawText(QRectF(center_x, draw_y, text_w, text_h), Qt.AlignCenter, title_text)
         if self.isSelected():
-            pen = QPen(QColor(UI_COLORS.MARCHING_ANTS), 3, Qt.CustomDashLine)
-            pen.setDashPattern([6, 6])
+            pen = QPen(QColor(UI_COLORS.MARCHING_ANTS), 2, Qt.CustomDashLine)
+            pen.setDashPattern([4, 4])
             pen.setDashOffset(self.ant_dash_offset)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(0, 0, int(self.current_width), int(self.current_height))
+            painter.drawRect(QRectF(-2, -2, self.current_width + 4, self.current_height + 4))
 
     def set_role(self, role):
         if role == "-- Select Role --":
             self.assigned_role = None
         else:
             self.assigned_role = role
+
+            from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP
+            role_key = "unknown"
+            for k, v in HUD_ELEMENT_MAPPINGS.items():
+                if v == role:
+                    role_key = k
+                    break
+            self.setZValue(Z_ORDER_MAP.get(role_key, 50))
         self.update()
 
     def update_handle_positions(self):
@@ -109,7 +121,7 @@ class ResizablePixmapItem(QGraphicsObject):
     def mousePressEvent(self, event):
         if self.handle_br.isUnderMouse():
             self.is_resizing_br = True
-            self.resize_start_pos = event.pos()
+            self.resize_start_scene_pos = event.scenePos()
             self.start_width = self.current_width
             self.start_height = self.current_height
             self._snap_active = False
@@ -118,7 +130,7 @@ class ResizablePixmapItem(QGraphicsObject):
             self._snap_suppressed_until_release = False
         elif self.handle_tl.isUnderMouse():
             self.is_resizing_tl = True
-            self.resize_start_pos = event.pos()
+            self.resize_start_scene_pos = event.scenePos()
             self.start_width = self.current_width
             self.start_height = self.current_height
             self.start_pos = self.pos()
@@ -135,7 +147,7 @@ class ResizablePixmapItem(QGraphicsObject):
 
     def mouseMoveEvent(self, event):
         if self.is_resizing_br:
-            delta = event.pos() - self.resize_start_pos
+            delta = event.scenePos() - self.resize_start_scene_pos
             new_width = self.start_width + delta.x()
             proposed_right = self.pos().x() + new_width
             snapped_right = self.calculate_snapping(self.pos(), resize_edge='R', proposed_value=proposed_right)
@@ -165,35 +177,38 @@ class ResizablePixmapItem(QGraphicsObject):
             if new_width > UI_LAYOUT.GRAPHICS_ITEM_MIN_SIZE and new_height > UI_LAYOUT.GRAPHICS_ITEM_MIN_SIZE:
                 self._apply_smooth_resize(new_width, new_height)
         elif self.is_resizing_tl:
-            delta = event.pos() - self.resize_start_pos
-            new_pos_x = self.start_pos.x() + delta.x()
-            snapped_left = self.calculate_snapping(QPointF(new_pos_x, self.start_pos.y()), resize_edge='L', proposed_value=new_pos_x)
+            delta = event.scenePos() - self.resize_start_scene_pos
+            proposed_new_pos_x = self.start_pos.x() + delta.x()
+            snapped_left = self.calculate_snapping(QPointF(proposed_new_pos_x, self.start_pos.y()), resize_edge='L', proposed_value=proposed_new_pos_x)
             if snapped_left is not None:
-                new_pos_x = snapped_left
+                proposed_new_pos_x = snapped_left
                 self._snap_active = True
-                self._snap_target_pos = QPointF(new_pos_x, self.start_pos.y())
+                self._snap_target_pos = QPointF(proposed_new_pos_x, self.start_pos.y())
             if self.scene():
-                new_pos_x = max(self.scene().sceneRect().left(), new_pos_x)
-            clamped_delta_x = new_pos_x - self.start_pos.x()
-            new_width = self.start_width - clamped_delta_x
+                proposed_new_pos_x = max(self.scene().sceneRect().left(), proposed_new_pos_x)
+            start_right = self.start_pos.x() + self.start_width
+            max_x = start_right - UI_LAYOUT.GRAPHICS_ITEM_MIN_SIZE
+            new_pos_x = min(proposed_new_pos_x, max_x)
+            new_width = start_right - new_pos_x
             aspect = self.original_pixmap.height() / self.original_pixmap.width() if self.original_pixmap.width() > 0 else 0
             new_height = new_width * aspect
-            new_pos_y = self.start_pos.y() + (self.start_height - new_height)
+            start_bottom = self.start_pos.y() + self.start_height
+            new_pos_y = start_bottom - new_height
             snapped_top = self.calculate_snapping(QPointF(new_pos_x, new_pos_y), resize_edge='T', proposed_value=new_pos_y)
             if snapped_top is not None:
                 new_pos_y = snapped_top
-                new_height = self.start_pos.y() + self.start_height - new_pos_y
+                new_height = start_bottom - new_pos_y
                 new_width = new_height / aspect if aspect > 0 else new_width
-                new_pos_x = self.start_pos.x() + self.start_width - new_width
+                new_pos_x = start_right - new_width
                 self._snap_active = True
                 self._snap_target_pos = QPointF(new_pos_x, new_pos_y)
             if self.scene():
                 top_bound = self.scene().sceneRect().top() + UI_LAYOUT.PORTRAIT_TOP_BAR_HEIGHT
                 if new_pos_y < top_bound:
                     new_pos_y = top_bound
-                    new_height = self.start_pos.y() - new_pos_y + self.start_height
+                    new_height = start_bottom - new_pos_y
                     new_width = new_height / aspect if aspect > 0 else 0
-                    new_pos_x = self.start_pos.x() + (self.start_width - new_width)
+                    new_pos_x = start_right - new_width
             if new_width > UI_LAYOUT.GRAPHICS_ITEM_MIN_SIZE and new_height > UI_LAYOUT.GRAPHICS_ITEM_MIN_SIZE:
                 self._apply_smooth_resize(new_width, new_height, new_pos_x, new_pos_y)
         else:
@@ -366,7 +381,9 @@ class ResizablePixmapItem(QGraphicsObject):
                     elif d_c < guide_threshold and guide_snap_y is None:
                         guide_snap_y = (ty, f"Center -> {t_label}")
         pen = QPen(QColor("#00FFFF"), 1, Qt.DashLine)
-        font = QFont("Arial", 9)
+        font = QFont("Segoe UI", 9)
+        if not font.exactMatch():
+            font = QFont("Arial", 9)
         scene_rect = self.scene().sceneRect() if self.scene() else None
         x_min = scene_rect.left() if scene_rect else -5000
         x_max = scene_rect.right() if scene_rect else 5000
@@ -419,7 +436,7 @@ class ResizablePixmapItem(QGraphicsObject):
             else:
                 self._snap_repeat_key = snap_key
                 self._snap_repeat_count = 1 if snap_key != (None, None) else 0
-            repeat_limit = getattr(UI_BEHAVIOR, 'SNAP_REPEAT_SUPPRESS_COUNT', 4)
+            repeat_limit = getattr(UI_BEHAVIOR, 'SNAP_REPEAT_SUPPRESS_COUNT', 5)
             if self._snap_repeat_count >= repeat_limit and snap_key != (None, None):
                 self._snap_suppressed_until_release = True
                 return proposed_pos

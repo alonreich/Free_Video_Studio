@@ -1,4 +1,4 @@
-"""
+﻿"""
 Enhanced logging system for Fortnite Video Software crop operations.
 Captures detailed information about user interactions with crop tools.
 """
@@ -236,6 +236,36 @@ class EnhancedCropLogger:
         finally:
             self.current_operation = None
             
+    def log_finished_button_click_memory(self, config_before_json, config_after_json):
+        """[FIX #22] Log configuration changes directly from memory strings."""
+        try:
+            config_before = json.loads(config_before_json)
+            config_after = json.loads(config_after_json)
+            self.crop_logger.info("=" * 80)
+            self.crop_logger.info("FINISHED BUTTON CLICKED - CONFIGURATION UPDATE (MEMORY LOG)")
+            self.crop_logger.info("=" * 80)
+            self.crop_logger.info("PREVIOUS EXISTING CONFIGURATION:")
+            self.crop_logger.info("-" * 40)
+            self.crop_logger.info(config_before_json)
+            self.crop_logger.info("-" * 40)
+            self.crop_logger.info("NEW JSON CONFIGURATION:")
+            self.crop_logger.info("-" * 40)
+            self.crop_logger.info(config_after_json)
+            self.crop_logger.info("-" * 40)
+            differences = self._find_config_differences(config_before, config_after)
+            self.crop_logger.info("CONFIGURATION DIFFERENCES:")
+            self.crop_logger.info("-" * 40)
+            self.crop_logger.info(json.dumps(differences, indent=2))
+            self.crop_logger.info("-" * 40)
+            configured_elements = set(config_after.get('crops_1080p', {}).keys())
+            self.crop_logger.info(f"Total elements now configured: {len(configured_elements)}")
+            for element in sorted(configured_elements):
+                self.crop_logger.info(f"  [X] {element}")
+            self.crop_logger.info("-" * 40)
+            self.crop_logger.info("=" * 80)
+        except Exception as e:
+            self.crop_logger.error(f"ERROR logging finished button from memory: {str(e)}")
+
     def log_error(self, error_message, context=None):
         """Log errors with context."""
         error_data = {

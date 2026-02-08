@@ -4,15 +4,17 @@ from .text_ops import safe_text
 try:
     from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, scale_round, inverse_transform_from_content_area_int
     )
 except ImportError:
     import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'developer_tools'))
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if base_dir not in sys.path:
+        sys.path.append(base_dir)
 
-    from coordinate_math import (
+    from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, scale_round, inverse_transform_from_content_area_int
     )
 COORDINATE_MATH_AVAILABLE = True
 
@@ -48,6 +50,7 @@ class FilterBuilder:
             return tuple(coords_data.get(section, {}).get(key, [0,0,0,0]))
         scales = coords_data.get('scales', {})
         overlays = coords_data.get('overlays', {})
+        z_orders = coords_data.get('z_orders', {})
         hp_key = 'boss_hp' if is_boss_hp else 'normal_hp'
         hp_1080 = get_rect('crops_1080p', hp_key)
         hp_scale = float(scales.get(hp_key, 1.0))
@@ -89,40 +92,48 @@ class FilterBuilder:
             render_w = max(1, scale_round(ui_w * s * BACKEND_SCALE))
             render_h = max(1, scale_round(ui_h * s * BACKEND_SCALE))
             return f"[{name}]crop={crop_str},scale={render_w}:{render_h}:flags=bilinear,pad=iw+4:ih+4:2:2:black,format=yuva444p[{name}_scaled]"
-        f_hp = make_hud_filter("healthbar", hp_orig, hp_1080[0], hp_1080[1], hp_scale)
-        f_loot = make_hud_filter("lootbar", loot_orig, loot_1080[0], loot_1080[1], loot_scale)
-        f_stats = make_hud_filter("stats", stats_orig, stats_1080[0], stats_1080[1], stats_scale)
-        common_filters = f"{f_main};{f_hp};{f_loot};{f_stats}"
-        z_orders = coords_data.get('z_orders', {})
-        layers = [
-            {'name': 'lootbar', 'filter_out': '[lootbar_scaled]', 'x': overlays.get('loot', {}).get('x', 0), 'y': overlays.get('loot', {}).get('y', 0), 'z': z_orders.get('loot', 10)},
-            {'name': 'healthbar', 'filter_out': '[healthbar_scaled]', 'x': hp_ov.get('x', 0), 'y': hp_ov.get('y', 0), 'z': z_orders.get(hp_key, 20)},
-            {'name': 'stats', 'filter_out': '[stats_scaled]', 'x': overlays.get('stats', {}).get('x', 0), 'y': overlays.get('stats', {}).get('y', 0), 'z': z_orders.get('stats', 30)}
-        ]
-        if show_teammates:
-            f_team = make_hud_filter("team", team_orig, team_1080[0], team_1080[1], team_scale)
-            common_filters += f";{f_team}"
+        common_filters_list = [f_main]
+        layers = []
+
+        def is_valid_config(rect, scale):
+            return rect[0] > 1 and rect[1] > 1 and float(scale) > 0.001
+        if is_valid_config(hp_1080, hp_scale):
+            common_filters_list.append(make_hud_filter("healthbar", hp_orig, hp_1080[0], hp_1080[1], hp_scale))
+            layers.append({'name': 'healthbar', 'filter_out': '[healthbar_scaled]', 'x': hp_ov.get('x', 0), 'y': hp_ov.get('y', 0), 'z': z_orders.get(hp_key, 20)})
+        if is_valid_config(loot_1080, loot_scale):
+            common_filters_list.append(make_hud_filter("lootbar", loot_orig, loot_1080[0], loot_1080[1], loot_scale))
+            layers.append({'name': 'lootbar', 'filter_out': '[lootbar_scaled]', 'x': overlays.get('loot', {}).get('x', 0), 'y': overlays.get('loot', {}).get('y', 0), 'z': z_orders.get('loot', 10)})
+        if is_valid_config(stats_1080, stats_scale):
+            common_filters_list.append(make_hud_filter("stats", stats_orig, stats_1080[0], stats_1080[1], stats_scale))
+            layers.append({'name': 'stats', 'filter_out': '[stats_scaled]', 'x': overlays.get('stats', {}).get('x', 0), 'y': overlays.get('stats', {}).get('y', 0), 'z': z_orders.get('stats', 30)})
+        if show_teammates and is_valid_config(team_1080, team_scale):
+            common_filters_list.append(make_hud_filter("team", team_orig, team_1080[0], team_1080[1], team_scale))
             layers.append({'name': 'team', 'filter_out': '[team_scaled]', 'x': overlays.get('team', {}).get('x', 0), 'y': overlays.get('team', {}).get('y', 0), 'z': z_orders.get('team', 40)})
+        common_filters = ";".join(common_filters_list)
         layers.sort(key=lambda item: item['z'])
         overlay_chain = ""
         current_pad = "[main_cropped]"
+        if not layers:
+            video_filter_cmd = f"{f_main};[main_cropped]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+            return video_filter_cmd
         for i, layer in enumerate(layers):
             next_pad = f"[t{i+1}]" if i < len(layers) - 1 else "[vpreout]"
             raw_x = float(layer['x'])
             raw_y = float(layer['y'])
             lx = scale_round(raw_x * BACKEND_SCALE)
-            ly = scale_round((raw_y - 150.0) * BACKEND_SCALE)
+            ly = scale_round((raw_y - float(PADDING_TOP)) * BACKEND_SCALE)
             overlay_chain += f"{current_pad}{layer['filter_out']}overlay={lx-2}:{ly-2}{next_pad};"
             current_pad = next_pad
-        split_count = 5 if show_teammates else 4
-        split_cmd = f"split={split_count}[main][healthbar][lootbar][stats]"
-        if show_teammates: split_cmd += "[team]"
+        split_count = 1 + len(layers)
+        split_pads = "[main]" + "".join([f"[{l['name']}]" for l in layers])
+        split_cmd = f"split={split_count}{split_pads}"
         video_filter_cmd = f"{split_cmd};{common_filters};{overlay_chain.rstrip(';')}"
         video_filter_cmd += ";[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
         return video_filter_cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
-        ff_textfile = text_file_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
+        norm_path = os.path.normpath(text_file_path)
+        ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
         candidates = [
             os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
             os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
@@ -147,7 +158,7 @@ class FilterBuilder:
     def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0):
         """
         Builds a complex filter chain for variable speed segments.
-        source_cut_start_ms: The absolute start time in the original file where FFmpeg begins (-ss).
+        [FIX #13] Uses setpts expression for video (efficient) and split/concat for audio.
         """
         segments = []
         for s in speed_segments:
@@ -199,42 +210,36 @@ class FilterBuilder:
                     break
             return t_new
         chunks = [ch for ch in chunks if (ch['end'] - ch['start']) > 0.001]
-        filter_parts = []
-        v_pads = []
-        a_pads = []
         final_duration = 0.0
         n_chunks = len(chunks)
         if n_chunks == 0:
             return f"[0:v]null[v_speed_out];[0:a]anull[a_speed_out]", "[v_speed_out]", "[a_speed_out]", total_duration_sec, lambda x: x
         self.logger.info(f"FFMPEG_ENGINE: Building granular chain with {n_chunks} chunks.")
-        for i, ch in enumerate(chunks):
-            self.logger.info(f"  Chunk {i}: {ch['start']:.3f}-{ch['end']:.3f}s @ {ch['speed']}x")
+        v_expr_parts = []
+        current_out_time = 0.0
+        a_filter_parts = []
+        a_pads = []
         if n_chunks > 1:
-            filter_parts.append(f"[0:v]split={n_chunks}{''.join([f'[v_split_{i}]' for i in range(n_chunks)])}")
-            filter_parts.append(f"[0:a]asplit={n_chunks}{''.join([f'[a_split_{i}]' for i in range(n_chunks)])}")
+            a_filter_parts.append(f"[0:a]asplit={n_chunks}{''.join([f'[a_split_{i}]' for i in range(n_chunks)])}")
         for i, chunk in enumerate(chunks):
             start = chunk['start']
             end = chunk['end']
             speed = chunk['speed']
             dur = end - start
             chunk_out_dur = dur / speed
-            final_duration += chunk_out_dur
-            v_in = f"[v_split_{i}]" if n_chunks > 1 else "[0:v]"
+            term = f"if(between(T,{start:.5f},{end:.5f}),(T-{start:.5f})/{speed:.5f}+{current_out_time:.5f},0)"
+            v_expr_parts.append(term)
             a_in = f"[a_split_{i}]" if n_chunks > 1 else "[0:a]"
-            filter_parts.append(f"{v_in}trim=start={start:.4f}:end={end:.4f},setpts=(PTS-STARTPTS)/{speed:.4f}[v_chunk_{i}]")
-            v_pads.append(f"[v_chunk_{i}]")
             audio_speed_filters = []
             temp_speed = speed
             while temp_speed < 0.5:
-                audio_speed_filters.append("atempo=0.5")
-                temp_speed /= 0.5
+                audio_speed_filters.append("atempo=0.5"); temp_speed /= 0.5
             while temp_speed > 2.0:
-                audio_speed_filters.append("atempo=2.0")
-                temp_speed /= 2.0
+                audio_speed_filters.append("atempo=2.0"); temp_speed /= 2.0
             audio_speed_filters.append(f"atempo={temp_speed:.4f}")
             audio_speed_cmd = ",".join(audio_speed_filters)
             fade_dur = min(0.05, chunk_out_dur / 3) 
-            filter_parts.append(
+            a_filter_parts.append(
                 f"{a_in}atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,"
                 f"{audio_speed_cmd},"
                 f"afade=t=in:st=0:d={fade_dur:.4f},"
@@ -242,19 +247,22 @@ class FilterBuilder:
                 f"[a_chunk_{i}]"
             )
             a_pads.append(f"[a_chunk_{i}]")
-        v_concat_in = "".join(v_pads)
+            current_out_time += chunk_out_dur
+            final_duration += chunk_out_dur
+        v_full_expr = "+".join(v_expr_parts)
+        v_filter_cmd = f"[0:v]setpts='({v_full_expr})/TB'[v_speed_out]"
         a_concat_in = "".join(a_pads)
-        filter_parts.append(f"{v_concat_in}concat=n={len(v_pads)}:v=1:a=0[v_speed_out]")
-        filter_parts.append(f"{a_concat_in}concat=n={len(a_pads)}:v=0:a=1[a_speed_out]")
-        return ";".join(filter_parts), "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
+        a_concat_cmd = f"{a_concat_in}concat=n={len(a_pads)}:v=0:a=1[a_speed_out]"
+        full_chain = f"{v_filter_cmd};{';'.join(a_filter_parts)};{a_concat_cmd}"
+        return full_chain, "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
 
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000):
         chain = []
         main_audio_filter_parts = [audio_filter_cmd if audio_filter_cmd else "anull"]
         if vfade_in_d > 0:
             main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         main_audio_filter = ",".join(main_audio_filter_parts)
-        chain.append(f"[0:a]{main_audio_filter},aresample=48000,asetpts=PTS-STARTPTS[a_main_prepared]")
+        chain.append(f"[0:a]{main_audio_filter},aresample={sample_rate},asetpts=PTS-STARTPTS[a_main_prepared]")
         if music_config and music_config.get("path"):
             mc = music_config
             t_mapper = time_mapper if time_mapper else (lambda t: (t - video_start_time) / speed_factor)
@@ -288,7 +296,7 @@ class FilterBuilder:
                     music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR}")
             vol = max(0.0, min(1.0, float(mc.get('volume', 1.0))))
             music_filters.append(f"volume={vol:.4f}")
-            music_filters.append("aresample=48000")
+            music_filters.append(f"aresample={sample_rate}")
             chain.append(f"[1:a]{','.join(music_filters)}[a_music_prepared]")
             if delay_ms > 0:
                 chain.append(f"[a_music_prepared]adelay={delay_ms}|{delay_ms}[a_music_delayed]")
@@ -301,7 +309,7 @@ class FilterBuilder:
             kill_switch_start = max(0, dur_a - 3.5)
             chain.append(f"[game_trig]afade=t=out:st={kill_switch_start:.3f}:d=0.5,highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
             chain.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
-            duck_params = "threshold=0.2:ratio=4:attack=1:release=400:detection=rms"
+            duck_params = "threshold=0.15:ratio=2.5:attack=1:release=400:detection=rms"
             chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
             chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
             chain.append(
@@ -309,7 +317,7 @@ class FilterBuilder:
                 "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
                 "alimiter=limit=0.95:attack=5:release=50[acore_pre_limiter]"
             )
-            chain.append("[acore_pre_limiter]aresample=48000[acore]")
+            chain.append(f"[acore_pre_limiter]aresample={sample_rate}[acore]")
         else:
             chain.append("[a_main_prepared]anull[acore]")
         return chain

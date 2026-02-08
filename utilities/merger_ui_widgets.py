@@ -7,11 +7,25 @@ from utilities.merger_unified_music_widget import UnifiedMusicWidget
 
 class MergerUIWidgetsMixin:
     def create_center_buttons(self):
-        # Buttons moved to the main action row in setup_ui
-        return QHBoxLayout()
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.parent.btn_undo = QPushButton("UNDO")
+        self.parent.btn_undo.setObjectName("aux-btn")
+        self.parent.btn_undo.setFixedSize(110, 36)
+        self.parent.btn_undo.setCursor(Qt.PointingHandCursor)
+        self.parent.btn_undo.setToolTip("Undo last action (Ctrl+Z)")
+        self.parent.btn_redo = QPushButton("REDO")
+        self.parent.btn_redo.setObjectName("aux-btn")
+        self.parent.btn_redo.setFixedSize(110, 36)
+        self.parent.btn_redo.setCursor(Qt.PointingHandCursor)
+        self.parent.btn_redo.setToolTip("Redo last action (Ctrl+Y)")
+        row.addWidget(self.parent.btn_undo)
+        row.addWidget(self.parent.btn_redo)
+        return row
 
     def create_merge_row(self):
-        self.parent.btn_back = QPushButton("RETURN TO MENU")
+        self.parent.btn_back = QPushButton("Return to menu")
         self.parent.btn_back.setFixedSize(160, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
@@ -22,7 +36,7 @@ class MergerUIWidgetsMixin:
         merge_wrap.setLayout(self.parent.merge_row)
         merge_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.parent.merge_row.addStretch(1)
-        self.parent.btn_merge = QPushButton("MERGE VIDEOS")
+        self.parent.btn_merge = QPushButton("Merge videos")
         self.parent.btn_merge.setObjectName("mergeButton")
         self.parent.btn_merge.setFixedSize(240, 50)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)

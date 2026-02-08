@@ -1,7 +1,8 @@
-import subprocess
+﻿import subprocess
 import sys
 import psutil
 import re
+import os
 
 def parse_time_to_seconds(time_str: str) -> float:
     try:
@@ -30,7 +31,8 @@ def parse_time_to_seconds(time_str: str) -> float:
 
 def create_subprocess(cmd, logger=None):
     if logger:
-        logger.info(f"Executing command: {' '.join(cmd)}")
+        clean_cmd = [os.path.basename(cmd[0])] + cmd[1:]
+        logger.info(f"Starting process: {' '.join(clean_cmd[:5])}...")
     startupinfo = None
     creationflags = 0
     if sys.platform == "win32":
@@ -71,6 +73,14 @@ def kill_process_tree(pid, logger=None):
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], 
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def check_disk_space(path: str, required_gb: float) -> bool:
+    try:
+        usage = psutil.disk_usage(os.path.dirname(os.path.abspath(path)))
+        free_gb = usage.free / (1024**3)
+        return free_gb >= required_gb
+    except Exception:
+        return True
+
 def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, is_canceled_func, logger):
     time_regex = re.compile(r'time=(\S+)')
     while True:
@@ -98,10 +108,11 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, is_canceled_fun
                         progress_signal.emit(calc_prog)
                 except ValueError:
                     pass
-            if key in ['error', 'fps', 'speed']:
-                logger.info(s)
+            if key in ['error', 'speed']:
+                logger.info(f"FFmpeg: {key}={val}")
         else:
-            logger.info(s)
+            if "error" in s.lower():
+                logger.error(s)
             match = time_regex.search(s)
             if match:
                 current_time_str = match.group(1).split('.')[0]

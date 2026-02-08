@@ -762,11 +762,18 @@ class GranularSpeedEditor(QDialog):
         super().reject()
 
     def closeEvent(self, event):
+        if self.list_modified or self.selection_modified:
+            reply = QMessageBox.question(self, "Unsaved Changes", 
+                "You have modified speed segments. Discard changes?", 
+                QMessageBox.Discard | QMessageBox.Cancel)
+            if reply == QMessageBox.Cancel:
+                event.ignore()
+                return
         self.save_geometry()
-        self.last_position_ms = self.vlc_player.get_time()
-        self.vlc_player.pause()
-        self.vlc_player.stop()
-        self.vlc_player.release()
-        self.vlc_player = None
+        if self.vlc_player:
+            self.vlc_player.pause()
+            self.vlc_player.stop()
+            self.vlc_player.release()
+            self.vlc_player = None
         super().closeEvent(event)
 

@@ -8,7 +8,7 @@ import threading
 import traceback
 from logging.handlers import RotatingFileHandler
 import vlc
-from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt
+from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
                              QMessageBox, QShortcut, QStatusBar, QLabel, QDialog)
@@ -17,6 +17,8 @@ from PyQt5.QtCore import QObject, QThread
 import tempfile, glob
 from system.config import ConfigManager
 from system.logger import setup_logger
+from system.state_transfer import StateTransfer
+from processing.system_utils import kill_process_tree
 from ui.widgets.tooltip_manager import ToolTipManager
 from ui.widgets.custom_file_dialog import CustomFileDialog
 from ui.parts.ui_builder_mixin import UiBuilderMixin
@@ -28,6 +30,13 @@ from ui.parts.trim_mixin import TrimMixin
 from ui.parts.music_mixin import MusicMixin
 from ui.parts.ffmpeg_mixin import FfmpegMixin
 from ui.parts.keyboard_mixin import KeyboardMixin
+try:
+    from developer_tools.utils import PersistentWindowMixin
+except ImportError:
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'developer_tools'))
+
+    from utils import PersistentWindowMixin
 
 class _QtLiveLogHandler(logging.Handler):
     def __init__(self, ui_owner):
@@ -47,18 +56,27 @@ class CleanupWorker(QObject):
 
     def run(self):
         try:
+            import time
             temp_dir = tempfile.gettempdir()
-            patterns = ["core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log", "drawtext-*.txt"]
+            patterns = [
+                "core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log", 
+                "drawtext-*.txt", "filter_complex-*.txt", "concat-*.txt",
+                "thumb-*.jpg", "snapshot-*.png"
+            ]
+            now = time.time()
+            limit_seconds = 6 * 3600 
             for pattern in patterns:
                 for old_file in glob.glob(os.path.join(temp_dir, pattern)):
                     try:
-                        os.remove(old_file)
+                        if os.path.isfile(old_file):
+                            if now - os.path.getmtime(old_file) > limit_seconds:
+                                os.remove(old_file)
                     except OSError:
                         pass
         except Exception:
             pass
 
-class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin):
+class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, PersistentWindowMixin):
     progress_update_signal = pyqtSignal(int)
     status_update_signal = pyqtSignal(str)
     process_finished_signal = pyqtSignal(bool, str)
@@ -151,14 +169,19 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         if not hasattr(self, 'status_bar'):
             return
         self.hardware_strategy = detected_mode
+        self.scan_complete = True
         self.logger.info(f"Hardware Strategy finalized: {self.hardware_strategy}")
         if self.hardware_strategy == "CPU":
             self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
         else:
-            self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
+            if hasattr(self, 'hardware_status_label'):
+                self.hardware_status_label.setText(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})")
+            else:
+                self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
+        self._maybe_enable_process()
 
     def show_status_warning(self, message: str):
-        """Displays a permanent warning message in the status bar."""
+        """Displays a temporary warning message in the status bar."""
         try:
             if not hasattr(self, 'status_bar_warning_label'):
                 self.status_bar_warning_label = QLabel(message)
@@ -167,6 +190,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.status_bar_warning_label.setText(message)
             self.status_bar_warning_label.show()
             self.logger.warning(f"StatusBar NOTIFICATION: {message}")
+            QTimer.singleShot(10000, self.status_bar_warning_label.hide)
         except Exception as e:
             self.logger.error(f"Failed to show status bar warning: {e}")
 
@@ -245,6 +269,10 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.tooltip_manager = ToolTipManager(self)
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(50)
+        self._resize_timer.timeout.connect(self._delayed_resize_event)
         self.init_ui()
         self.playback_rate = 1.1
         self.speed_segments = []
@@ -268,20 +296,31 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self._phase_dots = 1
         self._base_title = "Fortnite Video Compressor"
         self._music_files = []
+        self.scan_complete = False
         self.set_style()
         self.setWindowTitle(self._base_title)
+        session_data = StateTransfer.load_state()
+        if session_data:
+            self.logger.info("Session data found. Restoring state...")
+            if 'input_file' in session_data:
+                file_path = session_data['input_file']
         if self.hardware_strategy == "Scanning...":
-            self.status_bar.showMessage("🔎 Scanning for compatible hardware...")
+            if hasattr(self, 'hardware_status_label'):
+                self.hardware_status_label.setText("🔎 Scanning for compatible hardware...")
+            else:
+                self.status_bar.showMessage("🔎 Scanning for compatible hardware...")
         elif self.hardware_strategy == "CPU":
             self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
+            self.scan_complete = True
         else:
             self.status_bar.showMessage("Ready.", 5000)
+            self.scan_complete = True
         self.live_log_signal.connect(self.log_overlay_sink)
         self.video_ended_signal.connect(self._handle_video_end)
         try:
-            qt_handler = _QtLiveLogHandler(self) 
-            qt_handler.setLevel(logging.INFO)
-            if all(not isinstance(h, _QtLiveLogHandler) for h in self.logger.handlers):
+            if not any(isinstance(h, _QtLiveLogHandler) for h in self.logger.handlers):
+                qt_handler = _QtLiveLogHandler(self) 
+                qt_handler.setLevel(logging.INFO)
                 self.logger.addHandler(qt_handler)
         except Exception:
             pass
@@ -291,17 +330,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_player_state)
-        geom = self.config_manager.config.get('window_geometry')
-        if geom and isinstance(geom, dict):
-            from PyQt5.QtWidgets import QApplication
-            screen = QApplication.primaryScreen().availableGeometry()
-            w = min(geom.get('w', 1150), screen.width())
-            h = min(geom.get('h', 700), screen.height())
-            x = max(screen.x(), min(geom.get('x', 0), screen.right() - w))
-            y = max(screen.y(), min(geom.get('y', 0), screen.bottom() - h))
-            self.setGeometry(x, y, w, h)
-        else:
-            self.setGeometry(200, 200, 1150, 700)
+        self.setup_persistence(
+            config_path=os.path.join(self.base_dir, 'config', 'main_app.conf'),
+            settings_key='window_geometry',
+            default_geo={'x': 200, 'y': 200, 'w': 1150, 'h': 700},
+            title_info_provider=lambda: f"{self._base_title}  —  {self.width()}x{self.height()}"
+        )
         self.setMinimumSize(1150, 575)
         self._scan_mp3_folder()
         self._update_window_size_in_title()
@@ -394,10 +428,22 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     def launch_crop_tool(self):
         """Launches the crop tool application with a heartbeat check."""
         try:
+            state = {
+                "input_file": self.input_file_path,
+                "trim_start": self.trim_start_ms,
+                "trim_end": self.trim_end_ms,
+                "speed_segments": self.speed_segments,
+                "hardware_mode": getattr(self, "hardware_strategy", "CPU")
+            }
+            StateTransfer.save_state(state)
+            if getattr(self, "input_file_path", None) or self.speed_segments:
+                 pass
             self.logger.info("ACTION: Launching Crop Tool via F12...")
             script_path = os.path.join(self.base_dir, 'developer_tools', 'crop_tools.py')
             if not os.path.exists(script_path):
                 raise FileNotFoundError(f"Crop Tool script not found at: {script_path}")
+            if self.vlc_player:
+                self.vlc_player.stop()
             command = [sys.executable, "-B", script_path]
             if self.input_file_path:
                 command.append(self.input_file_path)
@@ -436,39 +482,25 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     def launch_advanced_editor(self):
         """Launches the advanced video editor application."""
         try:
+            state = {
+                "input_file": self.input_file_path,
+                "hardware_mode": getattr(self, "hardware_strategy", "CPU")
+            }
+            StateTransfer.save_state(state)
+            if getattr(self, "input_file_path", None) or self.speed_segments:
+                 pass
             self.logger.info("ACTION: Launching Advanced Video Editor via F11...")
             command = [sys.executable, os.path.join(self.base_dir, 'advanced', 'advanced_video_editor.py')]
             if self.input_file_path:
                 command.append(self.input_file_path)
+            if self.vlc_player:
+                self.vlc_player.stop()
             subprocess.Popen(command, cwd=self.base_dir)
             self.logger.info("Advanced Editor process started. Closing main app.")
             self.close()
         except Exception as e:
             self.logger.critical(f"ERROR: Failed to launch Advanced Editor. Error: {e}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor. Error: {e}")
-
-    def launch_video_merger(self):
-        """Launches the Video Merger with sanity checks (Overrides Mixin)."""
-        merger_path = os.path.join(self.base_dir, 'utilities', 'video_merger.py')
-        if not os.path.exists(merger_path):
-            self.logger.error(f"Sanity Check Failed: Merger script missing at {merger_path}")
-            QMessageBox.critical(self, "Missing Component", 
-                f"Could not find the Video Merger script:\n{merger_path}\n\nPlease check your installation.")
-            return
-        try:
-            self.logger.info(f"ACTION: Launching Video Merger: {merger_path}")
-            creation_flags = 0
-            if sys.platform == "win32":
-                creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen([sys.executable, "-B", merger_path], cwd=self.base_dir, creationflags=creation_flags)
-            self.logger.info("Merger launched successfully. Closing Main App.")
-            self.close()
-        except OSError as e:
-            self.logger.critical(f"OS Error launching merger: {e}")
-            QMessageBox.critical(self, "Launch Error", f"Failed to start the Video Merger.\n\nOS Error: {e}")
-        except Exception as e:
-            self.logger.critical(f"Unexpected error launching merger: {e}")
-            QMessageBox.critical(self, "Launch Error", f"An unexpected error occurred:\n{e}")
 
     def _on_music_trim_changed(self, start_ms, end_ms):
         """Handles music timeline bar changes from the slider (in ms)."""
@@ -678,32 +710,34 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 self.logger.error("Failed to open media: %s", p)
                 return
             self.vlc_player.set_media(media)
-            self.vlc_player.video_set_scale(0)
             try:
                 if sys.platform.startswith('win'):
                     self.vlc_player.set_hwnd(int(self.video_surface.winId()))
             except Exception as hwnd_err:
                 self.logger.error("Failed to set HWND for player: %s", hwnd_err)
             self.vlc_player.play()
-            toggle_method = getattr(self, "_on_mobile_toggled", None) or getattr(self, "_on_mobile_format_toggled", None)
-            if toggle_method:
-                QTimer.singleShot(150, lambda: toggle_method(self.mobile_checkbox.isChecked()))
+            if hasattr(self, "_on_mobile_toggled"):
+                QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
         else:
             self.logger.warning("VLC not available. Skipping playback. (CPU Mode)")
             pass
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
+        self._set_video_controls_enabled(True)
 
     def reset_app_state(self):
         """Resets the UI and state so a new file can be loaded fresh."""
         self.input_file_path = None
         self.original_resolution = None
-        if hasattr(self, 'resolution_label'):
+        if hasattr(self, 'set_resolution_text'):
+            self.set_resolution_text("")
+        elif hasattr(self, 'resolution_label'):
             self.resolution_label.setText("")
         self.original_duration_ms = 0
         self.trim_start_ms = 0
         self.trim_end_ms = 0
         self.process_button.setEnabled(False)
+        self._set_video_controls_enabled(False)
         self.progress_update_signal.emit(0)
         self.on_phase_update("Please upload a new video file.")
         try:
@@ -733,15 +767,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         """Encapsulates all logic for saving application state to disk."""
         cfg = self.config_manager.config
         try:
-            cfg['window_geometry'] = {
-                'x': self.geometry().x(),
-                'y': self.geometry().y(),
-                'w': self.geometry().width(),
-                'h': self.geometry().height()
-            }
-        except Exception:
-            pass
-        try:
             cfg['mobile_checked'] = bool(self.mobile_checkbox.isChecked())
         except Exception:
             pass
@@ -756,8 +781,9 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.config_manager.save_config(cfg)
         self.logger.info("CONFIG: Saved current state to disk.")
 
-    def closeEvent(self, event):
-        """Ensures all background encoding processes are killed before exit."""
+    def cleanup_and_exit(self):
+        """Centralized cleanup and exit logic."""
+        self.logger.info("=== Application shutting down ===")
         if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
             self.logger.warning("App closing during process. Killing ffmpeg...")
             self.process_thread.cancel()
@@ -769,6 +795,55 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         except Exception as e:
             self.logger.error("Failed to stop VLC players on close: %s", e)
         self._save_app_state_and_config()
+        QCoreApplication.instance().quit()
+
+    def resizeEvent(self, event):
+        """[FIX #1 & #24] Handles window resizing with throttling for overlay smoothness."""
+        self._update_window_size_in_title()
+        if hasattr(self, '_resize_timer'):
+            self._resize_timer.start()
+        else:
+            self._delayed_resize_event()
+        super().resizeEvent(event)
+
+    def _delayed_resize_event(self):
+        """Executed after resize throttle."""
+        try:
+            if hasattr(self, "_update_volume_badge"):
+                self._update_volume_badge()
+            if hasattr(self, "_resize_overlay"):
+                self._resize_overlay()
+            if hasattr(self, "_adjust_trim_margins"):
+                self._adjust_trim_margins()
+            if hasattr(self, "_update_portrait_mask_overlay_state"):
+                self._update_portrait_mask_overlay_state()
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        """[FIX #3] Ensures all background encoding processes are killed before exit."""
+        if getattr(self, "is_processing", False):
+            reply = QMessageBox.question(self, "Quit During Processing",
+                "A video is currently being processed. Closing now will cancel all progress. Quit anyway?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+        if getattr(self, "_switching_app", False):
+            self.cleanup_and_exit()
+            super().closeEvent(event)
+            return
+        try:
+            import psutil
+            current_process = psutil.Process()
+            children = current_process.children(recursive=True)
+            for child in children:
+                try:
+                    self.logger.info(f"EXIT: Killing child process {child.pid} ({child.name()})")
+                    child.kill()
+                except: pass
+        except: pass
+        self.cleanup_and_exit()
         super().closeEvent(event)
 
     def show_message(self, title, message):
@@ -795,53 +870,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                     subprocess.Popen(['xdg-open', path])
             except Exception as e:
                 self.show_message("Error", f"Failed to open folder. Please navigate to {path} manually. Error: {e}")
-
-    def _reset_player_after_end(self):
-        try:
-            p = getattr(self, 'vlc_player', None)
-            if not p:
-                return
-            p.blockSignals(True)
-            p.pause()
-            p.setPosition(0)
-        except Exception:
-            pass
-        finally:
-            try:
-                p.blockSignals(False)
-            except Exception:
-                pass
-        try:
-            if hasattr(self, 'play_button'):
-                self.play_button.setText("▶ Play")
-            if hasattr(self, 'trim_slider'):
-                self.trim_slider.setEnabled(True)
-        except Exception:
-            pass
-        setattr(self, '_is_playing', False)
-
-    def _on_position_changed(self, pos_ms):
-        try:
-            if hasattr(self, 'positionSlider') and not self.positionSlider.isSliderDown():
-                self.positionSlider.blockSignals(True)
-                self.positionSlider.setValue(pos_ms)
-                self.positionSlider.blockSignals(False)
-            p = getattr(self, 'vlc_player', None)
-            if not p:
-                return
-            dur = int(p.duration() or 0)
-            if dur > 0 and pos_ms >= max(0, dur - 200):
-                self._reset_player_after_end()
-        except Exception as e:
-            self.logger.error(f"UI Error in _on_position_changed: {e}")
-
-    def _on_state_changed(self, state):
-        try:
-            is_playing = getattr(state, 'value', lambda: state)() == 1
-            if hasattr(self, 'play_button'):
-                self.play_button.setText("⏸ Pause" if is_playing else "▶ Play")
-        except Exception:
-            pass
 
     def share_via_whatsapp(self):
         url = "https://web.whatsapp.com"

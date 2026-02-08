@@ -1,7 +1,6 @@
 ﻿import vlc
 import time
 from PyQt5.QtCore import QTimer
-from PyQt5.QtMultimedia import QMediaPlayer
 from PyQt5.QtWidgets import QStyle
 
 class PlayerMixin:
@@ -17,12 +16,6 @@ class PlayerMixin:
                 self.positionSlider.setValue(0)
         except Exception:
             pass
-    
-    def _finish_seek_from_end(self):
-        """Callback to finish the seek operation, re-enabling the UI."""
-        self.vlc_player.pause()
-        self.playPauseButton.setEnabled(True)
-        self._is_seeking_from_end = False
     
     def toggle_play_pause(self):
         """Toggles play/pause for video and triggers music sync."""
@@ -122,7 +115,7 @@ class PlayerMixin:
                             time_into_music_clip_ms = wall_time_current - wall_time_music_start
                         file_offset_ms = self._get_music_offset_ms() 
                         music_target_in_file_ms = int(time_into_music_clip_ms + file_offset_ms)
-                        if abs(music_player.get_time() - music_target_in_file_ms) > 400:
+                        if abs(music_player.get_time() - music_target_in_file_ms) > 50:
                             music_player.set_time(music_target_in_file_ms)
                 else:
                     if music_player.is_playing(): music_player.pause()
@@ -134,16 +127,17 @@ class PlayerMixin:
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         """
-        Calculates the real wall-clock time required to reach 'video_ms'
-        accounting for variable speed segments.
+        [FIX #10] Calculates the real wall-clock time required to reach 'video_ms'.
+        Optimized to avoid stuttering during preview.
         """
         if not segments:
-            return video_ms / base_speed
-        sorted_segs = sorted(segments, key=lambda x: x['start'])
+            return float(video_ms) / base_speed
+        if not segments or video_ms < segments[0]['start']:
+             return float(video_ms) / base_speed
         current_video_time = 0.0
         accumulated_wall_time = 0.0
         target = float(video_ms)
-        for seg in sorted_segs:
+        for seg in segments:
             start = seg['start']
             end = seg['end']
             speed = seg['speed']
@@ -151,21 +145,15 @@ class PlayerMixin:
                 break
             if start > current_video_time:
                 gap_dur = start - current_video_time
-                if target < start:
-                    gap_dur = target - current_video_time
-                    accumulated_wall_time += gap_dur / base_speed
-                    current_video_time = target
-                    break
-                else:
-                    accumulated_wall_time += gap_dur / base_speed
-                    current_video_time = start
-            seg_dur = end - start
+                accumulated_wall_time += gap_dur / base_speed
+                current_video_time = start
             if target < end:
                 partial_dur = target - start
                 accumulated_wall_time += partial_dur / speed
                 current_video_time = target
                 break
             else:
+                seg_dur = end - start
                 accumulated_wall_time += seg_dur / speed
                 current_video_time = end
         if current_video_time < target:

@@ -25,6 +25,16 @@ class MergerHandlersDialogsMixin:
             self.logger.error("OPEN_FOLDER: Failed to open folder %s | Error: %s", folder_path, e)
             if hasattr(self.parent, "set_status_message"):
                 self.parent.set_status_message("Failed to open output folder", "color: #ff6b6b; font-weight: bold;", 3000)
+            try:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self.parent,
+                    "Couldn't open folder",
+                    f"Could not open this folder automatically:\n{folder_path}\n\n"
+                    "Please copy this path and open it manually.",
+                )
+            except Exception:
+                pass
 
     def show_success_dialog(self, output_path):
         dialog = QDialog(self.parent)
@@ -33,7 +43,12 @@ class MergerHandlersDialogsMixin:
         fm = dialog.fontMetrics()
         btn_h = int(max(58, fm.height() * 2 + 18) + 115)
         btn_w = 220
-        dialog.setFixedSize(1200, 3 * btn_h + 80)
+        screen = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
+        max_w = int((screen.width() * 0.9)) if screen else 1200
+        max_h = int((screen.height() * 0.9)) if screen else (3 * btn_h + 80)
+        dlg_w = min(1200, max(820, max_w))
+        dlg_h = min(3 * btn_h + 80, max_h)
+        dialog.resize(dlg_w, dlg_h)
         layout = QVBoxLayout(dialog)
         label = QLabel(f"File saved to:\n{output_path}")
         layout.addWidget(label)

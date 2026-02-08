@@ -1,19 +1,22 @@
-import os
+﻿import os
 import tempfile
 import json
 from PyQt5.QtCore import QSettings, QByteArray, QTimer
 from PyQt5.QtWidgets import QApplication
 
 def cleanup_temp_snapshots():
-    """Removes temporary snapshot files from the temp directory."""
+    """Removes temporary snapshot files from the temp directory using globbing."""
+
+    import glob
     temp_dir = tempfile.gettempdir()
-    for ext in [".png", ".jpg", ".jpeg"]:
-        garbage_path = os.path.join(temp_dir, f"snapshot{ext}")
-        if os.path.exists(garbage_path):
+    patterns = ["fvs_tmp_snapshot_*.png", "fvs_tmp_snapshot_*.jpg", "fvs_tmp_snapshot_*.jpeg"]
+    for pattern in patterns:
+        for garbage_path in glob.glob(os.path.join(temp_dir, pattern)):
             try:
-                os.remove(garbage_path)
-            except OSError as e:
-                print(f"Error removing temp file {garbage_path}: {e}")
+                if os.path.isfile(garbage_path):
+                    os.remove(garbage_path)
+            except OSError:
+                pass
 
 class PersistentWindowMixin:
     """A mixin to provide common window geometry persistence."""
@@ -99,15 +102,24 @@ class PersistentWindowMixin:
             self.setWindowTitle(self.title_info_provider())
 
     def moveEvent(self, event):
-        super().moveEvent(event)
+        try:
+            super().moveEvent(event)
+        except AttributeError:
+            pass
         self.update_title()
         self._save_timer.start()
 
     def resizeEvent(self, event):
-        super().resizeEvent(event)
+        try:
+            super().resizeEvent(event)
+        except AttributeError:
+            pass
         self.update_title()
         self._save_timer.start()
 
     def closeEvent(self, event):
         self.save_geometry()
-        super().closeEvent(event)
+        try:
+            super().closeEvent(event)
+        except AttributeError:
+            pass

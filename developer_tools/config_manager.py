@@ -234,127 +234,40 @@ class ConfigManager:
         return clean
         
     def _acquire_lock(self, timeout_seconds: int = 5) -> bool:
-        """Acquire a file lock with improved deadlock prevention and watchdog timeout."""
-
-        import psutil
-        import sys
-        current_pid = os.getpid()
+        """Acquire a file-based atomic lock."""
         start_time = time.time()
-        max_attempts = 50
         attempt = 0
-        self._cleanup_stale_lock(timeout_seconds)
-        while attempt < max_attempts and (time.time() - start_time) < timeout_seconds:
+        while (time.time() - start_time) < timeout_seconds:
             attempt += 1
             try:
                 fd = os.open(self._lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                with os.fdopen(fd, 'w') as f:
-                    f.write(str(current_pid))
-                    f.flush()
-                    os.fsync(fd)
                 try:
-                    if sys.platform != 'win32':
-                        import fcntl
-                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    else:
-                        import msvcrt
-                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                except (ImportError, AttributeError, OSError):
-                    pass
-                self.logger.debug(f"Acquired lock for {self.config_path} (PID: {current_pid})")
-                self._start_lock_watchdog()
+                    os.write(fd, str(os.getpid()).encode())
+                finally:
+                    os.close(fd)
+                self.logger.debug(f"Acquired lock for {self.config_path}")
                 return True
             except FileExistsError:
-                if not self._check_and_break_stale_lock(timeout_seconds):
-                    wait_time = min(0.1 * (1.5 ** attempt), 1.0)
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    continue
-            except Exception as e:
-                self.logger.error(f"Unexpected error acquiring lock: {e}")
-                return False
-        self.logger.warning(f"Failed to acquire lock for {self.config_path} after {timeout_seconds}s")
-        self._notify_lock_timeout()
-        return False
-    
-    def _cleanup_stale_lock(self, timeout_seconds: int):
-        """Clean up stale lock file on startup."""
-        if os.path.exists(self._lock_file_path):
-            lock_age = time.time() - os.path.getmtime(self._lock_file_path)
-            if lock_age > timeout_seconds * 2:
                 try:
-                    os.unlink(self._lock_file_path)
-                    self.logger.warning(f"Cleaned up stale lock on startup (age: {lock_age:.1f}s)")
-                except OSError:
-                    pass
-    
-    def _check_and_break_stale_lock(self, timeout_seconds: int) -> bool:
-        """Check if lock is stale and break it if necessary."""
-
-        import psutil
-        try:
-            if not os.path.exists(self._lock_file_path):
-                return False
-            lock_age = time.time() - os.path.getmtime(self._lock_file_path)
-            if lock_age > timeout_seconds:
-                self.logger.warning(f"Breaking stale lock (age: {lock_age:.1f}s > {timeout_seconds}s)")
-                try:
-                    os.unlink(self._lock_file_path)
-                except OSError:
-                    pass
-                return True
-            try:
-                with open(self._lock_file_path, 'r') as f:
-                    lock_pid_str = f.read().strip()
-                    if lock_pid_str:
-                        lock_pid = int(lock_pid_str)
-                        if not psutil.pid_exists(lock_pid):
-                            self.logger.warning(f"Breaking lock from dead process {lock_pid}")
-                            try:
-                                os.unlink(self._lock_file_path)
-                            except OSError:
-                                pass
-                            return True
-            except (ValueError, OSError):
-                self.logger.warning("Breaking corrupted lock file")
-                try:
-                    os.unlink(self._lock_file_path)
-                except OSError:
-                    pass
-                return True
-        except (OSError, psutil.NoSuchProcess, psutil.AccessDenied) as e:
-            self.logger.debug(f"Lock check error: {e}")
-        return False
-    
-    def _start_lock_watchdog(self):
-        """Start a watchdog timer to automatically release lock if thread dies."""
-
-        def watchdog():
-            time.sleep(30)
-            if os.path.exists(self._lock_file_path):
-                try:
-                    with open(self._lock_file_path, 'r') as f:
-                        pid = int(f.read().strip())
-                        if pid == os.getpid():
-                            self.logger.error("Lock watchdog triggered - forcing lock release")
-                            self._release_lock()
+                    mtime = os.path.getmtime(self._lock_file_path)
+                    if (time.time() - mtime) > timeout_seconds:
+                        self.logger.warning(f"Breaking stale lock for {self.config_path}")
+                        try: os.unlink(self._lock_file_path)
+                        except: pass
+                        continue
                 except:
                     pass
-        
-        import threading
-        watchdog_thread = threading.Thread(target=watchdog, daemon=True)
-        watchdog_thread.start()
-    
-    def _notify_lock_timeout(self):
-        """Notify user about lock timeout (could be extended to show UI message)."""
-        self.logger.error(f"LOCK TIMEOUT: Could not acquire lock for {self.config_path}")
-    
+                time.sleep(0.1)
+            except Exception as e:
+                self.logger.error(f"Lock acquisition error: {e}")
+                return False
+        return False
+
     def _release_lock(self):
         """Release the file lock."""
         try:
             if os.path.exists(self._lock_file_path):
                 os.unlink(self._lock_file_path)
-                self.logger.debug(f"Released lock for {self.config_path}")
         except Exception as e:
             self.logger.error(f"Error releasing lock: {e}")
     
@@ -434,6 +347,15 @@ class ConfigManager:
         if not self._acquire_lock():
             self.logger.error(f"Could not acquire lock for saving {self.config_path}")
             return False
+        try:
+            if os.path.exists(self.config_path):
+                config_dir = os.path.dirname(self.config_path)
+                config_filename = os.path.basename(self.config_path)
+                old_backup_path = os.path.join(config_dir, f"old_{config_filename}")
+                shutil.copy2(self.config_path, old_backup_path)
+                self.logger.debug(f"Created persistent old-config backup at {old_backup_path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to create persistent old-config backup: {e}")
         backup_path = None
         success = False
         try:
@@ -553,25 +475,25 @@ class ConfigManager:
 
     def delete_crop_coordinates(self, tech_key: str) -> bool:
         """
-        [FIX #2] Zero-outs configuration data instead of deleting keys.
-        Deleting keys causes the processing engine to fall back to hardcoded defaults (Ghost Elements).
+        Physically removes configuration data for a technical key.
+        [FIX #9] Deleting keys instead of zeroing them ensures the config remains clean.
         """
         config_data = self.get_current_config_data()
         changes_made = False
         if 'crops_1080p' in config_data and tech_key in config_data['crops_1080p']:
-            config_data['crops_1080p'][tech_key] = [0, 0, 0, 0]
+            del config_data['crops_1080p'][tech_key]
             changes_made = True
         if 'scales' in config_data and tech_key in config_data['scales']:
-            config_data['scales'][tech_key] = 0.0
+            del config_data['scales'][tech_key]
             changes_made = True
         if 'overlays' in config_data and tech_key in config_data['overlays']:
-            config_data['overlays'][tech_key] = {"x": 0, "y": 0}
+            del config_data['overlays'][tech_key]
             changes_made = True
         if 'z_orders' in config_data and tech_key in config_data['z_orders']:
-            config_data['z_orders'][tech_key] = 10
+            del config_data['z_orders'][tech_key]
             changes_made = True
         if changes_made:
-            self.logger.info(f"Zeroed-out configuration data for tech_key: {tech_key} (Prevents default fallback)")
+            self.logger.info(f"Physically removed configuration data for tech_key: {tech_key}")
             return self.save_config(config_data, enforce_consistency=True)
         return True
     

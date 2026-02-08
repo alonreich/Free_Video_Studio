@@ -14,17 +14,12 @@ from processing.worker import ProcessThread
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
         """Accepts the dialog first, then quits the application, ensuring state is saved."""
-        try:
-            if hasattr(self, "_save_app_state_and_config"):
-                self._save_app_state_and_config()
-        except Exception as e:
-            try:
-                self.logger.error("Failed to save config before exit: %s", e)
-            except Exception:
-                pass
         if dialog_to_close:
             dialog_to_close.accept()
-        QCoreApplication.instance().quit()
+        if hasattr(self, "cleanup_and_exit"):
+            self.cleanup_and_exit()
+        else:
+            QCoreApplication.instance().quit()
     
     def _safe_status(self, text: str, color: str = "white"):
         """Use set_status_text_with_color if available; otherwise just log."""
@@ -73,13 +68,8 @@ class FfmpegMixin:
         QApplication.processEvents()
         if hasattr(self, "process_thread") and self.process_thread and self.process_thread.isRunning():
             self.process_thread.cancel()
-            if not self.process_thread.wait(2500):
-                self.logger.warning("CANCEL: Process thread hung. Forcing termination.")
-                try:
-                    self.process_thread.terminate()
-                    self.process_thread.wait()
-                except Exception as e:
-                    self.logger.error(f"CANCEL: Error terminating thread: {e}")
+            if not self.process_thread.wait(5000):
+                self.logger.error("CANCEL: Process thread failed to stop within 5s.")
         self.on_process_finished(False, "Processing was canceled by the user.")
         self._save_app_state_and_config()
     
@@ -95,8 +85,11 @@ class FfmpegMixin:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
                 self.show_message("Error", "Please select a valid video file first.")
                 return
-            if self.original_resolution not in ["1920x1080", "2560x1440", "3440x1440", "3840x2160"]:
-                self._safe_status("Unsupported input resolution.", "red")
+
+            from processing.system_utils import check_disk_space
+            out_dir = os.path.join(self.base_dir, "!!!_Output_Video_Files_!!!")
+            if not check_disk_space(out_dir, 2.0):
+                self.show_message("Disk Space Low", "You have less than 2GB free on the output drive. Please free up space before processing.")
                 return
             if self.trim_start_ms > 0 or self.trim_end_ms > 0:
                 start_time_ms = self.trim_start_ms
@@ -216,6 +209,40 @@ class FfmpegMixin:
             except Exception:
                 pass
     
+    def _show_error_with_log(self, message):
+        """[FIX #22] Error dialog with log viewer."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Processing Error")
+        msg.setText("An error occurred during processing.")
+        msg.setInformativeText(message)
+        details_btn = msg.addButton("Show Technical Logs", QMessageBox.ActionRole)
+        ok_btn = msg.addButton(QMessageBox.Ok)
+        msg.exec_()
+        if msg.clickedButton() == details_btn:
+            log_path = os.path.join(self.base_dir, "Fortnite_Video_Software.log")
+            log_content = "Log file not found."
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                        log_content = "".join(lines[-100:])
+                except Exception as e:
+                    log_content = f"Failed to read log: {e}"
+            d = QDialog(self)
+            d.setWindowTitle("Technical Logs (Last 100 Lines)")
+            d.resize(900, 600)
+            l = QVBoxLayout(d)
+
+            from PyQt5.QtWidgets import QTextEdit
+            t = QTextEdit()
+            t.setFont(QFont("Consolas", 10))
+            t.setReadOnly(True)
+            t.setPlainText(log_content)
+            l.addWidget(t)
+            t.verticalScrollBar().setValue(t.verticalScrollBar().maximum())
+            d.exec_()
+
     def on_process_finished(self, success, message):
         button_size = (250, 55)
         self.is_processing = False
@@ -237,6 +264,10 @@ class FfmpegMixin:
             pass
         if success:
             self._safe_set_phase("Done", ok=True)
+            if hasattr(self, "cleanup_worker"):
+                try:
+                    self.cleanup_worker.run()
+                except: pass
         else:
             if "canceled by user" in message.lower():
                 self._safe_set_phase("Canceled", ok=False)
@@ -330,7 +361,7 @@ class FfmpegMixin:
                 self.handle_new_file()
         else:
             if "canceled by user" not in message.lower():
-                self.show_message("Error", "Video processing failed.\n" + message)
+                self._show_error_with_log(message)
         try:
             for h in getattr(self.logger, "handlers", []):
                 stream = getattr(h, "stream", None)
@@ -363,27 +394,21 @@ class FfmpegMixin:
 
         def _on_worker_finished(result):
             success, duration_s, res_or_err = result
-
-            def _reenable():
-                self.playPauseButton.setEnabled(True)
-                self.start_trim_button.setEnabled(True)
-                self.end_trim_button.setEnabled(True)
-                self.process_button.setEnabled(True)
             if not success:
                 self._safe_status(f"Error analyzing: {res_or_err}", "red")
                 if hasattr(self, "logger"):
                     self.logger.error(f"Probe failed: {res_or_err}")
-                _reenable()
                 return
             duration_ms = int(duration_s * 1000)
             if duration_ms <= 0 or not res_or_err:
                 self._safe_status("Video analysis failed (invalid metadata).", "red")
-                _reenable()
                 return
             try:
                 self.original_duration_ms = duration_ms
                 self.original_resolution = res_or_err
-                if hasattr(self, 'resolution_label'):
+                if hasattr(self, 'set_resolution_text'):
+                    self.set_resolution_text(self.original_resolution)
+                elif hasattr(self, 'resolution_label'):
                     self.resolution_label.setText(self.original_resolution)
                 self.positionSlider.setRange(0, duration_ms)
                 self.positionSlider.set_duration_ms(duration_ms)
@@ -398,12 +423,10 @@ class FfmpegMixin:
                 self._update_trim_widgets_from_trim_times()
                 self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
                 self._safe_status("Video loaded.", "white")
-                _reenable()
             except Exception as e:
                 self._safe_status(f"UI Update Error: {e}", "red")
                 if hasattr(self, "logger"):
                     self.logger.exception("UI update failed in on_worker_finished")
-                _reenable()
             finally:
                 if hasattr(self, "timer") and not self.timer.isActive():
                     self.timer.start(100)
@@ -433,12 +456,14 @@ class FfmpegMixin:
         """Return audio duration in seconds (float) or 0.0 on failure."""
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
-            cmd = [ffprobe_path, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]
-            r = subprocess.run(cmd, text=True, check=True,
-                            stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
-            return max(0.0, float(r.stdout.strip()))
+            cmd = [ffprobe_path, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0", path]
+            r = subprocess.run(cmd, text=True, capture_output=True, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
+            out = r.stdout.strip()
+            if not out or "n/a" in out.lower():
+                cmd = [ffprobe_path, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]
+                r = subprocess.run(cmd, text=True, capture_output=True, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
+                out = r.stdout.strip()
+            return max(0.0, float(out))
         except Exception:
             return 0.0
     

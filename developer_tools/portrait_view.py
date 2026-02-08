@@ -51,10 +51,11 @@ class PortraitView(QGraphicsView):
             scale_w = view_rect.width() / scene_rect.width()
             scale_h = view_rect.height() / scene_rect.height()
             min_allowed_zoom = min(scale_w, scale_h)
-        zoom_factor = 1.1 if angle > 0 else 1 / 1.1
+        zoom_factor = 1.15 if angle > 0 else 1 / 1.15
         new_zoom = self.zoom * zoom_factor
         new_zoom = max(min_allowed_zoom, min(self.max_zoom, new_zoom))
-        if abs(new_zoom - self.zoom) < 0.0001: return
+        if abs(new_zoom - self.zoom) < 0.0001: 
+            return
         factor = new_zoom / self.zoom
         self.zoom = new_zoom
         self.scale(factor, factor)
@@ -87,6 +88,39 @@ class PortraitView(QGraphicsView):
             return super().mousePressEvent(event)
         return super().mousePressEvent(event)
 
+    def contextMenuEvent(self, event):
+        """[FIX #18] Context menu for autospacing overlaps."""
+        selected_items = [item for item in self.scene().selectedItems() if isinstance(item, ResizablePixmapItem)]
+        if not selected_items:
+            return
+            
+        from PyQt5.QtWidgets import QMenu, QAction
+        menu = QMenu(self)
+        autospace_action = QAction("Autospace Overlaps", self)
+        autospace_action.triggered.connect(lambda: self._autospace_items(selected_items))
+        menu.addAction(autospace_action)
+        menu.exec_(event.globalPos())
+
+    def _autospace_items(self, items):
+        """Simple algorithm to push overlapping items apart."""
+        if len(items) < 2: return
+        modified = False
+        items.sort(key=lambda i: i.scenePos().y())
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                item_a = items[i]
+                item_b = items[j]
+                rect_a = item_a.sceneBoundingRect()
+                rect_b = item_b.sceneBoundingRect()
+                if rect_a.intersects(rect_b):
+                    overlap_h = rect_a.bottom() - rect_b.top()
+                    item_b.moveBy(0, overlap_h + 10)
+                    modified = True
+        if modified and hasattr(self.parent(), 'on_item_modified'):
+            for item in items:
+                self.parent().on_item_modified(item)
+            self.scene().update()
+
     def mouseReleaseEvent(self, event):
         if self._middle_dragging and event.button() == Qt.MiddleButton:
             self._middle_dragging = False
@@ -98,16 +132,16 @@ class PortraitView(QGraphicsView):
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier:
             if event.key() == Qt.Key_Z:
-                self.parent().undo()
+                self.window().undo()
                 event.accept()
                 return
             elif event.key() == Qt.Key_Y:
-                self.parent().redo()
+                self.window().redo()
                 event.accept()
                 return
         if event.key() == Qt.Key_Delete:
-            if hasattr(self.parent(), 'delete_selected'):
-                self.parent().delete_selected()
+            if hasattr(self.window(), 'delete_selected'):
+                self.window().delete_selected()
                 event.accept()
                 return
         selected_items = self.scene().selectedItems()
@@ -120,7 +154,10 @@ class PortraitView(QGraphicsView):
                 if hasattr(item, '_snap_anim_pos'):
                     item._snap_anim_pos = None
             items_to_move = selected_items
-            if event.modifiers() == Qt.ShiftModifier:
+            delta = UI_BEHAVIOR.KEYBOARD_NUDGE_STEP
+            if event.modifiers() & Qt.ShiftModifier:
+                delta = 10.0
+            if event.modifiers() & Qt.ShiftModifier:
                 if event.key() == Qt.Key_Up:
                     for item in items_to_move:
                         item.setZValue(item.zValue() + 1)
@@ -131,7 +168,6 @@ class PortraitView(QGraphicsView):
                         item.setZValue(item.zValue() - 1)
                     event.accept()
                     return
-            delta = UI_BEHAVIOR.KEYBOARD_NUDGE_STEP
             key = event.key()
             if key == Qt.Key_Up:
                 for item in items_to_move:
@@ -148,9 +184,9 @@ class PortraitView(QGraphicsView):
             else:
                 super().keyPressEvent(event)
                 return
-            if hasattr(self.parent(), 'on_item_modified'):
+            if hasattr(self.window(), 'on_item_modified'):
                 for item in items_to_move:
-                    self.parent().on_item_modified(item)
+                    self.window().on_item_modified(item)
             event.accept()
         else:
             super().keyPressEvent(event)

@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal
+﻿from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal
 from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor, QPainterPath, QLinearGradient, QBrush
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle, QToolTip, QApplication
 
@@ -16,23 +16,6 @@ class TrimmedSlider(QSlider):
         self._duration_ms = 0
         self.setMouseTracking(True)
         self.setMinimumHeight(40)
-        self.setStyleSheet("""
-            QSlider::groove:horizontal {
-                background: #4a667a;
-                height: 4px; 
-                border-radius: 2px;
-                margin-top: 10px;
-                margin-bottom: 10px;
-            }
-            QSlider::handle:horizontal {
-                background: transparent;
-                border: none;
-                width: 26px;
-                margin: -10px 0;
-            }
-            QSlider::sub-page:horizontal { background: transparent; }
-            QSlider::add-page:horizontal { background: transparent; }
-        """)
         self.sliderPressed.connect(self._on_pressed)
         self.sliderReleased.connect(self._on_released)
         self._is_pressed = False
@@ -361,26 +344,28 @@ class TrimmedSlider(QSlider):
                 p.drawRoundedRect(handle_rect, 4, 4)
             playhead_rect = self._get_playhead_rect()
             if playhead_rect.isValid():
-                knob_w = 12
-                knob_h = 36
+                knob_w = 15
+                knob_h = 40
                 cx = playhead_rect.center().x()
                 cy = groove_rect.center().y()
                 knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
-                border_color = QColor("#1f2a36")
-                if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                    border_color = QColor("#90A4AE")
-                p.setPen(QPen(border_color, 1))
                 g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
-                c1 = QColor("#546E7A")
-                c2 = QColor("#90A4AE")
+                c1 = QColor("#5a5a5a")
+                c2 = QColor("#9a9a9a")
                 if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                    c1 = c1.lighter(120)
-                    c2 = c2.lighter(120)
-                g.setColorAt(0.0, c1); g.setColorAt(0.4, c1)
-                g.setColorAt(0.5, c2)
-                g.setColorAt(0.6, c1); g.setColorAt(1.0, c1)
+                    c1 = c1.lighter(110); c2 = c2.lighter(110)
+                g.setColorAt(0.0, c1)
+                g.setColorAt(0.35, c2)
+                g.setColorAt(0.38, Qt.black); g.setColorAt(0.42, Qt.black)
+                g.setColorAt(0.45, c2)
+                g.setColorAt(0.48, Qt.black); g.setColorAt(0.52, Qt.black)
+                g.setColorAt(0.55, c2)
+                g.setColorAt(0.58, Qt.black); g.setColorAt(0.62, Qt.black)
+                g.setColorAt(0.65, c2)
+                g.setColorAt(1.0, c1)
+                p.setPen(QPen(QColor("#111111"), 1))
                 p.setBrush(QBrush(g))
-                p.drawRoundedRect(knob_rect, 4, 4)
+                p.drawRoundedRect(knob_rect, 2, 2)
             if self._show_music:
                 for handle_type in ['start', 'end']:
                     handle_rect = self._get_music_handle_rect(handle_type)

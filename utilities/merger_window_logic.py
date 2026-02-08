@@ -1,12 +1,15 @@
 ﻿import os
 from pathlib import Path
-from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt
-from PyQt5.QtWidgets import QLabel, QPushButton
+from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt, QTimer
+from PyQt5.QtWidgets import QLabel
 from utilities.merger_utils import _load_conf, _save_conf
 
 class MergerWindowLogic:
     def __init__(self, window):
         self.window = window
+        self._save_timer = QTimer(self.window)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self.save_config)
 
     def _is_widget_alive(self, widget):
         if not widget:
@@ -42,6 +45,12 @@ class MergerWindowLogic:
                 self.window.logger.info(f"Restored window geometry: {x},{y} {w}x{h}")
         except Exception as ex:
             self.window.logger.debug(f"Failed to restore window geometry: {ex}")
+        try:
+            music_state = self.window._cfg.get("music_widget", {})
+            if hasattr(self.window, "unified_music_widget") and isinstance(music_state, dict):
+                self.window.unified_music_widget.apply_state(music_state)
+        except Exception as ex:
+            self.window.logger.debug(f"Failed to restore music state: {ex}")
 
     def save_config(self):
         """Thread-safe configuration saving with atomic write."""
@@ -55,13 +64,19 @@ class MergerWindowLogic:
             }
             config_copy["last_dir"] = self.window._last_dir
             config_copy["last_out_dir"] = self.window._last_out_dir
-            if hasattr(self.window, '_music_eff'):
-                config_copy["last_music_volume"] = self.window._music_eff()
-            self.window.logger.info("Saving config to merger_app.conf")
+            if hasattr(self.window, "unified_music_widget"):
+                config_copy["music_widget"] = self.window.unified_music_widget.export_state()
             _save_conf(config_copy)
             self.window._cfg = config_copy
         except Exception as err:
             self.window.logger.error("Error saving config in merger closeEvent: %s", err)
+
+    def request_save_config(self, delay_ms: int = 300):
+        """Debounced config save to avoid disk-write storms during rapid UI actions."""
+        if delay_ms <= 0:
+            self.save_config()
+            return
+        self._save_timer.start(int(delay_ms))
 
     def get_last_dir(self):
         return getattr(self.window, "_last_dir", str(Path.home()))
@@ -169,10 +184,6 @@ class MergerWindowLogic:
         listw = self.window.listw
         if from_row == to_row or from_row < 0 or to_row < 0 or from_row >= listw.count() or to_row >= listw.count():
             return
-        if from_row < to_row:
-            to_row -= 1
-        if from_row == to_row:
-            return
         updates_prev = listw.updatesEnabled()
         listw.setUpdatesEnabled(False)
         blocker = None
@@ -187,52 +198,22 @@ class MergerWindowLogic:
                 return
             path = item.data(Qt.UserRole)
             probe_data = item.data(Qt.UserRole + 1)
+            f_hash = item.data(Qt.UserRole + 2)
+            clip_id = item.data(Qt.UserRole + 3)
             self.window.logger.info(f"LOGIC: Moving item '{os.path.basename(str(path))}' from index {from_row} to {to_row}.")
-            existing_widget = None if rebuild_widget else listw.itemWidget(item)
-            if existing_widget and self._is_widget_alive(existing_widget):
-                try:
-                    existing_widget.setParent(self.window)
-                except RuntimeError:
-                    existing_widget = None
-            else:
-                existing_widget = None
             listw.takeItem(from_row)
-            if rebuild_widget:
-                from PyQt5.QtWidgets import QListWidgetItem
-                new_item = QListWidgetItem()
-                new_item.setToolTip(path)
-                new_item.setData(Qt.UserRole, path)
-                if probe_data:
-                    new_item.setData(Qt.UserRole + 1, probe_data)
-                listw.insertItem(to_row, new_item)
-                item = new_item
-            else:
-                listw.insertItem(to_row, item)
-            if existing_widget and not rebuild_widget:
-                try:
-                    from PyQt5.QtCore import QSize
-                    existing_widget.setVisible(True)
-                    item.setSizeHint(QSize(existing_widget.width(), 52))
-                    listw.setItemWidget(item, existing_widget)
-                except RuntimeError:
-                    existing_widget = None
-            if not existing_widget:
-                w = self.window.make_item_widget(path)
-                if probe_data:
-                    try:
-                        from utilities.merger_handlers_list import _human_time
-                        dur = float(probe_data.get('format', {}).get('duration', 0))
-                        if dur > 0: w.set_duration_label(_human_time(dur))
-                        streams = probe_data.get('streams', [])
-                        vid = next((s for s in streams if s.get('width')), None)
-                        if vid: w.set_resolution_label(f"{vid['width']}x{vid['height']}")
-                    except: pass
-                item.setSizeHint(w.sizeHint())
-                listw.setItemWidget(item, w)
+            self.window.event_handler._add_single_item_internal(
+                path,
+                row=to_row,
+                probe_data=probe_data,
+                f_hash=f_hash,
+                clip_id=clip_id,
+            )
+            item = listw.item(to_row)
             listw.clearSelection()
             item.setSelected(True)
             listw.setCurrentItem(item)
-            listw.doItemsLayout()
+            self.ensure_item_widgets_consistent()
             if hasattr(self.window.event_handler, 'update_button_states'):
                 self.window.event_handler.update_button_states()
         finally:
@@ -242,3 +223,21 @@ class MergerWindowLogic:
                 except Exception:
                     pass
             listw.setUpdatesEnabled(updates_prev)
+
+    def ensure_item_widgets_consistent(self):
+        """Self-heal: ensure every row has a bound widget to prevent visual ghost blanks."""
+        listw = self.window.listw
+        for i in range(listw.count()):
+            try:
+                item = listw.item(i)
+                if not item:
+                    continue
+                if listw.itemWidget(item) is not None:
+                    continue
+                path = item.data(Qt.UserRole)
+                probe_data = item.data(Qt.UserRole + 1)
+                w = self.window.make_item_widget(path)
+                item.setSizeHint(w.sizeHint())
+                listw.setItemWidget(item, w)
+            except Exception:
+                continue

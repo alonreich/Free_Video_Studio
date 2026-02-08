@@ -1,4 +1,4 @@
-﻿from PyQt5.QtGui import QColor
+﻿from PyQt5.QtGui import QColor, QCursor
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QSlider, QStackedWidget, QFrame, QProgressBar, QScrollArea, QSplitter, QCheckBox, QGraphicsScene
@@ -62,9 +62,18 @@ class Ui_CropApp:
         CropAppWindow.upload_hint_label.setObjectName("uploadHintLabel")
         CropAppWindow.upload_hint_label.setAlignment(Qt.AlignCenter)
         hint_layout.addWidget(CropAppWindow.upload_hint_label)
+        CropAppWindow.vlc_error_label = QLabel("⚠️ VLC MEDIA PLAYER NOT FOUND\nPlayback disabled. Please install 64-bit VLC.")
+        CropAppWindow.vlc_error_label.setStyleSheet("color: #ff4d4d; font-weight: bold; font-size: 16px; background: rgba(0,0,0,180); padding: 20px; border-radius: 10px;")
+        CropAppWindow.vlc_error_label.setAlignment(Qt.AlignCenter)
+        CropAppWindow.vlc_error_label.setVisible(False)
+        hint_layout.addWidget(CropAppWindow.vlc_error_label)
         video_frame_layout.addStretch(1)
         video_frame_layout.addWidget(CropAppWindow.upload_hint_container, 0, Qt.AlignCenter)
         video_frame_layout.addStretch(1)
+        CropAppWindow.shortcuts_label = QLabel("Hotkeys: [Del] Delete  |  [Arrows] Nudge  |  [Ctrl+Z] Undo  |  [Ctrl+Y] Redo")
+        CropAppWindow.shortcuts_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 10px; padding: 2px;")
+        CropAppWindow.shortcuts_label.setAlignment(Qt.AlignRight)
+        video_frame_layout.addWidget(CropAppWindow.shortcuts_label)
         CropAppWindow.view_stack.addWidget(CropAppWindow.video_frame)
         CropAppWindow.draw_scroll_area = QScrollArea()
         CropAppWindow.draw_scroll_area.setObjectName("drawScrollArea")
@@ -180,6 +189,15 @@ class Ui_CropApp:
         CropAppWindow.controls_frame.setFixedHeight(UI_LAYOUT.BUTTON_HEIGHT + 22)
         portrait_header.setFixedHeight(UI_LAYOUT.BUTTON_HEIGHT + 12)
         portrait_footer.setFixedHeight(UI_LAYOUT.BUTTON_HEIGHT + 22)
+        CropAppWindow.magic_wand_button.setVisible(False)
+        CropAppWindow.snapshot_button.setEnabled(False)
+        CropAppWindow.play_pause_button.setEnabled(False)
+        CropAppWindow.done_button.setEnabled(False)
+        CropAppWindow.delete_button.setEnabled(False)
+        CropAppWindow.undo_button.setEnabled(False)
+        CropAppWindow.redo_button.setEnabled(False)
+        CropAppWindow.snap_toggle_button.setEnabled(False)
+        CropAppWindow.show_placeholders_checkbox.setEnabled(False)
         self.setup_styles(CropAppWindow)
 
     def setup_styles(self, CropAppWindow):
@@ -201,5 +219,7 @@ class Ui_CropApp:
                     CropAppWindow.snap_toggle_button]:
             btn.setFixedHeight(UI_LAYOUT.BUTTON_HEIGHT)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+        

@@ -44,10 +44,10 @@ class MergerUIStyleMixin:
                  background-color: #3b8099;
             }
             QPushButton#danger-btn {
-                 background-color: #e74c3c;
+                 background-color: #d64538;
             }
             QPushButton#danger-btn:hover {
-                 background-color: #c0392b;
+                 background-color: #bf3a2e;
             }
             QPushButton#mergeButton {
                 background-color: #146314;

@@ -1,8 +1,6 @@
 ﻿import os
 import subprocess
 import re
-import shutil
-from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
 
@@ -27,6 +25,7 @@ class MergerEngine(QThread):
         self.logger = _get_logger()
         self._process = None
         self._is_cancelled = False
+        self._last_time_str = "00:00:00"
 
     def _detect_gpu_encoder(self):
         """
@@ -90,9 +89,9 @@ class MergerEngine(QThread):
                 line = line.strip()
                 self.log_line.emit(line)
                 self._parse_progress(line)
-                if "Error" in line or "Failed" in line:
-                    log_buffer.append(line)
-                    if len(log_buffer) > 10: log_buffer.pop(0)
+                log_buffer.append(line)
+                if len(log_buffer) > 80:
+                    log_buffer.pop(0)
         if self._is_cancelled:
             self._kill_process()
             self.finished.emit(False, "Cancelled by user.")
@@ -104,7 +103,11 @@ class MergerEngine(QThread):
             else:
                 self.finished.emit(False, "Render complete but output file is empty.")
         else:
-            err_msg = "\n".join(log_buffer) or f"Exit Code {rc}"
+            important = [
+                l for l in log_buffer
+                if re.search(r"error|failed|invalid|unable|cannot|no such", l, re.IGNORECASE)
+            ]
+            err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
             self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
 
     def _parse_progress(self, line):
@@ -115,10 +118,11 @@ class MergerEngine(QThread):
                     h, m, s = map(float, match.groups())
                     current_sec = h*3600 + m*60 + s
                     pct = int((current_sec / self.total_duration) * 100)
-                    pct = max(0, min(99, pct))
-                    self.progress.emit(pct, f"{int(h):02}:{int(m):02}:{int(s):02}")
-            except Exception:
-                pass
+                    pct = max(0, min(100, pct))
+                    self._last_time_str = f"{int(h):02}:{int(m):02}:{int(s):02}"
+                    self.progress.emit(pct, self._last_time_str)
+            except (ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
+                self.logger.debug(f"Progress parse failed: {e}")
 
     def cancel(self):
         self._is_cancelled = True

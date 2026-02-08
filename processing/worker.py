@@ -3,7 +3,7 @@ import tempfile
 import time
 from PyQt5.QtCore import QThread
 from .config_data import VideoConfig
-from .system_utils import create_subprocess, monitor_ffmpeg_progress, kill_process_tree
+from .system_utils import create_subprocess, monitor_ffmpeg_progress, kill_process_tree, check_disk_space
 from .text_ops import TextWrapper, fix_hebrew_text, apply_bidi_formatting
 from .media_utils import MediaProber, calculate_video_bitrate
 from .filter_builder import FilterBuilder
@@ -97,11 +97,17 @@ class ProcessThread(QThread):
         intro_path = None
         output_path = None
         ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
-        scaler_core = ProgressScaler(self.progress_update_signal, 0, 90)
-        scaler_intro = ProgressScaler(self.progress_update_signal, 90, 5)
-        scaler_concat = ProgressScaler(self.progress_update_signal, 95, 5)
+        scaler_core = ProgressScaler(self.progress_update_signal, 0, 80)
+        scaler_intro = ProgressScaler(self.progress_update_signal, 80, 10)
+        scaler_concat = ProgressScaler(self.progress_update_signal, 90, 10)
         try:
             if self.is_canceled: return
+            estimated_output_gb = (self.target_mb if self.target_mb else 500) / 1024.0
+            required_space_gb = (estimated_output_gb * 2.0) + 1.0 
+            out_dir = os.path.join(self.base_dir, "!!!_Output_Video_Files_!!!")
+            if not check_disk_space(out_dir, required_space_gb):
+                self.finished_signal.emit(False, f"Insufficient disk space. Need at least {required_space_gb:.1f} GB free.")
+                return
             has_bg = (self.bg_music_path is not None)
             fade_dur_ms = int(self.config.fade_duration * 1000)
             clip_start_ms = self.start_time_ms
@@ -139,13 +145,14 @@ class ProcessThread(QThread):
             else:
                 vfade_out_start_ms = final_clip_duration_ms - int(vfade_out_duration_ms / self.speed_factor)
                 self.duration_corrected_sec = final_clip_duration_ms / 1000.0
-            if self.is_mobile_format and self.portrait_text:
-                fix_hebrew_text(self.portrait_text)
             audio_kbps = 256
             probed_kbps = self.prober.get_audio_bitrate()
             if probed_kbps:
                 audio_kbps = probed_kbps
                 self.status_update_signal.emit(f"Audio bitrate: preserving source ~{audio_kbps} kbps.")
+            sample_rate = self.prober.get_sample_rate()
+            if has_bg:
+                sample_rate = 48000
             intro_len_sec = max(0.0, self.intro_still_sec) if self.intro_still_sec > 0 else 0.0
             eff_dur_sec = self.duration_corrected_sec + intro_len_sec
             video_bitrate_kbps = calculate_video_bitrate(
@@ -157,6 +164,8 @@ class ProcessThread(QThread):
                     return
                 video_bitrate_kbps = 2500
             MAX_SAFE_BITRATE = 35000
+            if self.quality_level >= 4:
+                MAX_SAFE_BITRATE = 200000
             if video_bitrate_kbps > MAX_SAFE_BITRATE:
                 self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
@@ -192,7 +201,8 @@ class ProcessThread(QThread):
                 disable_fades=self.disable_fades,
                 vfade_in_d=int(vfade_in_duration_ms / self.speed_factor) / 1000.0,
                 audio_filter_cmd=audio_speed_cmd,
-                time_mapper=time_mapper
+                time_mapper=time_mapper,
+                sample_rate=sample_rate
             )
             if self.speed_segments and granular_audio_label:
                 first_filter = audio_chains[0]
@@ -262,7 +272,7 @@ class ProcessThread(QThread):
                 self.filter_scripts.append(filter_script_path)
                 cmd.extend([
                     '-movflags', '+faststart',
-                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000',
+                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-ar', '48000', '-ac', '2',
                     '-filter_complex_script', filter_script_path,
                     '-map', '[vcore]', '-map', '[acore]', '-shortest',
                     core_path
@@ -309,11 +319,15 @@ class ProcessThread(QThread):
                         self.input_path, intro_time_ms / 1000.0, self.intro_still_sec,
                         self.is_mobile_format, audio_kbps, video_bitrate_kbps,
                         scaler_intro,
-                        lambda: self.is_canceled
+                        lambda: self.is_canceled,
+                        sample_rate=sample_rate
                     )
                     self.current_process = intro_proc.current_process
             concat_proc = ConcatProcessor(ffmpeg_path, self.logger, self.base_dir, temp_dir)
-            output_path = concat_proc.run_concat(intro_path, core_path, scaler_concat)
+            output_path = concat_proc.run_concat(
+                intro_path, core_path, scaler_concat,
+                cancellation_check=lambda: self.is_canceled
+            )
             self.current_process = concat_proc.current_process
             if output_path:
                 self.progress_update_signal.emit(100)
@@ -330,6 +344,9 @@ class ProcessThread(QThread):
                     if fs and os.path.exists(fs):
                         try: os.remove(fs)
                         except: pass
+            if textfile_path and os.path.exists(textfile_path):
+                try: os.remove(textfile_path)
+                except: pass
             if self.is_canceled and output_path and os.path.exists(output_path):
                 try: os.remove(output_path)
                 except: pass

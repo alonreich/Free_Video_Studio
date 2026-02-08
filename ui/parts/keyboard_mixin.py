@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 from PyQt5.QtCore import Qt, QEvent
@@ -30,7 +30,7 @@ class KeyboardMixin(QWidget):
             if key == Qt.Key_F12:
                 self._launch_dev_tool()
                 return True
-            if key in (Qt.Key_Up, Qt.Key_Down):
+            if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
                 if self._handle_volume_keys(key, event.modifiers()):
                     return True
             if key in (Qt.Key_Return, Qt.Key_Enter):
@@ -59,9 +59,14 @@ class KeyboardMixin(QWidget):
 
     def _handle_volume_keys(self, key, modifiers) -> bool:
         try:
-            vol_step = 15 if modifiers == Qt.ShiftModifier else 1
-            if key == Qt.Key_Down:
-                vol_step = -vol_step
+            if key in (Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
+                vol_step = 15
+                if key == Qt.Key_Minus:
+                    vol_step = -15
+            else:
+                vol_step = 15 if modifiers == Qt.ShiftModifier else 1
+                if key == Qt.Key_Down:
+                    vol_step = -vol_step
             if self.volume_shortcut_target == 'music':
                 slider = self.music_volume_slider
                 eff_func = self._music_eff

@@ -1,5 +1,10 @@
-import re
+﻿import re
 from PyQt5.QtGui import QFont, QFontMetrics
+try:
+    from bidi.algorithm import get_display
+    HAS_BIDI_LIB = True
+except ImportError:
+    HAS_BIDI_LIB = False
 
 def safe_text(text: str) -> str:
     """
@@ -16,6 +21,7 @@ def safe_text(text: str) -> str:
     return text
 
 def fix_hebrew_text(text: str) -> str:
+    """Legacy helper, kept for compatibility but generally superseded by apply_bidi_formatting."""
     if not text:
         return ""
     has_hebrew = any("\u0590" <= c <= "\u05ff" for c in text)
@@ -32,18 +38,29 @@ def fix_hebrew_text(text: str) -> str:
     return final_text
 
 def apply_bidi_formatting(text: str) -> str:
-    def replacer(m):
-        return "\u2066" + m.group(1) + "\u2069"
-    txt_with_ltr_numbers = re.sub(
-        r'([0-9]+(?:[.,:/\-][0-9]+)*)',
-        replacer,
-        text
-    )
-    has_hebrew = any("\u0590" <= c <= "\u05ff" for c in text)
-    if has_hebrew:
-        return "\u2067" + txt_with_ltr_numbers + "\u200F" + "\u2069"
-    else:
-        return "\u2066" + txt_with_ltr_numbers + "\u2069"
+    """
+    Applies Bidirectional algorithm to text to ensure correct display of RTL languages (Hebrew/Arabic).
+    Prioritizes 'python-bidi' library if available.
+    """
+    if not text:
+        return ""
+    if HAS_BIDI_LIB:
+        try:
+            return get_display(text)
+        except Exception:
+            pass
+    has_rtl = any("\u0590" <= c <= "\u06ff" for c in text)
+    if not has_rtl:
+        return text
+    segments = re.split(r'([\u0590-\u06ff]+)', text)
+    result = []
+    for seg in segments:
+        if not seg: continue
+        if any("\u0590" <= c <= "\u06ff" for c in seg):
+            result.append(seg[::-1])
+        else:
+            result.append(seg)
+    return fix_hebrew_text(text)
 
 class TextWrapper:
     def __init__(self, config):
@@ -59,7 +76,7 @@ class TextWrapper:
             w = int(fm.horizontalAdvance(s))
         except Exception:
             w = int(fm.width(s))
-        return int(w * self.cfg.measure_fudge) + self.cfg.shadow_pad_px
+        return int(w) + self.cfg.shadow_pad_px
 
     def _split_long_token(self, tok: str, px_size: int):
         chunks = []

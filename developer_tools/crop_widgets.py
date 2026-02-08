@@ -1,7 +1,7 @@
 ﻿from PyQt5.QtWidgets import QWidget, QFrame, QPushButton, QVBoxLayout, QHBoxLayout, QMenu, QAction, QApplication
 from PyQt5.QtCore import Qt, QPoint, QRect, pyqtSignal, QRectF, QPointF, QSize, QSizeF, QTimer
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap, QPainterPath, QCursor
-from config import UI_BEHAVIOR, UI_LAYOUT, HUD_ELEMENT_MAPPINGS
+from config import UI_BEHAVIOR, UI_LAYOUT, HUD_ELEMENT_MAPPINGS, UI_COLORS
 
 class RoleToolbar(QFrame):
     """A contextual toolbar for selecting a HUD element role."""
@@ -15,17 +15,10 @@ class RoleToolbar(QFrame):
         self.setObjectName("roleToolbar")
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.NoFocus)
-
-        from PyQt5.QtWidgets import QGraphicsDropShadowEffect
-        self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(15)
-        self.shadow.setColor(QColor(0, 0, 0, 180))
-        self.shadow.setOffset(0, 0)
-        self.setGraphicsEffect(self.shadow)
         self.setStyleSheet("""
             #roleToolbar {
                 background-color: rgba(31, 41, 55, 0.98);
-                border: 2px solid #4B5563;
+                border: 2px solid #60A5FA; /* Brighter border instead of shadow */
                 border-radius: 8px;
             }
             QPushButton {
@@ -158,7 +151,8 @@ class DrawWidget(QWidget):
         self.update()
 
     def _update_scaled_pixmap(self):
-        if self.pixmap.isNull() or not self.scroll_area: return
+        if self.pixmap.isNull() or not self.scroll_area: 
+            return
         viewport_size = self.scroll_area.viewport().size()
         if self.zoom == 1.0:
             available_width = viewport_size.width() - 10
@@ -168,7 +162,9 @@ class DrawWidget(QWidget):
             scale_x = available_width / self.pixmap.width()
             scale_y = available_height / self.pixmap.height()
             self.zoom = min(scale_x, scale_y)
-        scaled_size = self.pixmap.size() * self.zoom
+        new_w = int(self.pixmap.width() * self.zoom)
+        new_h = int(self.pixmap.height() * self.zoom)
+        scaled_size = QSize(new_w, new_h)
         self.resize(scaled_size)
         self._img_rect = QRect(QPoint(0, 0), scaled_size)
         self._cache_pix = self.pixmap.scaled(scaled_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -182,10 +178,10 @@ class DrawWidget(QWidget):
         viewport_size = self.scroll_area.viewport().size() if self.scroll_area else self.size()
         min_allowed_zoom = 0.1
         if self.pixmap.width() > 0 and self.pixmap.height() > 0:
-            scale_w = viewport_size.width() / self.pixmap.width()
-            scale_h = viewport_size.height() / self.pixmap.height()
+            scale_w = (viewport_size.width() - 20) / self.pixmap.width()
+            scale_h = (viewport_size.height() - 20) / self.pixmap.height()
             min_allowed_zoom = min(scale_w, scale_h)
-        factor = 1.1 if angle > 0 else 1/1.1
+        factor = 1.15 if angle > 0 else 1/1.15
         new_zoom = self.zoom * factor
         new_zoom = max(min_allowed_zoom, min(10.0, new_zoom))
         if new_zoom != self.zoom:
@@ -198,20 +194,20 @@ class DrawWidget(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        if not self.pixmap.isNull():
+        if not self.pixmap.isNull() and self._cache_pix:
             painter.drawPixmap(self._img_rect.topLeft(), self._cache_pix)
         if not self._crop_rect_img.isNull():
             path = QPainterPath()
             path.addRect(QRectF(self.rect()))
             path.addRect(QRectF(self._map_rect_to_display(self._crop_rect_img)))
-            painter.setBrush(QColor(0, 0, 0, 120))
+            painter.setBrush(QColor(0, 0, 0, UI_COLORS.OPACITY_DIM_MED))
             painter.setPen(Qt.NoPen)
             painter.drawPath(path)
         rect_to_draw_img = self._drawing_rect_img if self.mode == 'drawing' else self._crop_rect_img
         if not rect_to_draw_img.isNull():
             rect_to_draw = self._map_rect_to_display(rect_to_draw_img)
             painter.setBrush(Qt.NoBrush)
-            pen = QPen(QColor("#10B981"), 2, Qt.SolidLine)
+            pen = QPen(QColor(UI_COLORS.SELECTION_GREEN), 2, Qt.SolidLine)
             painter.setPen(pen)
             painter.drawRect(rect_to_draw)
             if self.mode != 'drawing':
@@ -223,8 +219,8 @@ class DrawWidget(QWidget):
     def _draw_selection_handles(self, painter, rect):
         size = self._selection_handle_size
         half = size / 2
-        painter.setBrush(QColor("#c52c2c"))
-        painter.setPen(QPen(Qt.white, 1))
+        painter.setBrush(QColor(UI_COLORS.HANDLE_ORANGE))
+        painter.setPen(QPen(Qt.white, 1.5))
         corners = [
             rect.topLeft(),
             rect.topRight(),
@@ -235,13 +231,13 @@ class DrawWidget(QWidget):
             painter.drawRect(QRectF(corner.x() - half, corner.y() - half, size, size))
 
     def _draw_crosshair(self, painter, pos):
-        pen = QPen(QColor(0, 255, 255, 100), 1, Qt.DashLine)
+        pen = QPen(QColor(0, 255, 255, 120), 1, Qt.DashLine)
         painter.setPen(pen)
         painter.drawLine(0, pos.y(), self.width(), pos.y())
         painter.drawLine(pos.x(), 0, pos.x(), self.height())
-        painter.setPen(QPen(QColor(0, 255, 255, 180), 1))
-        painter.drawLine(pos.x() - 10, pos.y(), pos.x() + 10, pos.y())
-        painter.drawLine(pos.x(), pos.y() - 10, pos.x(), pos.y() + 10)
+        painter.setPen(QPen(QColor(0, 255, 255, 200), 1))
+        painter.drawLine(pos.x() - 15, pos.y(), pos.x() + 15, pos.y())
+        painter.drawLine(pos.x(), pos.y() - 15, pos.x(), pos.y() + 15)
 
     def mousePressEvent(self, event):
         if self.pixmap.isNull(): return
@@ -249,6 +245,7 @@ class DrawWidget(QWidget):
             self._panning = True
             self._pan_start_pos = event.pos()
             self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
             return
         if event.button() == Qt.LeftButton:
             self._role_popup_timer.stop()
@@ -272,9 +269,6 @@ class DrawWidget(QWidget):
                 )
                 self.setCursor(Qt.ClosedHandCursor)
                 return
-            top_level = self.window()
-            if hasattr(top_level, 'enhanced_logger') and top_level.enhanced_logger:
-                top_level.enhanced_logger.log_user_action("Start Rubberband Selection", f"Mouse Pos: ({event.pos().x()}, {event.pos().y()})")
             self.clear_selection()
             self.mode = 'drawing'
             self.grabMouse()
@@ -485,16 +479,20 @@ class DrawWidget(QWidget):
         if not hasattr(self, '_all_roles'):
             return
         primary = None
-        is_right = box_center.x() > center_x
-        is_bottom = box_center.y() > center_y
-        if not is_right and not is_bottom:
+        is_right = box_center.x() > (center_x * 1.1)
+        is_left = box_center.x() < (center_x * 0.9)
+        is_bottom = box_center.y() > (center_y * 1.1)
+        is_top = box_center.y() < (center_y * 0.9)
+        if is_top and is_left:
             primary = HUD_ELEMENT_MAPPINGS.get("team")
-        elif is_right and not is_bottom:
+        elif is_top and is_right:
             primary = HUD_ELEMENT_MAPPINGS.get("stats")
-        elif is_right and is_bottom:
+        elif is_bottom and is_right:
             primary = HUD_ELEMENT_MAPPINGS.get("loot")
-        elif not is_right and is_bottom:
+        elif is_bottom and is_left:
             primary = HUD_ELEMENT_MAPPINGS.get("normal_hp")
+        elif is_top:
+            primary = HUD_ELEMENT_MAPPINGS.get("boss_hp")
         self.role_toolbar.set_roles_with_priority(self._all_roles, getattr(self, '_configured_roles', set()), primary)
 
     def _hit_test_selection_handle(self, pos):

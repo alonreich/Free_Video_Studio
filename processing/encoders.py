@@ -62,7 +62,7 @@ class EncoderManager:
             vcodec.extend([
                 '-rc', 'vbr',
                 '-tune', 'hq', 
-                '-preset', 'p5',
+                '-preset', 'p4',
                 '-rc-lookahead', '20',
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
@@ -72,11 +72,11 @@ class EncoderManager:
             ])
             rc_label = "NVENC VBR (HQ)"
         elif encoder_name == 'h264_amf':
-            vcodec.extend(['-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak'])
-            rc_label = "AMD AMF"
+            vcodec.extend(['-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak', '-bf', '2'])
+            rc_label = "AMD AMF (Balanced)"
         elif encoder_name == 'h264_qsv':
-            vcodec.extend(['-preset', 'medium', '-look_ahead', '0'])
-            rc_label = "Intel QSV"
+            vcodec.extend(['-preset', 'medium', '-look_ahead', '0', '-bf', '2'])
+            rc_label = "Intel QSV (Balanced)"
         elif encoder_name == 'libx264':
             if video_bitrate_kbps is None:
                 return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18'], "CPU libx264 (CRF)"

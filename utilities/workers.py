@@ -2,10 +2,94 @@
 import hashlib
 import json
 import subprocess
+import math
+import logging
 import time
+import signal
+import psutil
 from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
-from utilities.merger_utils import _human, _ffprobe
+from utilities.merger_utils import _ffprobe, _get_logger, kill_process_tree
+
+def _safe_subprocess_run(cmd, timeout_seconds, logger, description="subprocess"):
+    """
+    Safely run a subprocess with timeout and guaranteed cleanup.
+    Returns (success, stdout, stderr, error_message)
+    """
+    process = None
+    start_time = time.time()
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            creationflags=flags
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            elapsed = time.time() - start_time
+            logger.debug(f"{description} completed in {elapsed:.1f}s, returncode={process.returncode}")
+            if process.returncode == 0:
+                return True, stdout, stderr, ""
+            else:
+                error_msg = f"Process failed with code {process.returncode}"
+                if stderr:
+                    error_msg += f": {stderr[:200]}"
+                return False, stdout, stderr, error_msg
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{description} timed out after {timeout_seconds}s, killing process tree")
+            kill_process_tree(process.pid)
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                logger.error(f"Process tree still alive after kill attempt")
+            return False, "", "", f"Timeout after {timeout_seconds} seconds"
+    except FileNotFoundError as e:
+        return False, "", "", f"Command not found: {cmd[0]}"
+    except Exception as e:
+        logger.error(f"{description} unexpected error: {e}")
+        return False, "", "", str(e)
+    finally:
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=1)
+            except:
+                pass
+
+class FolderScanWorker(QThread):
+    finished = pyqtSignal(list, str)
+
+    def __init__(self, folder: str, exts: set[str]):
+        super().__init__()
+        self.folder = folder
+        self.exts = {e.lower() for e in (exts or set())}
+        self._cancelled = False
+        self._mutex = QMutex()
+        self.logger = _get_logger()
+
+    def cancel(self):
+        with QMutexLocker(self._mutex):
+            self._cancelled = True
+
+    def run(self):
+        files = []
+        try:
+            root = Path(self.folder)
+            for p in root.rglob("*"):
+                with QMutexLocker(self._mutex):
+                    if self._cancelled:
+                        return
+                if p.is_file() and p.suffix.lower() in self.exts:
+                    files.append(str(p))
+            self.finished.emit(files, "")
+        except Exception as e:
+            self.finished.emit([], str(e))
 
 class FastFileLoaderWorker(QThread):
     """
@@ -13,6 +97,7 @@ class FastFileLoaderWorker(QThread):
     Optimized for speed.
     """
     file_loaded = pyqtSignal(str, int, dict, str)
+    progress = pyqtSignal(int, int)
     finished = pyqtSignal(int, int)
 
     def __init__(self, files, existing_files, existing_hashes, max_limit, ffmpeg_path):
@@ -24,29 +109,30 @@ class FastFileLoaderWorker(QThread):
         self.ffprobe = _ffprobe(ffmpeg_path)
         self._cancelled = False
         self._mutex = QMutex()
+        self.existing_file_sizes = {}
 
     def _calculate_partial_hash(self, filepath):
-        """Hashes first 1MB, last 1MB, and file size/mtime for speed."""
+        """Hashes first 256KB + last 256KB + file size for duplicate detection (Issue #4)."""
         try:
             h = hashlib.sha256()
             p = Path(filepath)
             stat = p.stat()
             h.update(str(stat.st_size).encode('utf-8'))
-            h.update(str(stat.st_mtime).encode('utf-8'))
             with open(filepath, "rb") as f:
-                h.update(f.read(1024 * 1024))
-                if stat.st_size > 2 * 1024 * 1024:
-                    f.seek(-1024 * 1024, 2)
-                    h.update(f.read(1024 * 1024))
+                h.update(f.read(256 * 1024))
+                if stat.st_size > 512 * 1024:
+                    f.seek(-256 * 1024, 2)
+                    h.update(f.read(256 * 1024))
             return h.hexdigest()
-        except Exception:
+        except (OSError, IOError, MemoryError):
             return None
 
     def run(self):
         added = 0
         duplicates = 0
         room = self.max_limit - len(self.existing_files)
-        for f in self.files:
+        total = max(1, len(self.files))
+        for idx, f in enumerate(self.files, start=1):
             with QMutexLocker(self._mutex):
                 if self._cancelled: break
             if added >= room: 
@@ -71,13 +157,15 @@ class FastFileLoaderWorker(QThread):
                 r = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
                 if r.returncode == 0:
                     probe_data = json.loads(r.stdout)
-            except Exception:
+            except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError) as e:
                 pass
             self.file_loaded.emit(f, sz, probe_data, f_hash)
             self.existing_files.add(f)
             if f_hash:
                 self.existing_hashes.add(f_hash)
             added += 1
+            self.progress.emit(idx, total)
+        self.progress.emit(total, total)
         self.finished.emit(added, duplicates)
 
     def cancel(self):
@@ -101,27 +189,102 @@ class ProbeWorker(QThread):
         self._mutex = QMutex()
 
     def run(self):
-        durations = []
+        results = []
         total = 0.0
+        logger = _get_logger()
         try:
             for path in self.video_files:
                 with QMutexLocker(self._mutex):
                     if self._cancelled: return
+                duration = 0.0
+                resolution = None
+                has_audio = False
                 try:
-                    cmd = [self.ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]
-                    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                    r = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
-                    d = float(r.stdout.strip() or 0)
+                    timeout_s = 6
+                    try:
+                        size_mb = os.path.getsize(path) / (1024.0 * 1024.0)
+                        timeout_s = int(max(6, min(20, 4 + math.ceil(size_mb / 250.0))))
+                    except Exception:
+                        timeout_s = 6
+                    cmd = [
+                        self.ffprobe,
+                        "-v", "error",
+                        "-show_entries", "format=duration:stream=codec_type,width,height,codec_name,pix_fmt,r_frame_rate,sample_rate,channels",
+                        "-of", "json",
+                        path,
+                    ]
+                    success, stdout, stderr, error_msg = _safe_subprocess_run(
+                        cmd, timeout_s, logger, description=f"ffprobe {os.path.basename(path)}"
+                    )
+                    if success and stdout:
+                        payload = json.loads(stdout)
+                        duration = float(payload.get("format", {}).get("duration") or 0.0)
+                        streams = payload.get("streams", []) or []
+                        v_codec = ""
+                        v_pix_fmt = ""
+                        v_fps = 0.0
+                        a_codec = ""
+                        a_rate = 0
+                        a_channels = 0
+                        for s in streams:
+                            if s.get("codec_type") == "video" and s.get("width") and s.get("height"):
+                                resolution = (int(s.get("width")), int(s.get("height")))
+                                v_codec = str(s.get("codec_name") or "")
+                                v_pix_fmt = str(s.get("pix_fmt") or "")
+                                fr = str(s.get("r_frame_rate") or "0/1")
+                                try:
+                                    if "/" in fr:
+                                        a, b = fr.split("/", 1)
+                                        b_f = float(b or 1.0)
+                                        v_fps = float(a or 0.0) / (b_f if b_f else 1.0)
+                                    else:
+                                        v_fps = float(fr)
+                                except Exception:
+                                    v_fps = 0.0
+                                break
+                        for s in streams:
+                            if s.get("codec_type") == "audio":
+                                a_codec = str(s.get("codec_name") or "")
+                                try:
+                                    a_rate = int(float(s.get("sample_rate") or 0))
+                                except Exception:
+                                    a_rate = 0
+                                try:
+                                    a_channels = int(s.get("channels") or 0)
+                                except Exception:
+                                    a_channels = 0
+                                break
+                        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+                    else:
+                        logger.warning(f"ffprobe failed for {path}: {error_msg}")
                 except Exception:
-                    d = 0.0
-                durations.append((path, d))
-                total += d
+                    duration = 0.0
+                    resolution = None
+                    has_audio = False
+                    v_codec = ""
+                    v_pix_fmt = ""
+                    v_fps = 0.0
+                    a_codec = ""
+                    a_rate = 0
+                    a_channels = 0
+                results.append({
+                    "path": path,
+                    "duration": duration,
+                    "resolution": resolution,
+                    "has_audio": has_audio,
+                    "video_codec": v_codec,
+                    "video_pix_fmt": v_pix_fmt,
+                    "video_fps": v_fps,
+                    "audio_codec": a_codec,
+                    "audio_rate": a_rate,
+                    "audio_channels": a_channels,
+                })
+                total += duration
             if not self._cancelled:
-                self.finished.emit(durations, total)
+                self.finished.emit(results, total)
         except Exception as e:
             self.error.emit(str(e))
 
     def cancel(self):
         with QMutexLocker(self._mutex):
             self._cancelled = True
-        self.wait()

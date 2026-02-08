@@ -3,6 +3,10 @@
 logs/
 config/
 __pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 advanced/
 mpv_advanced/
 *.mp4

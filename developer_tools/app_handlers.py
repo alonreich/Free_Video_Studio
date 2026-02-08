@@ -34,17 +34,33 @@ class CropAppHandlers:
         self.is_scrubbing = False
         if hasattr(self, 'draw_widget'):
             self.draw_widget.crop_role_selected.connect(self.handle_crop_completed)
+        if hasattr(self, 'media_processor'):
+            self.media_processor.info_retrieved.connect(self._on_video_info_ready)
 
     def set_style(self):
         self.setStyleSheet(CROP_APP_STYLESHEET)
 
     def update_wizard_step(self, step_num, instruction):
+        """[FIX #5] Map instruction text to the status label so the user knows what to do."""
         self.current_step = step_num
-        if hasattr(self, 'progress_bar'):
+        if hasattr(self, 'progress_bar') and self.progress_bar:
             clamped_step = max(1, min(step_num, 5))
             self.progress_bar.setValue(clamped_step * 20)
+        if hasattr(self, 'status_label') and self.status_label and instruction:
+            self.status_label.setText(instruction)
         self.update_progress_tracker()
         
+    def _on_video_info_ready(self, resolution):
+        """[FIX #4] Callback for background resolution detection."""
+        self.logger.info(f"Background info ready: {resolution}")
+        total_ms = self.media_processor.get_length()
+        if total_ms > 0:
+            self.position_slider.setRange(0, total_ms)
+            self.snapshot_button.setEnabled(True)
+            self.snapshot_button.setText("START CROPPING")
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("Frame ready - click START CROPPING")
+
     def update_progress_tracker(self):
         if not hasattr(self, 'progress_labels') or not hasattr(self, 'hud_elements'):
             return
@@ -98,8 +114,11 @@ class CropAppHandlers:
         self.update_wizard_step(3, f"Adjust '{role}' in the Portrait Composer, then click FINISH to save.")
 
     def on_magic_wand_clicked(self):
+        """[FIX #24] Single worker pattern for Magic Wand."""
         if not self.snapshot_path or not os.path.exists(self.snapshot_path):
             QMessageBox.warning(self, "Magic Wand", "Please take a snapshot first.")
+            return
+        if hasattr(self, 'wand_thread') and self.wand_thread.isRunning():
             return
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("MAGIC WAND", "Activated automated HUD detection")
@@ -152,6 +171,8 @@ class CropAppHandlers:
     def _on_magic_wand_error(self, err):
         self.magic_wand_button.setEnabled(True)
         self.magic_wand_button.setText("MAGIC WAND")
+        if hasattr(self, '_magic_wand_preview_timer'):
+            self._magic_wand_preview_timer.stop()
         if hasattr(self, 'wand_thread') and self.wand_thread.isRunning():
             self.wand_thread.quit()
             self.wand_thread.wait()
@@ -164,6 +185,8 @@ class CropAppHandlers:
             return
         self.magic_wand_button.setEnabled(True)
         self.magic_wand_button.setText("MAGIC WAND")
+        if hasattr(self, '_magic_wand_preview_timer'):
+            self._magic_wand_preview_timer.stop()
         if regions:
             self._magic_wand_candidates = regions
             self._magic_wand_index = 0
@@ -179,6 +202,12 @@ class CropAppHandlers:
         else:
             QMessageBox.information(self, "Magic Wand", "No clear HUD elements detected automatically. Please draw manually.")
             self._magic_wand_candidates = None
+        try:
+            if hasattr(self, 'wand_thread') and self.wand_thread.isRunning():
+                self.wand_thread.quit()
+                self.wand_thread.wait()
+        except:
+            pass
 
     def _cycle_magic_wand_preview(self):
         if not getattr(self, '_magic_wand_candidates', None):
@@ -199,6 +228,7 @@ class CropAppHandlers:
         self.close()
 
     def reset_state(self, force=False):
+        """[FIX #6] stop active timers when resetting state."""
         if not force:
             reply = QMessageBox.question(self, 'Reset Confirmation', 
                                          "Are you sure you want to reset all current progress? Unsaved changes will be lost.",
@@ -208,23 +238,24 @@ class CropAppHandlers:
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("Reset State", "User confirmed complete reset")
         if hasattr(self, '_magic_wand_preview_timer') and self._magic_wand_preview_timer:
-            try:
-                self._magic_wand_preview_timer.stop()
-            except Exception:
-                pass
-        try:
-            if hasattr(self, 'config_manager'):
-                default_config = self.config_manager._sanitize_config(self.config_manager.DEFAULT_VALUES)
-                self.config_manager.save_config(default_config)
-        except Exception as e:
-            if hasattr(self, 'logger'):
-                self.logger.error(f"Failed to reset HUD config: {e}")
+            self._magic_wand_preview_timer.stop()
+        if hasattr(self, '_magic_wand_timeout_timer') and self._magic_wand_timeout_timer:
+            self._magic_wand_timeout_timer.stop()
+        if hasattr(self, 'wand_thread') and self.wand_thread.isRunning():
+            self.wand_thread.quit()
+            self.wand_thread.wait()
         if hasattr(self, 'portrait_scene'):
             try:
                 if hasattr(self, 'placeholders_group'):
+                    for ph in list(self.placeholders_group):
+                        self.portrait_scene.removeItem(ph)
                     self.placeholders_group.clear()
                 self.background_item = None
-                self.portrait_scene.clear()
+
+                from graphics_items import ResizablePixmapItem
+                for item in self.portrait_scene.items():
+                    if isinstance(item, ResizablePixmapItem):
+                        self.portrait_scene.removeItem(item)
                 self.load_existing_placeholders()
             except Exception as e:
                 if hasattr(self, 'logger'):
@@ -278,17 +309,19 @@ class CropAppHandlers:
             is_playing = self.media_processor.is_playing()
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("Play/Pause", f"New State: {'Playing' if is_playing else 'Paused'}")
+        if is_playing and self.view_stack.currentWidget() != self.draw_scroll_area:
+            self.show_video_view()
         self._sync_play_pause_button(is_playing)
 
     def _sync_play_pause_button(self, is_playing=None):
+        """[FIX #16] Use .update() instead of .repaint() to avoid stutter."""
         if is_playing is None:
             is_playing = self.media_processor.is_playing()
         if is_playing:
             self.play_pause_button.setText("⏸ PAUSE")
-            self.show_video_view()
         else:
             self.play_pause_button.setText("▶ PLAY")
-        self.play_pause_button.repaint()
+        self.play_pause_button.update()
 
     def open_file(self):
         if self._get_enhanced_logger():
@@ -300,17 +333,18 @@ class CropAppHandlers:
         if file_path:
             self.load_file(file_path)
         else:
-            if hasattr(self, '_set_upload_hint_active'):
+            if hasattr(self, '_set_upload_hint_active') and not self.media_processor.media:
                 self._set_upload_hint_active(True)
             self.timer.start()
 
     def load_file(self, file_path):
+        """[FIX #12] Defer slider and status updates until media length is confirmed."""
         self.last_dir = os.path.dirname(file_path)
         self.media_processor.load_media(file_path, self.video_frame.winId())
         if hasattr(self, '_set_upload_hint_active'):
             self._set_upload_hint_active(False)
         if hasattr(self, 'status_label'):
-            self.status_label.setText("Video loaded - prepare snapshot")
+            self.status_label.setText("Loading video - please wait...")
         enhanced_logger = self._get_enhanced_logger()
         if enhanced_logger:
             resolution = self.media_processor.original_resolution or "unknown"
@@ -318,31 +352,21 @@ class CropAppHandlers:
         self.play_pause_button.setEnabled(True)
         self.snapshot_button.setEnabled(False)
         self.snapshot_button.setText("Loading...")
-        self.position_slider.setEnabled(True)
+        self.position_slider.setEnabled(False)
         self.show_video_view()
-        self.update_wizard_step(2, "Play/Pause to find a clear frame with visible HUD elements.")
+        self.update_wizard_step(2, "Finding clear frame with HUD elements...")
         QTimer.singleShot(200, self._sync_play_pause_button)
-
-        def enable_snapshot_if_ready():
-            total_ms = self.media_processor.media_player.get_length()
-            has_res = self.media_processor.original_resolution is not None
-            if total_ms > 0 and has_res:
-                self.snapshot_button.setEnabled(True)
-                self.magic_wand_button.setEnabled(False)
-                self.snapshot_button.setText("START CROPPING")
-                self.position_slider.setRange(0, total_ms)
-                if hasattr(self, 'status_label'):
-                    self.status_label.setText("Frame ready - click START CROPPING")
-            else:
-                QTimer.singleShot(500, enable_snapshot_if_ready)
-        QTimer.singleShot(1000, enable_snapshot_if_ready)
         self.update_progress_tracker()
         self.timer.start()
 
     def take_snapshot(self):
         if not self.media_processor.original_resolution:
-             QMessageBox.warning(self, "Not Ready", "Video resolution not yet detected. Please play the video for a moment.")
+             QMessageBox.warning(self, "Not Ready", "Video resolution not yet detected. Please wait.")
              return
+        try:
+            cleanup_temp_snapshots()
+        except Exception:
+            pass
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("START CROPPING", f"Video Position: {self.position_slider.value()}ms")
         try:
@@ -362,7 +386,7 @@ class CropAppHandlers:
             self.play_pause_button.setText("▶ PLAY")
             preferred_time = self.position_slider.value() / 1000.0
             timestamp = int(time.time() * 1000)
-            unique_snapshot_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+            unique_snapshot_path = os.path.join(tempfile.gettempdir(), f"fvs_tmp_snapshot_{timestamp}.png")
             success, message = self.media_processor.take_snapshot(unique_snapshot_path, preferred_time)
             if success: 
                 self.snapshot_path = unique_snapshot_path
@@ -413,16 +437,16 @@ class CropAppHandlers:
                 self.update_wizard_step(3, f"Draw a box around the {next_element}")
             else:
                 self.update_wizard_step(3, "All elements configured! You can still add more if needed.")
-            if hasattr(self, 'status_label'):
-                self.status_label.setText("Draw selection on snapshot")
             self.update_progress_tracker()
             self.draw_widget.setFocus(Qt.OtherFocusReason)
             self._snapshot_processing = False
             self.snapshot_button.setEnabled(True)
             self.snapshot_button.setVisible(False)
-            self.magic_wand_button.setEnabled(True)
-            self.magic_wand_button.setVisible(True)
-            self.draw_widget.role_toolbar.hide()
+            if hasattr(self, 'magic_wand_button'):
+                self.magic_wand_button.setEnabled(True)
+                self.magic_wand_button.setVisible(True)
+            if hasattr(self.draw_widget, 'role_toolbar'):
+                self.draw_widget.role_toolbar.hide()
         except Exception as e:
             self.logger.error(f"Error in _show_draw_view: {e}", exc_info=True)
             QMessageBox.critical(self, "Display Error", f"Failed to display snapshot: {e}")
@@ -451,28 +475,45 @@ class CropAppHandlers:
 
     def _on_slider_pressed(self):
         self.is_scrubbing = True
+        self._was_playing_before_scrub = self.media_processor.is_playing()
+        if self._was_playing_before_scrub:
+            self.media_processor.media_player.pause()
+            self._sync_play_pause_button(False)
 
     def _on_slider_moved(self, position):
         self.update_time_labels()
+        if self.is_scrubbing:
+            self.set_position(position)
         
     def _on_slider_released(self):
         self.is_scrubbing = False
         self.set_position(self.position_slider.value())
+        if getattr(self, '_was_playing_before_scrub', False):
+            self.media_processor.media_player.play()
+            self._sync_play_pause_button(True)
 
     def update_time_labels(self):
         if not hasattr(self, 'current_time_label') or not hasattr(self, 'total_time_label'):
             return
-        total_ms = self.media_processor.media_player.get_length()
-        current_ms = self.media_processor.media_player.get_time()
+        total_ms = self.media_processor.get_length()
+        current_ms = self.media_processor.get_time()
         if self.is_scrubbing:
              current_ms = self.position_slider.value()
         self.current_time_label.setText(self._format_time(current_ms))
         self.total_time_label.setText(self._format_time(total_ms))
         
     def update_ui(self):
-        if self.media_processor.media and not self.is_scrubbing:
-            self.position_slider.setValue(self.media_processor.media_player.get_time())
-        self.update_time_labels()
+        """[FIX #12/32] update UI while respecting scrubbing and ensuring labels are current."""
+        if not hasattr(self, 'media_processor') or not self.media_processor.media:
+            return
+        try:
+            if not self.is_scrubbing:
+                current_time = self.media_processor.get_time()
+                if hasattr(self, 'position_slider') and self.position_slider and self.position_slider.isEnabled():
+                    self.position_slider.setValue(current_time)
+            self.update_time_labels()
+        except Exception as e:
+            self.logger.error(f"Error in update_ui: {e}")
            
     def get_title_info(self):
         return self.base_title

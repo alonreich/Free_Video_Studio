@@ -10,6 +10,7 @@ TARGET_H = 1920
 CONTENT_W = 1080
 CONTENT_H = 1620
 PADDING_TOP = 150
+PADDING_BOTTOM = 150
 BACKEND_SCALE = 1280.0 / 1080.0
 
 def scale_round(val: float) -> int:
@@ -17,12 +18,21 @@ def scale_round(val: float) -> int:
     return int(math.floor(val + 0.5))
 
 def outward_round_rect(x: float, y: float, w: float, h: float) -> Tuple[int, int, int, int]:
-    """Rounds a rectangle outwards: floor top-left, ceil bottom-right. Guaranteed 1x1 min size."""
-    ix = int(math.floor(x))
-    iy = int(math.floor(y))
-    iw = max(1, int(math.ceil(x + w) - ix))
-    ih = max(1, int(math.ceil(y + h) - iy))
-    return ix, iy, iw, ih
+    """
+    Rounds a rectangle outwards to the nearest pixel grid.
+    Top-left corner (x, y) is floored.
+    Bottom-right corner (x+w, y+h) is ceiled.
+    [FIX #30] Ensures the resulting integer rect always contains the original float rect.
+    """
+    x_min = float(x)
+    y_min = float(y)
+    x_max = x_min + float(w)
+    y_max = y_min + float(h)
+    ix = int(math.floor(x_min))
+    iy = int(math.floor(y_min))
+    iw = int(math.ceil(x_max)) - ix
+    ih = int(math.ceil(y_max)) - iy
+    return ix, iy, max(1, iw), max(1, ih)
 
 def transform_to_content_area(rect: Tuple[float, float, float, float],
                             original_resolution: str) -> Tuple[float, float, float, float]:
@@ -78,7 +88,7 @@ def transform_to_content_area_int(rect: Tuple[int, int, int, int],
         int(ih)
     )
 
-def clamp_overlay_position(x: int, y: int, width: int, height: int, padding_top_ui: int = 0, padding_bottom_ui: int = 0) -> Tuple[int, int]:
+def clamp_overlay_position(x: float, y: float, width: float, height: float, padding_top_ui: int = 150, padding_bottom_ui: int = 150) -> Tuple[float, float]:
     """
     Clamp overlay position to screen bounds in 1280x1920 backend canvas space.
     Args:
@@ -86,10 +96,10 @@ def clamp_overlay_position(x: int, y: int, width: int, height: int, padding_top_
         width, height: Scaled overlay dimensions in 1280x1920 space
         padding_top_ui: Padding in UI space (e.g., 150)
     """
-    min_y = int(math.floor(padding_top_ui * BACKEND_SCALE))
-    max_y = max(min_y, TARGET_H - height - int(math.ceil(padding_bottom_ui * BACKEND_SCALE)))
-    clamped_x = max(0, min(x, TARGET_W - width))
-    clamped_y = max(min_y, min(y, max_y))
+    min_y = float(padding_top_ui) * BACKEND_SCALE
+    max_y = max(min_y, float(TARGET_H) - height - (float(padding_bottom_ui) * BACKEND_SCALE))
+    clamped_x = max(0.0, min(float(x), float(TARGET_W) - width))
+    clamped_y = max(min_y, min(float(y), max_y))
     return clamped_x, clamped_y
 
 def validate_crop_rect(rect: Tuple[int, int, int, int],

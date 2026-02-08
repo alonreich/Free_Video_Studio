@@ -1,12 +1,12 @@
-import math
+﻿import math
 import shutil
 import subprocess
 import sys
 import time
 from collections import deque
 import psutil
-from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal
-from PyQt5.QtGui import QRegion, QIcon
+from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal, QPoint
+from PyQt5.QtGui import QRegion, QIcon, QColor, QPainter, QPen, QBrush, QFont
 from PyQt5.QtWidgets import QWidget, QPlainTextEdit
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
@@ -40,7 +40,7 @@ class GpuWorker(QThread):
             except Exception:
                 pass
             self.stats_updated.emit(gpu)
-            for _ in range(20): 
+            for _ in range(10):
                 if not self._running: break
                 time.sleep(0.1)
 
@@ -78,6 +78,7 @@ class PhaseOverlayMixin:
         self._graph = QWidget(self._overlay)
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)
         self._graph.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._graph.paintEvent = self._draw_performance_graphs
         self.live_log = QPlainTextEdit(self._overlay)
         self.live_log.setReadOnly(True)
         self.live_log.setMaximumBlockCount(5000)
@@ -87,11 +88,9 @@ class PhaseOverlayMixin:
                 font-family: Consolas, monospace; font-size: 12px;
             }
         """)
-
-        from collections import deque
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
             if not hasattr(self, nm):
-                setattr(self, nm, deque(maxlen=400))
+                setattr(self, nm, deque(maxlen=200))
         self._log_buffer = []
         self._log_flush_timer = QTimer(self)
         self._log_flush_timer.setInterval(250)
@@ -101,7 +100,7 @@ class PhaseOverlayMixin:
         self._gpu_worker = GpuWorker()
         self._gpu_worker.stats_updated.connect(self._on_gpu_update)
         self._stats_timer = QTimer(self)
-        self._stats_timer.setInterval(2000)
+        self._stats_timer.setInterval(1000)
         self._stats_timer.timeout.connect(self._sample_perf_counters_safe)
         self._overlay.installEventFilter(self)
 
@@ -136,16 +135,13 @@ class PhaseOverlayMixin:
                     w.raise_()
             self._overlay.setMask(mask_region)
             margin_x = 40
-            margin_y = 60
-            spacing = 20
+            margin_y = 40
             avail_w = main_rect.width() - (2 * margin_x)
             avail_h = main_rect.height() - (2 * margin_y)
-            if avail_w < 100 or avail_h < 100: 
-                return
-            graph_h = int(avail_h * 0.65)
-            log_h = avail_h - graph_h - spacing
+            if avail_w < 100 or avail_h < 100: return
+            graph_h = 240 
             self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
-            self.live_log.setGeometry(margin_x, margin_y + graph_h + spacing, avail_w, log_h)
+            self.live_log.setGeometry(margin_x, margin_y + graph_h + 20, avail_w, avail_h - graph_h - 20)
         except Exception:
             pass
 
@@ -263,4 +259,59 @@ class PhaseOverlayMixin:
         self._iops_hist.append(iops_pct)
         self._mem_hist.append(mem)
         if getattr(self, "_overlay", None) and self._overlay.isVisible():
+            if hasattr(self, "_graph"):
+                self._graph.update()
             self._overlay.update()
+
+    def _set_overlay_phase(self, phase: str) -> None:
+        """Triggers the show/hide of the processing overlay based on pipeline phase."""
+        p = (phase or "").lower()
+        if any(x in p for x in ("processing", "step", "encode", "intro", "core", "concat")):
+            if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
+                self._show_processing_overlay()
+        elif any(x in p for x in ("done", "idle", "error", "failed")):
+            if getattr(self, "_overlay", None) and self._overlay.isVisible():
+                self._hide_processing_overlay()
+
+    def _draw_performance_graphs(self, event):
+        """Draws 4 separate horizontal timelines of 10x45px sticks."""
+        painter = QPainter(self._graph)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = self._graph.width()
+        painter.fillRect(self._graph.rect(), QColor(11, 20, 29, 120))
+        metrics = [
+            (list(self._cpu_hist), "#3498db", "CPU"),
+            (list(self._gpu_hist), "#e74c3c", "GPU"),
+            (list(self._mem_hist), "#2ecc71", "MEM"),
+            (list(self._iops_hist), "#f1c40f", "I/O")
+        ]
+        stick_w = 10
+        stick_max_h = 45
+        gap = 2
+        row_spacing = 55
+        start_x = 75 
+        font = QFont("Segoe UI", 9, QFont.Bold)
+        painter.setFont(font)
+        for idx, (data, color, label) in enumerate(metrics):
+            y_base = idx * row_spacing + 10
+            cur_val = data[-1] if data else 0
+            painter.setPen(QColor("white"))
+            painter.drawText(5, y_base + 18, label)
+            painter.setPen(QColor(color))
+            painter.drawText(5, y_base + 38, f"{cur_val}%")
+            if not data: continue
+            for i, val in enumerate(data):
+                x = start_x + i * (stick_w + gap)
+                if x + stick_w > w:
+                    offset = (i * (stick_w + gap)) - (w - start_x - stick_w)
+                    x = start_x + i * (stick_w + gap) - offset
+                    if x < start_x: continue
+                painter.fillRect(x, y_base, stick_w, stick_max_h, QColor(31, 53, 69, 80))
+                fill_h = max(1, int((val / 100.0) * stick_max_h))
+                painter.fillRect(x, y_base + stick_max_h - fill_h, stick_w, fill_h, QBrush(QColor(color)))
+                painter.setPen(QPen(QColor(color).lighter(130), 1))
+                painter.drawLine(x, y_base + stick_max_h - fill_h, x + stick_w - 1, y_base + stick_max_h - fill_h)
+            if idx < len(metrics) - 1:
+                line_y = y_base + row_spacing - 5
+                painter.setPen(QPen(QColor(16, 185, 129, 60), 2)) 
+                painter.drawLine(0, line_y, w, line_y)

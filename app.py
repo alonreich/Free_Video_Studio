@@ -7,26 +7,21 @@ os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 sys.dont_write_bytecode = True
 
-try:
-    import audioop
-    AUDIOOP_AVAILABLE = True
-except ImportError:
-    try:
-        import audioop_lts as audioop_shim
-        sys.modules['audioop'] = audioop_shim
-        AUDIOOP_AVAILABLE = True
-    except ImportError:
-        AUDIOOP_AVAILABLE = False
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
 import subprocess, ctypes
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+# Ensure system module is in path
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from system.utils import DependencyDoctor, ProcessManager, LogManager
+
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 PLUGINS   = os.path.join(BIN_DIR, 'plugins')
-PID_FILE_NAME = "fortnite_video_software_app.pid"
-PID_FILE_PATH = os.path.join(tempfile.gettempdir(), PID_FILE_NAME)
+PID_APP_NAME = "fortnite_video_software_main"
 ORIGINAL_PATH = os.environ.get("PATH", "")
 DEBUG_ENABLED = "--debug" in sys.argv or os.environ.get("FVS_DEBUG") == "1"
 ENCODER_TEST_TIMEOUT = int(os.environ.get("FVS_ENCODER_TIMEOUT", "8"))
@@ -44,8 +39,6 @@ TRANSLATIONS = {
         "dependency_error_details": "FFmpeg Path: {ffmpeg}\nFFprobe Path: {ffprobe}\nBundled BIN_DIR added to PATH: {bin_dir}\n\nError:\n{error}",
         "single_instance_title": "Already Running",
         "single_instance_text": "The app is already running. Please close the other window before opening another.",
-        "audioop_warning_title": "Audio Feature Warning",
-        "audioop_warning_text": "An audio component is missing. Some audio features may not work as expected.",
         "pid_warning_title": "Startup Warning",
         "pid_warning_text": "The app could not create a temporary PID file. It will still run, but single-instance detection might be limited.",
         "hardware_scan_title": "Hardware Scan",
@@ -66,8 +59,6 @@ TRANSLATIONS = {
         "dependency_error_details": "נתיב FFmpeg: {ffmpeg}\nנתיב FFprobe: {ffprobe}\nתיקיית BIN_DIR נוספה ל-PATH: {bin_dir}\n\nשגיאה:\n{error}",
         "single_instance_title": "כבר פועל",
         "single_instance_text": "האפליקציה כבר פתוחה. סגור את החלון האחר לפני פתיחה נוספת.",
-        "audioop_warning_title": "אזהרת אודיו",
-        "audioop_warning_text": "רכיב אודיו חסר. חלק מתכונות האודיו עלולות לא לעבוד כמצופה.",
         "pid_warning_title": "אזהרת פתיחה",
         "pid_warning_text": "לא ניתן ליצור קובץ PID זמני. האפליקציה תמשיך לעבוד, אך זיהוי מופע יחיד עלול להיות מוגבל.",
         "hardware_scan_title": "סריקת חומרה",
@@ -87,6 +78,36 @@ def debug_log(message: str):
     if DEBUG_ENABLED:
         print(message)
 
+# Global PID Handle
+PID_FILE_HANDLE = None
+
+def check_vlc_dependencies():
+    """[FIX #1] Checks for essential VLC binaries using DependencyDoctor logic."""
+    vlc_path = DependencyDoctor.find_vlc_path()
+    
+    # If we found a system install, add it to PATH/DLL directory
+    if vlc_path:
+        os.environ["PATH"] = vlc_path + os.pathsep + os.environ["PATH"]
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(vlc_path)
+            except Exception: pass
+        return True
+
+    # Fallback to local binaries
+    required = ["libvlc.dll", "libvlccore.dll"]
+    missing = [f for f in required if not os.path.exists(os.path.join(BIN_DIR, f))]
+    
+    if missing:
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle("Missing Components")
+        msg_box.setText("Critical VLC components are missing.")
+        msg_box.setDetailedText(f"The following files are missing from {BIN_DIR} and no system VLC installation was found:\n" + "\n".join(missing))
+        msg_box.exec_()
+        return False
+    return True
+
 class HardwareWorker(QObject):
     """
     Worker thread to offload slow hardware capability checks from the main UI thread.
@@ -102,27 +123,6 @@ class HardwareWorker(QObject):
         detected_mode = determine_hardware_strategy(self.ffmpeg_path)
         self.finished.emit(detected_mode)
 
-def write_pid_file():
-    debug_log(f"DEBUG: Attempting to write PID {os.getpid()} to {PID_FILE_PATH}")
-    try:
-        with open(PID_FILE_PATH, "w") as f:
-            f.write(str(os.getpid()))
-        debug_log(f"DEBUG: Successfully wrote PID {os.getpid()} to {PID_FILE_PATH}")
-        return True, None
-    except Exception as e:
-        debug_log(f"ERROR: Failed to write PID file {PID_FILE_PATH}: {e}")
-        return False, str(e)
-
-def remove_pid_file():
-    debug_log(f"DEBUG: Attempting to remove PID file {PID_FILE_PATH}")
-    try:
-        if os.path.exists(PID_FILE_PATH):
-            os.remove(PID_FILE_PATH)
-            debug_log(f"DEBUG: Successfully removed PID file {PID_FILE_PATH}")
-        else:
-            debug_log(f"DEBUG: PID file {PID_FILE_PATH} does not exist, nothing to remove.")
-    except Exception as e:
-        debug_log(f"ERROR: Failed to remove PID file {PID_FILE_PATH}: {e}")
 os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
 from ui.main_window import VideoCompressorApp
 
@@ -215,35 +215,6 @@ def show_dependency_error_dialog(ffmpeg_path: str, ffprobe_path: str, error_text
         return "exit"
     return "exit"
 
-def check_single_instance(app: QApplication):
-    if not os.path.exists(PID_FILE_PATH):
-        return True
-    try:
-        with open(PID_FILE_PATH, "r") as f:
-            pid_text = f.read().strip()
-        if not pid_text.isdigit():
-            os.remove(PID_FILE_PATH)
-            return True
-        pid = int(pid_text)
-        if psutil.pid_exists(pid):
-            try:
-                proc = psutil.Process(pid)
-                cmdline = " ".join(proc.cmdline()).lower()
-                expected = os.path.abspath(__file__).lower()
-                if expected in cmdline or os.path.basename(expected) in cmdline:
-                    msg_box = QMessageBox()
-                    msg_box.setIcon(QMessageBox.Information)
-                    msg_box.setWindowTitle(tr("single_instance_title"))
-                    msg_box.setText(tr("single_instance_text"))
-                    msg_box.exec_()
-                    return False
-            except Exception:
-                pass
-        os.remove(PID_FILE_PATH)
-        return True
-    except Exception:
-        return True
-
 def show_startup_warning(app: QApplication, title: str, text: str):
     if hasattr(app, "activeWindow") and app.activeWindow():
         window = app.activeWindow()
@@ -276,8 +247,19 @@ def exception_hook(exctype, value, tb):
     sys.__excepthook__(exctype, value, tb)
 
 if __name__ == "__main__":
-    ffmpeg_path = os.path.join(BIN_DIR, 'ffmpeg.exe')
-    ffprobe_path = os.path.join(BIN_DIR, 'ffprobe.exe')
+    # [FIX #3 & #7] Clean up orphans and temps
+    ProcessManager.kill_orphans()
+    ProcessManager.cleanup_temp_files()
+    
+    # [FIX #28] Setup Rotating Logger
+    logger = LogManager.setup_logger(BASE_DIR, "Fortnite_Video_Software.log", "Main_App")
+    
+    # [FIX #1] Dependency Doctor Check
+    is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)
+    
+    # Set paths for QProcess to inherit
+    ffprobe_path = os.path.join(os.path.dirname(ffmpeg_path), "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+
     app = QCoreApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
@@ -285,47 +267,35 @@ if __name__ == "__main__":
     QCoreApplication.setOrganizationName("FortniteVideoSoftware")
     sys.excepthook = exception_hook
 
-    if not check_single_instance(app):
-        sys.exit(0)
-    try:
-        startupinfo = None
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-
-        subprocess.run([ffmpeg_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-        subprocess.run([ffprobe_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        error_text = str(e)
-        if isinstance(e, subprocess.CalledProcessError):
-            error_text = e.stderr.decode(errors="ignore") if e.stderr else str(e)
-        while True:
-            action = show_dependency_error_dialog(ffmpeg_path, ffprobe_path, error_text)
-            if action == "open":
-                continue
-            if action == "retry":
-                try:
-                    subprocess.run([ffmpeg_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-                    subprocess.run([ffprobe_path, '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    startupinfo=startupinfo, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0))
-                    break
-                except (FileNotFoundError, subprocess.CalledProcessError) as retry_error:
-                    error_text = str(retry_error)
-                    if isinstance(retry_error, subprocess.CalledProcessError):
-                        error_text = retry_error.stderr.decode(errors="ignore") if retry_error.stderr else str(retry_error)
-                    continue
-            sys.exit(1)
-    debug_log("DEBUG: Connecting remove_pid_file to app.aboutToQuit signal.")
-    app.aboutToQuit.connect(remove_pid_file)
-    app.aboutToQuit.connect(lambda: os.environ.__setitem__("PATH", ORIGINAL_PATH))
-    success, pid_error = write_pid_file()
+    # [FIX #5] Robust single instance check with ProcessManager
+    success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)
     if not success:
-        show_startup_warning(app, tr("pid_warning_title"), tr("pid_warning_text"))
-    debug_log("DEBUG: Called write_pid_file().")
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle(tr("single_instance_title"))
+        msg_box.setText(tr("single_instance_text"))
+        msg_box.exec_()
+        sys.exit(0)
+    PID_FILE_HANDLE = pid_handle
+
+    # [FIX #16] VLC Dynamic Path Check
+    if not check_vlc_dependencies():
+        if PID_FILE_HANDLE: PID_FILE_HANDLE.close()
+        sys.exit(1)
+
+    if not is_valid_deps:
+         # Fallback error handling logic
+         while True:
+            action = show_dependency_error_dialog(ffmpeg_path, ffprobe_path, dep_error)
+            if action == "open": continue
+            if action == "retry":
+                 is_valid_retry, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)
+                 if is_valid_retry: break
+                 continue
+            sys.exit(1)
+
+    app.aboutToQuit.connect(lambda: os.environ.__setitem__("PATH", ORIGINAL_PATH))
+    
     if sys.platform.startswith("win"):
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FortniteVideoTool.VideoCompressor")
@@ -334,8 +304,6 @@ if __name__ == "__main__":
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                # Hide the console window
-                # 0 = SW_HIDE, 1 = SW_SHOWNORMAL, 5 = SW_SHOW, 9 = SW_RESTORE
                 ctypes.windll.user32.ShowWindow(hwnd, 0)
         except Exception:
             pass
@@ -353,7 +321,6 @@ if __name__ == "__main__":
     
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
     ex = VideoCompressorApp(file_arg, "Scanning...")
-    app.installEventFilter(ex)
     try:
         if icon_path and os.path.exists(icon_path):
             ex.setWindowIcon(QIcon(icon_path))
@@ -368,9 +335,6 @@ if __name__ == "__main__":
             ex.statusBar().showMessage(tr("ffmpeg_path_message").format(ffmpeg=ffmpeg_path), 8000)
     except Exception:
         pass
-
-    if not AUDIOOP_AVAILABLE:
-        QTimer.singleShot(0, lambda: show_startup_warning(app, tr("audioop_warning_title"), tr("audioop_warning_text")))
 
     scan_dialog = QProgressDialog(tr("hardware_scan_text"), "", 0, 0, ex)
     scan_dialog.setWindowTitle(tr("hardware_scan_title"))
@@ -387,26 +351,34 @@ if __name__ == "__main__":
     hw_worker.finished.connect(ex.on_hardware_scan_finished)
     def handle_hardware_scan_result(mode: str):
         try:
-            scan_dialog.close()
+            if scan_dialog:
+                scan_dialog.close()
         except Exception:
             pass
-        title_suffix = f" — {tr('hardware_scan_done').format(mode=mode)}"
+            
         try:
-            ex.setWindowTitle(tr("app_name") + title_suffix)
-        except Exception:
-            pass
-        try:
-            if hasattr(ex, "statusBar"):
-                message = tr("hardware_scan_done").format(mode=mode)
-                if mode == "CPU":
-                    message = tr("hardware_scan_cpu")
-                    details = tr("hardware_scan_cpu_details")
-                    if HARDWARE_SCAN_DETAILS["timed_out"]:
-                        timeouts = ", ".join(HARDWARE_SCAN_DETAILS["timed_out"])
-                        details = f"{details} ({timeouts})"
-                    message = f"{message} {details}"
-                ex.statusBar().showMessage(message, 10000)
-        except Exception:
+            if ex and not ex.isHidden():
+                title_suffix = f" — {tr('hardware_scan_done').format(mode=mode)}"
+                ex.setWindowTitle(tr("app_name") + title_suffix)
+                
+                if hasattr(ex, "statusBar"):
+                    message = tr("hardware_scan_done").format(mode=mode)
+                    if mode == "CPU":
+                        message = tr("hardware_scan_cpu")
+                        details = tr("hardware_scan_cpu_details")
+                        if HARDWARE_SCAN_DETAILS["timed_out"]:
+                            timeouts = ", ".join(HARDWARE_SCAN_DETAILS["timed_out"])
+                            details = f"{details} ({timeouts})"
+                        message = f"{message} {details}"
+                    
+                    if hasattr(ex, "hardware_status_label"):
+                        # [FIX #8] Persistent hardware badge text
+                        badge_icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
+                        ex.hardware_status_label.setText(f"{badge_icon} {mode} Mode")
+                        ex.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;")
+                    else:
+                        ex.statusBar().showMessage(message, 10000)
+        except (RuntimeError, NameError):
             pass
     hw_worker.finished.connect(handle_hardware_scan_result)
     hw_worker.finished.connect(hw_thread.quit)

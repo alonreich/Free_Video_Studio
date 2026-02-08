@@ -1,6 +1,8 @@
-from PyQt5.QtWidgets import QStyle
+﻿from PyQt5.QtWidgets import QStyle
 
 class TrimMixin:
+    MIN_TRIM_GAP = 1000
+
     def _update_trim_inputs(self):
         """Update spinbox limits based on the original duration in milliseconds."""
         if not hasattr(self, "start_minute_input"): return
@@ -26,9 +28,12 @@ class TrimMixin:
         self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
     
     def set_start_time(self):
-        pos_ms = self.positionSlider.value()
-        if self.trim_end_ms > 0 and pos_ms > self.trim_end_ms:
-            self.trim_end_ms = self.original_duration_ms
+        pos_ms = int(self.positionSlider.value())
+        if self.trim_end_ms > 0:
+            if pos_ms > self.trim_end_ms - self.MIN_TRIM_GAP:
+                self.trim_end_ms = min(self.original_duration_ms, pos_ms + self.MIN_TRIM_GAP)
+                if self.trim_end_ms - pos_ms < self.MIN_TRIM_GAP:
+                    pos_ms = max(0, self.trim_end_ms - self.MIN_TRIM_GAP)
         self.trim_start_ms = max(0, pos_ms)
         if hasattr(self, "logger"):
             self.logger.info("TRIM: start set at %d ms from slider", self.trim_start_ms)
@@ -36,9 +41,11 @@ class TrimMixin:
         self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
     
     def set_end_time(self):
-        pos_ms = self.positionSlider.value()
-        if self.trim_start_ms > 0 and pos_ms < self.trim_start_ms:
-            pos_ms = self.trim_start_ms
+        pos_ms = int(self.positionSlider.value())
+        if pos_ms < self.trim_start_ms + self.MIN_TRIM_GAP:
+            self.trim_start_ms = max(0, pos_ms - self.MIN_TRIM_GAP)
+            if pos_ms - self.trim_start_ms < self.MIN_TRIM_GAP:
+                pos_ms = min(self.original_duration_ms, self.trim_start_ms + self.MIN_TRIM_GAP)
         if self.original_duration_ms > 0 and pos_ms > self.original_duration_ms:
             pos_ms = self.original_duration_ms
         self.trim_end_ms = pos_ms
@@ -87,9 +94,10 @@ class TrimMixin:
         if self.original_duration_ms > 0:
             start_ms = max(0, min(start_ms, self.original_duration_ms))
             end_ms = max(0, min(end_ms, self.original_duration_ms))
-            end_ms = max(end_ms, start_ms + 10)
-            if end_ms >= self.original_duration_ms and start_ms >= self.original_duration_ms - 10:
-                start_ms = max(0, self.original_duration_ms - 10)
-        self.trim_start_ms = start_ms
-        self.trim_end_ms = end_ms
+            if end_ms < start_ms + self.MIN_TRIM_GAP:
+                end_ms = min(self.original_duration_ms, start_ms + self.MIN_TRIM_GAP)
+                if end_ms < start_ms + self.MIN_TRIM_GAP:
+                    start_ms = max(0, end_ms - self.MIN_TRIM_GAP)
+        self.trim_start_ms = int(start_ms)
+        self.trim_end_ms = int(end_ms)
         self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)

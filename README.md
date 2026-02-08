@@ -2,3 +2,16 @@ Create amazing yet light weight video clips from the NVidvia Highlights or Insta
 Reduce original file size from 200-300MB down to 25-50MB.
 Create a portrait 1080x1920 format for mobile devices.
 perfect for social media: TikTok, Instagram, Facebook, MMS, Whatsapp
+
+## Development Policy: No Python Cache Files
+
+This project is configured to **never create Python cache artifacts**.
+
+- No `__pycache__/` folders
+- No `*.pyc` files
+- No `*.pyo` files
+
+Enforcement:
+
+- `sitecustomize.py` sets `sys.dont_write_bytecode = True`
+- `PYTHONDONTWRITEBYTECODE=1` is set at startup

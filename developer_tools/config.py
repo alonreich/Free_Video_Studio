@@ -56,6 +56,10 @@ class UI_COLORS:
     HANDLE_ORANGE = "#e67e22"
     MARCHING_ANTS = "white"
     SELECTION_GREEN = "#10B981"
+    OPACITY_DIM_HIGH = 180
+    OPACITY_DIM_MED = 120
+    OPACITY_DIM_LOW = 90
+    OPACITY_PH_ALPHA = 80
 
 class UI_LAYOUT:
     WIZARD_HEADER_HEIGHT = 130
@@ -128,7 +132,7 @@ UNIFIED_STYLESHEET = f"""
 QWidget {{
     background-color: {UI_COLORS.BACKGROUND_DARK};
     color: {UI_COLORS.TEXT_PRIMARY};
-    font-family: 'Segoe UI', 'Inter', -apple-system, sans-serif;
+    font-family: 'Segoe UI', 'Roboto', 'Inter', -apple-system, sans-serif;
     font-size: 14px;
     border: none;
 }}
@@ -219,6 +223,11 @@ QPushButton.primary:pressed {{
     background-color: {UI_COLORS.PRIMARY_PRESSED};
     border-bottom: 1px solid {UI_COLORS.PRIMARY_PRESSED};
 }}
+QPushButton.primary:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+    border-bottom: none;
+}}
 QPushButton.success {{
     background-color: {UI_COLORS.SUCCESS}; color: {UI_COLORS.TEXT_PRIMARY};
     border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.SUCCESS_BORDER};
@@ -230,6 +239,11 @@ QPushButton.success:pressed {{
     background-color: {UI_COLORS.SUCCESS_PRESSED};
     border-bottom: 1px solid {UI_COLORS.SUCCESS_PRESSED};
 }}
+QPushButton.success:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+    border-bottom: none;
+}}
 QPushButton.warning {{
     background-color: {UI_COLORS.WARNING}; color: {UI_COLORS.TEXT_PRIMARY};
     border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.WARNING_BORDER};
@@ -240,6 +254,11 @@ QPushButton.warning:hover {{
 QPushButton.warning:pressed {{
     background-color: {UI_COLORS.WARNING_PRESSED};
     border-bottom: 1px solid {UI_COLORS.WARNING_PRESSED};
+}}
+QPushButton.warning:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+    border-bottom: none;
 }}
 QPushButton.danger {{
     background-color: {UI_COLORS.DANGER}; color: {UI_COLORS.TEXT_DANGER};
@@ -256,6 +275,11 @@ QPushButton.danger:pressed {{
     border: 1px solid {UI_COLORS.DANGER_PRESSED};
     border-bottom: 1px solid {UI_COLORS.DANGER_PRESSED};
 }}
+QPushButton.danger:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+    border-bottom: none;
+}}
 QPushButton.accent {{
     background-color: {UI_COLORS.ACCENT}; color: {UI_COLORS.TEXT_PRIMARY};
     border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.ACCENT_BORDER};
@@ -266,6 +290,11 @@ QPushButton.accent:hover {{
 QPushButton.accent:pressed {{
     background-color: {UI_COLORS.ACCENT_PRESSED};
     border-bottom: 1px solid {UI_COLORS.ACCENT_PRESSED};
+}}
+QPushButton.accent:disabled {{
+    background-color: {UI_COLORS.BUTTON_DISABLED};
+    color: {UI_COLORS.TEXT_DISABLED};
+    border-bottom: none;
 }}
 QCheckBox {{
     color: {UI_COLORS.TEXT_PRIMARY};

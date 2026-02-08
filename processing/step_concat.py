@@ -1,4 +1,4 @@
-import os
+﻿import os
 from .system_utils import create_subprocess
 
 class ConcatProcessor:
@@ -9,7 +9,7 @@ class ConcatProcessor:
         self.temp_dir = temp_dir
         self.current_process = None
 
-    def run_concat(self, intro_path, core_path, progress_signal):
+    def run_concat(self, intro_path, core_path, progress_signal, cancellation_check=None):
         files_to_concat = []
         if intro_path and os.path.exists(intro_path): 
             files_to_concat.append(intro_path)
@@ -48,6 +48,13 @@ class ConcatProcessor:
         self.logger.info("STEP 3/3 CONCAT")
         self.current_process = create_subprocess(concat_cmd, self.logger)
         while True:
+            if cancellation_check and cancellation_check():
+                self.logger.info("Concat cancelled by user.")
+                try:
+                    self.current_process.terminate()
+                except:
+                    pass
+                return None
             line = self.current_process.stdout.readline()
             if not line:
                 if self.current_process.poll() is not None:

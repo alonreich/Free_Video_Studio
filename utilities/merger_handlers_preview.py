@@ -23,19 +23,16 @@ class MergerHandlersPreviewMixin:
         import os
         w = QWidget()
         w.setFixedHeight(52)
-        # Match the fixed size of the inner frame
-        w.setMinimumWidth(720) 
+        w.setMinimumWidth(360)
         w.setStyleSheet("background: transparent;")
-        
         h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
         h.addStretch(1)
-        
         frame = QFrame()
         frame.setObjectName("videoItemFrame")
-        # Use a fixed size for the block to guarantee consistency and prevent squashing
-        frame.setFixedSize(720, 42) 
+        frame.setFixedSize(500, 42)
+        frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         frame.setStyleSheet("""
             QFrame#videoItemFrame { 
                 background-color: #2c3e50; 
@@ -47,11 +44,9 @@ class MergerHandlersPreviewMixin:
                 border-color: #3498db;
             }
         """)
-        
         frame_layout = QHBoxLayout(frame)
         frame_layout.setContentsMargins(15, 0, 10, 0)
         frame_layout.setSpacing(10)
-        
         lbl = QLabel(os.path.basename(path))
         lbl.setObjectName("fileLabel")
         lbl.setStyleSheet("font-size:13px; font-weight: 600; color: #ecf0f1; background: transparent; border: none;")
@@ -59,7 +54,6 @@ class MergerHandlersPreviewMixin:
         lbl.setWordWrap(False)
         lbl.setFixedHeight(24)
         lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        
         btn = QPushButton("▶  PREVIEW  ▶")
         btn.setObjectName("playButton")
         btn.setFixedSize(110, 28)
@@ -79,12 +73,9 @@ class MergerHandlersPreviewMixin:
         """)
         btn.setProperty("path", path)
         btn.clicked.connect(self.preview_clicked)
-        
         frame_layout.addWidget(lbl, 1)
         frame_layout.addWidget(btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        
         h.addWidget(frame)
         h.addStretch(1)
-        
         w.video_frame = frame
         return w

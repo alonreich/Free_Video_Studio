@@ -16,7 +16,7 @@ def _proj_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 def _conf_path() -> Path:
-    return _proj_root() / "config" / "merger_app.conf"
+    return _proj_root() / "config" / "video_merger.conf"
 
 def _human(n_bytes: int) -> str:
     """Returns human-readable size."""
@@ -88,7 +88,7 @@ def _ffprobe(ffmpeg_path) -> str:
             p = ffmpeg_dir / name
             if p.exists():
                 return str(p)
-    except Exception:
+    except OSError:
         pass
     return "ffprobe"
 
@@ -118,3 +118,37 @@ def kill_process_tree(pid: int) -> None:
             except: pass
         parent.kill()
     except: pass
+
+def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, music_volume: float = 1.0, sample_rate: int = 48000) -> list[str]:
+    """
+    Returns FFmpeg filter strings for ducking music based on video audio.
+    Protects video dialogue by ducking music when video audio is present.
+    Args:
+        video_audio_stream: Input video audio stream label (e.g., '[0:a]')
+        music_stream: Input music stream label (e.g., '[mus]')
+        music_volume: Music volume multiplier (0.0 to 1.0)
+        sample_rate: Output sample rate
+    Returns:
+        List of filter strings to be joined with ';'
+    """
+    filters = []
+    filters.append(f"{music_stream}asplit=2[mus_base][mus_to_filter]")
+    filters.append("[mus_base]lowpass=f=150[mus_low]")
+    filters.append("[mus_to_filter]highpass=f=150[mus_high]")
+    filters.append(f"{video_audio_stream}asplit=2[game_out][game_trig]")
+    filters.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
+    filters.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
+    duck_params = "threshold=0.15:ratio=2.5:attack=1:release=400:detection=rms"
+    filters.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
+    filters.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
+    if music_volume != 1.0:
+        filters.append(f"[a_music_reconstructed]volume={music_volume:.4f}[a_music_vol]")
+        music_reconstructed = "[a_music_vol]"
+    else:
+        music_reconstructed = "[a_music_reconstructed]"
+    filters.append(
+        f"[game_out]{music_reconstructed}"
+        "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
+        f"alimiter=limit=0.95:attack=5:release=50,aresample={sample_rate}[a_out]"
+    )
+    return filters

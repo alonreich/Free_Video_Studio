@@ -11,7 +11,12 @@ class MusicDialogHandler:
         def _configure_dialog_player(vlc_player):
             try:
                 vlc_player.audio_output_set('directsound')
-                volume = self.parent.music_handler._music_eff()
+                volume = 25
+                try:
+                    if hasattr(self.parent, "unified_music_widget"):
+                        volume = int(self.parent.unified_music_widget.get_volume())
+                except Exception:
+                    volume = 25
                 vlc_player.audio_set_volume(volume)
                 return None
             except Exception as e:
@@ -40,7 +45,7 @@ class MusicDialogHandler:
             res = dlg.exec_()
             g = dlg.geometry()
             self.parent._cfg["music_dialog_geometry"] = [g.x(), g.y(), g.width(), g.height()]
-            self.parent.logic_handler.save_config()
+            self.parent.logic_handler.request_save_config(0)
             if res == QDialog.Accepted:
                 self.parent.music_offset_input.setValue(dlg.selected_offset)
         except Exception as e:

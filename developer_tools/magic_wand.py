@@ -25,11 +25,13 @@ class HUDExtractor:
         for key, filename in anchor_files.items():
             path = os.path.join(anchor_dir, filename)
             if os.path.exists(path):
-                self.anchors[key] = cv2.imread(path, 0)
-                if self.anchors[key] is None:
-                    self.logger.error(f"Failed to load anchor: {filename}")
-                else:
+                img = cv2.imread(path, 0)
+                if img is not None:
+                    self.anchors[key] = img
                     self.logger.info(f"Loaded anchor: {key}")
+                else:
+                    self.logger.error(f"Failed to decode anchor: {filename}")
+                    self.anchors[key] = None
             else:
                 self.logger.warning(f"Missing anchor file: {filename}")
                 self.anchors[key] = None
@@ -38,6 +40,8 @@ class HUDExtractor:
         """Finds a single anchor in a grayscale frame."""
         anchor_img = self.anchors.get(anchor_key)
         if anchor_img is None:
+            return None
+        if frame_gray is None or frame_gray.shape[0] == 0 or frame_gray.shape[1] == 0:
             return None
         res = cv2.matchTemplate(frame_gray, anchor_img, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
@@ -73,16 +77,27 @@ class HUDExtractor:
     def _extract_hp_module(self, frame_gray, frame_color):
         """
         Extracts the Health and Shield bars from the bottom-left.
+        Uses smart-width detection to avoid clipping overshields.
         """
-        hp_anchor_pos = self.find_anchor(frame_gray, 'hp_icon', threshold=0.6)
+        hp_anchor_img = self.anchors.get('hp_icon')
+        if hp_anchor_img is None: return None
+        hp_anchor_pos = self.find_anchor(frame_gray, 'hp_icon', threshold=0.55)
         if hp_anchor_pos is None:
             return None
-        anchor_h, anchor_w = self.anchors['hp_icon'].shape
+        anchor_h, anchor_w = hp_anchor_img.shape
         x1 = hp_anchor_pos[0] + (anchor_w // 2)
-        y1 = hp_anchor_pos[1] - 20
-        width = 400
-        height = 100
+        y1 = hp_anchor_pos[1] - 25
         img_h, img_w = frame_gray.shape
+        max_scan_w = int(anchor_w * 12) 
+        scan_y = hp_anchor_pos[1] + (anchor_h // 2)
+        detected_width = int(anchor_w * 8)
+        if scan_y < img_h:
+            row = frame_gray[scan_y, x1:min(x1 + max_scan_w, img_w)]
+            bright_indices = np.where(row > 100)[0]
+            if len(bright_indices) > 0:
+                detected_width = int(bright_indices[-1]) + 40
+        width = max(int(anchor_w * 7), min(detected_width, max_scan_w))
+        height = 110
         x1 = max(0, min(x1, img_w - 10))
         y1 = max(0, min(y1, img_h - 10))
         width = max(10, min(width, img_w - x1))
@@ -118,6 +133,15 @@ class HUDExtractor:
         if frame_color is None:
             self.logger.error(f"Failed to read image: {snapshot_path}")
             return []
+        orig_h, orig_w = frame_color.shape[:2]
+        target_h = 1080
+        scale = target_h / float(orig_h)
+        if abs(scale - 1.0) > 0.01:
+            target_w = int(orig_w * scale)
+            frame_color = cv2.resize(frame_color, (target_w, target_h), interpolation=cv2.INTER_AREA)
+            self.logger.info(f"Resized frame from {orig_w}x{orig_h} to {target_w}x{target_h} for matching (scale={scale:.2f})")
+        else:
+            scale = 1.0
         frame_gray = cv2.cvtColor(frame_color, cv2.COLOR_BGR2GRAY)
         rois = []
         try:
@@ -138,6 +162,17 @@ class HUDExtractor:
                 rois.append(map_roi)
         except Exception as e:
             self.logger.warning(f"Map extraction failed: {e}")
+        if abs(scale - 1.0) > 0.01:
+            inv_scale = 1.0 / scale
+            rescaled_rois = []
+            for r in rois:
+                rescaled_rois.append(QRect(
+                    int(round(r.x() * inv_scale)),
+                    int(round(r.y() * inv_scale)),
+                    int(round(r.width() * inv_scale)),
+                    int(round(r.height() * inv_scale))
+                ))
+            rois = rescaled_rois
         self.logger.info(f"HUDExtractor found {len(rois)} regions.")
         return rois
 
