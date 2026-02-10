@@ -54,6 +54,13 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 #    - Do NOT remove the top-bar restriction; it protects the text layer.
 #    - Do NOT change the scaling logic without understanding the full round-trip:
 #      Original -> 1280x1920 (scale+crop) -> 1080x1620 content -> config -> back to original.
+#
+# 5. DRIFT PROTECTION / PREVENTION:
+#    - To prevent mathematical drift during coordinate transformation and stay on the safe side:
+#      a. Mini Map + Stats: An additional extra 1 pixel is added to the LEFT of the selection.
+#      b. Loot Area: An additional extra 1 pixel is added to the RIGHT of the selection.
+#    - This ensures HUD borders remain crisp and no content is clipped by rounding errors.
+# ==============================================================================
 
 # ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE
@@ -104,7 +111,7 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 │   ├── config_data.py: Manages video configuration, crop coordinates, and quality settings.
 │   ├── crops_coordinations.conf: Configuration file for external crop coordinates (referenced by config_data.py).
 │   ├── encoders.py: Manages hardware/CPU encoder selection and codec flags.
-│   ├── filter_builder.py: Constructs complex FFmpeg filter graphs for video/audio processing. Responsible for Volume Ducking + EQ Ducking/Carving.
+│   ├── filter_builder.py: Dynamic HUD layering (Loot, MiniMap, HP, Teammates, Spectating Eye) and Volume/EQ Ducking.
 │   ├── media_utils.py: Utilities for media probing (ffprobe) and bitrate calculations.
 │   ├── step_concat.py: Handles the final concatenation of video parts.
 │   ├── step_intro.py: Generates the intro sequence for the video.
@@ -177,3 +184,5 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 # 18. MULTI-MONITOR: Move app to Monitor 2. Open Editor. Verify it opens on Monitor 2, not Monitor 1.
 # 19. HARDWARE SCAN: Watch launch. Verify 'Scanning...' status bar message appears then changes to 'Ready'.
 # 20. APP SWITCHING: Use F11/F12 to jump between apps. Verify the current video file follows you.
+# 21. DIMENTIONS/RESULOTION MATH FIT: Opening a 1920x1080 video in developer toold crop tools, then creating a 2560x1440 video in the main app check if it was mathematically calculated properly.
+# 22. DIMENTIONS/RESULOTION MATH FIT: Opening a 2560x1440 video in developer toold crop tools, then creating a 1920x1080 video in the main app check if it was mathematically calculated properly.

@@ -1,11 +1,12 @@
 
-
-import os, sys, tempfile, psutil, traceback
-# Prevent creation of __pycache__ folders
-os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-# Use a non-existent directory to prevent cache creation
-os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+import sys
+import os
+# [STRICT] Prevent bytecode generation BEFORE any other imports
 sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+import tempfile, psutil, traceback
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
@@ -251,8 +252,8 @@ if __name__ == "__main__":
     ProcessManager.kill_orphans()
     ProcessManager.cleanup_temp_files()
     
-    # [FIX #28] Setup Rotating Logger
-    logger = LogManager.setup_logger(BASE_DIR, "Fortnite_Video_Software.log", "Main_App")
+    # [FIX] Standardized Log Filename
+    logger = LogManager.setup_logger(BASE_DIR, "main_app.log", "Main_App")
     
     # [FIX #1] Dependency Doctor Check
     is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)
@@ -267,8 +268,19 @@ if __name__ == "__main__":
     QCoreApplication.setOrganizationName("FortniteVideoSoftware")
     sys.excepthook = exception_hook
 
-    # [FIX #5] Robust single instance check with ProcessManager
-    success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)
+    # [FIX #5 & #6] Robust single instance check with ProcessManager and Retry
+    import time
+    pid_retries = 3
+    success = False
+    pid_handle = None
+    
+    for attempt in range(pid_retries):
+        success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)
+        if success:
+            break
+        # Wait for previous instance to close if handoff is happening
+        time.sleep(0.5)
+
     if not success:
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Information)
@@ -329,6 +341,10 @@ if __name__ == "__main__":
     except Exception:
         pass
     ex.show()
+
+    # [FIX] Initial active state for hint
+    if not file_arg:
+        ex._set_upload_hint_active(True)
 
     try:
         if hasattr(ex, "statusBar"):

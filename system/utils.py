@@ -77,6 +77,7 @@ class ProcessManager:
     def cleanup_temp_files(prefix: str = "fvs_"):
         """
         Cleans up temporary files from previous sessions.
+        [FIX] Also aggressively removes any __pycache__ folders found in the project.
         """
         temp_dir = tempfile.gettempdir()
         try:
@@ -92,18 +93,38 @@ class ProcessManager:
                         pass
         except Exception:
             pass
+        try:
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            for root, dirs, files in os.walk(project_root):
+                if "__pycache__" in dirs:
+                    cache_path = os.path.join(root, "__pycache__")
+                    try:
+                        shutil.rmtree(cache_path)
+                    except:
+                        pass
+        except:
+            pass
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
         """
         Acquires a named lock file. Returns (success, file_handle).
-        Caller must keep file_handle open to maintain lock.
+        [FIX] Better stale lock handling for Windows.
         """
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")
-        try:
-            if os.path.exists(pid_file):
+        if os.path.exists(pid_file):
+            try:
                 os.remove(pid_file)
-        except OSError:
-            return False, None
+            except OSError:
+                try:
+                    with open(pid_file, 'r') as f:
+                        old_pid = int(f.read().strip())
+                    if not psutil.pid_exists(old_pid):
+                        pass
+                    else:
+                        return False, None
+                except:
+                    pass
+                return False, None
         try:
             f = open(pid_file, "w")
             if sys.platform == "win32":

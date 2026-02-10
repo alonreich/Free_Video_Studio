@@ -99,6 +99,13 @@ from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
 from utilities.merger_unified_music_widget import UnifiedMusicWidget
 from utilities.merger_music_dialog import MusicDialogHandler
 from utilities.merger_undo_stack import MergerUndoStack
+try:
+    from developer_tools.utils import PersistentWindowMixin
+except ImportError:
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'developer_tools'))
+
+    from utils import PersistentWindowMixin
 
 class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
     MAX_FILES = 100
@@ -118,6 +125,8 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self._cfg = config_manager.config if config_manager else {}
         self.config_manager = config_manager
         self.logger = _get_logger()
+        self.logic_handler = MergerWindowLogic(self)
+        self.logic_handler.load_config()
         self.undo_stack = MergerUndoStack()
         self.ui_handler = MergerUI(self)
         self.event_handler = MergerHandlers(self)

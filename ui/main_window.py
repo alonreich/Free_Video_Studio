@@ -8,7 +8,7 @@ import threading
 import traceback
 from logging.handlers import RotatingFileHandler
 import vlc
-from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication
+from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication, QEvent
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
                              QMessageBox, QShortcut, QStatusBar, QLabel, QDialog)
@@ -262,7 +262,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
         self.bin_dir = os.path.join(self.base_dir, 'binaries')
-        self.logger = setup_logger(self.base_dir, "Fortnite_Video_Software.log", "Main_App")
+        self.logger = setup_logger(self.base_dir, "main_app.log", "Main_App")
         self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -333,12 +333,14 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.setup_persistence(
             config_path=os.path.join(self.base_dir, 'config', 'main_app.conf'),
             settings_key='window_geometry',
-            default_geo={'x': 200, 'y': 200, 'w': 1150, 'h': 700},
-            title_info_provider=lambda: f"{self._base_title}  —  {self.width()}x{self.height()}"
+            default_geo={'x': 200, 'y': 200, 'w': 1000, 'h': 650},
+            title_info_provider=lambda: f"{self._base_title}  —  {self.width()}x{self.height()}",
+            config_manager=self.config_manager
         )
-        self.setMinimumSize(1150, 575)
+        self.setMinimumSize(1000, 600)
         self._scan_mp3_folder()
         self._update_window_size_in_title()
+        self.installEventFilter(self)
 
         def _seek_shortcut(offset_ms):
             if getattr(self, "input_file_path", None):
@@ -349,6 +351,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Right), self, lambda: _seek_shortcut(5))
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed)
+        self._init_upload_hint_blink()
+        if not file_path:
+            self._set_upload_hint_active(True)
+        else:
+            self._set_upload_hint_active(False)
         if file_path:
             self.handle_file_selection(file_path)
         self.cleanup_thread = QThread()
@@ -426,58 +433,55 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             super().keyPressEvent(event)
 
     def launch_crop_tool(self):
-        """Launches the crop tool application with a heartbeat check."""
+        """Launches the crop tool application and closes the main app."""
+        self.logger.info("TRIGGER: launch_crop_tool called.")
         try:
+            self.setEnabled(False)
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage("🚀 Switching to Crop Tool...", 5000)
+            QApplication.processEvents()
             state = {
                 "input_file": self.input_file_path,
                 "trim_start": self.trim_start_ms,
                 "trim_end": self.trim_end_ms,
                 "speed_segments": self.speed_segments,
-                "hardware_mode": getattr(self, "hardware_strategy", "CPU")
+                "hardware_mode": getattr(self, "hardware_strategy", "CPU"),
+                "resolution": getattr(self, "original_resolution", None)
             }
+            self.logger.info(f"DEBUG: Saving state for Crop Tool: {state.keys()}")
             StateTransfer.save_state(state)
-            if getattr(self, "input_file_path", None) or self.speed_segments:
-                 pass
-            self.logger.info("ACTION: Launching Crop Tool via F12...")
-            script_path = os.path.join(self.base_dir, 'developer_tools', 'crop_tools.py')
+            dev_tools_dir = os.path.join(self.base_dir, 'developer_tools')
+            script_path = os.path.join(dev_tools_dir, 'crop_tools.py')
             if not os.path.exists(script_path):
+                self.logger.error(f"ERROR: Crop Tool script not found at {script_path}")
                 raise FileNotFoundError(f"Crop Tool script not found at: {script_path}")
             if self.vlc_player:
                 self.vlc_player.stop()
             command = [sys.executable, "-B", script_path]
             if self.input_file_path:
                 command.append(self.input_file_path)
+            self.logger.info(f"ACTION: Launching Crop Tool process: {' '.join(command)}")
             env = os.environ.copy()
-            env["PYTHONPATH"] = self.base_dir + os.pathsep + env.get("PYTHONPATH", "")
-            self.logger.info(f"Command: {command}")
-            proc = subprocess.Popen(
+            env["PYTHONPATH"] = os.pathsep.join([
+                self.base_dir,
+                dev_tools_dir,
+                env.get("PYTHONPATH", "")
+            ])
+            subprocess.Popen(
                 command, 
-                cwd=self.base_dir, 
+                cwd=dev_tools_dir, 
                 env=env,
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                text=True
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                close_fds=True,
+                shell=False
             )
-            QTimer.singleShot(3000, lambda: self._finalize_switch(proc))
+            self._switching_app = True
+            self.logger.info("Crop Tool process started successfully. Closing Main App in 500ms.")
+            QTimer.singleShot(500, self.close)
         except Exception as e:
-            self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}")
+            self.setEnabled(True)
+            self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool.\n\nError: {e}")
-
-    def _finalize_switch(self, proc):
-        """Checks if child process is still alive before closing parent."""
-        if proc.poll() is None:
-            self.logger.info("Crop Tool launched successfully (PID: %s). Closing Main App.", proc.pid)
-            self.close()
-        else:
-            error_output = "No output captured."
-            try:
-                error_output = proc.stderr.read()
-                if not error_output:
-                    error_output = proc.stdout.read()
-            except Exception as e:
-                error_output = f"Could not read stderr/stdout: {e}"
-            self.logger.error(f"Crop Tool crashed on startup (Exit Code: {proc.poll()}).\nOutput:\n{error_output}")
-            QMessageBox.critical(self, "Launch Error", f"The Crop Tool crashed immediately after starting.\n\nReason: {error_output}")
 
     def launch_advanced_editor(self):
         """Launches the advanced video editor application."""
@@ -623,7 +627,114 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         except Exception:
             pass
 
+    def _init_upload_hint_blink(self):
+        """Initializes the robust smooth fading logic for the upload hint group."""
+        if not hasattr(self, 'hint_group_container'):
+            return
+            
+        from PyQt5.QtWidgets import QGraphicsOpacityEffect
+        from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QEasingCurve
+        self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
+        self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
+        anim_in = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
+        anim_in.setDuration(600) 
+        anim_in.setStartValue(0.1)
+        anim_in.setEndValue(1.0)
+        anim_in.setEasingCurve(QEasingCurve.InOutQuad)
+        anim_out = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
+        anim_out.setDuration(600)
+        anim_out.setStartValue(1.0)
+        anim_out.setEndValue(0.1)
+        anim_out.setEasingCurve(QEasingCurve.InOutQuad)
+        self._hint_group = QSequentialAnimationGroup(self)
+        self._hint_group.addAnimation(anim_in)
+        self._hint_group.addAnimation(anim_out)
+        self._hint_group.setLoopCount(-1)
+
+    def _set_upload_hint_active(self, active):
+        """Starts or stops the upload hint fading animation."""
+        target = getattr(self, 'hint_overlay_widget', None)
+        if not target or not hasattr(self, '_hint_group'):
+            return
+        if active:
+            self._update_upload_hint_responsive()
+            target.show()
+            target.raise_()
+            self._hint_group.start()
+        else:
+            self._hint_group.stop()
+            target.hide()
+
+    def _update_upload_hint_responsive(self):
+        """
+        Calculates Scale Factor based on 1513px reference width.
+        Updates Box, Font, Arrow, and Position proportionally.
+        [FIX] Dynamically aligns vertical center with the Upload Button.
+        """
+        if not hasattr(self, 'upload_hint_container') or not self.upload_hint_container.isVisible():
+            return
+            
+        from PyQt5.QtGui import QPainter, QPixmap, QColor, QPolygon
+        from PyQt5.QtCore import Qt, QPoint
+        scale = self.width() / self.REF_WIDTH
+        box_w = int(self.REF_BOX_W * scale)
+        box_h = int(self.REF_BOX_H * scale)
+        font_size = int(self.REF_FONT_SIZE * scale)
+        self.upload_hint_container.setFixedSize(box_w, box_h)
+        self.upload_hint_container.setStyleSheet(f"""
+            #uploadHintContainer {{
+                background-color: #000000;
+                border: {max(2, int(3*scale))}px solid #7DD3FC;
+                border-radius: {int(14*scale)}px;
+            }}
+        """)
+        self.upload_hint_label.setStyleSheet(f"""
+            color: #7DD3FC;
+            font-family: Arial;
+            font-size: {font_size}px;
+            font-weight: bold;
+            background: transparent;
+            border: none;
+        """)
+        gap = int(self.REF_GAP * scale)
+        self.hint_group_layout.setSpacing(max(20, gap))
+        arrow_l = int(self.REF_ARROW_L * scale)
+        arrow_s = int(self.REF_ARROW_S * scale)
+        c_w, c_h = arrow_l + 20, arrow_s + 40
+        self.upload_hint_arrow.setFixedSize(c_w, c_h)
+        pix = QPixmap(c_w, c_h)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor("#7DD3FC"))
+        p.setPen(Qt.NoPen)
+        center_y_arrow = c_h // 2
+        body_h = int(20 * scale)
+        head_w = int(50 * scale)
+        p.drawRect(5, center_y_arrow - (body_h // 2), arrow_l - head_w, body_h)
+        tip_x = 5 + arrow_l
+        base_x = tip_x - head_w
+        points = [
+            QPoint(base_x, center_y_arrow - (arrow_s // 2)),
+            QPoint(tip_x, center_y_arrow),
+            QPoint(base_x, center_y_arrow + (arrow_s // 2))
+        ]
+        p.drawPolygon(QPolygon(points))
+        p.end()
+        self.upload_hint_arrow.setPixmap(pix)
+        try:
+            btn_center_global = self.upload_button.mapToGlobal(self.upload_button.rect().center())
+            btn_center_local = self.hint_overlay_widget.mapFromGlobal(btn_center_global)
+            group_h = max(box_h, c_h)
+            target_y = btn_center_local.y() - (group_h // 2) + 10
+            offset_x = int(self.REF_OFFSET_X * scale)
+            self.hint_centering_layout.setContentsMargins(offset_x, target_y, 0, 0)
+        except Exception:
+            offset_x = int(self.REF_OFFSET_X * scale)
+            self.hint_centering_layout.setContentsMargins(offset_x, 0, 0, 0)
+
     def select_file(self):
+        self._set_upload_hint_active(False)
         try:
             if getattr(self, "vlc_player", None) and self.vlc_player.is_playing():
                 self.vlc_player.set_pause(1)
@@ -663,9 +774,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                     f"You selected {len(file_paths)} files. Only the first file, '{os.path.basename(file_to_load)}', will be loaded."
                 )
             self.logger.info("FILE: selected via dialog: %s", file_to_load)
+            self._set_upload_hint_active(False)
             self.handle_file_selection(file_to_load)
         else:
             self.logger.info("FILE: dialog canceled")
+            if not getattr(self, 'input_file_path', None):
+                self._set_upload_hint_active(True)
 
     def handle_file_selection(self, file_path):
         """Loads a file, starts playback, and initiates duration polling."""
@@ -689,6 +803,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.logger.error("Error during UI reset: %s", reset_err)
         self.logger.info("FILE: loading for playback: %s", file_path)
         self.input_file_path = file_path
+        self._set_upload_hint_active(False)
         self.drop_label.setWordWrap(True)
         self.drop_label.setText(os.path.basename(self.input_file_path))
         dir_path = os.path.dirname(file_path)

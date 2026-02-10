@@ -240,37 +240,6 @@ class UiBuilderMixin:
             self.logger.critical(f"Error launching merger: {e}")
             QMessageBox.critical(self, "Launch Error", f"Failed to start the Video Merger:\n{e}")
 
-    def launch_crop_tool(self):
-        """Launches the Crop Tool."""
-        tool_path = os.path.join(self.base_dir, 'developer_tools', 'crop_tools.py')
-        if not os.path.exists(tool_path):
-            QMessageBox.critical(self, "Error", "Crop tool not found.")
-            return
-        try:
-            from system.state_transfer import StateTransfer
-            StateTransfer.save_state({
-                'input_file': getattr(self, 'input_file_path', None),
-                'trim_start': getattr(self, 'trim_start_ms', 0),
-                'trim_end': getattr(self, 'trim_end_ms', 0)
-            })
-            self.logger.info(f"ACTION: Launching Crop Tool: {tool_path}")
-            flags = 0
-            if sys.platform == "win32":
-                flags = 0x00000010 | subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen(
-                [sys.executable, tool_path],
-                cwd=self.base_dir,
-                creationflags=flags,
-                close_fds=True,
-                start_new_session=True if sys.platform != "win32" else False
-            )
-            self._switching_app = True
-
-            from PyQt5.QtCore import QCoreApplication
-            QTimer.singleShot(500, QCoreApplication.quit)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to launch Crop Tool: {e}")
-
     def launch_advanced_editor(self):
         """Placeholder for Advanced Editor."""
         QMessageBox.information(self, "Coming Soon", "The Advanced Video Editor is currently under development.")
@@ -378,7 +347,8 @@ class UiBuilderMixin:
             self.music_volume_slider, self.add_music_checkbox, self.music_combo,
             self.music_offset_input, self.positionSlider,
             self.start_minute_input, self.start_second_input, self.start_ms_input,
-            self.end_minute_input, self.end_second_input, self.end_ms_input
+            self.end_minute_input, self.end_second_input, self.end_ms_input,
+            self.crop_tool_btn
         ]:
             if hasattr(self, widget.objectName()) or widget:
                 widget.setEnabled(enabled)
@@ -439,20 +409,44 @@ class UiBuilderMixin:
         self.video_frame.setMinimumHeight(360)
         self.video_frame.setFocusPolicy(Qt.NoFocus)
         self.video_frame.installEventFilter(self)
-        video_layout = QVBoxLayout(self.video_frame)
-        video_layout.setContentsMargins(0, 0, 0, 0)
+        self.REF_WIDTH = 1513.0
+        self.REF_BOX_W, self.REF_BOX_H = 620, 115
+        self.REF_FONT_SIZE = 28
+        self.REF_ARROW_L, self.REF_ARROW_S = 400, 40
+        self.REF_OFFSET_X = 190
+        self.REF_GAP = 20
+        self.video_stack = QStackedLayout(self.video_frame)
+        self.video_stack.setStackingMode(QStackedLayout.StackAll)
         self.video_viewport_container = QWidget()
         self.video_viewport_container.setContentsMargins(0, 0, 0, 0)
-        self.video_viewport_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         _center_row = QHBoxLayout(self.video_viewport_container)
         _center_row.setContentsMargins(0, 0, 0, 0)
         _center_row.setSpacing(0)
         self.video_surface = QWidget()
         self.video_surface.setStyleSheet("background-color: black;")
         self.video_surface.setAttribute(Qt.WA_NativeWindow)
-        self.video_surface.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         _center_row.addWidget(self.video_surface)
-        video_layout.addWidget(self.video_viewport_container, stretch=1)
+        self.video_stack.addWidget(self.video_viewport_container)
+        self.hint_overlay_widget = QWidget()
+        self.hint_overlay_widget.setStyleSheet("background: transparent;")
+        self.hint_overlay_widget.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.hint_centering_layout = QVBoxLayout(self.hint_overlay_widget)
+        self.hint_centering_layout.setContentsMargins(0, 0, 0, 0)
+        self.hint_centering_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.hint_group_container = QWidget()
+        self.hint_group_layout = QHBoxLayout(self.hint_group_container)
+        self.hint_group_layout.setContentsMargins(0, 0, 0, 0)
+        self.upload_hint_container = QFrame()
+        self.upload_hint_container.setObjectName("uploadHintContainer")
+        hint_inner_layout = QVBoxLayout(self.upload_hint_container)
+        self.upload_hint_label = QLabel("Please Upload Video to Begin!")
+        self.upload_hint_label.setAlignment(Qt.AlignCenter)
+        hint_inner_layout.addWidget(self.upload_hint_label)
+        self.upload_hint_arrow = QLabel()
+        self.hint_group_layout.addWidget(self.upload_hint_container)
+        self.hint_group_layout.addWidget(self.upload_hint_arrow)
+        self.hint_centering_layout.addWidget(self.hint_group_container)
+        self.video_stack.addWidget(self.hint_overlay_widget)
         if PortraitMaskOverlay:
             self.portrait_mask_overlay = PortraitMaskOverlay(self)
             self.portrait_mask_overlay.hide()
@@ -832,7 +826,7 @@ class UiBuilderMixin:
         self.merge_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.merge_btn.setCursor(Qt.PointingHandCursor)
         self.merge_btn.clicked.connect(self.launch_video_merger)
-        self.crop_tool_btn = QPushButton("CROP SETTING")
+        self.crop_tool_btn = QPushButton("CROP SETTINGS")
         self.crop_tool_btn.setStyleSheet(UIStyles.BUTTON_TOOL)
         self.crop_tool_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.crop_tool_btn.setCursor(Qt.PointingHandCursor)

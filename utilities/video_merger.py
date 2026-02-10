@@ -1,11 +1,12 @@
 ﻿import sys
 import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
 import traceback
 import faulthandler
 import logging
-sys.dont_write_bytecode = True
-os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon
 import subprocess
@@ -21,7 +22,7 @@ from system.state_transfer import StateTransfer
 def setup_environment(base_dir):
     """Setup logging and paths using centralized utils."""
     try:
-        logger = LogManager.setup_logger(base_dir, "Video_Merger.log", "Video_Merger")
+        logger = LogManager.setup_logger(base_dir, "video_merger.log", "Video_Merger")
         logger.info("=== Video Merger Environment Setup Complete ===")
         return logger
     except Exception as e:

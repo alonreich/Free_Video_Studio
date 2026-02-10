@@ -1,6 +1,6 @@
 ﻿import os
 from pathlib import Path
-from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt, QTimer
+from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt, QTimer, QPoint, QRect
 from PyQt5.QtWidgets import QLabel
 from utilities.merger_utils import _load_conf, _save_conf
 
@@ -29,17 +29,17 @@ class MergerWindowLogic:
         try:
             g = self.window._cfg.get("geometry", {})
             if g:
+                from PyQt5.QtWidgets import QApplication
+                desktop = QApplication.desktop()
                 x = int(g.get("x", self.window.x()))
                 y = int(g.get("y", self.window.y()))
                 w = int(g.get("w", self.window.width()))
                 h = int(g.get("h", self.window.height()))
-                screen = self.window.screen()
-                if screen:
-                    screen_geometry = screen.availableGeometry()
-                    x = max(screen_geometry.left(), min(x, screen_geometry.right() - w))
-                    y = max(screen_geometry.top(), min(y, screen_geometry.bottom() - h))
-                    w = max(800, min(w, screen_geometry.width()))
-                    h = max(600, min(h, screen_geometry.height()))
+                rect = desktop.screenGeometry(QPoint(x, y))
+                if rect.isNull() or not rect.intersects(QRect(x, y, w, h)):
+                    primary_rect = desktop.availableGeometry(0)
+                    x = primary_rect.x() + (primary_rect.width() - w) // 2
+                    y = primary_rect.y() + (primary_rect.height() - h) // 2
                 self.window.move(x, y)
                 self.window.resize(w, h)
                 self.window.logger.info(f"Restored window geometry: {x},{y} {w}x{h}")

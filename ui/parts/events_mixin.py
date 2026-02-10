@@ -12,9 +12,11 @@ class EventsMixin:
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
-        if obj in (getattr(self, "video_frame", None), getattr(self, "video_surface", None)):
+        if obj in (self, getattr(self, "video_frame", None), getattr(self, "video_surface", None)):
             if event.type() in (QEvent.Resize, QEvent.Move):
                 try:
+                    if hasattr(self, '_update_upload_hint_responsive'):
+                        self._update_upload_hint_responsive()
                     self._update_volume_badge()
                     if hasattr(self, "portrait_mask_overlay"):
                         r = self.video_surface.rect()

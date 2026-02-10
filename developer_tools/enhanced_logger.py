@@ -173,62 +173,31 @@ class EnhancedCropLogger:
         )
         
     def log_finished_button_click(self, config_path_before, config_path_after):
-        """Log when user clicks the Finished button and capture config file changes."""
+        """Log when user clicks the Finished button with summary of changes to prevent log bloat."""
         try:
             with open(config_path_before, 'r') as f:
                 config_before = json.load(f)
             with open(config_path_after, 'r') as f:
                 config_after = json.load(f)
             self.crop_logger.info("=" * 80)
-            self.crop_logger.info("FINISHED BUTTON CLICKED - CONFIGURATION UPDATE")
+            self.crop_logger.info("FINISHED BUTTON CLICKED - CONFIGURATION UPDATED")
             self.crop_logger.info("=" * 80)
-            self.crop_logger.info("PROBING THE PREVIOUS EXISTING CONFIG JSON FILE FOR CROPS COORDINATION AND OVERLAYS:")
-            self.crop_logger.info(f"File: {config_path_before}")
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info(json.dumps(config_before, indent=2))
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info("OVERWRITING THE JSON CONFIG FILE WITH THIS NEW VERSION:")
-            self.crop_logger.info(f"File: {config_path_after}")
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info(json.dumps(config_after, indent=2))
-            self.crop_logger.info("-" * 40)
             differences = self._find_config_differences(config_before, config_after)
-            self.crop_logger.info("CONFIGURATION DIFFERENCES (BEFORE vs AFTER):")
+            self.crop_logger.info("CONFIGURATION CHANGES:")
             self.crop_logger.info("-" * 40)
             self.crop_logger.info(json.dumps(differences, indent=2))
             self.crop_logger.info("-" * 40)
             self.crop_logger.info("COMPLETE CONFIGURATION SUMMARY:")
             self.crop_logger.info("-" * 40)
-            configured_elements = set()
-            if 'crops_1080p' in config_after:
-                configured_elements.update(config_after['crops_1080p'].keys())
-            if 'crops' in config_after:
-                configured_elements.update(config_after['crops'].keys())
-            try:
-                from config import HUD_ELEMENT_MAPPINGS
-                all_possible_elements = set(HUD_ELEMENT_MAPPINGS.keys())
-                self.crop_logger.info(f"Total configured elements: {len(configured_elements)}/{len(all_possible_elements)}")
-                self.crop_logger.info("Configured elements:")
-                for element in sorted(configured_elements):
-                    display_name = HUD_ELEMENT_MAPPINGS.get(element, element)
-                    self.crop_logger.info(f"  [X] {display_name} ({element})")
-                not_configured = all_possible_elements - configured_elements
-                if not_configured:
-                    self.crop_logger.info("Not configured yet:")
-                    for element in sorted(not_configured):
-                        display_name = HUD_ELEMENT_MAPPINGS.get(element, element)
-                        self.crop_logger.info(f"  [ ] {display_name} ({element})")
-            except ImportError:
-                self.crop_logger.info(f"Configured elements ({len(configured_elements)} total):")
-                for element in sorted(configured_elements):
-                    self.crop_logger.info(f"  [X] {element}")
+            configured_elements = set(config_after.get('crops_1080p', {}).keys())
+            self.crop_logger.info(f"Total configured elements: {len(configured_elements)}")
+            for element in sorted(configured_elements):
+                self.crop_logger.info(f"  [X] {element}")
             self.crop_logger.info("-" * 40)
             self.crop_logger.info("=" * 80)
             if self.current_operation:
                 self.current_operation['end_time'] = time.time()
                 self.current_operation['duration'] = self.current_operation['end_time'] - self.current_operation['start_time']
-                self.current_operation['config_before'] = config_before
-                self.current_operation['config_after'] = config_after
                 self.current_operation['differences'] = differences
                 self.crop_history.append(self.current_operation)
         except Exception as e:
@@ -237,21 +206,13 @@ class EnhancedCropLogger:
             self.current_operation = None
             
     def log_finished_button_click_memory(self, config_before_json, config_after_json):
-        """[FIX #22] Log configuration changes directly from memory strings."""
+        """[FIX #22] Log configuration changes summary from memory."""
         try:
             config_before = json.loads(config_before_json)
             config_after = json.loads(config_after_json)
             self.crop_logger.info("=" * 80)
-            self.crop_logger.info("FINISHED BUTTON CLICKED - CONFIGURATION UPDATE (MEMORY LOG)")
+            self.crop_logger.info("FINISHED BUTTON CLICKED - CONFIGURATION UPDATED (MEMORY)")
             self.crop_logger.info("=" * 80)
-            self.crop_logger.info("PREVIOUS EXISTING CONFIGURATION:")
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info(config_before_json)
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info("NEW JSON CONFIGURATION:")
-            self.crop_logger.info("-" * 40)
-            self.crop_logger.info(config_after_json)
-            self.crop_logger.info("-" * 40)
             differences = self._find_config_differences(config_before, config_after)
             self.crop_logger.info("CONFIGURATION DIFFERENCES:")
             self.crop_logger.info("-" * 40)
@@ -259,9 +220,6 @@ class EnhancedCropLogger:
             self.crop_logger.info("-" * 40)
             configured_elements = set(config_after.get('crops_1080p', {}).keys())
             self.crop_logger.info(f"Total elements now configured: {len(configured_elements)}")
-            for element in sorted(configured_elements):
-                self.crop_logger.info(f"  [X] {element}")
-            self.crop_logger.info("-" * 40)
             self.crop_logger.info("=" * 80)
         except Exception as e:
             self.crop_logger.error(f"ERROR logging finished button from memory: {str(e)}")

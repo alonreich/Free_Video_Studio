@@ -10,23 +10,46 @@ import tempfile
 import shutil
 import time
 import copy
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+
 from typing import Dict, Any, Optional, List
 from PyQt5.QtCore import QRect, QObject, pyqtSignal
 try:
     from .coordinate_math import (
         transform_to_content_area_int,
-        clamp_overlay_position
+        clamp_overlay_position,
+        BACKEND_SCALE
     )
 except ImportError:
     from coordinate_math import (
         transform_to_content_area_int,
-        clamp_overlay_position
+        clamp_overlay_position,
+        BACKEND_SCALE
     )
 try:
-    from validation_system import ValidationLevel, ValidationFeedback, ValidationRule
-    VALIDATION_SYSTEM_AVAILABLE = True
+    from .config import UI_BEHAVIOR
+    MIN_SCALE_FACTOR = UI_BEHAVIOR.MIN_SCALE_FACTOR
 except ImportError:
-    VALIDATION_SYSTEM_AVAILABLE = False
+    try:
+        from config import UI_BEHAVIOR
+        MIN_SCALE_FACTOR = UI_BEHAVIOR.MIN_SCALE_FACTOR
+    except:
+        MIN_SCALE_FACTOR = 0.0001
+try:
+    import sys
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+    from system.constants import Z_ORDER_MAP
+except ImportError:
+    Z_ORDER_MAP = {
+        'loot': 10, 'normal_hp': 20, 'boss_hp': 20, 
+        'stats': 30, 'team': 40, 'spectating': 100
+    }
+VALIDATION_SYSTEM_AVAILABLE = False
 
 class ConfigObserver(QObject):
     """Observer pattern for config changes using Qt signals."""
@@ -42,32 +65,36 @@ class ConfigManager:
     REQUIRED_SECTIONS = ["crops_1080p", "scales", "overlays", "z_orders"]
     DEFAULT_VALUES = {
         "crops_1080p": {
-            "loot": [400, 400, 680, 1220],
-            "stats": [350, 350, 730, 0],
-            "normal_hp": [450, 150, 30, 1470],
-            "boss_hp": [450, 150, 30, 1470],
-            "team": [300, 400, 30, 100]
+            "loot": [0, 0, 0, 0],
+            "stats": [0, 0, 0, 0],
+            "normal_hp": [0, 0, 0, 0],
+            "boss_hp": [0, 0, 0, 0],
+            "team": [0, 0, 0, 0],
+            "spectating": [0, 0, 0, 0]
         },
         "scales": {
             "loot": 1.0,
             "stats": 1.0,
             "team": 1.0,
             "normal_hp": 1.0,
-            "boss_hp": 1.0
+            "boss_hp": 1.0,
+            "spectating": 1.0
         },
         "overlays": {
             "loot": {"x": 680, "y": 1370},
             "stats": {"x": 730, "y": 150},
             "team": {"x": 30, "y": 250},
             "normal_hp": {"x": 30, "y": 1620},
-            "boss_hp": {"x": 30, "y": 1620}
+            "boss_hp": {"x": 30, "y": 1620},
+            "spectating": {"x": 30, "y": 1300}
         },
         "z_orders": {
-            "loot": 10,
-            "normal_hp": 20,
-            "boss_hp": 20,
-            "stats": 30,
-            "team": 40
+            "loot": Z_ORDER_MAP.get("loot", 10),
+            "normal_hp": Z_ORDER_MAP.get("normal_hp", 20),
+            "boss_hp": Z_ORDER_MAP.get("boss_hp", 20),
+            "stats": Z_ORDER_MAP.get("stats", 30),
+            "team": Z_ORDER_MAP.get("team", 40),
+            "spectating": Z_ORDER_MAP.get("spectating", 100)
         }
     }
     
@@ -84,16 +111,14 @@ class ConfigManager:
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, '..'))
         self._lock_file_path = f"{config_path}.lock"
         self.validation_feedback: Optional[Any] = None
-        self._last_known_config: Dict[str, Any] = copy.deepcopy(self.DEFAULT_VALUES)
+        self.is_hud_config = "crops_coordinations.conf" in os.path.basename(config_path).lower()
+        if self.is_hud_config:
+            self._last_known_config = copy.deepcopy(self.DEFAULT_VALUES)
+        else:
+            self._last_known_config = {}
         self._config_version = 0
         self._last_file_mtime = 0
         self._observer = ConfigObserver()
-        if VALIDATION_SYSTEM_AVAILABLE:
-            try:
-                self.validation_feedback = ValidationFeedback()
-                self._setup_validation_rules()
-            except Exception as e:
-                self.logger.error(f"Failed to initialize validation system: {e}")
     
     def get_observer(self) -> ConfigObserver:
         """Get the observer instance for subscribing to config changes."""
@@ -101,32 +126,7 @@ class ConfigManager:
     
     def _setup_validation_rules(self):
         """Setup validation rules for configuration."""
-        if not self.validation_feedback:
-            return
-        self.validation_feedback.add_rule(ValidationRule(
-            rule_id="config_file_exists",
-            condition=lambda: os.path.exists(self.config_path),
-            message="Configuration file does not exist",
-            level=ValidationLevel.WARNING
-        ))
-        self.validation_feedback.add_rule(ValidationRule(
-            rule_id="config_valid_json",
-            condition=lambda: self._is_valid_json(),
-            message="Configuration file contains invalid JSON",
-            level=ValidationLevel.ERROR
-        ))
-        self.validation_feedback.add_rule(ValidationRule(
-            rule_id="required_sections_exist",
-            condition=lambda: self._has_required_sections(),
-            message="Configuration missing required sections",
-            level=ValidationLevel.ERROR
-        ))
-        self.validation_feedback.add_rule(ValidationRule(
-            rule_id="section_consistency",
-            condition=lambda: self._check_section_consistency(),
-            message="Configuration sections are inconsistent",
-            level=ValidationLevel.WARNING
-        ))
+        pass
     
     def _is_valid_json(self) -> bool:
         """Check if config file contains valid JSON."""
@@ -171,6 +171,8 @@ class ConfigManager:
     
     def _enforce_cross_section_consistency(self, config: Dict[str, Any]) -> None:
         """Ensure all sections have the same keys by adding missing entries with defaults."""
+        if not self.is_hud_config:
+            return
         all_keys = set()
         for section in self.REQUIRED_SECTIONS:
             if section in config and isinstance(config[section], dict):
@@ -181,60 +183,84 @@ class ConfigManager:
                     config[section] = {}
                 if key not in config[section]:
                     if section == "crops_1080p":
-                        config[section][key] = [0, 0, 100, 100]
+                        if key == "spectating":
+                            config[section][key] = [150, 100, 30, 1300]
+                        else:
+                            config[section][key] = [0, 0, 100, 100]
                     elif section == "scales":
                         config[section][key] = 1.0
                     elif section == "overlays":
-                        config[section][key] = {"x": 0, "y": 0}
+                        if key == "spectating":
+                            config[section][key] = {"x": 30, "y": 1300}
+                        else:
+                            config[section][key] = {"x": 0, "y": 0}
                     elif section == "z_orders":
-                        config[section][key] = 10
+                        config[section][key] = Z_ORDER_MAP.get(key, 10)
                     self.logger.debug(f"Added missing key '{key}' to section '{section}'")
 
     def _filter_hud_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        clean = {}
-        for section in self.REQUIRED_SECTIONS:
-            section_value = config.get(section, {}) if isinstance(config, dict) else {}
-            clean[section] = section_value if isinstance(section_value, dict) else {}
+        """Preserves HUD sections while allowing other metadata to persist."""
+        if not isinstance(config, dict):
+            return copy.deepcopy(self.DEFAULT_VALUES) if self.is_hud_config else {}
+        clean = copy.deepcopy(config)
+        if self.is_hud_config:
+            for section in self.REQUIRED_SECTIONS:
+                if section not in clean or not isinstance(clean[section], dict):
+                    clean[section] = {}
         return clean
 
     def _sanitize_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Sanitizes HUD sections specifically while preserving other top-level keys."""
         clean = self._filter_hud_config(config)
-        for key, rect in list(clean.get("crops_1080p", {}).items()):
-            if not isinstance(rect, list) or len(rect) < 4:
-                clean["crops_1080p"][key] = [0, 0, 0, 0]
-                continue
-            try:
-                clean["crops_1080p"][key] = [int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])]
-            except Exception:
-                clean["crops_1080p"][key] = [0, 0, 0, 0]
-        for key, scale in list(clean.get("scales", {}).items()):
-            try:
-                scale_val = float(scale)
-                if scale_val < 0:
-                    scale_val = 0.0
-                clean["scales"][key] = round(scale_val, 4)
-            except Exception:
-                clean["scales"][key] = 1.0
-        for key, overlay in list(clean.get("overlays", {}).items()):
-            if not isinstance(overlay, dict):
-                clean["overlays"][key] = {"x": 0, "y": 0}
-                continue
-            try:
-                x_val = int(overlay.get("x", 0))
-                y_val = int(overlay.get("y", 0))
-                clean["overlays"][key] = {"x": x_val, "y": y_val}
-            except Exception:
-                clean["overlays"][key] = {"x": 0, "y": 0}
-        for key, z_val in list(clean.get("z_orders", {}).items()):
-            try:
-                clean["z_orders"][key] = int(z_val)
-            except Exception:
-                clean["z_orders"][key] = 10
+        if not self.is_hud_config:
+            return clean
+        if "crops_1080p" in clean:
+            for key, rect in list(clean["crops_1080p"].items()):
+                if not isinstance(rect, list) or len(rect) < 4:
+                    clean["crops_1080p"][key] = [0, 0, 0, 0]
+                    continue
+                try:
+                    w = max(0, min(900, int(rect[0])))
+                    h = max(0, min(600, int(rect[1])))
+                    clean["crops_1080p"][key] = [w, h, int(rect[2]), int(rect[3])]
+                except Exception:
+                    clean["crops_1080p"][key] = [0, 0, 0, 0]
+        if "scales" in clean:
+            for key, scale in list(clean["scales"].items()):
+                try:
+                    scale_val = float(scale)
+                    if scale_val < MIN_SCALE_FACTOR:
+                        scale_val = MIN_SCALE_FACTOR
+                    clean["scales"][key] = round(scale_val, 4)
+                except Exception:
+                    clean["scales"][key] = 1.0
+        if "overlays" in clean:
+            for key, overlay in list(clean["overlays"].items()):
+                if not isinstance(overlay, dict):
+                    clean["overlays"][key] = {"x": 0, "y": 0}
+                    continue
+                try:
+                    x_val = max(0, min(1080, int(overlay.get("x", 0))))
+                    y_val = max(0, min(1920, int(overlay.get("y", 0))))
+                    clean["overlays"][key] = {"x": x_val, "y": y_val}
+                except Exception:
+                    clean["overlays"][key] = {"x": 0, "y": 0}
+        if "z_orders" in clean:
+            for key, z_val in list(clean["z_orders"].items()):
+                try:
+                    clean["z_orders"][key] = int(z_val)
+                except Exception:
+                    clean["z_orders"][key] = 10
         self._enforce_cross_section_consistency(clean)
         return clean
         
     def _acquire_lock(self, timeout_seconds: int = 5) -> bool:
         """Acquire a file-based atomic lock."""
+        try:
+            os.makedirs(os.path.dirname(self._lock_file_path), exist_ok=True)
+        except Exception as e:
+            self.logger.error(f"Failed to create directory for lock file: {e}")
+            return False
         start_time = time.time()
         attempt = 0
         while (time.time() - start_time) < timeout_seconds:
@@ -249,9 +275,17 @@ class ConfigManager:
                 return True
             except FileExistsError:
                 try:
+                    with open(self._lock_file_path, 'r') as f:
+                        pid = int(f.read().strip())
+                    if HAS_PSUTIL:
+                        if not psutil.pid_exists(pid):
+                            self.logger.warning(f"Breaking stale lock from dead PID {pid}")
+                            try: os.unlink(self._lock_file_path)
+                            except: pass
+                            continue
                     mtime = os.path.getmtime(self._lock_file_path)
                     if (time.time() - mtime) > timeout_seconds:
-                        self.logger.warning(f"Breaking stale lock for {self.config_path}")
+                        self.logger.warning(f"Breaking stale lock (timed out) for {self.config_path}")
                         try: os.unlink(self._lock_file_path)
                         except: pass
                         continue
@@ -347,15 +381,6 @@ class ConfigManager:
         if not self._acquire_lock():
             self.logger.error(f"Could not acquire lock for saving {self.config_path}")
             return False
-        try:
-            if os.path.exists(self.config_path):
-                config_dir = os.path.dirname(self.config_path)
-                config_filename = os.path.basename(self.config_path)
-                old_backup_path = os.path.join(config_dir, f"old_{config_filename}")
-                shutil.copy2(self.config_path, old_backup_path)
-                self.logger.debug(f"Created persistent old-config backup at {old_backup_path}")
-        except Exception as e:
-            self.logger.warning(f"Failed to create persistent old-config backup: {e}")
         backup_path = None
         success = False
         try:
@@ -376,18 +401,19 @@ class ConfigManager:
                     shutil.copy2(self.config_path, backup_path)
                     self.logger.debug(f"Created backup at {backup_path}")
                 os.replace(temp_path, self.config_path)
-                self.logger.info("=" * 80)
-                self.logger.info("CONFIGURATION SAVED SUCCESSFULLY")
-                self.logger.info("-" * 40)
-                self.logger.info(f"File: {self.config_path}")
-                self.logger.info(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                self.logger.info(f"Sections: {', '.join(self.REQUIRED_SECTIONS)}")
-                self.logger.info(f"Configured elements: {len(config['crops_1080p'])}")
-                self.logger.info("FULL JSON CONFIGURATION FILE CONTENTS:")
-                self.logger.info("-" * 40)
-                self.logger.info(json.dumps(config, indent=2))
-                self.logger.info("-" * 40)
-                self.logger.info("=" * 80)
+                if self.is_hud_config:
+                    self.logger.info("=" * 80)
+                    self.logger.info("CONFIGURATION SAVED SUCCESSFULLY")
+                    self.logger.info("-" * 40)
+                    self.logger.info(f"File: {self.config_path}")
+                    self.logger.info(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    self.logger.info(f"Sections: {', '.join(self.REQUIRED_SECTIONS)}")
+                    self.logger.info(f"Configured elements: {len(config.get('crops_1080p', {}))}")
+                    self.logger.info("FULL JSON CONFIGURATION FILE CONTENTS:")
+                    self.logger.info("-" * 40)
+                    self.logger.info(json.dumps(config, indent=2))
+                    self.logger.info("-" * 40)
+                    self.logger.info("=" * 80)
                 if backup_path and os.path.exists(backup_path):
                     try:
                         with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -395,20 +421,22 @@ class ConfigManager:
                         os.unlink(backup_path)
                     except Exception as verify_error:
                         self.logger.warning(f"Backup retained due to verification failure: {verify_error}")
+                self._prune_backup_files(max_backups=5)
                 success = True
-                old_config = self._last_known_config
-                new_keys = set(config["crops_1080p"].keys())
-                old_keys = set(old_config.get("crops_1080p", {}).keys())
-                for key in new_keys:
-                    if key in old_keys:
-                        old_crop = old_config.get("crops_1080p", {}).get(key)
-                        new_crop = config["crops_1080p"].get(key)
-                        if old_crop != new_crop:
+                if self.is_hud_config:
+                    old_config = self._last_known_config
+                    new_keys = set(config.get("crops_1080p", {}).keys())
+                    old_keys = set(old_config.get("crops_1080p", {}).keys())
+                    for key in new_keys:
+                        if key in old_keys:
+                            old_crop = old_config.get("crops_1080p", {}).get(key)
+                            new_crop = config.get("crops_1080p", {}).get(key)
+                            if old_crop != new_crop:
+                                self._observer.config_changed.emit(key)
+                        else:
                             self._observer.config_changed.emit(key)
-                    else:
-                        self._observer.config_changed.emit(key)
-                for key in old_keys - new_keys:
-                    self._observer.config_deleted.emit(key)
+                    for key in old_keys - new_keys:
+                        self._observer.config_deleted.emit(key)
                 self._observer.config_loaded.emit()
                 return True
             except Exception as e:
@@ -437,6 +465,61 @@ class ConfigManager:
                     state_manager.rollback_transaction(transaction)
             if success:
                 self._last_known_config = copy.deepcopy(config)
+
+    def _prune_backup_files(self, max_backups: int = 5) -> None:
+        """Keep backup file count bounded to avoid unbounded disk growth."""
+        try:
+            import glob
+            pattern = f"{self.config_path}.backup.*"
+            backups = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+            for stale in backups[max_backups:]:
+                try:
+                    os.unlink(stale)
+                except Exception:
+                    pass
+            config_dir = os.path.dirname(self.config_path)
+            config_filename = os.path.basename(self.config_path)
+            old_backup_path = os.path.join(config_dir, f"old_{config_filename}")
+            if os.path.exists(old_backup_path):
+                try:
+                    max_age_seconds = 60 * 60 * 24 * 3
+                    if (time.time() - os.path.getmtime(old_backup_path)) > max_age_seconds:
+                        os.unlink(old_backup_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            self.logger.debug(f"Backup pruning skipped: {e}")
+
+    def validate_config_data(self, config: Dict[str, Any]) -> List[str]:
+        """Validate a provided config object (without reloading from disk)."""
+        issues: List[str] = []
+        if not isinstance(config, dict):
+            return ["Configuration must be a JSON object"]
+        clean = self._sanitize_config(config)
+        for section in self.REQUIRED_SECTIONS:
+            if section not in clean:
+                issues.append(f"Missing required section: {section}")
+            elif not isinstance(clean[section], dict):
+                issues.append(f"Section {section} should be a dictionary")
+        tech_keys: set[str] = set()
+        tech_keys.update(clean["crops_1080p"].keys())
+        tech_keys.update(clean["scales"].keys())
+        tech_keys.update(clean["overlays"].keys())
+        tech_keys.update(clean["z_orders"].keys())
+        for key in tech_keys:
+            rect = clean["crops_1080p"].get(key)
+            if not isinstance(rect, list) or len(rect) < 4:
+                issues.append(f"Invalid crop data for '{key}'")
+            scale_val = clean["scales"].get(key)
+            if not isinstance(scale_val, (int, float)):
+                issues.append(f"Invalid scale value for '{key}'")
+            overlay_val = clean["overlays"].get(key)
+            if not isinstance(overlay_val, dict) or "x" not in overlay_val or "y" not in overlay_val:
+                issues.append(f"Invalid overlay data for '{key}'")
+            z_val = clean["z_orders"].get(key)
+            if not isinstance(z_val, int):
+                issues.append(f"Invalid z-order value for '{key}'")
+        return issues
 
     def transform_crop_rect(self, rect: QRect, original_resolution: str) -> List[int]:
         rect_tuple = (rect.x(), rect.y(), rect.width(), rect.height())
@@ -520,11 +603,12 @@ class ConfigManager:
             scale = config.get("scales", {}).get(tech_key, 1.0)
             scaled_width = int(round(width * scale))
             scaled_height = int(round(height * scale))
-            BACKEND_SCALE = 1280.0 / 1080.0
             x_scaled = x * BACKEND_SCALE
             y_scaled = y * BACKEND_SCALE
-
-            from .coordinate_math import scale_round
+            try:
+                from .coordinate_math import scale_round
+            except ImportError:
+                from coordinate_math import scale_round
             clamped_x_scaled, clamped_y_scaled = clamp_overlay_position(
                 scale_round(x_scaled),
                 scale_round(y_scaled),
@@ -552,10 +636,9 @@ class ConfigManager:
         Returns:
             True if successful, False otherwise
         """
-        EPSILON = 0.001
-        if scale_factor < EPSILON:
-            self.logger.warning(f"Scale factor {scale_factor} too small, clamping to {EPSILON}")
-            scale_factor = EPSILON
+        if scale_factor < MIN_SCALE_FACTOR:
+            self.logger.warning(f"Scale factor {scale_factor} too small, clamping to {MIN_SCALE_FACTOR}")
+            scale_factor = MIN_SCALE_FACTOR
         try:
             config = self.load_config()
             config["scales"][tech_key] = round(scale_factor, 4)
@@ -617,14 +700,6 @@ class ConfigManager:
             z_val = config["z_orders"].get(key)
             if not isinstance(z_val, int):
                 issues.append(f"Invalid z-order value for '{key}'")
-        if self.validation_feedback:
-            try:
-                validation_results = self.validation_feedback.check_all_rules({})
-                for rule_id, result in validation_results.items():
-                    if not result['valid']:
-                        issues.append(f"Validation: {result['message']}")
-            except Exception as e:
-                self.logger.error(f"Validation system error: {e}")
         return issues
     
     def get_configured_elements(self) -> List[str]:

@@ -71,14 +71,16 @@ def setup_logger():
     """
     original_stdout = sys.stdout
     original_stderr = sys.stderr
-    log_file_path = os.path.join(parent_dir, 'logs', "Crop_Tools.log")
+    log_file_path = os.path.join(parent_dir, 'logs', "crop_tools.log")
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
     base_logger = logging.getLogger("Crop_Tools_Base")
     base_logger.setLevel(logging.INFO)
     if base_logger.handlers:
         for handler in base_logger.handlers:
             base_logger.removeHandler(handler)
-    file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+    
+    from logging.handlers import RotatingFileHandler
+    file_handler = RotatingFileHandler(log_file_path, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
     formatter = logging.Formatter('%(asctime)s | %(name)-12s | %(levelname)-8s | %(message)s')
     file_handler.setFormatter(formatter)
     base_logger.addHandler(file_handler)

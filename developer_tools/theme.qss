@@ -1,0 +1,327 @@
+﻿
+QWidget {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_DARK' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    font-family: 'Segoe UI', 'Roboto', 'Inter', -apple-system, sans-serif;
+    font-size: 14px;
+    border: none;
+}}
+QLabel {{ 
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_SECONDARY' ;
+    font-weight: 500;
+    padding: 4px;
+}}
+QLabel.title {{
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    font-weight: 700;
+    font-size: 16px;
+}}
+QLabel.status {{ color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ; font-weight: 600; }}
+QLabel.info {{ color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ; }}
+QLabel.italic {{ font-style: italic; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_ACCENT' ; }}
+QSlider::groove:horizontal {{ 
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ; 
+    height: 16px; 
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ; 
+    margin: 2px 0; 
+    border-radius: 4px;
+}}
+QSlider::handle:horizontal {{ 
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+    border: 2px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ; 
+    width: 22px; 
+    height: 40px;
+    margin: -12px 0; 
+    border-radius: 11px;
+}}
+QSlider::handle:horizontal:hover {{ 
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_HOVER' ; 
+    border: 2px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+}}
+QProgressBar {{
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+    border-radius: 6px;
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_DARK' ;
+    text-align: center;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_SECONDARY' ;
+    height: {UI_LAYOUT.PROGRESS_BAR_HEIGHT}px;
+}}
+QProgressBar::chunk {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT' ;
+    border-radius: 6px;
+}}
+QPushButton {{ 
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DEFAULT' ; 
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    padding: {UI_LAYOUT.BUTTON_PADDING_H};
+    border-radius: {UI_LAYOUT.BUTTON_BORDER_RADIUS};
+    font-weight: 600; 
+    font-size: {UI_LAYOUT.BUTTON_FONT_SIZE};
+    min-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    max-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_DARK' ;
+}}
+QPushButton:hover {{ 
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_HOVER' ; 
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_DARK' ;
+}}
+QPushButton:pressed {{ 
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_PRESSED' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    padding-top: 2px;
+    padding-left: 12px;
+}}
+QPushButton:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+}}
+QPushButton:checked {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT_BORDER' ;
+}}
+QPushButton.primary {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_BORDER' ;
+}}
+QPushButton.primary:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_HOVER' ;
+}}
+QPushButton.primary:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_PRESSED' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_PRESSED' ;
+}}
+QPushButton.primary:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+    border-bottom: none;
+}}
+QPushButton.success {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS' ; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_BORDER' ;
+}}
+QPushButton.success:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_HOVER' ;
+}}
+QPushButton.success:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_PRESSED' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_PRESSED' ;
+}}
+QPushButton.success:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+    border-bottom: none;
+}}
+QPushButton.warning {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'WARNING' ; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'WARNING_BORDER' ;
+}}
+QPushButton.warning:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'WARNING_HOVER' ;
+}}
+QPushButton.warning:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'WARNING_PRESSED' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'WARNING_PRESSED' ;
+}}
+QPushButton.warning:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+    border-bottom: none;
+}}
+QPushButton.danger {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER' ; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DANGER' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_BORDER' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_BORDER' ;
+}}
+QPushButton.danger:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_HOVER' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_BORDER' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_BORDER' ;
+}}
+QPushButton.danger:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_PRESSED' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_PRESSED' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'DANGER_PRESSED' ;
+}}
+QPushButton.danger:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+    border-bottom: none;
+}}
+QPushButton.accent {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT' ; color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT_BORDER' ;
+}}
+QPushButton.accent:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT_HOVER' ;
+}}
+QPushButton.accent:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT_PRESSED' ;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'ACCENT_PRESSED' ;
+}}
+QPushButton.accent:disabled {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DISABLED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_DISABLED' ;
+    border-bottom: none;
+}}
+QCheckBox {{
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    spacing: 8px;
+    font-weight: bold;
+}}
+QCheckBox::indicator {{
+    width: 18px;
+    height: 18px;
+    border: 2px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-radius: 4px;
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+}}
+QCheckBox::indicator:checked {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+    border: 2px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+    image: url(./icons/check_white.png); /* Assuming an icon for checked state */
+}}
+QCheckBox::indicator:hover {{
+    border-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+}}
+QScrollBar:vertical {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+    width: {UI_LAYOUT.SCROLLBAR_SIZE};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+QScrollBar::handle:vertical {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    min-height: {UI_LAYOUT.SCROLLBAR_HANDLE_MIN_LENGTH};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+}}
+QScrollBar::handle:vertical:hover {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_HOVER' ;
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_LIGHT' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    height: {UI_LAYOUT.SCROLLBAR_SIZE};
+    subcontrol-origin: margin;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+}}
+QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+    border-radius: 6px;
+    width: 12px;
+    height: 12px;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+}}
+QScrollBar:horizontal {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+    height: {UI_LAYOUT.SCROLLBAR_SIZE};
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+QScrollBar::handle:horizontal {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+    min-width: {UI_LAYOUT.SCROLLBAR_HANDLE_MIN_LENGTH};
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_HOVER' ;
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_LIGHT' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    width: {UI_LAYOUT.SCROLLBAR_SIZE};
+    subcontrol-origin: margin;
+    border-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
+}}
+QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border: {UI_LAYOUT.SCROLLBAR_HANDLE_BORDER} solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+    border-radius: 6px;
+    width: 12px;
+    height: 12px;
+}}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+}}
+#wizardFrame {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+    border-bottom: 2px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+#progressLabel {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_LIGHT' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_SECONDARY' ;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 10px;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    min-width: 120px;
+}}
+#progressLabel.completed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_PRESSED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'SUCCESS_BORDER' ;
+}}
+#progressLabel.current {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY_PRESSED' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'PRIMARY' ;
+}}
+#controlsFrame, #portraitFooter {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+    padding: 4px;
+    border-top: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+#portraitHeader {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_MEDIUM' ;
+    padding: 4px;
+    border-bottom: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+#portraitPane {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BACKGROUND_DARK' ;
+    border-left: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_DARK' ;
+}}
+#roleToolbar {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'OVERLAY_DIM' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-radius: {UI_LAYOUT.PORTRAIT_TOOLBAR_BORDER_RADIUS};
+}}
+#uploadHintContainer {{
+    background-color: #000000;
+    border: 2px solid #7DD3FC;
+    border-radius: 10px;
+}}
+#uploadHintLabel {{
+    color: #7DD3FC;
+    font-family: Arial;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 6px 18px;
+}}
+#roleToolbar QPushButton {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_DEFAULT' ;
+    color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'TEXT_PRIMARY' ;
+    border: 1px solid  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BORDER_MEDIUM' ;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-weight: bold;
+    font-size: 11px;
+    min-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+    max-height: {UI_LAYOUT.BUTTON_HEIGHT}px;
+}}
+#roleToolbar QPushButton:hover {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_HOVER' ;
+}}
+#roleToolbar QPushButton:pressed {{
+    background-color:  param($m) $name = $m.Groups[1].Value; (Select-String -Path "config.py" -Pattern "$name\s*=\s*`"(#[0-9A-Fa-f]{3,6}|rgba\(.*?\)|transparent|white|red)`"").Line -replace ".*=\s*`"(.*?)`".*", 'BUTTON_PRESSED' ;
+}}
+

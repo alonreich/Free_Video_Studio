@@ -66,6 +66,7 @@ class ProcessThread(QThread):
         self.prober = MediaProber(self.bin_dir, self.input_path)
         self.current_process = None
         self.is_canceled = False
+        self.filter_scripts = []
         self.duration_corrected_sec = (self.duration_ms / self.speed_factor / 1000.0) if self.speed_factor != 1.0 else (self.duration_ms / 1000.0)
 
     def cancel(self):
@@ -151,8 +152,10 @@ class ProcessThread(QThread):
                 audio_kbps = probed_kbps
                 self.status_update_signal.emit(f"Audio bitrate: preserving source ~{audio_kbps} kbps.")
             sample_rate = self.prober.get_sample_rate()
-            if has_bg:
+            should_resample_audio = False
+            if has_bg or sample_rate != 48000:
                 sample_rate = 48000
+                should_resample_audio = True
             intro_len_sec = max(0.0, self.intro_still_sec) if self.intro_still_sec > 0 else 0.0
             eff_dur_sec = self.duration_corrected_sec + intro_len_sec
             video_bitrate_kbps = calculate_video_bitrate(
@@ -165,7 +168,7 @@ class ProcessThread(QThread):
                 video_bitrate_kbps = 2500
             MAX_SAFE_BITRATE = 35000
             if self.quality_level >= 4:
-                MAX_SAFE_BITRATE = 200000
+                MAX_SAFE_BITRATE = 50000
             if video_bitrate_kbps > MAX_SAFE_BITRATE:
                 self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
@@ -202,7 +205,7 @@ class ProcessThread(QThread):
                 vfade_in_d=int(vfade_in_duration_ms / self.speed_factor) / 1000.0,
                 audio_filter_cmd=audio_speed_cmd,
                 time_mapper=time_mapper,
-                sample_rate=sample_rate
+                sample_rate=sample_rate if should_resample_audio else None
             )
             if self.speed_segments and granular_audio_label:
                 first_filter = audio_chains[0]
@@ -216,7 +219,8 @@ class ProcessThread(QThread):
                 if self.is_mobile_format:
                     mobile_coords = self.config.get_mobile_coordinates(self.logger)
                     v_filter_cmd = self.filter_builder.build_mobile_filter(
-                        mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay
+                        mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay,
+                        use_nvidia=attempt_is_nvidia
                     )
                     if self.portrait_text:
                         v_filter_cmd = self.filter_builder.add_drawtext_filter(
@@ -228,17 +232,21 @@ class ProcessThread(QThread):
                         if self.quality_level == 1: t_w = 1280
                         elif self.quality_level < 1: t_w = 960
                         elif video_bitrate_kbps < 800: t_w = 1280
-                    if self.keep_highest_res:
-                        target_res = "scale=iw:ih:flags=bilinear"
+                    if attempt_is_nvidia:
+                        target_res = "scale_cuda=iw:ih:interp_algo=bilinear" if self.keep_highest_res else f"scale_cuda='min({t_w},iw)':-2:interp_algo=bilinear"
+                        v_filter_cmd = f"{target_res}" 
                     else:
-                        target_res = f"scale='min({t_w},iw)':-2:flags=bilinear"
-                    v_filter_cmd = f"fps=60,{target_res}"
+                        target_res = "scale=iw:ih:flags=bilinear" if self.keep_highest_res else f"scale='min({t_w},iw)':-2:flags=bilinear"
+                        v_filter_cmd = f"fps=60,{target_res}"
                 if not self.speed_segments:
                     v_filter_cmd += f",setpts=PTS/{self.speed_factor}"
                 attempt_core_filters = []
                 if granular_filter_str:
                     attempt_core_filters.append(granular_filter_str)
-                vcore_str = f"{granular_video_label}{v_filter_cmd},"
+                if attempt_is_nvidia:
+                    vcore_str = f"{granular_video_label}{v_filter_cmd},unsharp_cuda=lmsize_x=3:lmsize_y=3:amount=0.5,"
+                else:
+                    vcore_str = f"{granular_video_label}{v_filter_cmd},unsharp=luma_msize_x=3:luma_msize_y=3:luma_amount=0.5,"
                 if not self.disable_fades:
                      vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
                      vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
@@ -254,12 +262,14 @@ class ProcessThread(QThread):
                 attempt_core_filters.extend(audio_chains)
                 self.status_update_signal.emit(f"Processing video ({rc_label})...")
                 hw_flags = []
+                if attempt_is_nvidia:
+                    hw_flags = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
                 cmd = [
                     ffmpeg_path, '-y'] + hw_flags + [
                     '-progress', 'pipe:1',
                     '-ss', f"{source_cut_start_ms / 1000.0:.3f}", 
-                    '-t', f"{source_cut_duration_ms / 1000.0:.3f}",
                     '-i', self.input_path,
+                    '-t', f"{source_cut_duration_ms / 1000.0:.3f}",
                 ]
                 if has_bg:
                     cmd.extend(['-i', self.bg_music_path])

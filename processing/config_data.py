@@ -21,6 +21,14 @@ class VideoConfig:
 
     def get_mobile_coordinates(self, logger=None):
         conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        lock_path = conf_path + ".lock"
+
+        import time
+        for _ in range(10):
+            if os.path.exists(lock_path):
+                time.sleep(0.1)
+            else:
+                break
         default_conf_data = {
             "crops_1080p": {
                 "loot": [400, 400, 680, 1220],

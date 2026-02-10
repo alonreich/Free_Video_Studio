@@ -18,11 +18,13 @@ class PortraitView(QGraphicsView):
         self.max_zoom = 4.0
         self.user_zoomed = False
         self._middle_dragging = False
+        self._left_panning = False
         self.snap_enabled = True
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
 
@@ -31,14 +33,24 @@ class PortraitView(QGraphicsView):
 
     def fit_to_scene(self):
         if not self.scene(): return
+        if self.user_zoomed:
+            self._clamp_scroll()
+            return
         view_rect = self.viewport().rect()
         scene_rect = self.scene().sceneRect()
         if scene_rect.width() <= 0 or scene_rect.height() <= 0: return
         self.resetTransform()
-        scale = min(view_rect.width() / scene_rect.width(), view_rect.height() / scene_rect.height())
+        content_top = 150
+        content_height = scene_rect.height() - content_top
+        scale_w = view_rect.width() / scene_rect.width()
+        scale_h = view_rect.height() / content_height
+        scale = min(scale_w, scale_h)
         scale = min(scale, 1.0)
         self.zoom = scale
         self.scale(scale, scale)
+        center_x = scene_rect.center().x()
+        center_y = content_top + (content_height / 2)
+        self.centerOn(center_x, center_y)
         self.user_zoomed = False
 
     def wheelEvent(self, event):
@@ -61,6 +73,9 @@ class PortraitView(QGraphicsView):
         self.scale(factor, factor)
         self.user_zoomed = True
         self._clamp_scroll()
+        for item in self.scene().items():
+            if hasattr(item, 'update_handle_positions'):
+                item.update_handle_positions()
         
     def _clamp_scroll(self):
         hbar = self.horizontalScrollBar()
@@ -83,19 +98,60 @@ class PortraitView(QGraphicsView):
     def mousePressEvent(self, event):
         if event.button() == Qt.MiddleButton:
             self._middle_dragging = True
-            self.setDragMode(QGraphicsView.ScrollHandDrag)
-            self.setCursor(Qt.ClosedHandCursor)
-            return super().mousePressEvent(event)
+            self._last_pan_pos = event.pos()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            return
+        if event.button() == Qt.LeftButton:
+            clicked_items = self.items(event.pos())
+            is_over_hud = any(isinstance(i, ResizablePixmapItem) for i in clicked_items)
+            if not is_over_hud:
+                if self._can_scroll():
+                    self._left_panning = True
+                    self._last_pan_pos = event.pos()
+                    self.viewport().setCursor(Qt.ClosedHandCursor)
+                    return
         return super().mousePressEvent(event)
 
+    def _can_scroll(self):
+        """Checks if there is any active scrollable area."""
+        hbar = self.horizontalScrollBar()
+        vbar = self.verticalScrollBar()
+        return (hbar and hbar.maximum() > hbar.minimum()) or (vbar and vbar.maximum() > vbar.minimum())
+
+    def mouseMoveEvent(self, event):
+        if self._left_panning or self._middle_dragging:
+            delta = event.pos() - self._last_pan_pos
+            self._last_pan_pos = event.pos()
+            hbar = self.horizontalScrollBar()
+            vbar = self.verticalScrollBar()
+            if hbar: hbar.setValue(hbar.value() - delta.x())
+            if vbar: vbar.setValue(vbar.value() - delta.y())
+            return
+        item = self.itemAt(event.pos())
+        if not item or not (item.flags() & QGraphicsItem.ItemIsMovable):
+            if self._can_scroll():
+                self.viewport().setCursor(Qt.OpenHandCursor)
+            else:
+                self.viewport().setCursor(Qt.ArrowCursor)
+        else:
+            self.viewport().setCursor(Qt.OpenHandCursor)
+        super().mouseMoveEvent(event)
+
     def contextMenuEvent(self, event):
-        """[FIX #18] Context menu for autospacing overlaps."""
+        """[FIX #10, #18] Context menu for layering and autospacing."""
         selected_items = [item for item in self.scene().selectedItems() if isinstance(item, ResizablePixmapItem)]
         if not selected_items:
             return
             
         from PyQt5.QtWidgets import QMenu, QAction
         menu = QMenu(self)
+        top_action = QAction("Bring to Top", self)
+        top_action.triggered.connect(lambda: self.window().raise_selected_item())
+        menu.addAction(top_action)
+        bottom_action = QAction("Send to Bottom", self)
+        bottom_action.triggered.connect(lambda: self.window().lower_selected_item())
+        menu.addAction(bottom_action)
+        menu.addSeparator()
         autospace_action = QAction("Autospace Overlaps", self)
         autospace_action.triggered.connect(lambda: self._autospace_items(selected_items))
         menu.addAction(autospace_action)
@@ -122,23 +178,20 @@ class PortraitView(QGraphicsView):
             self.scene().update()
 
     def mouseReleaseEvent(self, event):
-        if self._middle_dragging and event.button() == Qt.MiddleButton:
+        if (self._middle_dragging and event.button() == Qt.MiddleButton) or \
+           (self._left_panning and event.button() == Qt.LeftButton):
             self._middle_dragging = False
-            self.setDragMode(QGraphicsView.NoDrag)
-            self.setCursor(Qt.ArrowCursor)
+            self._left_panning = False
+            if self._can_scroll():
+                self.viewport().setCursor(Qt.OpenHandCursor)
+            else:
+                self.viewport().setCursor(Qt.ArrowCursor)
             self._clamp_scroll()
-        return super().mouseReleaseEvent(event)
+            return
+        super().mouseReleaseEvent(event)
+        self.mouseMoveEvent(event)
 
     def keyPressEvent(self, event):
-        if event.modifiers() == Qt.ControlModifier:
-            if event.key() == Qt.Key_Z:
-                self.window().undo()
-                event.accept()
-                return
-            elif event.key() == Qt.Key_Y:
-                self.window().redo()
-                event.accept()
-                return
         if event.key() == Qt.Key_Delete:
             if hasattr(self.window(), 'delete_selected'):
                 self.window().delete_selected()
@@ -154,18 +207,19 @@ class PortraitView(QGraphicsView):
                 if hasattr(item, '_snap_anim_pos'):
                     item._snap_anim_pos = None
             items_to_move = selected_items
-            delta = UI_BEHAVIOR.KEYBOARD_NUDGE_STEP
             if event.modifiers() & Qt.ShiftModifier:
-                delta = 10.0
-            if event.modifiers() & Qt.ShiftModifier:
+                delta = 5.0
+            else:
+                delta = UI_BEHAVIOR.KEYBOARD_NUDGE_STEP
+            if event.modifiers() & Qt.AltModifier:
                 if event.key() == Qt.Key_Up:
-                    for item in items_to_move:
-                        item.setZValue(item.zValue() + 1)
+                    if hasattr(self.window(), 'raise_selected_item'):
+                        self.window().raise_selected_item()
                     event.accept()
                     return
                 elif event.key() == Qt.Key_Down:
-                    for item in items_to_move:
-                        item.setZValue(item.zValue() - 1)
+                    if hasattr(self.window(), 'lower_selected_item'):
+                        self.window().lower_selected_item()
                     event.accept()
                     return
             key = event.key()
@@ -184,6 +238,9 @@ class PortraitView(QGraphicsView):
             else:
                 super().keyPressEvent(event)
                 return
+            for item in items_to_move:
+                if hasattr(item, 'trigger_nudge_feedback'):
+                    item.trigger_nudge_feedback()
             if hasattr(self.window(), 'on_item_modified'):
                 for item in items_to_move:
                     self.window().on_item_modified(item)

@@ -9,22 +9,21 @@ This desktop application, built specifically for Windows, works alongside a sepa
 3. **Take a Snapshot:** Clicking "START CROPPING" freezes the current frame and opens the cropping interface.
 4. **Define Crop Regions:** The user can mark a HUD element in two ways:
    * **Manual Drawing:** Click and drag to draw a rectangle around the HUD component.
-   * **Magic Wand/Template Matching:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers template matching using anchor images to detect common Fortnite HUD elements (Loot Area, Mini Map + Stats, Health Bar, Teammates Health). Suggested regions are overlaid on the snapshot; the user can cycle through detected regions.
-5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", or "Teammates health Bars (HP)". Note: Health Bar includes both health and shield components as they are combined in Fortnite.
-6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, focus shifts to a separate "Portrait Composer" window (titled "Portrait 1280x1920"), showing the selected element on a 9:16 canvas. The element is auto‑placed based on its role (e.g., loot goes bottom-right, health goes bottom-left). The user can drag it to reposition and use handles to resize it, defining its final scale and location within the portrait layout. **NOTHING IS SAVED UNTIL** the user clicks **"FINISH & SAVE"**.
-7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component that the user wants to appear in the portrait video. When saving, the application surgically updates only the HUD elements that were present in the portrait composer, leaving other configured elements untouched.
+   * **Magic Wand/Template Matching:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers high-precision template matching using Otsu thresholding and adaptive contour detection to shrink-wrap HUD elements (Loot Area, Mini Map + Stats, Health Bar, Teammates Health, Spectating Eye). Suggested regions are overlaid on the snapshot; the user can cycle through detected regions.
+5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", "Teammates health Bars (HP)", or "Spectating Eye". Note: Health Bar includes both health and shield components as they are combined in Fortnite. The "Spectating Eye" represents the viewer count.
+6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, focus shifts to the integrated Portrait Composer pane. The element is auto‑placed based on its role. The user can drag it to reposition and use responsive handles to resize it. Visual indicators show element roles and dynamic Layer ranks (Layer 1 = Top-most).
+7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component. When saving, the application surgically updates the JSON configuration, preserving unselected elements while maintaining atomic safety with file locking and a persistent "old_crops_coordinations.conf" backup.
 
 ## 3. Key Features & Logic
-* **Undo/Redo:** Cropping actions can be undone or redone via `Ctrl+Z` and `Ctrl+Y` (with functional undo/redo buttons).
-* **Configuration Management:** The application writes coordinate and placement data to a JSON file in `..\processing\` **only when the user clicks "FINISH & SAVE"**. It performs surgical updates—modifying only elements present in the portrait composer while preserving others.
-* **Coordinate Validation:** Crops are validated to ensure they lie within the video frame; invalid coordinates trigger an error.
-* **Guided UI:** A blinking text overlay appears at each step to guide the user on what to do next. No sidebar is used.
-* **Preset HUD Roles:** Fortnite-specific HUD roles are preconfigured: Loot Area, Mini Map + Stats, Own Health Bar (HP), Boss HP, Teammates health Bars (HP).
-* **No Caching:** The implementation avoids generating cache files (e.g., `__pycache__`) using environment variables.
-* **Fortnite‑Specific:** The tool is tailored for Fortnite with game-specific HUD detection and does not support other games.
-* **Accessibility:** The interface supports keyboard navigation (arrow keys for frame seeking and element movement in portrait composer).
-* **Zoom Limits:** Both landscape and portrait windows prevent zooming out beyond the point where black voids/empty space would appear around the image.
-* **UI Consistency:** All buttons have consistent heights, colors, and sizing. Window titles are standardized: "Crop Tool Wizard" for main window, "Portrait 1280x1920" for portrait composer.
+* **Undo/Redo:** Comprehensive undo/redo stack for all cropping, moving, resizing, and layering actions via `Ctrl+Z`, `Ctrl+Y`, or UI buttons. Redo stack integrity is protected during operations.
+* **Configuration Management:** Surgical JSON updates in `..\processing\` with atomic `os.replace` safety. Automatic persistent backup to `old_crops_coordinations.conf`.
+* **Coordinate Validation:** Crops are validated to ensure they lie within the video frame and have reasonable HUD proportions to prevent overshadowing.
+* **Responsive UI:** Adaptive 1800x900 initial window size. High DPI scaling support for 4K monitors. FIFO log rotation limited to 10MB.
+* **Dynamic Layering:** Real-time Z-order management with "LAYER X" indicators (1 = Top). Spectating Eye defaults to the top-most layer.
+* **Ghosting Support:** "Show Existing Crops" displays previously saved elements with adjustable transparency and role-based color coding.
+* **VLC Integration:** Robust background resolution detection and frame-accurate seeking using VLC 64-bit.
+* **Magic Wand Precision:** Aggressive shrink-wrapping logic ensures boxes are perfectly sized to the HUD content, not just general areas.
+* **Clean State:** "RESET ALL" performs a factory-reset of the session, purging all temporary files and clearing the canvas to pitch-black.
 
 # ==============================================================================
 # COORDINATE SYSTEM & SCALING LOGIC (CRITICAL FOR AI AGENTS)
@@ -62,3 +61,10 @@ This desktop application, built specifically for Windows, works alongside a sepa
 #    - Do NOT remove the top-bar restriction; it protects the text layer.
 #    - Do NOT change the scaling logic without understanding the full round-trip:
 #      Original -> 1280x1920 (scale+crop) -> 1080x1620 content -> config -> back to original.
+#
+# 5. DRIFT PROTECTION / PREVENTION:
+#    - To prevent mathematical drift during coordinate transformation and stay on the safe side:
+#      a. Mini Map + Stats: An additional extra 1 pixel is added to the LEFT of the selection.
+#      b. Loot Area: An additional extra 1 pixel is added to the RIGHT of the selection.
+#    - This ensures HUD borders remain crisp and no content is clipped by rounding errors.
+# ==============================================================================

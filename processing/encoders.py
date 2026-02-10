@@ -3,8 +3,6 @@
 class EncoderManager:
     """
     Manages encoder selection, settings, and dynamic fallback strategies.
-    This class centralizes encoder logic, making it easier to manage priorities
-    and adapt to failures during a render job.
     """
     ENCODER_PREFERENCE = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
 
@@ -15,20 +13,11 @@ class EncoderManager:
         self.attempted_encoders = set()
 
     def get_initial_encoder(self):
-        """Returns the best-case encoder determined at startup."""
         if self.forced_cpu:
             return "libx264"
         return self.primary_encoder
 
     def get_fallback_list(self, failed_encoder: str) -> list[str]:
-        """
-        Generates a dynamic list of fallback encoders to try, excluding any
-        that have already failed in the current job.
-        Args:
-            failed_encoder: The name of the encoder that just failed (e.g., 'h264_nvenc').
-        Returns:
-            A list of new encoder names to attempt.
-        """
         self.attempted_encoders.add(failed_encoder)
         try:
             start_index = self.ENCODER_PREFERENCE.index(failed_encoder) + 1
@@ -43,9 +32,6 @@ class EncoderManager:
         return fallback_options
 
     def get_codec_flags(self, encoder_name: str, video_bitrate_kbps: int, effective_duration_sec: float) -> tuple[list[str], str]:
-        """
-        Returns the specific FFmpeg command flags and a UI label for a given encoder.
-        """
         if self.forced_cpu:
             self.logger.info("Encoder: CPU Force Enabled for this job.")
             return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18'], "CPU (Forced)"
@@ -60,17 +46,16 @@ class EncoderManager:
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
             vcodec.extend([
-                '-rc', 'vbr',
+                '-rc', 'vbr_hq',
                 '-tune', 'hq', 
                 '-preset', 'p4',
-                '-rc-lookahead', '20',
+                '-rc-lookahead', '32',
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
-                '-bf', '3',
-                '-b_ref_mode', 'middle',
+                '-bf', '2',
                 '-forced-idr', '1'
             ])
-            rc_label = "NVENC VBR (HQ)"
+            rc_label = "NVENC CUDA (High)"
         elif encoder_name == 'h264_amf':
             vcodec.extend(['-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak', '-bf', '2'])
             rc_label = "AMD AMF (Balanced)"
@@ -87,10 +72,6 @@ class EncoderManager:
         return vcodec, rc_label
 
     def get_intro_codec_flags(self, video_bitrate_kbps: int) -> list[str]:
-        """
-        Returns FFmpeg command flags for intro encoding.
-        Uses the primary encoder (or CPU fallback) with the given bitrate.
-        """
         encoder = self.primary_encoder if not self.forced_cpu else 'libx264'
         vcodec, _ = self.get_codec_flags(encoder, video_bitrate_kbps, effective_duration_sec=5.0)
         return vcodec

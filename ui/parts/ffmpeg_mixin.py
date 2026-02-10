@@ -7,7 +7,7 @@ import threading
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QAbstractAnimation
 from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
-                             QGridLayout, QPushButton)
+                             QGridLayout, QPushButton, QMessageBox)
 
 from processing.worker import ProcessThread
 
@@ -220,7 +220,7 @@ class FfmpegMixin:
         ok_btn = msg.addButton(QMessageBox.Ok)
         msg.exec_()
         if msg.clickedButton() == details_btn:
-            log_path = os.path.join(self.base_dir, "Fortnite_Video_Software.log")
+            log_path = os.path.join(self.base_dir, "logs", "main_app.log")
             log_content = "Log file not found."
             if os.path.exists(log_path):
                 try:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 State management system with transaction support and rollback capabilities.
 Provides robust error recovery for the Fortnite Video Software application.
 """
@@ -251,17 +251,17 @@ class StateManager:
         self.logger.debug(f"Added undo action: {description} ({action_type})")
     
     def undo(self) -> bool:
-        """Undo the last action with validation and corruption handling."""
+        """Undo the last action with optimized validation."""
         if not self.undo_stack:
             self.logger.warning("Nothing to undo")
             return False
-        self._validate_undo_stack()
+        action = self.undo_stack[-1]
+        if not self._validate_action(action) or not self._validate_action_function(action.undo_func, "undo"):
+            self.logger.error(f"Invalid undo action: {action.description}")
+            self.undo_stack.pop()
+            return False
         action = self.undo_stack.pop()
         self.logger.info(f"Undoing: {action.description}")
-        if not self._validate_action_function(action.undo_func, "undo"):
-            self.logger.error(f"Invalid undo function for: {action.description}")
-            self._remove_corrupted_actions()
-            return False
         try:
             if action.undo():
                 self.redo_stack.append(action)
@@ -272,21 +272,20 @@ class StateManager:
                 return False
         except Exception as e:
             self.logger.error(f"Exception during undo for {action.description}: {e}")
-            self._remove_corrupted_actions()
             return False
     
     def redo(self) -> bool:
-        """Redo the last undone action with validation and corruption handling."""
+        """Redo the last undone action with optimized validation."""
         if not self.redo_stack:
             self.logger.warning("Nothing to redo")
             return False
-        self._validate_redo_stack()
+        action = self.redo_stack[-1]
+        if not self._validate_action(action) or not self._validate_action_function(action.redo_func, "redo"):
+            self.logger.error(f"Invalid redo action: {action.description}")
+            self.redo_stack.pop()
+            return False
         action = self.redo_stack.pop()
         self.logger.info(f"Redoing: {action.description}")
-        if not self._validate_action_function(action.redo_func, "redo"):
-            self.logger.error(f"Invalid redo function for: {action.description}")
-            self._remove_corrupted_actions()
-            return False
         try:
             if action.redo():
                 self.undo_stack.append(action)
@@ -297,7 +296,6 @@ class StateManager:
                 return False
         except Exception as e:
             self.logger.error(f"Exception during redo for {action.description}: {e}")
-            self._remove_corrupted_actions()
             return False
     
     def _validate_undo_stack(self):
@@ -405,7 +403,10 @@ def with_transaction(operation_type: OperationType, description: str):
             transaction = state_manager.begin_transaction(operation_type, description)
             try:
                 if operation_type == OperationType.CONFIG_SAVE:
-                    from config_manager import get_config_manager
+                    try:
+                        from .config_manager import get_config_manager
+                    except ImportError:
+                        from config_manager import get_config_manager
                     config_manager = get_config_manager()
                     transaction.add_file_backup(config_manager.config_path)
                 result = func(*args, **kwargs, _transaction=transaction)

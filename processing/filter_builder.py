@@ -43,98 +43,108 @@ class FilterBuilder:
              return "scale_cuda=960:-2:interp_algo=lanczos:format=nv12"
         return f"scale_cuda={target_w}:-2:interp_algo=lanczos:format=nv12"
 
-    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates):
+    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False):
         coords_data = mobile_coords
-        
+
         def get_rect(section, key):
             return tuple(coords_data.get(section, {}).get(key, [0,0,0,0]))
-        scales = coords_data.get('scales', {})
-        overlays = coords_data.get('overlays', {})
-        z_orders = coords_data.get('z_orders', {})
-        hp_key = 'boss_hp' if is_boss_hp else 'normal_hp'
-        hp_1080 = get_rect('crops_1080p', hp_key)
-        hp_scale = float(scales.get(hp_key, 1.0))
-        hp_ov = overlays.get(hp_key, {'x': 0, 'y': 0})
-        self.logger.info(f"Using {'Boss' if is_boss_hp else 'Normal'} HP coordinates.")
-        loot_1080 = get_rect('crops_1080p', 'loot')
-        loot_scale = float(scales.get('loot', 1.0))
-        stats_1080 = get_rect('crops_1080p', 'stats')
-        stats_scale = float(scales.get('stats', 1.0))
-        team_1080 = get_rect('crops_1080p', 'team')
-        team_scale = float(scales.get('team', 1.0))
-        try:
-            res_parts = original_res_str.split('x')
-            if len(res_parts) != 2:
-                raise ValueError("Invalid resolution format")
-            in_w, in_h = map(int, res_parts)
-        except (ValueError, AttributeError):
-            in_w, in_h = 1920, 1080
-            self.logger.warning(f"Failed to parse resolution '{original_res_str}', defaulting to 1920x1080")
-        self.logger.info(f"Mobile Crop Processing: Input={in_w}x{in_h}")
-
-        def get_original_crop(crop_ui):
-            w_ui, h_ui, x_ui, y_ui = crop_ui
-            transformed = inverse_transform_from_content_area_int((x_ui, y_ui, w_ui, h_ui), original_res_str)
-            return (transformed[2], transformed[3], transformed[0], transformed[1])
-        hp_orig = get_original_crop(hp_1080)
-        loot_orig = get_original_crop(loot_1080)
-        stats_orig = get_original_crop(stats_1080)
-        team_orig = get_original_crop(team_1080)
-        f_main = "[main]scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920[main_cropped]"
+        scales = coords_data.get("scales", {})
+        overlays = coords_data.get("overlays", {})
+        z_orders = coords_data.get("z_orders", {})
+        hp_key = "boss_hp" if is_boss_hp else "normal_hp"
+        active_layers = []
         
-        def make_hud_filter(name, crop_orig, ui_w, ui_h, user_scale):
-            s = max(0.001, min(float(user_scale), 5.0))
-            cw = max(1, crop_orig[0])
-            ch = max(1, crop_orig[1])
-            cx = crop_orig[2]
-            cy = crop_orig[3]
-            crop_str = f"{cw}:{ch}:{cx}:{cy}"
-            render_w = max(1, scale_round(ui_w * s * BACKEND_SCALE))
-            render_h = max(1, scale_round(ui_h * s * BACKEND_SCALE))
-            return f"[{name}]crop={crop_str},scale={render_w}:{render_h}:flags=bilinear,pad=iw+4:ih+4:2:2:black,format=yuva444p[{name}_scaled]"
-        common_filters_list = [f_main]
-        layers = []
-
         def is_valid_config(rect, scale):
-            return rect[0] > 1 and rect[1] > 1 and float(scale) > 0.001
-        if is_valid_config(hp_1080, hp_scale):
-            common_filters_list.append(make_hud_filter("healthbar", hp_orig, hp_1080[0], hp_1080[1], hp_scale))
-            layers.append({'name': 'healthbar', 'filter_out': '[healthbar_scaled]', 'x': hp_ov.get('x', 0), 'y': hp_ov.get('y', 0), 'z': z_orders.get(hp_key, 20)})
-        if is_valid_config(loot_1080, loot_scale):
-            common_filters_list.append(make_hud_filter("lootbar", loot_orig, loot_1080[0], loot_1080[1], loot_scale))
-            layers.append({'name': 'lootbar', 'filter_out': '[lootbar_scaled]', 'x': overlays.get('loot', {}).get('x', 0), 'y': overlays.get('loot', {}).get('y', 0), 'z': z_orders.get('loot', 10)})
-        if is_valid_config(stats_1080, stats_scale):
-            common_filters_list.append(make_hud_filter("stats", stats_orig, stats_1080[0], stats_1080[1], stats_scale))
-            layers.append({'name': 'stats', 'filter_out': '[stats_scaled]', 'x': overlays.get('stats', {}).get('x', 0), 'y': overlays.get('stats', {}).get('y', 0), 'z': z_orders.get('stats', 30)})
-        if show_teammates and is_valid_config(team_1080, team_scale):
-            common_filters_list.append(make_hud_filter("team", team_orig, team_1080[0], team_1080[1], team_scale))
-            layers.append({'name': 'team', 'filter_out': '[team_scaled]', 'x': overlays.get('team', {}).get('x', 0), 'y': overlays.get('team', {}).get('y', 0), 'z': z_orders.get('team', 40)})
-        common_filters = ";".join(common_filters_list)
-        layers.sort(key=lambda item: item['z'])
-        overlay_chain = ""
-        current_pad = "[main_cropped]"
-        if not layers:
-            video_filter_cmd = f"{f_main};[main_cropped]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
-            return video_filter_cmd
-        for i, layer in enumerate(layers):
-            next_pad = f"[t{i+1}]" if i < len(layers) - 1 else "[vpreout]"
-            raw_x = float(layer['x'])
-            raw_y = float(layer['y'])
-            lx = scale_round(raw_x * BACKEND_SCALE)
-            ly = scale_round((raw_y - float(PADDING_TOP)) * BACKEND_SCALE)
-            overlay_chain += f"{current_pad}{layer['filter_out']}overlay={lx-2}:{ly-2}{next_pad};"
-            current_pad = next_pad
-        split_count = 1 + len(layers)
-        split_pads = "[main]" + "".join([f"[{l['name']}]" for l in layers])
-        split_cmd = f"split={split_count}{split_pads}"
-        video_filter_cmd = f"{split_cmd};{common_filters};{overlay_chain.rstrip(';')}"
-        video_filter_cmd += ";[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
-        return video_filter_cmd
+            return rect and len(rect) >= 4 and rect[0] >= 1 and rect[1] >= 1 and float(scale) > 0.001
+
+        def register_layer(name, conf_key, crop_key_1080, ov_key):
+            rect_1080 = get_rect("crops_1080p", crop_key_1080)
+            sc = float(scales.get(conf_key, 1.0))
+            if is_valid_config(rect_1080, sc):
+                w_ui, h_ui, x_ui, y_ui = rect_1080
+                transformed = inverse_transform_from_content_area_int((x_ui, y_ui, w_ui, h_ui), original_res_str)
+                crop_orig = (transformed[2], transformed[3], transformed[0], transformed[1])
+                ov = overlays.get(ov_key, {"x": 0, "y": 0})
+                z = z_orders.get(ov_key, 50)
+                active_layers.append({
+                    "name": name,
+                    "crop_orig": crop_orig,
+                    "ui_wh": (rect_1080[0], rect_1080[1]),
+                    "scale": sc,
+                    "pos": (ov["x"], ov["y"]),
+                    "z": z
+                })
+        register_layer("healthbar", hp_key, hp_key, hp_key)
+        register_layer("lootbar", "loot", "loot", "loot")
+        register_layer("stats", "stats", "stats", "stats")
+        register_layer("spectating", "spectating", "spectating", "spectating")
+        if show_teammates:
+            register_layer("team", "team", "team", "team")
+        active_layers.sort(key=lambda x: x["z"])
+        if use_nvidia:
+            cmd_chain = "[main_base]hwdownload,format=nv12[cpu_master];"
+            total_splits = 1 + len(active_layers)
+            split_pads = "".join([f"[raw_{l['name']}]" for l in active_layers])
+            cmd_chain += f"[cpu_master]split={total_splits}[raw_bg]{split_pads};"
+            bg_filter = (
+                "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,"
+                "crop=1280:1920,"
+                "hwupload_cuda"
+            )
+            cmd_chain += f"[raw_bg]{bg_filter}[gpu_bg];"
+            overlay_chain_gpu = ""
+            current_base = "[gpu_bg]"
+            for i, layer in enumerate(active_layers):
+                name = layer['name']
+                cw, ch, cx, cy = layer['crop_orig']
+                render_w = max(1, scale_round(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
+                render_h = max(1, scale_round(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+                layer_filter = (
+                    f"crop={cw}:{ch}:{cx}:{cy},"
+                    f"scale={render_w}:{render_h}:flags=bilinear,"
+                    f"hwupload_cuda"
+                )
+                cmd_chain += f"[raw_{name}]{layer_filter}[gpu_{name}];"
+                lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
+                ly = scale_round((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
+                next_pad = f"[comp_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
+                overlay_chain_gpu += f"{current_base}[gpu_{name}]overlay_cuda=x={lx}:y={ly}{next_pad};"
+                current_base = next_pad
+            if not active_layers:
+                 return "hwdownload,format=nv12,scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920,hwupload_cuda,scale_cuda=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+            cmd_chain += overlay_chain_gpu
+            cmd_chain += f"[vpreout_gpu]hwdownload,format=nv12,scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,hwupload_cuda"
+            return cmd_chain
+        else:
+            f_main_inner = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
+            split_count = 1 + len(active_layers)
+            split_pads = "[main_base]" + "".join([f"[{l['name']}_in]" for l in active_layers])
+            cmd = f"split={split_count}{split_pads};[main_base]{f_main_inner}[main_cropped];"
+            hud_filters = []
+            for layer in active_layers:
+                cw, ch, cx, cy = layer['crop_orig']
+                render_w = max(1, scale_round(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
+                render_h = max(1, scale_round(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale={render_w}:{render_h}:flags=bilinear[{layer['name']}_out]"
+                hud_filters.append(f_str)
+            cmd += ";".join(hud_filters) + ";"
+            current_pad = "[main_cropped]"
+            for i, layer in enumerate(active_layers):
+                lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
+                ly = scale_round((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
+                next_pad = f"[t{i}]" if i < len(active_layers) - 1 else "[vpreout]"
+                cmd += f"{current_pad}[{layer['name']}_out]overlay=x={lx}:y={ly}{next_pad};"
+                current_pad = next_pad
+            if not active_layers:
+                 cmd = f"{f_main_inner}[vpreout];"
+            cmd += "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+            return cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
         norm_path = os.path.normpath(text_file_path)
-        ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\''")
+        ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'''")
         candidates = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "binaries", "fonts", "arial.ttf"),
             os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
             os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -156,10 +166,6 @@ class FilterBuilder:
         return video_filter_cmd + "," + drawtext_str
 
     def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0):
-        """
-        Builds a complex filter chain for variable speed segments.
-        [FIX #13] Uses setpts expression for video (efficient) and split/concat for audio.
-        """
         segments = []
         for s in speed_segments:
             rel_start = s['start'] - source_cut_start_ms
@@ -197,7 +203,7 @@ class FilterBuilder:
             current_time = seg_end
         if current_time < total_duration_sec - 0.001:
             chunks.append({'start': current_time, 'end': total_duration_sec, 'speed': float(base_speed)})
-            
+
         def time_mapper(t_orig):
             t_new = 0.0
             for ch in chunks:
@@ -238,7 +244,7 @@ class FilterBuilder:
                 audio_speed_filters.append("atempo=2.0"); temp_speed /= 2.0
             audio_speed_filters.append(f"atempo={temp_speed:.4f}")
             audio_speed_cmd = ",".join(audio_speed_filters)
-            fade_dur = min(0.05, chunk_out_dur / 3) 
+            fade_dur = min(0.05, chunk_out_dur / 3)
             a_filter_parts.append(
                 f"{a_in}atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,"
                 f"{audio_speed_cmd},"
@@ -256,13 +262,14 @@ class FilterBuilder:
         full_chain = f"{v_filter_cmd};{';'.join(a_filter_parts)};{a_concat_cmd}"
         return full_chain, "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
 
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=None):
         chain = []
         main_audio_filter_parts = [audio_filter_cmd if audio_filter_cmd else "anull"]
         if vfade_in_d > 0:
             main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         main_audio_filter = ",".join(main_audio_filter_parts)
-        chain.append(f"[0:a]{main_audio_filter},aresample={sample_rate},asetpts=PTS-STARTPTS[a_main_prepared]")
+        resample_filter = f",aresample={sample_rate}" if sample_rate else ""
+        chain.append(f"[0:a]{main_audio_filter}{resample_filter},asetpts=PTS-STARTPTS[a_main_prepared]")
         if music_config and music_config.get("path"):
             mc = music_config
             t_mapper = time_mapper if time_mapper else (lambda t: (t - video_start_time) / speed_factor)

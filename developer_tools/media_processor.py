@@ -4,6 +4,8 @@ import sys
 import logging
 import tempfile
 import contextlib
+import time
+import atexit
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal
 os.environ['VLC_VERBOSE'] = '-1'
 os.environ['VLC_QUIET'] = '1'
@@ -14,21 +16,19 @@ os.environ['VLC_PLUGIN_PATH'] = os.path.join(binaries_dir, 'plugins') if os.path
 try:
     import vlc
 except ImportError:
-    raise ImportError(
-        "VLC is not installed or could not be found. "
-        "This application requires a VLC installation to function. "
-        "Please install VLC from https://www.videolan.org/vlc/"
-    )
+    vlc = None
 logger = logging.getLogger(__name__)
-
+@contextlib.contextmanager
 def _suppress_vlc_output():
     """Context manager to suppress stdout and stderr during VLC initialization."""
-    @contextlib.contextmanager
-    def suppress_output():
-        with open(os.devnull, 'w') as null:
-            with contextlib.redirect_stdout(null), contextlib.redirect_stderr(null):
-                yield
-    return suppress_output()
+    with open(os.devnull, 'w') as null:
+        with contextlib.redirect_stdout(null), contextlib.redirect_stderr(null):
+            yield
+
+def get_vlc_log_dir():
+    log_dir = os.path.join(tempfile.gettempdir(), "FortniteVideoTool", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
 
 class MediaProcessor(QObject):
     info_retrieved = pyqtSignal(str)
@@ -36,15 +36,35 @@ class MediaProcessor(QObject):
     def __init__(self, bin_dir):
         super().__init__()
         self.bin_dir = bin_dir
-        logger.info("Initializing MediaProcessor...")
-        os.environ['VLC_VERBOSE'] = '0'
-        os.environ['VLC_QUIET'] = '1'
-        os.environ['VLC_DEBUG'] = '0'
+        self.vlc_log_path = os.path.join(get_vlc_log_dir(), "vlc_errors.log")
+        self._ffprobe_procs = []
+        atexit.register(self._kill_ffprobe_procs)
+        override_vlc_path = None
+        override_file = os.path.join(os.path.dirname(bin_dir), 'config', 'vlc_path.txt')
+        if os.path.exists(override_file):
+            try:
+                with open(override_file, 'r') as f:
+                    path = f.read().strip()
+                    if os.path.isdir(path):
+                        os.environ['PYTHON_VLC_MODULE_PATH'] = path
+                        override_vlc_path = path
+                        logger.info(f"Using VLC override path: {path}")
+            except Exception as e:
+                logger.error(f"Failed to read VLC override file: {e}")
+        if vlc is None:
+            logger.error("python-vlc module is unavailable. MediaProcessor will run in no-playback mode.")
+            self.vlc_instance = None
+            self.media_player = None
+            self.media = None
+            self.original_resolution = None
+            self.input_file_path = None
+            return
         vlc_args = [
             '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-            '--file-caching=200', '--aout=directsound', '--verbose=0',
-            '--quiet', '--no-stats', '--no-lua', '--no-interact',
-            '--logfile=NUL'
+            '--file-caching=500', '--aout=directsound', 
+            '--verbose=0',
+            '--no-stats', '--no-lua', '--no-interact',
+            f'--logfile={self.vlc_log_path}'
         ]
         try:
             with _suppress_vlc_output():
@@ -70,6 +90,8 @@ class MediaProcessor(QObject):
         self.media = None
         self.original_resolution = None
         self.input_file_path = None
+        self._ffprobe_procs = []
+        self._last_seek_time = 0
 
     def _get_binary_path(self, name):
         """Returns the path to a binary, favoring local binaries folder then system PATH."""
@@ -90,6 +112,7 @@ class MediaProcessor(QObject):
             logger.error("VLC not initialized; load_media aborted.")
             return False
         try:
+            self._kill_ffprobe_procs()
             if self.media:
                 self.media.release()
             self.input_file_path = file_path
@@ -106,6 +129,24 @@ class MediaProcessor(QObject):
         except Exception as e:
             logger.error(f"Failed to load media: {e}", exc_info=True)
             return False
+
+    def _kill_ffprobe_procs(self):
+        """Kill any running ffprobe processes."""
+        if not hasattr(self, '_ffprobe_procs'): return
+        for proc in self._ffprobe_procs:
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+            except:
+                pass
+        self._ffprobe_procs = []
+
+    def __del__(self):
+        try:
+            atexit.unregister(self._kill_ffprobe_procs)
+        except:
+            pass
+        self._kill_ffprobe_procs()
 
     def play_pause(self):
         if not self.media_player: return False
@@ -136,23 +177,27 @@ class MediaProcessor(QObject):
         return self.media_player.get_position() if self.media_player else 0.0
 
     def set_position(self, position):
-        if not self.media_player: return
+        if not self.media_player:
+            return
         logger.info(f"set_position called with position={position}")
         if self.media_player.is_seekable():
             try:
                 self.media_player.set_position(position)
+                self._last_seek_time = time.time()
             except Exception as e:
                 logger.error(f"Failed to seek: {e}")
         else:
             logger.warning(f"Media reports not seekable, cannot seek.")
 
     def stop(self):
+        self._kill_ffprobe_procs()
         if self.media_player:
             logger.info("Stopping media.")
             self.media_player.stop()
 
     def set_media_to_null(self):
         logger.info("Unloading media.")
+        self._kill_ffprobe_procs()
         if self.media_player:
             self.media_player.set_media(None)
         if self.media:
@@ -165,96 +210,91 @@ class MediaProcessor(QObject):
         if not file_path or not os.path.exists(file_path):
             logger.warning(f"get_video_info failed: file path not provided or does not exist: {file_path}")
             return None
+        self._kill_ffprobe_procs()
+        ffprobe_path = self._get_binary_path('ffprobe')
+        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        cmd_json = [
+            ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height', '-of', 'json',
+            file_path
+        ]
         try:
-            ffprobe_path = self._get_binary_path('ffprobe')
-            cmd = [
-                ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height', '-of', 'json',
-                file_path
-            ]
-            logger.info(f"Executing ffprobe (JSON) command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True,
-                                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                                    timeout=5.0)
-
-            import json
-            data = json.loads(result.stdout)
-            streams = data.get('streams', [])
-            if streams:
-                w = streams[0].get('width')
-                h = streams[0].get('height')
-                if w and h:
-                    self.original_resolution = f"{w}x{h}"
-                    logger.info(f"ffprobe (JSON) got resolution: {self.original_resolution}")
-                    self.info_retrieved.emit(self.original_resolution)
-                    return self.original_resolution
-        except subprocess.TimeoutExpired:
-            logger.error(f"ffprobe (JSON) timed out for {file_path}")
+            logger.info("Starting ffprobe detection...")
+            proc_json = subprocess.Popen(cmd_json, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=creation_flags)
+            self._ffprobe_procs = [proc_json]
+            start_time = time.time()
+            while time.time() - start_time < 3.0:
+                if proc_json.poll() is not None:
+                    out, _ = proc_json.communicate()
+                    if proc_json.returncode == 0:
+                        try:
+                            import json
+                            data = json.loads(out)
+                            w = data['streams'][0]['width']
+                            h = data['streams'][0]['height']
+                            self.original_resolution = f"{w}x{h}"
+                            logger.info(f"ffprobe (JSON) resolution: {self.original_resolution}")
+                            self.info_retrieved.emit(self.original_resolution)
+                            self._kill_ffprobe_procs()
+                            return self.original_resolution
+                        except Exception as e:
+                            logger.warning(f"Failed to parse ffprobe JSON: {e}")
+                time.sleep(0.1)
+            if not self.original_resolution:
+                cmd_csv = [
+                    ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x',
+                    file_path
+                ]
+                proc_csv = subprocess.run(cmd_csv, capture_output=True, text=True, creationflags=creation_flags)
+                if proc_csv.returncode == 0:
+                    res = proc_csv.stdout.strip()
+                    if res:
+                        self.original_resolution = res
+                        logger.info(f"ffprobe (CSV) fallback resolution: {self.original_resolution}")
+                        self.info_retrieved.emit(self.original_resolution)
+                        return self.original_resolution
         except Exception as e:
-             logger.warning(f"ffprobe (JSON) failed: {e}")
-        try:
-            ffprobe_path = self._get_binary_path('ffprobe')
-            cmd = [
-                ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x',
-                file_path
-            ]
-            logger.info(f"Executing ffprobe (CSV) command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True,
-                                    creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                                    timeout=5.0)
-            res_string = result.stdout.strip()
-            if res_string:
-                self.original_resolution = res_string
-                logger.info(f"ffprobe (CSV) got resolution: {res_string}")
-                self.info_retrieved.emit(self.original_resolution)
-                return self.original_resolution
-        except subprocess.TimeoutExpired:
-            logger.error(f"ffprobe (CSV) timed out for {file_path}")
-        except Exception as e:
-            logger.error(f"ffprobe (CSV) failed: {e}")
+            logger.error(f"ffprobe error: {e}")
+            self._kill_ffprobe_procs()
         QTimer.singleShot(500, lambda: self._fetch_vlc_resolution())
         return None
 
     def _fetch_vlc_resolution(self):
-        if not self.original_resolution:
+        if not self.original_resolution and self.media_player:
             logger.info("Attempting to fetch resolution fallback from VLC.")
             w, h = self.media_player.video_get_size(0)
             if w > 0 and h > 0:
                 self.original_resolution = f"{w}x{h}"
                 logger.info(f"VLC fallback got resolution: {self.original_resolution}")
                 self.info_retrieved.emit(self.original_resolution)
+        if not self.original_resolution:
+            self.original_resolution = "1920x1080"
+            logger.warning("All resolution detection failed. Defaulting to 1920x1080.")
+            self.info_retrieved.emit(self.original_resolution)
 
     def take_snapshot(self, snapshot_path, preferred_time=None):
+        """[FIX #8, #11] Reliable snapshot with atomic overwrite."""
         if self.is_playing():
-            logger.info("Pausing video for snapshot")
             self.media_player.pause()
         if not self.media or not self.input_file_path:
-            logger.warning("take_snapshot failed: No media or input file path.")
             return False, "No media loaded."
-        if not self.original_resolution:
-            logger.warning("take_snapshot failed: Original resolution not yet determined.")
-            return False, "Please wait for video information."
         try:
             ffmpeg_path = self._get_binary_path('ffmpeg')
-            if preferred_time is None:
-                curr_time = max(0, self.get_time() / 1000.0)
-            else:
-                curr_time = max(0, preferred_time)
+            curr_time = max(0, preferred_time if preferred_time is not None else self.get_time() / 1000.0)
+            temp_fd, temp_path = tempfile.mkstemp(suffix=".png")
+            os.close(temp_fd)
             cmd = [
                 ffmpeg_path, '-ss', f"{curr_time:.3f}", '-i', self.input_file_path,
-                '-frames:v', '1', '-q:v', '2', '-update', '1', '-y', snapshot_path
+                '-frames:v', '1', '-q:v', '2', '-y', temp_path
             ]
-            logger.info(f"Executing FFmpeg command: {' '.join(cmd)}")
             subprocess.run(
-                cmd, check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                cmd, check=True, capture_output=True,
                 creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             )
-            logger.info(f"Successfully created snapshot at {snapshot_path}")
-            return True, "Snapshot created."
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                os.replace(temp_path, snapshot_path)
+                return True, "Snapshot created."
+            return False, "Snapshot file empty."
         except Exception as e:
-            logger.error(f"FFmpeg snapshot failed. Command: {' '.join(cmd)}", exc_info=True)
-            return False, f"FFmpeg snapshot failed: {e}"
+            return False, f"FFmpeg failed: {e}"

@@ -8,19 +8,11 @@ class KeyboardMixin(QWidget):
     """Handles global keyboard shortcuts for the main window."""
 
     def _launch_dev_tool(self):
-        """Launches the crop tool and closes the main application."""
-        try:
-            self.logger.info("Launching developer crop tool...")
-            tool_path = os.path.join(self.base_dir, 'developer_tools', 'crop_tools.py')
-            if not os.path.exists(tool_path):
-                self.logger.error(f"Crop tool not found at: {tool_path}")
-                return
-            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen([sys.executable, tool_path], cwd=os.path.dirname(tool_path), creationflags=flags)
-            self.logger.info("Quitting main application to switch to developer tool.")
-            QApplication.instance().quit()
-        except Exception as e:
-            self.logger.exception("Failed to launch developer tool: %s", e)
+        """Launches the crop tool using the centralized method."""
+        if hasattr(self, 'launch_crop_tool'):
+            self.launch_crop_tool()
+        else:
+            self.logger.error("launch_crop_tool method not found in main window instance.")
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:

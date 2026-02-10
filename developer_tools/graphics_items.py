@@ -23,6 +23,8 @@ class ResizablePixmapItem(QGraphicsObject):
         self.handle_tl = QGraphicsRectItem(QRectF(0, 0, self.handle_size, self.handle_size), self)
         self.handle_tl.setBrush(QBrush(QColor("#e67e22")))
         self.handle_tl.setPen(QPen(Qt.white, 2))
+        self.handle_br.setZValue(1)
+        self.handle_tl.setZValue(1)
         self.setZValue(50)
         self.update_handle_positions()
         self.is_resizing_br = False
@@ -49,41 +51,67 @@ class ResizablePixmapItem(QGraphicsObject):
         self.update()
 
     def boundingRect(self):
-        margin = self.handle_size + 2
-        return QRectF(-margin, -margin, self.current_width + (margin * 2), self.current_height + (margin * 2) + 40)
+        h_size = self.handle_size
+        label_buffer = 70 
+        min_x = -h_size
+        max_x = self.current_width + h_size
+        min_y = -label_buffer
+        max_y = self.current_height + label_buffer
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
     def paint(self, painter, option, widget):
+        if getattr(self, '_is_nudging', False):
+            painter.setBrush(QColor(0, 255, 255, 60))
+            painter.setPen(QPen(QColor(0, 255, 255), 2))
+            painter.drawRect(QRectF(0, 0, self.current_width, self.current_height))
         painter.drawPixmap(QRectF(0, 0, self.current_width, self.current_height), 
                             self.original_pixmap, QRectF(self.original_pixmap.rect()))
-        black_pen = QPen(Qt.black, 1)
+        black_pen = QPen(Qt.black, 3)
         painter.setPen(black_pen)
         painter.setBrush(Qt.NoBrush)
-        painter.drawRect(QRectF(-0.5, -0.5, self.current_width + 1, self.current_height + 1))
+        painter.drawRect(QRectF(-1.0, -1.0, self.current_width + 2, self.current_height + 2))
         if self.assigned_role:
-            title_text = self.assigned_role.upper()
+            rank = 1
+            if self.scene():
+                all_hud_items = [i for i in self.scene().items() if isinstance(i, ResizablePixmapItem)]
+                all_hud_items.sort(key=lambda i: i.zValue(), reverse=True)
+                try:
+                    rank = all_hud_items.index(self) + 1
+                except ValueError:
+                    rank = 1
+            title_text = f"{self.assigned_role.upper()} (LAYER {rank})"
             font = painter.font()
             font.setBold(True)
-            target_font_size = max(10, int(self.current_height * 0.15))
-            target_font_size = min(target_font_size, UI_LAYOUT.GRAPHICS_TEXT_FONT_SIZE)
+            target_font_size = max(14, int(self.current_height * 0.20))
+            target_font_size = min(target_font_size, 36)
             font.setPixelSize(target_font_size)
             painter.setFont(font)
             fm = painter.fontMetrics()
-            text_w = fm.horizontalAdvance(title_text) + (target_font_size * 1.5)
-            text_h = fm.height() + (target_font_size * 0.4)
+            text_w = fm.horizontalAdvance(title_text) + (target_font_size * 2.0)
+            text_h = fm.height() + (target_font_size * 0.6)
             scene_pos = self.scenePos()
             if scene_pos.y() > (UI_LAYOUT.PORTRAIT_BASE_HEIGHT / 2):
-                draw_y = -text_h - 5
+                draw_y = -text_h - 10
             else:
-                draw_y = self.current_height + 5
-            center_x = (self.current_width - text_w) / 2
+                draw_y = self.current_height + 10
+            center_x = int((self.current_width - text_w) / 2)
+            draw_y = int(draw_y)
+            text_w = int(text_w)
+            text_h = int(text_h)
+            label_rect = QRectF(center_x, draw_y, text_w, text_h)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(0, 0, 0, UI_COLORS.OPACITY_DIM_HIGH))
-            painter.drawRoundedRect(QRectF(center_x, draw_y, text_w, text_h), 4, 4)
+            painter.setBrush(QColor(0, 0, 0, 210))
+            painter.drawRoundedRect(label_rect, 6, 6)
             painter.setPen(QColor(UI_COLORS.TEXT_WARNING))
-            painter.drawText(QRectF(center_x, draw_y, text_w, text_h), Qt.AlignCenter, title_text)
+            painter.drawText(label_rect, Qt.AlignCenter, title_text)
         if self.isSelected():
+            pattern_str = getattr(UI_BEHAVIOR, 'ANT_DASH_PATTERN', "4, 4")
+            try:
+                pattern = [int(x.strip()) for x in pattern_str.split(',')]
+            except:
+                pattern = [4, 4]
             pen = QPen(QColor(UI_COLORS.MARCHING_ANTS), 2, Qt.CustomDashLine)
-            pen.setDashPattern([4, 4])
+            pen.setDashPattern(pattern)
             pen.setDashOffset(self.ant_dash_offset)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
@@ -105,21 +133,39 @@ class ResizablePixmapItem(QGraphicsObject):
         self.update()
 
     def update_handle_positions(self):
+        """[FIX #25] Responsive handle sizing with enlarged hit areas."""
+        zoom = 1.0
+        if self.scene() and self.scene().views():
+            view = self.scene().views()[0]
+            zoom = view.transform().m11()
+        target_screen_size = 16 
+        dynamic_size = target_screen_size / max(0.01, zoom)
+        self.handle_size = max(10.0, dynamic_size)
+        min_dim = min(self.current_width, self.current_height)
+        if self.handle_size > min_dim / 1.5:
+            self.handle_size = max(4.0, min_dim / 2.0)
+        self.hit_size = self.handle_size * 1.5
         offset = self.handle_size / 2
+        self.handle_br.setRect(0, 0, self.handle_size, self.handle_size)
+        self.handle_tl.setRect(0, 0, self.handle_size, self.handle_size)
         self.handle_br.setPos(self.current_width - offset, self.current_height - offset)
         self.handle_tl.setPos(-offset, -offset)
 
+    def _is_on_handle(self, pos, handle):
+        """Helper to detect if a position is within the enlarged hit area of a handle."""
+        handle_center = handle.pos() + QPointF(self.handle_size/2, self.handle_size/2)
+        dist = (pos - handle_center).manhattanLength()
+        return dist < (self.hit_size)
+
     def hoverMoveEvent(self, event):
-        if self.handle_br.isUnderMouse():
-            self.setCursor(Qt.SizeFDiagCursor)
-        elif self.handle_tl.isUnderMouse():
+        if self._is_on_handle(event.pos(), self.handle_br) or self._is_on_handle(event.pos(), self.handle_tl):
             self.setCursor(Qt.SizeFDiagCursor)
         else:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.OpenHandCursor)
         super(ResizablePixmapItem, self).hoverMoveEvent(event)
 
     def mousePressEvent(self, event):
-        if self.handle_br.isUnderMouse():
+        if self._is_on_handle(event.pos(), self.handle_br):
             self.is_resizing_br = True
             self.resize_start_scene_pos = event.scenePos()
             self.start_width = self.current_width
@@ -128,7 +174,7 @@ class ResizablePixmapItem(QGraphicsObject):
             self._snap_repeat_key = None
             self._snap_repeat_count = 0
             self._snap_suppressed_until_release = False
-        elif self.handle_tl.isUnderMouse():
+        elif self._is_on_handle(event.pos(), self.handle_tl):
             self.is_resizing_tl = True
             self.resize_start_scene_pos = event.scenePos()
             self.start_width = self.current_width
@@ -139,6 +185,7 @@ class ResizablePixmapItem(QGraphicsObject):
             self._snap_repeat_count = 0
             self._snap_suppressed_until_release = False
         else:
+            self.setCursor(Qt.ClosedHandCursor)
             self._snap_active = False
             self._snap_repeat_key = None
             self._snap_repeat_count = 0
@@ -215,6 +262,7 @@ class ResizablePixmapItem(QGraphicsObject):
             super(ResizablePixmapItem, self).mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        self.setCursor(Qt.OpenHandCursor)
         self.is_resizing_br = False
         self.is_resizing_tl = False
         self.clear_guides()
@@ -238,6 +286,10 @@ class ResizablePixmapItem(QGraphicsObject):
         self.guide_lines.clear()
         self.guide_labels.clear()
 
+    def content_scene_rect(self):
+        """Returns the pixmap area in scene coordinates, excluding handles."""
+        return QRectF(self.scenePos().x(), self.scenePos().y(), self.current_width, self.current_height)
+
     def calculate_snapping(self, proposed_pos, resize_edge=None, proposed_value=None):
         if not self.scene(): return proposed_pos if resize_edge is None else None
         if len(self.scene().selectedItems()) > 1 and resize_edge is None:
@@ -246,219 +298,138 @@ class ResizablePixmapItem(QGraphicsObject):
         if self.scene().views():
             view = self.scene().views()[0]
         snap_enabled = getattr(view, 'snap_enabled', True)
-        default_threshold = getattr(UI_BEHAVIOR, 'SNAP_THRESHOLD', 15)
-        min_x_dist = default_threshold
-        min_y_dist = default_threshold
-        center_threshold = getattr(UI_BEHAVIOR, 'SNAP_CENTER_THRESHOLD', 80)
-        guide_threshold = getattr(UI_BEHAVIOR, 'SNAP_GUIDE_THRESHOLD', 95)
-        center_lock_threshold = getattr(UI_BEHAVIOR, 'SNAP_CENTER_LOCK_THRESHOLD', 60)
-        center_lock_x = False
-        center_lock_y = False
+        is_keyboard = False
+
+        import traceback
+        for frame in traceback.extract_stack():
+            if 'keyPressEvent' in frame.name:
+                is_keyboard = True
+                break
+        pull_threshold = 12 if not is_keyboard else 0
+        visual_threshold = 20
+        center_pull = 40 if not is_keyboard else 0
+        center_visual = 60
         my_w = self.current_width
         my_h = self.current_height
-        curr_pos = self.pos()
-        my_left = curr_pos.x()
-        my_right = my_left + my_w
-        my_top = curr_pos.y()
-        my_bottom = my_top + my_h
-        my_center_x = (my_left + my_right) / 2
-        my_center_y = (my_top + my_bottom) / 2
         if resize_edge is None:
-            my_left = proposed_pos.x()
-            my_right = my_left + my_w
-            my_center_x = my_left + (my_w / 2)
-            my_top = proposed_pos.y()
-            my_bottom = my_top + my_h
-            my_center_y = my_top + (my_h / 2)
+            my_l, my_t = proposed_pos.x(), proposed_pos.y()
         else:
-            if resize_edge == 'R':
-                my_right = proposed_value
-                my_center_x = (my_left + my_right) / 2
-            elif resize_edge == 'L':
-                my_left = proposed_value
-                my_center_x = (my_left + my_right) / 2
-            elif resize_edge == 'B':
-                my_bottom = proposed_value
-                my_center_y = (my_top + my_bottom) / 2
-            elif resize_edge == 'T':
-                my_top = proposed_value
-                my_center_y = (my_top + my_bottom) / 2
-        targets_x = [
-            (0, 'L', "Canvas Left"),
-            (UI_LAYOUT.PORTRAIT_BASE_WIDTH / 2.0, 'C', "Canvas Center"),
-            (UI_LAYOUT.PORTRAIT_BASE_WIDTH, 'R', "Canvas Right")
-        ]
-        targets_y = [
-            (UI_LAYOUT.PORTRAIT_TOP_BAR_HEIGHT, 'T', "Content Top"),
-            (UI_LAYOUT.PORTRAIT_BASE_HEIGHT / 2.0, 'C', "Canvas Center"),
-            (UI_LAYOUT.PORTRAIT_BASE_HEIGHT - UI_LAYOUT.PORTRAIT_BOTTOM_PADDING, 'B', "Content Bottom")
-        ]
+            curr = self.pos()
+            my_l, my_t = curr.x(), curr.y()
+            if resize_edge == 'L': my_l = proposed_value
+            elif resize_edge == 'T': my_t = proposed_value
+        my_r = my_l + my_w if resize_edge != 'R' else proposed_value
+        my_b = my_t + my_h if resize_edge != 'B' else proposed_value
+        my_cx = (my_l + my_r) / 2
+        my_cy = (my_t + my_b) / 2
+        targets_x = [(0, "Canvas Left"), (UI_LAYOUT.PORTRAIT_BASE_WIDTH / 2, "Canvas Center"), (UI_LAYOUT.PORTRAIT_BASE_WIDTH, "Canvas Right")]
+        targets_y = [(UI_LAYOUT.PORTRAIT_TOP_BAR_HEIGHT, "Content Top"), (UI_LAYOUT.PORTRAIT_BASE_HEIGHT / 2, "Canvas Center"), (UI_LAYOUT.PORTRAIT_BASE_HEIGHT - UI_LAYOUT.PORTRAIT_BOTTOM_PADDING, "Content Bottom")]
         for item in self.scene().items():
             if isinstance(item, ResizablePixmapItem) and item != self and item.isVisible():
-                pos = item.scenePos()
-                w = item.current_width
-                h = item.current_height
-                role = item.assigned_role or "Item"
-                targets_x.append((pos.x(), 'L', f"{role} Left"))
-                targets_x.append((pos.x() + w, 'R', f"{role} Right"))
-                targets_x.append((pos.x() + (w / 2), 'C', f"{role} Center"))
-                targets_y.append((pos.y(), 'T', f"{role} Top"))
-                targets_y.append((pos.y() + h, 'B', f"{role} Bottom"))
-                targets_y.append((pos.y() + (h / 2), 'C', f"{role} Center"))
-        final_x_val = my_left if resize_edge != 'R' else my_right
-        active_snap_x = None
-        guide_snap_x = None
-        snapped_coord = None
+                r = item.content_scene_rect()
+                label = item.assigned_role or "Item"
+                targets_x.extend([(r.left(), f"{label} Left"), (r.center().x(), f"{label} Center"), (r.right(), f"{label} Right")])
+                targets_y.extend([(r.top(), f"{label} Top"), (r.center().y(), f"{label} Center"), (r.bottom(), f"{label} Bottom")])
+        best_x, best_y = None, None
+        min_dx, min_dy = visual_threshold, visual_threshold
+        active_line_x, active_line_y = None, None
         if resize_edge in [None, 'L', 'R']:
-            for tx, t_type, t_label in targets_x:
+            for tx, t_lab in targets_x:
                 if resize_edge in [None, 'L']:
-                    d_l = abs(my_left - tx)
-                    if d_l < min_x_dist:
-                        min_x_dist = d_l
-                        if resize_edge == 'L':
-                            snapped_coord = tx
-                        else:
-                            final_x_val = tx
-                        active_snap_x = (tx, f"Align Left -> {t_label}")
-                    elif d_l < guide_threshold and guide_snap_x is None:
-                        guide_snap_x = (tx, f"Align Left -> {t_label}")
+                    d = abs(my_l - tx)
+                    if d < min_dx:
+                        active_line_x = (tx, f"Align Left -> {t_lab}")
+                        if d < pull_threshold: best_x = tx
                 if resize_edge in [None, 'R']:
-                    d_r = abs(my_right - tx)
-                    if d_r < min_x_dist:
-                        min_x_dist = d_r
-                        if resize_edge == 'R':
-                            snapped_coord = tx
-                        else:
-                            final_x_val = tx - my_w
-                        active_snap_x = (tx, f"Align Right -> {t_label}")
-                    elif d_r < guide_threshold and guide_snap_x is None:
-                        guide_snap_x = (tx, f"Align Right -> {t_label}")
+                    d = abs(my_r - tx)
+                    if d < min_dx:
+                        active_line_x = (tx, f"Align Right -> {t_lab}")
+                        if d < pull_threshold: best_x = tx - my_w if resize_edge is None else tx
                 if resize_edge is None:
-                    d_c = abs(my_center_x - tx)
-                    if d_c < center_threshold:
-                        min_x_dist = d_c
-                        final_x_val = tx - (my_w / 2)
-                        active_snap_x = (tx, f"Center -> {t_label}")
-                        if d_c < center_lock_threshold:
-                            center_lock_x = True
-                    elif d_c < guide_threshold and guide_snap_x is None:
-                        guide_snap_x = (tx, f"Center -> {t_label}")
-        final_y_val = my_top if resize_edge != 'B' else my_bottom
-        active_snap_y = None
-        guide_snap_y = None
+                    d = abs(my_cx - tx)
+                    if d < center_visual:
+                        if d < min_dx or active_line_x is None:
+                            active_line_x = (tx, f"Center -> {t_lab}")
+                            if d < center_pull: best_x = tx - (my_w / 2)
         if resize_edge in [None, 'T', 'B']:
-            for ty, t_type, t_label in targets_y:
+            for ty, t_lab in targets_y:
                 if resize_edge in [None, 'T']:
-                    d_t = abs(my_top - ty)
-                    if d_t < min_y_dist:
-                        min_y_dist = d_t
-                        if resize_edge == 'T':
-                            snapped_coord = ty
-                        else:
-                            final_y_val = ty
-                        active_snap_y = (ty, f"Align Top -> {t_label}")
-                    elif d_t < guide_threshold and guide_snap_y is None:
-                        guide_snap_y = (ty, f"Align Top -> {t_label}")
+                    d = abs(my_t - ty)
+                    if d < min_dy:
+                        active_line_y = (ty, f"Align Top -> {t_lab}")
+                        if d < pull_threshold: best_y = ty
                 if resize_edge in [None, 'B']:
-                    d_b = abs(my_bottom - ty)
-                    if d_b < min_y_dist:
-                        min_y_dist = d_b
-                        if resize_edge == 'B':
-                            snapped_coord = ty
-                        else:
-                            final_y_val = ty - my_h
-                        active_snap_y = (ty, f"Align Bottom -> {t_label}")
-                    elif d_b < guide_threshold and guide_snap_y is None:
-                        guide_snap_y = (ty, f"Align Bottom -> {t_label}")
+                    d = abs(my_b - ty)
+                    if d < min_dy:
+                        active_line_y = (ty, f"Align Bottom -> {t_lab}")
+                        if d < pull_threshold: best_y = ty - my_h if resize_edge is None else ty
                 if resize_edge is None:
-                    d_c = abs(my_center_y - ty)
-                    if d_c < center_threshold:
-                        min_y_dist = d_c
-                        final_y_val = ty - (my_h / 2)
-                        active_snap_y = (ty, f"Center -> {t_label}")
-                        if d_c < center_lock_threshold:
-                            center_lock_y = True
-                    elif d_c < guide_threshold and guide_snap_y is None:
-                        guide_snap_y = (ty, f"Center -> {t_label}")
-        pen = QPen(QColor("#00FFFF"), 1, Qt.DashLine)
-        font = QFont("Segoe UI", 9)
-        if not font.exactMatch():
-            font = QFont("Arial", 9)
-        scene_rect = self.scene().sceneRect() if self.scene() else None
-        x_min = scene_rect.left() if scene_rect else -5000
-        x_max = scene_rect.right() if scene_rect else 5000
-        y_min = scene_rect.top() if scene_rect else -5000
-        y_max = scene_rect.bottom() if scene_rect else 5000
-        line_snap_x = active_snap_x or guide_snap_x
-        line_snap_y = active_snap_y or guide_snap_y
-        current_snap_key = (line_snap_x, line_snap_y)
-        if current_snap_key != self._last_snap_key:
+                    d = abs(my_cy - ty)
+                    if d < center_visual:
+                        if d < min_dy or active_line_y is None:
+                            active_line_y = (ty, f"Center -> {t_lab}")
+                            if d < center_pull: best_y = ty - (my_h / 2)
+        current_key = (active_line_x, active_line_y)
+        if current_key != self._last_snap_key:
             self.clear_guides()
-            self._last_snap_key = current_snap_key
-            if line_snap_x:
-                lx, label = line_snap_x
-                line = QGraphicsLineItem(lx, y_min, lx, y_max)
-                line.setPen(QPen(QColor("#33ffff"), 2, Qt.DashLine))
-                line.setZValue(999)
+            self._last_snap_key = current_key
+            scene_rect = self.scene().sceneRect()
+            font = QFont("Segoe UI", 9, QFont.Bold)
+            if active_line_x:
+                lx, lab = active_line_x
+                line = QGraphicsLineItem(lx, scene_rect.top(), lx, scene_rect.bottom())
+                line.setPen(QPen(QColor("#00FFFF"), 2, Qt.DashLine))
+                line.setZValue(1000)
                 self.scene().addItem(line)
                 self.guide_lines.append(line)
-                text = QGraphicsSimpleTextItem(label)
-                text.setBrush(QBrush(QColor("#33ffff")))
-                text.setFont(font)
-                text.setPos(lx + 5, (my_top if resize_edge != 'B' else my_bottom) - 20)
-                text.setZValue(1000)
-                self.scene().addItem(text)
-                self.guide_labels.append(text)
-            if line_snap_y:
-                ly, label = line_snap_y
-                line = QGraphicsLineItem(x_min, ly, x_max, ly)
-                line.setPen(QPen(QColor("#33ffff"), 2, Qt.DashLine))
-                line.setZValue(999)
+                txt = QGraphicsSimpleTextItem(lab)
+                txt.setBrush(QBrush(QColor("#00FFFF")))
+                txt.setFont(font)
+                txt.setPos(lx + 5, my_t - 25)
+                txt.setZValue(1001)
+                self.scene().addItem(txt)
+                self.guide_labels.append(txt)
+            if active_line_y:
+                ly, lab = active_line_y
+                line = QGraphicsLineItem(scene_rect.left(), ly, scene_rect.right(), ly)
+                line.setPen(QPen(QColor("#00FFFF"), 2, Qt.DashLine))
+                line.setZValue(1000)
                 self.scene().addItem(line)
                 self.guide_lines.append(line)
-                text = QGraphicsSimpleTextItem(label)
-                text.setBrush(QBrush(QColor("#33ffff")))
-                text.setFont(font)
-                text.setPos((my_left if resize_edge != 'R' else my_right) + 5, ly - 20)
-                text.setZValue(1000)
-                self.scene().addItem(text)
-                self.guide_labels.append(text)
-        self._center_lock_x = center_lock_x
-        self._center_lock_y = center_lock_y
-        if not snap_enabled or self._snap_suppressed_until_release:
-            return proposed_pos if resize_edge is None else None
-        if resize_edge is not None:
-            return snapped_coord
+                txt = QGraphicsSimpleTextItem(lab)
+                txt.setBrush(QBrush(QColor("#00FFFF")))
+                txt.setFont(font)
+                txt.setPos(my_l + 5, ly - 25)
+                txt.setZValue(1001)
+                self.scene().addItem(txt)
+                self.guide_labels.append(txt)
+        if is_keyboard or not snap_enabled:
+            if resize_edge is None: return proposed_pos
+            return proposed_value
         if resize_edge is None:
-            snap_key = (active_snap_x, active_snap_y)
-            if snap_key == self._snap_repeat_key and snap_key != (None, None):
-                self._snap_repeat_count += 1
-            else:
-                self._snap_repeat_key = snap_key
-                self._snap_repeat_count = 1 if snap_key != (None, None) else 0
-            repeat_limit = getattr(UI_BEHAVIOR, 'SNAP_REPEAT_SUPPRESS_COUNT', 5)
-            if self._snap_repeat_count >= repeat_limit and snap_key != (None, None):
-                self._snap_suppressed_until_release = True
-                return proposed_pos
-        if center_lock_x:
-            final_x_val = (active_snap_x[0] - (my_w / 2)) if active_snap_x else final_x_val
-        if center_lock_y:
-            final_y_val = (active_snap_y[0] - (my_h / 2)) if active_snap_y else final_y_val
-        return QPointF(final_x_val, final_y_val)
+            fx = best_x if best_x is not None else proposed_pos.x()
+            fy = best_y if best_y is not None else proposed_pos.y()
+            return QPointF(fx, fy)
+        else:
+            if resize_edge in ['L', 'R']: return best_x if best_x is not None else proposed_value
+            if resize_edge in ['T', 'B']: return best_y if best_y is not None else proposed_value
+        return proposed_pos if resize_edge is None else proposed_value
 
     def _get_snap_alpha(self):
-        alpha = getattr(UI_BEHAVIOR, 'SNAP_SMOOTHING_ALPHA', 0.35)
-        try:
-            return max(0.05, min(float(alpha), 0.9))
-        except Exception:
-            return 0.35
+        """[FIX #30] Soft snapping: return a pull factor based on distance to snap point."""
+        if not self._snap_active or not self._snap_target_pos:
+            return 1.0
+        curr_pos = self.pos()
+        dx = abs(curr_pos.x() - self._snap_target_pos.x())
+        dy = abs(curr_pos.y() - self._snap_target_pos.y())
+        dist = (dx**2 + dy**2)**0.5
+        if dist < 2: return 1.0
+        if dist > 25: return 0.0
+        return (1.0 - (dist / 25.0)) ** 2
 
     def _get_resize_snap_alpha(self):
-        alpha = getattr(UI_BEHAVIOR, 'SNAP_RESIZE_SMOOTHING_ALPHA', self._get_snap_alpha())
-        try:
-            return max(0.05, min(float(alpha), 0.9))
-        except Exception:
-            return self._get_snap_alpha()
+        """[FIX #30] Soft snapping for resizing."""
+        return 1.0
 
     def _smooth_value(self, current, target):
         alpha = self._get_snap_alpha()
@@ -492,14 +463,17 @@ class ResizablePixmapItem(QGraphicsObject):
             self._snap_anim_size = (cur_w, cur_h)
             if new_pos_x is not None and new_pos_y is not None:
                 self.setPos(new_pos_x, new_pos_y)
+        self.prepareGeometryChange()
         self.current_width = cur_w
         self.current_height = cur_h
         self.update_handle_positions()
+        self.update()
         self.item_changed.emit()
 
     def _apply_snap_final_state(self):
         if self._snap_target_size:
             target_w, target_h = self._snap_target_size
+            self.prepareGeometryChange()
             if target_w is not None:
                 self.current_width = target_w
             if target_h is not None:
@@ -512,7 +486,6 @@ class ResizablePixmapItem(QGraphicsObject):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene():
-            self.clear_guides()
             new_pos = value
             view = self.scene().views()[0] if self.scene().views() else None
             snap_enabled = True

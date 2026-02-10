@@ -55,6 +55,12 @@ def create_subprocess(cmd, logger=None):
 def kill_process_tree(pid, logger=None):
     if not pid:
         return
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], 
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
     try:
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
@@ -68,10 +74,7 @@ def kill_process_tree(pid, logger=None):
             logger.warning("Process not found, might have already finished.")
     except Exception as e:
         if logger:
-            logger.error(f"psutil failed to kill process tree: {e}. Attempting 'taskkill' fallback.")
-        if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], 
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.error(f"psutil failed to kill process tree: {e}.")
 
 def check_disk_space(path: str, required_gb: float) -> bool:
     try:
@@ -79,7 +82,7 @@ def check_disk_space(path: str, required_gb: float) -> bool:
         free_gb = usage.free / (1024**3)
         return free_gb >= required_gb
     except Exception:
-        return True
+        return False
 
 def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, is_canceled_func, logger):
     time_regex = re.compile(r'time=(\S+)')
