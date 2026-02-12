@@ -3,6 +3,7 @@ import numpy as np
 import os
 import logging
 from PyQt5.QtCore import QRect, QObject, pyqtSignal, QThread
+from config import CV_HEURISTICS
 
 class HUDExtractor:
     def __init__(self, logger=None, params=None):
@@ -74,7 +75,7 @@ class HUDExtractor:
             return best
         return None
 
-    def _tighten_rect(self, frame_gray, rect, padding=8):
+    def _tighten_rect(self, frame_gray, rect, padding=CV_HEURISTICS.SHRINK_WRAP_PADDING):
         """[FIX #29] High-precision shrink-wrap with safety padding."""
         try:
             x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
@@ -111,26 +112,26 @@ class HUDExtractor:
         aspect = w / h
         nx = 0.85 if aspect > 2.0 else 0.78
         raw = self._rect_from_norm(frame_gray, nx, 0.02, 0.20, 0.25)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_hp_rect(self, frame_gray):
         raw = self._rect_from_norm(frame_gray, 0.02, 0.85, 0.25, 0.10)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_loot_rect(self, frame_gray):
         h, w = frame_gray.shape[:2]
         aspect = w / h
         nx = 0.85 if aspect > 2.0 else 0.78
         raw = self._rect_from_norm(frame_gray, nx, 0.88, 0.12, 0.08)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_teammates_rect(self, frame_gray):
         raw = self._rect_from_norm(frame_gray, 0.01, 0.20, 0.15, 0.30)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_spectating_rect(self, frame_gray):
         raw = self._rect_from_norm(frame_gray, 0.02, 0.70, 0.10, 0.05)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _clamp_rect(self, x, y, w, h, frame_w, frame_h):
         x, y = max(0, min(int(x), frame_w - 10)), max(0, min(int(y), frame_h - 10))
@@ -140,8 +141,10 @@ class HUDExtractor:
     def _detect_minimap_by_circle(self, frame_gray):
         """[FIX #28] Hybrid circle/corner detection for stylized minimaps."""
         h, w = frame_gray.shape[:2]
-        x0, y0 = int(0.70 * w), 0
-        rw, rh = int(0.30 * w), int(0.40 * h)
+        x0 = int(CV_HEURISTICS.MINIMAP_X_RATIO_W * w)
+        y0 = int(CV_HEURISTICS.MINIMAP_Y_RATIO_H * h)
+        rw = int(CV_HEURISTICS.MINIMAP_W_RATIO_W * w)
+        rh = int(CV_HEURISTICS.MINIMAP_H_RATIO_H * h)
         roi = frame_gray[y0:y0 + rh, x0:x0 + rw]
         if roi.size == 0: return None
         blur = cv2.GaussianBlur(roi, (7, 7), 1.5)
@@ -163,8 +166,10 @@ class HUDExtractor:
 
     def _detect_hp_by_color(self, frame_color):
         h, w = frame_color.shape[:2]
-        x0, y0 = 0, int(0.60 * h)
-        rw, rh = int(0.55 * w), int(0.40 * h)
+        x0 = int(CV_HEURISTICS.HP_COLOR_X_RATIO_W * w)
+        y0 = int(CV_HEURISTICS.HP_COLOR_Y_RATIO_H * h)
+        rw = int(CV_HEURISTICS.HP_COLOR_W_RATIO_W * w)
+        rh = int(CV_HEURISTICS.HP_COLOR_H_RATIO_H * h)
         roi = frame_color[y0:y0 + rh, x0:x0 + rw]
         if roi.size == 0: return None
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -187,8 +192,10 @@ class HUDExtractor:
 
     def _detect_loot_by_boxes(self, frame_gray):
         h, w = frame_gray.shape[:2]
-        x0, y0 = int(0.40 * w), int(0.60 * h)
-        rw, rh = int(0.60 * w), int(0.40 * h)
+        x0 = int(CV_HEURISTICS.LOOT_BOX_X_RATIO_W * w)
+        y0 = int(CV_HEURISTICS.LOOT_BOX_Y_RATIO_H * h)
+        rw = int(CV_HEURISTICS.LOOT_BOX_W_RATIO_W * w)
+        rh = int(CV_HEURISTICS.LOOT_BOX_H_RATIO_H * h)
         roi = frame_gray[y0:y0 + rh, x0:x0 + rw]
         if roi.size == 0: return None
         edges = cv2.dilate(cv2.Canny(cv2.GaussianBlur(roi, (5, 5), 0), 70, 180), np.ones((3, 3), np.uint8))
@@ -216,8 +223,8 @@ class HUDExtractor:
         if self.anchors.get('loot_start') is None or self.anchors.get('loot_end') is None: return None
         h, w = frame_gray.shape[:2]
         search = (int(0.70 * w), int(0.80 * h), int(0.30 * w), int(0.20 * h))
-        p1 = self._find_anchor_multiscale(frame_gray, 'loot_start', 0.52, search)
-        p5 = self._find_anchor_multiscale(frame_gray, 'loot_end', 0.52, search)
+        p1 = self._find_anchor_multiscale(frame_gray, 'loot_start', CV_HEURISTICS.MATCH_THRESHOLD + 0.02, search)
+        p5 = self._find_anchor_multiscale(frame_gray, 'loot_end', CV_HEURISTICS.MATCH_THRESHOLD + 0.02, search)
         if p1 is None and p5 is None: return None
         local_s = p1[5] if p1 else p5[5]
         if p1 and p5:
@@ -230,14 +237,14 @@ class HUDExtractor:
             x1, y1 = p5[0] - int(260 * local_s), p5[1] - int(60 * local_s)
             width, height = int(280 * local_s), int(100 * local_s)
         raw_rect = self._clamp_rect(x1, y1, width, height, w, h)
-        return self._tighten_rect(frame_gray, raw_rect, padding=8)
+        return self._tighten_rect(frame_gray, raw_rect)
 
     def _extract_hp_module(self, frame_gray, frame_color):
         hp_anchor = self.anchors.get('hp_icon')
         if hp_anchor is None: return None
         h, w = frame_gray.shape[:2]
         search = (0, int(0.75 * h), int(0.4 * w), int(0.25 * h))
-        found = self._find_anchor_multiscale(frame_gray, 'hp_icon', 0.50, search)
+        found = self._find_anchor_multiscale(frame_gray, 'hp_icon', CV_HEURISTICS.MATCH_THRESHOLD, search)
         if not found: return None
         ax, ay, _, tw, th, local_s = found
         x1, y1 = ax + (tw // 2), ay - int(20 * local_s)
@@ -249,24 +256,24 @@ class HUDExtractor:
             if len(brights) > 0: detected_w = int(brights[-1]) + int(30 * local_s)
         width, height = max(int(tw * 6), min(detected_w, int(tw * 10))), int(90 * local_s)
         raw_rect = self._clamp_rect(x1, y1, width, height, w, h)
-        return self._tighten_rect(frame_gray, raw_rect, padding=8)
+        return self._tighten_rect(frame_gray, raw_rect)
 
     def _extract_hp_module_boss(self, frame_gray, frame_color):
         """[NEW] Boss HP detection heuristic."""
         h, w = frame_gray.shape[:2]
         raw = self._rect_from_norm(frame_gray, 0.35, 0.05, 0.30, 0.08)
-        return self._tighten_rect(frame_gray, raw, padding=8)
+        return self._tighten_rect(frame_gray, raw)
 
     def _extract_map_stats_module(self, frame_gray, frame_color):
         if self.anchors.get('map_edge') is None: return None
         h, w = frame_gray.shape[:2]
         search = (int(0.65 * w), 0, int(0.35 * w), int(0.4 * h))
-        found = self._find_anchor_multiscale(frame_gray, 'map_edge', 0.50, search)
+        found = self._find_anchor_multiscale(frame_gray, 'map_edge', CV_HEURISTICS.MATCH_THRESHOLD, search)
         if not found: return None
         local_s = found[5]
         x1, y1 = found[0] - int(15 * local_s), found[1] - int(10 * local_s)
         raw_rect = self._clamp_rect(x1, y1, int(300 * local_s), int(380 * local_s), w, h)
-        return self._tighten_rect(frame_gray, raw_rect, padding=8)
+        return self._tighten_rect(frame_gray, raw_rect)
 
     def _rect_iou(self, a, b):
         ax1, ay1, ax2, ay2 = a.x(), a.y(), a.x() + a.width(), a.y() + a.height()
@@ -347,8 +354,7 @@ class MagicWandWorker(QObject):
             if self._is_cancelled: return
             regions = self.magic_wand.detect_static_hud_regions(self.snapshot_path, cancel_check)
             if cancel_check(): return
-            if not regions: self.error.emit("No HUD elements detected.")
-            else: self.finished.emit(regions)
+            self.finished.emit(regions or [])
         except Exception as e:
             if not cancel_check():
                 self.error.emit(str(e))

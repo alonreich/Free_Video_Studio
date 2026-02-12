@@ -10,6 +10,8 @@ import tempfile
 import shutil
 import time
 import copy
+import threading
+import uuid
 try:
     import psutil
     HAS_PSUTIL = True
@@ -50,6 +52,8 @@ except ImportError:
         'stats': 30, 'team': 40, 'spectating': 100
     }
 VALIDATION_SYSTEM_AVAILABLE = False
+_config_manager_instances: Dict[str, "ConfigManager"] = {}
+_config_manager_instances_lock = threading.Lock()
 
 class ConfigObserver(QObject):
     """Observer pattern for config changes using Qt signals."""
@@ -119,6 +123,9 @@ class ConfigManager:
         self._config_version = 0
         self._last_file_mtime = 0
         self._observer = ConfigObserver()
+        self._lock_owner_token: Optional[str] = None
+        self._validation_rules: Dict[str, Any] = {}
+        self._setup_validation_rules()
     
     def get_observer(self) -> ConfigObserver:
         """Get the observer instance for subscribing to config changes."""
@@ -126,7 +133,11 @@ class ConfigManager:
     
     def _setup_validation_rules(self):
         """Setup validation rules for configuration."""
-        pass
+        self._validation_rules = {
+            "required_sections": list(self.REQUIRED_SECTIONS),
+            "min_scale": MIN_SCALE_FACTOR,
+            "min_crop_size": 1,
+        }
     
     def _is_valid_json(self) -> bool:
         """Check if config file contains valid JSON."""
@@ -267,30 +278,50 @@ class ConfigManager:
             attempt += 1
             try:
                 fd = os.open(self._lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                lock_token = uuid.uuid4().hex
+                lock_payload = {
+                    "pid": os.getpid(),
+                    "token": lock_token,
+                    "created_at": time.time(),
+                }
                 try:
-                    os.write(fd, str(os.getpid()).encode())
+                    os.write(fd, json.dumps(lock_payload).encode("utf-8"))
                 finally:
                     os.close(fd)
+                self._lock_owner_token = lock_token
                 self.logger.debug(f"Acquired lock for {self.config_path}")
                 return True
             except FileExistsError:
                 try:
-                    with open(self._lock_file_path, 'r') as f:
-                        pid = int(f.read().strip())
+                    with open(self._lock_file_path, 'r', encoding='utf-8') as f:
+                        raw = f.read().strip()
+                    pid = None
+                    created_at = None
+                    try:
+                        lock_data = json.loads(raw)
+                        pid = int(lock_data.get("pid", 0))
+                        created_at = float(lock_data.get("created_at", 0.0))
+                    except Exception:
+                        pid = int(raw)
+                        created_at = os.path.getmtime(self._lock_file_path)
                     if HAS_PSUTIL:
                         if not psutil.pid_exists(pid):
                             self.logger.warning(f"Breaking stale lock from dead PID {pid}")
-                            try: os.unlink(self._lock_file_path)
-                            except: pass
+                            try:
+                                os.unlink(self._lock_file_path)
+                            except OSError as unlink_error:
+                                self.logger.warning(f"Failed removing stale lock: {unlink_error}")
                             continue
-                    mtime = os.path.getmtime(self._lock_file_path)
-                    if (time.time() - mtime) > timeout_seconds:
+                    lock_age = time.time() - (created_at if created_at else os.path.getmtime(self._lock_file_path))
+                    if lock_age > timeout_seconds:
                         self.logger.warning(f"Breaking stale lock (timed out) for {self.config_path}")
-                        try: os.unlink(self._lock_file_path)
-                        except: pass
+                        try:
+                            os.unlink(self._lock_file_path)
+                        except OSError as unlink_error:
+                            self.logger.warning(f"Failed removing timed-out lock: {unlink_error}")
                         continue
-                except:
-                    pass
+                except Exception as parse_error:
+                    self.logger.warning(f"Lock parsing failed for {self._lock_file_path}: {parse_error}")
                 time.sleep(0.1)
             except Exception as e:
                 self.logger.error(f"Lock acquisition error: {e}")
@@ -301,7 +332,20 @@ class ConfigManager:
         """Release the file lock."""
         try:
             if os.path.exists(self._lock_file_path):
-                os.unlink(self._lock_file_path)
+                should_remove = True
+                if self._lock_owner_token:
+                    try:
+                        with open(self._lock_file_path, 'r', encoding='utf-8') as f:
+                            lock_data = json.loads(f.read().strip())
+                        file_token = lock_data.get("token")
+                        if file_token and file_token != self._lock_owner_token:
+                            should_remove = False
+                            self.logger.warning("Skipping lock release: token mismatch, another writer owns lock")
+                    except Exception:
+                        pass
+                if should_remove:
+                    os.unlink(self._lock_file_path)
+            self._lock_owner_token = None
         except Exception as e:
             self.logger.error(f"Error releasing lock: {e}")
     
@@ -475,8 +519,8 @@ class ConfigManager:
             for stale in backups[max_backups:]:
                 try:
                     os.unlink(stale)
-                except Exception:
-                    pass
+                except Exception as prune_error:
+                    self.logger.warning(f"Failed to remove stale backup {stale}: {prune_error}")
             config_dir = os.path.dirname(self.config_path)
             config_filename = os.path.basename(self.config_path)
             old_backup_path = os.path.join(config_dir, f"old_{config_filename}")
@@ -485,8 +529,8 @@ class ConfigManager:
                     max_age_seconds = 60 * 60 * 24 * 3
                     if (time.time() - os.path.getmtime(old_backup_path)) > max_age_seconds:
                         os.unlink(old_backup_path)
-                except Exception:
-                    pass
+                except Exception as old_backup_error:
+                    self.logger.warning(f"Failed to remove old backup {old_backup_path}: {old_backup_error}")
         except Exception as e:
             self.logger.debug(f"Backup pruning skipped: {e}")
 
@@ -663,43 +707,16 @@ class ConfigManager:
         }
     
     def validate_config(self) -> List[str]:
-        """
-        Validate configuration and return list of issues.
-        Returns:
-            List of validation error messages
-        """
+        """Validate persisted configuration and return list of issues."""
         issues: List[str] = []
-        config = self.load_config()
-        for section in self.REQUIRED_SECTIONS:
-            if section not in config:
-                issues.append(f"Missing required section: {section}")
-            elif not isinstance(config[section], dict):
-                issues.append(f"Section {section} should be a dictionary")
-        tech_keys: set[str] = set()
-        tech_keys.update(config["crops_1080p"].keys())
-        tech_keys.update(config["scales"].keys())
-        tech_keys.update(config["overlays"].keys())
-        for key in tech_keys:
-            if key not in config["crops_1080p"]:
-                issues.append(f"Key '{key}' missing in 'crops_1080p' section")
-            if key not in config["scales"]:
-                issues.append(f"Key '{key}' missing in 'scales' section")
-            if key not in config["overlays"]:
-                issues.append(f"Key '{key}' missing in 'overlays' section")
-            if key not in config["z_orders"]:
-                issues.append(f"Key '{key}' missing in 'z_orders' section")
-            rect = config["crops_1080p"].get(key)
-            if not isinstance(rect, list) or len(rect) < 4:
-                issues.append(f"Invalid crop data for '{key}'")
-            scale_val = config["scales"].get(key)
-            if not isinstance(scale_val, (int, float)):
-                issues.append(f"Invalid scale value for '{key}'")
-            overlay_val = config["overlays"].get(key)
-            if not isinstance(overlay_val, dict) or "x" not in overlay_val or "y" not in overlay_val:
-                issues.append(f"Invalid overlay data for '{key}'")
-            z_val = config["z_orders"].get(key)
-            if not isinstance(z_val, int):
-                issues.append(f"Invalid z-order value for '{key}'")
+        if not self._is_valid_json():
+            issues.append("Configuration file is missing or contains invalid JSON")
+            return issues
+        if not self._has_required_sections():
+            issues.append("Configuration is missing one or more required sections")
+        if not self._check_section_consistency():
+            issues.append("Configuration sections are inconsistent across HUD keys")
+        issues.extend(self.validate_config_data(self.load_config()))
         return issues
     
     def get_configured_elements(self) -> List[str]:
@@ -725,19 +742,18 @@ class ConfigManager:
     def get_current_config_data(self) -> Dict[str, Any]:
         """Returns the entire current configuration data."""
         return self.load_config()
-_config_manager_instances: Dict[str, ConfigManager] = {}
 
 def get_config_manager(config_path: Optional[str] = None, logger: Optional[logging.Logger] = None) -> ConfigManager:
     """Get or create configuration manager instance scoped by config path."""
-    global _config_manager_instances
     if config_path is None:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.abspath(os.path.join(script_dir, '..'))
         config_path = os.path.join(base_dir, 'processing', 'crops_coordinations.conf')
     config_path = os.path.abspath(config_path)
-    if config_path not in _config_manager_instances:
-        _config_manager_instances[config_path] = ConfigManager(config_path, logger)
-    else:
-        if logger is not None:
-            _config_manager_instances[config_path].logger = logger
-    return _config_manager_instances[config_path]
+    with _config_manager_instances_lock:
+        if config_path not in _config_manager_instances:
+            _config_manager_instances[config_path] = ConfigManager(config_path, logger)
+        else:
+            if logger is not None:
+                _config_manager_instances[config_path].logger = logger
+        return _config_manager_instances[config_path]

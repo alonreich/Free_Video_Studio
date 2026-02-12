@@ -1,4 +1,3 @@
-
 import sys
 import os
 # [STRICT] Prevent bytecode generation BEFORE any other imports
@@ -6,19 +5,19 @@ sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 
-import tempfile, psutil, traceback
-
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
-import subprocess, ctypes
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-# Ensure system module is in path
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from system.utils import DependencyDoctor, ProcessManager, LogManager
+from system.utils import ConsoleManager, DependencyDoctor, ProcessManager, LogManager
+logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
+
+import tempfile, psutil, traceback
+import subprocess, ctypes
 
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 PLUGINS   = os.path.join(BIN_DIR, 'plugins')
@@ -251,9 +250,6 @@ if __name__ == "__main__":
     # [FIX #3 & #7] Clean up orphans and temps
     ProcessManager.kill_orphans()
     ProcessManager.cleanup_temp_files()
-    
-    # [FIX] Standardized Log Filename
-    logger = LogManager.setup_logger(BASE_DIR, "main_app.log", "Main_App")
     
     # [FIX #1] Dependency Doctor Check
     is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)

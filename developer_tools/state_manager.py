@@ -8,6 +8,7 @@ import os
 import tempfile
 import shutil
 import time
+import threading
 from typing import Dict, Any, Optional, List, Callable
 from enum import Enum
 import logging
@@ -386,13 +387,17 @@ class StateManager:
             'can_redo': self.can_redo()
         }
 _state_manager_instance = None
+_state_manager_lock = threading.Lock()
 
 def get_state_manager(logger: Optional[logging.Logger] = None) -> StateManager:
     """Get or create the global state manager instance."""
     global _state_manager_instance
-    if _state_manager_instance is None:
-        _state_manager_instance = StateManager(logger)
-    return _state_manager_instance
+    with _state_manager_lock:
+        if _state_manager_instance is None:
+            _state_manager_instance = StateManager(logger)
+        elif logger is not None:
+            _state_manager_instance.logger = logger
+        return _state_manager_instance
 
 def with_transaction(operation_type: OperationType, description: str):
     """Decorator for automatic transaction management."""

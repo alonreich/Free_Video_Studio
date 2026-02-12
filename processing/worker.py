@@ -1,10 +1,11 @@
 ﻿import os
 import tempfile
 import time
+import uuid
 from PyQt5.QtCore import QThread
 from .config_data import VideoConfig
 from .system_utils import create_subprocess, monitor_ffmpeg_progress, kill_process_tree, check_disk_space
-from .text_ops import TextWrapper, fix_hebrew_text, apply_bidi_formatting
+from .text_ops import TextWrapper, apply_bidi_formatting
 from .media_utils import MediaProber, calculate_video_bitrate
 from .filter_builder import FilterBuilder
 from .encoders import EncoderManager
@@ -68,12 +69,25 @@ class ProcessThread(QThread):
         self.is_canceled = False
         self.filter_scripts = []
         self.duration_corrected_sec = (self.duration_ms / self.speed_factor / 1000.0) if self.speed_factor != 1.0 else (self.duration_ms / 1000.0)
+        self._output_dir = os.path.join(self.base_dir, "!!!_Output_Video_Files_!!!")
 
     def cancel(self):
         self.logger.info("Cancellation requested.")
         self.is_canceled = True
         if self.current_process:
             kill_process_tree(self.current_process.pid, self.logger)
+
+    def _monitor_disk_space(self):
+        """[FIX #14] Callback for continuous disk space checking."""
+        try:
+            if not check_disk_space(self._output_dir, 0.2):
+                self.logger.critical("Disk space exhausted during render!")
+                self.cancel()
+                self.finished_signal.emit(False, "Render cancelled: Disk full.")
+                return True
+        except Exception:
+            pass
+        return self.is_canceled
 
     def run(self):
         if 'timeline_start_ms' in self.music_config:
@@ -105,8 +119,7 @@ class ProcessThread(QThread):
             if self.is_canceled: return
             estimated_output_gb = (self.target_mb if self.target_mb else 500) / 1024.0
             required_space_gb = (estimated_output_gb * 2.0) + 1.0 
-            out_dir = os.path.join(self.base_dir, "!!!_Output_Video_Files_!!!")
-            if not check_disk_space(out_dir, required_space_gb):
+            if not check_disk_space(self._output_dir, required_space_gb):
                 self.finished_signal.emit(False, f"Insufficient disk space. Need at least {required_space_gb:.1f} GB free.")
                 return
             has_bg = (self.bg_music_path is not None)
@@ -166,11 +179,9 @@ class ProcessThread(QThread):
                     self.finished_signal.emit(False, "Video duration is too short for target size.")
                     return
                 video_bitrate_kbps = 2500
-            MAX_SAFE_BITRATE = 35000
-            if self.quality_level >= 4:
-                MAX_SAFE_BITRATE = 50000
+            MAX_SAFE_BITRATE = 200000 
             if video_bitrate_kbps > MAX_SAFE_BITRATE:
-                self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k for stability.")
+                self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
             current_encoder = self.encoder_mgr.get_initial_encoder()
             textfile_path = None
@@ -179,7 +190,7 @@ class ProcessThread(QThread):
                 size, lines = self.text_wrapper.fit_and_wrap(self.portrait_text)
                 txt_wrapped = "\n".join(lines)
                 final_text_content = apply_bidi_formatting(txt_wrapped)
-                textfile_path = os.path.join(temp_dir, f"drawtext-{os.getpid()}-{int(time.time())}.txt")
+                textfile_path = os.path.join(temp_dir, f"drawtext-{uuid.uuid4()}.txt")
                 with open(textfile_path, "w", encoding="utf-8") as tf:
                     tf.write(final_text_content)
                 self.status_update_signal.emit("Applying Canvas Trick with Text.")
@@ -211,7 +222,7 @@ class ProcessThread(QThread):
                 first_filter = audio_chains[0]
                 if first_filter.startswith("[0:a]"):
                      audio_chains[0] = first_filter.replace("[0:a]", granular_audio_label)
-            core_path = os.path.join(temp_dir, f"core-{os.getpid()}-{int(time.time())}.mp4")
+            core_path = os.path.join(temp_dir, f"core-{uuid.uuid4()}.mp4")
 
             def run_ffmpeg_command(encoder_name):
                 attempt_is_nvidia = (encoder_name == 'h264_nvenc')
@@ -232,21 +243,14 @@ class ProcessThread(QThread):
                         if self.quality_level == 1: t_w = 1280
                         elif self.quality_level < 1: t_w = 960
                         elif video_bitrate_kbps < 800: t_w = 1280
-                    if attempt_is_nvidia:
-                        target_res = "scale_cuda=iw:ih:interp_algo=bilinear" if self.keep_highest_res else f"scale_cuda='min({t_w},iw)':-2:interp_algo=bilinear"
-                        v_filter_cmd = f"{target_res}" 
-                    else:
-                        target_res = "scale=iw:ih:flags=bilinear" if self.keep_highest_res else f"scale='min({t_w},iw)':-2:flags=bilinear"
-                        v_filter_cmd = f"fps=60,{target_res}"
+                    target_res = "scale=iw:ih:flags=bilinear" if self.keep_highest_res else f"scale='min({t_w},iw)':-2:flags=bilinear"
+                    v_filter_cmd = f"fps=60,{target_res}"
                 if not self.speed_segments:
                     v_filter_cmd += f",setpts=PTS/{self.speed_factor}"
                 attempt_core_filters = []
                 if granular_filter_str:
                     attempt_core_filters.append(granular_filter_str)
-                if attempt_is_nvidia:
-                    vcore_str = f"{granular_video_label}{v_filter_cmd},unsharp_cuda=lmsize_x=3:lmsize_y=3:amount=0.5,"
-                else:
-                    vcore_str = f"{granular_video_label}{v_filter_cmd},unsharp=luma_msize_x=3:luma_msize_y=3:luma_amount=0.5,"
+                vcore_str = f"{granular_video_label}{v_filter_cmd},unsharp=luma_msize_x=3:luma_msize_y=3:luma_amount=0.5,"
                 if not self.disable_fades:
                      vfade_in_sec = (vfade_in_duration_ms / self.speed_factor) / 1000.0
                      vfade_out_sec = (vfade_out_duration_ms / self.speed_factor) / 1000.0
@@ -255,15 +259,13 @@ class ProcessThread(QThread):
                          vcore_str += f"fade=t=in:st=0:d={vfade_in_sec:.4f},"
                      if vfade_out_sec > 0:
                          vcore_str += f"fade=t=out:st={vfade_out_start_sec:.4f}:d={vfade_out_sec:.4f},"
-                p_fmt = "yuv420p"
+                p_fmt = "nv12"
                 attempt_core_filters.append(
                     f"{vcore_str}format={p_fmt},trim=duration={self.duration_corrected_sec:.6f},setpts=PTS-STARTPTS,setsar=1[vcore]"
                 )
                 attempt_core_filters.extend(audio_chains)
                 self.status_update_signal.emit(f"Processing video ({rc_label})...")
                 hw_flags = []
-                if attempt_is_nvidia:
-                    hw_flags = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
                 cmd = [
                     ffmpeg_path, '-y'] + hw_flags + [
                     '-progress', 'pipe:1',
@@ -275,7 +277,7 @@ class ProcessThread(QThread):
                     cmd.extend(['-i', self.bg_music_path])
                 cmd.extend(vcodec)
                 complex_filter_str = ';'.join(attempt_core_filters)
-                filter_script_path = os.path.join(temp_dir, f"filter_complex-{os.getpid()}-{int(time.time())}.txt")
+                filter_script_path = os.path.join(temp_dir, f"filter_complex-{uuid.uuid4()}.txt")
                 with open(filter_script_path, "w", encoding="utf-8") as f_script:
                     f_script.write(complex_filter_str)
                 if 'filter_scripts' not in dir(self): self.filter_scripts = []
@@ -294,7 +296,8 @@ class ProcessThread(QThread):
                 monitor_ffmpeg_progress(
                     self.current_process, self.duration_corrected_sec, 
                     scaler_core,
-                    lambda: self.is_canceled, self.logger
+                    self._monitor_disk_space,
+                    self.logger
                 )
                 try:
                     self.current_process.wait(timeout=5)

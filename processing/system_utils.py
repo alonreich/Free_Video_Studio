@@ -84,10 +84,14 @@ def check_disk_space(path: str, required_gb: float) -> bool:
     except Exception:
         return False
 
-def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, is_canceled_func, logger):
-    time_regex = re.compile(r'time=(\S+)')
+def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger):
+    """
+    Optimized progress monitor relying on 'out_time_us' from -progress pipe.
+    Includes periodic disk space check.
+    """
+    last_disk_check = 0
     while True:
-        if is_canceled_func():
+        if check_disk_space_callback and check_disk_space_callback():
             break
         line = proc.stdout.readline()
         if not line:
@@ -111,16 +115,10 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, is_canceled_fun
                         progress_signal.emit(calc_prog)
                 except ValueError:
                     pass
-            if key in ['error', 'speed']:
-                logger.info(f"FFmpeg: {key}={val}")
+            elif key == 'speed':
+                pass
+            elif key == 'error':
+                 logger.error(f"FFmpeg reported error: {val}")
         else:
-            if "error" in s.lower():
-                logger.error(s)
-            match = time_regex.search(s)
-            if match:
-                current_time_str = match.group(1).split('.')[0]
-                current_seconds = parse_time_to_seconds(current_time_str)
-                if duration_sec > 0:
-                    percent = current_seconds / float(duration_sec)
-                    calc_prog = int(max(0, min(100, percent * 100)))
-                    progress_signal.emit(calc_prog)
+            if "error" in s.lower() or "failed" in s.lower():
+                logger.error(f"FFmpeg Output: {s}")

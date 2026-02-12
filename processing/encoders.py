@@ -35,38 +35,34 @@ class EncoderManager:
         if self.forced_cpu:
             self.logger.info("Encoder: CPU Force Enabled for this job.")
             return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18'], "CPU (Forced)"
-        vcodec = ['-c:v', encoder_name]
+        vcodec = ['-c:v', encoder_name, '-pix_fmt', 'nv12']
         rc_label = "Unknown"
         if video_bitrate_kbps is not None:
             kbps = int(video_bitrate_kbps)
             bitrate_arg = f'{kbps}k'
-            maxrate_arg = f'{int(kbps * 2.0)}k'
+            maxrate_arg = f'{int(kbps * 1.5)}k'
             bufsize_arg = f'{int(kbps * 2.0)}k'
             vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
             vcodec.extend([
-                '-rc', 'vbr_hq',
-                '-tune', 'hq', 
                 '-preset', 'p4',
-                '-rc-lookahead', '32',
-                '-spatial-aq', '1',
-                '-temporal-aq', '1',
-                '-bf', '2',
+                '-tune', 'hq',
+                '-rc', 'vbr',
                 '-forced-idr', '1'
             ])
-            rc_label = "NVENC CUDA (High)"
+            rc_label = "NVENC (Stable)"
         elif encoder_name == 'h264_amf':
-            vcodec.extend(['-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak', '-bf', '2'])
-            rc_label = "AMD AMF (Balanced)"
+            vcodec.extend(['-usage', 'transcoding', '-quality', 'speed', '-rc', 'vbr_peak'])
+            rc_label = "AMD AMF (Stable)"
         elif encoder_name == 'h264_qsv':
-            vcodec.extend(['-preset', 'medium', '-look_ahead', '0', '-bf', '2'])
-            rc_label = "Intel QSV (Balanced)"
+            vcodec.extend(['-preset', 'medium'])
+            rc_label = "Intel QSV (Stable)"
         elif encoder_name == 'libx264':
             if video_bitrate_kbps is None:
                 return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18'], "CPU libx264 (CRF)"
             else:
-                return ['-c:v', 'libx264', '-preset', 'veryfast', '-b:v', f'{video_bitrate_kbps}k'], "CPU libx264 (VBR)"
+                return ['-c:v', 'libx264', '-preset', 'veryfast', '-b:v', f'{video_bitrate_kbps}k', '-pix_fmt', 'yuv420p'], "CPU libx264 (VBR)"
         else:
             rc_label = f"{encoder_name} (Generic)"
         return vcodec, rc_label

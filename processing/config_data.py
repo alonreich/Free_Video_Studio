@@ -21,14 +21,6 @@ class VideoConfig:
 
     def get_mobile_coordinates(self, logger=None):
         conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
-        lock_path = conf_path + ".lock"
-
-        import time
-        for _ in range(10):
-            if os.path.exists(lock_path):
-                time.sleep(0.1)
-            else:
-                break
         default_conf_data = {
             "crops_1080p": {
                 "loot": [400, 400, 680, 1220],
@@ -67,14 +59,17 @@ class VideoConfig:
             except Exception as e:
                 if logger: logger.error(f"Failed to create default config: {e}")
                 return default_conf_data
-        try:
-            with open(conf_path, 'r', encoding='utf-8') as f:
-                loaded_data = json.load(f)
-            if logger: logger.info(f"Loaded crop config from {conf_path}")
-            return loaded_data
-        except Exception as e:
-            if logger: logger.error(f"Failed to load crop config: {e}. Returning defaults.")
-            return default_conf_data
+        for _ in range(3):
+            try:
+                with open(conf_path, 'r', encoding='utf-8') as f:
+                    loaded_data = json.load(f)
+                if logger: logger.info(f"Loaded crop config from {conf_path}")
+                return loaded_data
+            except (json.JSONDecodeError, OSError):
+                import time
+                time.sleep(0.1)
+        if logger: logger.error(f"Failed to load crop config after retries. Returning defaults.")
+        return default_conf_data
 
     def get_quality_settings(self, quality_level, target_mb_override=None):
         try:
@@ -82,19 +77,11 @@ class VideoConfig:
         except Exception:
             q = 2
         keep_highest_res = False
-        target_mb = 52.0 
+        target_mb = None
         if q >= 4:
             keep_highest_res = True
-            target_mb = None
-        elif q == 3:
-            target_mb = 90.0
-        elif q == 2:
-            target_mb = 45.0
-        elif q == 1:
-            target_mb = 25.0
         else:
-            target_mb = 15.0
-        if not keep_highest_res:
-             if target_mb_override is not None:
-                 target_mb = target_mb_override
+            keep_highest_res = False
+            if target_mb_override is not None:
+                target_mb = target_mb_override
         return keep_highest_res, target_mb, q

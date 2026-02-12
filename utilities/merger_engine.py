@@ -3,6 +3,13 @@ import subprocess
 import re
 from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
+import os
+import subprocess
+import re
+import threading
+import queue
+from PyQt5.QtCore import QThread, pyqtSignal
+from utilities.merger_utils import _get_logger, kill_process_tree
 
 class MergerEngine(QThread):
     """
@@ -33,7 +40,7 @@ class MergerEngine(QThread):
         Falls back to libx264 if none found.
         """
         if not self.use_gpu:
-            return ["-c:v", "libx264", "-preset", "medium", "-crf", "23"]
+            return ["-c:v", "libx264", "-preset", "medium", "-crf", "26"]
         try:
             cmd = [self.ffmpeg_path, "-hide_banner", "-encoders"]
             flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -41,21 +48,21 @@ class MergerEngine(QThread):
             out = res.stdout
             if "h264_nvenc" in out:
                 self.logger.info("GPU: NVIDIA NVENC detected.")
-                return ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23"]
+                return ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "26"]
             elif "h264_amf" in out:
                 self.logger.info("GPU: AMD AMF detected.")
-                return ["-c:v", "h264_amf", "-quality", "balanced"]
+                return ["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26"]
             elif "h264_qsv" in out:
                 self.logger.info("GPU: Intel QSV detected.")
-                return ["-c:v", "h264_qsv", "-global_quality", "23"]
+                return ["-c:v", "h264_qsv", "-global_quality", "26"]
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
-        return ["-c:v", "libx264", "-preset", "medium", "-crf", "23"]
+        return ["-c:v", "libx264", "-preset", "medium", "-crf", "26"]
 
     def run(self):
         self._is_cancelled = False
         cmd = list(self.cmd_base)
-        cmd.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "192k"])
+        cmd.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "128k"])
         cmd.extend(self._detect_gpu_encoder())
         cmd.append(str(self.output_path))
         self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")
@@ -78,25 +85,36 @@ class MergerEngine(QThread):
         except Exception as e:
             self.finished.emit(False, f"Failed to start FFmpeg: {e}")
             return
+        log_queue = queue.Queue()
+
+        def _reader_thread(proc, q):
+            for line in iter(proc.stdout.readline, ''):
+                q.put(line)
+            proc.stdout.close()
+        t = threading.Thread(target=_reader_thread, args=(self._process, log_queue))
+        t.daemon = True
+        t.start()
         log_buffer = []
         while True:
             if self._is_cancelled:
                 break
-            line = self._process.stdout.readline()
-            if not line and self._process.poll() is not None:
-                break
-            if line:
+            try:
+                line = log_queue.get(timeout=0.1)
                 line = line.strip()
                 self.log_line.emit(line)
                 self._parse_progress(line)
                 log_buffer.append(line)
                 if len(log_buffer) > 80:
                     log_buffer.pop(0)
+            except queue.Empty:
+                if not t.is_alive():
+                    break
         if self._is_cancelled:
             self._kill_process()
             self.finished.emit(False, "Cancelled by user.")
             return
-        rc = self._process.poll()
+        self._process.wait()
+        rc = self._process.returncode
         if rc == 0:
             if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:
                 self.finished.emit(True, self.output_path)

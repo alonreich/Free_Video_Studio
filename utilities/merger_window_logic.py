@@ -28,23 +28,32 @@ class MergerWindowLogic:
         self.window.logger.info(f"Loaded last_out_dir: {self.window._last_out_dir}")
         try:
             g = self.window._cfg.get("geometry", {})
-            if g:
-                from PyQt5.QtWidgets import QApplication
-                desktop = QApplication.desktop()
+
+            from PyQt5.QtWidgets import QApplication
+            screen_geo = QApplication.primaryScreen().availableGeometry()
+            if g and 'x' in g and 'y' in g:
                 x = int(g.get("x", self.window.x()))
                 y = int(g.get("y", self.window.y()))
                 w = int(g.get("w", self.window.width()))
                 h = int(g.get("h", self.window.height()))
-                rect = desktop.screenGeometry(QPoint(x, y))
-                if rect.isNull() or not rect.intersects(QRect(x, y, w, h)):
-                    primary_rect = desktop.availableGeometry(0)
-                    x = primary_rect.x() + (primary_rect.width() - w) // 2
-                    y = primary_rect.y() + (primary_rect.height() - h) // 2
+                if not screen_geo.intersects(QRect(x, y, w, h)):
+                    self._apply_default_center(screen_geo)
+                    return
                 self.window.move(x, y)
                 self.window.resize(w, h)
                 self.window.logger.info(f"Restored window geometry: {x},{y} {w}x{h}")
+            else:
+                self._apply_default_center(screen_geo)
         except Exception as ex:
             self.window.logger.debug(f"Failed to restore window geometry: {ex}")
+
+    def _apply_default_center(self, screen_geo):
+        w, h = 1000, 700
+        x = screen_geo.x() + (screen_geo.width() - w) // 2
+        y = max(screen_geo.top(), screen_geo.y() + (screen_geo.height() - h) // 2 - 25)
+        self.window.resize(w, h)
+        self.window.move(x, y)
+        self.window.logger.info(f"Centered window on first monitor: {x},{y}")
         try:
             music_state = self.window._cfg.get("music_widget", {})
             if hasattr(self.window, "unified_music_widget") and isinstance(music_state, dict):

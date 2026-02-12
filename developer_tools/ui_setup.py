@@ -78,15 +78,21 @@ class Ui_CropApp:
         video_ratio_container = AspectRatioWidget(CropAppWindow.video_surface, 16/9)
         _center_row.addWidget(video_ratio_container)
         CropAppWindow.video_stack.addWidget(CropAppWindow.video_viewport_container)
-        CropAppWindow.hint_overlay_widget = QWidget(CropAppWindow)
-        CropAppWindow.hint_overlay_widget.setStyleSheet("background: transparent;")
+        CropAppWindow.hint_overlay_widget = QWidget(CropAppWindow.video_frame)
+        CropAppWindow.hint_overlay_widget.setAttribute(Qt.WA_TranslucentBackground, True)
+        CropAppWindow.hint_overlay_widget.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        CropAppWindow.hint_overlay_widget.setAttribute(Qt.WA_NoSystemBackground, True)
+        CropAppWindow.hint_overlay_widget.setStyleSheet("background: transparent; border: none;")
         CropAppWindow.hint_overlay_widget.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.hint_overlay_widget.resize(CropAppWindow.size())
+        CropAppWindow.hint_overlay_widget.setGeometry(CropAppWindow.video_frame.geometry())
         CropAppWindow.hint_group_container = QWidget(CropAppWindow.hint_overlay_widget)
-        CropAppWindow.hint_group_layout = QHBoxLayout(CropAppWindow.hint_group_container)
+        CropAppWindow.hint_group_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        CropAppWindow.hint_group_layout = QVBoxLayout(CropAppWindow.hint_group_container)
         CropAppWindow.hint_group_layout.setContentsMargins(0, 0, 0, 0)
+        CropAppWindow.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         CropAppWindow.upload_hint_container = QFrame()
         CropAppWindow.upload_hint_container.setObjectName("uploadHintContainer")
+        CropAppWindow.upload_hint_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         CropAppWindow.upload_hint_container.setFixedSize(620, 115)
         CropAppWindow.upload_hint_container.setStyleSheet("""
             #uploadHintContainer {
@@ -97,6 +103,7 @@ class Ui_CropApp:
         """)
         hint_inner_layout = QVBoxLayout(CropAppWindow.upload_hint_container)
         CropAppWindow.upload_hint_label = QLabel("Please Upload Video to Begin!")
+        CropAppWindow.upload_hint_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         CropAppWindow.upload_hint_label.setAlignment(Qt.AlignCenter)
         CropAppWindow.upload_hint_label.setStyleSheet("""
             color: #7DD3FC;
@@ -108,6 +115,7 @@ class Ui_CropApp:
         """)
         hint_inner_layout.addWidget(CropAppWindow.upload_hint_label)
         CropAppWindow.upload_hint_arrow = QLabel()
+        CropAppWindow.upload_hint_arrow.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         CropAppWindow.hint_group_layout.addWidget(CropAppWindow.upload_hint_container)
         CropAppWindow.hint_group_layout.addWidget(CropAppWindow.upload_hint_arrow)
         CropAppWindow.view_stack.addWidget(CropAppWindow.video_frame)
@@ -176,6 +184,7 @@ class Ui_CropApp:
         CropAppWindow.magic_wand_button.setToolTip("Magic Wand (W): Auto-detect HUD elements using computer vision.")
         CropAppWindow.play_pause_button = QPushButton("▶ PLAY")
         CropAppWindow.play_pause_button.setToolTip("Play/Pause (Space): Toggle video playback to find the perfect frame.")
+        CropAppWindow.play_pause_button.setFixedSize(140, 35)
         CropAppWindow.return_button = QPushButton("RETURN TO MAIN APP")
         CropAppWindow.return_button.setToolTip("Return (Home): Close the crop tool and return to the primary editor.")
         CropAppWindow.reset_state_button = QPushButton("RESET ALL")
@@ -213,8 +222,10 @@ class Ui_CropApp:
         portrait_header_layout.setSpacing(12)
         CropAppWindow.goal_label = QLabel("")
         CropAppWindow.goal_label.setVisible(False)
+        CropAppWindow.goal_label.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 12px; font-weight: 700;")
         CropAppWindow.status_label = QLabel("")
         CropAppWindow.status_label.setVisible(False)
+        CropAppWindow.status_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 11px;")
         CropAppWindow.snap_toggle_button = QPushButton("🧲 SNAP")
         CropAppWindow.snap_toggle_button.setCheckable(True)
         CropAppWindow.snap_toggle_button.setChecked(True)
@@ -353,7 +364,10 @@ class Ui_CropApp:
                     CropAppWindow.snap_toggle_button, CropAppWindow.raise_button, CropAppWindow.lower_button,
                     CropAppWindow.show_placeholders_checkbox, CropAppWindow.transparency_slider]:
             if not isinstance(btn, (QCheckBox, QSlider)):
-                btn.setFixedHeight(UI_LAYOUT.PORTRAIT_BUTTON_HEIGHT)
+                if btn is CropAppWindow.play_pause_button:
+                    btn.setFixedSize(140, 35)
+                else:
+                    btn.setFixedHeight(UI_LAYOUT.PORTRAIT_BUTTON_HEIGHT)
             if btn in [CropAppWindow.raise_button, CropAppWindow.lower_button]:
                 btn.setFixedWidth(125)
             btn.setCursor(Qt.PointingHandCursor)

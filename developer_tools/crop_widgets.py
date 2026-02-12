@@ -480,6 +480,7 @@ class DrawWidget(QWidget):
                     self._selection_display_rect = self._map_rect_to_display(self._crop_rect_img)
                     self._last_mouse_release_pos = event.pos()
                     self._role_popup_timer.start(50)
+                    QTimer.singleShot(220, self._force_role_menu_after_release)
                 self.update()
                 return
             if self._resizing_selection:
@@ -490,6 +491,7 @@ class DrawWidget(QWidget):
                     self._last_mouse_release_pos = event.pos()
                     self._auto_zoom_to_selection()
                     self._role_popup_timer.start(100)
+                    QTimer.singleShot(260, self._force_role_menu_after_release)
                 self.update()
                 return
             if self.mode == 'drawing':
@@ -507,6 +509,7 @@ class DrawWidget(QWidget):
                     self._selection_display_rect = self._map_rect_to_display(self._crop_rect_img)
                     self._auto_zoom_to_selection()
                     self._role_popup_timer.start(150)
+                    QTimer.singleShot(300, self._force_role_menu_after_release)
             self.update()
         except Exception as e:
             top_level = self.window()

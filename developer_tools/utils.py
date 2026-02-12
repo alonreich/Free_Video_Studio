@@ -1,7 +1,7 @@
 ﻿import os
 import tempfile
 import json
-from PyQt5.QtCore import QSettings, QByteArray, QTimer
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
 
 def get_snapshot_dir():
@@ -61,11 +61,13 @@ class PersistentWindowMixin:
         self.title_info_provider = title_info_provider
         self.extra_data_provider = extra_data_provider
         self.external_config_manager = config_manager
+        self._loading_persistence = True
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(500)
+        self._save_timer.setInterval(1000)
         self._save_timer.timeout.connect(self.save_geometry)
         self.load_geometry()
+        self._loading_persistence = False
 
     def load_geometry(self):
         try:
@@ -76,29 +78,31 @@ class PersistentWindowMixin:
                 manager = get_config_manager(self.config_path)
             settings = manager.load_config()
             geom = settings.get(self.settings_key)
-            def_w = self.default_geo.get('w', 1800)
-            def_h = self.default_geo.get('h', 930)
-            if geom:
+            app_instance = QApplication.instance()
+            screen_geo = app_instance.primaryScreen().availableGeometry() if app_instance else None
+            if geom and 'x' in geom and 'y' in geom:
+                def_w = self.default_geo.get('w', 1200)
+                def_h = self.default_geo.get('h', 800)
                 w = geom.get('w', def_w)
                 h = geom.get('h', def_h)
-                if (w <= 1200 and h <= 800) and (def_w > 1200 or def_h > 800):
-                    w, h = def_w, def_h
-                app_instance = QApplication.instance()
-                if app_instance:
-                    screen_geo = app_instance.primaryScreen().availableGeometry()
+                x = geom['x']
+                y = geom['y']
+                if screen_geo:
+                    if not screen_geo.intersects(QRect(x, y, w, h)):
+                        self._apply_default_center()
+                        return
                     w = min(w, screen_geo.width())
-                    h = min(h, int(screen_geo.height() * 0.95))
-                self.move(geom['x'], geom['y'])
+                    h = min(h, screen_geo.height())
+                self.move(x, y)
                 self.resize(w, h)
             else:
                 self._apply_default_center()
             if 'last_directory' in settings:
                 self.last_dir = settings['last_directory']
-                if hasattr(self, 'logger') and self.logger:
-                    self.logger.info(f"Loaded last_directory: {self.last_dir}")
             self.update_title()
-            return
-        except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+        except Exception as e:
+            if hasattr(self, 'logger') and self.logger:
+                self.logger.error(f"Persistence load failed: {e}")
             self._apply_default_center()
             self.update_title()
 
@@ -108,16 +112,18 @@ class PersistentWindowMixin:
         if app_instance is None:
             return
         screen_geo = app_instance.primaryScreen().availableGeometry()
-        w = self.default_geo.get('w', 1800)
-        h = self.default_geo.get('h', 930)
+        w = self.default_geo.get('w', 1200)
+        h = self.default_geo.get('h', 800)
         w = min(w, screen_geo.width())
-        h = min(h, int(screen_geo.height() * 0.95))
+        h = min(h, int(screen_geo.height() * 0.98))
         x = screen_geo.x() + (screen_geo.width() - w) // 2
-        y = screen_geo.y() + (screen_geo.height() - h) // 2
-        self.move(x, y)
+        y = max(screen_geo.top(), screen_geo.y() + (screen_geo.height() - h) // 2 - 25)
         self.resize(w, h)
+        self.move(x, y)
 
     def save_geometry(self):
+        if getattr(self, '_loading_persistence', False):
+            return
         try:
             if self.external_config_manager:
                 manager = self.external_config_manager
@@ -126,11 +132,14 @@ class PersistentWindowMixin:
                 manager = get_config_manager(self.config_path)
             settings = manager.load_config()
             p = self.pos()
-            settings[self.settings_key] = {'x': p.x(), 'y': p.y(), 'w': self.width(), 'h': self.height()}
+            settings[self.settings_key] = {
+                'x': p.x(), 
+                'y': p.y(), 
+                'w': self.width(), 
+                'h': self.height()
+            }
             if hasattr(self, 'last_dir') and self.last_dir:
                 settings['last_directory'] = self.last_dir
-                if hasattr(self, 'logger') and self.logger:
-                    self.logger.info(f"Saving last_directory: {self.last_dir}")
             if self.extra_data_provider:
                 try:
                     extra_data = self.extra_data_provider()
@@ -140,31 +149,28 @@ class PersistentWindowMixin:
                     pass
             manager.save_config(settings)
         except Exception as e:
-            print(f"Error saving geometry: {e}")
+            pass
 
     def update_title(self):
-        if self.title_info_provider:
-            self.setWindowTitle(self.title_info_provider())
+        if hasattr(self, 'title_info_provider') and self.title_info_provider:
+            try:
+                self.setWindowTitle(self.title_info_provider())
+            except:
+                pass
+
+    def handle_persistence_event(self):
+        """Called by resize/move events to trigger save."""
+        if not getattr(self, '_loading_persistence', False):
+            self.update_title()
+            if hasattr(self, '_save_timer'):
+                self._save_timer.start()
 
     def moveEvent(self, event):
-        try:
-            super().moveEvent(event)
-        except AttributeError:
-            pass
-        self.update_title()
-        self._save_timer.start()
+        self.handle_persistence_event()
 
     def resizeEvent(self, event):
-        try:
-            super().resizeEvent(event)
-        except AttributeError:
-            pass
-        self.update_title()
-        self._save_timer.start()
+        self.handle_persistence_event()
 
     def closeEvent(self, event):
         self.save_geometry()
-        try:
-            super().closeEvent(event)
-        except AttributeError:
-            pass
+

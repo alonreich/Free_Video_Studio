@@ -1,5 +1,15 @@
 ﻿import re
-from PyQt5.QtGui import QFont, QFontMetrics
+import os
+try:
+    from PyQt5.QtGui import QFont, QFontMetrics, QGuiApplication
+    HAS_QT = True
+except ImportError:
+    HAS_QT = False
+try:
+    from PIL import ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 try:
     from bidi.algorithm import get_display
     HAS_BIDI_LIB = True
@@ -9,8 +19,6 @@ except ImportError:
 def safe_text(text: str) -> str:
     """
     Sanitizes text for FFmpeg filter chains.
-    unlike 'fix_hebrew_text', this DOES NOT reverse text manually.
-    We rely on FFmpeg's native 'text_shaping=1' engine to handle Hebrew/BiDi.
     """
     if not text:
         return ""
@@ -21,62 +29,77 @@ def safe_text(text: str) -> str:
     return text
 
 def fix_hebrew_text(text: str) -> str:
-    """Legacy helper, kept for compatibility but generally superseded by apply_bidi_formatting."""
+    """
+    [DEPRECATED] Legacy fallback. 
+    Use apply_bidi_formatting which handles this correctly.
+    """
     if not text:
         return ""
-    has_hebrew = any("\u0590" <= c <= "\u05ff" for c in text)
-    if has_hebrew:
-        rev_full = text[::-1]
-        
-        def _flip_back_match(match):
-            return match.group(0)[::-1]
-        final_text = re.sub(r'[^\u0590-\u05ff]+', _flip_back_match, rev_full)
-    else:
-        final_text = text
-    final_text = final_text.replace(":", "\\:")
-    final_text = final_text.replace("'", "'\\\\''")
-    return final_text
+    return text[::-1]
 
 def apply_bidi_formatting(text: str) -> str:
     """
-    Applies Bidirectional algorithm to text to ensure correct display of RTL languages (Hebrew/Arabic).
-    Prioritizes 'python-bidi' library if available.
+    Applies Bidirectional algorithm to text to ensure correct display of RTL languages.
+    [FIX] handles mixed content (Hebrew + Numbers/English) without flipping LTR chunks.
     """
     if not text:
         return ""
     if HAS_BIDI_LIB:
         try:
-            return get_display(text)
+            return "\n".join([get_display(line) for line in text.split('\n')])
         except Exception:
             pass
-    has_rtl = any("\u0590" <= c <= "\u06ff" for c in text)
-    if not has_rtl:
-        return text
-    segments = re.split(r'([\u0590-\u06ff]+)', text)
-    result = []
-    for seg in segments:
-        if not seg: continue
-        if any("\u0590" <= c <= "\u06ff" for c in seg):
-            result.append(seg[::-1])
-        else:
-            result.append(seg)
-    return fix_hebrew_text(text)
+
+    def _reverse_line_robust(line: str) -> str:
+        if not line: return ""
+        if not any("\u0590" <= c <= "\u06ff" for c in line):
+            return line
+        blocks = re.findall(r'([\u0590-\u06ff]+|[^\u0590-\u06ff]+)', line)
+        processed_blocks = []
+        for b in blocks:
+            if any("\u0590" <= c <= "\u06ff" for c in b):
+                processed_blocks.append(b[::-1])
+            else:
+                processed_blocks.append(b)
+        return "".join(processed_blocks[::-1])
+    return "\n".join([_reverse_line_robust(line) for line in text.split('\n')])
 
 class TextWrapper:
     def __init__(self, config):
         self.cfg = config
         self.MAX_LINE_W = config.wrap_at_px
         self.SAFE_MAX_W = config.safe_max_px
-
+        self.use_qt = False
+        self.use_pil = False
+        if HAS_QT and QGuiApplication.instance():
+            self.use_qt = True
+        elif HAS_PIL:
+            self.use_pil = True
+            try:
+                self._pil_font_path = "arial.ttf" 
+            except:
+                pass
+        
     def _measure_px(self, s: str, px_size: int) -> int:
-        f = QFont("Arial")
-        f.setPixelSize(int(px_size))
-        fm = QFontMetrics(f)
-        try:
-            w = int(fm.horizontalAdvance(s))
-        except Exception:
-            w = int(fm.width(s))
-        return int(w) + self.cfg.shadow_pad_px
+        if not s: return 0
+        if self.use_qt:
+            f = QFont("Arial")
+            f.setPixelSize(int(px_size))
+            fm = QFontMetrics(f)
+            try:
+                w = int(fm.horizontalAdvance(s))
+            except Exception:
+                w = int(fm.width(s))
+            return int(w) + self.cfg.shadow_pad_px
+        if self.use_pil:
+            try:
+                font = ImageFont.truetype("arial.ttf", int(px_size))
+                if hasattr(font, 'getlength'):
+                    return int(font.getlength(s)) + self.cfg.shadow_pad_px
+                return font.getsize(s)[0] + self.cfg.shadow_pad_px
+            except Exception:
+                pass
+        return int(len(s) * (px_size * 0.55)) + self.cfg.shadow_pad_px
 
     def _split_long_token(self, tok: str, px_size: int):
         chunks = []

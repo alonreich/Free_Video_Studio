@@ -80,13 +80,21 @@ class FolderScanWorker(QThread):
     def run(self):
         files = []
         try:
-            root = Path(self.folder)
-            for p in root.rglob("*"):
+            def _scan(path, current_depth, max_depth=3):
+                if current_depth > max_depth: return
                 with QMutexLocker(self._mutex):
-                    if self._cancelled:
-                        return
-                if p.is_file() and p.suffix.lower() in self.exts:
-                    files.append(str(p))
+                    if self._cancelled: return
+                try:
+                    with os.scandir(path) as it:
+                        for entry in it:
+                            if entry.is_file():
+                                if os.path.splitext(entry.name)[1].lower() in self.exts:
+                                    files.append(entry.path)
+                            elif entry.is_dir():
+                                _scan(entry.path, current_depth + 1, max_depth)
+                except OSError:
+                    pass
+            _scan(self.folder, 0, max_depth=4)
             self.finished.emit(files, "")
         except Exception as e:
             self.finished.emit([], str(e))
@@ -112,15 +120,19 @@ class FastFileLoaderWorker(QThread):
         self.existing_file_sizes = {}
 
     def _calculate_partial_hash(self, filepath):
-        """Hashes first 256KB + last 256KB + file size for duplicate detection (Issue #4)."""
+        """Hashes first 256KB + middle 256KB + last 256KB + file size for robust duplicate detection (Issue #7)."""
         try:
             h = hashlib.sha256()
             p = Path(filepath)
             stat = p.stat()
-            h.update(str(stat.st_size).encode('utf-8'))
+            size = stat.st_size
+            h.update(str(size).encode('utf-8'))
             with open(filepath, "rb") as f:
                 h.update(f.read(256 * 1024))
-                if stat.st_size > 512 * 1024:
+                if size > 1024 * 1024:
+                    f.seek(size // 2)
+                    h.update(f.read(256 * 1024))
+                if size > 512 * 1024:
                     f.seek(-256 * 1024, 2)
                     h.update(f.read(256 * 1024))
             return h.hexdigest()

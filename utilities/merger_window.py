@@ -29,85 +29,14 @@ from utilities.merger_utils import _get_logger, _human, escape_ffmpeg_path, get_
 from utilities.merger_window_logic import MergerWindowLogic
 from utilities.workers import ProbeWorker
 from utilities.merger_engine import MergerEngine
-try:
-    from ui.widgets.simple_draggable_list import SimpleDraggableList
-except ImportError:
-    from PyQt5.QtWidgets import QListWidget, QAbstractItemView
-    from PyQt5.QtCore import Qt, pyqtSignal
-
-    class SimpleDraggableList(QListWidget):
-        drag_started = pyqtSignal(int, str)
-        drag_completed = pyqtSignal(int, int, str, str)
-        drag_cancelled = pyqtSignal(int, str)
-
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            self.setSelectionMode(QAbstractItemView.ExtendedSelection)
-            self.setDragDropMode(QAbstractItemView.InternalMove)
-            self.setDefaultDropAction(Qt.MoveAction)
-            self.setDragEnabled(True)
-            self.setAcceptDrops(True)
-            self.setDropIndicatorShown(True)
-            self.setCursor(Qt.OpenHandCursor)
-            self.setSpacing(4)
-            self._drag_start_row = -1
-
-        def mousePressEvent(self, event):
-            if event.button() == Qt.LeftButton:
-                item = self.itemAt(event.pos())
-                self._drag_start_row = self.row(item) if item else -1
-            super().mousePressEvent(event)
-
-        def startDrag(self, supportedActions):
-            row = self._drag_start_row
-            if row >= 0:
-                self.drag_started.emit(row, self._item_name(row))
-            super().startDrag(supportedActions)
-
-        def dropEvent(self, event):
-            start = self._drag_start_row
-            before_name = self._item_name(start) if start >= 0 else "Unknown"
-            super().dropEvent(event)
-            end = self.currentRow()
-            after_name = self._item_name(end) if end >= 0 else "Unknown"
-            if start >= 0 and end >= 0:
-                if start != end:
-                    self.drag_completed.emit(start, end, before_name, after_name)
-                else:
-                    self.drag_cancelled.emit(start, before_name)
-            self._drag_start_row = -1
-
-        def _item_name(self, row: int) -> str:
-            if row < 0 or row >= self.count():
-                return "Unknown"
-            item = self.item(row)
-            if not item:
-                return "Unknown"
-            path = item.data(Qt.UserRole)
-            if path:
-                import os
-                return os.path.basename(path)
-            txt = item.text() if hasattr(item, "text") else ""
-            return txt or "Unknown"
-try:
-    from ui.parts.music_mixin import MusicMixin
-except ImportError:
-    class MusicMixin:
-        pass
-
+from utilities.merger_draggable_list import MergerDraggableList
 from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
+from utilities.merger_phase_overlay_logic import MergerPhaseOverlayLogic
+from utilities.merger_phase_overlay_draw import MergerPhaseOverlayDraw
 from utilities.merger_unified_music_widget import UnifiedMusicWidget
 from utilities.merger_music_dialog import MusicDialogHandler
-from utilities.merger_undo_stack import MergerUndoStack
-try:
-    from developer_tools.utils import PersistentWindowMixin
-except ImportError:
-    import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'developer_tools'))
 
-    from utils import PersistentWindowMixin
-
-class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
+class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlayLogic, MergerPhaseOverlayDraw):
     MAX_FILES = 100
     status_updated = pyqtSignal(str)
     return_to_main = pyqtSignal()
@@ -127,10 +56,8 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.logger = _get_logger()
         self.logic_handler = MergerWindowLogic(self)
         self.logic_handler.load_config()
-        self.undo_stack = MergerUndoStack()
         self.ui_handler = MergerUI(self)
         self.event_handler = MergerHandlers(self)
-        self.logic_handler = MergerWindowLogic(self)
         self.music_dialog_handler = MusicDialogHandler(self)
         self.engine = None
         self._state_mutex = QMutex()
@@ -141,66 +68,30 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self._probe_worker = None
         self.taskbar_button = None
         self.taskbar_progress = None
+        self._last_gpu_val = 0
+        self._iops_prev = None
+        self._iops_dyn_max = 1.0
         self._cleanup_stale_temps()
         self.init_ui()
         self.connect_signals()
         self.setAcceptDrops(True)
         QTimer.singleShot(100, self._scan_mp3_folder)
+        self._original_merge_btn_style = """
+            QPushButton {
+                background-color: #1b6d26;
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                border-radius: 10px;
+            }
+            QPushButton:hover { background-color: #22822d; }
+            QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }
+        """
         self.event_handler.update_button_states()
         self.logger.info("OPEN: Video Merger window created")
 
-    def save_state(self):
-        """Saves current list state to undo stack."""
-        state = self.get_state()
-        self.undo_stack.push(state)
-        self.update_undo_redo_buttons()
-
-    def get_state(self):
-        """Returns a serializable representation of the current video list."""
-        items = []
-        for i in range(self.listw.count()):
-            it = self.listw.item(i)
-            items.append({
-                'path': it.data(Qt.UserRole),
-                'probe': it.data(Qt.UserRole + 1)
-            })
-        return items
-
-    def load_state(self, state):
-        """Restores the video list from a state object."""
-        self.listw.clear()
-        for item_data in state:
-            self.event_handler.add_video_to_list(item_data['path'], probe_data=item_data.get('probe'))
-        self.event_handler.update_button_states()
-
-    def undo(self):
-        current = self.get_state()
-        prev = self.undo_stack.undo(current)
-        if prev is not None:
-            self.load_state(prev)
-            self.set_status_message("Undo performed", "color: #7289da;", 1500, force=True)
-        self.update_undo_redo_buttons()
-
-    def redo(self):
-        current = self.get_state()
-        nxt = self.undo_stack.redo(current)
-        if nxt is not None:
-            self.load_state(nxt)
-            self.set_status_message("Redo performed", "color: #7289da;", 1500, force=True)
-        self.update_undo_redo_buttons()
-
-    def update_undo_redo_buttons(self):
-        if hasattr(self, 'btn_undo'):
-            self.btn_undo.setEnabled(self.undo_stack.can_undo())
-            self.btn_undo.setCursor(Qt.PointingHandCursor)
-            self.btn_undo.setToolTip("Undo last action (Ctrl+Z)")
-        if hasattr(self, 'btn_redo'):
-            self.btn_redo.setEnabled(self.undo_stack.can_redo())
-            self.btn_redo.setCursor(Qt.PointingHandCursor)
-            self.btn_redo.setToolTip("Redo last action (Ctrl+Y)")
-
     def create_draggable_list_widget(self):
-        listw = SimpleDraggableList(self)
+        listw = MergerDraggableList(self)
         if hasattr(listw, "drag_started"):
             listw.drag_started.connect(self.event_handler.on_drag_started)
         if hasattr(listw, "drag_completed"):
@@ -208,41 +99,39 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         return listw
 
     def add_videos(self):
-        self.save_state()
         self.event_handler.add_videos()
 
     def remove_selected(self):
         self.logger.info("USER: Clicked REMOVE SELECTED")
-        self.save_state()
         self.event_handler.remove_selected()
 
     def move_item(self, direction):
-        self.save_state()
         self.event_handler.move_item(direction)
 
     def return_to_main_app(self):
         self.logger.info("USER: Clicked RETURN TO MENU")
         if self.is_processing:
-            QMessageBox.information(
-                self,
-                "Merge in progress",
-                "Please cancel the merge first, then return to menu.",
-            )
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Merge in progress")
+            msg.setText("Please cancel the merge first, then return to menu.")
+            for btn in msg.findChildren(QPushButton): btn.setCursor(Qt.PointingHandCursor)
+            msg.exec_()
             return
         if self.listw.count() > 0 and not self.is_processing:
-            reply = QMessageBox.question(
-                self,
-                "Return to menu",
-                "You still have videos in the list. Return to menu anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Return to menu")
+            msg.setText("You still have videos in the list. Return to menu anyway?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            for btn in msg.findChildren(QPushButton): btn.setCursor(Qt.PointingHandCursor)
+            reply = msg.exec_()
             if reply != QMessageBox.Yes:
                 return
         self.return_to_main.emit()
 
     def perform_move(self, from_row, to_row, rebuild_widget=False):
-        self.save_state()
         self.logic_handler.perform_move(from_row, to_row, rebuild_widget)
 
     def make_item_widget(self, path):
@@ -256,8 +145,19 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.btn_merge.setEnabled(not busy)
         self.btn_back.setEnabled(not busy)
         self.listw.setEnabled(not busy)
-        if hasattr(self, 'btn_undo'): self.btn_undo.setEnabled(not busy and self.undo_stack.can_undo())
-        if hasattr(self, 'btn_redo'): self.btn_redo.setEnabled(not busy and self.undo_stack.can_redo())
+        undo_enabled = False
+        redo_enabled = False
+        if (not busy) and hasattr(self, 'event_handler') and hasattr(self.event_handler, 'undo_stack'):
+            try:
+                undo_enabled = self.event_handler.undo_stack.canUndo()
+                redo_enabled = self.event_handler.undo_stack.canRedo()
+            except RuntimeError:
+                undo_enabled = False
+                redo_enabled = False
+        if hasattr(self, 'btn_undo'):
+            self.btn_undo.setEnabled(undo_enabled)
+        if hasattr(self, 'btn_redo'):
+            self.btn_redo.setEnabled(redo_enabled)
 
     def _paint_graph_event(self, event):
         from PyQt5.QtGui import QPainter, QColor
@@ -309,7 +209,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         supported = [f for f in files if Path(f).suffix.lower() in allowed]
         skipped = len(files) - len(supported)
         if supported:
-            self.save_state()
             self.event_handler.add_videos_from_list(supported)
             if skipped > 0:
                 self.set_status_message(
@@ -388,8 +287,12 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
     def init_ui(self):
         self.setWindowTitle("Video Merger")
         self.resize(1000, 700)
-        self.ui_handler.set_style()
+
+        from PyQt5.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar()
         self.ui_handler.setup_ui()
+        self.ui_handler.set_style()
+        self._original_merge_btn_style = self.btn_merge.styleSheet()
         self.set_icon()
         self._ensure_overlay_widgets()
         if hasattr(self, 'btn_cancel_merge'):
@@ -416,10 +319,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.move_up_shortcut.activated.connect(lambda: self._shortcut_move(-1))
         self.move_down_shortcut = QShortcut(QKeySequence("Ctrl+Down"), self)
         self.move_down_shortcut.activated.connect(lambda: self._shortcut_move(1))
-        self.undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
-        self.undo_shortcut.activated.connect(self.undo)
-        self.redo_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
-        self.redo_shortcut.activated.connect(self.redo)
 
     def _is_ui_busy_for_actions(self) -> bool:
         return bool(self.is_processing or getattr(self.event_handler, "_loading_lock", False))
@@ -465,12 +364,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         self.btn_remove.clicked.connect(self.remove_selected)
         self.btn_clear.clicked.connect(self.confirm_clear_list)
         self.listw.itemSelectionChanged.connect(self.event_handler.on_selection_changed)
-        if hasattr(self, 'btn_undo'):
-            self.btn_undo.clicked.connect(self.undo)
-        if hasattr(self, 'btn_redo'):
-            self.btn_redo.clicked.connect(self.redo)
-        if hasattr(self, "unified_music_widget") and self.unified_music_widget:
-            self.unified_music_widget.advanced_requested.connect(self._open_music_advanced_dialog)
 
     def _open_music_advanced_dialog(self):
         try:
@@ -485,14 +378,16 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
 
     def confirm_clear_list(self):
         if self.listw.count() > 0:
-            reply = QMessageBox.question(
-                self, 'Confirm Clear',
-                "Are you sure you want to remove all videos from the list?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle('Confirm Clear')
+            msg.setText("Are you sure you want to remove all videos from the list?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            for btn in msg.findChildren(QPushButton): btn.setCursor(Qt.PointingHandCursor)
+            reply = msg.exec_()
             if reply == QMessageBox.Yes:
                 self.logger.info("USER: Confirmed CLEAR ALL")
-                self.save_state()
                 self.event_handler.clear_all()
             else:
                 self.logger.info("USER: Cancelled CLEAR ALL")
@@ -633,16 +528,12 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
     def _get_next_output_path(self):
         r"""
         Get the output path with forced naming convention (Fix #12).
-        Folder: ..\!!!_Output_Video_Files_!!!\
+        Folder: ..\!!!_Output_Video_Files_!!!\ (Relative to utilities, so Project Root)
         Name: Merged-Videos-X.mp4
         """
         try:
-            if self.base_dir:
-                base_path = Path(self.base_dir)
-                output_dir = base_path.parent / "!!!_Output_Video_Files_!!!"
-            else:
-                output_dir = Path.cwd().parent / "!!!_Output_Video_Files_!!!"
-            output_dir = output_dir.resolve()
+            base_path = Path(self.base_dir).resolve() if self.base_dir else Path.cwd().parent
+            output_dir = base_path / "!!!_Output_Video_Files_!!!"
             output_dir.mkdir(parents=True, exist_ok=True)
             i = 1
             while True:
@@ -654,7 +545,6 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         except Exception as e:
             self.logger.error(f"Path generation failed: {e}")
             fallback_dir = Path(self.base_dir).resolve() if self.base_dir else Path.cwd()
-            fallback_dir.mkdir(parents=True, exist_ok=True)
             return str((fallback_dir / f"Merged-Videos-{int(time.time())}.mp4").resolve())
 
     def start_merge_processing(self):
@@ -820,9 +710,10 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         except Exception as e:
             self._merge_finished_cleanup(False, f"Failed to create list file: {e}")
             return
-        music_tracks = self.unified_music_widget.get_selected_tracks() if hasattr(self.unified_music_widget, "get_selected_tracks") else []
+        wizard_tracks = []
+        if hasattr(self.unified_music_widget, "get_wizard_tracks"):
+            wizard_tracks = self.unified_music_widget.get_wizard_tracks()
         music_vol = self.unified_music_widget.get_volume()
-        music_offset = self.unified_music_widget.get_offset()
         cmd = [self.ffmpeg, "-y", "-f", "concat", "-safe", "0", "-segment_time_metadata", "1", "-i", str(concat_txt)]
         filters = []
         map_video = "0:v"
@@ -834,30 +725,24 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                 f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1[v_out]"
             )
             map_video = "[v_out]"
-        if music_tracks:
-            fadeout_lead = float(getattr(self.unified_music_widget, "get_fadeout_lead_seconds", lambda: 7.0)())
-            crossfade_sec = float(getattr(self.unified_music_widget, "get_crossfade_seconds", lambda: 3.0)())
+        if wizard_tracks:
+            fadeout_lead = 7.0
+            crossfade_sec = 3.0
             expanded_tracks = []
             covered = 0.0
+            for path, offset, dur in wizard_tracks:
+                expanded_tracks.append((path, offset, dur))
+                if len(expanded_tracks) == 1:
+                    covered += dur
+                else:
+                    covered += max(0.0, dur - crossfade_sec)
             cycle_guard = 0
-            max_expanded_tracks = 96
-            while covered < max(0.1, float(total_duration)) and cycle_guard < 64 and len(expanded_tracks) < max_expanded_tracks:
-                for base_idx, t in enumerate(music_tracks):
-                    start_sec = music_offset if (cycle_guard == 0 and base_idx == 0) else 0.0
-                    d = max(0.0, self._probe_media_duration(t) - start_sec)
-                    expanded_tracks.append((t, start_sec, d))
-                    if len(expanded_tracks) == 1:
-                        covered += d
-                    else:
-                        covered += max(0.0, d - crossfade_sec)
-                    if covered >= max(0.1, float(total_duration)):
-                        break
-                    if len(expanded_tracks) >= max_expanded_tracks:
-                        break
+            while covered < max(0.1, float(total_duration)) and cycle_guard < 32 and len(expanded_tracks) < 96:
+                path, _, _ = wizard_tracks[-1]
+                dur = self._probe_media_duration(path)
+                expanded_tracks.append((path, 0.0, dur))
+                covered += max(0.0, dur - crossfade_sec)
                 cycle_guard += 1
-            if not expanded_tracks:
-                self._merge_finished_cleanup(False, "Music tracks could not be prepared.")
-                return
             for t, _, _ in expanded_tracks:
                 cmd.extend(["-i", t])
             music_inputs = []
@@ -865,16 +750,15 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                 in_idx = idx + 1
                 raw_label = f"m_raw_{idx}"
                 out_label = f"m_{idx}"
+                fade_start = max(0.0, dur - fadeout_lead)
                 if idx == 0:
                     filters.append(
-                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},afade=t=in:d=3[{raw_label}]"
+                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},afade=t=in:d=3,{f'afade=t=out:st={fade_start}:d={fadeout_lead}' if dur > fadeout_lead else ''}[{out_label}]"
                     )
                 else:
                     filters.append(
-                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0}[{raw_label}]"
+                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},{f'afade=t=out:st={fade_start}:d={fadeout_lead}' if dur > fadeout_lead else ''}[{out_label}]"
                     )
-                fade_start = max(0.0, dur - fadeout_lead)
-                filters.append(f"[{raw_label}]afade=t=out:st={fade_start}:d={fadeout_lead}[{out_label}]")
                 music_inputs.append(out_label)
             music_out = music_inputs[0] if music_inputs else None
             for i in range(1, len(music_inputs)):
@@ -885,23 +769,29 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
                 music_out = next_label
             if music_out:
                 filters.append(f"[{music_out}]atrim=duration={max(0.1, float(total_duration))}[mus]")
-            if has_audio_input:
-                ducking_filters = build_audio_ducking_filters(
-                    video_audio_stream="[0:a]",
-                    music_stream="[mus]",
-                    music_volume=music_vol/100.0,
-                    sample_rate=48000
-                )
-                filters.extend(ducking_filters)
-                map_audio = "[a_out]"
-            else:
-                filters.append("[mus]anull[a_out]")
-                map_audio = "[a_out]"
+            ducking_filters = build_audio_ducking_filters(
+                video_audio_stream="[0:a]" if has_audio_input else "anullsrc=channel_layout=stereo:sample_rate=48000",
+                music_stream="[mus]",
+                music_volume=music_vol/100.0,
+                sample_rate=48000,
+                video_has_audio=has_audio_input
+            )
+            filters.extend(ducking_filters)
+            map_audio = "[a_out]"
         else:
             if has_audio_input:
                 map_audio = "0:a"
+            else:
+                map_audio = None
         if filters:
-            cmd.extend(["-filter_complex", ";".join(filters)])
+            filter_script_path = Path(self._temp_dir.name, "filter_complex.txt")
+            try:
+                with open(filter_script_path, "w", encoding="utf-8") as f:
+                    f.write(";".join(filters))
+                cmd.extend(["-filter_complex_script", str(filter_script_path)])
+            except Exception as e:
+                self._merge_finished_cleanup(False, f"Failed to write filter script: {e}")
+                return
         cmd.extend(["-map", map_video])
         if map_audio:
             cmd.extend(["-map", map_audio])
@@ -962,7 +852,12 @@ class VideoMergerWindow(QMainWindow, MusicMixin, MergerPhaseOverlayMixin):
         else:
             if "Cancelled" not in result_msg:
                  friendly = "Merge failed. Please check input files and available disk space."
-                 QMessageBox.critical(self, "Merge Failed", f"{friendly}\n\nDetails:\n{result_msg}")
+                 msg = QMessageBox(self)
+                 msg.setIcon(QMessageBox.Critical)
+                 msg.setWindowTitle("Merge Failed")
+                 msg.setText(f"{friendly}\n\nDetails:\n{result_msg}")
+                 for btn in msg.findChildren(QPushButton): btn.setCursor(Qt.PointingHandCursor)
+                 msg.exec_()
             self.set_status_message(f"Failed: {result_msg}", "color: #ff6b6b;", 5000, force=True)
             
     def _update_process_button_text(self):

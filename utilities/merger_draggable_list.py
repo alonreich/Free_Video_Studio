@@ -1,6 +1,7 @@
 ﻿from PyQt5.QtWidgets import QListWidget, QAbstractItemView, QWidget, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QMimeData
 from PyQt5.QtGui import QDrag, QPixmap, QPainter, QColor, QPen, QCursor
+import os
 
 class MergerDraggableList(QListWidget):
     """
@@ -8,25 +9,47 @@ class MergerDraggableList(QListWidget):
     Fixes performance issues (#7) and visual glitches (#10).
     """
     item_moved_signal = pyqtSignal(int, int)
+    drag_started = pyqtSignal(int, str)
     drag_completed = pyqtSignal(int, int, str, str)
+    drag_cancelled = pyqtSignal(int, str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
-        self.setDragDropMode(QAbstractItemView.DragDrop)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setSpacing(4)
         self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._drag_start_row = -1
+
+    def startDrag(self, supportedActions):
+        self._drag_start_row = self.currentRow()
+        item = self.currentItem()
+        name = "Unknown"
+        if item:
+            name = os.path.basename(item.data(Qt.UserRole)) if item.data(Qt.UserRole) else item.text()
+        self.drag_started.emit(self._drag_start_row, name)
+        super().startDrag(supportedActions)
 
     def dropEvent(self, event):
         if event.source() == self:
-            if event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist"):
-                event.setDropAction(Qt.MoveAction)
-                super().dropEvent(event)
-                event.accept()
+            start = self._drag_start_row
+            super().dropEvent(event)
+            end = self.currentRow()
+            before_name = "Unknown"
+            after_name = "Unknown"
+            item = self.item(end)
+            if item:
+                after_name = os.path.basename(item.data(Qt.UserRole)) if item.data(Qt.UserRole) else item.text()
+            if start != -1 and start != end:
+                self.drag_completed.emit(start, end, before_name, after_name)
+            elif start != -1:
+                self.drag_cancelled.emit(start, before_name)
+            self._drag_start_row = -1
+            event.accept()
         else:
             if event.mimeData().hasUrls():
                 event.setDropAction(Qt.CopyAction)

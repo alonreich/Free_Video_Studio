@@ -1,14 +1,8 @@
-﻿from PyQt5.QtWidgets import (
-    QApplication, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
-    QLabel, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem,
-    QGraphicsItem, QComboBox, QMessageBox, QFrame, QGraphicsRectItem, QGraphicsSimpleTextItem,
-    QDialog
-)
-
-from PyQt5.QtCore import Qt, QTimer, QRectF, pyqtSignal, QPointF, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPixmap, QCursor
+﻿from PyQt5.QtWidgets import QGraphicsView, QGraphicsItem
+from PyQt5.QtCore import Qt, QRectF
+from PyQt5.QtGui import QPainter
 from graphics_items import ResizablePixmapItem
-from config import HUD_ELEMENT_MAPPINGS, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR
+from config import UI_BEHAVIOR
 
 class PortraitView(QGraphicsView):
     def __init__(self, scene, parent=None):

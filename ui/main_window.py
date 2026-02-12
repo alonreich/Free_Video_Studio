@@ -439,7 +439,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.setEnabled(False)
             if hasattr(self, 'statusBar'):
                 self.statusBar().showMessage("🚀 Switching to Crop Tool...", 5000)
-            QApplication.processEvents()
+            QCoreApplication.processEvents()
+            root_dir = os.path.abspath(self.base_dir)
+            dev_tools_dir = os.path.join(root_dir, 'developer_tools')
+            script_path = os.path.join(dev_tools_dir, 'crop_tools.py')
+            if not os.path.exists(script_path):
+                raise FileNotFoundError(f"Crop Tool script not found at: {script_path}")
             state = {
                 "input_file": self.input_file_path,
                 "trim_start": self.trim_start_ms,
@@ -448,36 +453,36 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 "hardware_mode": getattr(self, "hardware_strategy", "CPU"),
                 "resolution": getattr(self, "original_resolution", None)
             }
-            self.logger.info(f"DEBUG: Saving state for Crop Tool: {state.keys()}")
             StateTransfer.save_state(state)
-            dev_tools_dir = os.path.join(self.base_dir, 'developer_tools')
-            script_path = os.path.join(dev_tools_dir, 'crop_tools.py')
-            if not os.path.exists(script_path):
-                self.logger.error(f"ERROR: Crop Tool script not found at {script_path}")
-                raise FileNotFoundError(f"Crop Tool script not found at: {script_path}")
             if self.vlc_player:
                 self.vlc_player.stop()
-            command = [sys.executable, "-B", script_path]
-            if self.input_file_path:
-                command.append(self.input_file_path)
-            self.logger.info(f"ACTION: Launching Crop Tool process: {' '.join(command)}")
             env = os.environ.copy()
-            env["PYTHONPATH"] = os.pathsep.join([
-                self.base_dir,
-                dev_tools_dir,
-                env.get("PYTHONPATH", "")
-            ])
+            norm_root = os.path.normpath(root_dir)
+            norm_dev = os.path.normpath(dev_tools_dir)
+            current_pythonpath = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = os.pathsep.join(filter(None, [
+                norm_dev,
+                norm_root,
+                current_pythonpath
+            ]))
+            cmd = [sys.executable, "-B", script_path]
+            if self.input_file_path:
+                cmd.append(self.input_file_path)
+            self.logger.info(f"ACTION: Launching detached Crop Tool: {' '.join(cmd)}")
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = 0x00000008 | 0x00000200
             subprocess.Popen(
-                command, 
-                cwd=dev_tools_dir, 
+                cmd, 
+                cwd=norm_dev, 
                 env=env,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=creation_flags,
                 close_fds=True,
                 shell=False
             )
             self._switching_app = True
-            self.logger.info("Crop Tool process started successfully. Closing Main App in 500ms.")
-            QTimer.singleShot(500, self.close)
+            self.logger.info("Crop Tool launched successfully. Closing parent.")
+            self.close()
         except Exception as e:
             self.setEnabled(True)
             self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}\n{traceback.format_exc()}")
@@ -590,12 +595,28 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             QPushButton {
                 background-color: #266b89;
                 color: #ffffff;
-                border: none;
+                border-style: solid;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+                border-right: 1px solid rgba(0, 0, 0, 0.6);
                 padding: 10px 18px;
                 border-radius: 8px;
                 font-weight: bold;
             }
-            QPushButton:hover { background-color: #2980b9; }
+            QPushButton:hover:!disabled {
+                border: 2px solid #7DD3FC;
+            }
+            QPushButton:pressed:!disabled {
+                border-top: 1px solid rgba(0, 0, 0, 0.7);
+                border-left: 1px solid rgba(0, 0, 0, 0.7);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 11px;
+                padding-left: 19px;
+                padding-bottom: 9px;
+                padding-right: 17px;
+            }
             QPushButton#WhatsappButton { background-color: #25D366; }
             QPushButton#DoneButton { background-color: #e74c3c; }
             QProgressBar { border: 1px solid #266b89; border-radius: 5px; text-align: center; height: 18px; }
@@ -914,12 +935,19 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
 
     def resizeEvent(self, event):
         """[FIX #1 & #24] Handles window resizing with throttling for overlay smoothness."""
-        self._update_window_size_in_title()
+        if hasattr(self, 'handle_persistence_event'):
+            self.handle_persistence_event()
         if hasattr(self, '_resize_timer'):
             self._resize_timer.start()
         else:
             self._delayed_resize_event()
         super().resizeEvent(event)
+
+    def moveEvent(self, event):
+        """[FIX] Track window movements for persistence."""
+        if hasattr(self, 'handle_persistence_event'):
+            self.handle_persistence_event()
+        super().moveEvent(event)
 
     def _delayed_resize_event(self):
         """Executed after resize throttle."""
@@ -937,6 +965,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
 
     def closeEvent(self, event):
         """[FIX #3] Ensures all background encoding processes are killed before exit."""
+        if hasattr(self, 'save_geometry'):
+            self.save_geometry()
         if getattr(self, "is_processing", False):
             reply = QMessageBox.question(self, "Quit During Processing",
                 "A video is currently being processed. Closing now will cancel all progress. Quit anyway?",

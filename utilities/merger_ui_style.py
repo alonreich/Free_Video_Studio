@@ -1,107 +1,183 @@
+﻿class MergerUIStyle:
+    BUTTON_COMMON = """
+        QPushButton {
+            color: #ffffff;
+            border-style: solid;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 8px 14px;
+        }
+        QPushButton:hover:!disabled {
+            border: 1px solid #7DD3FC;
+        }
+        QPushButton:disabled {
+            background-color: #4a5a63;
+            color: #95a5a6;
+            border: 1px solid #34495e;
+        }
+    """
+    BUTTON_STANDARD = BUTTON_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 9px;
+            padding-left: 15px;
+            padding-bottom: 7px;
+            padding-right: 13px;
+        }
+    """
+    BUTTON_ARROW = BUTTON_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+            font-size: 20px;
+            padding: 2px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 3px;
+            padding-left: 3px;
+            padding-bottom: 1px;
+            padding-right: 1px;
+        }
+    """
+    BUTTON_MERGE = BUTTON_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
+            border-radius: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 9px;
+            padding-left: 15px;
+            padding-bottom: 7px;
+            padding-right: 13px;
+        }
+    """
+    BUTTON_DANGER = BUTTON_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e74c3c, stop:0.1 #c0392b, stop:1 #8e2317);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4d1009, stop:1 #8e2317);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 9px;
+            padding-left: 15px;
+            padding-bottom: 7px;
+            padding-right: 13px;
+        }
+    """
+    BUTTON_TOOL = BUTTON_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4a90e2, stop:1 #318181);
+            padding: 5px;
+            border-radius: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.5);
+            border-right: 1px solid rgba(0, 0, 0, 0.5);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a3a3a, stop:1 #318181);
+            border-top: 1px solid rgba(0, 0, 0, 0.6);
+            border-left: 1px solid rgba(0, 0, 0, 0.6);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 6px;
+            padding-left: 6px;
+            padding-bottom: 4px;
+            padding-right: 4px;
+        }
+    """
+    PROGRESS_BAR = """
+        QProgressBar {
+            border: 1px solid #266b89;
+            border-radius: 5px;
+            text-align: center;
+            height: 18px;
+            background-color: #34495e;
+            color: white;
+        }
+        QProgressBar::chunk {
+            background-color: #2ecc71;
+            border-radius: 4px;
+        }
+    """
+    STATUS_BAR = """
+        QStatusBar {
+            background: #2c3e50;
+            color: #bdc3c7;
+            border-top: 1px solid #34495e;
+        }
+    """
+
 class MergerUIStyleMixin:
     def set_style(self):
-        """Applies a modernized dark theme stylesheet."""
-        self.parent.setStyleSheet("""
-            QMainWindow, QWidget {
+        self.parent.setStyleSheet('''
+            QWidget {
                 background-color: #2c3e50;
                 color: #ecf0f1;
-                font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-                font-size: 13px; /* Fix #48: Increased font size */
+                font-family: "Helvetica Neue", Arial, sans-serif;
             }
-            QLabel#titleLabel {
-                font-size: 18px;
-                font-weight: bold;
-                color: #3498db;
-                padding-bottom: 12px;
-            }
-            QPushButton {
-                background-color: #3498db;
-                color: #ffffff;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:disabled {
-                background-color: #566573;
-                color: #aeb6bf;
-            }
-            /* Fix #80: Removed non-standard [class=...] selectors */
-            QPushButton#moveUpBtn, QPushButton#moveDownBtn {
-                 background-color: #2b7089;
-                 font-size: 14px;
-            }
-            QPushButton#moveUpBtn:hover, QPushButton#moveDownBtn:hover {
-                 background-color: #3b8099;
-            }
-            QPushButton#aux-btn {
-                 background-color: #2b7089;
-            }
-            QPushButton#aux-btn:hover {
-                 background-color: #3b8099;
-            }
-            QPushButton#danger-btn {
-                 background-color: #d64538;
-            }
-            QPushButton#danger-btn:hover {
-                 background-color: #bf3a2e;
-            }
-            QPushButton#mergeButton {
-                background-color: #146314;
-                color: black;
-                font-size: 16px;
-                font-weight: bold;
-                padding: 12px 30px;
-                border-radius: 8px;
-            }
-            QPushButton#mergeButton:hover {
-                background-color: #c8f7c5;
-            }
-            QPushButton#returnButton {
-                background-color: #f39c12;
-                color: #2c3e50;
-            }
-            QPushButton#returnButton:hover {
-                 background-color: #f1c40f;
-            }
+            QLabel { font-size: 12px; padding: 5px; background: transparent; }
             QListWidget {
-                background-color: #1e2a36;
-                border: 2px solid #266b89;
-                border-radius: 12px;
-                padding: 5px;
-                outline: none;
-            }
-            QListWidget::item {
-                background-color: transparent;
-                border: none;
-                margin: 2px 0px;
-                padding: 0px;
-            }
-            QListWidget::item:selected {
-                background-color: rgba(52, 152, 219, 0.15);
-                border-radius: 10px;
-            }
-            QComboBox, QDoubleSpinBox {
                 background-color: #34495e;
-                border: 1px solid #5d6d7e;
-                border-radius: 4px;
-                padding: 6px;
-                min-height: 24px;
+                border: 2px solid #266b89;
+                border-radius: 10px;
+                padding: 5px;
+                color: white;
             }
-            QScrollBar:vertical {
-                background: #2c3e50;
-                width: 14px; /* Fix #28: Reduced scrollbar width */
-                margin: 0;
+            QToolTip {
+                font-family: Arial;
+                font-size: 13pt;
+                font-weight: normal;
+                border: 1px solid #ecf0f1;
+                background-color: #34495e;
+                color: #ecf0f1;
+                padding: 5px;
             }
-            QScrollBar::handle:vertical {
-                background: #5d6d7e;
-                min-height: 20px;
-                border-radius: 7px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
+        ''')
+        self.parent.btn_merge.setStyleSheet(MergerUIStyle.BUTTON_MERGE)
+        self.parent.btn_back.setStyleSheet(MergerUIStyle.BUTTON_TOOL)
+        self.parent.progress_bar.setStyleSheet(MergerUIStyle.PROGRESS_BAR)
+        if hasattr(self.parent, "btn_cancel_merge"):
+            self.parent.btn_cancel_merge.setStyleSheet(MergerUIStyle.BUTTON_CANCEL)
+        for b in [self.parent.btn_add, self.parent.btn_add_folder, self.parent.btn_undo, self.parent.btn_redo]:
+            b.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        for b in [self.parent.btn_remove, self.parent.btn_clear]:
+            b.setStyleSheet(MergerUIStyle.BUTTON_DANGER)
+        self.parent.btn_up.setStyleSheet(MergerUIStyle.BUTTON_ARROW)
+        self.parent.btn_down.setStyleSheet(MergerUIStyle.BUTTON_ARROW)

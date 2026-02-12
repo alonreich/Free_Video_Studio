@@ -12,12 +12,12 @@ class MergerUIWidgetsMixin:
         row.setSpacing(10)
         self.parent.btn_undo = QPushButton("UNDO")
         self.parent.btn_undo.setObjectName("aux-btn")
-        self.parent.btn_undo.setFixedSize(110, 36)
+        self.parent.btn_undo.setFixedSize(100, 32)
         self.parent.btn_undo.setCursor(Qt.PointingHandCursor)
         self.parent.btn_undo.setToolTip("Undo last action (Ctrl+Z)")
         self.parent.btn_redo = QPushButton("REDO")
         self.parent.btn_redo.setObjectName("aux-btn")
-        self.parent.btn_redo.setFixedSize(110, 36)
+        self.parent.btn_redo.setFixedSize(100, 32)
         self.parent.btn_redo.setCursor(Qt.PointingHandCursor)
         self.parent.btn_redo.setToolTip("Redo last action (Ctrl+Y)")
         row.addWidget(self.parent.btn_undo)
@@ -25,7 +25,7 @@ class MergerUIWidgetsMixin:
         return row
 
     def create_merge_row(self):
-        self.parent.btn_back = QPushButton("Return to menu")
+        self.parent.btn_back = QPushButton("RETURN TO MAIN APP")
         self.parent.btn_back.setFixedSize(160, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
@@ -38,7 +38,7 @@ class MergerUIWidgetsMixin:
         self.parent.merge_row.addStretch(1)
         self.parent.btn_merge = QPushButton("Merge videos")
         self.parent.btn_merge.setObjectName("mergeButton")
-        self.parent.btn_merge.setFixedSize(240, 50)
+        self.parent.btn_merge.setFixedSize(210, 45)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
         self.parent.btn_merge.clicked.connect(self.parent.on_merge_clicked)
         self.parent.btn_merge.setToolTip("Start merging the video list (Ctrl+Enter)")
@@ -53,7 +53,4 @@ class MergerUIWidgetsMixin:
         self.parent.unified_music_widget = UnifiedMusicWidget(self.parent)
         music_layout.addWidget(self.parent.unified_music_widget)
         self.parent.add_music_checkbox = self.parent.unified_music_widget.toggle_button
-        self.parent.music_combo = self.parent.unified_music_widget.track_combo
-        self.parent.music_offset_input = self.parent.unified_music_widget.offset_spin
-        self.parent.music_volume_slider = self.parent.unified_music_widget.volume_slider
         return music_layout

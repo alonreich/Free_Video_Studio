@@ -273,13 +273,6 @@ class UiBuilderMixin:
         self.central_widget.setLayout(main_layout)
         self._ensure_overlay_widgets()
         self._hide_processing_overlay()
-        old_resize = getattr(self, "resizeEvent", None)
-
-        def _resized(e):
-            if callable(old_resize): old_resize(e)
-            try: self._resize_overlay()
-            except: pass
-        self.resizeEvent = _resized
         self._update_ui_positions(self.add_music_checkbox.isChecked())
         QTimer.singleShot(0, self._adjust_trim_margins)
         QTimer.singleShot(0, self.apply_master_volume)
@@ -726,7 +719,8 @@ class UiBuilderMixin:
         self.right_panel = QWidget()
         self.right_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         right_col = QVBoxLayout(self.right_panel)
-        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setContentsMargins(0, 10, 0, 0)
+        right_col.setAlignment(Qt.AlignTop)
         drop_slider_row = QHBoxLayout()
         drop_slider_row.setContentsMargins(0, 0, 0, 0)
         drop_slider_row.setSpacing(40)
@@ -747,7 +741,7 @@ class UiBuilderMixin:
         self.drop_area.setFixedWidth(140)
         drop_slider_row.addWidget(self.drop_area)
         self.slider_vbox_layout = QVBoxLayout()
-        self.slider_vbox_layout.setContentsMargins(0, 0, 0, 0)
+        self.slider_vbox_layout.setContentsMargins(0, 15, 0, 0)
         self.slider_vbox_layout.setSpacing(0)
         self.slider_vbox_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.music_volume_slider = QSlider(Qt.Vertical, self)
@@ -765,12 +759,12 @@ class UiBuilderMixin:
         self.music_volume_slider.setFocusPolicy(Qt.NoFocus)
         self.music_volume_slider.installEventFilter(self)
         self.music_volume_slider.setCursor(Qt.PointingHandCursor)
-        self.music_volume_slider.setFixedHeight(170)
+        self.music_volume_slider.setFixedHeight(160)
         self.music_volume_slider.setEnabled(False)
         self.music_volume_label = QLabel("80%")
         self.music_volume_label.setAlignment(Qt.AlignHCenter)
         self.music_volume_label.setVisible(False)
-        self.music_volume_label.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;")
+        self.music_volume_label.setStyleSheet("font-size: 11px; font-weight: bold;")
         init_eff = self._music_eff(int(self.music_volume_slider.value()))
         self.music_volume_label.setText(f"{init_eff}%")
         self.music_volume_badge = QLabel("100%", self)
@@ -778,13 +772,15 @@ class UiBuilderMixin:
         self.music_volume_badge.setStyleSheet("color: white; background: rgba(0,0,0,160); padding: 2px 6px; border-radius: 6px; font-weight: bold;")
         self.music_volume_badge.hide()
         self.slider_vbox_layout.addWidget(self.music_volume_slider)
+        self.slider_vbox_layout.addSpacing(10)
         self.slider_vbox_layout.addWidget(self.music_volume_label)
         drop_slider_row.addLayout(self.slider_vbox_layout)
         right_col.addLayout(drop_slider_row)
         self.upload_button = QPushButton("📂 UPLOAD VIDEO FILE 📂")
+        self.upload_button.setObjectName("uploadButton")
         self.upload_button.clicked.connect(self.select_file)
-        self.upload_button.setFixedHeight(55)
-        self.upload_button.setStyleSheet("font-size: 11px; font-weight: bold; margin-top: 20px; padding: 7px;")
+        self.upload_button.setFixedSize(150, 65)
+        self.upload_button.setStyleSheet(UIStyles.get_3d_style("#266b89", font_size=10, padding="0px 0px") + "QPushButton#uploadButton { margin-top: 20px; }")
         self.upload_button.setCursor(Qt.PointingHandCursor)
         right_col.addWidget(self.upload_button)
         self.add_music_checkbox = QCheckBox("Add Background Music")
@@ -850,8 +846,9 @@ class UiBuilderMixin:
 
     def _update_ui_positions(self, checked):
         self.drop_area.setStyleSheet(UIStyles.get_drop_area_style(checked))
-        s_top = 32 if checked else 32
-        self.slider_vbox_layout.setContentsMargins(0, s_top, 0, 0)
+        self.slider_vbox_layout.setContentsMargins(0, 15, 0, 0)
+        margin_top = 35 if checked else 20
+        self.add_music_checkbox.setStyleSheet(f"font-size: 11px; font-weight: bold; margin-top: {margin_top}px; margin-bottom: 20px;")
 
     def _on_mobile_toggled(self, checked: bool):
         self.logger.info("OPTION: Mobile Format -> %s", checked)
@@ -862,6 +859,7 @@ class UiBuilderMixin:
                 self.teammates_checkbox.setChecked(False)
         if hasattr(self, 'portrait_text_input'):
             self.portrait_text_input.setVisible(checked)
+            self.portrait_text_input.setEnabled(checked)
             if not checked:
                 self.portrait_text_input.clear()
         self._update_portrait_mask_overlay_state()

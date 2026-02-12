@@ -27,7 +27,7 @@ class FilterBuilder:
         alpha_hex = hex(int(alpha * 255))[2:].zfill(2)
         return (
             f"drawtext=fontfile='{font_path}':text='{safe_t}':"
-            f"text_shaping=1:"
+            f"text_shaping=0:"
             f"fontsize={size}:fontcolor={color}{alpha_hex}:"
             f"x={x}:y={y}:shadowcolor=black@0.6:shadowx=2:shadowy=2"
         )
@@ -36,12 +36,12 @@ class FilterBuilder:
         if keep_highest_res:
             return "scale_cuda=format=nv12"
         if target_w == 1920:
-             return "scale_cuda=1920:-2:interp_algo=lanczos:format=nv12"
+             return "scale_cuda=1920:-2:interp=linear:format=nv12"
         elif target_w == 1280:
-             return "scale_cuda=1280:-2:interp_algo=lanczos:format=nv12"
+             return "scale_cuda=1280:-2:interp=linear:format=nv12"
         elif target_w == 960:
-             return "scale_cuda=960:-2:interp_algo=lanczos:format=nv12"
-        return f"scale_cuda={target_w}:-2:interp_algo=lanczos:format=nv12"
+             return "scale_cuda=960:-2:interp=linear:format=nv12"
+        return f"scale_cuda={target_w}:-2:interp=linear:format=nv12"
 
     def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False):
         coords_data = mobile_coords
@@ -82,44 +82,34 @@ class FilterBuilder:
             register_layer("team", "team", "team", "team")
         active_layers.sort(key=lambda x: x["z"])
         if use_nvidia:
-            cmd_chain = "[main_base]hwdownload,format=nv12[cpu_master];"
-            total_splits = 1 + len(active_layers)
-            split_pads = "".join([f"[raw_{l['name']}]" for l in active_layers])
-            cmd_chain += f"[cpu_master]split={total_splits}[raw_bg]{split_pads};"
-            bg_filter = (
-                "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,"
-                "crop=1280:1920,"
-                "hwupload_cuda"
-            )
-            cmd_chain += f"[raw_bg]{bg_filter}[gpu_bg];"
-            overlay_chain_gpu = ""
-            current_base = "[gpu_bg]"
-            for i, layer in enumerate(active_layers):
-                name = layer['name']
+            cmd = "format=nv12,hwupload_cuda[gpu_master];"
+            split_count = 1 + len(active_layers)
+            cmd += f"[gpu_master]split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
+            cmd += "[bg_in]scale_cuda=1280:1920:interp=linear:force_original_aspect_ratio=increase,crop=1280:1920[bg_pre];"
+            hud_gpu_names = []
+            for layer in active_layers:
                 cw, ch, cx, cy = layer['crop_orig']
                 render_w = max(1, scale_round(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
                 render_h = max(1, scale_round(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
-                layer_filter = (
-                    f"crop={cw}:{ch}:{cx}:{cy},"
-                    f"scale={render_w}:{render_h}:flags=bilinear,"
-                    f"hwupload_cuda"
-                )
-                cmd_chain += f"[raw_{name}]{layer_filter}[gpu_{name}];"
+                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:interp=linear[{layer['name']}_gpu]"
+                cmd += f_str + ";"
+                hud_gpu_names.append(f"{layer['name']}_gpu")
+            current_pad = "[bg_pre]"
+            for i, layer in enumerate(active_layers):
                 lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
                 ly = scale_round((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
-                next_pad = f"[comp_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
-                overlay_chain_gpu += f"{current_base}[gpu_{name}]overlay_cuda=x={lx}:y={ly}{next_pad};"
-                current_base = next_pad
+                next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
+                cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
+                current_pad = next_pad
             if not active_layers:
-                 return "hwdownload,format=nv12,scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920,hwupload_cuda,scale_cuda=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
-            cmd_chain += overlay_chain_gpu
-            cmd_chain += f"[vpreout_gpu]hwdownload,format=nv12,scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,hwupload_cuda"
-            return cmd_chain
+                cmd = "format=nv12,hwupload_cuda,scale_cuda=1280:1920:interp=linear:force_original_aspect_ratio=increase,crop=1280:1920[vpreout_gpu];"
+            cmd += "[vpreout_gpu]scale_cuda=1080:-2:interp=linear,hwdownload,format=nv12,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
+            return cmd
         else:
             f_main_inner = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
             split_count = 1 + len(active_layers)
-            split_pads = "[main_base]" + "".join([f"[{l['name']}_in]" for l in active_layers])
-            cmd = f"split={split_count}{split_pads};[main_base]{f_main_inner}[main_cropped];"
+            cmd = f"split={split_count}[main_base]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
+            cmd += f"[main_base]{f_main_inner}[main_cropped];"
             hud_filters = []
             for layer in active_layers:
                 cw, ch, cx, cy = layer['crop_orig']
@@ -127,7 +117,8 @@ class FilterBuilder:
                 render_h = max(1, scale_round(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
                 f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale={render_w}:{render_h}:flags=bilinear[{layer['name']}_out]"
                 hud_filters.append(f_str)
-            cmd += ";".join(hud_filters) + ";"
+            if hud_filters:
+                cmd += ";".join(hud_filters) + ";"
             current_pad = "[main_cropped]"
             for i, layer in enumerate(active_layers):
                 lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
@@ -136,28 +127,36 @@ class FilterBuilder:
                 cmd += f"{current_pad}[{layer['name']}_out]overlay=x={lx}:y={ly}{next_pad};"
                 current_pad = next_pad
             if not active_layers:
-                 cmd = f"{f_main_inner}[vpreout];"
-            cmd += "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+                 cmd = f"split=1[main_base];[main_base]{f_main_inner}[vpreout];"
+            cmd += "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
             return cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
         norm_path = os.path.normpath(text_file_path)
         ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'''")
-        candidates = [
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "binaries", "fonts", "arial.ttf"),
-            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "arial.ttf"),
-            os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts", "segoeui.ttf"),
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/System/Library/Fonts/Helvetica.ttc"
-        ]
         font_path = "arial"
+        candidates = []
+        try:
+            import matplotlib.font_manager
+            found = matplotlib.font_manager.findfont("Arial")
+            if found: candidates.append(found)
+        except ImportError:
+            pass
+        if os.name == 'nt':
+            win_fonts = os.path.join(os.environ.get('WINDIR', 'C:/Windows'), "Fonts")
+            candidates.append(os.path.join(win_fonts, "arial.ttf"))
+            candidates.append(os.path.join(win_fonts, "segoeui.ttf"))
+        else:
+            candidates.append("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            candidates.append("/System/Library/Fonts/Helvetica.ttc")
+        candidates.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "binaries", "fonts", "arial.ttf"))
         for c in candidates:
             if os.path.exists(c):
                 font_path = c.replace("\\", "/").replace(":", "\\:")
                 break
         drawtext_parts = [
             f"drawtext=fontfile='{font_path}'",
-            f"textfile='{ff_textfile}':reload=0:text_shaping=1",
+            f"textfile='{ff_textfile}':reload=0:text_shaping=0",
             f"fontcolor=white:fontsize={int(font_px)}",
             f"x=(w-text_w)/2:y=(150-text_h)/2:line_spacing={line_spacing}",
             f"shadowcolor=black:shadowx=3:shadowy=3"
@@ -316,7 +315,11 @@ class FilterBuilder:
             kill_switch_start = max(0, dur_a - 3.5)
             chain.append(f"[game_trig]afade=t=out:st={kill_switch_start:.3f}:d=0.5,highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
             chain.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
-            duck_params = "threshold=0.15:ratio=2.5:attack=1:release=400:detection=rms"
+            d_thresh = mc.get('duck_threshold', 0.15)
+            d_ratio = mc.get('duck_ratio', 2.5)
+            d_attack = mc.get('duck_attack', 1)
+            d_release = mc.get('duck_release', 400)
+            duck_params = f"threshold={d_thresh}:ratio={d_ratio}:attack={d_attack}:release={d_release}:detection=rms"
             chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
             chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
             chain.append(

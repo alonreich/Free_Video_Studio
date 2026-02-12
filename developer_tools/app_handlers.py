@@ -1,16 +1,38 @@
 ﻿import os
-import json
-import logging
-import tempfile
 import time
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton
 from PyQt5.QtGui import QPixmap, QColor
-from PyQt5.QtCore import QTimer, QThread, Qt
+from PyQt5.QtCore import QTimer, QThread, Qt, QObject, pyqtSignal
 from utils import cleanup_temp_snapshots, get_snapshot_dir
-from config import CROP_APP_STYLESHEET, HUD_ELEMENT_MAPPINGS, UI_BEHAVIOR, get_tech_key_from_role
+from config import (
+    CROP_APP_STYLESHEET,
+    HUD_ELEMENT_MAPPINGS,
+    UI_BEHAVIOR,
+    WizardState,
+    get_stylesheet,
+    get_tech_key_from_role,
+)
+
 from enhanced_logger import get_enhanced_logger
 from magic_wand import MagicWand, MagicWandWorker
 from system.utils import ProcessManager
+from graphics_items import ResizablePixmapItem
+
+class SnapshotWorker(QObject):
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, media_processor, path, time_val):
+        super().__init__()
+        self.media_processor = media_processor
+        self.path = path
+        self.time_val = time_val
+
+    def run(self):
+        try:
+            success, message = self.media_processor.take_snapshot(self.path, self.time_val)
+        except Exception as e:
+            success, message = False, str(e)
+        self.finished.emit(success, message)
 
 class CropAppHandlers:
     def _is_wand_thread_running(self):
@@ -25,16 +47,22 @@ class CropAppHandlers:
             return False
 
     def _cleanup_magic_wand_runtime(self):
-        """[FIX #4] Robust Magic Wand cleanup with thread joining."""
+        """Cooperative Magic Wand cleanup without force-killing threads."""
         if hasattr(self, '_magic_wand_timeout_timer') and self._magic_wand_timeout_timer:
             self._magic_wand_timeout_timer.stop()
         if hasattr(self, '_analyzing_timer') and self._analyzing_timer:
             self._analyzing_timer.stop()
         thread = getattr(self, 'wand_thread', None)
         if thread and thread.isRunning():
+            worker = getattr(self, 'wand_worker', None)
+            if worker and hasattr(worker, 'cancel'):
+                try:
+                    worker.cancel()
+                except RuntimeError:
+                    pass
             thread.quit()
-            if not thread.wait(1000):
-                thread.terminate()
+            if not thread.wait(1500):
+                self.logger.error("Magic Wand thread did not stop in time; leaving thread to finish asynchronously")
         self.wand_thread = None
         self.wand_worker = None
         if hasattr(self, 'progress_bar'):
@@ -73,8 +101,10 @@ class CropAppHandlers:
             self.media_processor.info_retrieved.connect(self._on_video_info_ready)
 
     def set_style(self):
-        from config import UNIFIED_STYLESHEET
-        style = CROP_APP_STYLESHEET or UNIFIED_STYLESHEET
+        style = CROP_APP_STYLESHEET or ""
+        theme_qss = get_stylesheet()
+        if theme_qss:
+            style = f"{style}\n{theme_qss}" if style else theme_qss
         self.setStyleSheet(style)
 
     def _set_upload_hint_active(self, active):
@@ -99,14 +129,61 @@ class CropAppHandlers:
         self.show_video_view()
 
     def open_image_fallback(self):
-        """[FIX #1] Direct image upload when VLC fails."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Image", self.last_dir or "", "Images (*.png *.jpg *.jpeg)")
-        if file_path:
-            self.last_dir = os.path.dirname(file_path)
-            self.snapshot_path = file_path
-            if hasattr(self, 'save_geometry'):
-                self.save_geometry()
-            self._show_draw_view()
+        """Fallback path for VLC-missing environments: load a local screenshot safely."""
+        image_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Screenshot",
+            self.last_dir or "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp)"
+        )
+        if not image_path:
+            return
+        if not os.path.isfile(image_path):
+            QMessageBox.warning(self, "Invalid Image", "Selected image does not exist.")
+            return
+        ext = os.path.splitext(image_path)[1].lower()
+        if ext not in {'.png', '.jpg', '.jpeg', '.bmp', '.webp'}:
+            QMessageBox.warning(self, "Unsupported Image", f"Unsupported image type: {ext or 'unknown'}")
+            return
+        pix = QPixmap(image_path)
+        if pix.isNull():
+            QMessageBox.warning(self, "Image Load Error", "Could not decode this image file.")
+            return
+        self.last_dir = os.path.dirname(image_path)
+        self._delete_managed_snapshot()
+        fallback_snapshot_path = os.path.join(get_snapshot_dir(), "fallback_snapshot.png")
+        try:
+            if os.path.exists(fallback_snapshot_path):
+                os.unlink(fallback_snapshot_path)
+        except OSError as unlink_err:
+            self.logger.warning(f"Could not remove previous fallback snapshot: {unlink_err}")
+        if not pix.save(fallback_snapshot_path, "PNG"):
+            QMessageBox.warning(self, "Image Save Error", "Could not prepare a temporary working copy of this image.")
+            return
+        self.snapshot_path = fallback_snapshot_path
+        self._snapshot_owned_by_app = True
+        try:
+            if hasattr(self, 'media_processor') and self.media_processor:
+                self.media_processor.stop()
+                self.media_processor.set_media_to_null()
+        except Exception:
+            pass
+        self._set_upload_hint_active(False)
+        self.set_background_image(pix)
+        self.view_stack.setCurrentWidget(self.draw_scroll_area)
+        QApplication.processEvents()
+        self.draw_widget.setImage(self.snapshot_path)
+        self.draw_widget.set_roles(self.hud_elements, self._get_configured_roles())
+        next_element = self.get_next_element_to_configure()
+        self.update_wizard_step(3, f"Draw a box around the {next_element}" if next_element else "Refine your selection")
+        self.snapshot_button.setVisible(False)
+        if hasattr(self, 'back_to_video_button'):
+            self.back_to_video_button.setVisible(False)
+        if hasattr(self, 'magic_wand_button'):
+            self.magic_wand_button.setVisible(True)
+        if hasattr(self, 'slider_container'):
+            self.slider_container.setVisible(False)
+        self.draw_widget.setFocus()
 
     def update_wizard_step(self, step_num, instruction):
         """[FIX #17, #22] Short, punchy status labels with Goal/Status split."""
@@ -116,11 +193,11 @@ class CropAppHandlers:
             self.progress_bar.setValue(clamped_step * 20)
             self.progress_bar.setVisible(True)
         goal_map = {
-            1: "UPLOAD VIDEO",
-            2: "FIND HUD FRAME",
-            3: "REFINE BOX",
-            4: "PORTRAIT COMPOSER",
-            5: "CONFIG READY"
+            1: WizardState.UPLOAD.value,
+            2: WizardState.FIND_HUD.value,
+            3: WizardState.REFINE.value,
+            4: WizardState.COMPOSER.value,
+            5: WizardState.READY.value,
         }
         punchy_map = {
             "Open a video file to begin the configuration wizard.": "UPLOAD VIDEO",
@@ -203,7 +280,10 @@ class CropAppHandlers:
                 pix = self.draw_widget.pixmap.copy(process_rect.intersected(self.draw_widget.pixmap.rect()))
         rect = process_rect
         tech_key = get_tech_key_from_role(role)
-        if tech_key == "unknown": return
+        if tech_key == "unknown":
+            self.logger.error(f"Cannot map role '{role}' to a technical key")
+            QMessageBox.warning(self, "Unknown HUD Role", f"Cannot save selection for unknown role: {role}")
+            return
         if self._get_enhanced_logger():
             w = rect.width() * 1.3
             h = rect.height() * 1.3
@@ -311,8 +391,12 @@ class CropAppHandlers:
         self.magic_wand_button.setText("MAGIC WAND")
         if self._is_wand_thread_running():
             try:
+                worker = getattr(self, 'wand_worker', None)
+                if worker and hasattr(worker, 'cancel'):
+                    worker.cancel()
                 self.wand_thread.quit()
-                self.wand_thread.wait()
+                if not self.wand_thread.wait(1200):
+                    self.logger.error("Magic Wand timeout cleanup: thread did not stop within timeout")
             except RuntimeError:
                 self.wand_thread = None
         self._cleanup_magic_wand_runtime()
@@ -377,10 +461,8 @@ class CropAppHandlers:
             if msg.exec_() == QMessageBox.No:
                 return
         self.logger.info("Performing surgical state reset...")
-        try: 
-            if hasattr(self, 'snapshot_path') and self.snapshot_path and os.path.exists(self.snapshot_path):
-                try: os.unlink(self.snapshot_path)
-                except Exception as e: self.logger.warning(f"Failed to delete snapshot: {e}")
+        try:
+            self._delete_managed_snapshot()
             cleanup_temp_snapshots()
             ProcessManager.cleanup_temp_files()
         except Exception as e:
@@ -388,13 +470,21 @@ class CropAppHandlers:
         for attr in ['_magic_wand_preview_timer', '_magic_wand_timeout_timer', '_analyzing_timer', '_scrubbing_safety_timer']:
             timer = getattr(self, attr, None)
             if timer: 
-                try: timer.stop()
-                except: pass
+                try:
+                    timer.stop()
+                except RuntimeError as timer_err:
+                    self.logger.debug(f"Timer stop skipped for {attr}: {timer_err}")
+        self._cleanup_snapshot_runtime()
         if self._is_wand_thread_running():
             try:
+                worker = getattr(self, 'wand_worker', None)
+                if worker and hasattr(worker, 'cancel'):
+                    worker.cancel()
                 self.wand_thread.quit()
-                self.wand_thread.wait(1000)
-            except:
+                if not self.wand_thread.wait(1000):
+                    self.logger.warning("Magic Wand thread still running during reset")
+            except RuntimeError as thread_err:
+                self.logger.debug(f"Magic Wand thread cleanup skipped: {thread_err}")
                 self.wand_thread = None
         self._cleanup_magic_wand_runtime()
         if hasattr(self, 'state_manager'):
@@ -442,7 +532,12 @@ class CropAppHandlers:
             self._get_enhanced_logger().log_button_click("Open Video File")
         self.timer.stop()
         self._set_upload_hint_active(False)
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Video", self.last_dir or "", "Video Files (*.mp4 *.avi *.mkv)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Video",
+            self.last_dir or "",
+            "Video Files (*.mp4 *.avi *.mkv *.mov *.webm *.m4v)"
+        )
         if file_path:
             self.load_file(file_path)
         else:
@@ -450,8 +545,52 @@ class CropAppHandlers:
                 self._set_upload_hint_active(True)
             self.timer.start()
 
+    def _cleanup_snapshot_runtime(self):
+        thread = getattr(self, '_snapshot_thread', None)
+        if thread and thread.isRunning():
+            thread.quit()
+            if not thread.wait(1500):
+                self.logger.warning("Snapshot thread did not stop in time")
+        self._snapshot_worker = None
+        self._snapshot_thread = None
+
+    def _is_managed_snapshot_path(self, path):
+        if not path:
+            return False
+        try:
+            snapshot_dir = os.path.abspath(get_snapshot_dir())
+            abs_path = os.path.abspath(path)
+            return os.path.commonpath([snapshot_dir, abs_path]) == snapshot_dir
+        except (ValueError, OSError):
+            return False
+
+    def _delete_managed_snapshot(self):
+        snapshot_path = getattr(self, 'snapshot_path', None)
+        if not snapshot_path:
+            return
+        is_managed = bool(getattr(self, '_snapshot_owned_by_app', False)) or self._is_managed_snapshot_path(snapshot_path)
+        if is_managed and os.path.exists(snapshot_path):
+            try:
+                os.unlink(snapshot_path)
+            except OSError as unlink_err:
+                self.logger.warning(f"Failed to delete managed snapshot: {unlink_err}")
+        self.snapshot_path = None
+        self._snapshot_owned_by_app = False
+
     def load_file(self, file_path):
         """[FIX #12] Defer slider and status updates until media length is confirmed."""
+        if not file_path or not os.path.isfile(file_path):
+            QMessageBox.warning(self, "Invalid File", "Selected file does not exist or is not a regular file.")
+            self._set_upload_hint_active(True)
+            self.timer.start()
+            return
+        allowed_ext = {'.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v'}
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in allowed_ext:
+            QMessageBox.warning(self, "Unsupported Format", f"Unsupported file type: {ext or 'unknown'}. Please select a video file.")
+            self._set_upload_hint_active(True)
+            self.timer.start()
+            return
         self.last_dir = os.path.dirname(file_path)
         if hasattr(self, 'save_geometry'):
             self.save_geometry()
@@ -466,6 +605,16 @@ class CropAppHandlers:
         self._set_upload_hint_active(False)
         if hasattr(self, 'status_label'):
             self.status_label.setText("Loading video - please wait...")
+        if hasattr(self, 'slider_container') and self.slider_container:
+            self.slider_container.show()
+        if hasattr(self, 'play_pause_button') and self.play_pause_button:
+            self.play_pause_button.show()
+        if hasattr(self, 'snapshot_button') and self.snapshot_button:
+            self.snapshot_button.show()
+            self.snapshot_button.setText("START CROPPING")
+            self.snapshot_button.setEnabled(True)
+        if hasattr(self, 'reset_state_button') and self.reset_state_button:
+            self.reset_state_button.show()
         self.play_pause_button.setEnabled(True)
         self.snapshot_button.setEnabled(False)
         self.snapshot_button.setText("Loading...")
@@ -477,11 +626,22 @@ class CropAppHandlers:
         self.timer.start()
 
     def take_snapshot(self):
+        max_resolution_wait_attempts = 12
+        if not hasattr(self, '_snapshot_wait_attempts'):
+            self._snapshot_wait_attempts = 0
         if not self.media_processor.original_resolution:
+             self._snapshot_wait_attempts += 1
              if hasattr(self, 'status_label'):
                  self.status_label.setText("WAITING FOR VIDEO...")
+             if self._snapshot_wait_attempts > max_resolution_wait_attempts:
+                 self.logger.error("Timed out waiting for video resolution before snapshot")
+                 QMessageBox.warning(self, "Snapshot", "Timed out waiting for video metadata. Try reloading the video.")
+                 self._snapshot_wait_attempts = 0
+                 self._reset_snapshot_ui()
+                 return
              QTimer.singleShot(1000, self.take_snapshot)
              return
+        self._snapshot_wait_attempts = 0
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("START CROPPING", f"Video Position: {self.position_slider.value()}ms")
         try:
@@ -498,10 +658,9 @@ class CropAppHandlers:
             was_playing = self.media_processor.is_playing()
             if was_playing:
                 self.play_pause()
+            self._delete_managed_snapshot()
             self.snapshot_path = os.path.join(get_snapshot_dir(), "last_snapshot.png")
-            if os.path.exists(self.snapshot_path):
-                try: os.unlink(self.snapshot_path)
-                except: pass
+            self._snapshot_owned_by_app = True
             preferred_time = self.position_slider.value() / 1000.0
             QTimer.singleShot(50, lambda: self._execute_snapshot_capture(self.snapshot_path, preferred_time))
         except Exception as e:
@@ -509,14 +668,31 @@ class CropAppHandlers:
             self._reset_snapshot_ui()
 
     def _execute_snapshot_capture(self, path, time_val):
-        """[FIX #2] Robust snapshot execution with explicit verification."""
-        success, message = self.media_processor.take_snapshot(path, time_val)
-        if success: 
+        """Run snapshot capture off the GUI thread and return via signal."""
+        if getattr(self, '_snapshot_thread', None) and self._snapshot_thread.isRunning():
+            return
+        self._snapshot_thread = QThread(self)
+        self._snapshot_worker = SnapshotWorker(self.media_processor, path, time_val)
+        self._snapshot_worker.moveToThread(self._snapshot_thread)
+        self._snapshot_thread.started.connect(self._snapshot_worker.run)
+        self._snapshot_worker.finished.connect(self._on_snapshot_capture_result)
+        self._snapshot_worker.finished.connect(self._snapshot_thread.quit)
+        self._snapshot_worker.finished.connect(self._snapshot_worker.deleteLater)
+        self._snapshot_thread.finished.connect(self._on_snapshot_thread_finished)
+        self._snapshot_thread.finished.connect(self._snapshot_thread.deleteLater)
+        self._snapshot_thread.start()
+
+    def _on_snapshot_capture_result(self, success, message):
+        self._snapshot_worker = None
+        if success:
             QTimer.singleShot(UI_BEHAVIOR.SNAPSHOT_RETRY_INTERVAL_MS, self._check_and_show_snapshot)
-        else: 
-            if hasattr(self, 'status_label'):
-                self.status_label.setText(f"Snapshot Error: {message}")
-            self._reset_snapshot_ui()
+            return
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(f"Snapshot Error: {message}")
+        self._reset_snapshot_ui()
+
+    def _on_snapshot_thread_finished(self):
+        self._snapshot_thread = None
 
     def _reset_snapshot_ui(self):
         self._snapshot_processing = False
@@ -555,8 +731,6 @@ class CropAppHandlers:
                 return
             self.set_background_image(snapshot_pixmap)
             self.view_stack.setCurrentWidget(self.draw_scroll_area)
-
-            from PyQt5.QtWidgets import QApplication
             QApplication.processEvents()
             self.draw_widget.setImage(self.snapshot_path)
             self.draw_widget.set_roles(self.hud_elements, self._get_configured_roles())
@@ -591,7 +765,9 @@ class CropAppHandlers:
             return
         total = self.media_processor.media_player.get_length()
         if total > 0:
-            self.media_processor.set_position(position_ms / total)
+            clamped_ms = max(0, min(int(position_ms), int(total)))
+            normalized = max(0.0, min(1.0, clamped_ms / float(total)))
+            self.media_processor.set_position(normalized)
         self.update_time_labels()
 
     def _on_slider_pressed(self):

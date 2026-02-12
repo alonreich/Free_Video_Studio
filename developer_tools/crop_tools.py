@@ -4,34 +4,37 @@ sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 
-import json
-import traceback
-import time
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, 
+    QGraphicsSimpleTextItem, QDialog, QFrame, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
+    QProgressDialog, QShortcut, QPushButton, QScrollArea, QGraphicsOpacityEffect
+)
+
+from PyQt5.QtCore import (
+    Qt, QTimer, QRectF, pyqtSignal, QPointF, QPoint, QPropertyAnimation, 
+    QEasingCurve, QObject, QThread, QParallelAnimationGroup, QSequentialAnimationGroup
+)
+
+from PyQt5.QtGui import QPainter, QColor, QFont, QBrush, QPixmap, QPen, QPolygon, QKeySequence, QFontMetrics
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import ctypes
+from system.utils import ConsoleManager, ProcessManager, LogManager, DependencyDoctor
+logger_initial = ConsoleManager.initialize(project_root, "crop_tools.log", "Crop_Tool")
+
+import json
+import traceback
+import time
+import math
 import tempfile
 import subprocess
-import psutil
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, 
-    QGraphicsSimpleTextItem, QDialog, QFrame, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
-    QProgressDialog, QShortcut, QPushButton
-)
-
-from PyQt5.QtCore import Qt, QTimer, QRectF, pyqtSignal, QPointF, QPoint, QPropertyAnimation, QEasingCurve
-from PyQt5.QtCore import QParallelAnimationGroup, QSequentialAnimationGroup
-from PyQt5.QtGui import QPainter, QColor, QFont, QBrush, QPixmap, QPen, QPolygon, QKeySequence
-from utils import PersistentWindowMixin
+from utils import PersistentWindowMixin, cleanup_temp_snapshots, cleanup_old_backups
 from Keyboard_Mixing import KeyboardShortcutMixin
 from media_processor import MediaProcessor
 from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
-from config import CROP_APP_STYLESHEET
 from system.constants import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR
-from system.shared_paths import SharedPaths
 from logger_setup import setup_logger
 from enhanced_logger import get_enhanced_logger
 from config_manager import get_config_manager
@@ -42,7 +45,7 @@ from coordinate_math import (
     PORTRAIT_W, PORTRAIT_H, UI_PADDING_TOP, UI_PADDING_BOTTOM
 )
 
-from system.utils import ProcessManager, LogManager, DependencyDoctor
+from resource_manager import get_resource_manager
 from system.state_transfer import StateTransfer
 
 class SummaryToast(QDialog):
@@ -81,8 +84,6 @@ class SummaryToast(QDialog):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
-        
-        from PyQt5.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -121,11 +122,82 @@ class SummaryToast(QDialog):
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.center() - self.rect().center())
 
+class SaveConfigWorker(QObject):
+    finished = pyqtSignal(bool, list, list, str)
+
+    def __init__(self, hud_config_path, item_payload, logger=None):
+        super().__init__()
+        self.hud_config_path = hud_config_path
+        self.item_payload = item_payload or {}
+        self.logger = logger
+
+    def _create_rotation_backup(self):
+        processing_dir = os.path.dirname(self.hud_config_path)
+        backup_names = [
+            "old_crops_coordinations.conf",
+            "old1_crops_coordinations.conf",
+            "old2_crops_coordinations.conf",
+            "old3_crops_coordinations.conf",
+            "old4_crops_coordinations.conf",
+        ]
+        target_backup = None
+        for name in backup_names:
+            path = os.path.join(processing_dir, name)
+            if not os.path.exists(path):
+                target_backup = path
+                break
+        if not target_backup:
+            oldest_time = float('inf')
+            for name in backup_names:
+                path = os.path.join(processing_dir, name)
+                mtime = os.path.getmtime(path)
+                if mtime < oldest_time:
+                    oldest_time = mtime
+                    target_backup = path
+        if target_backup:
+            import shutil
+            shutil.copy2(self.hud_config_path, target_backup)
+            if self.logger:
+                self.logger.info(f"Rotation backup created at: {target_backup}")
+
+    def run(self):
+        try:
+            manager = get_config_manager(self.hud_config_path, self.logger)
+            config = manager.load_config()
+            existing_before = set(config.get("crops_1080p", {}).keys())
+            saved_keys = set()
+            configured = []
+            for tech_key, payload in self.item_payload.items():
+                config["crops_1080p"][tech_key] = payload["crop"]
+                config["scales"][tech_key] = payload["scale"]
+                config["overlays"][tech_key] = payload["overlay"]
+                config["z_orders"][tech_key] = payload["z"]
+                configured.append(payload["display"])
+                saved_keys.add(tech_key)
+            for key in list(config.get("crops_1080p", {}).keys()):
+                if key not in saved_keys:
+                    for section in ["crops_1080p", "scales", "overlays", "z_orders"]:
+                        if key in config.get(section, {}):
+                            del config[section][key]
+            unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
+            if manager.save_config(config):
+                try:
+                    self._create_rotation_backup()
+                except Exception as backup_err:
+                    if self.logger:
+                        self.logger.error(f"Failed to create rotation backup: {backup_err}")
+                self.finished.emit(True, configured, unchanged, "")
+            else:
+                self.finished.emit(False, [], [], "Failed to save config.")
+        except Exception as e:
+            self.finished.emit(False, [], [], str(e))
+
 class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHandlers):
     done_organizing = pyqtSignal()
 
     def __init__(self, logger_instance, enhanced_logger_instance, file_path=None):
         super().__init__()
+        self.setAcceptDrops(True)
         self.logger = logger_instance
         self.enhanced_logger = enhanced_logger_instance
         self.base_title = f"Portrait {PORTRAIT_W}x{PORTRAIT_H} (Crop Tool)"
@@ -143,6 +215,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 QMessageBox.critical(self, "System Error", f"Cannot create configuration folder at:\n{processing_dir}")
         self.config_manager = get_config_manager(self.hud_config_path, self.logger)
         self.state_manager = get_state_manager(self.logger)
+        self.resource_manager = get_resource_manager(self.logger)
+        self.resource_manager.setup_cleanup_timer(30000)
         self._check_dependencies()
         self._autosave_file = os.path.join(tempfile.gettempdir(), "fvs_autosave_recovery.json")
         self._autosave_timer = QTimer(self)
@@ -163,10 +237,19 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._in_undo_redo = False
         self._item_edit_cache = {}
         self._item_edit_timers = {}
+        self._save_thread = None
+        self._save_worker = None
+        self._save_progress_dialog = None
         self.REF_WIDTH = 1513.0
         self.REF_BOX_W, self.REF_BOX_H = 620, 115
-        self.REF_FONT_SIZE = 28
-        self.REF_ARROW_L, self.REF_ARROW_S = 400, 40
+        self.REF_FONT_SIZE = 32
+        self.REF_FONT_BOOST = 1.30
+        self.REF_HINT_OFFSET_X = 100
+        self.REF_HINT_OFFSET_Y = 100
+        self.REF_ARROW_SHIFT_X = -445
+        self.REF_ARROW_SHIFT_Y = 0
+        self.REF_ARROW_TILT_DEG = -5.0
+        self.REF_ARROW_L, self.REF_ARROW_S = 550, 40
         self.REF_OFFSET_X = 190
         self.REF_GAP = 20
         self.ui = Ui_CropApp()
@@ -205,12 +288,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.portrait_scene = getattr(self, 'portrait_scene', None)
             self.portrait_view = getattr(self, 'portrait_view', None)
         except Exception as e:
-            logger_instance.critical(f"SetupUI Failed: {e}", exc_info=True)
+            logger_initial.critical(f"SetupUI Failed: {e}", exc_info=True)
             raise e
         try:
             self.connect_signals()
         except Exception as e:
-            logger_instance.critical(f"Connect Signals Failed: {e}", exc_info=True)
+            logger_initial.critical(f"Connect Signals Failed: {e}", exc_info=True)
             raise e
         if not self.media_processor.vlc_instance:
             if hasattr(self, 'vlc_error_label'):
@@ -238,24 +321,36 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         try:
             self.set_style()
         except Exception as e:
-            logger_instance.error(f"Set Style Failed: {e}")
+            logger_initial.error(f"Set Style Failed: {e}")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
+
+        from ui.styles import UIStyles
+        self.play_pause_button.setStyleSheet(UIStyles.BUTTON_PLAY)
+        self.play_pause_button.setFixedSize(140, 35)
         try:
             self.setup_persistence(
                 config_path=self.app_config_path,
                 settings_key='window_geometry',
-                default_geo={'x': 0, 'y': 0, 'w': 1800, 'h': 930},
+                default_geo={'w': 1800, 'h': 930},
                 title_info_provider=self.get_title_info,
                 extra_data_provider=self._get_persistence_extras
             )
         except Exception as e:
-            logger_instance.error(f"Persistence Setup Failed: {e}")
+            logger_initial.error(f"Persistence Setup Failed: {e}")
         try:
             self._setup_portrait_editor()
         except Exception as e:
-            logger_instance.critical(f"Portrait Editor Setup Failed: {e}", exc_info=True)
+            logger_initial.critical(f"Portrait Editor Setup Failed: {e}", exc_info=True)
             raise e
+        if hasattr(self, 'slider_container') and self.slider_container:
+            self.slider_container.hide()
+        if hasattr(self, 'play_pause_button') and self.play_pause_button:
+            self.play_pause_button.hide()
+        if hasattr(self, 'snapshot_button') and self.snapshot_button:
+            self.snapshot_button.hide()
+        if hasattr(self, 'reset_state_button') and self.reset_state_button:
+            self.reset_state_button.hide()
         self._init_upload_hint_blink()
         self._init_refine_selection_hint()
         try:
@@ -268,13 +363,13 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 if session_data.get('resolution'):
                      self.media_processor.original_resolution = session_data['resolution']
         except Exception as e:
-            logger_instance.error(f"Session Load Failed: {e}")
+            logger_initial.error(f"Session Load Failed: {e}")
         if file_path and os.path.exists(file_path):
             self._set_upload_hint_active(False)
             try:
                 self.load_file(file_path)
             except Exception as e:
-                logger_instance.error(f"Initial Load File Failed: {e}")
+                logger_initial.error(f"Initial Load File Failed: {e}")
         else:
             self._set_upload_hint_active(True)
 
@@ -291,7 +386,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.redo_shortcut_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
         self.redo_shortcut_z.activated.connect(self.redo)
         QShortcut(QKeySequence("O"), self).activated.connect(self.open_button.click)
-        QShortcut(QKeySequence("I"), self).activated.connect(self.open_image_button.click)
         QShortcut(QKeySequence("C"), self).activated.connect(self.snapshot_button.click)
         QShortcut(QKeySequence("W"), self).activated.connect(self.magic_wand_button.click)
         QShortcut(QKeySequence("R"), self).activated.connect(self.reset_state_button.click)
@@ -354,8 +448,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         """Initializes the robust smooth fading logic for the upload hint group."""
         if not hasattr(self, 'hint_group_container'):
             return
-
-        from PyQt5.QtWidgets import QGraphicsOpacityEffect
         self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
         self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
         anim_in = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
@@ -378,50 +470,157 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not target or not hasattr(self, '_hint_group'):
             return
         if active:
+            try:
+                if hasattr(self, 'video_surface') and self.video_surface:
+                    self.video_surface.setVisible(False)
+                if hasattr(self, 'video_viewport_container') and self.video_viewport_container:
+                    self.video_viewport_container.setVisible(False)
+            except Exception:
+                pass
+            if hasattr(self, 'video_frame') and self.video_frame:
+                target.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
             self._update_upload_hint_responsive()
             target.show()
             target.raise_()
+            QTimer.singleShot(0, self._update_upload_hint_responsive)
+            QTimer.singleShot(120, self._update_upload_hint_responsive)
             self._hint_group.start()
         else:
             self._hint_group.stop()
             target.hide()
+            try:
+                if hasattr(self, 'video_surface') and self.video_surface:
+                    self.video_surface.setVisible(True)
+                if hasattr(self, 'video_viewport_container') and self.video_viewport_container:
+                    self.video_viewport_container.setVisible(True)
+            except Exception:
+                pass
 
     def _update_upload_hint_responsive(self):
-        if not hasattr(self, 'upload_hint_container'):
+        if (
+            not hasattr(self, 'upload_hint_container')
+            or not self.upload_hint_container
+            or not hasattr(self, 'upload_hint_label')
+            or not self.upload_hint_label
+            or not hasattr(self, 'upload_hint_arrow')
+            or not self.upload_hint_arrow
+        ):
             return
 
         from PyQt5.QtGui import QPolygon
-        scale = (self.width() / self.REF_WIDTH) * 0.9
-        box_w, box_h = int(self.REF_BOX_W * scale), int(self.REF_BOX_H * scale)
-        font_size = int(self.REF_FONT_SIZE * scale)
+        try:
+            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
+                self.hint_overlay_widget.raise_()
+            if hasattr(self, 'hint_group_container') and self.hint_group_container:
+                self.hint_group_container.raise_()
+            self.upload_hint_container.raise_()
+            self.upload_hint_label.raise_()
+            self.upload_hint_arrow.raise_()
+        except Exception:
+            pass
+        host = getattr(self, 'video_frame', None)
+        if host is None:
+            host = getattr(self, 'hint_overlay_widget', None)
+        if host is None:
+            return
+        host_w = max(1, int(host.width()))
+        host_h = max(1, int(host.height()))
+        if host_w < 120 or host_h < 80:
+            return
+        scale = max(0.95, min(1.35, (host_w / self.REF_WIDTH) * 0.98))
+        max_box_w = max(280, host_w - 12)
+        min_box_w = min(max_box_w, int(self.REF_BOX_W * scale))
+        box_h = int(self.REF_BOX_H * scale) + 100
+        font_size = max(18, int(self.REF_FONT_SIZE * scale * float(getattr(self, 'REF_FONT_BOOST', 1.30))))
+        margin_lr = max(14, int(20 * scale))
+        margin_tb = max(8, int(10 * scale))
+        target_text = self.upload_hint_label.text()
+        chosen_font = font_size
+        probe_font = QFont("Arial")
+        probe_font.setPixelSize(chosen_font)
+        probe_font.setBold(True)
+        self.upload_hint_label.setFont(probe_font)
+        self.upload_hint_label.setText(target_text)
+        self.upload_hint_label.adjustSize()
+        extra_box_w = 170
+        box_w = min(max_box_w, min_box_w + extra_box_w)
         self.upload_hint_container.setFixedSize(box_w, box_h)
-        self.upload_hint_container.setStyleSheet(f"background-color: #000000; border: {max(2, int(3*scale))}px solid #7DD3FC; border-radius: {int(14*scale)}px;")
-        self.upload_hint_label.setStyleSheet(f"color: #7DD3FC; font-family: Arial; font-size: {font_size}px; font-weight: bold; background: transparent;")
+        border_px = max(2, int(3 * scale))
+        self.upload_hint_container.setStyleSheet(
+            f"background-color: #000000; border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
+        )
+        self.upload_hint_label.setStyleSheet(
+            f"color: #7DD3FC; font-family: Arial; font-size: {chosen_font}px; font-weight: 700; "
+            f"background: transparent;"
+        )
+        self.upload_hint_label.setMargin(0)
+        self.upload_hint_label.setAlignment(Qt.AlignCenter)
+        self.upload_hint_label.setWordWrap(False)
+        self.upload_hint_label.setFixedWidth(max(220, box_w - (margin_lr * 2)))
+        if self.upload_hint_container.layout() is not None:
+            self.upload_hint_container.layout().setContentsMargins(margin_lr, margin_tb, margin_lr, margin_tb)
         if self.hint_group_layout.direction() != QHBoxLayout.TopToBottom:
             self.hint_group_layout.setDirection(QHBoxLayout.TopToBottom)
-            self.hint_group_layout.setAlignment(Qt.AlignCenter)
-        gap = 60
+        self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        stable_top_margin = max(40, int(host_h * 0.35))
+        self.hint_group_layout.setContentsMargins(0, stable_top_margin, 0, 0)
+        gap = max(24, int(40 * scale))
         self.hint_group_layout.setSpacing(gap)
-        c_w, c_h = 1200, 600
+        arrow_boost = 1.4
+        arrow_shift_x = int(getattr(self, 'REF_ARROW_SHIFT_X', -425)) - 160
+        arrow_shift_y = int(getattr(self, 'REF_ARROW_SHIFT_Y', 50))
+        c_w = min(max(int((box_w + 40) * arrow_boost), int(host_w * 0.9)), max(450, host_w - 20))
+        c_h = min(max(int(120 * arrow_boost), int(host_h * 0.28 * arrow_boost)), int(300 * arrow_boost))
         self.upload_hint_arrow.setFixedSize(c_w, c_h)
         self.upload_hint_arrow.setContentsMargins(0, 0, 0, 0)
         pix = QPixmap(c_w, c_h)
         pix.fill(Qt.transparent)
         p = QPainter(pix)
         p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.HighQualityAntialiasing)
         p.setBrush(QColor("#7DD3FC"))
-        p.setPen(QPen(QColor("#7DD3FC"), max(2, int(10*scale)), Qt.SolidLine, Qt.FlatCap, Qt.MiterJoin))
-        draw_shift_left = 565 
-        start_pt = QPoint(c_w // 2, 10)
-        end_pt = QPoint(c_w // 2 - 390, 10 + 290)
-        p.drawLine(start_pt, end_pt + QPoint(12, -10))
-        p.setPen(Qt.NoPen)
-        h_s = int(42 * scale) 
+        shaft_thickness = max(4, int(10 * scale * arrow_boost))
+        start_x = max(8, min(c_w - 8, int(c_w * 0.85) + arrow_shift_x))
+        end_x = max(8, min(c_w - 8, int(c_w * 0.05) + arrow_shift_x))
+        start_y = max(8, min(c_h - 8, int(8 * arrow_boost) + arrow_shift_y))
+        end_y = max(8, min(c_h - 8, c_h - max(18, int(20 * scale * arrow_boost)) + arrow_shift_y))
+        start_pt = QPoint(start_x, start_y)
+        raw_end = QPoint(end_x, end_y)
+        tilt_deg = float(getattr(self, 'REF_ARROW_TILT_DEG', 8.0))
+        theta = math.radians(tilt_deg)
+        vx = raw_end.x() - start_pt.x()
+        vy = raw_end.y() - start_pt.y()
+        rotated_vx = (vx * math.cos(theta)) + (vy * math.sin(theta))
+        rotated_vy = (-vx * math.sin(theta)) + (vy * math.cos(theta))
+        end_pt = QPoint(
+            max(8, min(c_w - 8, start_pt.x() + int(rotated_vx))),
+            max(int(8 * arrow_boost) + 8, min(c_h - 8, start_pt.y() + int(rotated_vy))),
+        )
+        dx = end_pt.x() - start_pt.x()
+        dy = end_pt.y() - start_pt.y()
+        vec_len = max(1.0, math.hypot(dx, dy))
+        ux, uy = dx / vec_len, dy / vec_len
+        px, py = -uy, ux
+        head_len = max(24, int(44 * scale * arrow_boost))
+        head_half_w = max(8, int(head_len * 0.28))
+        shaft_half_w = max(3, int(shaft_thickness * 0.5))
+        shaft_end = QPoint(
+            end_pt.x() - int(ux * head_len),
+            end_pt.y() - int(uy * head_len),
+        )
+        shaft_poly = QPolygon([
+            QPoint(start_pt.x() + int(px * shaft_half_w), start_pt.y() + int(py * shaft_half_w)),
+            QPoint(shaft_end.x() + int(px * shaft_half_w), shaft_end.y() + int(py * shaft_half_w)),
+            QPoint(shaft_end.x() - int(px * shaft_half_w), shaft_end.y() - int(py * shaft_half_w)),
+            QPoint(start_pt.x() - int(px * shaft_half_w), start_pt.y() - int(py * shaft_half_w)),
+        ])
         head = QPolygon([
             end_pt,
-            QPoint(end_pt.x() + h_s, end_pt.y() - int(h_s * 0.35)),
-            QPoint(end_pt.x() + int(h_s * 0.35), end_pt.y() - h_s)
+            QPoint(shaft_end.x() + int(px * head_half_w), shaft_end.y() + int(py * head_half_w)),
+            QPoint(shaft_end.x() - int(px * head_half_w), shaft_end.y() - int(py * head_half_w)),
         ])
+        p.setPen(Qt.NoPen)
+        p.drawPolygon(shaft_poly)
         p.drawPolygon(head)
         p.end()
         self.upload_hint_arrow.setPixmap(pix)
@@ -430,17 +629,24 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def _apply_hint_position(self):
         if not hasattr(self, 'hint_group_container'): return
         try:
-            scale = (self.width() / self.REF_WIDTH) * 0.9
-            box_w = int(self.REF_BOX_W * scale)
-            box_h = int(self.REF_BOX_H * scale)
-            gap = 60
-            c_w, c_h = 1200, 600
-            win_w, win_h = self.width(), self.height()
-            draw_shift_left = 565 
-            target_x = (win_w - box_w) // 2 - draw_shift_left
-            target_y = (win_h - (box_h + gap + c_h)) // 2 + 290
-            self.hint_group_container.setFixedSize(max(box_w, c_w), box_h + gap + c_h)
-            self.hint_group_container.move(target_x, target_y)
+            host = getattr(self, 'video_frame', None)
+            if host is None:
+                host = getattr(self, 'hint_overlay_widget', None)
+            if host is None:
+                return
+            if hasattr(self, 'video_frame') and self.video_frame and hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
+                self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
+            win_w, win_h = host.width(), host.height()
+            if win_w < 50 or win_h < 50:
+                return
+            offset_x = int(getattr(self, 'REF_HINT_OFFSET_X', 100)) + 50
+            offset_y = int(getattr(self, 'REF_HINT_OFFSET_Y', 100)) - 100
+            overflow_x = 300
+            self.hint_group_container.setGeometry(offset_x - overflow_x, offset_y, win_w + (overflow_x * 2), win_h)
+            if self.hint_group_layout is not None:
+                safe_edge = max(14, int(win_w * 0.03))
+                self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+            self.hint_group_container.raise_()
         except Exception:
             pass
 
@@ -448,11 +654,16 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         super().resizeEvent(event)
         self.portrait_view.fit_to_scene()
         self._position_refine_selection_hint()
-        if hasattr(self, 'hint_overlay_widget'):
-            self.hint_overlay_widget.resize(self.size())
+        if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
+            self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
             self.hint_overlay_widget.raise_()
         if hasattr(self, '_update_upload_hint_responsive'):
             self._update_upload_hint_responsive()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if hasattr(self, '_apply_hint_position'):
+            self._apply_hint_position()
 
     def _toggle_upload_hint(self): pass
 
@@ -469,15 +680,22 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not hasattr(self, 'draw_refine_hint_container'): return
         viewport = self.draw_scroll_area.viewport()
         if viewport is None: return
-        self.draw_refine_hint_container.setFixedWidth(min(560, max(360, viewport.width() - 80)))
+        side_margin = 12
+        max_fit_width = max(180, viewport.width() - (side_margin * 2))
+        self.draw_refine_hint_container.setFixedWidth(min(560, max_fit_width))
         self.draw_refine_hint_container.adjustSize()
-        self.draw_refine_hint_container.move(max(10, (viewport.width() - self.draw_refine_hint_container.width()) // 2), 12)
+        self.draw_refine_hint_container.move(
+            max(side_margin, (viewport.width() - self.draw_refine_hint_container.width()) // 2),
+            12,
+        )
+        self.draw_refine_hint_container.raise_()
 
     def show_refine_selection_overlay(self):
         if not hasattr(self, 'draw_refine_hint_container'): return
         self._position_refine_selection_hint()
         self._refine_hint_visible = True
         self.draw_refine_hint_container.setVisible(True)
+        self.draw_refine_hint_container.raise_()
         self._refine_hint_blink_timer.start()
         self._refine_hint_hide_timer.start(3000)
 
@@ -485,6 +703,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not hasattr(self, 'draw_refine_hint_container'): return
         self._refine_hint_visible = not self._refine_hint_visible
         self.draw_refine_hint_container.setVisible(self._refine_hint_visible)
+        if self._refine_hint_visible:
+            self.draw_refine_hint_container.raise_()
 
     def _hide_refine_selection_hint(self):
         if hasattr(self, '_refine_hint_blink_timer'): self._refine_hint_blink_timer.stop()
@@ -738,75 +958,82 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def on_done_clicked(self):
         pd = QProgressDialog("Saving Configuration...", None, 0, 0, self)
-        pd.setWindowTitle("Saving"); pd.show(); QApplication.processEvents()
+        pd.setWindowTitle("Saving")
+        pd.show()
+        QApplication.processEvents()
         try:
             tk_map = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
             items = [item for item in self.portrait_scene.items() if isinstance(item, ResizablePixmapItem)]
-            if not items: pd.close(); QMessageBox.warning(self, "Save", "No HUD elements to save."); return
+            if not items:
+                pd.close()
+                QMessageBox.warning(self, "Save", "No HUD elements to save.")
+                return
             res_str = self.media_processor.original_resolution or "1920x1080"
-            config = self.config_manager.load_config()
-            configured, unchanged, saved_keys = [], [], set()
+            item_payload = {}
             items.sort(key=lambda i: i.zValue())
             for item in items:
                 role = item.assigned_role
-                if not role: continue
+                if not role:
+                    continue
                 tk = tk_map.get(role, "unknown")
-                if tk == "unknown": continue
+                if tk == "unknown":
+                    continue
                 r = item.crop_rect
                 fx, fy, fw, fh = transform_to_content_area((float(r.x()), float(r.y()), float(r.width()), float(r.height())), res_str)
                 ix, iy, iw, ih = outward_round_rect(fx, fy, fw, fh)
                 normalized_rect = [iw, ih, ix, iy]
                 scale = max(0.001, round(float(item.current_width) / max(1.0, fw), 4))
                 ox, oy, zv = int(scale_round(item.scenePos().x())), int(scale_round(item.scenePos().y())), int(item.zValue())
-                config["crops_1080p"][tk] = normalized_rect
-                config["scales"][tk] = scale
-                config["overlays"][tk] = {"x": ox, "y": oy}
-                config["z_orders"][tk] = zv
-                configured.append(HUD_ELEMENT_MAPPINGS.get(tk, tk))
-                saved_keys.add(tk)
-            all_tech_keys = list(config["crops_1080p"].keys())
-            for tk in all_tech_keys:
-                if tk not in saved_keys:
-                    self.logger.info(f"Removing zombie element from config: {tk}")
-                    for s in ["crops_1080p", "scales", "overlays", "z_orders"]:
-                        if tk in config[s]: del config[s][tk]
-            if self.config_manager.save_config(config):
+                item_payload[tk] = {
+                    "crop": normalized_rect,
+                    "scale": scale,
+                    "overlay": {"x": ox, "y": oy},
+                    "z": zv,
+                    "display": HUD_ELEMENT_MAPPINGS.get(tk, tk),
+                }
+            if not item_payload:
+                pd.close()
+                QMessageBox.warning(self, "Save", "No valid HUD elements to save.")
+                return
+            self._save_progress_dialog = pd
+            self.done_button.setEnabled(False)
+            self.done_button.setText("SAVING...")
+            self._save_thread = QThread(self)
+            self._save_worker = SaveConfigWorker(self.hud_config_path, item_payload, self.logger)
+            self._save_worker.moveToThread(self._save_thread)
+            self._save_thread.started.connect(self._save_worker.run)
+            self._save_worker.finished.connect(self._on_save_finished)
+            self._save_worker.finished.connect(self._save_thread.quit)
+            self._save_worker.finished.connect(self._save_worker.deleteLater)
+            self._save_thread.finished.connect(self._on_save_thread_finished)
+            self._save_thread.finished.connect(self._save_thread.deleteLater)
+            self._save_thread.start()
+        except Exception as e:
+            pd.close()
+            self.logger.exception(f"Save failed: {e}")
+
+    def _on_save_finished(self, success, configured, unchanged, error_message):
+        pd = getattr(self, '_save_progress_dialog', None)
+        if pd:
+            pd.close()
+            self._save_progress_dialog = None
+        if success:
+            self._dirty = False
+            if os.path.exists(self._autosave_file):
                 try:
-                    processing_dir = os.path.dirname(self.hud_config_path)
-                    backup_names = [
-                        "old_crops_coordinations.conf",
-                        "old1_crops_coordinations.conf",
-                        "old2_crops_coordinations.conf",
-                        "old3_crops_coordinations.conf",
-                        "old4_crops_coordinations.conf"
-                    ]
-                    target_backup = None
-                    for name in backup_names:
-                        path = os.path.join(processing_dir, name)
-                        if not os.path.exists(path):
-                            target_backup = path
-                            break
-                    if not target_backup:
-                        oldest_time = float('inf')
-                        for name in backup_names:
-                            path = os.path.join(processing_dir, name)
-                            mtime = os.path.getmtime(path)
-                            if mtime < oldest_time:
-                                oldest_time = mtime
-                                target_backup = path
-                    if target_backup:
-                        import shutil
-                        shutil.copy2(self.hud_config_path, target_backup)
-                        self.logger.info(f"Rotation backup created at: {target_backup}")
-                except Exception as backup_err:
-                    self.logger.error(f"Failed to create rotation backup: {backup_err}")
-                self._dirty = False
-                if os.path.exists(self._autosave_file):
-                    try: os.unlink(self._autosave_file)
-                    except: pass
-                pd.close(); summary = SummaryToast(configured, unchanged, self); summary.show(); self._start_exit_sequence(summary)
-            else: pd.close(); QMessageBox.critical(self, "Save", "Failed to save config.")
-        except Exception as e: pd.close(); self.logger.exception(f"Save failed: {e}")
+                    os.unlink(self._autosave_file)
+                except OSError:
+                    pass
+            summary = SummaryToast(configured, unchanged, self)
+            summary.show()
+            self._start_exit_sequence(summary)
+        else:
+            QMessageBox.critical(self, "Save", error_message or "Failed to save config.")
+            self._refresh_done_button()
+
+    def _on_save_thread_finished(self):
+        self._save_thread = None
+        self._save_worker = None
 
     def _start_exit_sequence(self, summary_dialog):
         widgets = [w for w in (self, summary_dialog) if w]
@@ -995,11 +1222,60 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not self._autosave_timer.isActive():
             self._autosave_timer.start()
 
+    def dragEnterEvent(self, event):
+        try:
+            if not event.mimeData().hasUrls():
+                event.ignore()
+                return
+            local_urls = [u for u in event.mimeData().urls() if u.isLocalFile()]
+            if len(local_urls) != 1:
+                event.ignore()
+                return
+            ext = os.path.splitext(local_urls[0].toLocalFile())[1].lower()
+            if ext in {'.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v'}:
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+        except Exception:
+            event.ignore()
+
+    def dropEvent(self, event):
+        try:
+            local_urls = [u for u in event.mimeData().urls() if u.isLocalFile()]
+            if len(local_urls) != 1:
+                QMessageBox.warning(self, "Invalid Drop", "Drop exactly one local video file.")
+                event.ignore()
+                return
+            self.load_file(local_urls[0].toLocalFile())
+            event.acceptProposedAction()
+        except Exception as e:
+            self.logger.error(f"Drop handling failed: {e}")
+            event.ignore()
+
     def closeEvent(self, event):
         if self._confirm_discard_changes():
+            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
+                try:
+                    self.hint_overlay_widget.hide()
+                    self.hint_overlay_widget.deleteLater()
+                except Exception:
+                    pass
             if hasattr(self, '_autosave_file') and os.path.exists(self._autosave_file):
                 try: os.unlink(self._autosave_file)
                 except: pass
+            if hasattr(self, '_autosave_timer') and self._autosave_timer.isActive():
+                self._autosave_timer.stop()
+            if hasattr(self, 'media_processor') and self.media_processor:
+                try:
+                    self.media_processor.stop()
+                    self.media_processor.set_media_to_null()
+                except Exception as media_cleanup_err:
+                    self.logger.debug(f"Media cleanup during close skipped: {media_cleanup_err}")
+            if hasattr(self, 'resource_manager') and self.resource_manager:
+                try:
+                    self.resource_manager.shutdown()
+                except Exception as resource_cleanup_err:
+                    self.logger.debug(f"Resource manager shutdown skipped: {resource_cleanup_err}")
             try: cleanup_temp_snapshots()
             except: pass
             super().closeEvent(event)
@@ -1022,7 +1298,20 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.logger.error(f"Error preparing handoff: {e}")
             pass
         try: 
-            subprocess.Popen([sys.executable, "-B", os.path.join(self.base_dir, 'app.py')], cwd=self.base_dir)
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+            env = os.environ.copy()
+            if self.base_dir not in env.get("PYTHONPATH", ""):
+                 env["PYTHONPATH"] = self.base_dir + os.pathsep + env.get("PYTHONPATH", "")
+            subprocess.Popen(
+                [sys.executable, "-B", os.path.join(self.base_dir, 'app.py')], 
+                cwd=self.base_dir,
+                creationflags=creation_flags,
+                close_fds=True,
+                env=env,
+                shell=False
+            )
         except Exception as e:
             self.logger.critical(f"Failed to launch main app: {e}")
             pass
@@ -1053,16 +1342,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         return msg.exec_() == QMessageBox.Yes
 
     def get_title_info(self): return self.base_title
-
-    def _format_time(self, ms):
-        ts = int(ms / 1000); return f"{ts // 60:02d}:{ts % 60:02d}"
-
-    def update_ui(self):
-        if not self.media_processor.media: return
-        if not self.is_scrubbing:
-            curr = self.media_processor.get_time()
-            if self.position_slider.isEnabled(): self.position_slider.setValue(curr)
-        self.update_time_labels()
 
     def _detect_overlaps(self, items):
         overlaps = []
@@ -1111,26 +1390,10 @@ def main():
     try:
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
-        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
-        os.makedirs(log_dir, exist_ok=True)
         enhanced_logger_instance = setup_logger()
         logger = enhanced_logger_instance.base_logger
         logger.info("Application starting...")
-
-        def global_exception_handler(exc_type, exc_value, exc_traceback):
-            if issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
-                sys.__excepthook__(exc_type, exc_value, exc_traceback)
-                return
-            error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            logger.critical(f"Unhandled Exception: {error_msg}")
-            print(error_msg, file=sys.stderr)
-            try:
-                QMessageBox.critical(None, "Critical Error", f"An unhandled error occurred:\n{exc_value}")
-            except:
-                pass
-        sys.excepthook = global_exception_handler
-
-        import time
+        cleanup_old_backups()
         pid_retries = 3
         success = False
         pid_handle = None
@@ -1140,7 +1403,6 @@ def main():
                 break
             time.sleep(0.5)
         if not success:
-            logger.warning("Another instance of Crop Tool is running.")
             app = QApplication(sys.argv)
             QMessageBox.information(None, "Already Running", "Crop Tool is already running.")
             sys.exit(0)
@@ -1154,14 +1416,14 @@ def main():
         try:
             ret = app.exec_()
         except Exception as event_loop_err:
-            logger.critical(f"Crash in event loop: {event_loop_err}", exc_info=True)
+            logger_initial.critical(f"Crash in event loop: {event_loop_err}", exc_info=True)
             ret = 1
         if pid_handle:
             pid_handle.close()
         sys.exit(ret)
     except Exception as e:
-        if 'logger' in locals():
-            logger.critical(f"Unhandled exception in main: {e}", exc_info=True)
+        if 'logger_initial' in locals():
+            logger_initial.critical(f"Unhandled exception in main: {e}", exc_info=True)
         else:
             print(f"Caught unhandled exception in main: {e}")
             traceback.print_exc()
@@ -1169,5 +1431,3 @@ def main():
         print("--- Crop Tools main() finished ---")
 if __name__ == '__main__':
     main()
-
-

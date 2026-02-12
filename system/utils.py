@@ -65,12 +65,19 @@ class ProcessManager:
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
         """
         Kills stray processes that might be lingering from previous sessions.
+        STRICT SAFETY: Only kills processes running from the application's 'binaries' directory.
         """
         my_pid = os.getpid()
-        for proc in psutil.process_iter(['pid', 'name']):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        bin_dir = os.path.join(base_dir, 'binaries')
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
             try:
-                if proc.info['name'] in process_names and proc.info['pid'] != my_pid:
-                    proc.kill()
+                if proc.info['pid'] == my_pid:
+                    continue
+                if proc.info['name'] in process_names:
+                    proc_exe = proc.info.get('exe')
+                    if proc_exe and bin_dir in os.path.abspath(proc_exe):
+                        proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     @staticmethod
@@ -107,37 +114,61 @@ class ProcessManager:
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
         """
-        Acquires a named lock file. Returns (success, file_handle).
-        [FIX] Better stale lock handling for Windows.
+        Acquires a named lock file using OS-level file locking (msvcrt/fcntl).
+        Returns (success, file_handle).
+        If success, file_handle MUST be kept open to maintain the lock.
         """
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")
-        if os.path.exists(pid_file):
-            try:
-                os.remove(pid_file)
-            except OSError:
-                try:
-                    with open(pid_file, 'r') as f:
-                        old_pid = int(f.read().strip())
-                    if not psutil.pid_exists(old_pid):
-                        pass
-                    else:
-                        return False, None
-                except:
-                    pass
-                return False, None
         try:
-            f = open(pid_file, "w")
+            f = open(pid_file, "a+")
+            f.seek(0)
             if sys.platform == "win32":
                 import msvcrt
                 msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
                 fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            f.seek(0)
+            f.truncate()
             f.write(str(os.getpid()))
             f.flush()
             return True, f
-        except (IOError, OSError):
+        except (IOError, OSError, PermissionError):
             return False, None
+
+class ConsoleManager:
+    @staticmethod
+    def initialize(base_dir: str, log_filename: str, logger_name: str):
+        logger = LogManager.setup_logger(base_dir, log_filename, logger_name)
+        log_dir = os.path.join(base_dir, "logs")
+        log_path = os.path.join(log_dir, log_filename)
+
+        def global_exception_handler(exc_type, exc_value, exc_traceback):
+            if issubclass(exc_type, KeyboardInterrupt):
+                sys.__excepthook__(exc_type, exc_value, exc_traceback)
+                return
+            error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+            logger.critical(f"UNCAUGHT EXCEPTION:\n{error_msg}")
+            try:
+                from PyQt5.QtWidgets import QMessageBox, QApplication
+                if QApplication.instance():
+                    QMessageBox.critical(None, "Critical Error", f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
+            except: pass
+        sys.excepthook = global_exception_handler
+        try:
+            f = open(log_path, 'a', buffering=1, encoding='utf-8')
+            os.dup2(f.fileno(), sys.stdout.fileno())
+            os.dup2(f.fileno(), sys.stderr.fileno())
+        except Exception as e:
+            print(f"Failed FD redirection: {e}")
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd != 0:
+                    ctypes.windll.user32.ShowWindow(hwnd, 0)
+            except: pass
+        return logger
 
 class LogManager:
     @staticmethod

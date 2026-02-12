@@ -30,16 +30,10 @@ def _human(n_bytes: int) -> str:
 
 def _get_logger():
     """Gets or sets up the logger safely."""
+
+    from utilities.merger_system import MergerLogManager
     project_root = str(Path(__file__).resolve().parents[1])
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    try:
-        from system.logger import setup_logger as setup_main_logger
-        return setup_main_logger(project_root, "Video_Merger.log", "Video_Merger")
-    except ImportError:
-        import logging
-        logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("Video_Merger")
+    return MergerLogManager.setup_logger(project_root, "Video_Merger.log", "Video_Merger")
 
 def _load_conf() -> dict:
     p = _conf_path()
@@ -119,7 +113,7 @@ def kill_process_tree(pid: int) -> None:
         parent.kill()
     except: pass
 
-def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, music_volume: float = 1.0, sample_rate: int = 48000) -> list[str]:
+def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, music_volume: float = 1.0, sample_rate: int = 48000, video_has_audio: bool = True) -> list[str]:
     """
     Returns FFmpeg filter strings for ducking music based on video audio.
     Protects video dialogue by ducking music when video audio is present.
@@ -128,6 +122,7 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
         music_stream: Input music stream label (e.g., '[mus]')
         music_volume: Music volume multiplier (0.0 to 1.0)
         sample_rate: Output sample rate
+        video_has_audio: Whether the video stream actually contains audio.
     Returns:
         List of filter strings to be joined with ';'
     """
@@ -135,7 +130,11 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
     filters.append(f"{music_stream}asplit=2[mus_base][mus_to_filter]")
     filters.append("[mus_base]lowpass=f=150[mus_low]")
     filters.append("[mus_to_filter]highpass=f=150[mus_high]")
-    filters.append(f"{video_audio_stream}asplit=2[game_out][game_trig]")
+    trigger_source = video_audio_stream
+    if not video_has_audio:
+        filters.append(f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}[video_silence]")
+        trigger_source = "[video_silence]"
+    filters.append(f"{trigger_source}asplit=2[game_out_pre][game_trig]")
     filters.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
     filters.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
     duck_params = "threshold=0.15:ratio=2.5:attack=1:release=400:detection=rms"
@@ -147,7 +146,7 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
     else:
         music_reconstructed = "[a_music_reconstructed]"
     filters.append(
-        f"[game_out]{music_reconstructed}"
+        f"[game_out_pre]{music_reconstructed}"
         "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
         f"alimiter=limit=0.95:attack=5:release=50,aresample={sample_rate}[a_out]"
     )

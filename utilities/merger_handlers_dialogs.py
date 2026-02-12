@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QGridLayout, QPushButton, QApplication
+﻿from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QGridLayout, QPushButton, QApplication
 from PyQt5.QtCore import QUrl, Qt
 from PyQt5.QtGui import QDesktopServices
 from pathlib import Path
@@ -36,7 +36,26 @@ class MergerHandlersDialogsMixin:
             except Exception:
                 pass
 
-    def show_success_dialog(self, output_path):
+    def open_music_wizard(self):
+        from utilities.merger_music_wizard import MergerMusicWizard
+        import os
+        total_sec = self.parent.estimate_total_duration_seconds()
+        if total_sec <= 0:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self.parent, "No Videos", "Please add at least one video first so we know how much music you need!")
+            return
+        mp3_dir = os.path.join(self.parent.base_dir, "mp3")
+        wizard = MergerMusicWizard(
+            self.parent, 
+            self.parent.vlc_instance, 
+            self.parent.bin_dir, 
+            mp3_dir, 
+            total_sec
+        )
+        if wizard.exec_() == QDialog.Accepted:
+            if hasattr(self.parent, "unified_music_widget"):
+                self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks)
+                self.parent.set_status_message("✅ Music selection applied!", "color: #43b581; font-weight: bold;", 3000, force=True)
         dialog = QDialog(self.parent)
         dialog.setWindowTitle("Done! Video Processed Successfully!")
         dialog.setModal(True)
