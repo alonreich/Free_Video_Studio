@@ -34,6 +34,8 @@ class MusicDialogHandler:
 
     def open_music_wizard(self):
         from utilities.merger_music_wizard import MergerMusicWizard
+        if not self._ensure_vlc_instance():
+            self.logger.warning("WIZARD: VLC initialization failed. Preview will be unavailable.")
         total_sec = self.parent.estimate_total_duration_seconds()
         if total_sec <= 0:
             QMessageBox.warning(self.parent, "No Videos", "Please add at least one video first!")
@@ -42,7 +44,9 @@ class MusicDialogHandler:
         wizard = MergerMusicWizard(self.parent, self.parent.vlc_instance, self.parent.bin_dir, mp3_dir, total_sec)
         if wizard.exec_() == QDialog.Accepted:
             if hasattr(self.parent, "unified_music_widget"):
-                self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks)
+                m_vol = wizard.music_vol_slider.value()
+                v_vol = wizard.video_vol_slider.value()
+                self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks, music_vol=m_vol, video_vol=v_vol)
                 self.parent.set_status_message("✅ Music selection applied!", "color: #43b581; font-weight: bold;", 3000, force=True)
 
     def show_music_offset_dialog(self, path):

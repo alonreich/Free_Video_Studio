@@ -4,7 +4,7 @@
         is_processing = self.parent.is_processing
         selected_items = self.parent.listw.selectedItems()
         is_single_selection = len(selected_items) == 1
-        self.parent.add_music_checkbox.setEnabled(not is_processing)
+        self.parent.add_music_checkbox.setEnabled(n >= 1 and not is_processing)
         self.parent.btn_merge.setEnabled(n >= 1 and not is_processing)
         self.parent.btn_remove.setEnabled(bool(selected_items) and not is_processing)
         self.parent.btn_clear.setEnabled(n > 0 and not is_processing)

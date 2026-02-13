@@ -604,7 +604,13 @@ class UiBuilderMixin:
         self.speed_spinbox.setValue(1.1)
         self.speed_spinbox.setFixedWidth(55)
         self.speed_spinbox.setFixedHeight(35)
-        self.speed_spinbox.setStyleSheet(UIStyles.SPINBOX)
+        self.speed_spinbox.setStyleSheet(
+            UIStyles.SPINBOX + """
+            QDoubleSpinBox {
+                padding: 2px 4px 2px 4px;
+            }
+            """
+        )
         self.speed_spinbox.setCursor(Qt.PointingHandCursor)
         self.speed_spinbox.setEnabled(False)
         self.speed_spinbox.valueChanged.connect(self._on_speed_changed)

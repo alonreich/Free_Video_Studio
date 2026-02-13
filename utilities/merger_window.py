@@ -189,14 +189,17 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             self._progress_samples = []
 
     def _cleanup_stale_temps(self):
-        """Clean up old temp directories from previous crashes (Fix #16)."""
+        """Clean up old temp directories from previous crashes (Fix #8, #16)."""
         try:
             tmp = Path(tempfile.gettempdir())
+            now = time.time()
             for p in tmp.glob("fvs_merger_*"):
                 if p.is_dir() and (p / ".fvs_merger_tmp").exists():
                     try:
-                        shutil.rmtree(p)
-                        self.logger.info(f"Cleaned stale temp: {p}")
+                        mtime = p.stat().st_mtime
+                        if now - mtime > 1800:
+                            shutil.rmtree(p, ignore_errors=True)
+                            self.logger.info(f"Cleaned stale temp: {p}")
                     except Exception as ex:
                         self.logger.debug(f"Temp cleanup skip for {p}: {ex}")
         except Exception as e:
@@ -282,7 +285,8 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
 
     def resizeEvent(self, event: QEvent):
         super().resizeEvent(event)
-        self._resize_overlay()
+        if hasattr(self, "_resize_overlay"):
+            self._resize_overlay()
 
     def init_ui(self):
         self.setWindowTitle("Video Merger")
@@ -353,6 +357,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         """Connect all signals with deduplication."""
         self.event_handler.setup_list_connections()
         self.listw.itemSelectionChanged.connect(self.event_handler.update_button_states)
+        self.listw.itemSelectionChanged.connect(self.event_handler.refresh_selection_highlights)
         self.status_updated.connect(self.handle_status_update)
         self.listw.model().rowsInserted.connect(self.event_handler.update_button_states)
         self.listw.model().rowsRemoved.connect(self.event_handler.update_button_states)
@@ -511,7 +516,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 total_in += os.path.getsize(p)
             except Exception:
                 continue
-        return max(int(total_in * 1.15), 500 * 1024 * 1024)
+        return max(int(total_in * 1.05), 300 * 1024 * 1024)
 
     def _collect_preflight_warnings(self) -> list[str]:
         warnings = []
@@ -611,20 +616,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                     self.set_processing_state(False)
                     return
             if total_video > 0 and music_unique_total > total_video + 30:
-                extra = self._human_time(music_unique_total - total_video)
-                reply = QMessageBox.question(
-                    self,
-                    "Music Length Notice",
-                    f"Your selected music ({self._human_time(music_unique_total)}) is longer than all videos ({self._human_time(total_video)}) by {extra}.\n\n"
-                    f"The music will be automatically faded out and trimmed to match the video length.\n"
-                    f"This ensures no black frozen frames after videos end.\n\n"
-                    "Do you want to proceed?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes,
-                )
-                if reply != QMessageBox.Yes:
-                    self.set_processing_state(False)
-                    return
+                pass
             mus_dur = self._probe_media_duration(music_path)
             if mus_dur > 0 and music_offset >= max(0.0, mus_dur - 0.1):
                 QMessageBox.warning(
@@ -636,15 +628,24 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 self.set_processing_state(False)
                 return
         self._output_path = self._get_next_output_path()
-        free_bytes = get_disk_free_space(self._output_path)
+        free_bytes = get_disk_free_space(os.path.dirname(os.path.abspath(self._output_path)))
         req_bytes = self._estimate_required_output_bytes(video_files)
         if free_bytes < req_bytes:
+            if free_bytes < (req_bytes * 0.5):
+                QMessageBox.critical(
+                    self,
+                    "Critically Low Disk Space",
+                    f"You only have {_human(free_bytes)} available, but need at least {_human(req_bytes)}.\n"
+                    "Please free up space to continue."
+                )
+                self.set_processing_state(False)
+                return
             reply = QMessageBox.question(
                 self,
                 "Low Disk Space",
                 f"Estimated required space: {_human(req_bytes)}\n"
                 f"Available space: {_human(free_bytes)}\n\n"
-                "Merge may fail. Continue anyway?",
+                "Merge might fail if the output is larger than expected. Continue?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -670,6 +671,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
     def _validate_and_finalize(self, results, total_duration):
         """
         Validate resolution consistency and audio presence (Fix #1, #2).
+        Calculates peak quality targets to match original media.
         """
         if not self.is_processing: return
         result_by_path = {r.get("path"): r for r in (results or []) if isinstance(r, dict)}
@@ -677,6 +679,9 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         first_res = None
         normalize_video = False
         has_audio_input = False
+        peak_v_bitrate = 0
+        peak_a_bitrate = 0
+        peak_a_rate = 44100
         for i in range(self.listw.count()):
             it = self.listw.item(i)
             path = it.data(Qt.UserRole)
@@ -685,6 +690,9 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             if not info:
                 self._merge_finished_cleanup(False, f"Probe data missing for file: {path}")
                 return
+            peak_v_bitrate = max(peak_v_bitrate, info.get("video_bitrate", 0))
+            peak_a_bitrate = max(peak_a_bitrate, info.get("audio_bitrate", 0))
+            peak_a_rate = max(peak_a_rate, info.get("audio_rate", 0))
             res = info.get("resolution")
             if not res or len(res) != 2 or not all(isinstance(v, int) and v > 0 for v in res):
                 self._merge_finished_cleanup(False, f"Could not determine video resolution for: {path}")
@@ -694,48 +702,66 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             elif tuple(res) != first_res:
                 normalize_video = True
             has_audio_input = has_audio_input or bool(info.get("has_audio"))
-        self._finalize_merge_setup(video_files, total_duration, has_audio_input, first_res, normalize_video)
+        if peak_v_bitrate == 0: peak_v_bitrate = 8000000
+        if peak_a_bitrate == 0: peak_a_bitrate = 192000
+        if peak_a_rate == 0: peak_a_rate = 48000
+        self._finalize_merge_setup(video_files, total_duration, has_audio_input, first_res, normalize_video, peak_v_bitrate, peak_a_bitrate, peak_a_rate)
 
-    def _finalize_merge_setup(self, video_files, total_duration=0.0, has_audio_input=False, target_resolution=None, normalize_video=False):
+    def _finalize_merge_setup(self, video_files, total_duration=0.0, has_audio_input=False, target_resolution=None, normalize_video=False, target_v_bitrate=0, target_a_bitrate=0, target_a_rate=48000):
         if not self.is_processing: return
         self._temp_dir = tempfile.TemporaryDirectory(prefix="fvs_merger_")
-        concat_txt = Path(self._temp_dir.name, "concat_list.txt")
         try:
             Path(self._temp_dir.name, ".fvs_merger_tmp").write_text("fvs", encoding="utf-8")
-            with concat_txt.open("w", encoding="utf-8") as f:
-                f.write("ffconcat version 1.0\n")
-                for path in video_files:
-                    escaped = escape_ffmpeg_path(path)
-                    f.write(f"file '{escaped}'\n")
         except Exception as e:
-            self._merge_finished_cleanup(False, f"Failed to create list file: {e}")
+            self._merge_finished_cleanup(False, f"Failed to init temp dir: {e}")
             return
         wizard_tracks = []
         if hasattr(self.unified_music_widget, "get_wizard_tracks"):
             wizard_tracks = self.unified_music_widget.get_wizard_tracks()
         music_vol = self.unified_music_widget.get_volume()
-        cmd = [self.ffmpeg, "-y", "-f", "concat", "-safe", "0", "-segment_time_metadata", "1", "-i", str(concat_txt)]
+        video_vol = self.unified_music_widget.get_video_volume()
+        cmd = [self.ffmpeg, "-y"]
         filters = []
-        map_video = "0:v"
-        map_audio = None
-        if normalize_video and target_resolution and len(target_resolution) == 2:
+        if normalize_video:
             tw, th = int(target_resolution[0]), int(target_resolution[1])
-            filters.append(
-                f"[0:v]scale={tw}:{th}:force_original_aspect_ratio=decrease,"
-                f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1[v_out]"
-            )
+            for i, path in enumerate(video_files):
+                cmd.extend(["-i", path])
+                filters.append(
+                    f"[{i}:v]scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+                    f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}]"
+                )
+            v_inputs = "".join(f"[v{i}]" for i in range(len(video_files)))
+            filters.append(f"{v_inputs}concat=n={len(video_files)}:v=1:a=0[v_out]")
             map_video = "[v_out]"
+            if has_audio_input:
+                a_inputs = "".join(f"[{i}:a]" for i in range(len(video_files)))
+                filters.append(f"{a_inputs}concat=n={len(video_files)}:v=0:a=1,volume={video_vol/100.0}[a_serial]")
+                map_audio = "[a_serial]"
+            else:
+                map_audio = None
+        else:
+            concat_txt = Path(self._temp_dir.name, "concat_list.txt")
+            with concat_txt.open("w", encoding="utf-8") as f:
+                f.write("ffconcat version 1.0\n")
+                for path in video_files:
+                    f.write(f"file '{escape_ffmpeg_path(path)}'\n")
+            cmd.extend(["-f", "concat", "-safe", "0", "-i", str(concat_txt)])
+            map_video = "0:v"
+            if has_audio_input:
+                filters.append(f"[0:a]volume={video_vol/100.0}[a_vid_vol]")
+                map_audio = "[a_vid_vol]"
+            else:
+                map_audio = None
         if wizard_tracks:
+            music_start_idx = len(video_files) if normalize_video else 1
             fadeout_lead = 7.0
             crossfade_sec = 3.0
             expanded_tracks = []
             covered = 0.0
             for path, offset, dur in wizard_tracks:
                 expanded_tracks.append((path, offset, dur))
-                if len(expanded_tracks) == 1:
-                    covered += dur
-                else:
-                    covered += max(0.0, dur - crossfade_sec)
+                if len(expanded_tracks) == 1: covered += dur
+                else: covered += max(0.0, dur - crossfade_sec)
             cycle_guard = 0
             while covered < max(0.1, float(total_duration)) and cycle_guard < 32 and len(expanded_tracks) < 96:
                 path, _, _ = wizard_tracks[-1]
@@ -747,8 +773,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 cmd.extend(["-i", t])
             music_inputs = []
             for idx, (track_path, start_sec, dur) in enumerate(expanded_tracks):
-                in_idx = idx + 1
-                raw_label = f"m_raw_{idx}"
+                in_idx = music_start_idx + idx
                 out_label = f"m_{idx}"
                 fade_start = max(0.0, dur - fadeout_lead)
                 if idx == 0:
@@ -760,48 +785,34 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                         f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},{f'afade=t=out:st={fade_start}:d={fadeout_lead}' if dur > fadeout_lead else ''}[{out_label}]"
                     )
                 music_inputs.append(out_label)
-            music_out = music_inputs[0] if music_inputs else None
+            music_out = music_inputs[0]
             for i in range(1, len(music_inputs)):
                 next_label = f"m_xf_{i}"
-                filters.append(
-                    f"[{music_out}][{music_inputs[i]}]acrossfade=d={crossfade_sec}:c1=tri:c2=tri[{next_label}]"
-                )
+                filters.append(f"[{music_out}][{music_inputs[i]}]acrossfade=d={crossfade_sec}:c1=tri:c2=tri[{next_label}]")
                 music_out = next_label
-            if music_out:
-                filters.append(f"[{music_out}]atrim=duration={max(0.1, float(total_duration))}[mus]")
+            filters.append(f"[{music_out}]atrim=duration={max(0.1, float(total_duration))}[mus]")
             ducking_filters = build_audio_ducking_filters(
-                video_audio_stream="[0:a]" if has_audio_input else "anullsrc=channel_layout=stereo:sample_rate=48000",
+                video_audio_stream=map_audio or "anullsrc=channel_layout=stereo:sample_rate=48000",
                 music_stream="[mus]",
-                music_volume=music_vol/100.0,
-                sample_rate=48000,
+                music_volume=1.0, 
+                sample_rate=target_a_rate,
                 video_has_audio=has_audio_input
             )
             filters.extend(ducking_filters)
             map_audio = "[a_out]"
-        else:
-            if has_audio_input:
-                map_audio = "0:a"
-            else:
-                map_audio = None
         if filters:
             filter_script_path = Path(self._temp_dir.name, "filter_complex.txt")
-            try:
-                with open(filter_script_path, "w", encoding="utf-8") as f:
-                    f.write(";".join(filters))
-                cmd.extend(["-filter_complex_script", str(filter_script_path)])
-            except Exception as e:
-                self._merge_finished_cleanup(False, f"Failed to write filter script: {e}")
-                return
+            with open(filter_script_path, "w", encoding="utf-8") as f:
+                f.write(";".join(filters))
+            cmd.extend(["-filter_complex_script", str(filter_script_path)])
         cmd.extend(["-map", map_video])
-        if map_audio:
-            cmd.extend(["-map", map_audio])
-        self.engine = MergerEngine(self.ffmpeg, cmd, self._output_path, total_duration, use_gpu=True)
+        if map_audio: cmd.extend(["-map", map_audio])
+        self.engine = MergerEngine(self.ffmpeg, cmd, self._output_path, total_duration, use_gpu=True, target_v_bitrate=target_v_bitrate, target_a_bitrate=target_a_bitrate, target_a_rate=target_a_rate)
         self.engine.progress.connect(self._update_progress)
         self.engine.log_line.connect(self._append_log)
         self.engine.finished.connect(self._merge_finished_cleanup)
         if self.taskbar_progress:
-            self.taskbar_progress.setValue(0)
-            self.taskbar_progress.setVisible(True)
+            self.taskbar_progress.setValue(0); self.taskbar_progress.setVisible(True)
         self.engine.start()
 
     def _update_progress(self, percent, time_str):

@@ -1,7 +1,6 @@
 ﻿import os
 import tempfile
-import json
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QRect, QPoint
 from PyQt5.QtWidgets import QApplication
 
 def get_snapshot_dir():
@@ -68,6 +67,7 @@ class PersistentWindowMixin:
         self._save_timer.timeout.connect(self.save_geometry)
         self.load_geometry()
         self._loading_persistence = False
+        QTimer.singleShot(0, self.save_geometry)
 
     def load_geometry(self):
         try:
@@ -87,18 +87,37 @@ class PersistentWindowMixin:
                 h = geom.get('h', def_h)
                 x = geom['x']
                 y = geom['y']
-                if screen_geo:
-                    if not screen_geo.intersects(QRect(x, y, w, h)):
-                        self._apply_default_center()
+                target_screen = None
+                if app_instance:
+                    screens = app_instance.screens() or []
+                    saved_screen_name = geom.get('screen_name') if isinstance(geom, dict) else None
+                    saved_screen_index = geom.get('screen_index') if isinstance(geom, dict) else None
+                    if saved_screen_name:
+                        for s in screens:
+                            if s and s.name() == saved_screen_name:
+                                target_screen = s
+                                break
+                    if target_screen is None and isinstance(saved_screen_index, int) and 0 <= saved_screen_index < len(screens):
+                        target_screen = screens[saved_screen_index]
+                    if target_screen is None:
+                        target_screen = QApplication.screenAt(QPoint(int(x), int(y)))
+                    if target_screen is None:
+                        target_screen = app_instance.primaryScreen()
+                active_geo = target_screen.availableGeometry() if target_screen else screen_geo
+                if active_geo:
+                    w = min(int(w), active_geo.width())
+                    h = min(int(h), active_geo.height())
+                    if not active_geo.intersects(QRect(int(x), int(y), int(w), int(h))):
+                        self._apply_default_center(target_screen)
                         return
-                    w = min(w, screen_geo.width())
-                    h = min(h, screen_geo.height())
-                self.move(x, y)
-                self.resize(w, h)
+                self.resize(int(w), int(h))
+                self.move(int(x), int(y))
             else:
                 self._apply_default_center()
             if 'last_directory' in settings:
                 self.last_dir = settings['last_directory']
+            elif 'last_input_directory' in settings:
+                self.last_dir = settings['last_input_directory']
             self.update_title()
         except Exception as e:
             if hasattr(self, 'logger') and self.logger:
@@ -106,12 +125,13 @@ class PersistentWindowMixin:
             self._apply_default_center()
             self.update_title()
 
-    def _apply_default_center(self):
+    def _apply_default_center(self, screen=None):
         """Centers window based on default_geo, ensuring it fits on the current screen."""
         app_instance = QApplication.instance()
         if app_instance is None:
             return
-        screen_geo = app_instance.primaryScreen().availableGeometry()
+        target_screen = screen or app_instance.primaryScreen()
+        screen_geo = target_screen.availableGeometry()
         w = self.default_geo.get('w', 1200)
         h = self.default_geo.get('h', 800)
         w = min(w, screen_geo.width())
@@ -132,14 +152,30 @@ class PersistentWindowMixin:
                 manager = get_config_manager(self.config_path)
             settings = manager.load_config()
             p = self.pos()
+            app_instance = QApplication.instance()
+            screen_name = None
+            screen_index = -1
+            if app_instance:
+                frame_center = self.frameGeometry().center()
+                active_screen = QApplication.screenAt(frame_center) or app_instance.primaryScreen()
+                if active_screen:
+                    screen_name = active_screen.name()
+                    screens = app_instance.screens() or []
+                    for idx, s in enumerate(screens):
+                        if s is active_screen:
+                            screen_index = idx
+                            break
             settings[self.settings_key] = {
                 'x': p.x(), 
                 'y': p.y(), 
                 'w': self.width(), 
-                'h': self.height()
+                'h': self.height(),
+                'screen_index': screen_index,
+                'screen_name': screen_name
             }
             if hasattr(self, 'last_dir') and self.last_dir:
                 settings['last_directory'] = self.last_dir
+                settings['last_input_directory'] = self.last_dir
             if self.extra_data_provider:
                 try:
                     extra_data = self.extra_data_provider()

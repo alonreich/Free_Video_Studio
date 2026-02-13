@@ -79,8 +79,9 @@ class FolderScanWorker(QThread):
 
     def run(self):
         files = []
+        exclude_dirs = {'.git', 'node_modules', '__pycache__', 'venv', '.env'}
         try:
-            def _scan(path, current_depth, max_depth=3):
+            def _scan(path, current_depth, max_depth=4):
                 if current_depth > max_depth: return
                 with QMutexLocker(self._mutex):
                     if self._cancelled: return
@@ -91,10 +92,11 @@ class FolderScanWorker(QThread):
                                 if os.path.splitext(entry.name)[1].lower() in self.exts:
                                     files.append(entry.path)
                             elif entry.is_dir():
-                                _scan(entry.path, current_depth + 1, max_depth)
+                                if entry.name.lower() not in exclude_dirs:
+                                    _scan(entry.path, current_depth + 1, max_depth)
                 except OSError:
                     pass
-            _scan(self.folder, 0, max_depth=4)
+            _scan(self.folder, 0, max_depth=5)
             self.finished.emit(files, "")
         except Exception as e:
             self.finished.emit([], str(e))
@@ -221,7 +223,7 @@ class ProbeWorker(QThread):
                     cmd = [
                         self.ffprobe,
                         "-v", "error",
-                        "-show_entries", "format=duration:stream=codec_type,width,height,codec_name,pix_fmt,r_frame_rate,sample_rate,channels",
+                        "-show_entries", "format=duration,bit_rate:stream=codec_type,width,height,codec_name,pix_fmt,r_frame_rate,sample_rate,channels,bit_rate",
                         "-of", "json",
                         path,
                     ]
@@ -231,18 +233,22 @@ class ProbeWorker(QThread):
                     if success and stdout:
                         payload = json.loads(stdout)
                         duration = float(payload.get("format", {}).get("duration") or 0.0)
+                        format_bitrate = int(payload.get("format", {}).get("bit_rate") or 0)
                         streams = payload.get("streams", []) or []
                         v_codec = ""
                         v_pix_fmt = ""
                         v_fps = 0.0
+                        v_bitrate = 0
                         a_codec = ""
                         a_rate = 0
                         a_channels = 0
+                        a_bitrate = 0
                         for s in streams:
                             if s.get("codec_type") == "video" and s.get("width") and s.get("height"):
                                 resolution = (int(s.get("width")), int(s.get("height")))
                                 v_codec = str(s.get("codec_name") or "")
                                 v_pix_fmt = str(s.get("pix_fmt") or "")
+                                v_bitrate = int(s.get("bit_rate") or 0)
                                 fr = str(s.get("r_frame_rate") or "0/1")
                                 try:
                                     if "/" in fr:
@@ -257,6 +263,7 @@ class ProbeWorker(QThread):
                         for s in streams:
                             if s.get("codec_type") == "audio":
                                 a_codec = str(s.get("codec_name") or "")
+                                a_bitrate = int(s.get("bit_rate") or 0)
                                 try:
                                     a_rate = int(float(s.get("sample_rate") or 0))
                                 except Exception:
@@ -266,6 +273,8 @@ class ProbeWorker(QThread):
                                 except Exception:
                                     a_channels = 0
                                 break
+                        if v_bitrate == 0 and format_bitrate > 0:
+                            v_bitrate = format_bitrate - a_bitrate
                         has_audio = any(s.get("codec_type") == "audio" for s in streams)
                     else:
                         logger.warning(f"ffprobe failed for {path}: {error_msg}")
@@ -276,9 +285,11 @@ class ProbeWorker(QThread):
                     v_codec = ""
                     v_pix_fmt = ""
                     v_fps = 0.0
+                    v_bitrate = 0
                     a_codec = ""
                     a_rate = 0
                     a_channels = 0
+                    a_bitrate = 0
                 results.append({
                     "path": path,
                     "duration": duration,
@@ -287,9 +298,11 @@ class ProbeWorker(QThread):
                     "video_codec": v_codec,
                     "video_pix_fmt": v_pix_fmt,
                     "video_fps": v_fps,
+                    "video_bitrate": v_bitrate,
                     "audio_codec": a_codec,
                     "audio_rate": a_rate,
                     "audio_channels": a_channels,
+                    "audio_bitrate": a_bitrate,
                 })
                 total += duration
             if not self._cancelled:

@@ -54,69 +54,70 @@ class MergerHandlersDialogsMixin:
         )
         if wizard.exec_() == QDialog.Accepted:
             if hasattr(self.parent, "unified_music_widget"):
-                self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks)
+                m_vol = wizard.music_vol_slider.value()
+                v_vol = wizard.video_vol_slider.value()
+                self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks, music_vol=m_vol, video_vol=v_vol)
                 self.parent.set_status_message("✅ Music selection applied!", "color: #43b581; font-weight: bold;", 3000, force=True)
+
+    def show_success_dialog(self, output_path: str):
+        """Displays the high-production-value success dialog after a successful merge."""
         dialog = QDialog(self.parent)
         dialog.setWindowTitle("Done! Video Processed Successfully!")
         dialog.setModal(True)
-        fm = dialog.fontMetrics()
-        btn_h = int(max(58, fm.height() * 2 + 18) + 115)
-        btn_w = 220
-        screen = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
-        max_w = int((screen.width() * 0.9)) if screen else 1200
-        max_h = int((screen.height() * 0.9)) if screen else (3 * btn_h + 80)
-        dlg_w = min(1200, max(820, max_w))
-        dlg_h = min(3 * btn_h + 80, max_h)
+        btn_h = 55
+        btn_w = 250
+        button_size = (btn_w, btn_h)
+        dlg_w = 850
+        dlg_h = 450
         dialog.resize(dlg_w, dlg_h)
         layout = QVBoxLayout(dialog)
-        label = QLabel(f"File saved to:\n{output_path}")
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+        label = QLabel(f"File successfully saved to:\n{output_path}")
+        label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
         grid = QGridLayout()
-        grid.setHorizontalSpacing(150)
-        grid.setVerticalSpacing(100)
-        grid.setContentsMargins(30, 20, 30, 24)
-        button_size = (btn_w, btn_h)
-
+        grid.setSpacing(20)
+        
         def _open_whatsapp():
             try:
                 QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
             except Exception as e:
                 self.logger.error("Failed to open WhatsApp Web: %s", e)
-        whatsapp_button = QPushButton("\r\n✆   Share via Whatsapp   ✆\r\n")
+        whatsapp_button = QPushButton("✆   Share via Whatsapp   ✆")
         whatsapp_button.setFixedSize(*button_size)
-        whatsapp_button.setStyleSheet("background-color: #328742; color: white;")
+        whatsapp_button.setStyleSheet("background-color: #328742; color: white; font-weight: bold; border-radius: 8px;")
         whatsapp_button.setCursor(Qt.PointingHandCursor)
-        whatsapp_button.clicked.connect(lambda: (_open_whatsapp(), dialog.accept(), QApplication.instance().quit()))
-        open_folder_button = QPushButton("\r\nOpen Output Folder\r\n")
+        whatsapp_button.clicked.connect(lambda: (_open_whatsapp(), dialog.accept()))
+        open_folder_button = QPushButton("Open Output Folder")
         open_folder_button.setFixedSize(*button_size)
-        open_folder_button.setStyleSheet("background-color: #6c5f9e; color: white;")
+        open_folder_button.setStyleSheet("background-color: #6c5f9e; color: white; font-weight: bold; border-radius: 8px;")
         open_folder_button.setCursor(Qt.PointingHandCursor)
-        open_folder_button.clicked.connect(lambda: (dialog.accept(), self.open_folder(os.path.dirname(output_path)), QApplication.instance().quit()))
-        new_file_button = QPushButton("\r\n📂   Upload a New File   📂\r\n")
+        open_folder_button.clicked.connect(lambda: (dialog.accept(), self.open_folder(os.path.dirname(output_path))))
+        new_file_button = QPushButton("📂   Merge More Videos   📂")
         new_file_button.setFixedSize(*button_size)
-        new_file_button.setStyleSheet("background-color: #6c5f9e; color: white;")
+        new_file_button.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; border-radius: 8px;")
         new_file_button.setCursor(Qt.PointingHandCursor)
         new_file_button.clicked.connect(dialog.reject)
-        done_button = QPushButton("\r\nDone\r\n")
-        done_button.setFixedSize(*button_size)
-        done_button.setStyleSheet("background-color: #821e1e; color: white; padding: 8px 16px;")
+        done_button = QPushButton("Done")
+        done_button.setFixedSize(dlg_w - 100, 50)
+        done_button.setStyleSheet("background-color: #1b6d26; color: white; font-weight: bold; border-radius: 10px;")
         done_button.setCursor(Qt.PointingHandCursor)
         done_button.clicked.connect(dialog.accept)
-        finished_button = QPushButton("Close The App!\r\n(Exit)")
-        finished_button.setFixedSize(*button_size)
-        finished_button.setStyleSheet("background-color: #c90e0e; color: white; padding: 8px 16px;")
+        finished_button = QPushButton("Close The App! (Exit)")
+        finished_button.setFixedSize(dlg_w - 100, 50)
+        finished_button.setStyleSheet("background-color: #c90e0e; color: white; font-weight: bold; border-radius: 10px;")
         finished_button.setCursor(Qt.PointingHandCursor)
         finished_button.clicked.connect(lambda: (dialog.accept(), QApplication.instance().quit()))
         grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
         grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
         grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)
-        grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
-        grid.addWidget(finished_button, 2, 0, 1, 3, alignment=Qt.AlignCenter)
         layout.addLayout(grid)
-        dialog.setLayout(layout)
-        result = dialog.exec_()
-        if result == QDialog.Rejected:
-            self.add_videos()
+        layout.addWidget(done_button, 0, Qt.AlignCenter)
+        layout.addWidget(finished_button, 0, Qt.AlignCenter)
+        dialog.exec_()
         try:
             out_sz = Path(output_path).stat().st_size if output_path else 0
             self.logger.info("MERGE_DONE: output='%s' | size=%s", output_path, _human(out_sz))

@@ -299,11 +299,10 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.scan_complete = False
         self.set_style()
         self.setWindowTitle(self._base_title)
-        session_data = StateTransfer.load_state()
-        if session_data:
-            self.logger.info("Session data found. Restoring state...")
-            if 'input_file' in session_data:
-                file_path = session_data['input_file']
+        try:
+            StateTransfer.clear_state()
+        except Exception as state_err:
+            self.logger.debug("Could not clear startup session state: %s", state_err)
         if self.hardware_strategy == "Scanning...":
             if hasattr(self, 'hardware_status_label'):
                 self.hardware_status_label.setText("🔎 Scanning for compatible hardware...")

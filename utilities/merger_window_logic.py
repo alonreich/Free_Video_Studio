@@ -121,6 +121,11 @@ class MergerWindowLogic:
             w1, w2 = self.window.listw.itemWidget(it1), self.window.listw.itemWidget(it2)
             if not self._is_widget_alive(w1) or not self._is_widget_alive(w2):
                 return False
+            if not w1.isVisible() or not w2.isVisible():
+                self.window.listw.scrollToItem(it1)
+                if not w1.isVisible() or not w2.isVisible():
+                    self.perform_swap(row, new_row)
+                    return True
             r1 = self.window.listw.visualItemRect(it1)
             r2 = self.window.listw.visualItemRect(it2)
             if r1.isNull() or r2.isNull():
@@ -131,7 +136,9 @@ class MergerWindowLogic:
             except RuntimeError:
                 return False
             ghost1 = QLabel(v); ghost1.setPixmap(pm1); ghost1.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            ghost1.setStyleSheet("background: transparent;")
             ghost2 = QLabel(v); ghost2.setPixmap(pm2); ghost2.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            ghost2.setStyleSheet("background: transparent;")
             ghost1.move(r1.topLeft()); ghost1.show()
             ghost2.move(r2.topLeft()); ghost2.show()
             w1.setVisible(False); w2.setVisible(False)

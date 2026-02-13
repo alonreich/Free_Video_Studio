@@ -12,12 +12,12 @@ class MergerUIWidgetsMixin:
         row.setSpacing(10)
         self.parent.btn_undo = QPushButton("UNDO")
         self.parent.btn_undo.setObjectName("aux-btn")
-        self.parent.btn_undo.setFixedSize(100, 32)
+        self.parent.btn_undo.setFixedSize(85, 32)
         self.parent.btn_undo.setCursor(Qt.PointingHandCursor)
         self.parent.btn_undo.setToolTip("Undo last action (Ctrl+Z)")
         self.parent.btn_redo = QPushButton("REDO")
         self.parent.btn_redo.setObjectName("aux-btn")
-        self.parent.btn_redo.setFixedSize(100, 32)
+        self.parent.btn_redo.setFixedSize(85, 32)
         self.parent.btn_redo.setCursor(Qt.PointingHandCursor)
         self.parent.btn_redo.setToolTip("Redo last action (Ctrl+Y)")
         row.addWidget(self.parent.btn_undo)
@@ -26,7 +26,7 @@ class MergerUIWidgetsMixin:
 
     def create_merge_row(self):
         self.parent.btn_back = QPushButton("RETURN TO MAIN APP")
-        self.parent.btn_back.setFixedSize(160, 40)
+        self.parent.btn_back.setFixedSize(135, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
         self.parent.btn_back.setCursor(Qt.PointingHandCursor)
@@ -36,7 +36,7 @@ class MergerUIWidgetsMixin:
         merge_wrap.setLayout(self.parent.merge_row)
         merge_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.parent.merge_row.addStretch(1)
-        self.parent.btn_merge = QPushButton("Merge videos")
+        self.parent.btn_merge = QPushButton("MERGE VIDEOS")
         self.parent.btn_merge.setObjectName("mergeButton")
         self.parent.btn_merge.setFixedSize(210, 45)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
@@ -45,6 +45,7 @@ class MergerUIWidgetsMixin:
         self.parent.merge_row.addWidget(self.parent.btn_merge)
         self.parent.merge_row.addStretch(1)
         self.parent.merge_row.addWidget(self.parent.btn_back)
+        self.parent.merge_row.addSpacing(60)
         return merge_wrap
 
     def create_music_layout(self):

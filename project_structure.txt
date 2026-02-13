@@ -82,7 +82,7 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 │
 ├── binaries/: Contains all the necessary binaries for the application to run (ffmpeg, vlc, etc.).
 │
-├── config/: Contains configuration files for the applications.
+├── config/: Contains application JSON config files, window geometries/state, and last-used working folder records.
 │
 ├── developer_tools/: Tools for development purposes.
 │   ├── app_handlers.py: Handles events for the crop tool application.
@@ -103,7 +103,7 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 ├── icons/: Contains application icons.
 │   └── Video_Icon_File.ico
 │
-├── logs/: Directory for application log files.
+├── logs/: Directory for application log files and runtime diagnostics.
 │
 ├── mp3/: Directory for background music MP3 files.
 │
@@ -141,15 +141,25 @@ The suite is divided into four main applications: Video Compressor, Video Merger
 # 1. AI AGENT SANITY CHECK QUESTIONS (20 MOST IMPORTANT)
 # ------------------------------------------------------------------------------
 # 1. GPU PREFERENCE: Does the app always prioritize GPU (NVENC/AMF/QSV) over CPU for heavy encoding tasks?
+#    - References: app.py (hardware scan/selection), processing/encoders.py (ENCODER_PREFERENCE, initial encoder selection), processing/worker.py (active encoder attempts).
 # 2. FAILBACK LOGIC: Does the app successfully fallback to CPU-only (libx264) if no compatible GPU is detected?
+#    - References: app.py (sets VIDEO_FORCE_CPU when GPU encoders unavailable), processing/encoders.py (fallback list ending in libx264), processing/worker.py (fallback retry loop).
 # 3. MULTI-VENDOR GPU: Does the app work correctly on AMD and Intel GPUs, not just NVIDIA?
+#    - References: app.py (h264_amf and h264_qsv capability checks), processing/encoders.py (AMF/QSV codec flags), processing/worker.py (tries selected/fallback hardware encoders).
 # 4. AUDIO PARITY: Is the output audio quality identical or the closest possible match to the original source?
+#    - References: processing/media_utils.py (audio bitrate/sample-rate probing), processing/worker.py (preserves probed audio bitrate and processing pipeline), processing/filter_builder.py (audio chain composition).
 # 5. RESIDUE CLEANUP: Are all temporary files (.mp4, .txt, .log) deleted from Temp, especially after clicking 'CANCEL'?
+#    - References: processing/worker.py (finally-block cleanup + cancel output removal), processing/step_concat.py (temp concat list usage), system/shared_paths.py (project logs path and temp usage context).
 # 6. ATEMPO LIMITS: Does the app strictly use 'atempo' for all speed changes, and stay within the 0.5x - 3.1x range?
+#    - References: processing/worker.py (chained atempo segments with 0.5/2.0 decomposition), processing/filter_builder.py (granular speed atempo chain).
 # 7. WAVELENGTH SOURCE: Is 'ffmpeg showwaves' used for audio visualizers? Is it more efficient than manual Python draws?
+#    - References: ui/widgets/music_offset_dialog.py (showwavespic), utilities/merger_music_offset_dialog.py (showwavespic), utilities/merger_music_wizard.py (showwavespic waveform generation).
 # 8. PIP REDUCTION: Are unnecessary packages like 'pynput' or 'PyQtWebEngine' removed to keep the installation lean?
+#    - References: Installer.ps1 (explicit pip package list), project_structure.txt Manual Pip Management section (documented minimal install command).
 # 9. BITRATE INTELLIGENCE: Do short videos (<5s) at 'Maximum' quality correctly avoid exceeding the source file size?
+#    - References: processing/media_utils.py (target size from source bytes on maximum quality), processing/worker.py (short-duration handling + bitrate clamp safeguards), processing/config_data.py (quality/target behavior).
 # 10. MUSIC OFFSET MATH: Does the app accurately calculate music stop points when pink offset handles + Granular Speeds are used?
+#    - References: ui/widgets/music_offset_dialog.py (offset UI source), ui/parts/music_mixin.py (offset retrieval into processing config), processing/worker.py + processing/filter_builder.py (offset/speed parameters used in final audio timing).
 # 11. ASPECT RATIO MATH: Do 16:9 sources at any resolution (720p to 4K) maintain perfect HUD anchor scaling?
 # 12. SHELL OVERFLOW: Are all FFmpeg complex filters passed via .txt script files to bypass Windows character limits?
 # 13. BIDI WRAPPING: Do mixed RTL/LTR Hebrew/English strings wrap correctly within the 150px top-bar?

@@ -55,7 +55,9 @@ class ReorderCommand(QUndoCommand):
                     probe_data=entry.get("probe_data"),
                     f_hash=entry.get("f_hash"),
                     clip_id=entry.get("clip_id"),
+                    refresh=False
                 )
+            self.parent.event_handler.refresh_ranks()
             if selected_ids:
                 listw.clearSelection()
                 first_selected = None
@@ -97,8 +99,10 @@ class AddCommand(QUndoCommand):
                 probe_data=entry.get("probe_data"),
                 f_hash=entry.get("f_hash"),
                 clip_id=entry.get("clip_id"),
+                refresh=False
             )
             self.parent.logger.info(f"LIST: Added file '{os.path.basename(path)}' at row {entry.get('row')}")
+        self.parent.event_handler.refresh_ranks()
 
     def undo(self):
         for entry in self.items_data:
@@ -109,6 +113,7 @@ class AddCommand(QUndoCommand):
                     self.list_widget.takeItem(i)
                     self.parent.logger.info(f"UNDO: Removed file '{os.path.basename(entry.get('path'))}'")
                     break
+        self.parent.event_handler.refresh_ranks()
 
 class RemoveCommand(QUndoCommand):
     def __init__(self, parent, items, list_widget):
@@ -129,11 +134,13 @@ class RemoveCommand(QUndoCommand):
                     self.list_widget.takeItem(i)
                     self.parent.logger.info(f"LIST: Removed file '{os.path.basename(path)}' from row {row}")
                     break
+        self.parent.event_handler.refresh_ranks()
 
     def undo(self):
         for row, path, probe_data, f_hash, clip_id in reversed(self.items_data):
-            self.parent.event_handler._add_single_item_internal(path, row, probe_data, f_hash, clip_id=clip_id)
+            self.parent.event_handler._add_single_item_internal(path, row, probe_data, f_hash, clip_id=clip_id, refresh=False)
             self.parent.logger.info(f"UNDO: Restored file '{os.path.basename(path)}' to row {row}")
+        self.parent.event_handler.refresh_ranks()
 
 class BatchMoveCommand(QUndoCommand):
     def __init__(self, parent, before_entries, after_entries):
@@ -174,7 +181,9 @@ class BatchMoveCommand(QUndoCommand):
                     probe_data=entry.get("probe_data"),
                     f_hash=entry.get("f_hash"),
                     clip_id=entry.get("clip_id"),
+                    refresh=False
                 )
+            self.parent.event_handler.refresh_ranks()
             if selected_ids:
                 listw.clearSelection()
                 first_selected = None
@@ -217,8 +226,10 @@ class ClearCommand(QUndoCommand):
                 probe_data=entry.get("probe_data"),
                 f_hash=entry.get("f_hash"),
                 clip_id=entry.get("clip_id"),
+                refresh=False
             )
         self.parent.logger.info(f"UNDO: Restored {len(self.items_data)} items to list")
+        self.parent.event_handler.refresh_ranks()
 
 class MergerHandlersListMixin:
     def __init__(self):
@@ -466,7 +477,24 @@ class MergerHandlersListMixin:
             "clip_id": uuid.uuid4().hex,
         })
 
-    def _add_single_item_internal(self, path, row=None, probe_data=None, f_hash=None, clip_id=None):
+    def refresh_ranks(self):
+        """Update all ranking labels (#1, #2, etc.) based on current list order."""
+        for i in range(self.parent.listw.count()):
+            item = self.parent.listw.item(i)
+            w = self.parent.listw.itemWidget(item)
+            if w and hasattr(w, 'rank_label'):
+                w.rank_label.setText(f"#{i + 1}")
+
+    def refresh_selection_highlights(self):
+        """Sync the visual 'marked' state of custom widgets with their list selection state."""
+        listw = self.parent.listw
+        for i in range(listw.count()):
+            item = listw.item(i)
+            w = listw.itemWidget(item)
+            if w and hasattr(w, 'set_marked'):
+                w.set_marked(item.isSelected())
+
+    def _add_single_item_internal(self, path, row=None, probe_data=None, f_hash=None, clip_id=None, refresh=True):
         item = QListWidgetItem()
         item.setToolTip(path)
         item.setData(Qt.UserRole, path)
@@ -475,7 +503,9 @@ class MergerHandlersListMixin:
             item.setData(Qt.UserRole + 1, probe_data)
         if f_hash:
             item.setData(Qt.UserRole + 2, f_hash)
-        w = self.make_item_widget(path)
+        current_count = self.parent.listw.count()
+        rank = (row + 1) if row is not None else (current_count + 1)
+        w = self.make_item_widget(path, rank=rank)
         if probe_data:
             try:
                 dur = float(probe_data.get('format', {}).get('duration', 0))
@@ -489,7 +519,7 @@ class MergerHandlersListMixin:
                 self.parent.logger.debug(f"Item metadata paint skipped: {ex}")
 
         from PyQt5.QtCore import QSize
-        item.setSizeHint(QSize(w.width(), 52))
+        item.setSizeHint(QSize(w.width(), 50))
         if row is not None:
             self.parent.listw.insertItem(row, item)
             inserted_row = row
@@ -497,6 +527,9 @@ class MergerHandlersListMixin:
             self.parent.listw.addItem(item)
             inserted_row = self.parent.listw.count() - 1
         self.parent.listw.setItemWidget(item, w)
+        if refresh:
+            self.refresh_ranks()
+        self.refresh_selection_highlights()
         return inserted_row
 
     def _on_loading_finished(self, added, duplicates):

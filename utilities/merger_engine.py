@@ -22,13 +22,16 @@ class MergerEngine(QThread):
     finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
 
-    def __init__(self, ffmpeg_path, cmd_base, output_path, total_duration_sec=0, use_gpu=False):
+    def __init__(self, ffmpeg_path, cmd_base, output_path, total_duration_sec=0, use_gpu=False, target_v_bitrate=0, target_a_bitrate=0, target_a_rate=48000):
         super().__init__()
         self.ffmpeg_path = ffmpeg_path
         self.cmd_base = cmd_base
         self.output_path = output_path
         self.total_duration = max(1.0, float(total_duration_sec))
         self.use_gpu = use_gpu
+        self.target_v_bitrate = target_v_bitrate
+        self.target_a_bitrate = target_a_bitrate
+        self.target_a_rate = target_a_rate
         self.logger = _get_logger()
         self._process = None
         self._is_cancelled = False
@@ -39,30 +42,49 @@ class MergerEngine(QThread):
         Detects available GPU encoders (NVENC, AMF, QSV).
         Falls back to libx264 if none found.
         """
+        v_bitrate_args = []
+        if self.target_v_bitrate > 0:
+            v_bitrate_args = ["-b:v", f"{self.target_v_bitrate}", "-maxrate:v", f"{int(self.target_v_bitrate * 1.5)}", "-bufsize:v", f"{int(self.target_v_bitrate * 2)}"]
         if not self.use_gpu:
-            return ["-c:v", "libx264", "-preset", "medium", "-crf", "26"]
+            base = ["-c:v", "libx264", "-preset", "medium"]
+            if not v_bitrate_args:
+                base.extend(["-crf", "28"])
+            else:
+                base.extend(v_bitrate_args)
+            return base
         try:
             cmd = [self.ffmpeg_path, "-hide_banner", "-encoders"]
             flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             res = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
             out = res.stdout
-            if "h264_nvenc" in out:
-                self.logger.info("GPU: NVIDIA NVENC detected.")
-                return ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "26"]
-            elif "h264_amf" in out:
-                self.logger.info("GPU: AMD AMF detected.")
-                return ["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26"]
-            elif "h264_qsv" in out:
-                self.logger.info("GPU: Intel QSV detected.")
-                return ["-c:v", "h264_qsv", "-global_quality", "26"]
+            if re.search(r"\s+h264_nvenc\s+", out):
+                self.logger.info(f"GPU: NVIDIA NVENC detected. Target Bitrate: {self.target_v_bitrate}")
+                base = ["-c:v", "h264_nvenc", "-preset", "p4"]
+                if not v_bitrate_args: base.extend(["-cq", "28"])
+                else: base.extend(v_bitrate_args)
+                return base
+            elif re.search(r"\s+h264_amf\s+", out):
+                self.logger.info(f"GPU: AMD AMF detected. Target Bitrate: {self.target_v_bitrate}")
+                base = ["-c:v", "h264_amf", "-quality", "balanced"]
+                if not v_bitrate_args: base.extend(["-rc", "cqp", "-qp_i", "28", "-qp_p", "28"])
+                else: base.extend(v_bitrate_args)
+                return base
+            elif re.search(r"\s+h264_qsv\s+", out):
+                self.logger.info(f"GPU: Intel QSV detected. Target Bitrate: {self.target_v_bitrate}")
+                base = ["-c:v", "h264_qsv"]
+                if not v_bitrate_args: base.extend(["-global_quality", "28"])
+                else: base.extend(v_bitrate_args)
+                return base
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
-        return ["-c:v", "libx264", "-preset", "medium", "-crf", "26"]
+        return ["-c:v", "libx264", "-preset", "medium", "-crf", "28"] if not v_bitrate_args else ["-c:v", "libx264", "-preset", "medium"] + v_bitrate_args
 
     def run(self):
         self._is_cancelled = False
         cmd = list(self.cmd_base)
-        cmd.extend(["-c:a", "aac", "-ar", "48000", "-b:a", "128k"])
+        a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
+        a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
+        cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
         cmd.extend(self._detect_gpu_encoder())
         cmd.append(str(self.output_path))
         self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")

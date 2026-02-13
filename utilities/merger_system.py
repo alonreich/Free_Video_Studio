@@ -5,6 +5,7 @@ import logging
 import tempfile
 import subprocess
 import shutil
+import traceback
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
@@ -25,60 +26,79 @@ class MergerDependencyDoctor:
         path_ffprobe = shutil.which(ffprobe_exe)
         if path_ffmpeg and path_ffprobe:
             return True, path_ffmpeg, ""
-        return False, "", "FFmpeg or FFprobe binaries are missing."
+        return False, "", f"FFmpeg or FFprobe binaries are missing in {bin_dir} or System PATH."
     @staticmethod
     def find_vlc_path() -> Optional[str]:
+        vlc_from_path = shutil.which("vlc.exe")
+        if vlc_from_path:
+            vlc_dir = os.path.dirname(vlc_from_path)
+            if os.path.exists(os.path.join(vlc_dir, "libvlc.dll")):
+                return vlc_dir
+        if sys.platform == "win32":
+            import winreg
+            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    key = winreg.OpenKey(root, r"SOFTWARE\VideoLAN\VLC")
+                    val, _ = winreg.QueryValueEx(key, "InstallDir")
+                    if val and os.path.exists(os.path.join(val, "libvlc.dll")):
+                        return val
+                except Exception:
+                    continue
         common_paths = [
             r"C:\Program Files\VideoLAN\VLC",
-            r"C:\Program Files (x86)\VideoLAN\VLC"
+            r"C:\Program Files (x86)\VideoLAN\VLC",
+            os.path.expandvars(r"%ProgramFiles%\VideoLAN\VLC"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\VideoLAN\VLC")
         ]
         for p in common_paths:
             if os.path.exists(os.path.join(p, "libvlc.dll")):
                 return p
-        if sys.platform == "win32":
-            import winreg
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VideoLAN\VLC")
-                val, _ = winreg.QueryValueEx(key, "InstallDir")
-                if val and os.path.exists(os.path.join(val, "libvlc.dll")):
-                    return val
-            except Exception:
-                pass
         return None
 
 class MergerProcessManager:
     @staticmethod
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
+        """Kill orphans but only if they belong to this application's binary directory."""
         my_pid = os.getpid()
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        base_dir = os.path.abspath(os.path.join(script_dir, '..'))
-        bin_dir = os.path.join(base_dir, 'binaries')
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
-            try:
-                if proc.info['pid'] == my_pid:
-                    continue
-                if proc.info['name'] in process_names:
-                    proc_exe = proc.info.get('exe')
-                    if proc_exe and bin_dir in os.path.abspath(proc_exe):
-                        proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            base_dir = os.path.abspath(os.path.join(script_dir, '..'))
+            bin_dir = os.path.normpath(os.path.join(base_dir, 'binaries'))
+            for proc in psutil.process_iter(['pid', 'name', 'exe', 'ppid']):
+                try:
+                    if proc.info['pid'] == my_pid:
+                        continue
+                    if proc.info['name'] in process_names:
+                        proc_exe = proc.info.get('exe')
+                        if proc_exe:
+                            norm_exe = os.path.normpath(proc_exe)
+                            if bin_dir in norm_exe or proc.info.get('ppid') == my_pid:
+                                proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception as e:
+            logging.getLogger("Video_Merger").error(f"kill_orphans failed: {e}")
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_merger_"):
         temp_dir = tempfile.gettempdir()
+        logger = logging.getLogger("Video_Merger")
         try:
             for filename in os.listdir(temp_dir):
-                if filename.startswith(prefix) or filename.startswith("core-") or filename.startswith("ffmpeg2pass"):
+                if filename.startswith(prefix) or filename.startswith("ffmpeg2pass"):
                     file_path = os.path.join(temp_dir, filename)
                     try:
+                        if os.path.exists(file_path):
+                            mtime = os.path.getmtime(file_path)
+                            if time.time() - mtime < 600:
+                                continue
                         if os.path.isfile(file_path):
                             os.remove(file_path)
                         elif os.path.isdir(file_path):
-                            shutil.rmtree(file_path)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                            shutil.rmtree(file_path, ignore_errors=True)
+                    except Exception as e:
+                        logger.debug(f"Could not cleanup {file_path}: {e}")
+        except Exception as e:
+            logger.error(f"cleanup_temp_files error: {e}")
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")

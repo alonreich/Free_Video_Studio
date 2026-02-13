@@ -72,6 +72,8 @@ class MergerMusicOffsetDialog(QDialog):
         self.ok_btn = QPushButton("OK")
         self.play_btn = QPushButton("Play")
         self.cancel_btn = QPushButton("Cancel")
+        for _b in (self.ok_btn, self.cancel_btn, self.play_btn):
+            _b.setCursor(Qt.PointingHandCursor)
         for _b in (self.ok_btn, self.cancel_btn):
             _b.setFixedWidth(100)
             _b.setStyleSheet("""

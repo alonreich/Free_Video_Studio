@@ -20,7 +20,7 @@ class MergerDraggableList(QListWidget):
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
-        self.setSpacing(4)
+        self.setSpacing(5)
         self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._drag_start_row = -1
