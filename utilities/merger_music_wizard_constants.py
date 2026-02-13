@@ -1,0 +1,5 @@
+PREVIEW_VISUAL_LEAD_MS = 1100
+
+__all__ = [
+    "PREVIEW_VISUAL_LEAD_MS",
+]
