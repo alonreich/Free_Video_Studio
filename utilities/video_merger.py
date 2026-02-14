@@ -22,7 +22,6 @@ import shutil
 def main():
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
-    
     ProcessManager.kill_orphans()
     ProcessManager.cleanup_temp_files(min_age_seconds=300)
     if sys.platform.startswith("win") and os.environ.get("FVS_DEBUG_CONSOLE", "0") == "1":

@@ -10,22 +10,17 @@ class MergerMusicWizardNavigationMixin:
 
     def _on_page_changed(self, index):
         if not hasattr(self, 'btn_nav_next'): return
-        
-        # Step 2 (Index 1) must be static 1300x600 to prevent visual drift
         if index == 1:
             self.setFixedSize(1300, 600)
         else:
-            # Restore flexibility for other steps
             self.setMinimumSize(800, 500)
-            self.setMaximumSize(16777215, 16777215) # QWIDGETSIZE_MAX
-
+            self.setMaximumSize(16777215, 16777215)
         if index in (1, 2):
             self.btn_play_video.setVisible(True)
             self.btn_play_video.setText("  PLAY")
             self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
             self.btn_play_video.setVisible(False)
-        
         if index == 2:
             self.btn_nav_next.setText("✓  DONE")
             if self.width() < 1500:

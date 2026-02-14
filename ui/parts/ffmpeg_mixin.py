@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton, QMessageBox)
 
 from processing.worker import ProcessThread
+from ui.styles import UIStyles
 
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
@@ -116,18 +117,23 @@ class FfmpegMixin:
                 self.is_processing = False
                 self.process_button.setEnabled(True)
                 return
-            self._update_trim_widgets_from_trim_times()
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-            music_path, music_vol_linear = self._get_selected_music()
+            music_path = None
+            music_offset_s = 0.0
+            linear_video_vol = self._get_master_eff() / 100.0
+            if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
+                music_path = self._wizard_tracks[0][0]
+                music_offset_s = self._wizard_tracks[0][1]
+            music_vol_linear = self._music_eff() / 100.0 if music_path else 0.0
             q_level = int(self.quality_slider.value())
             self.logger.info(
-                "PROCESS: clicked at %s | start=%dms end=%dms speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | music=%s vol=%.2f",
+                "PROCESS: clicked at %s | start=%dms end=%dms speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | music=%s vol=%.2f video_vol=%.2f",
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 start_time_ms, end_time_ms, speed_factor,
                 is_mobile_format, self.teammates_checkbox.isChecked(), self.boss_hp_checkbox.isChecked(),
                 q_level,
                 self.no_fade_checkbox.isChecked(),
-                (music_path or "None"), (music_vol_linear if music_vol_linear is not None else 0.0)
+                (music_path or "None"), music_vol_linear, linear_video_vol
             )
             if hasattr(self, 'portrait_mask_overlay'):
                 self.portrait_mask_overlay.hide()
@@ -151,15 +157,14 @@ class FfmpegMixin:
             cfg['mobile_checked'] = bool(is_mobile_format)
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
-            music_path, music_vol_linear = self._get_selected_music()
             music_conf = {
                 'ducking_threshold': 0.15,
                 'ducking_ratio': 2.5,
                 'eq_enabled': True,
-                'main_vol': 1.0,
+                'main_vol': linear_video_vol,
                 'music_vol': music_vol_linear if music_path else 1.0,
-                'timeline_start_ms': getattr(self, 'music_timeline_start_ms', 0),
-                'timeline_end_ms': getattr(self, 'music_timeline_end_ms', 0)
+                'timeline_start_ms': self.trim_start_ms,
+                'timeline_end_ms': self.trim_end_ms
             }
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
@@ -180,7 +185,7 @@ class FfmpegMixin:
                 quality_level=q_level,
                 bg_music_path=music_path, 
                 bg_music_volume=music_vol_linear,
-                bg_music_offset_ms=int(self._get_music_offset() * 1000),
+                bg_music_offset_ms=int(music_offset_s * 1000),
                 original_total_duration_ms=self.original_duration_ms,
                 disable_fades=self.no_fade_checkbox.isChecked(),
                 intro_still_sec=0.1,

@@ -154,7 +154,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 self.granular_checkbox.blockSignals(False)
             resume_time = dlg.last_position_ms
             if resume_time < 0: resume_time = 0
-            self.vlc_player.set_time(int(resume_time))
+            if getattr(self, "vlc_player", None):
+                self.vlc_player.set_time(int(resume_time))
             self.positionSlider.setValue(int(resume_time))
             self.is_playing = False
             self.playPauseButton.setText("PLAY")
@@ -332,7 +333,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.setup_persistence(
             config_path=os.path.join(self.base_dir, 'config', 'main_app.conf'),
             settings_key='window_geometry',
-            default_geo={'x': 200, 'y': 200, 'w': 1000, 'h': 650},
+            default_geo={'x': 0, 'y': 0, 'w': 1300, 'h': 750},
             title_info_provider=lambda: f"{self._base_title}  —  {self.width()}x{self.height()}",
             config_manager=self.config_manager
         )
@@ -371,18 +372,29 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
 
     def _setup_vlc(self):
         """Initializes the VLC instance and player."""
+        log_dir = os.path.join(self.base_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
         if hasattr(os, 'add_dll_directory'):
             try:
                 os.add_dll_directory(self.bin_dir)
             except Exception: pass
         plugin_path = os.path.join(self.bin_dir, "plugins")
+        vlc_log_path = os.path.join(log_dir, "vlc.log")
         vlc_args = [
-            '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-            '--file-caching=1000', '--audio-time-stretch', '--verbose=-1',
+            '--no-video-title-show',
+            '--avcodec-hw=any',
+            '--vout=direct3d11',
+            '--aout=waveout', 
+            '--file-caching=3000',
+            '--no-osd',
+            '--ignore-config',
+            '--verbose=2',
+            '--file-logging',
+            '--logmode=text',
+            f'--logfile={vlc_log_path}',
         ]
         if os.path.exists(plugin_path):
             vlc_args.append(f"--plugin-path={plugin_path.replace('\\', '/')}")
-            os.environ["VLC_PLUGIN_PATH"] = plugin_path
         os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
         self.vlc_player = None
         try:
@@ -396,11 +408,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.vlc_instance = None
         if self.vlc_player:
             try:
-                em = self.vlc_player.event_manager()
-                if em:
-                    em.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached)
-                    em.event_attach(vlc.EventType.MediaPlayerMediaChanged, self._on_duration_changed)
-                    em.event_attach(vlc.EventType.MediaDurationChanged, self._on_duration_changed)
+                self.vlc_event_manager = self.vlc_player.event_manager()
+                if self.vlc_event_manager:
+                    self.vlc_event_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached)
+                    self.vlc_event_manager.event_attach(vlc.EventType.MediaPlayerMediaChanged, self._on_duration_changed)
+                    self.vlc_event_manager.event_attach(vlc.EventType.MediaDurationChanged, self._on_duration_changed)
                 else:
                     self.logger.warning("Could not get VLC event manager.")
             except Exception as e:
@@ -550,7 +562,18 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         """Handles trim time changes from the custom slider (in ms)."""
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
-        if self.music_timeline_start_ms > 0 and self.music_timeline_end_ms > 0 and self.add_music_checkbox.isChecked():
+        if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
+            new_m_start = max(start_ms, self.music_timeline_start_ms)
+            new_m_end = min(end_ms, self.music_timeline_end_ms)
+            if self.music_timeline_start_ms == self.trim_start_ms or new_m_start > new_m_end:
+                new_m_start = start_ms
+            if self.music_timeline_end_ms == self.trim_end_ms or new_m_end < new_m_start:
+                new_m_end = end_ms
+            self.music_timeline_start_ms = new_m_start
+            self.music_timeline_end_ms = new_m_end
+            self.positionSlider.set_music_times(new_m_start, new_m_end)
+            self.logger.info(f"UI: Clamped music overlay to video trim: {new_m_start}ms - {new_m_end}ms")
+        if self.music_timeline_start_ms > 0 and self.music_timeline_end_ms > 0 and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
             video_dur_ms = end_ms - start_ms
             music_dur_ms = self.music_timeline_end_ms - self.music_timeline_start_ms
             if music_dur_ms > video_dur_ms:
@@ -884,11 +907,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         except AttributeError:
             pass
         try:
-            if self.add_music_checkbox.isChecked():
-                self.add_music_checkbox.setChecked(False)
-            else:
-                self._reset_music_player()
-        except AttributeError:
+            self._reset_music_player()
+        except Exception:
             pass
         self.drop_label.setText("Drag & Drop\r\nVideo File Here:")
         self._update_portrait_mask_overlay_state()
@@ -919,16 +939,31 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     def cleanup_and_exit(self):
         """Centralized cleanup and exit logic."""
         self.logger.info("=== Application shutting down ===")
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
         if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
             self.logger.warning("App closing during process. Killing ffmpeg...")
             self.process_thread.cancel()
         try:
+            if hasattr(self, "vlc_event_manager") and self.vlc_event_manager:
+                try:
+                    self.vlc_event_manager.event_detach(vlc.EventType.MediaPlayerEndReached)
+                    self.vlc_event_manager.event_detach(vlc.EventType.MediaPlayerMediaChanged)
+                    self.vlc_event_manager.event_detach(vlc.EventType.MediaDurationChanged)
+                except Exception: pass
             if getattr(self, "vlc_player", None):
                 self.vlc_player.stop()
+                self.vlc_player.release()
+                self.vlc_player = None
             if getattr(self, "vlc_music_player", None):
                 self.vlc_music_player.stop()
+                self.vlc_music_player.release()
+                self.vlc_music_player = None
+            if getattr(self, "vlc_instance", None):
+                self.vlc_instance.release()
+                self.vlc_instance = None
         except Exception as e:
-            self.logger.error("Failed to stop VLC players on close: %s", e)
+            self.logger.error("Failed to safely stop VLC on close: %s", e)
         self._save_app_state_and_config()
         QCoreApplication.instance().quit()
 

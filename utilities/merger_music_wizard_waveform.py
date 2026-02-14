@@ -11,7 +11,6 @@ class MergerMusicWizardWaveformMixin:
         try:
             if worker.isRunning():
                 worker.stop()
-                # Move to a local list to prevent garbage collection until finished
                 if not hasattr(self, "_stale_workers"):
                     self._stale_workers = []
                 self._stale_workers.append(worker)
@@ -40,7 +39,6 @@ class MergerMusicWizardWaveformMixin:
             try: os.remove(self._temp_sync)
             except Exception: pass
         self._temp_sync = None
-        
         self._wave_target_path = str(self.current_track_path)
         self.logger.info(f"WIZARD_STEP2: Initializing Async Waveform Generation for {os.path.basename(self._wave_target_path)}")
         self._waveform_worker = SingleWaveformWorker(self._wave_target_path, self.bin_dir, timeout_sec=15.0)
@@ -68,8 +66,6 @@ class MergerMusicWizardWaveformMixin:
         self._temp_sync = temp_sync_path
         self._pm_src = pixmap
         self._refresh_wave_scaled()
-        
-        # We KEEP _temp_sync for playback, but we can delete _temp_png after loading pixmap
         if self._temp_png and os.path.exists(self._temp_png):
             try: os.remove(self._temp_png)
             except Exception: pass

@@ -25,7 +25,6 @@ class MergerMusicWizardPlaybackMixin:
                 else:
                     self.logger.info(f"WIZARD: User clicked PLAY at offset {self.offset_slider.value()/1000.0:.1f}s")
                     if st in (0, 5, 6, 7):
-                        # Use synced audio if available for perfect Step 2 sync
                         preview_path = getattr(self, "_temp_sync", None) or self.current_track_path
                         m = self.vlc.media_new(preview_path)
                         self._player.set_media(m)
@@ -71,27 +70,21 @@ class MergerMusicWizardPlaybackMixin:
                 try:
                     st = self._player.get_state()
                     if st == 3:
-                        # Sync duration from VLC to avoid probed vs actual drift
                         vlc_len = self._player.get_length()
                         if vlc_len > 0 and abs(vlc_len - self.offset_slider.maximum()) > 50:
                             self.offset_slider.blockSignals(True)
                             self.offset_slider.setRange(0, vlc_len)
                             self.current_track_dur = vlc_len / 1000.0
                             self.offset_slider.blockSignals(False)
-
                         vlc_ms = int(self._player.get_time() or 0)
                         if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
                         else: self._last_good_vlc_ms = vlc_ms
-                        
-                        # Apply recursive correction: 0ms for first 10s, then Xms every 10s
                         if vlc_ms > 10000:
                             increments = int((vlc_ms - 10000) / 10000)
                             vlc_ms -= (increments * RECURSIVE_MS_DRIFT_CORRECTION_MS)
-                        
                         vlc_ms = int(vlc_ms + PREVIEW_VISUAL_LEAD_MS)
                         max_ms = self.offset_slider.maximum()
                         vlc_ms = max(0, min(max_ms, vlc_ms))
-                        
                         if vlc_ms >= max_ms - 10:
                             self._on_vlc_ended()
                             return

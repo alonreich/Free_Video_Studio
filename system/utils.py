@@ -139,9 +139,10 @@ class ProcessManager:
 class ConsoleManager:
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
+        LogManager.truncate_vlc_log(base_dir)
         logger = LogManager.setup_logger(base_dir, log_filename, logger_name)
         log_dir = os.path.join(base_dir, "logs")
-        log_path = os.path.join(log_dir, log_filename)
+        vlc_log_path = os.path.join(log_dir, "vlc.log")
 
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
@@ -156,9 +157,14 @@ class ConsoleManager:
             except: pass
         sys.excepthook = global_exception_handler
         try:
-            f = open(log_path, 'a', buffering=1, encoding='utf-8')
+            f = open(vlc_log_path, 'a', buffering=1, encoding='utf-8')
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
+
+            import faulthandler
+            faulthandler.enable(f)
+            f.write("\n--- NATIVE DEBUG LOGGING ACTIVE ---\n")
+            f.flush()
         except Exception as e:
             print(f"Failed FD redirection: {e}")
         if sys.platform == "win32":
@@ -171,6 +177,25 @@ class ConsoleManager:
         return logger
 
 class LogManager:
+    @staticmethod
+    def truncate_vlc_log(base_dir: str, max_size_mb: int = 10):
+        """
+        Maintains logs/vlc.log size by keeping only the last N MB (FIFO).
+        """
+        try:
+            log_path = os.path.join(base_dir, "logs", "vlc.log")
+            if not os.path.exists(log_path):
+                return
+            file_size = os.path.getsize(log_path)
+            max_bytes = max_size_mb * 1024 * 1024
+            if file_size > max_bytes:
+                with open(log_path, 'rb') as f:
+                    f.seek(-max_bytes, os.SEEK_END)
+                    data = f.read()
+                with open(log_path, 'wb') as f:
+                    f.write(data)
+        except Exception:
+            pass
     @staticmethod
     def setup_logger(base_dir: str, log_filename: str, logger_name: str) -> logging.Logger:
         """

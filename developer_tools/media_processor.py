@@ -41,6 +41,7 @@ class MediaProcessor(QObject):
         super().__init__()
         self.bin_dir = bin_dir
         self.vlc_log_path = os.path.join(get_vlc_log_dir(), "vlc_errors.log")
+        os.makedirs(os.path.dirname(self.vlc_log_path), exist_ok=True)
         self._ffprobe_procs = []
         self._ffprobe_lock = threading.Lock()
         self._state_lock = threading.RLock()
@@ -69,11 +70,10 @@ class MediaProcessor(QObject):
             self.input_file_path = None
             return
         vlc_args = [
-            '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-            '--file-caching=500', '--aout=directsound', 
-            '--verbose=0',
-            '--no-stats', '--no-lua', '--no-interact',
-            f'--logfile={self.vlc_log_path}'
+            '--no-xlib', '--no-video-title-show',
+            '--aout=waveout', 
+            '--avcodec-hw=any', '--vout=direct3d11',
+            '--no-stats', '--no-lua', '--no-interact'
         ]
         try:
             with _suppress_vlc_output():

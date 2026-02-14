@@ -330,7 +330,7 @@ class MusicWaveformWorker(QtCore.QThread):
             self.finished.emit(self.stage)
 
 class SingleWaveformWorker(QtCore.QThread):
-    ready = pyqtSignal(str, float, QPixmap, str, str)  # track_path, duration, pixmap, png_path, sync_path
+    ready = pyqtSignal(str, float, QPixmap, str, str)
     error = pyqtSignal(str, str)
 
     def __init__(self, track_path: str, bin_dir: str, timeout_sec: float = 15.0):
@@ -349,7 +349,6 @@ class SingleWaveformWorker(QtCore.QThread):
         ffprobe_exe = os.path.join(self.bin_dir, "ffprobe.exe")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
         try:
-            # Try stream duration first (more accurate for trimmed/sync files)
             r = subprocess.run(
                 [
                     ffprobe_exe,
@@ -364,8 +363,6 @@ class SingleWaveformWorker(QtCore.QThread):
             val = (r.stdout or "").strip()
             if r.returncode == 0 and val and val != "N/A":
                 return max(0.0, float(val))
-            
-            # Fallback to format duration
             r = subprocess.run(
                 [
                     ffprobe_exe,
@@ -389,19 +386,15 @@ class SingleWaveformWorker(QtCore.QThread):
             return
         ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-        
-        # 1. Create Sync WAV (Solution 1: Conversion to Constant Bitrate/Linear format)
         tf_sync = tempfile.NamedTemporaryFile(prefix="fvs_sync_", suffix=".wav", delete=False)
         tmp_sync = tf_sync.name
         tf_sync.close()
-        
         conv_cmd = [
             ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error",
             "-i", self.track_path,
             "-vn", "-ac", "2", "-ar", "44100", "-f", "wav",
             tmp_sync
         ]
-        
         try:
             logger.info("WIZARD_STEP2: Straightening audio for perfect sync...")
             self._proc = subprocess.Popen(conv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
@@ -416,12 +409,10 @@ class SingleWaveformWorker(QtCore.QThread):
             if os.path.exists(tmp_sync): os.remove(tmp_sync)
             self.error.emit(self.track_path, f"Sync conversion failed: {e}")
             return
-
         duration = self._probe_duration(tmp_sync)
         tf_png = tempfile.NamedTemporaryFile(prefix="fvs_wave_", suffix=".png", delete=False)
         tmp_png = tf_png.name
         tf_png.close()
-        
         cmd = [
             ffmpeg_exe,
             "-y",

@@ -45,66 +45,47 @@ class MergerMusicWizardMiscMixin:
                 label_pos = self.wave_preview.mapTo(self, QPoint(0, 0))
                 x = label_pos.x() + self._draw_x0 + int(frac * self._draw_w) - 1
                 y = label_pos.y() + self._draw_y0
-                
-                # Fixed height of 265 pixels
                 total_h = 265
-                
                 self._wave_caret.setGeometry(x, y, 2, total_h)
                 self._wave_caret.show()
                 self._wave_caret.raise_()
-
-                # Update badges
                 time_str = self._format_time_long(val_ms)
                 self._wave_time_badge.setText(time_str)
                 self._wave_time_badge.adjustSize()
                 self._wave_time_badge_bottom.setText(time_str)
                 self._wave_time_badge_bottom.adjustSize()
-                
                 bw = self._wave_time_badge.width()
-                # Top badge
                 self._wave_time_badge.move(x - bw // 2, y - 25)
                 self._wave_time_badge.show()
                 self._wave_time_badge.raise_()
-                
-                # Bottom badge (tightly below the axis)
                 self._wave_time_badge_bottom.move(x - bw // 2, y + total_h + 3)
                 self._wave_time_badge_bottom.show()
                 self._wave_time_badge_bottom.raise_()
-                
-                # Trigger redraw of slider (since it now contains axis markers)
                 self.offset_slider.update()
-
             elif curr_idx == 2:
                 if not self.timeline.isVisible(): 
                     self._wave_caret.hide()
                     self._wave_time_badge.hide()
                     self._wave_time_badge_bottom.hide()
                     return
-                
-                # Project Timeline Sync
                 proj_time = self.timeline.current_time
                 frac = proj_time / self.total_video_sec
                 tl_pos = self.timeline.mapTo(self, QPoint(0, 0))
                 x = tl_pos.x() + int(frac * self.timeline.width()) - 1
                 y = tl_pos.y()
                 h = self.timeline.height()
-                
                 self._wave_caret.setGeometry(x, y, 2, h)
                 self._wave_caret.show()
                 self._wave_caret.raise_()
-
-                # Enable badges for Step 3 as well
                 time_str = self._format_time_long(int(proj_time * 1000))
                 self._wave_time_badge.setText(time_str)
                 self._wave_time_badge.adjustSize()
                 self._wave_time_badge_bottom.setText(time_str)
                 self._wave_time_badge_bottom.adjustSize()
-                
                 bw = self._wave_time_badge.width()
                 self._wave_time_badge.move(x - bw // 2, y - 25)
                 self._wave_time_badge.show()
                 self._wave_time_badge.raise_()
-                
                 self._wave_time_badge_bottom.move(x - bw // 2, y + h + 5)
                 self._wave_time_badge_bottom.show()
                 self._wave_time_badge_bottom.raise_()

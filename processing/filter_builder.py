@@ -296,10 +296,10 @@ class FilterBuilder:
                 "asetpts=PTS-STARTPTS"
             ]
             if not disable_fades:
-                FADE_DUR = 1.0
-                if dur_a > (FADE_DUR * 2):
-                    music_filters.append(f"afade=t=in:st=0:d={FADE_DUR}")
-                    music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR}")
+                FADE_DUR = min(1.0, dur_a / 3.0)
+                if dur_a > 0.1:
+                    music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
+                    music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
             vol = max(0.0, min(1.0, float(mc.get('volume', 1.0))))
             music_filters.append(f"volume={vol:.4f}")
             music_filters.append(f"aresample={sample_rate}")
@@ -322,8 +322,10 @@ class FilterBuilder:
             duck_params = f"threshold={d_thresh}:ratio={d_ratio}:attack={d_attack}:release={d_release}:detection=rms"
             chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
             chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
+            v_vol = float(mc.get('main_vol', 1.0))
+            chain.append(f"[game_out]volume={v_vol:.4f}[game_scaled]")
             chain.append(
-                "[game_out][a_music_reconstructed]"
+                "[game_scaled][a_music_reconstructed]"
                 "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
                 "alimiter=limit=0.95:attack=5:release=50[acore_pre_limiter]"
             )

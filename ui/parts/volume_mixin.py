@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QTimer, QPoint, Qt
+﻿from PyQt5.QtCore import QTimer, QPoint, Qt
 from PyQt5.QtWidgets import QStyleOptionSlider, QStyle
 
 class VolumeMixin:
@@ -39,8 +39,13 @@ class VolumeMixin:
     def _on_master_volume_changed(self, v: int):
         """Apply mapped volume, persist real %, and refresh badge."""
         eff = self._vol_eff(v)
-        if getattr(self, "vlc_player", None):
-            self.vlc_player.audio_set_volume(eff)
+        player = getattr(self, "vlc_player", None)
+        if player:
+            try:
+                state = player.get_state()
+                if state not in (vlc.State.NothingSpecial, vlc.State.Stopped):
+                    player.audio_set_volume(eff)
+            except Exception: pass
         if hasattr(self, "config_manager"):
             try:
                 cfg = dict(self.config_manager.config)

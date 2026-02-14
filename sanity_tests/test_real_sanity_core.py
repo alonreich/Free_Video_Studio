@@ -1,0 +1,161 @@
+﻿from __future__ import annotations
+from pathlib import Path
+import tempfile
+import types
+import os
+from sanity_tests._real_sanity_harness import (
+    DummyButton,
+    DummyCheckBox,
+    DummyConfigManager,
+    DummyMediaPlayer,
+    DummySlider,
+    DummySpinBox,
+    DummyTimer,
+    DummyListItem,
+    DummyKeyEvent,
+    install_qt_vlc_stubs,
+)
+install_qt_vlc_stubs()
+
+from processing.filter_builder import FilterBuilder
+from system.config import ConfigManager
+from system.utils import ConsoleManager
+from ui.parts.player_mixin import PlayerMixin
+from ui.parts.music_mixin import MusicMixin
+from ui.widgets.music_wizard_widgets import SearchableListWidget
+
+def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
+    host = types.SimpleNamespace()
+    host.vlc_player = DummyMediaPlayer(playing=True, current_ms=0, rate=speed)
+    host.vlc_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.8)
+    host.music_timeline_start_ms = 1000
+    host.music_timeline_end_ms = 9000
+    host.wants_to_play = True
+    host.speed_spinbox = DummySpinBox(speed)
+    host.granular_checkbox = DummyCheckBox(granular)
+    host.speed_segments = [
+        {"start": 0, "end": 2000, "speed": 0.5},
+        {"start": 2000, "end": 4000, "speed": 2.0},
+        {"start": 4000, "end": 9000, "speed": 1.1},
+    ]
+    host._wizard_tracks = [("song.mp3", 0.5, 8.0)]
+    host._get_music_offset_ms = lambda: 500
+    host._calculate_wall_clock_time = lambda video_ms, _segments, base: float(video_ms) / base
+    host.logger = types.SimpleNamespace(error=lambda *a, **k: None)
+    return host
+
+def test_core_01_constant_tempo_music_rate_locked_to_1x() -> None:
+    host = _player_host(speed=3.1, granular=False)
+    PlayerMixin.set_vlc_position(host, 3000, sync_only=True)
+    assert host.vlc_music_player.set_rate_calls
+    assert host.vlc_music_player.set_rate_calls[-1] == 1.0
+
+def test_core_03_scrub_protection_throttles_under_50ms(monkeypatch) -> None:
+    host = _player_host(speed=2.0)
+    t = {"v": 10.0}
+    monkeypatch.setattr("time.time", lambda: t["v"])
+    PlayerMixin.set_vlc_position(host, 2000, sync_only=True)
+    calls_after_first = len(host.vlc_music_player.set_time_calls)
+    t["v"] = 10.02
+    PlayerMixin.set_vlc_position(host, 2600, sync_only=True)
+    assert len(host.vlc_music_player.set_time_calls) == calls_after_first
+
+def test_core_04_smart_fading_scales_for_short_clips() -> None:
+    fb = FilterBuilder(logger=types.SimpleNamespace(info=lambda *a, **k: None))
+    chain = fb.build_audio_chain(
+        music_config={"path": "song.mp3", "timeline_start_sec": 0.0, "timeline_end_sec": 0.1, "file_offset_sec": 0.0, "volume": 1.0, "main_vol": 1.0},
+        video_start_time=0.0,
+        video_end_time=0.1,
+        speed_factor=1.0,
+        disable_fades=False,
+        vfade_in_d=0,
+        audio_filter_cmd="anull",
+        sample_rate=48000,
+    )
+    music_prepared = chain[1]
+    assert "[a_music_prepared]" in music_prepared
+    assert "afade=t=in" not in music_prepared
+    assert "afade=t=out" not in music_prepared
+
+def test_core_06_type_ahead_multi_char_focus() -> None:
+    lst = SearchableListWidget()
+    lst._items = [DummyListItem("alpha"), DummyListItem("akita"), DummyListItem("zebra")]
+    lst.keyPressEvent(DummyKeyEvent("a"))
+    lst.keyPressEvent(DummyKeyEvent("k"))
+    lst.keyPressEvent(DummyKeyEvent("i"))
+    assert getattr(lst, "_current", None) is lst._items[1]
+
+def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -> None:
+    class DummyWizard:
+        def __init__(self, *_a, **_k):
+            self._vv = 100
+            self.video_vol_slider = types.SimpleNamespace(
+                setValue=lambda v: setattr(self, "_vv", v),
+                value=lambda: self._vv,
+            )
+            self.music_vol_slider = types.SimpleNamespace(value=lambda: 80, setValue=lambda *_: None)
+            self.selected_tracks = [("song.mp3", 0.0, 5.0)]
+
+        def exec_(self):
+            return 1
+
+        def stop_previews(self):
+            return None
+
+    import sys
+    sys.modules["ui.widgets.music_wizard"] = types.SimpleNamespace(MergerMusicWizard=DummyWizard)
+    host = types.SimpleNamespace()
+    host.vlc_player = DummyMediaPlayer(playing=True)
+    host.wants_to_play = True
+    host.playPauseButton = DummyButton()
+    host.style = lambda: types.SimpleNamespace(standardIcon=lambda *_: None)
+    host.timer = DummyTimer(active=True)
+    host.original_duration_ms = 10_000
+    host.base_dir = tempfile.gettempdir()
+    host.bin_dir = tempfile.gettempdir()
+    host.vlc_instance = types.SimpleNamespace(media_player_new=lambda: DummyMediaPlayer(), media_new=lambda *_: object())
+    host.speed_spinbox = DummySpinBox(1.5)
+    host._get_master_eff = lambda: 100
+    host.volume_slider = types.SimpleNamespace(maximum=lambda: 100, minimum=lambda: 0, invertedAppearance=lambda: False, setValue=lambda *_: None)
+    host.trim_start_ms = 1200
+    host.trim_end_ms = 8200
+    host.positionSlider = DummySlider()
+    host.logger = types.SimpleNamespace(info=lambda *a, **k: None)
+    host.config_manager = DummyConfigManager(config={})
+    host._mp3_dir = types.MethodType(MusicMixin._mp3_dir, host)
+    host._reset_music_player = lambda: None
+    MusicMixin.open_music_wizard(host)
+    assert host.vlc_player.paused >= 1
+    assert host.wants_to_play is False
+    assert host.positionSlider.visible_calls and host.positionSlider.visible_calls[-1] is True
+    assert host.positionSlider.time_calls and host.positionSlider.time_calls[-1] == (1200, 8200)
+
+def test_core_09_native_logs_faulthandler_pipeline(monkeypatch, tmp_path: Path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    dup_calls: list[tuple[int, int]] = []
+    fh_calls: list[object] = []
+    monkeypatch.setattr("os.dup2", lambda a, b: dup_calls.append((a, b)))
+    monkeypatch.setattr("faulthandler.enable", lambda *a, **_k: fh_calls.append(a[0] if a else None))
+    monkeypatch.setattr("sys.stdout", open(os.devnull, "w", encoding="utf-8"), raising=False)
+    monkeypatch.setattr("sys.stderr", open(os.devnull, "w", encoding="utf-8"), raising=False)
+    logger_name = f"sanity_test_logger_{tmp_path.name}"
+    ConsoleManager.initialize(str(tmp_path), "main_app.log", logger_name)
+    assert (log_dir / "main_app.log").exists()
+    assert len(dup_calls) >= 2
+    assert len(fh_calls) == 1
+
+def test_core_10_folder_persistence_prioritizes_custom_path(tmp_path: Path) -> None:
+    custom = tmp_path / "custom_music"
+    custom.mkdir(parents=True, exist_ok=True)
+    host = types.SimpleNamespace(base_dir=str(tmp_path), config_manager=DummyConfigManager(config={"custom_mp3_dir": str(custom)}))
+    chosen = MusicMixin._mp3_dir(host)
+    assert chosen == str(custom)
+
+def test_core_10_multi_instance_config_reload_visibility(tmp_path: Path) -> None:
+    conf = tmp_path / "main_app.conf"
+    a = ConfigManager(str(conf))
+    b = ConfigManager(str(conf))
+    a.save_config({"custom_mp3_dir": "X:/music"})
+    loaded = b.load_config()
+    assert loaded.get("custom_mp3_dir") == "X:/music"

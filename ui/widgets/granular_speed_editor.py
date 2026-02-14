@@ -1,5 +1,6 @@
 ﻿import vlc
 import sys
+import os
 import time as import_time
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QDoubleSpinBox, QWidget, QMessageBox, QStyle, QStyleOptionSlider, QApplication, QSizePolicy)
@@ -224,9 +225,13 @@ class GranularSpeedEditor(QDialog):
         if vlc_instance:
             self.vlc_instance = vlc_instance
         else:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
             vlc_args = [
-                '--no-xlib', '--no-video-title-show', '--no-plugins-cache',
-                '--file-caching=1000', '--audio-time-stretch', '--verbose=-1',
+                '--no-video-title-show',
+                '--audio-time-stretch',
+                '--avcodec-hw=any',
+                '--vout=direct3d11',
+                '--aout=waveout',
             ]
             self.vlc_instance = vlc.Instance(vlc_args)
         self.vlc_player = self.vlc_instance.media_player_new()
@@ -274,13 +279,17 @@ class GranularSpeedEditor(QDialog):
 
     def save_geometry(self):
         if self.parent_app and hasattr(self.parent_app, 'config_manager'):
-            cfg = self.parent_app.config_manager.config
+            cfg = dict(getattr(self.parent_app.config_manager, 'config', {}) or {})
             cfg['granular_editor_geometry'] = {
                 'x': self.geometry().x(),
                 'y': self.geometry().y(),
                 'w': self.geometry().width(),
                 'h': self.geometry().height()
             }
+            try:
+                self.parent_app.config_manager.save_config(cfg)
+            except Exception:
+                pass
 
     def init_ui(self):
         self.setStyleSheet('''
@@ -750,6 +759,7 @@ class GranularSpeedEditor(QDialog):
             if self.parent_app and hasattr(self.parent_app, 'logger'):
                 self.parent_app.logger.info(f"GRANULAR: Auto-adding pending selection {start}-{end}ms on APPLY.")
             self.add_segment()
+        self.save_geometry()
         super().accept()
 
     def reject(self):
@@ -759,6 +769,7 @@ class GranularSpeedEditor(QDialog):
                 QMessageBox.Discard | QMessageBox.Cancel)
             if reply == QMessageBox.Cancel:
                 return
+        self.save_geometry()
         super().reject()
 
     def closeEvent(self, event):
@@ -776,4 +787,5 @@ class GranularSpeedEditor(QDialog):
             self.vlc_player.release()
             self.vlc_player = None
         super().closeEvent(event)
+
 

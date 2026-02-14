@@ -2,197 +2,119 @@
 # PROJECT GOAL: Fortnite Video Software
 # TARGET: PYTHON / DESKTOP (GPU-ENABLED)
 # ==============================================================================
-A quick, free-to-use, ad-free, GPU-accelerated desktop video editor designed for creating and sharing cool Fortnite video clips with family and friends.
-The suite is divided into four main applications: Video Compressor, Video Merger, Crop Tool, and an Advanced Video Editor.
+A high-performance, GPU-accelerated Fortnite video editor with mathematically perfect audio-visual synchronization.
+The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Advanced Editor.
 
 # General Project Guidelines:
-# 1. To maintain readability and focus, each code/script file should not exceed 150-200 lines. Logic should be divided into multiple separate files.
-# 2. This file (.\project_structure.txt) must be kept up-to-date, reflecting all changes in the project structure.
-# 3. Video tempo scales with the speed multiplier, but audio pitch and background music tempo remain constant.
-# 4. To ensure dialogue and in-game sounds are clear, the main video's audio is protected using "Volume Ducking" and "EQ Ducking" against the background music.
-#    - Volume Ducking: When the main audio exceeds -16.5 dB (a threshold of 0.15), the background music volume is compressed at a 2.5:1 ratio.
-#    - EQ Ducking: The music is split at 150 Hz. Ducking is applied only to frequencies above 150 Hz, preserving the music's bassline while carving out space for the main audio.
-# 5. Code should be written without comments for a clean and uncluttered codebase.
-
-# Manual Pip Management:
-# To upgrade pip: "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install --upgrade pip
-# To install packages: "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" -m pip install PyQt5 psutil python-vlc send2trash
+# 1. Modular Architecture: Files should remain focused (target 150-250 lines). 
+# 2. Sync Logic: Video tempo scales with speed multiplier. Background music ALWAYS remains at a constant 1.0x tempo.
+# 3. Audio Protection: Main video audio uses Volume/EQ Ducking (150Hz split) against background music.
+# 4. Strict UI Rules: "No Junk" policy. All temp files (.wav, .png, .txt) must be deleted on cancel/close.
+# 5. UI Spacing: Exactly 10px vertical gap above/below STEP titles. Navigation buttons are strictly 42px height.
+# 6. Stability: VLC scrubbing is throttled to 20fps (50ms) to prevent native thread deadlocks.
+# 7. Independence: Main App and Merger share widget logic but remain technically decoupled (local method copies).
 
 # ==============================================================================
-# COORDINATE SYSTEM & SCALING LOGIC (CRITICAL FOR AI AGENTS)
+# COORDINATE SYSTEM & SCALING LOGIC
 # ==============================================================================
-# The Crop Tool and Processing Engine usage a unique "Scale-Out" architecture to ensure high quality.
-#
-# 1. THE UI SPACE (1080x1920, WITH 1080x1620 CONTENT AREA):
-#    - The Crop Tool's Portrait View uses a 1080x1920 canvas.
-#    - The Top 150 pixels (y=0 to y=150) are STRICTLY RESERVED for the text/header canvas.
-#    - HUD elements are constrained to the 1080x1620 CONTENT AREA (y=150..1920).
-#    - IMPORTANT: crops_coordinations.conf stores crop rectangles in the CONTENT AREA
-#      coordinate space (1080x1620), i.e., y is relative to the content area and does
-#      NOT include the top 150px padding. Overlay positions are stored in full 1080x1920.
-#
-# 2. THE PROCESSING SPACE (1280x1920):
-#    - The backend (filter_builder.py) scales the main video to 1280x1920 (TARGET_W=1280) first.
-#    - This scaling (1280p) is larger than the UI space (1080p).
-#    - Why? To allow the 1080p content to be "centered" or manipulated with high fidelity before final output.
-#
-# 3. THE TRANSFORMATION PIPELINE:
-#    - CONFIG -> BACKEND (1280x1920 canvas):
-#         a. Crop Rect (content area): X_canvas = X_content * BACKEND_SCALE
-#         b. Crop Rect (content area): Y_canvas = Y_content * BACKEND_SCALE
-#         c. Element Size: Size_canvas = (Size_content * user_scale) * BACKEND_SCALE
-#    - BACKEND -> FFmpeg:
-#         a. The *Source Crop* is computed by inverting the content-area transform back
-#            to the original resolution using the same scale+center-crop math as FFmpeg.
-#         b. The *Overlay Position* is computed by scaling overlay x,y from 1080x1920
-#            to 1280x1920, and then subtracting the 150px top padding after scaling.
-#         c. The *Element Size* is also scaled to 1280x1920 to preserve relative size.
-#
-# 4. KEY TAKEAWAY:
-#    - Crop rectangles are stored in 1080x1620 content space; overlay positions are in 1080x1920.
-#    - The 150px top padding is applied ONLY to overlay positioning, not crop rectangles.
-#    - Do NOT remove the top-bar restriction; it protects the text layer.
-#    - Do NOT change the scaling logic without understanding the full round-trip:
-#      Original -> 1280x1920 (scale+crop) -> 1080x1620 content -> config -> back to original.
-#
-# 5. DRIFT PROTECTION / PREVENTION:
-#    - To prevent mathematical drift during coordinate transformation and stay on the safe side:
-#      a. Mini Map + Stats: An additional extra 1 pixel is added to the LEFT of the selection.
-#      b. Loot Area: An additional extra 1 pixel is added to the RIGHT of the selection.
-#    - This ensures HUD borders remain crisp and no content is clipped by rounding errors.
-# ==============================================================================
+# 1. UI Space: 1080x1920 (Portrait). Content Area: 1080x1620 (Excludes top 150px text canvas).
+# 2. Backend Space: 1280x1920 (High-fidelity scaling before 1080p center-crop).
+# 3. Transformation: Source -> 1280p Scale -> 1080p Crop -> HUD Overlay -> Encode.
+# 4. Drift Prevention: Extra 1px padding on HUD selection borders (Left for Map/Stats, Right for Loot).
 
 # ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE
 # ==============================================================================
 .
-├── app.py: Main entry point for the application. Launches the main window.
-├── README.md: Contains information about the project.
-├── project_structure.txt: This file, containing a map and description of the project structure.
-├── .gitignore: Specifies files and directories to be ignored by Git.
-├── .gitattributes: Specifies attributes for paths.
-├── Fix OS Problems.cmd: A command script to fix OS related problems.
-├── Installer.ps1: A PowerShell script for one-click installation and updates.
-├── z_Install_Fortnite_Video_Software.cmd: A command script to installation.
+├── app.py: Main entry point. Initializes logging, hardware scan, and launches window.
+├── project_structure.txt: This file (Architecture Map).
+├── README.md: Product documentation.
 │
-├── !!!_Ouput_Video_Files_!!!/: Default output directory for processed videos.
+├── !!!_Output_Video_Files_!!!/: Final rendered videos.
 │
-├── advanced/: A separate, multi-track video editor application.
-│   ├── (Content from .\advanced\project_structure.txt)
+├── binaries/: FFmpeg, FFprobe, and VLC native libraries.
+├── config/: JSON/Conf settings (main_app.conf, crops_coordinations.conf).
+├── logs/: Rotating logs (main_app.log). Captured native stderr/faulthandler output.
 │
-├── binaries/: Contains all the necessary binaries for the application to run (ffmpeg, vlc, etc.).
+├── processing/: The core rendering engine.
+│   ├── filter_builder.py: Builds complex audio/video chains (atempo, smart afade, ducking).
+│   ├── worker.py: ProcessThread orchestrating the FFmpeg pipeline.
+│   ├── encoders.py: GPU vs CPU codec management.
+│   └── (media_utils.py, step_concat.py, step_intro.py, system_utils.py, text_ops.py)
 │
-├── config/: Contains application JSON config files, window geometries/state, and last-used working folder records.
+├── system/: Operating system and lifecycle management.
+│   ├── utils.py: ProcessManager, DependencyDoctor, and Native Console initialization.
+│   └── (config.py, constants.py, logger.py, state_transfer.py)
 │
-├── developer_tools/: Tools for development purposes.
-│   ├── app_handlers.py: Handles events for the crop tool application.
-│   ├── cleaner.py: A script to clean python files by removing comments.
-│   ├── config.py: Configuration for the developer tools.
-│   ├── crop_tools.py: The main entry point for the crop tool application.
-│   ├── crop_widgets.py: Widgets used in the crop tool.
-│   ├── Find_and_Remove_Comments.py: A script to find and remove comments from python files.
-│   ├── graphics_items.py: Custom graphics items for the crop tool.
-│   ├── Keyboard_Mixing.py: A mixin for keyboard shortcuts.
-│   ├── logger_setup.py: Sets up the logger for the developer tools.
-│   ├── media_processor.py: Processes media for the crop tool.
-│   ├── portrait_window.py: The portrait window for the crop tool.
-│   ├── ui_setup.py: Sets up the UI for the crop tool.
-│   ├── utils.py: Utility functions for the developer tools.
-│   ├── audio_compressor.py: Tool for audio compression.
+├── ui/: Frontend components.
+│   ├── main_window.py: The central hub of the Compressor app.
+│   ├── parts/: Mixins providing modular functionality to the main window.
+│   │   ├── music_mixin.py: Controls wizard launch, persistent folder selection, and auto-pause.
+│   │   ├── player_mixin.py: Handles VLC playback, wall-clock sync math, and scrubbing protection.
+│   │   ├── ui_builder_mixin.py: Constructs 3D-styled UI. 'ADD MUSIC' button uses nested layout.
+│   │   └── (events, ffmpeg, keyboard, phase_overlay, trim, volume)
+│   │
+│   └── widgets/: Reusable specialized custom components.
+│       ├── music_wizard.py: 3-step music engine. Sets global dark theme to break app inheritance.
+│       ├── music_wizard_step_pages.py: Steps 1 & 2 layout. Folder button uses large 16px gear icons.
+│       ├── music_wizard_page3.py: Step 3 Timeline preview. Dual lanes with 2px borders and 10px gap.
+│       ├── music_wizard_waveform.py: Async soundwave generation and click-to-seek logic.
+│       ├── music_wizard_playback.py: Synchronized wizard preview playback.
+│       ├── music_wizard_misc.py: mathematically precise frameGeometry centering and persistence.
+│       ├── music_wizard_constants.py: Mathematical sync values (1350ms lead, 5ms correction).
+│       ├── music_wizard_widgets.py: SearchableListWidget with 1.5s multi-char type-ahead buffer.
+│       ├── music_wizard_workers.py: FFmpeg background tasks (Low-res 192p thumbnail extraction).
+│       ├── trimmed_slider.py: Unified axis with 15s/30s/45s markers and 2px hover-glow handle.
+│       └── (clickable_button, drop_area, tooltip_manager, custom_dialogs)
 │
-├── icons/: Contains application icons.
-│   └── Video_Icon_File.ico
-│
-├── logs/: Directory for application log files and runtime diagnostics.
-│
-├── mp3/: Directory for background music MP3 files.
-│
-├── processing/: The core video processing logic.
-│   ├── config_data.py: Manages video configuration, crop coordinates, and quality settings.
-│   ├── crops_coordinations.conf: Configuration file for external crop coordinates (referenced by config_data.py).
-│   ├── encoders.py: Manages hardware/CPU encoder selection and codec flags.
-│   ├── filter_builder.py: Dynamic HUD layering (Loot, MiniMap, HP, Teammates, Spectating Eye) and Volume/EQ Ducking.
-│   ├── media_utils.py: Utilities for media probing (ffprobe) and bitrate calculations.
-│   ├── step_concat.py: Handles the final concatenation of video parts.
-│   ├── step_intro.py: Generates the intro sequence for the video.
-│   ├── system_utils.py: System-level utilities for subprocess handling, time parsing, and progress monitoring.
-│   ├── text_ops.py: Handles text formatting, wrapping, and bidirectional (Hebrew) support.
-│   └── worker.py: The central worker thread orchestrating the rendering pipeline.
-│
-├── system/: System-level modules for the main application.
-│   ├── config.py: Manages application configuration.
-│   └── logger.py: Sets up the logger for the application.
-│
-├── ui/: The user interface for the main application.
-│   ├── main_window.py: The main window of the application.
-│   ├── parts/: Mixins for the main window.
-│   │   ├── events_mixin.py: Mixin for handling events.
-│   │   ├── ffmpeg_mixin.py: Mixin for handling ffmpeg processes.
-
-
-
-
+└── utilities/: Port source for shared logic (Video Merger suite).
 
 # ==============================================================================
-# PRODUCTION SANITY TEST SUITE (STRICT QUALITY ASSURANCE)
+# PRODUCTION SANITY TEST SUITE
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# 1. AI AGENT SANITY CHECK QUESTIONS (20 MOST IMPORTANT)
-# ------------------------------------------------------------------------------
-# 1. GPU PREFERENCE: Does the app always prioritize GPU (NVENC/AMF/QSV) over CPU for heavy encoding tasks?
-#    - References: app.py (hardware scan/selection), processing/encoders.py (ENCODER_PREFERENCE, initial encoder selection), processing/worker.py (active encoder attempts).
-# 2. FAILBACK LOGIC: Does the app successfully fallback to CPU-only (libx264) if no compatible GPU is detected?
-#    - References: app.py (sets VIDEO_FORCE_CPU when GPU encoders unavailable), processing/encoders.py (fallback list ending in libx264), processing/worker.py (fallback retry loop).
-# 3. MULTI-VENDOR GPU: Does the app work correctly on AMD and Intel GPUs, not just NVIDIA?
-#    - References: app.py (h264_amf and h264_qsv capability checks), processing/encoders.py (AMF/QSV codec flags), processing/worker.py (tries selected/fallback hardware encoders).
-# 4. AUDIO PARITY: Is the output audio quality identical or the closest possible match to the original source?
-#    - References: processing/media_utils.py (audio bitrate/sample-rate probing), processing/worker.py (preserves probed audio bitrate and processing pipeline), processing/filter_builder.py (audio chain composition).
-# 5. RESIDUE CLEANUP: Are all temporary files (.mp4, .txt, .log) deleted from Temp, especially after clicking 'CANCEL'?
-#    - References: processing/worker.py (finally-block cleanup + cancel output removal), processing/step_concat.py (temp concat list usage), system/shared_paths.py (project logs path and temp usage context).
-# 6. ATEMPO LIMITS: Does the app strictly use 'atempo' for all speed changes, and stay within the 0.5x - 3.1x range?
-#    - References: processing/worker.py (chained atempo segments with 0.5/2.0 decomposition), processing/filter_builder.py (granular speed atempo chain).
-# 7. WAVELENGTH SOURCE: Is 'ffmpeg showwaves' used for audio visualizers? Is it more efficient than manual Python draws?
-#    - References: ui/widgets/music_offset_dialog.py (showwavespic), utilities/merger_music_offset_dialog.py (showwavespic), utilities/merger_music_wizard.py (showwavespic waveform generation).
-# 8. PIP REDUCTION: Are unnecessary packages like 'pynput' or 'PyQtWebEngine' removed to keep the installation lean?
-#    - References: Installer.ps1 (explicit pip package list), project_structure.txt Manual Pip Management section (documented minimal install command).
-# 9. BITRATE INTELLIGENCE: Do short videos (<5s) at 'Maximum' quality correctly avoid exceeding the source file size?
-#    - References: processing/media_utils.py (target size from source bytes on maximum quality), processing/worker.py (short-duration handling + bitrate clamp safeguards), processing/config_data.py (quality/target behavior).
-# 10. MUSIC OFFSET MATH: Does the app accurately calculate music stop points when pink offset handles + Granular Speeds are used?
-#    - References: ui/widgets/music_offset_dialog.py (offset UI source), ui/parts/music_mixin.py (offset retrieval into processing config), processing/worker.py + processing/filter_builder.py (offset/speed parameters used in final audio timing).
-# 11. ASPECT RATIO MATH: Do 16:9 sources at any resolution (720p to 4K) maintain perfect HUD anchor scaling?
-# 12. SHELL OVERFLOW: Are all FFmpeg complex filters passed via .txt script files to bypass Windows character limits?
-# 13. BIDI WRAPPING: Do mixed RTL/LTR Hebrew/English strings wrap correctly within the 150px top-bar?
-# 14. RESOURCE LEAKS: Is system memory (RAM) fully released after the 'ProcessThread' finishes a job?
-# 15. TEMPLATE MATCHING: Is 'Magic Wand' accuracy verified against the latest Fortnite season HUD reference images?
-# 16. STRATEGY FEEDBACK: Does the status bar correctly report the finalized hardware strategy (e.g., '✅ NVENC Enabled')?
-# 17. PROBE ROBUSTNESS: Does the app handle corrupted 0-byte or non-video files without crashing?
-# 18. CONFIG RECOVERY: Does the app reset to 1500x800 centered if the 'Config' folder or 'main_app.conf' is deleted?
-# 19. PERMISSION HANDLING: Does the app report an error if the output directory is read-only or protected?
-# 20. GPU PUSH: Can the processing (e.g., filters/scaling) be pushed further into the GPU pipeline (OpenCL/CUDA)?
+# 1. AI AGENT SANITY CHECK QUESTIONS (CORE)
+# 1. CONSTANT TEMPO: Does background music always play at 1.0x speed, even if the video is accelerated or slowed?
+# 2. HANDLE CLAMPING: Are pink music handles physically blocked from going outside orange video trims?
+# 3. SCRUB PROTECTION: Is VLC scrubbing throttled to 20fps to prevent native thread deadlocks?
+# 4. SMART FADING: Do afade durations scale down automatically for clips under 3 seconds?
+# 5. GEOMETRY MEMORY: Does the wizard save geometry on every move/resize event?
+# 6. TYPE-AHEAD: Can users type sequential letters (e.g. 'aki') to jump to songs in Step 1?
+# 7. AUTO-PAUSE: Does the background video pause immediately when 'ADD MUSIC' is clicked?
+# 8. PINK OVERLAY: Does the pink timeline line appear automatically after wizard selection?
+# 9. NATIVE LOGS: Are C++ VLC crashes captured in main_app.log via faulthandler?
+# 10. FOLDER PERSISTENCE: Is 'custom_mp3_dir' prioritized over default path on launch?
 
-# ------------------------------------------------------------------------------
-# 2. MANUAL SANITY CHECK TASKS (20 MOST IMPORTANT)
-# ------------------------------------------------------------------------------
-# 1. QUALITY CHECK: Upload a video, move quality slider to 'Standard'. Verify output is approx 45MB.
-# 2. MUSIC MIX: Add MP3 background music. Verify processing succeeds and music is audible/ducked.
-# 3. SPEED SYNC: Set speed to 3.0. Verify video and audio remain perfectly synced until the very end.
-# 4. PORTRAIT BAD: Process 'Bad' quality in both Landscape and Portrait. Verify both are 10MB-15MB.
-# 5. MERGER TEST: Join 2 videos + music in Merger. Verify no audio pops or visual gaps at the transition.
-# 6. HIDDEN CONSOLE: Launch all 3 apps (Merger, Compressor, Crop). Verify NO black CMD windows appear.
-# 7. GHOST PROCESS: Open Editor -> Merger -> Close All. Verify no 'cmd.exe' or 'python.exe' remains in Task Manager.
-# 8. CONFIG RESET: Delete .\Config\ folder. Verify window centers and all settings return to defaults.
-# 9. MUSIC OVERLAP: Use music shorter than the video. Verify it stops/fades out before the video trim end.
-# 10. THUMBNAIL SPEED: Set 1.2x speed. Pick thumbnail. Verify the image matches the playhead frame exactly.
-# 11. GRANULAR EDIT: Edit segments, save, re-open. Verify segments are remembered and still editable.
-# 12. BOSS HP SHIFT: Toggle 'Boss HP'. Verify HUD crops in Portrait View shift to the correct boss positions.
-# 13. HOVER BADGES: Hover over Volume handles. Verify the % badge appears and updates correctly.
-# 14. CANCEL REACTION: Start processing and click 'CANCEL' immediately. Verify app returns to 'Ready'.
-# 15. HEBREW CENTERING: Type Hebrew in Mobile Format. Verify it is centered correctly in the final video.
-# 16. TRIM PRECISION: Drag trim handles to 0.1s precision. Verify FFmpeg cuts at the exact requested time.
-# 17. DRAG & DROP: Drop a file from a network drive or different partition. Verify it loads successfully.
-# 18. MULTI-MONITOR: Move app to Monitor 2. Open Editor. Verify it opens on Monitor 2, not Monitor 1.
-# 19. HARDWARE SCAN: Watch launch. Verify 'Scanning...' status bar message appears then changes to 'Ready'.
-# 20. APP SWITCHING: Use F11/F12 to jump between apps. Verify the current video file follows you.
-# 21. DIMENTIONS/RESULOTION MATH FIT: Opening a 1920x1080 video in developer toold crop tools, then creating a 2560x1440 video in the main app check if it was mathematically calculated properly.
-# 22. DIMENTIONS/RESULOTION MATH FIT: Opening a 2560x1440 video in developer toold crop tools, then creating a 1920x1080 video in the main app check if it was mathematically calculated properly.
+# 2. AI AGENT SANITY CHECK QUESTIONS (CRAZY CHALLENGING SCENARIOS)
+# 1. GRANULAR SPEED SYNC: Video has 3 segments (0.5x, 2.0x, 1.1x). Music starts in seg 1, ends in seg 3. 
+#    - Test: Does the wall-clock math correctly predict the audio mark in the final export despite constant 1.0x music?
+# 2. IMPOSSIBLE FADE: A music clip is 0.1s long. 
+#    - Test: Does the 'min(1.0, dur/3)' fade logic prevent division-by-zero or negative duration errors?
+# 3. DJ SCRUBBING: User wiggles the timeline 15 times per second while playback is active.
+#    - Test: Does the 50ms throttle keep the VLC audio buffer from overflowing or crashing?
+# 4. NETWORK DISCONNECT: 'custom_mp3_dir' points to a drive that is unplugged.
+#    - Test: Does the app gracefully fall back to the local ./mp3 folder without hanging?
+# 5. TRIMMING CONFLICT: User drags orange handle INTO a pink handle.
+#    - Test: Does the clamping logic correctly 'push' or 'block' the pink handle to maintain validity?
+# 6. WORKER RACE: User double-clicks a song and clicks 'BACK' 0.1s later while FFmpeg is starting.
+#    - Test: Is the Popen process tree (taskkill /T /F) successfully purged to prevent zombie binaries?
+# 7. BITRATE EXHAUSTION: 1-second video with 320kbps MP3 at 'Bad' quality.
+#    - Test: Does the calculator clamp to a safe minimum (e.g. 400k) instead of calculating a negative bitrate?
+# 8. ULTRA-WIDE SCALING: 21:9 source video in Mobile Portrait mode.
+#    - Test: Does the scale-out math correctly center the content while keeping HUD anchors accurate?
+# 9. CONSTANT PITCH: Speed is 3.1x.
+#    - Test: Does the music maintain its original pitch and speed (1.0x) while the video zooms by?
+# 10. MULTI-INSTANCE CONFIG: Compressor and Merger are both open. One changes the music folder.
+#     - Test: Does the second app correctly refresh its path from the .conf file without a restart?
+
+# 3. MANUAL SANITY CHECK TASKS
+# 1. FOLDER PICKER: Click 'SELECT MUSIC FOLDER', pick a path. Verify list reloads and config saves.
+# 2. MULTI-CHAR SEARCH: In Step 1, type 3 letters quickly. Verify focus jumps to the exact song.
+# 3. TRIMMING SYNC: Add music, then move orange trim handle. Verify pink handle 'jumps' to follow.
+# 4. STEP 3 CENTERING: Delete config, open wizard. Verify Step 3 pops up in the exact screen center.
+# 5. CONSTANT TEMPO: Set 2.0x video speed. Verify background music in final MP4 still sounds normal (1.0x).
+# 6. HOVER GLOW: Hover over the metallic caret in Step 2. Verify the 2px blue border appears.
+# 7. STEP 3 BORDERS: Check if 2px blue rectangles surround the thumbnail and waveform lanes.
+# 8. VOL INDICATORS: Move sliders in Step 3. Verify white percentage labels update at the bottom.
+# 9. BUTTON HEIGHTS: Verify CANCEL/BACK/DONE are all identically tall (42px).
+# 10. FIRST FRAME: Arrive at Step 3. Confirm the video frame 0 is visible immediately.

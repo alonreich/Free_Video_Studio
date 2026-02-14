@@ -290,6 +290,9 @@ if __name__ == "__main__":
         if PID_FILE_HANDLE: PID_FILE_HANDLE.close()
         sys.exit(1)
 
+    # Force VLC to find its plugins
+    os.environ["VLC_PLUGIN_PATH"] = os.path.join(BIN_DIR, "plugins")
+
     if not is_valid_deps:
          # Fallback error handling logic
          while True:

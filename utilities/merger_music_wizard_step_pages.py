@@ -142,8 +142,6 @@ class MergerMusicWizardStepPagesMixin:
         self.lbl_step2.setFixedHeight(30)
         layout.addWidget(self.lbl_step2)
         layout.addSpacing(10)
-
-        # Unified container for Waveform
         self.wave_container = QFrame()
         self.wave_container.setObjectName("waveContainer")
         self.wave_container.setFixedHeight(270)
@@ -151,21 +149,17 @@ class MergerMusicWizardStepPagesMixin:
         container_layout = QVBoxLayout(self.wave_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
-
         self.wave_preview = QLabel("Visualizing audio...")
         self.wave_preview.setStyleSheet("background: transparent; border: none;")
         self.wave_preview.setAlignment(Qt.AlignCenter)
         self.wave_preview.installEventFilter(self)
         container_layout.addWidget(self.wave_preview)
-        
         layout.addWidget(self.wave_container)
-
         self.slider_unified_container = QWidget()
         self.slider_unified_container.setFixedHeight(100)
         self.slider_unified_layout = QVBoxLayout(self.slider_unified_container)
         self.slider_unified_layout.setContentsMargins(0, 0, 0, 0)
         self.slider_unified_layout.setSpacing(0)
-
         self.offset_slider = MergerTrimmedSlider()
         self.offset_slider.setProperty("is_wizard_slider", True)
         self.offset_slider.setFixedHeight(100)
@@ -176,22 +170,18 @@ class MergerMusicWizardStepPagesMixin:
             self.offset_slider.sliderReleased.connect(self._on_drag_end)
         except Exception as ex:
             self.logger.debug("WIZARD: slider drag signal hookup skipped: %s", ex)
-        
         self.slider_unified_layout.addWidget(self.offset_slider)
         layout.addWidget(self.slider_unified_container)
-        
         self._wave_caret = QLabel(self)
         self._wave_caret.setStyleSheet("background: #3498db;")
         self._wave_caret.setFixedWidth(2)
         self._wave_caret.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_caret.hide()
-
         self._wave_time_badge = QLabel(self)
         self._wave_time_badge.setStyleSheet("background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px;")
         self._wave_time_badge.setAlignment(Qt.AlignCenter)
         self._wave_time_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_time_badge.hide()
-
         self._wave_time_badge_bottom = QLabel(self)
         self._wave_time_badge_bottom.setStyleSheet("background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px;")
         self._wave_time_badge_bottom.setAlignment(Qt.AlignCenter)

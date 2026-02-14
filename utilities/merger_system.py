@@ -156,8 +156,7 @@ class MergerConsoleManager:
             f = open(log_path, 'a', buffering=1, encoding='utf-8')
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
-            
-            # [DEBUG] Enable fault handler to catch native crashes
+
             import faulthandler
             faulthandler.enable(f)
             f.write("\n--- NATIVE DEBUG LOGGING ACTIVE ---\n")

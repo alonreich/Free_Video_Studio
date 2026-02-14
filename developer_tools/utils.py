@@ -137,7 +137,7 @@ class PersistentWindowMixin:
         w = min(w, screen_geo.width())
         h = min(h, int(screen_geo.height() * 0.98))
         x = screen_geo.x() + (screen_geo.width() - w) // 2
-        y = max(screen_geo.top(), screen_geo.y() + (screen_geo.height() - h) // 2 - 25)
+        y = max(screen_geo.top(), screen_geo.y() + (screen_geo.height() - h) // 2)
         self.resize(w, h)
         self.move(x, y)
 

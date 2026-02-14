@@ -130,29 +130,20 @@ class MergerMusicWizard(
 
     def stop_previews(self):
         """Utility to stop all preview-related background activity."""
-        # Stop waveform worker (from MergerMusicWizardWaveformMixin)
         if hasattr(self, '_stop_waveform_worker'):
             self._stop_waveform_worker()
-        
-        # Explicit cleanup of synced audio leftovers
         if hasattr(self, '_temp_sync') and self._temp_sync and os.path.exists(self._temp_sync):
             try:
                 os.remove(self._temp_sync)
                 self.logger.info(f"WIZARD: Cleaned up synced audio: {self._temp_sync}")
             except Exception: pass
         self._temp_sync = None
-
-        # Stop VLC players
         if hasattr(self, '_player') and self._player:
             self._player.stop()
         if hasattr(self, '_video_player') and self._video_player:
             self._video_player.stop()
-        
-        # Stop play timer
         if hasattr(self, '_play_timer'):
             self._play_timer.stop()
-            
-        # Stop filmstrip worker if any (from MergerMusicWizardTimelineMixin)
         if hasattr(self, '_filmstrip_worker') and self._filmstrip_worker:
             try:
                 if self._filmstrip_worker.isRunning():
