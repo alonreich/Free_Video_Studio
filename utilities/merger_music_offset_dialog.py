@@ -230,6 +230,7 @@ class MergerMusicOffsetDialog(QDialog):
         dur_ms = self._probe_duration_ms()
         if dur_ms <= 0: dur_ms = 1
         self._total_ms = dur_ms
+        wave_posted = False
 
         def _apply_init():
             if not self.isVisible(): return
@@ -240,24 +241,42 @@ class MergerMusicOffsetDialog(QDialog):
         try:
             if not os.path.exists(self._mpath): raise FileNotFoundError(f"Audio file missing: {self._mpath}")
             ffmpeg_exe = self._ffmpeg()
-            tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tf = tempfile.NamedTemporaryFile(prefix="fvs_offset_", suffix=".png", delete=False)
             self._temp_png_path = tf.name
             tf.close()
             cmd = [ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error", "-i", os.path.abspath(self._mpath), "-frames:v", "1", "-filter_complex", "volume=5.0,showwavespic=s=1200x300:colors=green", os.path.abspath(self._temp_png_path)]
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags)
             if result.returncode != 0: raise RuntimeError(f"FFmpeg failed (rc={result.returncode})")
+            temp_png_path = str(self._temp_png_path)
 
             def _apply_wave():
-                pm = QPixmap(self._temp_png_path)
-                if not pm.isNull():
-                    self._pm_src = pm
-                    self._refresh_wave_scaled()
-                self._sync_caret()
+                try:
+                    pm = QPixmap(temp_png_path)
+                    if not pm.isNull():
+                        self._pm_src = pm
+                        self._refresh_wave_scaled()
+                    self._sync_caret()
+                finally:
+                    try:
+                        if os.path.exists(temp_png_path):
+                            os.remove(temp_png_path)
+                    except Exception:
+                        pass
+                    if self._temp_png_path == temp_png_path:
+                        self._temp_png_path = None
             self._post_ui(_apply_wave)
+            wave_posted = True
         except Exception as e:
             self.logger.error(f"Waveform generation error: {e}")
             self._post_ui(lambda: self.wave.setText(f"Error generating waveform."))
+        finally:
+            if (not wave_posted) and self._temp_png_path and os.path.exists(self._temp_png_path):
+                try:
+                    os.remove(self._temp_png_path)
+                except Exception:
+                    pass
+                self._temp_png_path = None
         self._post_ui(self._sync_caret)
 
     def _refresh_wave_scaled(self):

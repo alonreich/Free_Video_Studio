@@ -49,7 +49,6 @@ class MergerUIBuildMixin(MergerUIWidgetsMixin):
         self.parent.status_label.setStyleSheet("color: #7289da; font-weight: bold; font-size: 14px;")
         self.parent.status_label.setAlignment(Qt.AlignCenter)
         outer.addWidget(self.parent.status_label, 0)
-        outer.addWidget(self.parent.progress_bar, 0)
         outer.addWidget(merge_row, 0)
 
     def create_move_buttons(self):

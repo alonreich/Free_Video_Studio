@@ -1,17 +1,16 @@
-from PyQt5.QtCore import Qt
+﻿from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSlider
 from utilities.merger_ui_style import MergerUIStyle
 from utilities.merger_timeline_widget import MergerTimelineWidget
 
 class MergerMusicWizardStep3PageMixin:
-
     def setup_step3_timeline(self):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         self.lbl_step3 = QLabel("STEP 3: Preview Project Timeline")
-        self.lbl_step3.setStyleSheet("font-size: 20px; font-weight: bold; color: #7DD3FC;")
+        self.lbl_step3.setStyleSheet("font-size: 20px; font-weight: bold; color: #7DD3FC; padding: 0px; margin: 0px;")
         self.lbl_step3.setAlignment(Qt.AlignCenter)
         self.lbl_step3.setFixedHeight(30)
         layout.addWidget(self.lbl_step3)

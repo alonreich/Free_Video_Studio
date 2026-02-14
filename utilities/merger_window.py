@@ -1,5 +1,5 @@
-﻿from PyQt5.QtWidgets import QMainWindow, QFileDialog, QApplication, QListWidget, QLabel, QPushButton, QMessageBox, QInputDialog, QShortcut
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QProcess, QThread, QStandardPaths, QMutex, QMutexLocker, QRect, QUrl
+﻿from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QMessageBox, QShortcut
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QMutex, QMutexLocker
 from PyQt5.QtGui import QIcon, QKeySequence, QDesktopServices
 import sys
 import os
@@ -11,17 +11,10 @@ try:
 except ImportError:
     _HAS_WIN_EXTRAS = False
 
-import math
 import tempfile
-import os
-import sys
 import subprocess
 import time
-import json
 import shutil
-import psutil
-import decimal
-from datetime import datetime
 from pathlib import Path
 from utilities.merger_ui import MergerUI
 from utilities.merger_handlers_main import MergerHandlers
@@ -33,7 +26,6 @@ from utilities.merger_draggable_list import MergerDraggableList
 from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
 from utilities.merger_phase_overlay_logic import MergerPhaseOverlayLogic
 from utilities.merger_phase_overlay_draw import MergerPhaseOverlayDraw
-from utilities.merger_unified_music_widget import UnifiedMusicWidget
 from utilities.merger_music_dialog import MusicDialogHandler
 
 class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlayLogic, MergerPhaseOverlayDraw):
@@ -55,7 +47,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.config_manager = config_manager
         self.logger = _get_logger()
         self.logic_handler = MergerWindowLogic(self)
-        self.logic_handler.load_config()
         self.ui_handler = MergerUI(self)
         self.event_handler = MergerHandlers(self)
         self.music_dialog_handler = MusicDialogHandler(self)
@@ -73,6 +64,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._iops_dyn_max = 1.0
         self._cleanup_stale_temps()
         self.init_ui()
+        self.logic_handler.load_config()
         self.connect_signals()
         self.setAcceptDrops(True)
         QTimer.singleShot(100, self._scan_mp3_folder)
@@ -158,31 +150,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             self.btn_undo.setEnabled(undo_enabled)
         if hasattr(self, 'btn_redo'):
             self.btn_redo.setEnabled(redo_enabled)
-
-    def _paint_graph_event(self, event):
-        from PyQt5.QtGui import QPainter, QColor
-        p = QPainter(self._graph)
-        try:
-            p.setRenderHint(QPainter.Antialiasing)
-            rect = self._graph.rect()
-            p.fillRect(rect, QColor(20, 20, 20, 200))
-            if hasattr(self, '_cpu_hist') and self._cpu_hist:
-                path = self._cpu_hist
-                if len(path) > 1:
-                    w = rect.width()
-                    h = rect.height()
-                    step = w / 50.0
-                    p.setPen(QColor(0, 255, 255))
-                    for i in range(min(len(path), 50) - 1):
-                        x1 = w - (i * step)
-                        y1 = h - (path[-(i+1)] / 100.0 * h)
-                        x2 = w - ((i+1) * step)
-                        y2 = h - (path[-(i+2)] / 100.0 * h)
-                        p.drawLine(int(x1), int(y1), int(x2), int(y2))
-        except Exception as ex:
-            self.logger.debug(f"Graph paint skipped: {ex}")
-        finally:
-            p.end()
 
     def setup_progress_visualization(self):
         if not hasattr(self, "_progress_samples"):
@@ -273,7 +240,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
     def showEvent(self, event: QEvent):
         if not self._loaded:
             self._loaded = True
-            self.logic_handler.load_config()
             if _HAS_WIN_EXTRAS and not self.taskbar_button:
                 try:
                     self.taskbar_button = QWinTaskbarButton(self)
@@ -287,6 +253,19 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         super().resizeEvent(event)
         if hasattr(self, "_resize_overlay"):
             self._resize_overlay()
+        if hasattr(self, "logic_handler"):
+            try:
+                self.logic_handler.request_save_config(400)
+            except Exception:
+                pass
+
+    def moveEvent(self, event: QEvent):
+        super().moveEvent(event)
+        if hasattr(self, "logic_handler"):
+            try:
+                self.logic_handler.request_save_config(400)
+            except Exception:
+                pass
 
     def init_ui(self):
         self.setWindowTitle("Video Merger")
@@ -309,8 +288,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
              self.merge_row.addWidget(self.btn_cancel_merge)
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._update_process_button_text)
-        if hasattr(self, '_graph'):
-            self._graph.paintEvent = self._paint_graph_event
         self.setup_progress_visualization()
         self.setup_keyboard_shortcuts()
         
@@ -370,17 +347,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.btn_clear.clicked.connect(self.confirm_clear_list)
         self.listw.itemSelectionChanged.connect(self.event_handler.on_selection_changed)
 
-    def _open_music_advanced_dialog(self):
-        try:
-            track = self.unified_music_widget.get_selected_track()
-            if not track:
-                QMessageBox.information(self, "Select music", "Please select at least one track first.")
-                return
-            self.music_dialog_handler.show_music_offset_dialog(track)
-        except Exception as ex:
-            self.logger.error(f"Failed to open advanced music dialog: {ex}")
-            self.set_status_message("Could not open music editor.", "color: #ff6b6b;", 2500, force=True)
-
     def confirm_clear_list(self):
         if self.listw.count() > 0:
             msg = QMessageBox(self)
@@ -399,8 +365,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
 
     def closeEvent(self, event):
         self._stop_all_workers()
-        if self.config_manager:
-            self.logic_handler.save_config()
+        self.logic_handler.save_config()
         if self.vlc_instance:
              try: 
                  self.vlc_instance.release()
@@ -583,10 +548,11 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             if reply != QMessageBox.Yes:
                 self.set_processing_state(False)
                 return
-        music_enabled = bool(self.unified_music_widget.toggle_button.isChecked())
-        music_tracks = self.unified_music_widget.get_selected_tracks() if hasattr(self.unified_music_widget, "get_selected_tracks") else []
-        music_path = music_tracks[0] if music_tracks else self.unified_music_widget.get_selected_track()
-        music_offset = self.unified_music_widget.get_offset()
+        wizard_tracks = self.unified_music_widget.get_wizard_tracks() if hasattr(self.unified_music_widget, "get_wizard_tracks") else []
+        music_tracks = [t[0] for t in wizard_tracks] if wizard_tracks else (self.unified_music_widget.get_selected_tracks() if hasattr(self.unified_music_widget, "get_selected_tracks") else [])
+        music_enabled = bool(music_tracks)
+        music_path = wizard_tracks[0][0] if wizard_tracks else (music_tracks[0] if music_tracks else self.unified_music_widget.get_selected_track())
+        music_offset = float(wizard_tracks[0][1]) if wizard_tracks else float(self.unified_music_widget.get_offset())
         if music_enabled and not music_tracks:
             QMessageBox.information(self, "Select music", "Music is enabled, but no track is selected.")
             self.set_processing_state(False)
@@ -597,9 +563,12 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 self.unified_music_widget.update_coverage_guidance(total_video, self._probe_media_duration)
             except Exception:
                 pass
-            music_unique_total = 0.0
-            for t in music_tracks:
-                music_unique_total += self._probe_media_duration(t)
+            if wizard_tracks:
+                music_unique_total = sum(max(0.0, float(t[2])) for t in wizard_tracks)
+            else:
+                music_unique_total = 0.0
+                for t in music_tracks:
+                    music_unique_total += self._probe_media_duration(t)
             if total_video > 0 and music_unique_total < total_video:
                 missing = self._human_time(total_video - music_unique_total)
                 reply = QMessageBox.question(
@@ -615,8 +584,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 if reply != QMessageBox.Yes:
                     self.set_processing_state(False)
                     return
-            if total_video > 0 and music_unique_total > total_video + 30:
-                pass
             mus_dur = self._probe_media_duration(music_path)
             if mus_dur > 0 and music_offset >= max(0.0, mus_dur - 0.1):
                 QMessageBox.warning(
@@ -664,9 +631,19 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.logic_handler.request_save_config()
         self.set_status_message("Analyzing files...", "color: #43b581;", 0, force=True)
         self._probe_worker = ProbeWorker(video_files, self.ffmpeg)
-        self._probe_worker.finished.connect(lambda r, t: self._validate_and_finalize(r, t))
-        self._probe_worker.error.connect(lambda e: self._merge_finished_cleanup(False, e))
+        self._probe_worker.finished.connect(self._on_probe_finished)
+        self._probe_worker.error.connect(self._on_probe_error)
         self._probe_worker.start()
+
+    def _on_probe_finished(self, results, total_duration):
+        self._validate_and_finalize(results, total_duration)
+
+    def _on_probe_error(self, error_msg):
+        msg = str(error_msg or "Probe failed")
+        if "cancelled" in msg.lower():
+            self._merge_finished_cleanup(False, "Cancelled by user.")
+            return
+        self._merge_finished_cleanup(False, msg)
 
     def _validate_and_finalize(self, results, total_duration):
         """
@@ -679,6 +656,8 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         first_res = None
         normalize_video = False
         has_audio_input = False
+        all_have_audio = True
+        audio_plan = []
         peak_v_bitrate = 0
         peak_a_bitrate = 0
         peak_a_rate = 44100
@@ -701,13 +680,46 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 first_res = tuple(res)
             elif tuple(res) != first_res:
                 normalize_video = True
-            has_audio_input = has_audio_input or bool(info.get("has_audio"))
+            clip_has_audio = bool(info.get("has_audio"))
+            has_audio_input = has_audio_input or clip_has_audio
+            all_have_audio = all_have_audio and clip_has_audio
+            audio_plan.append({
+                "path": path,
+                "duration": float(info.get("duration") or 0.0),
+                "has_audio": clip_has_audio,
+            })
+        audio_mixed = has_audio_input and (not all_have_audio)
+        if audio_mixed:
+            normalize_video = True
         if peak_v_bitrate == 0: peak_v_bitrate = 8000000
         if peak_a_bitrate == 0: peak_a_bitrate = 192000
         if peak_a_rate == 0: peak_a_rate = 48000
-        self._finalize_merge_setup(video_files, total_duration, has_audio_input, first_res, normalize_video, peak_v_bitrate, peak_a_bitrate, peak_a_rate)
+        self._finalize_merge_setup(
+            video_files,
+            total_duration,
+            has_audio_input,
+            first_res,
+            normalize_video,
+            peak_v_bitrate,
+            peak_a_bitrate,
+            peak_a_rate,
+            audio_plan=audio_plan,
+            audio_mixed=audio_mixed,
+        )
 
-    def _finalize_merge_setup(self, video_files, total_duration=0.0, has_audio_input=False, target_resolution=None, normalize_video=False, target_v_bitrate=0, target_a_bitrate=0, target_a_rate=48000):
+    def _finalize_merge_setup(
+        self,
+        video_files,
+        total_duration=0.0,
+        has_audio_input=False,
+        target_resolution=None,
+        normalize_video=False,
+        target_v_bitrate=0,
+        target_a_bitrate=0,
+        target_a_rate=48000,
+        audio_plan=None,
+        audio_mixed=False,
+    ):
         if not self.is_processing: return
         self._temp_dir = tempfile.TemporaryDirectory(prefix="fvs_merger_")
         try:
@@ -734,8 +746,21 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             filters.append(f"{v_inputs}concat=n={len(video_files)}:v=1:a=0[v_out]")
             map_video = "[v_out]"
             if has_audio_input:
-                a_inputs = "".join(f"[{i}:a]" for i in range(len(video_files)))
-                filters.append(f"{a_inputs}concat=n={len(video_files)}:v=0:a=1,volume={video_vol/100.0}[a_serial]")
+                if audio_mixed and audio_plan:
+                    for i, entry in enumerate(audio_plan):
+                        dur = max(0.05, float(entry.get("duration") or 0.0))
+                        if entry.get("has_audio"):
+                            filters.append(
+                                f"[{i}:a]aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates={target_a_rate},"
+                                f"volume={video_vol/100.0}[a{i}]"
+                            )
+                        else:
+                            filters.append(f"anullsrc=channel_layout=stereo:sample_rate={target_a_rate}:d={dur}[a{i}]")
+                    a_inputs = "".join(f"[a{i}]" for i in range(len(video_files)))
+                    filters.append(f"{a_inputs}concat=n={len(video_files)}:v=0:a=1[a_serial]")
+                else:
+                    a_inputs = "".join(f"[{i}:a]" for i in range(len(video_files)))
+                    filters.append(f"{a_inputs}concat=n={len(video_files)}:v=0:a=1,volume={video_vol/100.0}[a_serial]")
                 map_audio = "[a_serial]"
             else:
                 map_audio = None
@@ -819,6 +844,13 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.set_status_message(f"Merging: {percent}% ({time_str})", "color: #43b581;", force=True)
         if hasattr(self, '_graph'): 
             self._sample_perf_counters_safe()
+        if hasattr(self, "_overlay_progress_bar"):
+            try:
+                p = max(0, min(100, int(percent)))
+                self._overlay_progress_bar.setValue(p)
+                self._overlay_progress_bar.setFormat(f"{p}%  ({time_str})")
+            except Exception:
+                pass
         self.setWindowTitle(f"Video Merger - {percent}%")
         if self.taskbar_progress:
             self.taskbar_progress.setValue(percent)
@@ -833,10 +865,19 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             if self.engine and self.engine.isRunning():
                 self.engine.cancel()
             if self._probe_worker and self._probe_worker.isRunning():
-                 self._probe_worker.cancel()
-                 self._probe_worker.wait(1200)
+                self._probe_worker.cancel()
+                self._probe_worker.wait(1200)
             if self.taskbar_progress:
                 self.taskbar_progress.setPaused(True)
+            QTimer.singleShot(2200, self._ensure_cancel_cleanup)
+
+    def _ensure_cancel_cleanup(self):
+        if not self.is_processing:
+            return
+        probe_alive = bool(self._probe_worker and self._probe_worker.isRunning())
+        engine_alive = bool(self.engine and self.engine.isRunning())
+        if not probe_alive and not engine_alive:
+            self._merge_finished_cleanup(False, "Cancelled by user.")
 
     def _merge_finished_cleanup(self, success, result_msg):
         with QMutexLocker(self._state_mutex):
@@ -882,14 +923,13 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         try:
             mp3_dir = os.path.join(self.base_dir, "mp3") if self.base_dir else "mp3"
             self.unified_music_widget.load_tracks(mp3_dir)
-        except Exception:
-            pass
+        except Exception as ex:
+            self.logger.debug(f"MP3 initial scan skipped: {ex}")
             
     def _reset_music_player(self):
         try:
             if hasattr(self, "unified_music_widget") and self.unified_music_widget:
                 self.unified_music_widget.clear_playlist()
-                self.unified_music_widget.toggle_button.setChecked(False)
                 self.set_status_message("Music reset because list is empty.", "color: #7289da;", 1200, force=True)
         except Exception as ex:
             self.logger.debug(f"Music reset skipped: {ex}")

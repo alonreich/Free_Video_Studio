@@ -1,25 +1,10 @@
-﻿import math
-import shutil
+﻿import shutil
 import subprocess
 import sys
 import time
 from collections import deque
-import psutil
-from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal, QPoint
-from PyQt5.QtGui import QRegion, QIcon, QColor, QPainter, QPen, QBrush, QFont
-from PyQt5.QtWidgets import QWidget, QPlainTextEdit
-_ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
-
-import math
-import shutil
-import subprocess
-import sys
-import time
-from collections import deque
-import psutil
-from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal, QPoint
-from PyQt5.QtGui import QRegion, QIcon, QColor, QPainter, QPen, QBrush, QFont
-from PyQt5.QtWidgets import QWidget, QPlainTextEdit
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtWidgets import QWidget, QPlainTextEdit, QProgressBar
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
 class MergerGpuWorker(QThread):
@@ -61,9 +46,6 @@ class MergerPhaseOverlayMixin:
         """Buffers log lines and flushes them in batches to save CPU."""
         if not getattr(self, "live_log", None):
             return
-        if " | " in line:
-            parts = line.split(" | ")
-            line = parts[-1].strip()
         if not hasattr(self, "_log_buffer"):
             self._log_buffer = []
         self._log_buffer.append(line)
@@ -97,8 +79,27 @@ class MergerPhaseOverlayMixin:
         self.live_log.setMaximumBlockCount(5000)
         self.live_log.setStyleSheet("""
             QPlainTextEdit {
-                color:#25e825; background:#0b141d; border:1px solid #1f3545; border-radius:8px;
+                color:#25e825; background:#071018; border:1px solid #1f3545; border-radius:10px;
                 font-family: Consolas, monospace; font-size: 12px;
+            }
+        """)
+        self._overlay_progress_bar = QProgressBar(self._overlay)
+        self._overlay_progress_bar.setRange(0, 100)
+        self._overlay_progress_bar.setValue(0)
+        self._overlay_progress_bar.setTextVisible(True)
+        self._overlay_progress_bar.setFormat("%p%")
+        self._overlay_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #266b89;
+                border-radius: 5px;
+                text-align: center;
+                height: 18px;
+                background-color: #34495e;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background-color: #2ecc71;
+                border-radius: 4px;
             }
         """)
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):

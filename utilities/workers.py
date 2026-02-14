@@ -201,6 +201,7 @@ class ProbeWorker(QThread):
         self.ffprobe = _ffprobe(ffmpeg_path)
         self._cancelled = False
         self._mutex = QMutex()
+        self._cancel_msg = "Cancelled by user."
 
     def run(self):
         results = []
@@ -209,7 +210,9 @@ class ProbeWorker(QThread):
         try:
             for path in self.video_files:
                 with QMutexLocker(self._mutex):
-                    if self._cancelled: return
+                    if self._cancelled:
+                        self.error.emit(self._cancel_msg)
+                        return
                 duration = 0.0
                 resolution = None
                 has_audio = False
@@ -305,8 +308,11 @@ class ProbeWorker(QThread):
                     "audio_bitrate": a_bitrate,
                 })
                 total += duration
-            if not self._cancelled:
-                self.finished.emit(results, total)
+            with QMutexLocker(self._mutex):
+                if self._cancelled:
+                    self.error.emit(self._cancel_msg)
+                    return
+            self.finished.emit(results, total)
         except Exception as e:
             self.error.emit(str(e))
 

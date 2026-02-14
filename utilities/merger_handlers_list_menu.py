@@ -1,4 +1,4 @@
-import os
+﻿import os
 import uuid
 from PyQt5.QtWidgets import QMenu, QAction
 from PyQt5.QtCore import Qt, QPoint, QUrl
@@ -6,7 +6,6 @@ from PyQt5.QtGui import QDesktopServices
 from utilities.merger_handlers_list_commands_b import AddCommand
 
 class MergerHandlersListMenuMixin:
-
     def show_context_menu(self, pos: QPoint):
         item = self.parent.listw.itemAt(pos)
         menu = QMenu(self.parent)
@@ -53,6 +52,7 @@ class MergerHandlersListMenuMixin:
         menu.addAction(undo_action)
         menu.addAction(redo_action)
         menu.exec_(self.parent.listw.mapToGlobal(pos))
+
     def duplicate_item(self, item):
         path = item.data(Qt.UserRole)
         probe_data = item.data(Qt.UserRole + 1)
@@ -66,14 +66,15 @@ class MergerHandlersListMenuMixin:
             "clip_id": uuid.uuid4().hex,
         }
         self.undo_stack.push(AddCommand(self.parent, [entry], self.parent.listw))
+
     def smart_add_and_prepare(self):
         """One-shot action: add videos and proactively prepare merge prerequisites."""
         if self._loading_lock:
+            self.parent.set_status_message("Still loading previous files... Please wait.", "color: #ffa500;", 1800, force=True)
             return
+        self._pending_smart_prepare = True
         self.add_videos()
-        if self.parent.listw.count() > 0:
-            self.parent.estimate_total_duration_seconds()
-            self.parent.set_status_message("Smart action complete: files queued and merge prerequisites precomputed.", "color: #43b581;", 2000, force=True)
+
     def on_merge_clicked(self):
         self.parent.logger.info("USER: Clicked MERGE VIDEOS")
         self.parent.start_merge_processing()

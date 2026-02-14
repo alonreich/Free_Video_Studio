@@ -1,6 +1,6 @@
 ﻿import os
 import time
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton, QStyle
 from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtCore import QTimer, QThread, Qt, QObject, pyqtSignal
 from utils import cleanup_temp_snapshots, get_snapshot_dir
@@ -512,9 +512,11 @@ class CropAppHandlers:
         if is_playing is None:
             is_playing = self.media_processor.is_playing()
         if is_playing:
-            self.play_pause_button.setText("⏸ PAUSE")
+            self.play_pause_button.setText("  PAUSE")
+            self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
         else:
-            self.play_pause_button.setText("▶ PLAY")
+            self.play_pause_button.setText("  PLAY")
+            self.play_pause_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.play_pause_button.update()
 
     def play_pause(self):

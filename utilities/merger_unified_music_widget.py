@@ -14,6 +14,7 @@ class UnifiedMusicWidget(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self._wizard_tracks = [] 
+        self._mp3_folder = ""
         self._video_total_sec = 0.0
         self._music_volume = 80
         self._video_volume = 100
@@ -38,6 +39,18 @@ class UnifiedMusicWidget(QWidget):
         if hasattr(self.parent_window, "music_dialog_handler"):
             self.parent_window.music_dialog_handler.open_music_wizard()
 
+    def load_tracks(self, folder_path: str):
+        """Compatibility helper for legacy callers; wizard loads real list when opened."""
+        self._mp3_folder = str(folder_path or "")
+        if not self._mp3_folder or not os.path.isdir(self._mp3_folder):
+            return
+        try:
+            mp3_count = len([f for f in os.listdir(self._mp3_folder) if f.lower().endswith(".mp3")])
+            if not self._wizard_tracks:
+                self.lbl_summary.setText(f"{mp3_count} local track(s) available")
+        except Exception:
+            pass
+
     def set_wizard_tracks(self, tracks, music_vol=None, video_vol=None):
         self._wizard_tracks = list(tracks) if tracks else []
         if music_vol is not None: self._music_volume = music_vol
@@ -50,17 +63,35 @@ class UnifiedMusicWidget(QWidget):
         else:
             total_dur = sum(t[2] for t in self._wizard_tracks)
             self.lbl_summary.setText(f"{n} track(s) selected ({total_dur:.1f}s)")
-            self.toggle_button.setText("♪  MUSIC READY  ♪")
+            self.toggle_button.setText("♪  ADD BACKGROUND MUSIC  ♪")
             self.toggle_button.setStyleSheet(MergerUIStyle.BUTTON_MERGE)
 
     def get_selected_tracks(self):
         return [t[0] for t in self._wizard_tracks]
+
+    def get_selected_track(self):
+        tracks = self.get_selected_tracks()
+        return tracks[0] if tracks else None
 
     def get_wizard_tracks(self):
         return self._wizard_tracks
 
     def get_offset(self):
         return self._wizard_tracks[0][1] if self._wizard_tracks else 0.0
+
+    def set_primary_offset(self, offset_seconds: float):
+        """Update first track offset while keeping track duration coherent."""
+        if not self._wizard_tracks:
+            return
+        try:
+            offset_seconds = max(0.0, float(offset_seconds or 0.0))
+        except Exception:
+            offset_seconds = 0.0
+        path, old_offset, old_dur = self._wizard_tracks[0]
+        full_dur = max(0.0, float(old_offset) + max(0.0, float(old_dur)))
+        new_dur = max(0.0, full_dur - offset_seconds)
+        self._wizard_tracks[0] = (path, offset_seconds, new_dur)
+        self.set_wizard_tracks(self._wizard_tracks, music_vol=self._music_volume, video_vol=self._video_volume)
 
     def get_volume(self):
         return self._music_volume

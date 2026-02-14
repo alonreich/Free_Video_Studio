@@ -1,11 +1,33 @@
 ﻿import math
 import psutil
 import time
-from PyQt5.QtCore import Qt, QRect, QTimer
+from PyQt5.QtCore import Qt, QRect, QTimer, QPoint
 from PyQt5.QtGui import QRegion, QIcon, QColor, QPainter, QPen, QBrush, QFont
 from PyQt5.QtWidgets import QWidget
 
 class MergerPhaseOverlayLogic:
+    def _layout_overlay_panels(self, main_rect):
+        """Keep overlay panels large and readable across all window sizes."""
+        margin_x = 24
+        margin_y = 20
+        avail_w = max(100, main_rect.width() - (2 * margin_x))
+        avail_h = max(120, main_rect.height() - (2 * margin_y))
+        pb_h = 18
+        pb_gap = 10
+        graph_h = max(180, int((avail_h - pb_h - pb_gap) * 0.42))
+        log_y = margin_y + graph_h + 14
+        log_h = max(100, (margin_y + avail_h - pb_h - pb_gap) - log_y)
+        pb_y = margin_y + avail_h - pb_h
+        if hasattr(self, "_graph"):
+            self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
+            self._graph.raise_()
+        if hasattr(self, "live_log"):
+            self.live_log.setGeometry(margin_x, log_y, avail_w, log_h)
+            self.live_log.raise_()
+        if hasattr(self, "_overlay_progress_bar"):
+            self._overlay_progress_bar.setGeometry(margin_x, pb_y, avail_w, pb_h)
+            self._overlay_progress_bar.raise_()
+
     def _resize_overlay(self) -> None:
         """Called by the main resizeEvent to resize/mask the overlay."""
         try:
@@ -20,7 +42,7 @@ class MergerPhaseOverlayLogic:
             pass
 
     def _update_overlay_mask(self):
-        """Positions graph/log and raises interaction widgets above the overlay."""
+        """Positions graph/log full-screen and keeps controls visible above overlay."""
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
@@ -28,25 +50,21 @@ class MergerPhaseOverlayLogic:
             main_rect = parent.rect() if parent else self.rect()
             self._overlay.setGeometry(main_rect)
             self._overlay.raise_()
-            mask_region = QRegion(main_rect)
-            for w_name in ["btn_merge", "btn_cancel_merge", "progress_bar"]:
+            self._overlay.clearMask()
+            for w_name in ["btn_merge", "btn_cancel_merge"]:
                 w = getattr(self, w_name, None)
                 if w and w.isVisible():
-                    tl = w.mapTo(self.centralWidget() if hasattr(self, 'centralWidget') else self, QPoint(0,0))
-                    w_rect = QRect(tl, w.size())
-                    mask_region = mask_region.subtracted(QRegion(w_rect))
                     w.raise_()
-            self._overlay.setMask(mask_region)
-            margin_x = 40
-            margin_y = 40
-            avail_w = main_rect.width() - (2 * margin_x)
-            avail_h = main_rect.height() - (2 * margin_y)
-            if avail_w < 100 or avail_h < 100: return
-            graph_h = 240 
-            self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
-            self.live_log.setGeometry(margin_x, margin_y + graph_h + 20, avail_w, avail_h - graph_h - 20)
+            self._layout_overlay_panels(main_rect)
         except Exception:
-            pass
+            try:
+                parent = self._overlay.parentWidget() if getattr(self, "_overlay", None) else None
+                main_rect = parent.rect() if parent else self.rect()
+                if getattr(self, "_overlay", None):
+                    self._overlay.setGeometry(main_rect)
+                    self._layout_overlay_panels(main_rect)
+            except Exception:
+                pass
 
     def _show_processing_overlay(self) -> None:
         """Shows the overlay and starts stats/pulse timers."""
@@ -59,6 +77,9 @@ class MergerPhaseOverlayLogic:
             self._overlay.setGeometry(parent.rect() if parent else self.rect())
             self._overlay.show()
             self._overlay.raise_()
+            if hasattr(self, "_overlay_progress_bar"):
+                self._overlay_progress_bar.setValue(0)
+            self._layout_overlay_panels(self._overlay.rect())
             self._update_overlay_mask()
             self._sample_perf_counters_safe()
             self._stats_timer.start()
@@ -86,6 +107,8 @@ class MergerPhaseOverlayLogic:
                 self._color_pulse_timer.stop()
             if hasattr(self, "btn_merge") and hasattr(self, "_original_merge_btn_style"):
                 self.btn_merge.setStyleSheet(self._original_merge_btn_style)
+            if hasattr(self, "_overlay_progress_bar"):
+                self._overlay_progress_bar.setValue(0)
         except Exception:
             pass
         try:

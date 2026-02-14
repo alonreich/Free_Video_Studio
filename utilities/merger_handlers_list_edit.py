@@ -1,10 +1,9 @@
-import os
+﻿import os
 from PyQt5.QtCore import Qt
 from utilities.merger_handlers_list_commands_a import ReorderCommand, BatchMoveCommand
 from utilities.merger_handlers_list_commands_b import RemoveCommand, ClearCommand
 
 class MergerHandlersListEditMixin:
-
     def remove_selected(self):
         if self.parent.is_processing:
             return
@@ -16,6 +15,7 @@ class MergerHandlersListEditMixin:
         self.parent.event_handler.update_button_states()
         self.parent.set_status_message(f"Removed {len(selected)}", "color: #e74c3c;", 2000, force=True)
         self.parent.logic_handler.request_save_config()
+
     def clear_all(self):
         if self.parent.is_processing:
             return
@@ -34,6 +34,7 @@ class MergerHandlersListEditMixin:
         self.undo_stack.push(ClearCommand(self.parent, items_data, self.parent.listw))
         self.parent.set_status_message("List cleared", "color: #e74c3c;", 2000, force=True)
         self.parent.logic_handler.request_save_config()
+
     def move_item(self, direction: int):
         if self.parent.is_processing:
             return
@@ -60,8 +61,10 @@ class MergerHandlersListEditMixin:
         after = [by_index[idx] for idx in order]
         self.undo_stack.push(BatchMoveCommand(self.parent, before, after))
         self.parent.set_status_message(f"Moved {len(selected_set)} item(s)", "color: #7289da;", 1200, force=True)
+
     def on_selection_changed(self):
         self.parent.event_handler.update_button_states()
+
     def on_drag_completed(self, start_row, end_row, path, tag):
         if start_row == end_row: return
         self.parent.logger.info(f"USER: Drag reordered '{os.path.basename(path)}' from row {start_row} to {end_row}")
@@ -70,8 +73,10 @@ class MergerHandlersListEditMixin:
         self.parent.logic_handler.request_save_config()
         self.parent.event_handler.update_button_states()
         self.parent.set_status_message("Order updated", "color: #7289da;", 1200, force=True)
+
     def on_drag_started(self, *_):
         self._order_before_drag = self._snapshot_order()
+
     def on_rows_moved(self, sourceParent, sourceStart, sourceEnd, destinationParent, destinationRow):
         """Capture drag-reorder as a single undoable transaction."""
         if self._is_replaying_undo:

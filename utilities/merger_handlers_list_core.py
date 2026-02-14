@@ -1,21 +1,23 @@
-from PyQt5.QtWidgets import QUndoStack
+﻿from PyQt5.QtWidgets import QUndoStack
 from PyQt5.QtCore import Qt
 
 class MergerHandlersListCoreMixin:
-
     def __init__(self):
         self.undo_stack = QUndoStack(self.parent)
         self.undo_stack.setUndoLimit(200)
         self._loading_lock = False
+        self._pending_smart_prepare = False
         self._order_before_drag = None
         self._is_replaying_undo = False
         self._loading_progress_total = 0
+
     def _safe_update_button_states(self):
         """Safely update button states, catching RuntimeError if Qt objects are deleted."""
         try:
             self.parent.event_handler.update_button_states()
         except RuntimeError:
             pass
+
     def _snapshot_order(self):
         """Create a complete snapshot of all item data for undo/redo operations."""
         out = []
@@ -28,6 +30,7 @@ class MergerHandlersListCoreMixin:
                 "f_hash": it.data(Qt.UserRole + 2),
             })
         return out
+
     def setup_list_connections(self):
         self.parent.listw.setContextMenuPolicy(Qt.CustomContextMenu)
         self.parent.listw.customContextMenuRequested.connect(self.show_context_menu)
@@ -49,6 +52,7 @@ class MergerHandlersListCoreMixin:
         self.sel_all_shortcut.activated.connect(self.parent.listw.selectAll)
         self.esc_shortcut = QShortcut(QKeySequence("Esc"), self.parent)
         self.esc_shortcut.activated.connect(self.parent.listw.clearSelection)
+
     def refresh_ranks(self):
         """Update all ranking labels (#1, #2, etc.) based on current list order."""
         for i in range(self.parent.listw.count()):
@@ -56,6 +60,7 @@ class MergerHandlersListCoreMixin:
             w = self.parent.listw.itemWidget(item)
             if w and hasattr(w, 'rank_label'):
                 w.rank_label.setText(f"#{i + 1}")
+
     def refresh_selection_highlights(self):
         """Sync the visual 'marked' state of custom widgets with their list selection state."""
         listw = self.parent.listw

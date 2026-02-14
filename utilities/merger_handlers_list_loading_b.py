@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import uuid
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import Qt
@@ -6,7 +6,6 @@ from utilities.workers import FastFileLoaderWorker
 from utilities.merger_handlers_list_commands_b import AddCommand
 
 class MergerHandlersListLoadingWorkerMixin:
-
     def _start_file_loader(self, files):
         current_count = self.parent.listw.count()
         current_files = set()
@@ -56,11 +55,13 @@ class MergerHandlersListLoadingWorkerMixin:
         if files:
             self.parent.logic_handler.set_last_dir(str(Path(files[0]).parent))
             self.parent.logic_handler.request_save_config()
+
     def _on_loader_progress(self, current, total):
         self._loading_progress_total = max(1, int(total or 1))
         pct = int(round((float(current) / float(self._loading_progress_total)) * 100.0))
         pct = max(0, min(100, pct))
         self.parent.set_status_message(f"Loading files... {current}/{self._loading_progress_total} ({pct}%)", "color: #ffa500;", force=True)
+
     def _on_file_loaded(self, path, size, probe_data, f_hash):
         current_idx = self.parent.listw.count() + len(self._pending_undo_items)
         self._pending_undo_items.append({
@@ -70,6 +71,7 @@ class MergerHandlersListLoadingWorkerMixin:
             "f_hash": f_hash,
             "clip_id": uuid.uuid4().hex,
         })
+
     def _on_loading_finished(self, added, duplicates):
         self._loading_lock = False
         self.parent.set_ui_busy(False)
@@ -83,5 +85,15 @@ class MergerHandlersListLoadingWorkerMixin:
         self._loading_progress_total = 0
         self.parent.event_handler.update_button_states()
         self.parent.logic_handler.request_save_config()
+        if getattr(self, "_pending_smart_prepare", False):
+            self._pending_smart_prepare = False
+            if self.parent.listw.count() > 0:
+                self.parent.estimate_total_duration_seconds()
+                self.parent.set_status_message(
+                    "Smart action complete: files queued and merge prerequisites precomputed.",
+                    "color: #43b581;",
+                    2000,
+                    force=True,
+                )
         if added:
             self.parent.set_status_message(f"Loaded {added} videos. Ready for merge.", "color: #43b581;", 2500, force=True)

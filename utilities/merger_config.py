@@ -1,5 +1,7 @@
-import os
+﻿import os
 import json
+import logging
+logger = logging.getLogger("Video_Merger")
 
 class MergerConfigManager:
     def __init__(self, config_path):
@@ -24,5 +26,5 @@ class MergerConfigManager:
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4)
-        except Exception:
-            pass
+        except Exception as ex:
+            logger.error("CONFIG: Failed saving config to %s | Error: %s", self.config_path, ex)

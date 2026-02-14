@@ -60,7 +60,10 @@ class MusicDialogHandler:
             try: dlg.setGeometry(*saved_geo)
             except Exception: pass
         if dlg.exec_() == QDialog.Accepted:
-            self.parent.unified_music_widget.offset_input.setValue(dlg.selected_offset)
+            try:
+                self.parent.unified_music_widget.set_primary_offset(float(dlg.selected_offset))
+            except Exception as ex:
+                self.logger.error(f"Failed applying selected offset: {ex}")
         g = dlg.geometry()
         cfg = dict(self.parent.config_manager.config)
         cfg["music_dialog_geometry"] = [g.x(), g.y(), g.width(), g.height()]

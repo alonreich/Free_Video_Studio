@@ -1,10 +1,9 @@
-import uuid
+﻿import uuid
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QListWidgetItem
 from utilities.merger_handlers_list_helpers import _human_time
 
 class MergerHandlersListItemBuildMixin:
-
     def _add_single_item_internal(self, path, row=None, probe_data=None, f_hash=None, clip_id=None, refresh=True):
         item = QListWidgetItem()
         item.setToolTip(path)

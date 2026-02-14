@@ -1,5 +1,6 @@
 ﻿import os
 from pathlib import Path
+from PyQt5.QtCore import QByteArray
 from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, Qt, QTimer, QPoint, QRect
 from PyQt5.QtWidgets import QLabel
 from utilities.merger_utils import _load_conf, _save_conf
@@ -27,11 +28,20 @@ class MergerWindowLogic:
         self.window.logger.info(f"Loaded last_dir: {self.window._last_dir}")
         self.window.logger.info(f"Loaded last_out_dir: {self.window._last_out_dir}")
         try:
+            qt_geom = self.window._cfg.get("qt_geometry")
+            if isinstance(qt_geom, str) and qt_geom:
+                try:
+                    if self.window.restoreGeometry(QByteArray.fromBase64(qt_geom.encode("utf-8"))):
+                        self.window.logger.info("Restored window geometry from qt_geometry")
+                    else:
+                        self.window.logger.debug("qt_geometry restore returned False; falling back")
+                except Exception as ex:
+                    self.window.logger.debug(f"qt_geometry restore failed: {ex}")
             g = self.window._cfg.get("geometry", {})
 
             from PyQt5.QtWidgets import QApplication
             screen_geo = QApplication.primaryScreen().availableGeometry()
-            if g and 'x' in g and 'y' in g:
+            if (not qt_geom) and g and 'x' in g and 'y' in g:
                 x = int(g.get("x", self.window.x()))
                 y = int(g.get("y", self.window.y()))
                 w = int(g.get("w", self.window.width()))
@@ -42,10 +52,16 @@ class MergerWindowLogic:
                 self.window.move(x, y)
                 self.window.resize(w, h)
                 self.window.logger.info(f"Restored window geometry: {x},{y} {w}x{h}")
-            else:
+            elif not qt_geom:
                 self._apply_default_center(screen_geo)
         except Exception as ex:
             self.window.logger.debug(f"Failed to restore window geometry: {ex}")
+        try:
+            music_state = self.window._cfg.get("music_widget", {})
+            if hasattr(self.window, "unified_music_widget") and isinstance(music_state, dict):
+                self.window.unified_music_widget.apply_state(music_state)
+        except Exception as ex:
+            self.window.logger.debug(f"Failed to restore music state: {ex}")
 
     def _apply_default_center(self, screen_geo):
         w, h = 1000, 700
@@ -54,17 +70,15 @@ class MergerWindowLogic:
         self.window.resize(w, h)
         self.window.move(x, y)
         self.window.logger.info(f"Centered window on first monitor: {x},{y}")
-        try:
-            music_state = self.window._cfg.get("music_widget", {})
-            if hasattr(self.window, "unified_music_widget") and isinstance(music_state, dict):
-                self.window.unified_music_widget.apply_state(music_state)
-        except Exception as ex:
-            self.window.logger.debug(f"Failed to restore music state: {ex}")
 
     def save_config(self):
         """Thread-safe configuration saving with atomic write."""
         try:
             config_copy = self.window._cfg.copy()
+            try:
+                config_copy["qt_geometry"] = bytes(self.window.saveGeometry().toBase64()).decode("utf-8")
+            except Exception:
+                pass
             config_copy["geometry"] = {
                 "x": self.window.x(),
                 "y": self.window.y(),

@@ -2,7 +2,6 @@
 import os
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon
@@ -19,13 +18,13 @@ import logging
 import subprocess
 import ctypes
 import shutil
-from utilities.merger_state_transfer import MergerStateTransfer as StateTransfer
 
 def main():
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
+    
     ProcessManager.kill_orphans()
-    ProcessManager.cleanup_temp_files(prefix="fvs_merger_")
+    ProcessManager.cleanup_temp_files(min_age_seconds=300)
     if sys.platform.startswith("win") and os.environ.get("FVS_DEBUG_CONSOLE", "0") == "1":
         try:
             kernel32 = ctypes.windll.kernel32

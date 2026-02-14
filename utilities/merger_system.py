@@ -6,6 +6,7 @@ import tempfile
 import subprocess
 import shutil
 import traceback
+import time
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
@@ -58,45 +59,58 @@ class MergerDependencyDoctor:
 class MergerProcessManager:
     @staticmethod
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
-        """Kill orphans but only if they belong to this application's binary directory."""
+        """Kill only direct children launched by this app to avoid affecting unrelated jobs."""
         my_pid = os.getpid()
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            base_dir = os.path.abspath(os.path.join(script_dir, '..'))
-            bin_dir = os.path.normpath(os.path.join(base_dir, 'binaries'))
             for proc in psutil.process_iter(['pid', 'name', 'exe', 'ppid']):
                 try:
                     if proc.info['pid'] == my_pid:
                         continue
                     if proc.info['name'] in process_names:
-                        proc_exe = proc.info.get('exe')
-                        if proc_exe:
-                            norm_exe = os.path.normpath(proc_exe)
-                            if bin_dir in norm_exe or proc.info.get('ppid') == my_pid:
-                                proc.kill()
+                        if proc.info.get('ppid') == my_pid:
+                            proc.kill()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         except Exception as e:
             logging.getLogger("Video_Merger").error(f"kill_orphans failed: {e}")
     @staticmethod
-    def cleanup_temp_files(prefix: str = "fvs_merger_"):
+    def cleanup_temp_files(
+        prefixes: tuple[str, ...] | None = None,
+        min_age_seconds: int = 600,
+        prefix: str | None = None,
+    ):
         temp_dir = tempfile.gettempdir()
         logger = logging.getLogger("Video_Merger")
+        if prefix:
+            if prefixes is None:
+                prefixes = (prefix,)
+            elif prefix not in prefixes:
+                prefixes = tuple(prefixes) + (prefix,)
+        if prefixes is None:
+            prefixes = (
+                "fvs_merger_",
+                "fvs_thumbs_",
+                "fvs_wiz_",
+                "fvs_offset_",
+                "fvs_wave_",
+            )
         try:
+            now = time.time()
             for filename in os.listdir(temp_dir):
-                if filename.startswith(prefix) or filename.startswith("ffmpeg2pass"):
-                    file_path = os.path.join(temp_dir, filename)
-                    try:
-                        if os.path.exists(file_path):
-                            mtime = os.path.getmtime(file_path)
-                            if time.time() - mtime < 600:
-                                continue
-                        if os.path.isfile(file_path):
-                            os.remove(file_path)
-                        elif os.path.isdir(file_path):
-                            shutil.rmtree(file_path, ignore_errors=True)
-                    except Exception as e:
-                        logger.debug(f"Could not cleanup {file_path}: {e}")
+                if not (filename.startswith("ffmpeg2pass") or any(filename.startswith(p) for p in prefixes)):
+                    continue
+                file_path = os.path.join(temp_dir, filename)
+                try:
+                    if os.path.exists(file_path):
+                        mtime = os.path.getmtime(file_path)
+                        if now - mtime < max(0, int(min_age_seconds)):
+                            continue
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path, ignore_errors=True)
+                except Exception as e:
+                    logger.debug(f"Could not cleanup {file_path}: {e}")
         except Exception as e:
             logger.error(f"cleanup_temp_files error: {e}")
     @staticmethod
@@ -142,6 +156,12 @@ class MergerConsoleManager:
             f = open(log_path, 'a', buffering=1, encoding='utf-8')
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
+            
+            # [DEBUG] Enable fault handler to catch native crashes
+            import faulthandler
+            faulthandler.enable(f)
+            f.write("\n--- NATIVE DEBUG LOGGING ACTIVE ---\n")
+            f.flush()
         except Exception: pass
         if sys.platform == "win32":
             try:

@@ -301,28 +301,41 @@ class MergerTrimmedSlider(QSlider):
             f.setPointSize(max(10, f.pointSize()))
             p.setFont(f)
             fm = QFontMetrics(f)
-            if self._duration_ms > 0 and groove_rect.width() > 10:
+            
+            # 1. Wizard High-Precision Timeline (Step 2)
+            is_wizard = (self.property("is_wizard_slider") is True)
+            if is_wizard and self._duration_ms > 0 and groove_rect.width() > 10:
+                duration_sec = self._duration_ms / 1000.0
+                
+                # Markers every 15s (quarters), 30s, 45s and 60s
+                sub_interval = 15
+                if duration_sec > 600: sub_interval = 30 # > 10 mins
+                if duration_sec > 1200: sub_interval = 60 # > 20 mins
+
+                for sec in range(0, int(duration_sec) + 1, sub_interval):
+                    ratio = sec / duration_sec
+                    x = groove_rect.left() + int(ratio * (groove_rect.width() - 1))
+                    is_minute = (sec % 60 == 0)
+                    
+                    # Draw ticks below groove
+                    p.setPen(QPen(QColor("#7DD3FC") if is_minute else QColor("#666666"), 1.5 if is_minute else 1))
+                    tick_len = 8 if is_minute else 4
+                    p.drawLine(x, groove_rect.bottom() + 1, x, groove_rect.bottom() + 1 + tick_len)
+                    
+                    # Labels
+                    # Show labels for minutes, and 15s/30s/45s quarters if duration < 15 mins (900s)
+                    show_label = is_minute or (duration_sec < 900)
+                    
+                    if show_label:
+                        time_str = self._fmt(sec * 1000)
+                        text_width = fm.horizontalAdvance(time_str)
+                        p.setPen(QColor("#FFFFFF")) # Pure white for visibility
+                        p.drawText(x - text_width // 2, groove_rect.bottom() + 18, time_str)
+
+            # 2. Original Trim Markers Logic (Main App)
+            elif not is_wizard and self._duration_ms > 0 and groove_rect.width() > 10 and self._show_trim and not self._show_music:
                 major_tick_pixels = 120 
                 num_major_ticks = max(1, int(round(groove_rect.width() / major_tick_pixels)))
-                for i in range(num_major_ticks + 1):
-                    ratio = i / float(num_major_ticks)
-                    ms = self._duration_ms * ratio
-                    x = groove_rect.left() + int(ratio * max(1, groove_rect.width() - 1))
-                    is_obscured = False
-                    start_handle_rect = self._get_handle_rect('start')
-                    end_handle_rect = self._get_handle_rect('end')
-                    if start_handle_rect.isValid() and (abs(x - start_handle_rect.center().x()) < (start_handle_rect.width() / 2 + 5) or 
-                       abs(x - end_handle_rect.center().x()) < (end_handle_rect.width() / 2 + 5)):
-                        is_obscured = True
-                    playhead_rect = self._get_playhead_rect()
-                    if playhead_rect.isValid() and abs(x - playhead_rect.center().x()) < (playhead_rect.width() / 2 + 5):
-                        is_obscured = True
-                    if not is_obscured:
-                        p.setPen(QColor(180, 180, 180))
-                        p.drawLine(x, groove_rect.bottom() + 1, x, groove_rect.bottom() + 6)
-                        time_str = self._fmt(int(ms))
-                        text_width = fm.horizontalAdvance(time_str)
-                        p.drawText(x - text_width // 2, groove_rect.bottom() + 18, time_str)
             else:
                 p.setPen(QColor(150, 150, 150))
                 p.drawText(groove_rect.left(), groove_rect.bottom() + 18, "0:00")
@@ -348,6 +361,10 @@ class MergerTrimmedSlider(QSlider):
                 c2 = QColor("#9a9a9a")
                 if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
                     c1 = c1.lighter(110); c2 = c2.lighter(110)
+                    p.setPen(QPen(QColor("#7DD3FC"), 2))
+                else:
+                    p.setPen(QPen(QColor("#111111"), 1))
+                
                 g.setColorAt(0.0, c1)
                 g.setColorAt(0.35, c2)
                 g.setColorAt(0.38, Qt.black); g.setColorAt(0.42, Qt.black)
@@ -357,7 +374,7 @@ class MergerTrimmedSlider(QSlider):
                 g.setColorAt(0.58, Qt.black); g.setColorAt(0.62, Qt.black)
                 g.setColorAt(0.65, c2)
                 g.setColorAt(1.0, c1)
-                p.setPen(QPen(QColor("#111111"), 1))
+                
                 p.setBrush(QBrush(g))
                 p.drawRoundedRect(knob_rect, 2, 2)
             if self._show_music:

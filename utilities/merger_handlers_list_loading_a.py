@@ -1,14 +1,15 @@
-from pathlib import Path
+﻿from pathlib import Path
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from utilities.workers import FolderScanWorker
 from utilities.merger_handlers_list_helpers import _natural_key
 
 class MergerHandlersListLoadingSourceMixin:
-
     def add_videos(self):
         if self.parent.is_processing:
             return
-        if self._loading_lock: return
+        if self._loading_lock:
+            self.parent.set_status_message("Still loading previous files... Please wait.", "color: #ffa500;", 1800, force=True)
+            return
         self.parent.logger.info("USER: Clicked ADD VIDEOS")
         start_dir = self.parent.logic_handler.get_last_dir()
         files, _ = QFileDialog.getOpenFileNames(
@@ -20,10 +21,13 @@ class MergerHandlersListLoadingSourceMixin:
             return
         self.parent.logger.info(f"USER: Selected {len(files)} files to add")
         self._start_file_loader(files)
+
     def add_folder(self):
         if self.parent.is_processing:
             return
-        if self._loading_lock: return
+        if self._loading_lock:
+            self.parent.set_status_message("Still loading previous files... Please wait.", "color: #ffa500;", 1800, force=True)
+            return
         self.parent.logger.info("USER: Clicked ADD FOLDER")
         start_dir = self.parent.logic_handler.get_last_dir()
         folder = QFileDialog.getExistingDirectory(self.parent, "Select Folder of Videos", start_dir)
@@ -36,6 +40,7 @@ class MergerHandlersListLoadingSourceMixin:
         self._folder_scan_worker = FolderScanWorker(folder, exts)
         self._folder_scan_worker.finished.connect(self._on_folder_scan_finished)
         self._folder_scan_worker.start()
+
     def _on_folder_scan_finished(self, files, err):
         if err:
             self.parent.logger.error(f"ERROR: Failed to read folder: {err}")
@@ -50,9 +55,12 @@ class MergerHandlersListLoadingSourceMixin:
         files = sorted(files, key=_natural_key)
         self.parent.logger.info(f"USER: Found {len(files)} videos in folder (recursive smart add)")
         self._start_file_loader(files)
+
     def add_videos_from_list(self, files):
         if self.parent.is_processing:
             return
-        if self._loading_lock: return
+        if self._loading_lock:
+            self.parent.set_status_message("Still loading previous files... Please wait.", "color: #ffa500;", 1800, force=True)
+            return
         if not files: return
         self._start_file_loader(files)

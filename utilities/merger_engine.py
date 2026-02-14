@@ -1,13 +1,8 @@
 ﻿import os
-import subprocess
-import re
-from PyQt5.QtCore import QThread, pyqtSignal
-from utilities.merger_utils import _get_logger, kill_process_tree
-import os
-import subprocess
-import re
-import threading
 import queue
+import re
+import subprocess
+import threading
 from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
 
@@ -153,7 +148,7 @@ class MergerEngine(QThread):
     def _parse_progress(self, line):
         if "time=" in line:
             try:
-                match = re.search(r'time=(\d{2}):(\d{2}):(\d{2}\.\d{2})', line)
+                match = re.search(r'time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)', line)
                 if match:
                     h, m, s = map(float, match.groups())
                     current_sec = h*3600 + m*60 + s

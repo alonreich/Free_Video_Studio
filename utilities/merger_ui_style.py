@@ -190,6 +190,9 @@
             margin: 0 -17px;
             border-radius: 2px;
         }
+        QSlider::handle:vertical:hover {
+            border: 2px solid #7DD3FC;
+        }
         QSlider::add-page:vertical { background: #1b6d26; border-radius: 3px; }
         QSlider::sub-page:vertical { background: #333; border-radius: 3px; }
     """
@@ -208,13 +211,16 @@
                 stop:0.48 #000, stop:0.52 #000,
                 stop:0.55 #9a9a9a,
                 stop:0.58 #000, stop:0.62 #000,
-                stop:0.65 #9a9a9a,
-                stop:1 #5a5a5a);
+            stop:0.65 #9a9a9a,
+            stop:1 #5a5a5a);
             border: 1px solid #111;
             width: 40px;
-            height: 12px;
+            height: 15px;
             margin: 0 -17px;
             border-radius: 2px;
+        }
+        QSlider::handle:vertical:hover {
+            border: 2px solid #7DD3FC;
         }
         QSlider::add-page:vertical { background: #3498db; border-radius: 3px; }
         QSlider::sub-page:vertical { background: #333; border-radius: 3px; }
@@ -242,6 +248,10 @@ class MergerUIStyleMixin:
             }
             QListWidget::item:selected {
                 background: transparent;
+            }
+            QRubberBand {
+                background-color: rgba(125, 211, 252, 55);
+                border: 2px solid #7DD3FC;
             }
             QToolTip {
                 font-family: Arial;

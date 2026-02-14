@@ -326,8 +326,43 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.setFocus()
 
         from ui.styles import UIStyles
-        self.play_pause_button.setStyleSheet(UIStyles.BUTTON_PLAY)
-        self.play_pause_button.setFixedSize(140, 35)
+        self.play_pause_button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+                color: #ffffff;
+                border-style: solid;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 10px;
+                padding: 8px 2px;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+                border-right: 1px solid rgba(0, 0, 0, 0.6);
+            }
+            QPushButton:hover:!disabled {
+                border: 1px solid #7DD3FC;
+            }
+            QPushButton:pressed:!disabled {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+                border-top: 1px solid rgba(0, 0, 0, 0.7);
+                border-left: 1px solid rgba(0, 0, 0, 0.7);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 9px;
+                padding-left: 3px;
+                padding-bottom: 7px;
+                padding-right: 1px;
+            }
+            QPushButton:disabled {
+                background-color: #4a5a63;
+                color: #95a5a6;
+                border: 1px solid #34495e;
+            }
+        """)
+        self.play_pause_button.setFixedWidth(150)
+        self.play_pause_button.setFixedHeight(35)
+        self.play_pause_button.setCursor(Qt.PointingHandCursor)
         try:
             self.setup_persistence(
                 config_path=self.app_config_path,

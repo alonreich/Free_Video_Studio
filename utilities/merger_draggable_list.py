@@ -1,6 +1,5 @@
-﻿from PyQt5.QtWidgets import QListWidget, QAbstractItemView, QWidget, QApplication
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QMimeData
-from PyQt5.QtGui import QDrag, QPixmap, QPainter, QColor, QPen, QCursor
+﻿from PyQt5.QtWidgets import QListWidget, QAbstractItemView
+from PyQt5.QtCore import Qt, pyqtSignal
 import os
 
 class MergerDraggableList(QListWidget):
@@ -16,14 +15,17 @@ class MergerDraggableList(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.setSelectionRectVisible(True)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDropIndicatorShown(True)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setSpacing(5)
         self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._drag_start_row = -1
+        self._drag_start_name = "Unknown"
 
     def startDrag(self, supportedActions):
         self._drag_start_row = self.currentRow()
@@ -31,15 +33,16 @@ class MergerDraggableList(QListWidget):
         name = "Unknown"
         if item:
             name = os.path.basename(item.data(Qt.UserRole)) if item.data(Qt.UserRole) else item.text()
+        self._drag_start_name = name
         self.drag_started.emit(self._drag_start_row, name)
         super().startDrag(supportedActions)
 
     def dropEvent(self, event):
         if event.source() == self:
             start = self._drag_start_row
+            before_name = self._drag_start_name
             super().dropEvent(event)
             end = self.currentRow()
-            before_name = "Unknown"
             after_name = "Unknown"
             item = self.item(end)
             if item:
@@ -49,6 +52,7 @@ class MergerDraggableList(QListWidget):
             elif start != -1:
                 self.drag_cancelled.emit(start, before_name)
             self._drag_start_row = -1
+            self._drag_start_name = "Unknown"
             event.accept()
         else:
             if event.mimeData().hasUrls():

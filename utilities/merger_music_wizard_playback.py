@@ -1,16 +1,17 @@
-import os
+﻿import os
 import time
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
-from utilities.merger_music_wizard_constants import PREVIEW_VISUAL_LEAD_MS
+from utilities.merger_music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECURSIVE_MS_DRIFT_CORRECTION_MS
 
 class MergerMusicWizardPlaybackMixin:
-
     def _on_video_vol_changed(self, val):
         if self._video_player: self._video_player.audio_set_volume(val)
+
     def _on_music_vol_changed(self, val):
         if self._player: self._player.audio_set_volume(val)
         self.logger.info(f"WIZARD: Music Volume changed to {val}%")
+
     def toggle_video_preview(self):
         try:
             if self.stack.currentIndex() == 1:
@@ -24,7 +25,9 @@ class MergerMusicWizardPlaybackMixin:
                 else:
                     self.logger.info(f"WIZARD: User clicked PLAY at offset {self.offset_slider.value()/1000.0:.1f}s")
                     if st in (0, 5, 6, 7):
-                        m = self.vlc.media_new(self.current_track_path)
+                        # Use synced audio if available for perfect Step 2 sync
+                        preview_path = getattr(self, "_temp_sync", None) or self.current_track_path
+                        m = self.vlc.media_new(preview_path)
                         self._player.set_media(m)
                     self._player.play()
 
@@ -56,6 +59,7 @@ class MergerMusicWizardPlaybackMixin:
                         self._play_timer = QTimer(self); self._play_timer.setInterval(50); self._play_timer.timeout.connect(self._on_play_tick); self._play_timer.start()
         except Exception as e:
             self.logger.error(f"WIZARD: Playback toggle failed: {e}")
+
     def _on_play_tick(self):
         if self._is_syncing: return
         self._is_syncing = True
@@ -67,12 +71,27 @@ class MergerMusicWizardPlaybackMixin:
                 try:
                     st = self._player.get_state()
                     if st == 3:
+                        # Sync duration from VLC to avoid probed vs actual drift
+                        vlc_len = self._player.get_length()
+                        if vlc_len > 0 and abs(vlc_len - self.offset_slider.maximum()) > 50:
+                            self.offset_slider.blockSignals(True)
+                            self.offset_slider.setRange(0, vlc_len)
+                            self.current_track_dur = vlc_len / 1000.0
+                            self.offset_slider.blockSignals(False)
+
                         vlc_ms = int(self._player.get_time() or 0)
                         if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
                         else: self._last_good_vlc_ms = vlc_ms
+                        
+                        # Apply recursive correction: 0ms for first 10s, then Xms every 10s
+                        if vlc_ms > 10000:
+                            increments = int((vlc_ms - 10000) / 10000)
+                            vlc_ms -= (increments * RECURSIVE_MS_DRIFT_CORRECTION_MS)
+                        
                         vlc_ms = int(vlc_ms + PREVIEW_VISUAL_LEAD_MS)
                         max_ms = self.offset_slider.maximum()
                         vlc_ms = max(0, min(max_ms, vlc_ms))
+                        
                         if vlc_ms >= max_ms - 10:
                             self._on_vlc_ended()
                             return
@@ -82,7 +101,8 @@ class MergerMusicWizardPlaybackMixin:
                             self.offset_slider.blockSignals(False)
                             self._sync_caret()
                     elif st == 6: self._on_vlc_ended()
-                except: pass
+                except Exception as ex:
+                    self.logger.debug(f"WIZARD: Step2 play tick sync skipped: {ex}")
             if self.stack.currentIndex() == 2 and self._video_player:
                 try:
                     if now - self._last_seek_ts < 0.5:
@@ -124,9 +144,11 @@ class MergerMusicWizardPlaybackMixin:
                         self.timeline.set_current_time(self.total_video_sec)
                         self._sync_caret()
                     else: self._last_clock_ts = now
-                except: pass
+                except Exception as ex:
+                    self.logger.debug(f"WIZARD: Step3 timeline tick sync skipped: {ex}")
             else: self._last_clock_ts = now
         finally: self._is_syncing = False
+
     def _on_vlc_ended(self):
         self.btn_play_video.setText("  PLAY"); self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         if hasattr(self, '_play_timer'): self._play_timer.stop()
