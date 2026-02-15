@@ -378,9 +378,9 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             try:
                 os.add_dll_directory(self.bin_dir)
             except Exception: pass
-        plugin_path = os.path.join(self.bin_dir, "plugins")
-        vlc_log_path = os.path.join(log_dir, "vlc.log")
+        plugin_path = os.path.join(self.bin_dir, "plugins").replace('\\', '/')
         vlc_args = [
+            '--verbose=2',
             '--no-video-title-show',
             '--avcodec-hw=any',
             '--vout=direct3d11',
@@ -388,13 +388,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             '--file-caching=3000',
             '--no-osd',
             '--ignore-config',
-            '--verbose=2',
-            '--file-logging',
-            '--logmode=text',
-            f'--logfile={vlc_log_path}',
+            f'--plugin-path={plugin_path}'
         ]
-        if os.path.exists(plugin_path):
-            vlc_args.append(f"--plugin-path={plugin_path.replace('\\', '/')}")
         os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
         self.vlc_player = None
         try:

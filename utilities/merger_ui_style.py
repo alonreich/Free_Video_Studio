@@ -1,4 +1,4 @@
-﻿class MergerUIStyle:
+class MergerUIStyle:
     BUTTON_COMMON = """
         QPushButton {
             color: #ffffff;

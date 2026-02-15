@@ -7,6 +7,7 @@ import subprocess
 import shutil
 import traceback
 import time
+import threading
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
@@ -58,16 +59,17 @@ class MergerDependencyDoctor:
 
 class MergerProcessManager:
     @staticmethod
-    def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
-        """Kill only direct children launched by this app to avoid affecting unrelated jobs."""
+    def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe", "ffmpeg", "ffprobe"]):
+        """Kill orphans and zombies related to this application."""
         my_pid = os.getpid()
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'exe', 'ppid']):
+            for proc in psutil.process_iter(['pid', 'name', 'ppid']):
                 try:
-                    if proc.info['pid'] == my_pid:
+                    pinfo = proc.info
+                    if pinfo['pid'] == my_pid:
                         continue
-                    if proc.info['name'] in process_names:
-                        if proc.info.get('ppid') == my_pid:
+                    if pinfo['name'].lower() in [n.lower() for n in process_names]:
+                        if pinfo.get('ppid') == my_pid or pinfo.get('ppid') in (0, 1):
                             proc.kill()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
@@ -135,10 +137,54 @@ class MergerProcessManager:
 
 class MergerConsoleManager:
     @staticmethod
+    def _start_native_bridge(source_tag: str, raw_log_path: str, shared_vlc_log_path: str):
+        bridge_logger = logging.getLogger(f"VLC_Aggregator_{source_tag}_{os.getpid()}")
+        for h in bridge_logger.handlers[:]:
+            bridge_logger.removeHandler(h)
+        bridge_logger.setLevel(logging.INFO)
+        bridge_logger.propagate = False
+        bridge_handler = RotatingFileHandler(
+            shared_vlc_log_path,
+            maxBytes=5*1024*1024,
+            backupCount=1,
+            encoding='utf-8',
+        )
+        bridge_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        bridge_logger.addHandler(bridge_handler)
+
+        def _tail_raw_forever():
+            pos = 0
+            while True:
+                try:
+                    if not os.path.exists(raw_log_path):
+                        time.sleep(0.5)
+                        continue
+                    with open(raw_log_path, 'rb') as rf:
+                        rf.seek(pos)
+                        chunk_bytes = rf.read()
+                        if chunk_bytes:
+                            pos += len(chunk_bytes)
+                            chunk = chunk_bytes.decode('utf-8', errors='ignore')
+                            for line in chunk.splitlines():
+                                clean_line = line.strip()
+                                if clean_line:
+                                    bridge_logger.info("[%s] %s", source_tag, clean_line)
+                        else:
+                            time.sleep(0.2)
+                except Exception:
+                    time.sleep(1.0)
+        t = threading.Thread(target=_tail_raw_forever, daemon=True)
+        t.start()
+    @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
         logger = MergerLogManager.setup_logger(base_dir, log_filename, logger_name)
         log_dir = os.path.join(base_dir, "logs")
-        log_path = os.path.join(log_dir, log_filename)
+        vlc_log_path = os.path.join(log_dir, "vlc.log")
+        source_tag = "video_merger"
+        raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")
+        os.environ["FVS_VLC_SOURCE_TAG"] = source_tag
+        os.environ["FVS_VLC_RAW_LOG"] = raw_log_path
+        MergerConsoleManager._start_native_bridge(source_tag, raw_log_path, vlc_log_path)
 
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
@@ -153,13 +199,15 @@ class MergerConsoleManager:
             except: pass
         sys.excepthook = global_exception_handler
         try:
-            f = open(log_path, 'a', buffering=1, encoding='utf-8')
+            MergerConsoleManager._f_keepalive = open(raw_log_path, 'a', buffering=1, encoding='utf-8')
+            f = MergerConsoleManager._f_keepalive
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
 
             import faulthandler
             faulthandler.enable(f)
-            f.write("\n--- NATIVE DEBUG LOGGING ACTIVE ---\n")
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
             f.flush()
         except Exception: pass
         if sys.platform == "win32":
@@ -181,7 +229,7 @@ class MergerLogManager:
         log_dir = os.path.join(base_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, log_filename)
-        handler = RotatingFileHandler(log_path, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8')
+        handler = RotatingFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)

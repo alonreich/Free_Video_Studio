@@ -61,12 +61,40 @@ class MergerMusicWizardMiscMixin:
         if not hasattr(self.parent_window, "config_manager"): return
         step_idx = self.stack.currentIndex()
         geom = self.geometry()
-        app = QApplication.instance()
+        app = None
+        try:
+            instance_getter = getattr(QApplication, "instance", None)
+            if callable(instance_getter):
+                app = instance_getter()
+        except:
+            app = None
         screen_name = ""
         if app:
-            screen = app.screenAt(geom.center()) or app.primaryScreen()
+            center = None
+            try:
+                center_getter = getattr(geom, "center", None)
+                if callable(center_getter):
+                    center = center_getter()
+            except:
+                center = None
+            screen = None
+            try:
+                if center is not None and hasattr(app, "screenAt"):
+                    screen = app.screenAt(center)
+            except:
+                screen = None
+            if not screen:
+                try:
+                    if hasattr(app, "primaryScreen"):
+                        screen = app.primaryScreen()
+                except:
+                    screen = None
             if screen:
-                screen_name = screen.name()
+                try:
+                    if hasattr(screen, "name"):
+                        screen_name = screen.name() or ""
+                except:
+                    screen_name = ""
         try:
             cfg = dict(self.parent_window.config_manager.config)
             if "music_wizard_custom_geo" not in cfg:

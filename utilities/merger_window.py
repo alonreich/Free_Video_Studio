@@ -366,11 +366,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
     def closeEvent(self, event):
         self._stop_all_workers()
         self.logic_handler.save_config()
-        if self.vlc_instance:
-             try: 
-                 self.vlc_instance.release()
-             except Exception as ex:
-                 self.logger.debug(f"VLC release skipped: {ex}")
         super().closeEvent(event)
 
     def _stop_all_workers(self):

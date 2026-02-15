@@ -6,6 +6,8 @@ import tempfile
 import traceback
 import subprocess
 import shutil
+import time
+import threading
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
@@ -138,11 +140,63 @@ class ProcessManager:
 
 class ConsoleManager:
     @staticmethod
+    def _source_tag(logger_name: str) -> str:
+        mapping = {
+            "Main_App": "main_app",
+            "Crop_Tool": "crop_tools",
+            "Advanced_Editor": "advanced_editor",
+        }
+        return mapping.get(str(logger_name), str(logger_name).strip().lower())
+    @staticmethod
+    def _start_native_bridge(source_tag: str, raw_log_path: str, shared_vlc_log_path: str):
+        bridge_logger = logging.getLogger(f"VLC_Aggregator_{source_tag}_{os.getpid()}")
+        for h in bridge_logger.handlers[:]:
+            bridge_logger.removeHandler(h)
+        bridge_logger.setLevel(logging.INFO)
+        bridge_logger.propagate = False
+        bridge_handler = RotatingFileHandler(
+            shared_vlc_log_path,
+            maxBytes=5*1024*1024,
+            backupCount=1,
+            encoding='utf-8',
+        )
+        bridge_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        bridge_logger.addHandler(bridge_handler)
+
+        def _tail_raw_forever():
+            pos = 0
+            while True:
+                try:
+                    if not os.path.exists(raw_log_path):
+                        time.sleep(0.5)
+                        continue
+                    with open(raw_log_path, 'rb') as rf:
+                        rf.seek(pos)
+                        chunk_bytes = rf.read()
+                        if chunk_bytes:
+                            pos += len(chunk_bytes)
+                            chunk = chunk_bytes.decode('utf-8', errors='ignore')
+                            for line in chunk.splitlines():
+                                clean_line = line.strip()
+                                if clean_line:
+                                    bridge_logger.info("[%s] %s", source_tag, clean_line)
+                        else:
+                            time.sleep(0.2)
+                except Exception:
+                    time.sleep(1.0)
+        t = threading.Thread(target=_tail_raw_forever, daemon=True)
+        t.start()
+    @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
-        LogManager.truncate_vlc_log(base_dir)
+        LogManager.truncate_vlc_log(base_dir, max_size_mb=5)
         logger = LogManager.setup_logger(base_dir, log_filename, logger_name)
         log_dir = os.path.join(base_dir, "logs")
         vlc_log_path = os.path.join(log_dir, "vlc.log")
+        source_tag = ConsoleManager._source_tag(logger_name)
+        raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")
+        os.environ["FVS_VLC_SOURCE_TAG"] = source_tag
+        os.environ["FVS_VLC_RAW_LOG"] = raw_log_path
+        ConsoleManager._start_native_bridge(source_tag, raw_log_path, vlc_log_path)
 
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
@@ -157,13 +211,15 @@ class ConsoleManager:
             except: pass
         sys.excepthook = global_exception_handler
         try:
-            f = open(vlc_log_path, 'a', buffering=1, encoding='utf-8')
+            ConsoleManager._f_keepalive = open(raw_log_path, 'a', buffering=1, encoding='utf-8')
+            f = ConsoleManager._f_keepalive
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
 
             import faulthandler
             faulthandler.enable(f)
-            f.write("\n--- NATIVE DEBUG LOGGING ACTIVE ---\n")
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
             f.flush()
         except Exception as e:
             print(f"Failed FD redirection: {e}")
@@ -178,7 +234,7 @@ class ConsoleManager:
 
 class LogManager:
     @staticmethod
-    def truncate_vlc_log(base_dir: str, max_size_mb: int = 10):
+    def truncate_vlc_log(base_dir: str, max_size_mb: int = 5):
         """
         Maintains logs/vlc.log size by keeping only the last N MB (FIFO).
         """
@@ -208,7 +264,7 @@ class LogManager:
         log_dir = os.path.join(base_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, log_filename)
-        handler = RotatingFileHandler(log_path, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8')
+        handler = RotatingFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -216,4 +272,5 @@ class LogManager:
         console.setFormatter(formatter)
         logger.addHandler(console)
         return logger
+
 

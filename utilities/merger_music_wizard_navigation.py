@@ -1,6 +1,6 @@
-﻿import os
-from PyQt5.QtWidgets import QMessageBox, QStyle
-from PyQt5.QtCore import Qt
+import os
+from PyQt5.QtWidgets import QMessageBox, QStyle, QWidget
+from PyQt5.QtCore import Qt, QTimer
 
 class MergerMusicWizardNavigationMixin:
     def _on_nav_cancel_clicked(self):
@@ -10,11 +10,7 @@ class MergerMusicWizardNavigationMixin:
 
     def _on_page_changed(self, index):
         if not hasattr(self, 'btn_nav_next'): return
-        if index == 1:
-            self.setFixedSize(1300, 600)
-        else:
-            self.setMinimumSize(800, 500)
-            self.setMaximumSize(16777215, 16777215)
+        self._apply_step_geometry(index)
         if index in (1, 2):
             self.btn_play_video.setVisible(True)
             self.btn_play_video.setText("  PLAY")
@@ -23,23 +19,30 @@ class MergerMusicWizardNavigationMixin:
             self.btn_play_video.setVisible(False)
         if index == 2:
             self.btn_nav_next.setText("✓  DONE")
-            if self.width() < 1500:
-                self._resize_from_center(1600, 800)
             self._bind_video_output()
             self._prepare_timeline_data()
+            self.timeline.set_current_time(0.0)
+            self._sync_all_players_to_time(0.0)
+            QTimer.singleShot(200, lambda: self._video_player.set_pause(True) if self._video_player else None)
+            if self._player:
+                QTimer.singleShot(200, lambda: self._player.set_pause(True))
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
-            if self.width() > 1500:
-                self._resize_from_center(1300, 650)
             self.update_coverage_ui()
         self._sync_caret()
 
     def _resize_from_center(self, w, h):
-        old_center = self.geometry().center()
-        self.resize(w, h)
-        new_rect = self.geometry()
-        new_rect.moveCenter(old_center)
-        self.setGeometry(new_rect)
+        try:
+            if abs(self.width() - w) < 5 and abs(self.height() - h) < 5:
+                return
+            old_center = self.geometry().center()
+            new_geom = self.geometry()
+            new_geom.setWidth(w)
+            new_geom.setHeight(h)
+            new_geom.moveCenter(old_center)
+            self.setGeometry(new_geom)
+        except:
+            self.resize(w, h)
 
     def _on_nav_next_clicked(self):
         idx = self.stack.currentIndex()
@@ -50,6 +53,7 @@ class MergerMusicWizardNavigationMixin:
             self.confirm_current_track()
         elif idx == 2:
             self.logger.info("WIZARD: User clicked DONE on Timeline. Finishing.")
+            self._save_step_geometry() 
             self.stop_previews()
             self.accept()
 

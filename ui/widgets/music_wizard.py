@@ -44,23 +44,35 @@ class MergerMusicWizard(
         self._cache_wall_times()
         self.setWindowTitle("Background Music Selection Wizard")
         self.setModal(True)
-        vlc_args_v = [
+        plugin_path = os.path.join(self.bin_dir, "plugins").replace('\\', '/')
+        vlc_args_common = [
+            "--verbose=2",
             "--no-osd",
-            "--aout=waveout",
+            "--aout=directx",
+            "--mmdevice-passthrough=0",
             "--avcodec-hw=any",
             "--vout=direct3d11",
             "--ignore-config",
-        ]
-        vlc_args_m = [
-            "--no-osd",
-            "--aout=waveout",
-            "--avcodec-hw=any",
-            "--vout=direct3d11",
-            "--ignore-config",
+            f"--plugin-path={plugin_path}"
         ]
         os.environ["VLC_PLUGIN_PATH"] = os.path.join(self.bin_dir, "plugins")
-        self.vlc_v = _vlc_mod.Instance(vlc_args_v) if _vlc_mod else None
-        self.vlc_m = _vlc_mod.Instance(vlc_args_m) if _vlc_mod else None
+        self.vlc_v = None
+        self.vlc_m = None
+        if _vlc_mod:
+            try:
+                v_args = vlc_args_common + ["--directx-audio-device-name=VIDEO_PLAYER"]
+                self.vlc_v = _vlc_mod.Instance(v_args)
+            except Exception as ex_v:
+                self.logger.error("WIZARD_VLC: VIDEO primary instance failed: %s", ex_v)
+            try:
+                m_args = vlc_args_common + ["--directx-audio-device-name=MUSIC_PLAYER"]
+                self.vlc_m = _vlc_mod.Instance(m_args)
+            except Exception as ex_m:
+                self.logger.error("WIZARD_VLC: MUSIC primary instance failed: %s", ex_m)
+        if not self.vlc_v: self.vlc_v = self.parent_window.vlc_instance
+        if not self.vlc_m: self.vlc_m = self.parent_window.vlc_instance
+        if not self.vlc_v or not self.vlc_m:
+            self.logger.error("WIZARD_VLC: Dedicated instances unavailable. Preview isolation may not work.")
         self.vlc = self.vlc_v
         self.setStyleSheet('''
             QDialog { background-color: #2c3e50; color: #ecf0f1; }

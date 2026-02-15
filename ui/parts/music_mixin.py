@@ -59,9 +59,8 @@ class MusicMixin:
             self._custom_mp3_dir = folder
 
     def open_music_wizard(self):
-        player = getattr(self, "vlc_player", None)
-        if player and player.is_playing():
-            player.pause()
+        if getattr(self, "vlc_player", None) and self.vlc_player.is_playing():
+            self.vlc_player.pause()
             self.wants_to_play = False
             if hasattr(self, 'playPauseButton'):
                 self.playPauseButton.setText("PLAY")

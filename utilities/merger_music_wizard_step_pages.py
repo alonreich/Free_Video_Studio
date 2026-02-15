@@ -1,6 +1,6 @@
-﻿import os
+import os
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton
 from utilities.merger_trimmed_slider import MergerTrimmedSlider
 from utilities.merger_music_wizard_widgets import SearchableListWidget, MusicItemWidget
 
@@ -24,15 +24,47 @@ class MergerMusicWizardStepPagesMixin:
         self.logger.info(f"WIZARD: Loaded {len(files)} tracks from {folder_path}")
 
     def setup_step1_select(self):
+        from utilities.merger_ui_style import MergerUIStyle
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        left_balance_spacer = QWidget()
+        left_balance_spacer.setFixedWidth(200) 
+        header_layout.addWidget(left_balance_spacer)
+        header_layout.addStretch(1)
         self.lbl_step1 = QLabel("STEP 1: Pick a song from your folder")
         self.lbl_step1.setStyleSheet("font-size: 20px; font-weight: bold; color: #7DD3FC; padding: 0px; margin: 0px;")
         self.lbl_step1.setAlignment(Qt.AlignCenter)
-        self.lbl_step1.setFixedHeight(30)
-        layout.addWidget(self.lbl_step1)
+        self.lbl_step1.setFixedHeight(40)
+        header_layout.addWidget(self.lbl_step1)
+        header_layout.addStretch(1)
+        self.select_folder_btn = QPushButton()
+        self.select_folder_btn.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.select_folder_btn.setFixedSize(235, 42)
+        self.select_folder_btn.setCursor(Qt.PointingHandCursor)
+        self.select_folder_btn.clicked.connect(lambda: self.parent_window.music_dialog_handler._on_select_music_folder(self))
+        btn_layout = QHBoxLayout(self.select_folder_btn)
+        btn_layout.setContentsMargins(2, 0, 2, 0)
+        btn_layout.setSpacing(3)
+        gear_l = QLabel("⚙️")
+        gear_l.setStyleSheet("font-size: 16px; color: white; background: transparent; border: none;")
+        gear_l.setAttribute(Qt.WA_TransparentForMouseEvents)
+        txt_lbl = QLabel("SELECT MUSIC FOLDER")
+        txt_lbl.setStyleSheet("font-size: 12px; color: white; font-weight: bold; background: transparent; border: none;")
+        txt_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        gear_r = QLabel("⚙️")
+        gear_r.setStyleSheet("font-size: 16px; color: white; background: transparent; border: none;")
+        gear_r.setAttribute(Qt.WA_TransparentForMouseEvents)
+        btn_layout.addStretch()
+        btn_layout.addWidget(gear_l)
+        btn_layout.addWidget(txt_lbl)
+        btn_layout.addWidget(gear_r)
+        btn_layout.addStretch()
+        header_layout.addWidget(self.select_folder_btn)
+        layout.addLayout(header_layout)
         layout.addSpacing(10)
         self.coverage_progress = QProgressBar()
         self.coverage_progress.setFixedHeight(25)
@@ -55,20 +87,9 @@ class MergerMusicWizardStepPagesMixin:
         search_layout = QHBoxLayout()
         search_layout.setSpacing(10)
         search_icon = QLabel("🔍")
-        search_icon.setStyleSheet("font-size: 18px;")
+        search_icon.setStyleSheet("font-size: 18px; background: transparent;")
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search songs by name...")
-        self.search_input.setStyleSheet("""
-            QLineEdit {
-                background: #0b141d;
-                border: 2px solid #1f3545;
-                border-radius: 8px;
-                padding: 8px 12px;
-                color: #ecf0f1;
-                font-size: 14px;
-            }
-            QLineEdit:focus { border-color: #3498db; }
-        """)
         self.search_input.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(search_icon)
         search_layout.addWidget(self.search_input)
@@ -89,7 +110,7 @@ class MergerMusicWizardStepPagesMixin:
                 margin: 0px;
             }
             QListWidget::item:selected {
-                background: #3498db;
+                background: #1a5276;
                 border-radius: 4px;
             }
             QScrollBar:vertical {
@@ -163,7 +184,6 @@ class MergerMusicWizardStepPagesMixin:
         self.offset_slider = MergerTrimmedSlider()
         self.offset_slider.setProperty("is_wizard_slider", True)
         self.offset_slider.setFixedHeight(100)
-        self.offset_slider.setStyleSheet("QSlider::handle:horizontal { width: 10px; background: #2196F3; }")
         self.offset_slider.valueChanged.connect(self._on_slider_seek)
         try:
             self.offset_slider.sliderPressed.connect(self._on_drag_start)
@@ -172,18 +192,20 @@ class MergerMusicWizardStepPagesMixin:
             self.logger.debug("WIZARD: slider drag signal hookup skipped: %s", ex)
         self.slider_unified_layout.addWidget(self.offset_slider)
         layout.addWidget(self.slider_unified_container)
+        layout.addStretch(1)
         self._wave_caret = QLabel(self)
-        self._wave_caret.setStyleSheet("background: #3498db;")
+        self._wave_caret.setStyleSheet("background: #3498db; border: none;")
         self._wave_caret.setFixedWidth(2)
         self._wave_caret.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_caret.hide()
+        badge_style = "background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;"
         self._wave_time_badge = QLabel(self)
-        self._wave_time_badge.setStyleSheet("background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px;")
+        self._wave_time_badge.setStyleSheet(badge_style)
         self._wave_time_badge.setAlignment(Qt.AlignCenter)
         self._wave_time_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_time_badge.hide()
         self._wave_time_badge_bottom = QLabel(self)
-        self._wave_time_badge_bottom.setStyleSheet("background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px;")
+        self._wave_time_badge_bottom.setStyleSheet(badge_style)
         self._wave_time_badge_bottom.setAlignment(Qt.AlignCenter)
         self._wave_time_badge_bottom.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_time_badge_bottom.hide()

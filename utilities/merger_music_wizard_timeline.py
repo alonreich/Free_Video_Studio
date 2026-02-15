@@ -1,6 +1,6 @@
-﻿import time
+import time
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from utilities.merger_music_wizard_workers import VideoFilmstripWorker, MusicWaveformWorker
 
@@ -22,22 +22,32 @@ class MergerMusicWizardTimelineMixin:
         self._music_worker = None
         self._timeline_stage = None
 
-    def _start_timeline_workers(self, video_info_list, unique_music_segments_info, *, stage: str):
+    def _start_timeline_workers(self, video_info_list, unique_music_segments_info, *, stage: str, speed_segments: list = None):
         stage_name = str(stage or "fast").lower()
-        if stage_name in ("fast", "progressive"):
-            v_workers = 2
-            m_workers = 2
-        else:
-            v_workers = 1
-            m_workers = 1
+        chunked_video_info = []
+        num_chunks = 8 if stage_name in ("fast", "progressive") else 4
+        for orig_idx, (path, duration, t_start, speed) in enumerate(video_info_list):
+            chunk_dur = duration / num_chunks
+            for i in range(num_chunks):
+                c_start_offset_project = i * chunk_dur
+                c_start_source = t_start + (c_start_offset_project * speed * 1000.0)
+                chunked_video_info.append((
+                    path, 
+                    chunk_dur, 
+                    c_start_source, 
+                    speed, 
+                    orig_idx
+                ))
         self._video_worker = VideoFilmstripWorker(
-            video_info_list,
+            chunked_video_info,
             self.bin_dir,
             stage=stage_name,
-            max_workers=v_workers,
+            max_workers=num_chunks,
+            speed_segments=speed_segments,
         )
         self._video_worker.asset_ready.connect(self._on_video_asset_ready)
         self._video_worker.finished.connect(self._on_worker_finished)
+        m_workers = 2 if stage_name in ("fast", "progressive") else 1
         self._music_worker = MusicWaveformWorker(
             unique_music_segments_info,
             self.bin_dir,
@@ -75,12 +85,20 @@ class MergerMusicWizardTimelineMixin:
         if target_idx != -1:
             target_path = self.selected_tracks[target_idx][0]
             if target_path != self._last_m_mrl:
-                m = self.vlc.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_time(int(music_offset * 1000)); self._last_m_mrl = target_path
+                m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
+
+                def _mus_v_safe():
+                    if self._player: self._player.audio_set_volume(self.music_vol_slider.value())
+                QTimer.singleShot(200, _mus_v_safe)
+                self._player.set_time(int(music_offset * 1000))
             else:
                 try:
                     curr_audio_time = self._player.get_time() / 1000.0
-                    if abs(curr_audio_time - music_offset) > 0.5: self._player.set_time(int(music_offset * 1000))
-                    if self._player.get_state() != 3: self._player.play()
+                    target_audio_time = music_offset 
+                    if abs(curr_audio_time - target_audio_time) > 0.5: self._player.set_time(int(target_audio_time * 1000))
+                    if self._player.get_state() != 3: 
+                        self._player.play()
+                        self._player.set_rate(1.0)
                 except Exception as ex:
                     self.logger.debug("WIZARD: music sync drift correction skipped: %s", ex)
         else:
@@ -104,9 +122,16 @@ class MergerMusicWizardTimelineMixin:
             curr_media = self._video_player.get_media()
             curr_mrl = str(curr_media.get_mrl()).replace("%20", " ") if curr_media else ""
             if target_path.replace("\\", "/").lower() not in curr_mrl.lower():
-                m = self.vlc.media_new(target_path); self._video_player.set_media(m)
-                if is_playing: self._video_player.play()
-            self._video_player.set_time(int(video_offset * 1000))
+                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m)
+                if is_playing: 
+                    self._video_player.play()
+                    self._video_player.set_rate(self.speed_factor)
+            
+            def _seek_v_safe():
+                if self._video_player: self._video_player.audio_set_volume(self.video_vol_slider.value())
+            QTimer.singleShot(200, _seek_v_safe)
+            real_v_pos_ms = self._project_time_to_source_ms(target_sec if 'target_sec' in locals() else timeline_sec)
+            self._video_player.set_time(real_v_pos_ms)
             if not is_playing: self._video_player.set_pause(True)
         self._sync_all_players_to_time(target_sec)
         if not is_playing:
@@ -122,9 +147,16 @@ class MergerMusicWizardTimelineMixin:
             elapsed += seg["duration"]
         if self._video_player:
             target_path = self.video_segments[target_video_idx]["path"]; curr_media = self._video_player.get_media()
-            if not curr_media or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
-                m = self.vlc.media_new(target_path); self._video_player.set_media(m); self._video_player.play()
-            self._video_player.set_time(int(video_offset * 1000))
+            v_st = self._video_player.get_state()
+            if not curr_media or v_st == 6 or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
+                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m); self._video_player.play(); self._video_player.set_rate(self.speed_factor)
+                self._video_player.audio_set_mute(True)
+                self._video_player.audio_set_volume(0)
+                self._video_player.audio_set_mute(False)
+                self._video_player.audio_set_volume(self.video_vol_slider.value())
+                self._video_player.audio_set_track(1)
+            real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
+            self._video_player.set_time(real_v_pos_ms)
         elapsed = 0.0; target_music_idx = -1; music_offset = 0.0
         for i, (path, start_off, dur) in enumerate(self.selected_tracks):
             if elapsed + dur > timeline_sec:
@@ -134,16 +166,27 @@ class MergerMusicWizardTimelineMixin:
             if target_music_idx != -1:
                 target_path = self.selected_tracks[target_music_idx][0]
                 if target_path != self._last_m_mrl:
-                    m = self.vlc.media_new(target_path); self._player.set_media(m); self._player.play(); self._last_m_mrl = target_path
+                    m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
+                    self._player.audio_set_mute(True)
+                    self._player.audio_set_volume(0)
+                    self._player.audio_set_mute(False)
+                    self._player.audio_set_volume(self.music_vol_slider.value())
                 self._player.set_time(int(music_offset * 1000))
             else: self._player.stop()
 
     def _prepare_timeline_data(self):
         videos = []; video_info_list = []
-        for i in range(self.parent_window.listw.count()):
-            it = self.parent_window.listw.item(i); p = it.data(Qt.UserRole); probe_data = it.data(Qt.UserRole + 1) or {}
-            dur = float(probe_data.get("format", {}).get("duration", 0.0))
-            videos.append({"path": p, "duration": dur, "thumbs": []}); video_info_list.append((p, dur))
+        if hasattr(self.parent_window, "listw"):
+            for i in range(self.parent_window.listw.count()):
+                it = self.parent_window.listw.item(i); p = it.data(Qt.UserRole); probe_data = it.data(Qt.UserRole + 1) or {}
+                dur = float(probe_data.get("format", {}).get("duration", 0.0))
+                videos.append({"path": p, "duration": dur, "thumbs": []}); video_info_list.append((p, dur, 0.0, 1.0))
+        else:
+            p = getattr(self.parent_window, "input_file_path", None)
+            dur = float(self.total_video_sec)
+            if p:
+                videos.append({"path": p, "duration": dur, "thumbs": []})
+                video_info_list.append((p, dur, self.trim_start_ms, self.speed_factor))
         self.video_segments = videos
         music = []; music_segments_info = []
         if self.selected_tracks:
@@ -171,12 +214,15 @@ class MergerMusicWizardTimelineMixin:
         self._workers_running = 0
         self._stop_timeline_workers()
         self.splash_overlay.hide()
-        self._start_timeline_workers(video_info_list, unique_music_segments_info, stage="progressive")
+        self._start_timeline_workers(video_info_list, unique_music_segments_info, stage="progressive", speed_segments=self.speed_segments)
 
     def _on_video_asset_ready(self, idx, thumbs, stage):
         if stage != getattr(self, "_timeline_stage", None):
             return
-        if 0 <= idx < len(self.video_segments): self.video_segments[idx]["thumbs"] = thumbs; self.timeline.update()
+        if 0 <= idx < len(self.video_segments):
+            existing = self.video_segments[idx].get("thumbs", [])
+            self.video_segments[idx]["thumbs"] = thumbs
+            self.timeline.update()
 
     def _on_music_asset_ready(self, idx, pixmap, stage):
         if stage != getattr(self, "_timeline_stage", None):

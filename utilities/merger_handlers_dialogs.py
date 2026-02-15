@@ -128,11 +128,24 @@ class MergerHandlersDialogsMixin:
         done_button.setStyleSheet(self._dialog_button_style("#821e1e", "#5D1515"))
         done_button.setCursor(Qt.PointingHandCursor)
         done_button.clicked.connect(dialog.accept)
+
+        def _hard_exit():
+            dialog.accept()
+            try:
+                if hasattr(self.parent, "close"):
+                    self.parent.close()
+            except: pass
+            try:
+                from utilities.merger_system import MergerProcessManager
+                MergerProcessManager.kill_orphans()
+            except: pass
+            QApplication.instance().quit()
+            QTimer.singleShot(500, lambda: os._exit(0))
         finished_button = QPushButton("Close The App! (Exit)")
         finished_button.setFixedSize(*button_size)
         finished_button.setStyleSheet(self._dialog_button_style("#c90e0e", "#950808"))
         finished_button.setCursor(Qt.PointingHandCursor)
-        finished_button.clicked.connect(lambda: (dialog.accept(), QApplication.instance().quit()))
+        finished_button.clicked.connect(_hard_exit)
         grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
         grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
         grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)

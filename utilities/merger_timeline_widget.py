@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QRectF
@@ -33,7 +33,7 @@ class MergerTimelineWidget(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform)
         w = float(self.width())
         h = float(self.height())
-        lane_h = 50.0
+        lane_h = 45.0
         v_y = 0.0
         m_y = lane_h
         p.fillRect(self.rect(), QColor(15, 25, 35))
@@ -77,6 +77,10 @@ class MergerTimelineWidget(QWidget):
                 sep_x = int(current_x + seg_w)
                 p.drawLine(sep_x, int(m_y), sep_x, int(m_y + lane_h))
             current_x += seg_w
+        p.setPen(QPen(QColor("#266b89"), 2))
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(QRectF(0, v_y, w, lane_h))
+        p.drawRect(QRectF(0, m_y, w, lane_h))
         caret_x = (self.current_time / self.total_duration) * w
         p.setPen(QPen(QColor(52, 152, 219, 100), 6))
         p.drawLine(int(caret_x), 0, int(caret_x), int(h))

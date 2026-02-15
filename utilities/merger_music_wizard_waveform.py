@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
 from utilities.merger_music_wizard_workers import SingleWaveformWorker
@@ -81,11 +81,14 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
+        self._show_caret_step2 = True
         if self._dragging or self._wave_dragging: return
         if self._player: self._player.set_time(val_ms)
         self._sync_caret()
 
-    def _on_drag_start(self): self._dragging = True
+    def _on_drag_start(self): 
+        self._show_caret_step2 = True
+        self._dragging = True
 
     def _on_drag_end(self):
         self._dragging = False
@@ -106,6 +109,7 @@ class MergerMusicWizardWaveformMixin:
             if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
                 try:
                     if self._draw_w <= 1: return True
+                    self._show_caret_step2 = True
                     self._wave_dragging = True
                     self._set_time_from_wave_x(event.pos().x())
                     return True
@@ -126,6 +130,7 @@ class MergerMusicWizardWaveformMixin:
 
     def _set_time_from_wave_x(self, x):
         if self._draw_w <= 1: return
+        self._show_caret_step2 = True
         rel = (x - self._draw_x0) / float(self._draw_w)
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
