@@ -8,15 +8,19 @@ from utilities.merger_music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECU
 class MergerMusicWizardPlaybackMixin:
     def _on_video_vol_changed(self, val):
         """Strictly controls the game audio player volume."""
+        eff = self._scaled_vol(val)
+        self.logger.info(f"DEBUG_VOL: [MERGER_VIDEO_WORKER_HANDLE] Moved to {val}%. Resulting Scaled Vol: {eff}%. PlayerObj: {hex(id(self._video_player))}")
         if getattr(self, "_video_player", None): 
-            self._video_player.audio_set_volume(val)
+            self._video_player.audio_set_volume(eff)
         if hasattr(self, "video_vol_val_lbl"): 
             self.video_vol_val_lbl.setText(f"{val}%")
 
     def _on_music_vol_changed(self, val):
         """Strictly controls the background music player volume."""
+        eff = self._scaled_vol(val)
+        self.logger.info(f"DEBUG_VOL: [MERGER_MUSIC_WORKER_HANDLE] Moved to {val}%. Resulting Scaled Vol: {eff}%. PlayerObj: {hex(id(self._player))}")
         if getattr(self, "_player", None): 
-            self._player.audio_set_volume(val)
+            self._player.audio_set_volume(eff)
         if hasattr(self, "music_vol_val_lbl"): 
             self.music_vol_val_lbl.setText(f"{val}%")
 
@@ -51,7 +55,8 @@ class MergerMusicWizardPlaybackMixin:
                     def _force_audio_m():
                         if not getattr(self, "_player", None): return
                         self._player.audio_set_mute(False)
-                        self._player.audio_set_volume(self.music_vol_slider.value())
+                        mix_vol = self.music_vol_slider.value() if hasattr(self, "music_vol_slider") else 80
+                        self._player.audio_set_volume(self._scaled_vol(mix_vol))
                     QTimer.singleShot(300, _force_audio_m)
 
                     def _after_start():
@@ -91,11 +96,11 @@ class MergerMusicWizardPlaybackMixin:
                     
                     def _force_audio_v():
                         if not getattr(self, "_video_player", None): return
-                        self.logger.info("WIZARD: Forcing video audio settings.")
-                        self._video_player.audio_set_mute(True)
-                        self._video_player.audio_set_volume(0) 
+                        v_mix = self.video_vol_slider.value()
+                        eff = self._scaled_vol(v_mix)
+                        self.logger.info(f"DEBUG_STEP3: Merger Forcing Video Vol={v_mix}% (Eff={eff}%). Player={hex(id(self._video_player))}")
                         self._video_player.audio_set_mute(False)
-                        self._video_player.audio_set_volume(self.video_vol_slider.value())
+                        QTimer.singleShot(50, lambda: self._video_player.audio_set_volume(eff))
                         v_tracks = self._video_player.audio_get_track_description()
                         if v_tracks and len(v_tracks) > 1:
                             self._video_player.audio_set_track(v_tracks[1][0])
@@ -109,11 +114,11 @@ class MergerMusicWizardPlaybackMixin:
                         
                         def _force_audio_m_tl():
                             if not getattr(self, "_player", None): return
-                            self.logger.info("WIZARD: Forcing music audio settings.")
-                            self._player.audio_set_mute(True)
-                            self._player.audio_set_volume(0)
+                            m_mix = self.music_vol_slider.value()
+                            eff = self._scaled_vol(m_mix)
+                            self.logger.info(f"DEBUG_STEP3: Merger Forcing Music Vol={m_mix}% (Eff={eff}%). Player={hex(id(self._player))}")
                             self._player.audio_set_mute(False)
-                            self._player.audio_set_volume(self.music_vol_slider.value())
+                            QTimer.singleShot(50, lambda: self._player.audio_set_volume(eff))
                         QTimer.singleShot(350, _force_audio_m_tl)
                     self.btn_play_video.setText("  PAUSE")
                     self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))

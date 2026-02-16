@@ -1,9 +1,14 @@
 ﻿import vlc
 import time
+import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
 
 class PlayerMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._scrub_lock = threading.RLock()
+
     def _safe_stop_playback(self):
         try:
             if getattr(self, "vlc_player", None):
@@ -44,11 +49,16 @@ class PlayerMixin:
 
             def _apply_audio_final():
                 if not getattr(self, "vlc_player", None): return
-                self.vlc_player.audio_set_volume(0) 
                 self.vlc_player.audio_set_mute(False)
                 if hasattr(self, "_vol_eff"):
                     vol = self._vol_eff()
                     self.vlc_player.audio_set_volume(vol)
+                m_player = getattr(self, "vlc_music_player", None)
+                if m_player:
+                    m_player.audio_set_mute(False)
+                    if hasattr(self, "_music_eff"):
+                        m_vol = self._music_eff()
+                        m_player.audio_set_volume(m_vol)
                 tracks = self.vlc_player.audio_get_track_description()
                 if tracks and len(tracks) > 1:
                     self.vlc_player.audio_set_track(tracks[1][0])
@@ -111,46 +121,52 @@ class PlayerMixin:
 
     def set_vlc_position(self, position_ms, sync_only=False, force_pause=False):
         """Sets video player position (in ms) AND syncs the music player state."""
-        try:
-            now = time.time()
-            if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
-            if now - self._last_scrub_ts < 0.05:
-                return
-            self._last_scrub_ts = now
-            target_ms = int(position_ms)
-            music_player = getattr(self, 'vlc_music_player', None)
-            if music_player and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-                if self.music_timeline_start_ms >= 0 and self.music_timeline_end_ms > 0:
-                    is_video_playing = not force_pause and getattr(self, 'wants_to_play', False)
-                    is_within_music_bounds = self.music_timeline_start_ms <= target_ms < self.music_timeline_end_ms
-                    if is_video_playing and is_within_music_bounds:
-                        if not music_player.is_playing():
-                            music_player.play()
-                    else:
-                        if music_player.is_playing():
-                            music_player.pause()
-                    if is_within_music_bounds:
-                        time_since_music_start_project_ms = target_ms - self.music_timeline_start_ms
-                        speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
-                        if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked() and hasattr(self, 'speed_segments'):
-                            wall_now = self._calculate_wall_clock_time(target_ms, self.speed_segments, speed)
-                            wall_start = self._calculate_wall_clock_time(self.music_timeline_start_ms, self.speed_segments, speed)
-                            real_audio_ms = (wall_now - wall_start) * 1000.0
+        if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
+            self._scrub_lock = threading.RLock()
+        with self._scrub_lock:
+            try:
+                now = time.time()
+                if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
+                if now - self._last_scrub_ts < 0.05:
+                    return
+                self._last_scrub_ts = now
+                target_ms = int(position_ms)
+                music_player = getattr(self, 'vlc_music_player', None)
+                if music_player and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
+                    if self.music_timeline_start_ms >= 0 and self.music_timeline_end_ms > 0:
+                        is_video_playing = not force_pause and getattr(self, 'wants_to_play', False)
+                        is_within_music_bounds = self.music_timeline_start_ms <= target_ms < self.music_timeline_end_ms
+                        if is_video_playing and is_within_music_bounds:
+                            if not music_player.is_playing():
+                                music_player.play()
                         else:
-                            real_audio_ms = time_since_music_start_project_ms / speed
-                        file_offset_ms = self._get_music_offset_ms() 
-                        music_target_in_file_ms = int(real_audio_ms + file_offset_ms)
-                        if abs(music_player.get_time() - music_target_in_file_ms) > 50:
-                            music_player.set_time(music_target_in_file_ms)
-                        if music_player.get_rate() != 1.0:
-                            music_player.set_rate(1.0)
-                else:
-                    if music_player.is_playing(): music_player.pause()
-            if not sync_only and getattr(self, "vlc_player", None):
-                self.vlc_player.set_time(target_ms)
-        except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
+                            if music_player.is_playing():
+                                music_player.pause()
+                        if is_within_music_bounds:
+                            time_since_music_start_project_ms = target_ms - self.music_timeline_start_ms
+                            speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
+                            if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked() and hasattr(self, 'speed_segments'):
+                                wall_now = self._calculate_wall_clock_time(target_ms, self.speed_segments, speed)
+                                wall_start = self._calculate_wall_clock_time(self.music_timeline_start_ms, self.speed_segments, speed)
+                                real_audio_ms = (wall_now - wall_start) * 1000.0
+                            else:
+                                real_audio_ms = time_since_music_start_project_ms / speed
+                            file_offset_ms = self._get_music_offset_ms() 
+                            music_target_in_file_ms = int(real_audio_ms + file_offset_ms)
+                            if abs(music_player.get_time() - music_target_in_file_ms) > 50:
+                                music_player.set_time(music_target_in_file_ms)
+                            music_player.audio_set_mute(False)
+                            if hasattr(self, "_music_eff"):
+                                music_player.audio_set_volume(self._music_eff())
+                            if music_player.get_rate() != 1.0:
+                                music_player.set_rate(1.0)
+                    else:
+                        if music_player.is_playing(): music_player.pause()
+                if not sync_only and getattr(self, "vlc_player", None):
+                    self.vlc_player.set_time(target_ms)
+            except Exception as e:
+                if hasattr(self, "logger"):
+                    self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         """
@@ -190,12 +206,19 @@ class PlayerMixin:
     
     def _on_vlc_end_reached(self, event=None):
         """
-        VLC reached end.
-        Ensures thread-safe handling by using QTimer to push the execution 
-        to the main Qt event loop, preventing cross-thread deadlocks.
+        VLC reached end. (Native VLC thread)
+        [FIX #23] Use QTimer to safely hop back to UI thread.
         """
         try:
-            QTimer.singleShot(0, lambda: self.video_ended_signal.emit())
+            QTimer.singleShot(0, self._safe_handle_vlc_end)
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.error(f"VLC End Event failed to defer: {e}")
+
+    def _safe_handle_vlc_end(self):
+        """Handle end of media safely on the main thread."""
+        try:
+            if not self.signalsBlocked():
+                self.video_ended_signal.emit()
+        except Exception:
+            pass

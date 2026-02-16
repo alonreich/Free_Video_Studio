@@ -1,19 +1,8 @@
 ﻿from PyQt5.QtCore import QTimer, QPoint, Qt
 from PyQt5.QtWidgets import QStyleOptionSlider, QStyle
+import threading
 
 class VolumeMixin:
-    def apply_master_volume(self):
-        """Push current slider value into VLC (unmute), persist, and refresh badge."""
-        if getattr(self, "vlc_player", None):
-            self.vlc_player.audio_set_mute(False)
-        v = 100
-        if hasattr(self, "volume_slider"):
-            v = int(self.volume_slider.value())
-        else:
-            cfg = getattr(self.config_manager, "config", {})
-            v = int(cfg.get("last_volume", 100))
-        self._on_master_volume_changed(int(v))
-
     def _vol_eff(self, raw: int | None = None) -> int:
         """Map slider value -> real volume (0..100) respecting invertedAppearance."""
         if not hasattr(self, "volume_slider"):
@@ -29,29 +18,49 @@ class VolumeMixin:
             return
         try:
             raw = int(self.volume_slider.value())
-            self.volume_badge.setText(f"{self._vol_eff(raw)}%")
+            eff = self._vol_eff(raw)
+            self.volume_badge.setText(f"{eff}%")
             self.volume_badge.adjustSize()
             self.volume_badge.show()
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.error(f"Volume Badge Error: {e}")
 
+    def apply_master_volume(self):
+        """Sync UI -> VLC and start reinforcement."""
+        v = 100
+        if hasattr(self, "volume_slider"):
+            v = int(self._vol_eff()) 
+        else:
+            cfg = getattr(self.config_manager, "config", {})
+            v = int(cfg.get("video_mix_volume", cfg.get("last_volume", 100)))
+        self._on_master_volume_changed(int(v))
+
+        def _reinforce():
+            try:
+                player = getattr(self, "vlc_player", None)
+                if player:
+                    player.audio_set_volume(v)
+            except: pass
+        for delay in [100, 500, 1000, 2000, 4000, 7000, 10000, 15000]:
+            QTimer.singleShot(delay, _reinforce)
+
     def _on_master_volume_changed(self, v: int):
-        """Apply mapped volume, persist real %, and refresh badge."""
-        eff = self._vol_eff(v)
+        """
+        Direction: UI Slider -> VLC Volume
+        """
+        eff_pct = self._vol_eff(v)
         player = getattr(self, "vlc_player", None)
         if player:
-            try:
-                state = player.get_state()
-                if state not in (vlc.State.NothingSpecial, vlc.State.Stopped):
-                    player.audio_set_volume(eff)
-            except Exception: pass
+            try: 
+                player.audio_set_volume(eff_pct)
+                player.audio_set_mute(False)
+            except: pass
         if hasattr(self, "config_manager"):
             try:
                 cfg = dict(self.config_manager.config)
-                cfg['last_volume'] = eff
+                cfg['video_mix_volume'] = eff_pct
+                cfg['last_volume'] = eff_pct
                 self.config_manager.save_config(cfg)
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.error(f"Config Save Error (Volume): {e}")
+            except: pass
         self._update_volume_badge()

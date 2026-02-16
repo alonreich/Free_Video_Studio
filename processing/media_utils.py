@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 
@@ -8,50 +8,57 @@ class MediaProber:
         self.input_path = input_path
         self.ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
 
-    def run_probe(self, args):
+    def _run_command(self, args):
+        """Internal helper to run ffprobe commands safely with correct window flags."""
         try:
-            base_cmd = [self.ffprobe_path, "-v", "error", "-of", "default=nw=1:nk=1"]
-            full_cmd = base_cmd + args + [self.input_path]
+            full_cmd = [self.ffprobe_path, "-v", "error", "-of", "default=nw=1:nk=1"] + args + [self.input_path]
             creationflags = 0
             if sys.platform == "win32":
                 creationflags = subprocess.CREATE_NO_WINDOW
-            r = subprocess.run(
+            result = subprocess.run(
                 full_cmd, 
                 capture_output=True, 
                 text=True, 
                 check=True,
                 creationflags=creationflags
             )
-            raw_val = (r.stdout or "0").strip()
-            val = float(raw_val or 0)
-            if val > 0:
-                return max(8, int(round(val / 1000.0)))
-            return None
+            return (result.stdout or "").strip()
         except Exception:
             return None
 
+    def run_probe(self, args):
+        """Run probe and return a float value (converted to kbps if applicable)."""
+        val_str = self._run_command(args)
+        if val_str:
+            try:
+                val = float(val_str)
+                if val > 0:
+                    return max(8, int(round(val / 1000.0)))
+            except ValueError:
+                pass
+        return None
+
     def get_audio_bitrate(self):
-        args_stream = ["-select_streams", "a:0", "-show_entries", "stream=bit_rate"]
-        kbps = self.run_probe(args_stream)
+        kbps = self.run_probe(["-select_streams", "a:0", "-show_entries", "stream=bit_rate"])
         if kbps:
             return kbps
-        args_format = ["-show_entries", "format=bit_rate"]
-        kbps = self.run_probe(args_format)
+        kbps = self.run_probe(["-show_entries", "format=bit_rate"])
         return kbps
 
     def get_sample_rate(self):
-        try:
-            base_cmd = [self.ffprobe_path, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate", "-of", "default=nw=1:nk=1"]
-            creationflags = 0
-            if sys.platform == "win32":
-                creationflags = subprocess.CREATE_NO_WINDOW
-            r = subprocess.run(base_cmd + [self.input_path], capture_output=True, text=True, check=True, creationflags=creationflags)
-            val = int(r.stdout.strip() or 48000)
-            return val
-        except Exception:
-            return 48000
+        val_str = self._run_command(["-select_streams", "a:0", "-show_entries", "stream=sample_rate"])
+        if val_str:
+            try:
+                return int(val_str)
+            except ValueError:
+                pass
+        return 48000
 
-def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res):
+def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None):
+    """
+    [FIX #11] Calculates video bitrate to hit target MB. 
+    Conservative calculation (using 1024 divisor) ensures we rarely exceed target size.
+    """
     target_size_bits = 0
     is_max_quality = False
     if keep_highest_res:
@@ -68,8 +75,14 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
         target_size_bits = mb_in_bits
     audio_bits = audio_kbps * 1024 * duration
     video_bits = target_size_bits - audio_bits
-    if duration <= 0: return None
+    if duration <= 0: 
+        return None
     if video_bits <= 0:
+        if logger:
+            logger.warning("Target size is too small for audio track; forcing 300kbps video.")
         return 300
     calculated_kbps = int(video_bits / (1024 * duration))
-    return max(300, calculated_kbps)
+    final_kbps = max(300, calculated_kbps)
+    if final_kbps < 300 and logger:
+        logger.warning(f"Calculated bitrate ({final_kbps}k) is very low. Quality will be impacted.")
+    return final_kbps

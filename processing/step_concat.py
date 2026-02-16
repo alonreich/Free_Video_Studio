@@ -1,4 +1,6 @@
 ﻿import os
+import atexit
+import tempfile
 from .system_utils import create_subprocess
 
 class ConcatProcessor:
@@ -8,6 +10,23 @@ class ConcatProcessor:
         self.base_dir = base_dir
         self.temp_dir = temp_dir
         self.current_process = None
+        self._temp_files = []
+        atexit.register(self._cleanup_temp_files)
+
+    def _cleanup_temp_files(self):
+        """Remove any remaining temporary files."""
+        for path in self._temp_files:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    self.logger.debug(f"Cleaned up temp file: {path}")
+            except Exception as e:
+                self.logger.debug(f"Failed to remove temp file {path}: {e}")
+        self._temp_files.clear()
+
+    def _register_temp_file(self, path):
+        """Register a temporary file for automatic cleanup."""
+        self._temp_files.append(path)
 
     def run_concat(self, intro_path, core_path, progress_signal, cancellation_check=None):
         files_to_concat = []
@@ -36,36 +55,58 @@ class ConcatProcessor:
             for fc in files_to_concat:
                 safe_path = fc.replace('\\', '/')
                 f.write(f"file '{safe_path}'\n")
+        self._register_temp_file(concat_list)
         concat_cmd = [
             self.ffmpeg_path, "-y", 
             "-f", "concat", 
             "-safe", "0",
             "-i", concat_list, 
             "-c", "copy", 
+            "-avoid_negative_ts", "make_zero",
             "-movflags", "+faststart",
             output_path
         ]
         self.logger.info("STEP 3/3 CONCAT")
         self.current_process = create_subprocess(concat_cmd, self.logger)
-        while True:
-            if cancellation_check and cancellation_check():
-                self.logger.info("Concat cancelled by user.")
-                try:
-                    self.current_process.terminate()
-                except:
-                    pass
+        try:
+            while True:
+                if cancellation_check and cancellation_check():
+                    self.logger.info("Concat cancelled by user.")
+                    try:
+                        self.current_process.terminate()
+                    except:
+                        pass
+                    return None
+                line = self.current_process.stdout.readline()
+                if not line:
+                    if self.current_process.poll() is not None:
+                        break
+                    continue
+                s = line.strip()
+                if s:
+                    self.logger.info(s)
+                progress_signal.emit(99)
+            self.current_process.wait()
+            if self.current_process.returncode == 0:
+                progress_signal.emit(100)
+                return output_path
+            else:
+                error_msg = "Concat failed."
+                if not os.path.exists(intro_path) if intro_path else False:
+                    error_msg = "Intro file disappeared before concat."
+                elif not os.path.exists(core_path):
+                    error_msg = "Core video file disappeared before concat."
+                else:
+                    self.logger.error(f"FFmpeg Concat returned error code {self.current_process.returncode}")
+                    error_msg = f"FFmpeg Concat failed (Code {self.current_process.returncode}). Possible frame rate or resolution mismatch between Intro and Video."
+                self.logger.error(f"DIAGNOSTICS: {error_msg}")
                 return None
-            line = self.current_process.stdout.readline()
-            if not line:
-                if self.current_process.poll() is not None:
-                    break
-                continue
-            s = line.strip()
-            if s:
-                self.logger.info(s)
-            progress_signal.emit(99)
-        self.current_process.wait()
-        if self.current_process.returncode == 0:
-            progress_signal.emit(100)
-            return output_path
-        return None
+        finally:
+            try:
+                if os.path.exists(concat_list):
+                    os.remove(concat_list)
+                    self.logger.debug(f"Removed concat list: {concat_list}")
+                    if concat_list in self._temp_files:
+                        self._temp_files.remove(concat_list)
+            except Exception as e:
+                self.logger.debug(f"Failed to remove concat list {concat_list}: {e}")

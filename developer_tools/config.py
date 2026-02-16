@@ -31,6 +31,11 @@ HUD_ELEMENT_MAPPINGS = {
     "spectating": "Spectating Eye"
 }
 HUD_ELEMENT_KEYS_BY_NAME = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
+CROPPING_HINT_TEXT = 'Hit "START CROPPING" button to begin!'
+HUD_SAFE_PADDING = {
+    "stats": {"left": -1},
+    "loot": {"right": 1}
+}
 
 def get_tech_key_from_role(role: str) -> str:
     if not role:
@@ -586,17 +591,18 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     border-radius: {UI_LAYOUT.PORTRAIT_TOOLBAR_BORDER_RADIUS};
 }}
-#uploadHintContainer {{
-    background-color: #000000;
-    border: 2px solid #7DD3FC;
-    border-radius: 10px;
+#uploadHintContainer, #croppingHintContainer {{
+    background-color: rgba(0, 0, 0, 180);
+    border: 3px solid #7DD3FC;
+    border-radius: 14px;
 }}
-#uploadHintLabel {{
+#uploadHintLabel, #croppingHintLabel {{
     color: #7DD3FC;
     font-family: Arial;
-    font-size: 20px;
+    font-size: 28px;
     font-weight: bold;
-    padding: 6px 18px;
+    background: transparent;
+    border: none;
 }}
 #roleToolbar QPushButton {{
     background-color: {UI_COLORS.BUTTON_DEFAULT};

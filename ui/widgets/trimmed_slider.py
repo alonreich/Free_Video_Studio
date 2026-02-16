@@ -1,4 +1,4 @@
-﻿from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal
+﻿from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize
 from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor, QPainterPath, QLinearGradient, QBrush
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle, QToolTip, QApplication
 
@@ -26,6 +26,10 @@ class TrimmedSlider(QSlider):
         self._dragging_music_handle = None
         self._hovering_music_handle = None
         self._music_drag_offset_ms = 0
+        self._cached_font = None
+        self._cached_font_metrics = None
+        self._cached_tick_info = None
+        self._last_paint_size = QSize()
 
     def set_duration_ms(self, ms: int):
         new_ms = max(0, int(ms))

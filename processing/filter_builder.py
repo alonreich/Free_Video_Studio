@@ -1,4 +1,5 @@
 ﻿import os
+import tempfile
 from typing import Tuple
 from .text_ops import safe_text
 try:
@@ -22,6 +23,11 @@ class FilterBuilder:
     def __init__(self, logger):
         self.logger = logger
 
+    def _make_even(self, n):
+        """Ensure dimensions are even numbers for NVENC/CUDA compatibility."""
+        i = int(round(n))
+        return i if i % 2 == 0 else i + 1
+
     def _drawtext(self, text, x, y, size, color, font_path, alpha=1.0):
         safe_t = safe_text(text)
         alpha_hex = hex(int(alpha * 255))[2:].zfill(2)
@@ -33,17 +39,20 @@ class FilterBuilder:
         )
 
     def build_nvidia_resize(self, target_w, target_h, keep_highest_res=False):
+        w = self._make_even(target_w)
         if keep_highest_res:
             return "scale_cuda=format=nv12"
-        if target_w == 1920:
-             return "scale_cuda=1920:-2:interp=linear:format=nv12"
-        elif target_w == 1280:
-             return "scale_cuda=1280:-2:interp=linear:format=nv12"
-        elif target_w == 960:
-             return "scale_cuda=960:-2:interp=linear:format=nv12"
-        return f"scale_cuda={target_w}:-2:interp=linear:format=nv12"
+        if w in [1920, 1280, 960]:
+             return f"scale_cuda={w}:-2:interp=linear:format=nv12"
+        return f"scale_cuda={w}:-2:interp=linear:format=nv12"
 
-    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False):
+    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False):
+        """
+        Builds the complex filter graph for mobile layout.
+        Args:
+            needs_text_overlay (bool): If False, we skip the 'hwdownload' step in NVIDIA mode
+                                       keeping the entire pipeline on VRAM for max speed.
+        """
         coords_data = mobile_coords
 
         def get_rect(section, key):
@@ -62,6 +71,10 @@ class FilterBuilder:
             sc = float(scales.get(conf_key, 1.0))
             if is_valid_config(rect_1080, sc):
                 w_ui, h_ui, x_ui, y_ui = rect_1080
+                if any(k in name.lower() for k in ["stats", "healthbar", "team"]):
+                    x_ui -= 1; w_ui += 1
+                elif "loot" in name.lower():
+                    w_ui += 1
                 transformed = inverse_transform_from_content_area_int((x_ui, y_ui, w_ui, h_ui), original_res_str)
                 crop_orig = (transformed[2], transformed[3], transformed[0], transformed[1])
                 ov = overlays.get(ov_key, {"x": 0, "y": 0})
@@ -89,21 +102,26 @@ class FilterBuilder:
             hud_gpu_names = []
             for layer in active_layers:
                 cw, ch, cx, cy = layer['crop_orig']
-                render_w = max(1, scale_round(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
-                render_h = max(1, scale_round(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+                raw_w = layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE
+                raw_h = layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE
+                render_w = max(2, self._make_even(raw_w))
+                render_h = max(2, self._make_even(raw_h))
                 f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:interp=linear[{layer['name']}_gpu]"
                 cmd += f_str + ";"
                 hud_gpu_names.append(f"{layer['name']}_gpu")
             current_pad = "[bg_pre]"
             for i, layer in enumerate(active_layers):
-                lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = scale_round((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
+                lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
+                ly = self._make_even((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
                 next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
                 cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
                 current_pad = next_pad
             if not active_layers:
                 cmd = "format=nv12,hwupload_cuda,scale_cuda=1280:1920:interp=linear:force_original_aspect_ratio=increase,crop=1280:1920[vpreout_gpu];"
-            cmd += "[vpreout_gpu]scale_cuda=1080:-2:interp=linear,hwdownload,format=nv12,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
+            if needs_text_overlay:
+                return self.build_mobile_filter(mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False)
+            else:
+                cmd += "[vpreout_gpu]scale_cuda=1080:1920:interp=linear:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
             return cmd
         else:
             f_main_inner = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
@@ -133,7 +151,7 @@ class FilterBuilder:
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
         norm_path = os.path.normpath(text_file_path)
-        ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'''")
+        ff_textfile = norm_path.replace("\\", "/").replace(":", "\\:").replace("'", "'\\\\''")
         font_path = "arial"
         candidates = []
         try:
@@ -243,12 +261,12 @@ class FilterBuilder:
                 audio_speed_filters.append("atempo=2.0"); temp_speed /= 2.0
             audio_speed_filters.append(f"atempo={temp_speed:.4f}")
             audio_speed_cmd = ",".join(audio_speed_filters)
-            fade_dur = min(0.05, chunk_out_dur / 3)
+            micro_fade = 0.005 
             a_filter_parts.append(
                 f"{a_in}atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,"
                 f"{audio_speed_cmd},"
-                f"afade=t=in:st=0:d={fade_dur:.4f},"
-                f"afade=t=out:st={chunk_out_dur - fade_dur:.4f}:d={fade_dur:.4f}"
+                f"afade=t=in:st=0:d={micro_fade:.3f},"
+                f"afade=t=out:st={chunk_out_dur - micro_fade:.3f}:d={micro_fade:.3f}"
                 f"[a_chunk_{i}]"
             )
             a_pads.append(f"[a_chunk_{i}]")
@@ -312,8 +330,7 @@ class FilterBuilder:
             chain.append("[mus_base]lowpass=f=150[mus_low]")
             chain.append("[mus_to_filter]highpass=f=150[mus_high]")
             chain.append("[a_main_prepared]asplit=2[game_out][game_trig]")
-            kill_switch_start = max(0, dur_a - 3.5)
-            chain.append(f"[game_trig]afade=t=out:st={kill_switch_start:.3f}:d=0.5,highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
+            chain.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
             chain.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
             d_thresh = mc.get('duck_threshold', 0.15)
             d_ratio = mc.get('duck_ratio', 2.5)

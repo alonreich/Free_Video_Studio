@@ -30,9 +30,10 @@ class ProcessThread(QThread):
                  is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
                  bg_music_path=None, bg_music_volume=None, bg_music_offset_ms=0, original_total_duration_ms=0,
                  disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time_ms: int = None,
-                 portrait_text: str = None, music_config=None, speed_segments=None):
+                 portrait_text: str = None, music_config=None, speed_segments=None, hardware_strategy: str = "CPU"):
         super().__init__()
         self.music_config = music_config if music_config else {}
+        self.hardware_strategy = str(hardware_strategy or "CPU")
         self.input_path = input_path
         self.start_time_ms = int(start_time_ms)
         self.end_time_ms = int(end_time_ms)
@@ -90,6 +91,11 @@ class ProcessThread(QThread):
         return self.is_canceled
 
     def run(self):
+        textfile_path = None
+        size = None
+        scaler_core = ProgressScaler(self.progress_update_signal, 0, 85)
+        scaler_intro = ProgressScaler(self.progress_update_signal, 85, 10)
+        scaler_concat = ProgressScaler(self.progress_update_signal, 95, 5)
         if 'timeline_start_ms' in self.music_config:
             self.music_config['timeline_start_sec'] = self.music_config.pop('timeline_start_ms') / 1000.0
         if 'timeline_end_ms' in self.music_config:
@@ -112,9 +118,6 @@ class ProcessThread(QThread):
         intro_path = None
         output_path = None
         ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
-        scaler_core = ProgressScaler(self.progress_update_signal, 0, 80)
-        scaler_intro = ProgressScaler(self.progress_update_signal, 80, 10)
-        scaler_concat = ProgressScaler(self.progress_update_signal, 90, 10)
         try:
             if self.is_canceled: return
             estimated_output_gb = (self.target_mb if self.target_mb else 500) / 1024.0
@@ -172,7 +175,7 @@ class ProcessThread(QThread):
             intro_len_sec = max(0.0, self.intro_still_sec) if self.intro_still_sec > 0 else 0.0
             eff_dur_sec = self.duration_corrected_sec + intro_len_sec
             video_bitrate_kbps = calculate_video_bitrate(
-                self.input_path, eff_dur_sec, audio_kbps, self.target_mb, self.keep_highest_res
+                self.input_path, eff_dur_sec, audio_kbps, self.target_mb, self.keep_highest_res, logger=self.logger
             )
             if video_bitrate_kbps is None:
                 if not self.keep_highest_res:
@@ -184,8 +187,6 @@ class ProcessThread(QThread):
                 self.logger.info(f"Clamping bitrate from {video_bitrate_kbps}k to {MAX_SAFE_BITRATE}k.")
                 video_bitrate_kbps = MAX_SAFE_BITRATE
             current_encoder = self.encoder_mgr.get_initial_encoder()
-            textfile_path = None
-            size = None
             if self.is_mobile_format and self.portrait_text:
                 size, lines = self.text_wrapper.fit_and_wrap(self.portrait_text)
                 txt_wrapped = "\n".join(lines)
@@ -229,11 +230,13 @@ class ProcessThread(QThread):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(encoder_name, video_bitrate_kbps, eff_dur_sec)
                 if self.is_mobile_format:
                     mobile_coords = self.config.get_mobile_coordinates(self.logger)
+                    has_text = (self.portrait_text is not None)
                     v_filter_cmd = self.filter_builder.build_mobile_filter(
                         mobile_coords, self.original_resolution, self.is_boss_hp, self.show_teammates_overlay,
-                        use_nvidia=attempt_is_nvidia
+                        use_nvidia=attempt_is_nvidia,
+                        needs_text_overlay=has_text
                     )
-                    if self.portrait_text:
+                    if has_text:
                         v_filter_cmd = self.filter_builder.add_drawtext_filter(
                             v_filter_cmd, textfile_path, size, self.config.line_spacing
                         )
@@ -308,8 +311,14 @@ class ProcessThread(QThread):
             success = run_ffmpeg_command(current_encoder)
             if not self.is_canceled and not success:
                 self.logger.warning(f"Initial encoder '{current_encoder}' failed. Starting fallback process.")
+                strategy = getattr(self, "hardware_strategy", "CPU")
                 fallback_encoders = self.encoder_mgr.get_fallback_list(failed_encoder=current_encoder)
-                for fallback_encoder in fallback_encoders:
+                if strategy == "NVIDIA": allowed = ["h264_nvenc", "libx264"]
+                elif strategy == "AMD": allowed = ["h264_amf", "libx264"]
+                elif strategy == "INTEL": allowed = ["h264_qsv", "libx264"]
+                else: allowed = ["libx264"]
+                filtered_fallbacks = [e for e in fallback_encoders if e in allowed]
+                for fallback_encoder in filtered_fallbacks:
                     if self.is_canceled: break
                     self.status_update_signal.emit(f"Trying fallback: {fallback_encoder}...")
                     success = run_ffmpeg_command(fallback_encoder)

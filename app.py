@@ -7,6 +7,7 @@ os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
+from ui.styles import UIStyles
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -16,6 +17,7 @@ from system.utils import ConsoleManager, DependencyDoctor, ProcessManager, LogMa
 logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
 
 import tempfile, psutil, traceback
+import threading
 import subprocess, ctypes
 
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
@@ -80,6 +82,15 @@ def debug_log(message: str):
 # Global PID Handle
 PID_FILE_HANDLE = None
 
+def cleanup_pid_lock():
+    global PID_FILE_HANDLE
+    if PID_FILE_HANDLE:
+        try:
+            PID_FILE_HANDLE.close()
+        except Exception:
+            pass
+        PID_FILE_HANDLE = None
+
 def check_vlc_dependencies():
     """[FIX #1] Checks for essential VLC binaries using DependencyDoctor logic."""
     vlc_path = DependencyDoctor.find_vlc_path()
@@ -98,12 +109,28 @@ def check_vlc_dependencies():
     missing = [f for f in required if not os.path.exists(os.path.join(BIN_DIR, f))]
     
     if missing:
+        import webbrowser
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
-        msg_box.setWindowTitle("Missing Components")
-        msg_box.setText("Critical VLC components are missing.")
-        msg_box.setDetailedText(f"The following files are missing from {BIN_DIR} and no system VLC installation was found:\n" + "\n".join(missing))
+        msg_box.setWindowTitle("VLC Not Found")
+        msg_box.setText("VLC is required for video playback.\n\nPlease install VLC Media Player to continue.")
+        msg_box.setDetailedText(f"Missing files in {BIN_DIR}: " + ", ".join(missing) + 
+                                "\n\nYou can download VLC from videolan.org. Click 'Download VLC' to open the website.")
+        
+        # [FIX] Make the dialog larger
+        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
+        layout = msg_box.layout()
+        if isinstance(layout, QGridLayout):
+            layout.addItem(QSpacerItem(500, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+        
+        download_button = msg_box.addButton("Download VLC", QMessageBox.ActionRole)
+        exit_button = msg_box.addButton("Exit", QMessageBox.RejectRole)
+        
         msg_box.exec_()
+        clicked = msg_box.clickedButton()
+        if clicked == download_button:
+            webbrowser.open("https://www.videolan.org/vlc/")
+        # Exit anyway
         return False
     return True
 
@@ -116,11 +143,59 @@ class HardwareWorker(QObject):
     def __init__(self, ffmpeg_path):
         super().__init__()
         self.ffmpeg_path = ffmpeg_path
+        self.stop_requested = False
+        self.watchdog_timer = None
+
+    def stop(self):
+        """Request the worker to stop as soon as possible."""
+        self.stop_requested = True
 
     def run(self):
         """Performs the hardware scan and emits the result."""
-        detected_mode = determine_hardware_strategy(self.ffmpeg_path)
-        self.finished.emit(detected_mode)
+        # Start a watchdog timer that will force stop after 15 seconds total
+        import threading
+        def watchdog():
+            self.stop_requested = True
+        self.watchdog_timer = threading.Timer(15.0, watchdog)
+        self.watchdog_timer.daemon = True
+        self.watchdog_timer.start()
+        
+        try:
+            detected_mode = self._determine_hardware_strategy_with_stop()
+            self.finished.emit(detected_mode)
+        except Exception as e:
+            debug_log(f"Hardware scan error: {e}")
+            self.finished.emit("CPU")
+        finally:
+            if self.watchdog_timer:
+                self.watchdog_timer.cancel()
+
+    def _determine_hardware_strategy_with_stop(self):
+        """
+        Failover logic with stop flag checking.
+        """
+        os.environ.pop("VIDEO_HW_ENCODER", None)
+        os.environ.pop("VIDEO_FORCE_CPU", None)
+        if self.stop_requested:
+            os.environ["VIDEO_FORCE_CPU"] = "1"
+            return "CPU"
+        if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"):
+            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+            return "NVIDIA"
+        if self.stop_requested:
+            os.environ["VIDEO_FORCE_CPU"] = "1"
+            return "CPU"
+        if check_encoder_capability(self.ffmpeg_path, "h264_amf"):
+            os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
+            return "AMD"
+        if self.stop_requested:
+            os.environ["VIDEO_FORCE_CPU"] = "1"
+            return "CPU"
+        if check_encoder_capability(self.ffmpeg_path, "h264_qsv"):
+            os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
+            return "INTEL"
+        os.environ["VIDEO_FORCE_CPU"] = "1"
+        return "CPU"
 
 os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
 from ui.main_window import VideoCompressorApp
@@ -197,9 +272,17 @@ def show_dependency_error_dialog(ffmpeg_path: str, ffprobe_path: str, error_text
     msg_box.setWindowTitle(tr("dependency_error_title"))
     msg_box.setText(tr("dependency_error_text"))
     msg_box.setDetailedText(build_diagnostics(ffmpeg_path, ffprobe_path, error_text))
+    
+    # [FIX] Make the dialog larger
+    from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
+    layout = msg_box.layout()
+    if isinstance(layout, QGridLayout):
+        layout.addItem(QSpacerItem(500, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+    
     open_button = msg_box.addButton(tr("dependency_error_open_folder"), QMessageBox.ActionRole)
     retry_button = msg_box.addButton(tr("dependency_error_retry"), QMessageBox.AcceptRole)
     exit_button = msg_box.addButton(tr("dependency_error_exit"), QMessageBox.RejectRole)
+    
     msg_box.exec_()
     clicked = msg_box.clickedButton()
     if clicked == open_button:
@@ -240,6 +323,13 @@ def exception_hook(exctype, value, tb):
             msg_box.setWindowTitle(tr("diagnostics_title"))
             msg_box.setText(str(value))
             msg_box.setDetailedText(error_text)
+            
+            # [FIX] Make the dialog larger
+            from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
+            layout = msg_box.layout()
+            if isinstance(layout, QGridLayout):
+                layout.addItem(QSpacerItem(600, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+                
             msg_box.exec_()
     except Exception:
         pass
@@ -259,6 +349,7 @@ if __name__ == "__main__":
     app = QCoreApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
+    app.setStyleSheet(UIStyles.GLOBAL_STYLE)
     app.setApplicationName(tr("app_name"))
     QCoreApplication.setOrganizationName("FortniteVideoSoftware")
     sys.excepthook = exception_hook
@@ -355,6 +446,7 @@ if __name__ == "__main__":
     scan_dialog.setWindowModality(Qt.NonModal)
     scan_dialog.setCancelButton(None)
     scan_dialog.setMinimumDuration(0)
+    scan_dialog.setMinimumWidth(450) # [FIX] Larger width for scanning dialog
     scan_dialog.show()
 
 
@@ -368,31 +460,6 @@ if __name__ == "__main__":
             if scan_dialog:
                 scan_dialog.close()
         except Exception:
-            pass
-            
-        try:
-            if ex and not ex.isHidden():
-                title_suffix = f" — {tr('hardware_scan_done').format(mode=mode)}"
-                ex.setWindowTitle(tr("app_name") + title_suffix)
-                
-                if hasattr(ex, "statusBar"):
-                    message = tr("hardware_scan_done").format(mode=mode)
-                    if mode == "CPU":
-                        message = tr("hardware_scan_cpu")
-                        details = tr("hardware_scan_cpu_details")
-                        if HARDWARE_SCAN_DETAILS["timed_out"]:
-                            timeouts = ", ".join(HARDWARE_SCAN_DETAILS["timed_out"])
-                            details = f"{details} ({timeouts})"
-                        message = f"{message} {details}"
-                    
-                    if hasattr(ex, "hardware_status_label"):
-                        # [FIX #8] Persistent hardware badge text
-                        badge_icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
-                        ex.hardware_status_label.setText(f"{badge_icon} {mode} Mode")
-                        ex.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;")
-                    else:
-                        ex.statusBar().showMessage(message, 10000)
-        except (RuntimeError, NameError):
             pass
     hw_worker.finished.connect(handle_hardware_scan_result)
     hw_worker.finished.connect(hw_thread.quit)

@@ -7,15 +7,21 @@ from ui.widgets.music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECURSIVE_
 class MergerMusicWizardPlaybackMixin:
     def _on_video_vol_changed(self, val):
         """Strictly controls the game audio player volume."""
-        if getattr(self, "_video_player", None): 
-            self._video_player.audio_set_volume(val)
+        if not hasattr(self, "_video_player") or self._video_player is None:
+            return
+        eff = self._scaled_vol(val)
+        self.logger.info(f"HARDWARE_SET: [VIDEO_PLAYER] Volume -> {eff}% (Raw: {val}%) | PlayerID: {hex(id(self._video_player))}")
+        self._video_player.audio_set_volume(eff)
         if hasattr(self, "video_vol_val_lbl"): 
             self.video_vol_val_lbl.setText(f"{val}%")
 
     def _on_music_vol_changed(self, val):
         """Strictly controls the background music player volume."""
-        if getattr(self, "_player", None): 
-            self._player.audio_set_volume(val)
+        if not hasattr(self, "_player") or self._player is None:
+            return
+        eff = self._scaled_vol(val)
+        self.logger.info(f"HARDWARE_SET: [MUSIC_PLAYER] Volume -> {eff}% (Raw: {val}%) | PlayerID: {hex(id(self._player))}")
+        self._player.audio_set_volume(eff)
         if hasattr(self, "music_vol_val_lbl"): 
             self.music_vol_val_lbl.setText(f"{val}%")
 
@@ -50,7 +56,8 @@ class MergerMusicWizardPlaybackMixin:
                     def _force_audio_m():
                         if not getattr(self, "_player", None): return
                         self._player.audio_set_mute(False)
-                        self._player.audio_set_volume(self.music_vol_slider.value())
+                        mix_vol = self.music_vol_slider.value() if hasattr(self, "music_vol_slider") else 80
+                        self._player.audio_set_volume(self._scaled_vol(mix_vol))
                     QTimer.singleShot(300, _force_audio_m)
 
                     def _after_start():
@@ -90,16 +97,20 @@ class MergerMusicWizardPlaybackMixin:
                     
                     def _force_audio_v():
                         if not getattr(self, "_video_player", None): return
-                        self.logger.info("WIZARD: Forcing video audio settings.")
-                        self._video_player.audio_set_mute(True)
-                        self._video_player.audio_set_volume(0) 
+                        v_mix = self.video_vol_slider.value()
+                        eff = self._scaled_vol(v_mix)
+                        self.logger.info(f"DEBUG_STEP3: Forcing Video Vol={v_mix}% (Eff={eff}%). Player={hex(id(self._video_player))}")
                         self._video_player.audio_set_mute(False)
-                        self._video_player.audio_set_volume(self.video_vol_slider.value())
-                        v_tracks = self._video_player.audio_get_track_description()
-                        if v_tracks and len(v_tracks) > 1:
-                            self._video_player.audio_set_track(v_tracks[1][0])
-                        else:
-                            self._video_player.audio_set_track(1)
+                        self._video_player.audio_set_volume(eff)
+                        
+                        def _track_delayed():
+                            if not getattr(self, "_video_player", None): return
+                            v_tracks = self._video_player.audio_get_track_description()
+                            if v_tracks and len(v_tracks) > 1:
+                                self._video_player.audio_set_track(v_tracks[1][0])
+                            else:
+                                self._video_player.audio_set_track(1)
+                        QTimer.singleShot(150, _track_delayed)
                     QTimer.singleShot(300, _force_audio_v)
                     if getattr(self, "_player", None): 
                         self.logger.info("WIZARD: Calling _player.play() for music")
@@ -108,21 +119,23 @@ class MergerMusicWizardPlaybackMixin:
                         
                         def _force_audio_m_tl():
                             if not getattr(self, "_player", None): return
-                            self.logger.info("WIZARD: Forcing music audio settings.")
-                            self._player.audio_set_mute(True)
-                            self._player.audio_set_volume(0)
+                            m_mix = self.music_vol_slider.value()
+                            eff = self._scaled_vol(m_mix)
+                            self.logger.info(f"DEBUG_STEP3: Forcing Music Vol={m_mix}% (Eff={eff}%). Player={hex(id(self._player))}")
                             self._player.audio_set_mute(False)
-                            self._player.audio_set_volume(self.music_vol_slider.value())
+                            QTimer.singleShot(50, lambda: self._player.audio_set_volume(eff))
                         QTimer.singleShot(350, _force_audio_m_tl)
                     self.btn_play_video.setText("  PAUSE")
                     self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                    v_val_capture = self.video_vol_slider.value()
+                    m_val_capture = self.music_vol_slider.value()
                     
                     def _final_vol_safety():
                         if getattr(self, "_video_player", None):
-                            self._video_player.audio_set_volume(self.video_vol_slider.value())
+                            self._video_player.audio_set_volume(self._scaled_vol(v_val_capture))
                         if getattr(self, "_player", None):
-                            self._player.audio_set_volume(self.music_vol_slider.value())
-                        self.logger.info("WIZARD: Final volume safety re-enforcement complete.")
+                            self._player.audio_set_volume(self._scaled_vol(m_val_capture))
+                        self.logger.info(f"WIZARD: Final volume safety reinforcement: Video={v_val_capture}%, Music={m_val_capture}%")
                     QTimer.singleShot(1000, _final_vol_safety)
                     if not hasattr(self, '_play_timer') or not self._play_timer.isActive():
                         self.logger.info("WIZARD: Starting play timer.")
@@ -152,10 +165,6 @@ class MergerMusicWizardPlaybackMixin:
                         vlc_ms = int(self._player.get_time() or 0)
                         if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
                         else: self._last_good_vlc_ms = vlc_ms
-                        if vlc_ms > 10000:
-                            increments = int((vlc_ms - 10000) / 10000)
-                            vlc_ms -= (increments * RECURSIVE_MS_DRIFT_CORRECTION_MS)
-                        vlc_ms = int(vlc_ms + PREVIEW_VISUAL_LEAD_MS)
                         max_ms = self.offset_slider.maximum()
                         vlc_ms = max(0, min(max_ms, vlc_ms))
                         if vlc_ms >= max_ms - 10:

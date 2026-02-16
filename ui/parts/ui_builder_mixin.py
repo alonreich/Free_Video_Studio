@@ -6,7 +6,8 @@ from PyQt5.QtGui import QPixmap, QPainter, QFont, QIcon, QFontMetrics, QColor, Q
 from PyQt5.QtWidgets import (QGridLayout, QMessageBox, QSizePolicy, QHBoxLayout,
                              QVBoxLayout, QFrame, QSlider, QLabel, QStyle,
                              QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
-                             QProgressBar, QComboBox, QWidget, QStyleOptionSpinBox, QStackedLayout)
+                             QProgressBar, QComboBox, QWidget, QStyleOptionSpinBox, 
+                             QStyleOptionSlider, QStackedLayout)
 
 from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
@@ -240,10 +241,6 @@ class UiBuilderMixin:
             self.logger.critical(f"Error launching merger: {e}")
             QMessageBox.critical(self, "Launch Error", f"Failed to start the Video Merger:\n{e}")
 
-    def launch_advanced_editor(self):
-        """Placeholder for Advanced Editor."""
-        QMessageBox.information(self, "Coming Soon", "The Advanced Video Editor is currently under development.")
-
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
             if obj is getattr(self, "video_surface", None):
@@ -342,7 +339,7 @@ class UiBuilderMixin:
             self.end_minute_input, self.end_second_input, self.end_ms_input,
             self.crop_tool_btn
         ]:
-            if hasattr(self, widget.objectName()) or widget:
+            if widget is not None:
                 widget.setEnabled(enabled)
         if enabled:
             if hasattr(self, 'mobile_checkbox') and self.mobile_checkbox.isChecked():
@@ -366,17 +363,17 @@ class UiBuilderMixin:
         self.volume_slider.setTickInterval(10)
         self.volume_slider.setTickPosition(QSlider.TicksBothSides)
         self.volume_slider.setTracking(True)
-        self.volume_slider.setInvertedAppearance(True)
         self.volume_slider.setCursor(Qt.PointingHandCursor)
         self.volume_slider.setEnabled(True)
         self.volume_slider.setStyleSheet(UIStyles.SLIDER_VOLUME_VERTICAL_METALLIC)
         self.tooltip_manager.add_tooltip(self.volume_slider, "Adjust Volume: ↑ / ↓\nLarge Step: Shift + ↑ / ↓")
         try:
-            eff = int(self.config_manager.config.get('last_volume', 100))
+            cfg = self.config_manager.config
+            eff = int(cfg.get('video_mix_volume', cfg.get('last_volume', 100)))
         except:
             eff = 100
-        raw = self.volume_slider.maximum() + self.volume_slider.minimum() - eff
-        self.volume_slider.setValue(max(self.volume_slider.minimum(), min(self.volume_slider.maximum(), raw)))
+        raw = eff
+        self.volume_slider.setValue(raw)
         self.volume_slider.valueChanged.connect(self._on_master_volume_changed)
         self.volume_slider.sliderMoved.connect(lambda _: self._update_volume_badge())
         self.volume_slider.installEventFilter(self)
@@ -450,18 +447,19 @@ class UiBuilderMixin:
         self.playPauseButton.setCursor(Qt.PointingHandCursor)
         self.playPauseButton.setEnabled(False)
         self.tooltip_manager.add_tooltip(self.playPauseButton, "Spacebar")
-        self.playPauseButton.setStyleSheet(UIStyles.BUTTON_PLAY)
-        self.playPauseButton.setFixedWidth(140)
-        self.playPauseButton.setFixedHeight(35)
+        self.playPauseButton.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
+        self.playPauseButton.setFixedWidth(150)
+        self.playPauseButton.setFixedHeight(42)
         self.thumb_pick_btn = QPushButton("📸 SET THUMBNAIL 📸")
         self.thumb_pick_btn.setObjectName("thumbPickBtn")
-        self.thumb_pick_btn.setStyleSheet(UIStyles.BUTTON_STANDARD)
+        self.thumb_pick_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.thumb_pick_btn.setEnabled(False)
         self.tooltip_manager.add_tooltip(self.thumb_pick_btn, "Select Custom Thumbnail Picture For Sharing")
         self.thumb_pick_btn.setFocusPolicy(Qt.NoFocus)
         self.thumb_pick_btn.setCursor(Qt.PointingHandCursor)
         self.thumb_pick_btn.clicked.connect(self._pick_thumbnail_from_current_frame)
         self.thumb_pick_btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.thumb_pick_btn.setFixedHeight(42)
         self.start_minute_input = QSpinBox(); self.start_minute_input.setRange(0, 0)
         self.start_second_input = QSpinBox(); self.start_second_input.setRange(0, 59)
         self.start_ms_input = QSpinBox(); self.start_ms_input.setRange(0, 999); self.start_ms_input.setSingleStep(10)
@@ -477,21 +475,23 @@ class UiBuilderMixin:
             spin.valueChanged.connect(self._on_trim_spin_changed)
         self.start_trim_button = QPushButton("SET START")
         self.start_trim_button.setObjectName("startTrimButton")
-        self.start_trim_button.setStyleSheet(UIStyles.BUTTON_STANDARD)
+        self.start_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.start_trim_button.clicked.connect(self.set_start_time)
         self.start_trim_button.setFocusPolicy(Qt.NoFocus)
         self.start_trim_button.setCursor(Qt.PointingHandCursor)
         self.start_trim_button.setEnabled(False)
-        self.start_trim_button.setFixedWidth(105)
+        self.start_trim_button.setFixedWidth(150)
+        self.start_trim_button.setFixedHeight(42)
         self.tooltip_manager.add_tooltip(self.start_trim_button, "[")
         self.end_trim_button = QPushButton("SET END")
         self.end_trim_button.setObjectName("endTrimButton")
-        self.end_trim_button.setStyleSheet(UIStyles.BUTTON_STANDARD)
+        self.end_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.end_trim_button.clicked.connect(self.set_end_time)
         self.end_trim_button.setFocusPolicy(Qt.NoFocus)
         self.end_trim_button.setCursor(Qt.PointingHandCursor)
         self.end_trim_button.setEnabled(False)
-        self.end_trim_button.setFixedWidth(105)
+        self.end_trim_button.setFixedWidth(150)
+        self.end_trim_button.setFixedHeight(42)
         self.tooltip_manager.add_tooltip(self.end_trim_button, "]")
 
         def _make_layout(lbl_txt, spin):
@@ -539,16 +539,22 @@ class UiBuilderMixin:
         self.quality_slider.setFixedSize(180, 35)
         self.quality_slider.setEnabled(False)
         self.tooltip_manager.add_tooltip(self.quality_slider, "Bad = 15MB\nOkay = 25MB\nStandard = 45MB\nGood = 90MB\nMaximum = Original Video Size")
-        self.quality_value_label = QLabel("Standard")
+        self.quality_value_label = QLabel("Standard (45MB)")
         self.quality_value_label.setAlignment(Qt.AlignHCenter)
         self.quality_value_label.setObjectName("qualityValueLabel")
         self.quality_value_label.setStyleSheet("font-size: 10px; margin: 0; padding: 0;")
         fm = QFontMetrics(self.quality_value_label.font())
-        fixed_w = fm.horizontalAdvance("Maximum (For Social Media)") + 16
+        fixed_w = fm.horizontalAdvance("Maximum (Original Video Size)") + 16
         self.quality_value_label.setMinimumWidth(fixed_w)
 
         def _on_quality_changed(value: int):
-            titles = ["Bad (Lightning Speed Shares)", "Okay (Easier to Share)", "Standard", "Good", "Maximum (For Social Media)"]
+            titles = [
+                "Bad (15MB - Smallest File)", 
+                "Okay (25MB - Balanced)", 
+                "Standard (45MB)", 
+                "Good (90MB - High Quality)", 
+                "Maximum (Original Video Size)"
+            ]
             idx = max(0, min(4, int(value)))
             self.quality_value_label.setText(titles[idx])
             self.logger.info(f"OPTION: Video Output Quality -> {titles[idx]}")
@@ -570,7 +576,7 @@ class UiBuilderMixin:
         self.process_button.setFixedSize(140, 50)
         self.process_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.tooltip_manager.add_tooltip(self.process_button, "Enter")
-        self.process_button.setStyleSheet(UIStyles.BUTTON_PROCESS)
+        self.process_button.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
         self.process_button.setCursor(Qt.PointingHandCursor)
         self.process_button.clicked.connect(self._on_process_clicked)
         self.process_button.setEnabled(False)
@@ -745,14 +751,14 @@ class UiBuilderMixin:
         self.upload_button.setObjectName("uploadButton")
         self.upload_button.clicked.connect(self.select_file)
         self.upload_button.setFixedSize(150, 65)
-        self.upload_button.setStyleSheet(UIStyles.get_3d_style("#266b89", font_size=10, padding="0px 0px") + "QPushButton#uploadButton { margin-top: 20px; }")
+        self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton#uploadButton { margin-top: 20px; padding-left: 6px; padding-right: 6px; }")
         self.upload_button.setCursor(Qt.PointingHandCursor)
         right_col.addWidget(self.upload_button)
         self.music_button = QPushButton()
         self.music_button.setObjectName("musicButton")
         self.music_button.clicked.connect(self.open_music_wizard)
         self.music_button.setFixedSize(150, 75)
-        self.music_button.setStyleSheet(UIStyles.get_3d_style("#266b89", font_size=11, padding="0px 0px") + "QPushButton#musicButton { margin-top: 20px; margin-bottom: 20px; }")
+        self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton#musicButton { margin-top: 20px; margin-bottom: 20px; }")
         self.music_button.setCursor(Qt.PointingHandCursor)
         self.music_button.setEnabled(False)
         music_btn_layout = QHBoxLayout(self.music_button)
@@ -820,7 +826,13 @@ class UiBuilderMixin:
             self.portrait_text_input.setEnabled(checked)
             if not checked:
                 self.portrait_text_input.clear()
-        self._update_portrait_mask_overlay_state()
+        if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
+            if not checked:
+                self.portrait_mask_overlay.hide()
+            else:
+                self._update_portrait_mask_overlay_state()
+        else:
+            self._update_portrait_mask_overlay_state()
 
     def _update_portrait_mask_overlay_state(self):
         if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay:

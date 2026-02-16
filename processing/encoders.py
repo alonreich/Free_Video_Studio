@@ -8,7 +8,7 @@ class EncoderManager:
 
     def __init__(self, logger):
         self.logger = logger
-        self.primary_encoder = os.environ.get('VIDEO_HW_ENCODER', 'libx264')
+        self.primary_encoder = os.environ.get('VIDEO_HW_ENCODER', 'h264_nvenc')
         self.forced_cpu = (os.environ.get('VIDEO_FORCE_CPU') == '1')
         self.attempted_encoders = set()
 
@@ -46,12 +46,17 @@ class EncoderManager:
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
             vcodec.extend([
-                '-preset', 'p4',
+                '-preset', 'p1',
                 '-tune', 'hq',
                 '-rc', 'vbr',
-                '-forced-idr', '1'
+                '-forced-idr', '1',
+                '-spatial-aq', '1',
+                '-temporal-aq', '1',
+                '-b_ref_mode', 'middle',
+                '-multipass', 'fullres',
+                '-bf', '3'
             ])
-            rc_label = "NVENC (Stable)"
+            rc_label = "NVENC (Fast Motion)"
         elif encoder_name == 'h264_amf':
             vcodec.extend(['-usage', 'transcoding', '-quality', 'speed', '-rc', 'vbr_peak'])
             rc_label = "AMD AMF (Stable)"

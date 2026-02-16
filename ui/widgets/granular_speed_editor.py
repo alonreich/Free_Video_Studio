@@ -322,70 +322,49 @@ class GranularSpeedEditor(QDialog):
         self.timeline.sliderMoved.connect(self.seek_video)
         self.timeline.trim_times_changed.connect(self.on_trim_changed)
         main_layout.addWidget(self.timeline)
+
+        from ui.styles import UIStyles
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(14)
-        _play_style = """
-            QPushButton {
-                background-color: #59A06D;
-                color: white;
-                font-size: 14px;
-                padding: 4px 8px;
-                border-radius: 6px;
-            }
-            QPushButton:hover { background-color: #6fb57f; }
-            QPushButton:pressed { background-color: #4a865a; }
-        """
-        _std_btn_style = """
-            QPushButton {
-                background-color: #266b89;
-                color: #ffffff;
-                border: none;
-                padding: 10px 18px;
-                border-radius: 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2980b9; }
-            QPushButton:pressed { background-color: #1f5f7a; }
-        """
         controls_layout.addStretch(1)
         self.start_trim_button = QPushButton("SET START")
-        self.start_trim_button.setStyleSheet(_std_btn_style)
-        self.start_trim_button.setFixedWidth(105)
+        self.start_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
+        self.start_trim_button.setFixedWidth(150)
+        self.start_trim_button.setFixedHeight(42)
         self.start_trim_button.setCursor(Qt.PointingHandCursor)
         self.start_trim_button.clicked.connect(self.set_start)
         self.start_trim_button.setFocusPolicy(Qt.NoFocus)
         controls_layout.addWidget(self.start_trim_button)
         self.play_btn = QPushButton("PLAY")
-        self.play_btn.setStyleSheet(_play_style)
-        self.play_btn.setFixedWidth(140)
-        self.play_btn.setFixedHeight(35)
+        self.play_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
+        self.play_btn.setFixedWidth(150)
+        self.play_btn.setFixedHeight(42)
         self.play_btn.setCursor(Qt.PointingHandCursor)
         self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.play_btn.clicked.connect(self.toggle_play)
         self.play_btn.setFocusPolicy(Qt.NoFocus)
         controls_layout.addWidget(self.play_btn)
         self.end_trim_button = QPushButton("SET END")
-        self.end_trim_button.setStyleSheet(_std_btn_style)
-        self.end_trim_button.setFixedWidth(105)
-        self.end_trim_button.setFixedHeight(35)
+        self.end_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
+        self.end_trim_button.setFixedWidth(150)
+        self.end_trim_button.setFixedHeight(42)
         self.end_trim_button.setCursor(Qt.PointingHandCursor)
         self.end_trim_button.clicked.connect(self.set_end)
         self.end_trim_button.setFocusPolicy(Qt.NoFocus)
         controls_layout.addWidget(self.end_trim_button)
         controls_layout.addStretch(1)
         main_layout.addLayout(controls_layout)
-        self.start_trim_button.setFixedHeight(35)
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 10, 0, 0)
         self.clear_all_btn = QPushButton("CLEAR ALL")
-        self.clear_all_btn.setStyleSheet("background-color: #7f8c8d; color: white; font-weight: bold; border-radius: 8px; padding: 10px 18px;")
+        self.clear_all_btn.setStyleSheet(UIStyles.get_3d_style("#7f8c8d", font_size=12, padding="10px 18px"))
         self.clear_all_btn.clicked.connect(self.clear_all_segments)
         self.clear_all_btn.setCursor(Qt.PointingHandCursor)
         self.clear_all_btn.setFocusPolicy(Qt.NoFocus)
         action_row.addWidget(self.clear_all_btn)
         action_row.addStretch(1)
         self.cancel_btn = QPushButton("CANCEL")
-        self.cancel_btn.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; border-radius: 8px;")
+        self.cancel_btn.setStyleSheet(UIStyles.BUTTON_CANCEL)
         self.cancel_btn.setFixedWidth(105)
         self.cancel_btn.setFixedHeight(35)
         self.cancel_btn.clicked.connect(self.reject)
@@ -394,16 +373,7 @@ class GranularSpeedEditor(QDialog):
         action_row.addWidget(self.cancel_btn)
         action_row.addSpacing(20)
         self.save_btn = QPushButton("APPLY")
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #146314;
-                color: black;
-                border: none;
-                border-radius: 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #c8f7c5; }
-        """)
+        self.save_btn.setStyleSheet(UIStyles.get_3d_style("#146314", font_size=12, padding="10px 18px"))
         self.save_btn.setFixedWidth(105)
         self.save_btn.setFixedHeight(35)
         self.save_btn.clicked.connect(self.accept)
@@ -425,13 +395,13 @@ class GranularSpeedEditor(QDialog):
         self.speed_spin.setFixedWidth(65)
         self.speed_spin.setFixedHeight(30)
         self.speed_spin.setAlignment(Qt.AlignCenter)
-        self.speed_spin.setStyleSheet("font-size: 11px; background-color: #4a667a; border: 1px solid #266b89; border-radius: 5px; color: #ecf0f1; margin: 0; padding: 0;")
+        self.speed_spin.setStyleSheet(UIStyles.SPINBOX + "QDoubleSpinBox { font-size: 11px; margin: 0; padding: 0; }")
         self.speed_spin.setCursor(Qt.PointingHandCursor)
         self.speed_spin.valueChanged.connect(self.on_speed_changed)
         speed_container.addWidget(lbl_speed)
         speed_container.addWidget(self.speed_spin, alignment=Qt.AlignCenter)
         self.add_seg_btn = QPushButton("ADD NEW SPEED SEGMENT")
-        self.add_seg_btn.setStyleSheet(_std_btn_style)
+        self.add_seg_btn.setStyleSheet(UIStyles.BUTTON_STANDARD)
         self.add_seg_btn.setCursor(Qt.PointingHandCursor)
         self.add_seg_btn.clicked.connect(self.add_segment)
         self.add_seg_btn.pressed.connect(lambda: self.parent_app.logger.info("UI_EVENT: ADD NEW SPEED SEGMENT button physically pressed.") if self.parent_app else None)

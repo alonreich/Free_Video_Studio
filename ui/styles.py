@@ -134,6 +134,56 @@
             padding-right: 4px;
         }
     """ + _HOVER_BORDER
+    BUTTON_WIZARD_BLUE = _3D_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+            color: #ffffff;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 8px 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 9px;
+            padding-left: 15px;
+            padding-bottom: 7px;
+            padding-right: 13px;
+        }
+    """ + _HOVER_BORDER
+    BUTTON_WIZARD_GREEN = _3D_COMMON + """
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
+            color: #ffffff;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 10px 18px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 11px;
+            padding-left: 19px;
+            padding-bottom: 9px;
+            padding-right: 17px;
+        }
+    """ + _HOVER_BORDER
     @staticmethod
     def get_3d_style(color, font_size=12, border_radius=8, padding="10px 18px"):
         try:
@@ -356,3 +406,51 @@
                 padding: 20px;
             }}
         """
+    GLOBAL_STYLE = """
+        QDialog, QMessageBox, QProgressDialog {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            font-family: "Helvetica Neue", Arial, sans-serif;
+        }
+        QLabel {
+            color: #ecf0f1;
+            font-size: 13px;
+        }
+        QPushButton {
+            background-color: #266b89;
+            color: #ffffff;
+            border-style: solid;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            min-width: 80px;
+        }
+        QPushButton:hover {
+            background-color: #2980b9;
+            border: 1px solid #7DD3FC;
+        }
+        QPushButton:pressed {
+            background-color: #1a5276;
+        }
+        QTextEdit {
+            background-color: #1a1a1a;
+            color: #bdc3c7;
+            border: 1px solid #34495e;
+            font-family: Consolas, monospace;
+            font-size: 11px;
+        }
+        QProgressBar {
+            border: 1px solid #266b89;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        QProgressBar::chunk {
+            background-color: #2ecc71;
+        }
+    """

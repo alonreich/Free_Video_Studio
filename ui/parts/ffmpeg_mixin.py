@@ -120,7 +120,7 @@ class FfmpegMixin:
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
             music_path = None
             music_offset_s = 0.0
-            linear_video_vol = self._get_master_eff() / 100.0
+            linear_video_vol = getattr(self, "_video_volume_pct", 100) / 100.0
             if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
                 music_path = self._wizard_tracks[0][0]
                 music_offset_s = self._wizard_tracks[0][1]
@@ -163,9 +163,11 @@ class FfmpegMixin:
                 'eq_enabled': True,
                 'main_vol': linear_video_vol,
                 'music_vol': music_vol_linear if music_path else 1.0,
-                'timeline_start_ms': self.trim_start_ms,
-                'timeline_end_ms': self.trim_end_ms
+                'timeline_start_ms': int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms)),
+                'timeline_end_ms': int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms))
             }
+            music_conf['timeline_start_ms'] = max(self.trim_start_ms, min(music_conf['timeline_start_ms'], self.trim_end_ms))
+            music_conf['timeline_end_ms'] = max(music_conf['timeline_start_ms'], min(music_conf['timeline_end_ms'], self.trim_end_ms))
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
                 raw_text = self.portrait_text_input.text().strip()
@@ -193,7 +195,8 @@ class FfmpegMixin:
                 intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None,
                 portrait_text=p_text,
                 music_config=music_conf,
-                speed_segments=getattr(self, 'speed_segments', None)
+                speed_segments=getattr(self, 'speed_segments', None),
+                hardware_strategy=getattr(self, 'hardware_strategy', 'CPU')
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))
@@ -359,7 +362,9 @@ class FfmpegMixin:
             anim.setEndValue(1.0)
             anim.setLoopCount(-1)
             anim.start()
+            dialog.finished.connect(anim.stop)
             result = dialog.exec_()
+            anim.stop()
             if hasattr(self, '_update_portrait_mask_overlay_state'):
                 self._update_portrait_mask_overlay_state()
             if result == QDialog.Rejected:
@@ -388,7 +393,7 @@ class FfmpegMixin:
         self.playPauseButton.setEnabled(False)
         self.start_trim_button.setEnabled(False)
         self.end_trim_button.setEnabled(False)
-        path = self.input_file_path
+        path_to_probe = str(self.input_file_path)
 
         def _bg_worker(p):
             try:
@@ -446,7 +451,7 @@ class FfmpegMixin:
         self._probe_bridge.done.connect(_on_worker_finished)
 
         def _thread_target():
-            result = _bg_worker(path)
+            result = _bg_worker(path_to_probe)
             self._probe_bridge.done.emit(result)
         t = threading.Thread(target=_thread_target, daemon=True)
         t.start()

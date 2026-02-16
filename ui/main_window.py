@@ -8,7 +8,7 @@ import threading
 import traceback
 from logging.handlers import RotatingFileHandler
 import vlc
-from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication, QEvent
+from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication, QEvent, QRect
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
                              QMessageBox, QShortcut, QStatusBar, QLabel, QDialog)
@@ -23,7 +23,6 @@ from ui.widgets.tooltip_manager import ToolTipManager
 from ui.widgets.custom_file_dialog import CustomFileDialog
 from ui.parts.ui_builder_mixin import UiBuilderMixin
 from ui.parts.phase_overlay_mixin import PhaseOverlayMixin
-from ui.parts.events_mixin import EventsMixin
 from ui.parts.player_mixin import PlayerMixin
 from ui.parts.volume_mixin import VolumeMixin
 from ui.parts.trim_mixin import TrimMixin
@@ -51,37 +50,13 @@ class _QtLiveLogHandler(logging.Handler):
         except Exception:
             pass
 
-class CleanupWorker(QObject):
-    """Worker to clean up old temporary files in the background."""
-
-    def run(self):
-        try:
-            import time
-            temp_dir = tempfile.gettempdir()
-            patterns = [
-                "core-*.mp4", "intro-*.mp4", "ffmpeg2pass-*.log", 
-                "drawtext-*.txt", "filter_complex-*.txt", "concat-*.txt",
-                "thumb-*.jpg", "snapshot-*.png"
-            ]
-            now = time.time()
-            limit_seconds = 6 * 3600 
-            for pattern in patterns:
-                for old_file in glob.glob(os.path.join(temp_dir, pattern)):
-                    try:
-                        if os.path.isfile(old_file):
-                            if now - os.path.getmtime(old_file) > limit_seconds:
-                                os.remove(old_file)
-                    except OSError:
-                        pass
-        except Exception:
-            pass
-
-class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, PersistentWindowMixin):
+class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, PersistentWindowMixin):
     progress_update_signal = pyqtSignal(int)
     status_update_signal = pyqtSignal(str)
     process_finished_signal = pyqtSignal(bool, str)
     live_log_signal = pyqtSignal(str)
     video_ended_signal = pyqtSignal()
+    duration_changed_signal = pyqtSignal(int)
 
     def open_granular_speed_dialog(self):
         """Opens the Granular Speed Editor dialog."""
@@ -110,7 +85,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             current_ms = 0
             if self.vlc_player:
                 if self.vlc_player.is_playing():
-                    self.vlc_player.pause()
+                    self.vlc_player.set_pause(1)
                 current_ms = max(0, self.vlc_player.get_time())
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
@@ -172,13 +147,16 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.hardware_strategy = detected_mode
         self.scan_complete = True
         self.logger.info(f"Hardware Strategy finalized: {self.hardware_strategy}")
+        if hasattr(self, 'hardware_status_label'):
+            mode = self.hardware_strategy
+            badge_icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
+            self.hardware_status_label.setText(f"{badge_icon} {mode} Mode")
+            self.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;")
+            self.hardware_status_label.show()
         if self.hardware_strategy == "CPU":
             self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
         else:
-            if hasattr(self, 'hardware_status_label'):
-                self.hardware_status_label.setText(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})")
-            else:
-                self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
+            self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
         self._maybe_enable_process()
 
     def show_status_warning(self, message: str):
@@ -250,7 +228,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     def _on_speed_changed(self, value):
         self.playback_rate = value
         if self.vlc_player and self.vlc_player.is_playing():
-            self.vlc_player.pause()
+            self.vlc_player.set_pause(1)
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
@@ -260,11 +238,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
 
     def __init__(self, file_path=None, hardware_strategy="CPU"):
         super().__init__()
+        self._scrub_lock = threading.RLock()
         self.script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
         self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
         self.bin_dir = os.path.join(self.base_dir, 'binaries')
         self.logger = setup_logger(self.base_dir, "main_app.log", "Main_App")
-        self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))
+        self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.central_widget = QWidget()
@@ -278,6 +257,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.playback_rate = 1.1
         self.speed_segments = []
         self.hardware_strategy = hardware_strategy
+        try:
+            self._video_volume_pct = int(self.config_manager.config.get('video_mix_volume', 100))
+            self._music_volume_pct = int(self.config_manager.config.get('music_mix_volume', 80))
+        except:
+            self._video_volume_pct = 100
+            self._music_volume_pct = 80
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser('~'))
         self.trim_start_ms = 0
         self.trim_end_ms = 0
@@ -317,6 +302,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.scan_complete = True
         self.live_log_signal.connect(self.log_overlay_sink)
         self.video_ended_signal.connect(self._handle_video_end)
+        self.duration_changed_signal.connect(self._safe_handle_duration_changed)
         try:
             if not any(isinstance(h, _QtLiveLogHandler) for h in self.logger.handlers):
                 qt_handler = _QtLiveLogHandler(self) 
@@ -331,7 +317,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_player_state)
         self.setup_persistence(
-            config_path=os.path.join(self.base_dir, 'config', 'main_app.conf'),
+            config_path=os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'),
             settings_key='window_geometry',
             default_geo={'x': 0, 'y': 0, 'w': 1300, 'h': 750},
             title_info_provider=lambda: f"{self._base_title}  —  {self.width()}x{self.height()}",
@@ -349,8 +335,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         QShortcut(QKeySequence(Qt.Key_Right), self, lambda: _seek_shortcut(250))
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Left), self, lambda: _seek_shortcut(-5))
         QShortcut(QKeySequence(Qt.CTRL | Qt.Key_Right), self, lambda: _seek_shortcut(5))
-        self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
-        self.positionSlider.music_trim_changed.connect(self._on_music_trim_changed)
         self._init_upload_hint_blink()
         if not file_path:
             self._set_upload_hint_active(True)
@@ -358,13 +342,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self._set_upload_hint_active(False)
         if file_path:
             self.handle_file_selection(file_path)
-        self.cleanup_thread = QThread()
-        self.cleanup_worker = CleanupWorker()
-        self.cleanup_worker.moveToThread(self.cleanup_thread)
-        self.cleanup_thread.started.connect(self.cleanup_worker.run)
-        self.cleanup_thread.finished.connect(self.cleanup_worker.deleteLater)
-        self.cleanup_thread.finished.connect(self.cleanup_thread.deleteLater)
-        self.cleanup_thread.start()
     @property
     def original_duration(self):
         """Return original duration in seconds (float)."""
@@ -384,7 +361,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             '--no-video-title-show',
             '--avcodec-hw=any',
             '--vout=direct3d11',
-            '--aout=waveout', 
+            '--aout=mmdevice', 
             '--file-caching=3000',
             '--no-osd',
             '--ignore-config',
@@ -396,6 +373,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.vlc_instance = vlc.Instance(vlc_args)
             if self.vlc_instance:
                 self.vlc_player = self.vlc_instance.media_player_new()
+                if self.vlc_player:
+                    self.vlc_player.audio_set_volume(100)
             else:
                 self.logger.error("VLC Instance creation returned None.")
         except Exception as e:
@@ -413,21 +392,28 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             except Exception as e:
                 self.logger.error("Failed to attach VLC event handlers: %s", e)
             try:
-                self.vlc_player.audio_set_mute(False)
                 self.apply_master_volume()
             except Exception: pass
     
     def _on_duration_changed(self, event, player=None):
-        """Event handler for when media duration becomes available."""
+        """Event handler for when media duration becomes available. (Native VLC thread)"""
         try:
             player = player or self.vlc_player
-            duration_ms = player.get_media().get_duration()
-            if duration_ms > 0:
-                self.positionSlider.setRange(0, duration_ms)
-                self.positionSlider.set_duration_ms(duration_ms)
-                self.logger.info(f"VLC Event: Duration changed to {duration_ms}ms.")
+            if player and player.get_media():
+                duration_ms = player.get_media().get_duration()
+                if duration_ms > 0:
+                    self.duration_changed_signal.emit(int(duration_ms))
         except Exception as e:
-            self.logger.error(f"Error in _on_duration_changed event handler: {e}")
+            self.logger.error("Error in _on_duration_changed VLC callback: %s", e)
+
+    def _safe_handle_duration_changed(self, duration_ms: int):
+        """Slot to safely update UI with duration. (Main thread)"""
+        try:
+            self.positionSlider.setRange(0, duration_ms)
+            self.positionSlider.set_duration_ms(duration_ms)
+            self.logger.info(f"UI: Duration updated to {duration_ms}ms via signal.")
+        except Exception as e:
+            self.logger.error("Error updating UI duration: %s", e)
 
     def keyPressEvent(self, event):
         """Handle key presses for shortcuts."""
@@ -437,6 +423,43 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.launch_crop_tool()
         else:
             super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        """Restore focus to the main window so keyboard shortcuts remain reliable."""
+        try:
+            if event.button() == Qt.LeftButton:
+                self.setFocus(Qt.MouseFocusReason)
+        except Exception as e:
+            self.logger.error("MousePress error: %s", e)
+        super().mousePressEvent(event)
+
+    def eventFilter(self, obj, event):
+        """
+        Centralized event filter.
+        - Keeps keyboard shortcut handling active.
+        - Handles resize/move overlay maintenance without duplicate wiring.
+        """
+        try:
+            if event.type() == QEvent.KeyPress:
+                if KeyboardMixin.eventFilter(self, obj, event):
+                    return True
+        except Exception as e:
+            self.logger.error("Keyboard eventFilter error: %s", e)
+        if obj in (self, getattr(self, "video_frame", None), getattr(self, "video_surface", None)):
+            if event.type() in (QEvent.Resize, QEvent.Move):
+                try:
+                    if hasattr(self, '_update_upload_hint_responsive'):
+                        self._update_upload_hint_responsive()
+                    self._update_volume_badge()
+                    if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
+                        r = self.video_surface.rect()
+                        top_left = self.video_surface.mapToGlobal(r.topLeft())
+                        self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
+                        self._update_portrait_mask_overlay_state()
+                except Exception as e:
+                    self.logger.error("EventFilter resize/move error: %s", e)
+                return False
+        return super().eventFilter(obj, event)
 
     def launch_crop_tool(self):
         """Launches the crop tool application and closes the main app."""
@@ -517,14 +540,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             self.logger.critical(f"ERROR: Failed to launch Advanced Editor. Error: {e}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor. Error: {e}")
 
-    def _on_music_trim_changed(self, start_ms, end_ms):
-        """Handles music timeline bar changes from the slider (in ms)."""
-        self.music_timeline_start_ms = start_ms
-        self.music_timeline_end_ms = end_ms
-        if hasattr(self, 'vlc_player') and self.vlc_player.is_playing():
-            self.set_vlc_position(self.vlc_player.get_time(), sync_only=True)
-        self.logger.info(f"MUSIC: Timeline updated to start={start_ms/1000.0:.2f}s, end={end_ms/1000.0:.2f}s")
-
     def _update_window_size_in_title(self):
         self.setWindowTitle(f"{self._base_title}  —  {self.width()}x{self.height()}")
 
@@ -554,34 +569,33 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             pass
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
-        """Handles trim time changes from the custom slider (in ms)."""
+        """[FIX #24] Handles trim time changes with 'Magnetic' music following."""
+        old_start = self.trim_start_ms
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-            new_m_start = max(start_ms, self.music_timeline_start_ms)
-            new_m_end = min(end_ms, self.music_timeline_end_ms)
-            if self.music_timeline_start_ms == self.trim_start_ms or new_m_start > new_m_end:
-                new_m_start = start_ms
-            if self.music_timeline_end_ms == self.trim_end_ms or new_m_end < new_m_start:
-                new_m_end = end_ms
-            self.music_timeline_start_ms = new_m_start
-            self.music_timeline_end_ms = new_m_end
-            self.positionSlider.set_music_times(new_m_start, new_m_end)
-            self.logger.info(f"UI: Clamped music overlay to video trim: {new_m_start}ms - {new_m_end}ms")
-        if self.music_timeline_start_ms > 0 and self.music_timeline_end_ms > 0 and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-            video_dur_ms = end_ms - start_ms
-            music_dur_ms = self.music_timeline_end_ms - self.music_timeline_start_ms
-            if music_dur_ms > video_dur_ms:
-                music_dur_ms = video_dur_ms
-            new_music_start_ms = max(start_ms, self.music_timeline_start_ms)
-            if new_music_start_ms + music_dur_ms > end_ms:
-                new_music_start_ms = end_ms - music_dur_ms
-            new_music_end_ms = new_music_start_ms + music_dur_ms
-            if (self.music_timeline_start_ms != new_music_start_ms or self.music_timeline_end_ms != new_music_end_ms):
-                self.music_timeline_start_ms = new_music_start_ms
-                self.music_timeline_end_ms = new_music_end_ms
-                self.positionSlider.set_music_times(new_music_start_ms, new_music_end_ms)
-                self.logger.info(f"MUSIC: Timeline auto-adjusted to fit new video trim: start={new_music_start_ms/1000.0:.2f}s, end={new_music_end_ms/1000.0:.2f}s")
+            delta_start = start_ms - old_start
+            if delta_start != 0:
+                new_m_start = self.music_timeline_start_ms + delta_start
+                music_dur = self.music_timeline_end_ms - self.music_timeline_start_ms
+                if new_m_start < start_ms: new_m_start = start_ms
+                if new_m_start + music_dur > end_ms: new_m_start = end_ms - music_dur
+                new_m_end = new_m_start + music_dur
+                if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
+                    self.music_timeline_start_ms = new_m_start
+                    self.music_timeline_end_ms = new_m_end
+                    self.positionSlider.set_music_times(new_m_start, new_m_end)
+                    self.logger.info(f"MUSIC: Magnetically shifted to {new_m_start}ms following video trim.")
+            else:
+                new_m_start = max(start_ms, self.music_timeline_start_ms)
+                new_m_end = min(end_ms, self.music_timeline_end_ms)
+                if new_m_start > new_m_end - 100:
+                    new_m_start = start_ms
+                    new_m_end = start_ms + min(100, end_ms - start_ms)
+                if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
+                    self.music_timeline_start_ms = new_m_start
+                    self.music_timeline_end_ms = new_m_end
+                    self.positionSlider.set_music_times(new_m_start, new_m_end)
         self._update_trim_widgets_from_trim_times()
 
     def set_style(self):
@@ -666,7 +680,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             pass
 
     def _init_upload_hint_blink(self):
-        """Initializes the robust smooth fading logic for the upload hint group."""
+        """[FIX #30] Hardware-accelerated smooth breath-like glow animation."""
         if not hasattr(self, 'hint_group_container'):
             return
             
@@ -675,22 +689,22 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
         self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
         anim_in = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_in.setDuration(600) 
-        anim_in.setStartValue(0.1)
+        anim_in.setDuration(1200)
+        anim_in.setStartValue(0.15)
         anim_in.setEndValue(1.0)
-        anim_in.setEasingCurve(QEasingCurve.InOutQuad)
+        anim_in.setEasingCurve(QEasingCurve.InOutSine)
         anim_out = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_out.setDuration(600)
+        anim_out.setDuration(1200)
         anim_out.setStartValue(1.0)
-        anim_out.setEndValue(0.1)
-        anim_out.setEasingCurve(QEasingCurve.InOutQuad)
+        anim_out.setEndValue(0.15)
+        anim_out.setEasingCurve(QEasingCurve.InOutSine)
         self._hint_group = QSequentialAnimationGroup(self)
         self._hint_group.addAnimation(anim_in)
         self._hint_group.addAnimation(anim_out)
         self._hint_group.setLoopCount(-1)
 
     def _set_upload_hint_active(self, active):
-        """Starts or stops the upload hint fading animation."""
+        """[FIX #12 & #30] Starts or stops the upload hint fading animation."""
         target = getattr(self, 'hint_overlay_widget', None)
         if not target or not hasattr(self, '_hint_group'):
             return
@@ -705,25 +719,27 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
 
     def _update_upload_hint_responsive(self):
         """
-        Calculates Scale Factor based on 1513px reference width.
-        Updates Box, Font, Arrow, and Position proportionally.
-        [FIX] Dynamically aligns vertical center with the Upload Button.
+        [FIX #12] Proportional scaling for the Upload Hint overlay.
+        Calculates relative sizes based on current window height and width to prevent overlap.
         """
         if not hasattr(self, 'upload_hint_container') or not self.upload_hint_container.isVisible():
             return
             
         from PyQt5.QtGui import QPainter, QPixmap, QColor, QPolygon
         from PyQt5.QtCore import Qt, QPoint
-        scale = self.width() / self.REF_WIDTH
-        box_w = int(self.REF_BOX_W * scale)
-        box_h = int(self.REF_BOX_H * scale)
-        font_size = int(self.REF_FONT_SIZE * scale)
+        curr_w = self.width()
+        curr_h = self.height()
+        ref_h = 750.0
+        scale = max(0.5, min(1.5, curr_h / ref_h))
+        box_w = int(580 * scale)
+        box_h = int(100 * scale)
+        font_size = int(24 * scale)
         self.upload_hint_container.setFixedSize(box_w, box_h)
         self.upload_hint_container.setStyleSheet(f"""
             #uploadHintContainer {{
                 background-color: #000000;
                 border: {max(2, int(3*scale))}px solid #7DD3FC;
-                border-radius: {int(14*scale)}px;
+                border-radius: {int(12*scale)}px;
             }}
         """)
         self.upload_hint_label.setStyleSheet(f"""
@@ -734,10 +750,21 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             background: transparent;
             border: none;
         """)
-        gap = int(self.REF_GAP * scale)
-        self.hint_group_layout.setSpacing(max(20, gap))
-        arrow_l = int(self.REF_ARROW_L * scale)
-        arrow_s = int(self.REF_ARROW_S * scale)
+        gap = int(15 * scale)
+        self.hint_group_layout.setSpacing(gap)
+        offset_x = int(150 * scale)
+        arrow_l_base = int(350 * scale)
+        right_safety = int(60 * scale)
+        available_space = curr_w - offset_x - box_w - gap - right_safety
+        if curr_w < 1277:
+            width_ratio = max(0.1, (curr_w - offset_x - box_w - gap - right_safety) / (1277.0 - offset_x - box_w - gap - right_safety))
+            arrow_l = int(arrow_l_base * width_ratio)
+        else:
+            arrow_l = arrow_l_base
+        arrow_l = max(30, min(arrow_l, available_space))
+        if (offset_x + box_w + gap + arrow_l + right_safety) > curr_w:
+             arrow_l = max(10, curr_w - offset_x - box_w - gap - right_safety)
+        arrow_s = int(35 * scale)
         c_w, c_h = arrow_l + 20, arrow_s + 40
         self.upload_hint_arrow.setFixedSize(c_w, c_h)
         pix = QPixmap(c_w, c_h)
@@ -747,8 +774,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         p.setBrush(QColor("#7DD3FC"))
         p.setPen(Qt.NoPen)
         center_y_arrow = c_h // 2
-        body_h = int(20 * scale)
-        head_w = int(50 * scale)
+        body_h = int(16 * scale)
+        head_w = int(min(45 * scale, arrow_l * 0.4))
         p.drawRect(5, center_y_arrow - (body_h // 2), arrow_l - head_w, body_h)
         tip_x = 5 + arrow_l
         base_x = tip_x - head_w
@@ -761,15 +788,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         p.end()
         self.upload_hint_arrow.setPixmap(pix)
         try:
-            btn_center_global = self.upload_button.mapToGlobal(self.upload_button.rect().center())
-            btn_center_local = self.hint_overlay_widget.mapFromGlobal(btn_center_global)
-            group_h = max(box_h, c_h)
-            target_y = btn_center_local.y() - (group_h // 2) + 10
-            offset_x = int(self.REF_OFFSET_X * scale)
+            btn_pos = self.upload_button.mapToGlobal(self.upload_button.rect().center())
+            local_pos = self.hint_overlay_widget.mapFromGlobal(btn_pos)
+            target_y = local_pos.y() - (max(box_h, c_h) // 2)
             self.hint_centering_layout.setContentsMargins(offset_x, target_y, 0, 0)
         except Exception:
-            offset_x = int(self.REF_OFFSET_X * scale)
-            self.hint_centering_layout.setContentsMargins(offset_x, 0, 0, 0)
+            pass
 
     def select_file(self):
         self._set_upload_hint_active(False)
@@ -869,6 +893,9 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
             except Exception as hwnd_err:
                 self.logger.error("Failed to set HWND for player: %s", hwnd_err)
             self.vlc_player.play()
+            if hasattr(self, "apply_master_volume"):
+                self.apply_master_volume()
+                QTimer.singleShot(1000, self.apply_master_volume)
             if hasattr(self, "_on_mobile_toggled"):
                 QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
         else:
@@ -906,6 +933,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
         except Exception:
             pass
         self.drop_label.setText("Drag & Drop\r\nVideo File Here:")
+        if hasattr(self, 'portrait_mask_overlay') and self.portrait_mask_overlay:
+            self.portrait_mask_overlay.hide()
         self._update_portrait_mask_overlay_state()
 
     def handle_new_file(self):
@@ -934,11 +963,14 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
     def cleanup_and_exit(self):
         """Centralized cleanup and exit logic."""
         self.logger.info("=== Application shutting down ===")
+        self.blockSignals(True)
         if hasattr(self, "timer") and self.timer.isActive():
             self.timer.stop()
         if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
             self.logger.warning("App closing during process. Killing ffmpeg...")
             self.process_thread.cancel()
+            if self.process_thread.isRunning():
+                self.process_thread.wait(3000)
         try:
             if hasattr(self, "vlc_event_manager") and self.vlc_event_manager:
                 try:
@@ -959,6 +991,9 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, EventsM
                 self.vlc_instance = None
         except Exception as e:
             self.logger.error("Failed to safely stop VLC on close: %s", e)
+
+        from system.utils import ProcessManager
+        ProcessManager.cleanup_temp_files()
         self._save_app_state_and_config()
         QCoreApplication.instance().quit()
 

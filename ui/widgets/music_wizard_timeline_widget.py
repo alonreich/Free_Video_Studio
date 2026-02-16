@@ -16,23 +16,32 @@ class MergerTimelineWidget(QWidget):
         self.setMinimumHeight(100)
         self.setCursor(Qt.PointingHandCursor)
         self.setMouseTracking(True)
+        self._bg_buffer = QPixmap()
+        self._needs_repaint = True
 
     def set_data(self, total_dur, videos, music):
         self.total_duration = max(0.1, total_dur)
         self.video_segments = videos
         self.music_segments = music
+        self._needs_repaint = True
         self.update()
 
     def set_current_time(self, t):
         self.current_time = max(0.0, min(self.total_duration, t))
         self.update()
 
-    def paintEvent(self, event):
-        p = QPainter(self)
+    def resizeEvent(self, event):
+        self._needs_repaint = True
+        super().resizeEvent(event)
+
+    def _render_background(self):
+        w = self.width()
+        h = self.height()
+        if w <= 0 or h <= 0: return
+        self._bg_buffer = QPixmap(self.size())
+        p = QPainter(self._bg_buffer)
         p.setRenderHint(QPainter.Antialiasing)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
-        w = float(self.width())
-        h = float(self.height())
         lane_h = 45.0
         v_y = 0.0
         m_y = lane_h
@@ -81,6 +90,16 @@ class MergerTimelineWidget(QWidget):
         p.setBrush(Qt.NoBrush)
         p.drawRect(QRectF(0, v_y, w, lane_h))
         p.drawRect(QRectF(0, m_y, w, lane_h))
+        p.end()
+        self._needs_repaint = False
+
+    def paintEvent(self, event):
+        if self._needs_repaint or self._bg_buffer.isNull() or self._bg_buffer.size() != self.size():
+            self._render_background()
+        p = QPainter(self)
+        p.drawPixmap(0, 0, self._bg_buffer)
+        w = float(self.width())
+        h = float(self.height())
         caret_x = (self.current_time / self.total_duration) * w
         p.setPen(QPen(QColor(52, 152, 219, 100), 6))
         p.drawLine(int(caret_x), 0, int(caret_x), int(h))

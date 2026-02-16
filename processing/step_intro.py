@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 from .system_utils import create_subprocess, monitor_ffmpeg_progress
 
@@ -28,12 +28,17 @@ class IntroProcessor:
         intro_cmd = [
             self.ffmpeg_path, "-y",
             "-progress", "pipe:1",
-            "-ss", f"{intro_abs_time:.6f}", "-i", input_path, "-t", "0.2"
+            "-ss", f"{intro_abs_time:.6f}", 
+            "-i", input_path, 
+            "-t", "0.2"
         ] + vcodec_intro + [
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", 
+            "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", f'{audio_kbps}k', '-ar', '48000', '-ac', '2',
             "-filter_complex", intro_filter,
-            "-map", "[vintro]", "-map", "[aintro]", "-shortest", intro_path
+            "-map", "[vintro]", "-map", "[aintro]", 
+            "-shortest", 
+            intro_path
         ]
         self.logger.info("STEP 2/3 INTRO")
         self.current_process = create_subprocess(intro_cmd, self.logger)
@@ -41,7 +46,7 @@ class IntroProcessor:
             self.current_process, 
             still_len, 
             progress_signal, 
-            is_canceled_func, 
+            is_canceled_func,
             self.logger
         )
         self.current_process.wait()

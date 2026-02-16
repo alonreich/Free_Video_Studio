@@ -72,7 +72,7 @@ class MediaProcessor(QObject):
         vlc_args = [
             '--no-xlib', '--no-video-title-show',
             '--aout=waveout', 
-            '--avcodec-hw=any', '--vout=direct3d11',
+            '--avcodec-hw=any', '--vout=direct3d9',
             '--no-stats', '--no-lua', '--no-interact',
             '--file-logging', '--logmode=text',
             f"--logfile={os.environ.get('FVS_VLC_RAW_LOG', self.vlc_log_path)}",

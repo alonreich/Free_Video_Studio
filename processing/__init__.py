@@ -8,6 +8,9 @@ import sys
 import tempfile
 import shutil
 
+# ---------------------------------------------------------------------------
+# Environment Setup (Clean Python)
+# ---------------------------------------------------------------------------
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(tempfile.gettempdir(), 'pycache_disabled')
 sys.dont_write_bytecode = True
@@ -20,22 +23,23 @@ def cleanup_pycache():
             cache_dir = os.path.join(root, '__pycache__')
             try:
                 shutil.rmtree(cache_dir)
-                print(f"Cleaned up: {cache_dir}")
-            except Exception as e:
-                print(f"Failed to remove {cache_dir}: {e}")
+            except Exception:
+                pass
         for file in files:
             if file.endswith('.pyc') or file.endswith('.pyo'):
                 try:
                     os.remove(os.path.join(root, file))
-                    print(f"Removed: {os.path.join(root, file)}")
-                except Exception as e:
-                    print(f"Failed to remove {file}: {e}")
+                except Exception:
+                    pass
 
 cleanup_pycache()
 
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, List
 from PyQt5.QtCore import QObject, pyqtSignal
 
+# ---------------------------------------------------------------------------
+# Module Imports
+# ---------------------------------------------------------------------------
 from .config_data import VideoConfig
 from .media_utils import MediaProber
 from .filter_builder import FilterBuilder
@@ -46,6 +50,7 @@ from .step_intro import IntroProcessor
 from .step_concat import ConcatProcessor
 from .worker import ProcessThread
 
+# Optional / Feature Flag Imports
 try:
     from state_manager import get_state_manager, OperationType, with_transaction
     STATE_MANAGER_AVAILABLE = True
@@ -64,6 +69,10 @@ try:
 except ImportError:
     VALIDATION_SYSTEM_AVAILABLE = False
 
+
+# ---------------------------------------------------------------------------
+# Data Structures
+# ---------------------------------------------------------------------------
 
 class ProcessingJob:
     """Represents a video processing job with all configuration."""
@@ -87,7 +96,8 @@ class ProcessingJob:
                  intro_from_midpoint: bool = False,
                  intro_abs_time: Optional[float] = None,
                  original_total_duration: float = 0.0,
-                 music_config: Optional[Dict[str, Any]] = None):
+                 music_config: Optional[Dict[str, Any]] = None,
+                 speed_segments: Optional[List[Dict[str, Any]]] = None): # [ADDED] Missing param
         
         self.input_path = input_path
         self.start_time = float(start_time)
@@ -108,8 +118,8 @@ class ProcessingJob:
         self.intro_abs_time = float(intro_abs_time) if intro_abs_time is not None else None
         self.original_total_duration = float(original_total_duration)
         self.music_config = music_config if music_config else {}
+        self.speed_segments = speed_segments if speed_segments else [] # [ADDED]
         
-
         self.duration = self.end_time - self.start_time
 
 
@@ -129,9 +139,12 @@ class ProcessingResult:
         self.processing_time = processing_time
         self.output_size = output_size
         
-
         self.metadata: Dict[str, Any] = {}
 
+
+# ---------------------------------------------------------------------------
+# Manager Class
+# ---------------------------------------------------------------------------
 
 class ProcessingManager(QObject):
     """
@@ -139,7 +152,6 @@ class ProcessingManager(QObject):
     Provides a clean interface for starting, monitoring, and controlling jobs.
     """
     
-
     job_started = pyqtSignal(str)
     job_progress = pyqtSignal(str, int, str)
     job_completed = pyqtSignal(str, ProcessingResult)
@@ -154,7 +166,6 @@ class ProcessingManager(QObject):
         self._jobs: Dict[str, ProcessThread] = {}
         self._job_results: Dict[str, ProcessingResult] = {}
         
-
         self.config = VideoConfig(base_dir)
         self.encoder_mgr = EncoderManager(logger)
         self.filter_builder = FilterBuilder(logger)
@@ -162,13 +173,6 @@ class ProcessingManager(QObject):
     def create_job(self, job: ProcessingJob, job_id: Optional[str] = None) -> str:
         """
         Create and start a processing job.
-        
-        Args:
-            job: ProcessingJob configuration
-            job_id: Optional custom job ID (generated if not provided)
-            
-        Returns:
-            Job ID for tracking
         """
         import time
         import uuid
@@ -176,13 +180,8 @@ class ProcessingManager(QObject):
         if job_id is None:
             job_id = f"job_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         
-
-        from PyQt5.QtCore import pyqtSignal as Signal
-        
-
         script_dir = os.path.dirname(os.path.abspath(__file__))
         
-
         def progress_handler(progress: int):
             status = self._get_status_for_progress(progress)
             self.job_progress.emit(job_id, progress, status)
@@ -202,11 +201,10 @@ class ProcessingManager(QObject):
             else:
                 self.job_error.emit(job_id, result.error_message or "Unknown error")
             
-
             if job_id in self._jobs:
                 del self._jobs[job_id]
         
-
+        # Prepare arguments for the Worker Thread
         thread_kwargs = {
             'input_path': job.input_path,
             'start_time_ms': int(job.start_time * 1000),
@@ -229,10 +227,10 @@ class ProcessingManager(QObject):
             'disable_fades': job.disable_fades,
             'intro_still_sec': job.intro_still_sec,
             'intro_from_midpoint': job.intro_from_midpoint,
-            'music_config': job.music_config
+            'music_config': job.music_config,
+            'speed_segments': job.speed_segments # [ADDED] Pass granular speed segments
         }
         
-
         if job.intro_abs_time is not None:
             thread_kwargs['intro_abs_time_ms'] = int(job.intro_abs_time * 1000)
         
@@ -241,7 +239,6 @@ class ProcessingManager(QObject):
         
         thread = ProcessThread(**thread_kwargs)
         
-
         self._jobs[job_id] = thread
         self.job_started.emit(job_id)
         thread.start()
@@ -255,7 +252,6 @@ class ProcessingManager(QObject):
             thread.cancel()
             self.job_cancelled.emit(job_id)
             
-
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(1000, lambda: self._cleanup_job(job_id))
             return True
@@ -311,9 +307,6 @@ class ProcessingManager(QObject):
     def validate_job(self, job: ProcessingJob) -> Dict[str, Any]:
         """
         Validate a job configuration before processing.
-        
-        Returns:
-            Dictionary with validation results
         """
         validation_results = {
             "valid": True,
@@ -321,17 +314,14 @@ class ProcessingManager(QObject):
             "warnings": []
         }
         
-
         if not os.path.exists(job.input_path):
             validation_results["valid"] = False
             validation_results["errors"].append(f"Input file not found: {job.input_path}")
         
-
         if job.duration <= 0:
             validation_results["valid"] = False
             validation_results["errors"].append("Duration must be positive")
         
-
         try:
             if 'x' in job.original_resolution:
                 w, h = map(int, job.original_resolution.split('x'))
@@ -340,13 +330,58 @@ class ProcessingManager(QObject):
         except ValueError:
             validation_results["warnings"].append("Could not parse resolution, using default")
         
-
         if job.speed_factor < 0.25 or job.speed_factor > 4.0:
             validation_results["warnings"].append(f"Speed factor {job.speed_factor} is outside recommended range (0.25-4.0)")
         
-
         if job.quality_level < 0 or job.quality_level > 3:
             validation_results["warnings"].append(f"Quality level {job.quality_level} is outside valid range (0-3)")
+
+        if not isinstance(job.speed_segments, list):
+            validation_results["valid"] = False
+            validation_results["errors"].append("speed_segments must be a list of segment dictionaries")
+        else:
+            for idx, segment in enumerate(job.speed_segments):
+                if not isinstance(segment, dict):
+                    validation_results["valid"] = False
+                    validation_results["errors"].append(f"speed_segments[{idx}] must be a dictionary")
+                    continue
+
+                missing_keys = [k for k in ("start_ms", "end_ms", "speed") if k not in segment]
+                if missing_keys:
+                    validation_results["valid"] = False
+                    validation_results["errors"].append(
+                        f"speed_segments[{idx}] missing required keys: {', '.join(missing_keys)}"
+                    )
+                    continue
+
+                try:
+                    seg_start = float(segment["start_ms"])
+                    seg_end = float(segment["end_ms"])
+                    seg_speed = float(segment["speed"])
+                except (TypeError, ValueError):
+                    validation_results["valid"] = False
+                    validation_results["errors"].append(
+                        f"speed_segments[{idx}] values must be numeric (start_ms, end_ms, speed)"
+                    )
+                    continue
+
+                if seg_end <= seg_start:
+                    validation_results["valid"] = False
+                    validation_results["errors"].append(
+                        f"speed_segments[{idx}] must have end_ms > start_ms"
+                    )
+
+                if seg_speed < 0.25 or seg_speed > 4.0:
+                    validation_results["warnings"].append(
+                        f"speed_segments[{idx}] speed {seg_speed} is outside recommended range (0.25-4.0)"
+                    )
+
+                # Segment values are expected to be relative to the selected clip timeline.
+                # Keep this as warning to avoid blocking existing pipelines.
+                if seg_start < 0 or seg_end > (job.duration * 1000.0):
+                    validation_results["warnings"].append(
+                        f"speed_segments[{idx}] lies outside selected clip duration ({job.duration * 1000.0:.0f} ms)"
+                    )
         
         return validation_results
 
@@ -354,16 +389,8 @@ class ProcessingManager(QObject):
 def create_processing_manager(base_dir: Optional[str] = None, logger=None):
     """
     Create a ProcessingManager instance.
-    
-    Args:
-        base_dir: Base directory of the application (auto-detected if None)
-        logger: Optional logger instance
-        
-    Returns:
-        ProcessingManager instance
     """
     if base_dir is None:
-
         import sys
         script_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.abspath(os.path.join(script_dir, '..'))

@@ -1,7 +1,7 @@
 ﻿import os
 import sys
 import subprocess
-from PyQt5.QtCore import QPoint, QRect
+from PyQt5.QtCore import QPoint, QRect, QTimer
 from PyQt5.QtWidgets import QApplication, QLabel
 
 class MergerMusicWizardMiscMixin:
@@ -17,13 +17,18 @@ class MergerMusicWizardMiscMixin:
 
     def _get_default_size(self, step_idx):
         """Returns (width, height) for a step if no config exists."""
-        if step_idx == 0: return (900, 800)
+        if step_idx == 0: return (1100, 850)
         if step_idx == 1: return (1300, 580)
         if step_idx == 2: return (1600, 850)
         return (1300, 850)
 
     def _apply_step_geometry(self, step_idx):
         """Applies saved geometry or centers the default size."""
+        if os.name == 'nt':
+            import ctypes
+            try:
+                ctypes.windll.ole32.CoInitializeEx(None, 0x0)
+            except: pass
         if not hasattr(self, "parent_window") or not hasattr(self.parent_window, "config_manager"): return
         self._is_applying_geometry = True
         try:
@@ -31,77 +36,56 @@ class MergerMusicWizardMiscMixin:
             geo_map = cfg.get("music_wizard_custom_geo", {})
             key = f"step_{step_idx}"
             w_def, h_def = self._get_default_size(step_idx)
-            if step_idx == 1:
-                self.setFixedSize(1300, 580)
-            else:
-                self.setMinimumSize(w_def, h_def)
-                self.setMaximumSize(16777215, 16777215)
+            self.setMinimumSize(600, 400)
+            self.setMaximumSize(16777215, 16777215)
             if key in geo_map:
                 g = geo_map[key]
                 self.setGeometry(g['x'], g['y'], g['w'], g['h'])
             else:
                 self.resize(w_def, h_def)
-                app = QApplication.instance()
-                screen = app.primaryScreen()
-                if hasattr(self, "parent_window") and self.parent_window:
-                    try:
-                        screen = self.parent_window.screen() or screen
-                    except: pass
-                screen_geo = screen.availableGeometry()
-                fg = self.frameGeometry()
-                fg.moveCenter(screen_geo.center())
-                self.move(fg.topLeft())
+                if self.parent_window and self.parent_window.isVisible():
+                    p_geo = self.parent_window.frameGeometry()
+                    center = p_geo.center()
+                    my_geo = self.frameGeometry()
+                    my_geo.moveCenter(center)
+                    self.move(my_geo.topLeft())
+                else:
+                    app = QApplication.instance()
+                    screen = app.primaryScreen()
+                    if self.parent_window:
+                        try: screen = self.parent_window.screen() or screen
+                        except: pass
+                    screen_geo = screen.availableGeometry()
+                    size = self.size()
+                    x = screen_geo.left() + (screen_geo.width() - size.width()) // 2
+                    y = screen_geo.top() + (screen_geo.height() - size.height()) // 2
+                    self.move(x, y)
         finally:
-            self._is_applying_geometry = False
+            QTimer.singleShot(500, lambda: setattr(self, "_is_applying_geometry", False))
 
     def _save_step_geometry(self):
         """Saves current geometry for the active step into config."""
         if not getattr(self, "_startup_complete", False): return
         if getattr(self, "_is_applying_geometry", False): return
         if not hasattr(self.parent_window, "config_manager"): return
-        step_idx = self.stack.currentIndex()
-        geom = self.geometry()
-        app = None
+        if hasattr(self, "_save_geo_timer") and self._save_geo_timer.isActive():
+            return
+        if not hasattr(self, "_save_geo_timer"):
+            self._save_geo_timer = QTimer(self)
+            self._save_geo_timer.setSingleShot(True)
+            self._save_geo_timer.setInterval(1000)
+            self._save_geo_timer.timeout.connect(self._do_save_step_geometry)
+        self._save_geo_timer.start()
+
+    def _do_save_step_geometry(self):
         try:
-            instance_getter = getattr(QApplication, "instance", None)
-            if callable(instance_getter):
-                app = instance_getter()
-        except:
-            app = None
-        screen_name = ""
-        if app:
-            center = None
-            try:
-                center_getter = getattr(geom, "center", None)
-                if callable(center_getter):
-                    center = center_getter()
-            except:
-                center = None
-            screen = None
-            try:
-                if center is not None and hasattr(app, "screenAt"):
-                    screen = app.screenAt(center)
-            except:
-                screen = None
-            if not screen:
-                try:
-                    if hasattr(app, "primaryScreen"):
-                        screen = app.primaryScreen()
-                except:
-                    screen = None
-            if screen:
-                try:
-                    if hasattr(screen, "name"):
-                        screen_name = screen.name() or ""
-                except:
-                    screen_name = ""
-        try:
+            step_idx = self.stack.currentIndex()
+            geom = self.geometry()
             cfg = dict(self.parent_window.config_manager.config)
             if "music_wizard_custom_geo" not in cfg:
                 cfg["music_wizard_custom_geo"] = {}
             cfg["music_wizard_custom_geo"][f"step_{step_idx}"] = {
-                'x': geom.x(), 'y': geom.y(), 'w': geom.width(), 'h': geom.height(),
-                'screen': screen_name
+                'x': geom.x(), 'y': geom.y(), 'w': geom.width(), 'h': geom.height()
             }
             self.parent_window.config_manager.save_config(cfg)
         except: pass
@@ -158,6 +142,17 @@ class MergerMusicWizardMiscMixin:
             else: 
                 self._wave_caret.hide(); self._wave_time_badge.hide(); self._wave_time_badge_bottom.hide()
         except: pass
+
+    def _scaled_vol(self, mix_val):
+        """Scale a 0-100 mix value by the parent's master monitor percentage."""
+        try:
+            if hasattr(self.parent_window, "_vol_eff"):
+                master_ratio = self.parent_window._vol_eff() / 100.0
+                final_vol = int(max(0, min(100, mix_val * master_ratio)))
+                self.logger.info(f"DEBUG_SCALED_VOL: Mix={mix_val}% Master={master_ratio*100:.1f}% -> Final={final_vol}%")
+                return final_vol
+        except: pass
+        return int(max(0, min(100, mix_val)))
 
     def _format_time_long(self, ms):
         total_seconds = int(ms / 1000)

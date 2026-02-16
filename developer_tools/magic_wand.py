@@ -109,28 +109,25 @@ class HUDExtractor:
 
     def _heuristic_map_rect(self, frame_gray):
         h, w = frame_gray.shape[:2]
-        aspect = w / h
-        nx = 0.85 if aspect > 2.0 else 0.78
-        raw = self._rect_from_norm(frame_gray, nx, 0.02, 0.20, 0.25)
+        nx = 0.75
+        raw = self._rect_from_norm(frame_gray, nx, 0.01, 0.24, 0.30)
         return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_hp_rect(self, frame_gray):
-        raw = self._rect_from_norm(frame_gray, 0.02, 0.85, 0.25, 0.10)
+        raw = self._rect_from_norm(frame_gray, 0.01, 0.80, 0.35, 0.18)
         return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_loot_rect(self, frame_gray):
         h, w = frame_gray.shape[:2]
-        aspect = w / h
-        nx = 0.85 if aspect > 2.0 else 0.78
-        raw = self._rect_from_norm(frame_gray, nx, 0.88, 0.12, 0.08)
+        raw = self._rect_from_norm(frame_gray, 0.70, 0.75, 0.28, 0.22)
         return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_teammates_rect(self, frame_gray):
-        raw = self._rect_from_norm(frame_gray, 0.01, 0.20, 0.15, 0.30)
+        raw = self._rect_from_norm(frame_gray, 0.0, 0.15, 0.20, 0.45)
         return self._tighten_rect(frame_gray, raw)
 
     def _heuristic_spectating_rect(self, frame_gray):
-        raw = self._rect_from_norm(frame_gray, 0.02, 0.70, 0.10, 0.05)
+        raw = self._rect_from_norm(frame_gray, 0.01, 0.65, 0.15, 0.10)
         return self._tighten_rect(frame_gray, raw)
 
     def _clamp_rect(self, x, y, w, h, frame_w, frame_h):

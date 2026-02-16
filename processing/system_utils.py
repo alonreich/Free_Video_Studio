@@ -3,8 +3,10 @@ import sys
 import psutil
 import re
 import os
+import time
 
 def parse_time_to_seconds(time_str: str) -> float:
+    """Parses HH:MM:SS.ms or MM:SS.ms string to total seconds."""
     try:
         s = str(time_str or "").strip()
         if not s:
@@ -15,21 +17,19 @@ def parse_time_to_seconds(time_str: str) -> float:
             h = int(parts[0])
             m = int(parts[1])
             sec = float(parts[2])
-            total = (h * 3600) + (m * 60) + sec
-            return float(total)
+            return float((h * 3600) + (m * 60) + sec)
         if count == 2:
             m = int(parts[0])
             sec = float(parts[1])
-            total = (m * 60) + sec
-            return float(total)
+            return float((m * 60) + sec)
         if count == 1:
-            val = float(parts[0])
-            return val
+            return float(parts[0])
     except Exception:
         return 0.0
     return 0.0
 
 def create_subprocess(cmd, logger=None):
+    """Creates a subprocess with proper flags to hide the console window on Windows."""
     if logger:
         clean_cmd = [os.path.basename(cmd[0])] + cmd[1:]
         logger.info(f"Starting process: {' '.join(clean_cmd[:5])}...")
@@ -53,20 +53,26 @@ def create_subprocess(cmd, logger=None):
     return proc
 
 def kill_process_tree(pid, logger=None):
+    """Terminates a process and all its children/descendants."""
     if not pid:
         return
     if sys.platform == "win32":
         try:
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], 
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL
+            )
         except Exception:
             pass
     try:
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
         for child in children:
-            child.kill()
-        parent.kill()
+            try: child.kill()
+            except psutil.NoSuchProcess: pass
+        try: parent.kill()
+        except psutil.NoSuchProcess: pass
         if logger:
             logger.info("Process terminated.")
     except psutil.NoSuchProcess:
@@ -77,22 +83,30 @@ def kill_process_tree(pid, logger=None):
             logger.error(f"psutil failed to kill process tree: {e}.")
 
 def check_disk_space(path: str, required_gb: float) -> bool:
+    """Checks if the drive containing 'path' has at least 'required_gb' free."""
     try:
-        usage = psutil.disk_usage(os.path.dirname(os.path.abspath(path)))
+        target = path
+        if not os.path.exists(target):
+            target = os.path.dirname(os.path.abspath(target))
+        usage = psutil.disk_usage(target)
         free_gb = usage.free / (1024**3)
         return free_gb >= required_gb
     except Exception:
-        return False
+        return True
 
 def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger):
     """
-    Optimized progress monitor relying on 'out_time_us' from -progress pipe.
-    Includes periodic disk space check.
+    Monitors FFmpeg stdout for progress stats and handles cancellation/disk checks.
     """
-    last_disk_check = 0
+    last_poll_time = time.time()
     while True:
-        if check_disk_space_callback and check_disk_space_callback():
-            break
+        current_time = time.time()
+        if current_time - last_poll_time > 0.5:
+            if check_disk_space_callback and check_disk_space_callback():
+                logger.warning("MONITOR: Disk full or Cancellation detected. Terminating FFmpeg.")
+                kill_process_tree(proc.pid, logger)
+                break
+            last_poll_time = current_time
         line = proc.stdout.readline()
         if not line:
             if proc.poll() is not None:
@@ -115,8 +129,6 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
                         progress_signal.emit(calc_prog)
                 except ValueError:
                     pass
-            elif key == 'speed':
-                pass
             elif key == 'error':
                  logger.error(f"FFmpeg reported error: {val}")
         else:

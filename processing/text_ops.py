@@ -19,19 +19,21 @@ except ImportError:
 def safe_text(text: str) -> str:
     """
     Sanitizes text for FFmpeg filter chains.
+    Escapes special characters that confuse the drawtext filter.
     """
     if not text:
         return ""
     text = str(text)
     text = text.replace("\\", "\\\\") 
-    text = text.replace("'", "'\''")
+    text = text.replace("'", r"'\''")
     text = text.replace(":", "\\:")
+    text = text.replace("%", "") 
     return text
 
 def fix_hebrew_text(text: str) -> str:
     """
     [DEPRECATED] Legacy fallback. 
-    Use apply_bidi_formatting which handles this correctly.
+    Use apply_bidi_formatting which handles mixed content correctly.
     """
     if not text:
         return ""
@@ -39,8 +41,10 @@ def fix_hebrew_text(text: str) -> str:
 
 def apply_bidi_formatting(text: str) -> str:
     """
-    Applies Bidirectional algorithm to text to ensure correct display of RTL languages.
-    [FIX] handles mixed content (Hebrew + Numbers/English) without flipping LTR chunks.
+    Applies Bidirectional algorithm to text to ensure correct display of RTL languages
+    in environments (like FFmpeg drawtext) that do not support automatic shaping.
+    Returns:
+        str: Text converted to 'Visual' order.
     """
     if not text:
         return ""

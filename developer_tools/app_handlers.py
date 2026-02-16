@@ -270,14 +270,16 @@ class CropAppHandlers:
         """
         if not pix or not rect: return
         process_rect = rect.toRect() if hasattr(rect, 'toRect') else rect
-        if role == "Mini Map + Stats":
-            process_rect.setLeft(process_rect.left() - 1)
-            if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
-                pix = self.draw_widget.pixmap.copy(process_rect.intersected(self.draw_widget.pixmap.rect()))
-        elif role == "Loot Area":
-            process_rect.setRight(process_rect.right() + 1)
-            if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
-                pix = self.draw_widget.pixmap.copy(process_rect.intersected(self.draw_widget.pixmap.rect()))
+
+        from config import HUD_SAFE_PADDING
+        tk = get_tech_key_from_role(role)
+        padding = HUD_SAFE_PADDING.get(tk, {})
+        if "left" in padding:
+            process_rect.setLeft(process_rect.left() + padding["left"])
+        if "right" in padding:
+            process_rect.setRight(process_rect.right() + padding["right"])
+        if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
+            pix = self.draw_widget.pixmap.copy(process_rect.intersected(self.draw_widget.pixmap.rect()))
         rect = process_rect
         tech_key = get_tech_key_from_role(role)
         if tech_key == "unknown":
@@ -329,7 +331,12 @@ class CropAppHandlers:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         anchor_dir = os.path.join(script_dir, 'anchors')
         if not os.path.isdir(anchor_dir):
-             QMessageBox.critical(self, "Setup Required", f"Magic Wand cannot function because the 'anchors' directory is missing.\n\nLocation: {anchor_dir}\n\nPlease reinstall or create this folder with reference images.")
+             self.magic_wand_button.setEnabled(False)
+             self.magic_wand_button.setToolTip("Feature disabled: Reference templates ('anchors' folder) are missing.")
+             QMessageBox.warning(self, "Magic Wand Unavailable", 
+                                f"Magic Wand cannot function because the 'anchors' directory is missing.\n\n"
+                                f"Required path: {anchor_dir}\n\n"
+                                "Please ensure this folder exists with the necessary reference images.")
              return
         if hasattr(self, '_magic_wand_candidates') and self._magic_wand_candidates:
             self._magic_wand_index = (self._magic_wand_index + 1) % len(self._magic_wand_candidates)
@@ -475,6 +482,8 @@ class CropAppHandlers:
                 except RuntimeError as timer_err:
                     self.logger.debug(f"Timer stop skipped for {attr}: {timer_err}")
         self._cleanup_snapshot_runtime()
+        if hasattr(self, '_set_cropping_hint_active'):
+            self._set_cropping_hint_active(False)
         if self._is_wand_thread_running():
             try:
                 worker = getattr(self, 'wand_worker', None)
@@ -596,6 +605,7 @@ class CropAppHandlers:
         self.last_dir = os.path.dirname(file_path)
         if hasattr(self, 'save_geometry'):
             self.save_geometry()
+        QApplication.processEvents()
         loaded_ok = self.media_processor.load_media(file_path, self.video_frame.winId())
         if not loaded_ok:
             QMessageBox.critical(self, "Video Load Error", "Failed to load this video. Please choose another file.")
@@ -623,6 +633,8 @@ class CropAppHandlers:
         self.position_slider.setEnabled(False)
         self.show_video_view()
         self.update_wizard_step(2, "Finding clear frame with HUD elements...")
+        if hasattr(self, '_set_cropping_hint_active'):
+            self._set_cropping_hint_active(True)
         QTimer.singleShot(200, self._sync_play_pause_button)
         self.update_progress_tracker()
         self.timer.start()
@@ -655,6 +667,8 @@ class CropAppHandlers:
             self.snapshot_button.setText("Capturing...")
             if hasattr(self, 'status_label'):
                 self.status_label.setText("Capturing snapshot...")
+            if hasattr(self, '_set_cropping_hint_active'):
+                self._set_cropping_hint_active(False)
             if hasattr(self, 'slider_container'):
                 self.slider_container.setVisible(False)
             was_playing = self.media_processor.is_playing()
@@ -761,6 +775,8 @@ class CropAppHandlers:
             self.slider_container.setVisible(True)
         if hasattr(self, 'magic_wand_button'):
             self.magic_wand_button.setVisible(False)
+        if hasattr(self, '_set_cropping_hint_active'):
+            self._set_cropping_hint_active(True)
 
     def set_position(self, position_ms):
         if not hasattr(self, 'media_processor') or not self.media_processor or not self.media_processor.media_player:
@@ -821,6 +837,8 @@ class CropAppHandlers:
                 if hasattr(self, 'position_slider') and self.position_slider and self.position_slider.isEnabled():
                     self.position_slider.setValue(current_time)
             self.update_time_labels()
+            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget.isVisible():
+                self.hint_overlay_widget.raise_()
         except Exception as e:
             self.logger.error(f"Error in update_ui: {e}")
            

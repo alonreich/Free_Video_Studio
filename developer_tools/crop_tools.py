@@ -34,7 +34,7 @@ from Keyboard_Mixing import KeyboardShortcutMixin
 from media_processor import MediaProcessor
 from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
-from system.constants import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR
+from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR
 from logger_setup import setup_logger
 from enhanced_logger import get_enhanced_logger
 from config_manager import get_config_manager
@@ -326,42 +326,36 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.setFocus()
 
         from ui.styles import UIStyles
-        self.play_pause_button.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
-                color: #ffffff;
-                border-style: solid;
+        self.play_pause_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UI_COLORS.PRIMARY};
+                color: {UI_COLORS.TEXT_PRIMARY};
+                border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+                border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.BACKGROUND_DARK};
                 border-radius: 8px;
                 font-weight: bold;
                 font-size: 10px;
-                padding: 8px 2px;
-                border-top: 1px solid rgba(255, 255, 255, 0.2);
-                border-left: 1px solid rgba(255, 255, 255, 0.2);
-                border-bottom: 1px solid rgba(0, 0, 0, 0.6);
-                border-right: 1px solid rgba(0, 0, 0, 0.6);
-            }
-            QPushButton:hover:!disabled {
+                padding: 0px;
+                margin: 0px;
+                min-height: 29px;
+                max-height: 29px;
+            }}
+            QPushButton:hover:!disabled {{
+                background-color: {UI_COLORS.PRIMARY_HOVER};
                 border: 1px solid #7DD3FC;
-            }
-            QPushButton:pressed:!disabled {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
-                border-top: 1px solid rgba(0, 0, 0, 0.7);
-                border-left: 1px solid rgba(0, 0, 0, 0.7);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                border-right: 1px solid rgba(255, 255, 255, 0.1);
-                padding-top: 9px;
-                padding-left: 3px;
-                padding-bottom: 7px;
-                padding-right: 1px;
-            }
-            QPushButton:disabled {
+            }}
+            QPushButton:pressed:!disabled {{
+                background-color: {UI_COLORS.PRIMARY_PRESSED};
+                padding-top: 1px;
+            }}
+            QPushButton:disabled {{
                 background-color: #4a5a63;
                 color: #95a5a6;
                 border: 1px solid #34495e;
-            }
+            }}
         """)
-        self.play_pause_button.setFixedWidth(150)
-        self.play_pause_button.setFixedHeight(35)
+        self.play_pause_button.setFixedWidth(110)
+        self.play_pause_button.setFixedHeight(29)
         self.play_pause_button.setCursor(Qt.PointingHandCursor)
         try:
             self.setup_persistence(
@@ -480,7 +474,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.portrait_view.setToolTip("Mouse wheel to zoom, middle drag to pan, Shift+Arrows to reorder")
 
     def _init_upload_hint_blink(self):
-        """Initializes the robust smooth fading logic for the upload hint group."""
+        """Initializes the robust smooth fading logic for the hint groups."""
         if not hasattr(self, 'hint_group_container'):
             return
         self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
@@ -500,36 +494,61 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._hint_group.addAnimation(anim_out)
         self._hint_group.setLoopCount(-1)
 
-    def _set_upload_hint_active(self, active):
+    def _set_cropping_hint_active(self, active):
+        """Manages the 'Hit START CROPPING' hint on top of the video."""
         target = getattr(self, 'hint_overlay_widget', None)
-        if not target or not hasattr(self, '_hint_group'):
+        container = getattr(self, 'cropping_hint_container', None)
+        if not target or not container or not hasattr(self, '_hint_group'):
             return
         if active:
-            try:
-                if hasattr(self, 'video_surface') and self.video_surface:
-                    self.video_surface.setVisible(False)
-                if hasattr(self, 'video_viewport_container') and self.video_viewport_container:
-                    self.video_viewport_container.setVisible(False)
-            except Exception:
-                pass
-            if hasattr(self, 'video_frame') and self.video_frame:
-                target.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
+            if hasattr(self, 'upload_hint_container') and self.upload_hint_container:
+                self.upload_hint_container.setVisible(False)
+            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
+                self.upload_hint_arrow.setVisible(False)
+            container.setVisible(True)
+            target.show()
+            target.raise_()
+            if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container:
+                self.cropping_hint_container.raise_()
+            if hasattr(self, '_apply_hint_position'):
+                self._apply_hint_position()
+            self._hint_group.start()
+        else:
+            container.setVisible(False)
+            if not (hasattr(self, 'upload_hint_container') and self.upload_hint_container.isVisible()):
+                self._hint_group.stop()
+                target.hide()
+
+    def _set_upload_hint_active(self, active):
+        target = getattr(self, 'hint_overlay_widget', None)
+        container = getattr(self, 'upload_hint_container', None)
+        if not target or not container or not hasattr(self, '_hint_group'):
+            return
+        if active:
+            if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container:
+                self.cropping_hint_container.setVisible(False)
+            container.setVisible(True)
+            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
+                self.upload_hint_arrow.setVisible(True)
             self._update_upload_hint_responsive()
             target.show()
             target.raise_()
+            if hasattr(self, 'upload_hint_container') and self.upload_hint_container:
+                self.upload_hint_container.raise_()
+            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
+                self.upload_hint_arrow.raise_()
+            if hasattr(self, '_apply_hint_position'):
+                self._apply_hint_position()
             QTimer.singleShot(0, self._update_upload_hint_responsive)
             QTimer.singleShot(120, self._update_upload_hint_responsive)
             self._hint_group.start()
         else:
-            self._hint_group.stop()
-            target.hide()
-            try:
-                if hasattr(self, 'video_surface') and self.video_surface:
-                    self.video_surface.setVisible(True)
-                if hasattr(self, 'video_viewport_container') and self.video_viewport_container:
-                    self.video_viewport_container.setVisible(True)
-            except Exception:
-                pass
+            container.setVisible(False)
+            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
+                self.upload_hint_arrow.setVisible(False)
+            if not (hasattr(self, 'cropping_hint_container') and self.cropping_hint_container.isVisible()):
+                self._hint_group.stop()
+                target.hide()
 
     def _update_upload_hint_responsive(self):
         if (
@@ -582,8 +601,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.upload_hint_container.setFixedSize(box_w, box_h)
         border_px = max(2, int(3 * scale))
         self.upload_hint_container.setStyleSheet(
-            f"background-color: #000000; border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
+            f"background-color: rgba(0, 0, 0, 180); border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
         )
+        if hasattr(self, 'cropping_hint_container'):
+            self.cropping_hint_container.setStyleSheet(
+                f"background-color: rgba(0, 0, 0, 180); border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
+            )
         self.upload_hint_label.setStyleSheet(
             f"color: #7DD3FC; font-family: Arial; font-size: {chosen_font}px; font-weight: 700; "
             f"background: transparent;"
@@ -592,8 +615,17 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.upload_hint_label.setAlignment(Qt.AlignCenter)
         self.upload_hint_label.setWordWrap(False)
         self.upload_hint_label.setFixedWidth(max(220, box_w - (margin_lr * 2)))
+        if hasattr(self, 'cropping_hint_label'):
+            self.cropping_hint_label.setStyleSheet(
+                f"color: #7DD3FC; font-family: Arial; font-size: {chosen_font}px; font-weight: 700; "
+                f"background: transparent;"
+            )
+            self.cropping_hint_label.setFixedWidth(max(220, box_w - (margin_lr * 2)))
         if self.upload_hint_container.layout() is not None:
             self.upload_hint_container.layout().setContentsMargins(margin_lr, margin_tb, margin_lr, margin_tb)
+        if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container.layout() is not None:
+            self.cropping_hint_container.layout().setContentsMargins(margin_lr, margin_tb, margin_lr, margin_tb)
+            self.cropping_hint_container.setFixedSize(box_w, int(self.REF_BOX_H * scale) + 40)
         if self.hint_group_layout.direction() != QHBoxLayout.TopToBottom:
             self.hint_group_layout.setDirection(QHBoxLayout.TopToBottom)
         self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
@@ -664,23 +696,27 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def _apply_hint_position(self):
         if not hasattr(self, 'hint_group_container'): return
         try:
-            host = getattr(self, 'video_frame', None)
-            if host is None:
-                host = getattr(self, 'hint_overlay_widget', None)
+            is_cropping_hint = self.cropping_hint_container.isVisible() if hasattr(self, 'cropping_hint_container') else False
+            host = getattr(self, 'video_viewport_container', None) or getattr(self, 'video_frame', None)
             if host is None:
                 return
-            if hasattr(self, 'video_frame') and self.video_frame and hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
-                self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
+            global_pos = host.mapToGlobal(QPoint(0, 0))
+            self.hint_overlay_widget.setGeometry(global_pos.x(), global_pos.y(), host.width(), host.height())
             win_w, win_h = host.width(), host.height()
             if win_w < 50 or win_h < 50:
                 return
-            offset_x = int(getattr(self, 'REF_HINT_OFFSET_X', 100)) + 50
-            offset_y = int(getattr(self, 'REF_HINT_OFFSET_Y', 100)) - 100
-            overflow_x = 300
-            self.hint_group_container.setGeometry(offset_x - overflow_x, offset_y, win_w + (overflow_x * 2), win_h)
-            if self.hint_group_layout is not None:
-                safe_edge = max(14, int(win_w * 0.03))
-                self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+            if is_cropping_hint:
+                self.hint_group_container.setGeometry(0, 0, win_w, win_h)
+                if self.hint_group_layout is not None:
+                    self.hint_group_layout.setAlignment(Qt.AlignCenter)
+                    self.hint_group_layout.setContentsMargins(0, 0, 0, 0)
+            else:
+                self.hint_group_container.setGeometry(0, 0, win_w, win_h)
+                if self.hint_group_layout is not None:
+                    self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+                    stable_top_margin = max(40, int(win_h * 0.35))
+                    self.hint_group_layout.setContentsMargins(0, stable_top_margin, 0, 0)
+            self.hint_overlay_widget.raise_()
             self.hint_group_container.raise_()
         except Exception:
             pass
@@ -894,6 +930,14 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                     self.placeholders_group.append(rect_item)
         except Exception as e:
             self.logger.error(f"Error loading placeholders: {e}")
+        has_saved = len(self.placeholders_group) > 0
+        if hasattr(self, 'show_placeholders_checkbox'):
+            self.show_placeholders_checkbox.setEnabled(has_saved)
+            if not has_saved:
+                self.show_placeholders_checkbox.setChecked(False)
+                self.show_placeholders_checkbox.setToolTip("No saved crops found in configuration.")
+            else:
+                self.show_placeholders_checkbox.setToolTip("Show Existing (E): Display previously saved HUD locations on screen.")
         if hasattr(self, 'draw_widget'):
             self.draw_widget.set_ghost_rects(ghosts_for_landscape)
         self.toggle_placeholders()
@@ -1249,10 +1293,14 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.raise_()
+        self.activateWindow()
         self.portrait_view.fit_to_scene()
         self._position_refine_selection_hint()
         if hasattr(self, '_update_upload_hint_responsive'):
             self._update_upload_hint_responsive()
+        if hasattr(self, 'hint_overlay_widget'):
+            self.hint_overlay_widget.show()
         QTimer.singleShot(200, self._check_restore)
         if not self._autosave_timer.isActive():
             self._autosave_timer.start()
@@ -1448,6 +1496,8 @@ def main():
         file_path = sys.argv[1] if len(sys.argv) > 1 else None
         player = CropApp(logger, enhanced_logger_instance, file_path=file_path)
         player.show()
+        player.raise_()
+        player.activateWindow()
         try:
             ret = app.exec_()
         except Exception as event_loop_err:

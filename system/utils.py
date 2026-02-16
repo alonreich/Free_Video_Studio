@@ -66,32 +66,37 @@ class ProcessManager:
     @staticmethod
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
         """
-        Kills stray processes that might be lingering from previous sessions.
-        STRICT SAFETY: Only kills processes running from the application's 'binaries' directory.
+        [FIX #10] Aggressively kills stray processes associated with this project.
         """
         my_pid = os.getpid()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         bin_dir = os.path.join(base_dir, 'binaries')
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
                 if proc.info['pid'] == my_pid:
                     continue
-                if proc.info['name'] in process_names:
+                name = proc.info['name']
+                if name in process_names:
                     proc_exe = proc.info.get('exe')
-                    if proc_exe and bin_dir in os.path.abspath(proc_exe):
+                    cmdline = " ".join(proc.info.get('cmdline') or [])
+                    if (proc_exe and bin_dir in os.path.abspath(proc_exe)) or (base_dir in cmdline):
                         proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
         """
-        Cleans up temporary files from previous sessions.
-        [FIX] Also aggressively removes any __pycache__ folders found in the project.
+        [FIX #3] Aggressively cleans up temporary files from previous or failed sessions.
+        No longer waits for 6 hours; if they match our patterns, they are deleted.
         """
         temp_dir = tempfile.gettempdir()
+        patterns = [
+            prefix, "core-", "intro-", "ffmpeg2pass-", "drawtext-", 
+            "filter_complex-", "concat-", "thumb-", "snapshot-"
+        ]
         try:
             for filename in os.listdir(temp_dir):
-                if filename.startswith(prefix) or filename.startswith("core-") or filename.startswith("ffmpeg2pass"):
+                if any(filename.startswith(p) for p in patterns):
                     file_path = os.path.join(temp_dir, filename)
                     try:
                         if os.path.isfile(file_path):
@@ -101,6 +106,13 @@ class ProcessManager:
                     except Exception:
                         pass
         except Exception:
+            pass
+        try:
+            local_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".tmp")
+            if os.path.exists(local_tmp):
+                shutil.rmtree(local_tmp)
+                os.makedirs(local_tmp, exist_ok=True)
+        except:
             pass
         try:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -116,27 +128,30 @@ class ProcessManager:
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
         """
-        Acquires a named lock file using OS-level file locking (msvcrt/fcntl).
+        [FIX #5] Acquires a named lock file with a small retry logic to handle OS lag.
         Returns (success, file_handle).
-        If success, file_handle MUST be kept open to maintain the lock.
         """
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")
-        try:
-            f = open(pid_file, "a+")
-            f.seek(0)
-            if sys.platform == "win32":
-                import msvcrt
-                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            f.seek(0)
-            f.truncate()
-            f.write(str(os.getpid()))
-            f.flush()
-            return True, f
-        except (IOError, OSError, PermissionError):
-            return False, None
+        for attempt in range(3):
+            try:
+                f = open(pid_file, "a+")
+                f.seek(0)
+                if sys.platform == "win32":
+                    import msvcrt
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                f.seek(0)
+                f.truncate()
+                f.write(str(os.getpid()))
+                f.flush()
+                return True, f
+            except (IOError, OSError, PermissionError):
+                if attempt < 2:
+                    time.sleep(0.2)
+                continue
+        return False, None
 
 class ConsoleManager:
     @staticmethod
@@ -188,10 +203,16 @@ class ConsoleManager:
         t.start()
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
-        LogManager.truncate_vlc_log(base_dir, max_size_mb=5)
-        logger = LogManager.setup_logger(base_dir, log_filename, logger_name)
+        app_prefix = logger_name.lower().replace(" ", "_")
+        LogManager.truncate_vlc_log(base_dir, app_prefix, max_size_mb=5)
+        if not log_filename.startswith(app_prefix):
+            final_log_filename = f"{app_prefix}_{log_filename}"
+        else:
+            final_log_filename = log_filename
+        logger = LogManager.setup_logger(base_dir, final_log_filename, logger_name)
         log_dir = os.path.join(base_dir, "logs")
-        vlc_log_path = os.path.join(log_dir, "vlc.log")
+        os.makedirs(log_dir, exist_ok=True)
+        vlc_log_path = os.path.join(log_dir, f"{app_prefix}_vlc.log")
         source_tag = ConsoleManager._source_tag(logger_name)
         raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")
         os.environ["FVS_VLC_SOURCE_TAG"] = source_tag
@@ -205,13 +226,20 @@ class ConsoleManager:
             error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
             logger.critical(f"UNCAUGHT EXCEPTION:\n{error_msg}")
             try:
-                from PyQt5.QtWidgets import QMessageBox, QApplication
+                from PyQt5.QtWidgets import QMessageBox, QApplication, QSpacerItem, QSizePolicy, QGridLayout
                 if QApplication.instance():
-                    QMessageBox.critical(None, "Critical Error", f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
+                    msg_box = QMessageBox(None)
+                    msg_box.setIcon(QMessageBox.Critical)
+                    msg_box.setWindowTitle("Critical Error")
+                    msg_box.setText(f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
+                    layout = msg_box.layout()
+                    if isinstance(layout, QGridLayout):
+                        layout.addItem(QSpacerItem(600, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+                    msg_box.exec_()
             except: pass
         sys.excepthook = global_exception_handler
         try:
-            ConsoleManager._f_keepalive = open(raw_log_path, 'a', buffering=1, encoding='utf-8')
+            ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
             f = ConsoleManager._f_keepalive
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
@@ -234,12 +262,12 @@ class ConsoleManager:
 
 class LogManager:
     @staticmethod
-    def truncate_vlc_log(base_dir: str, max_size_mb: int = 5):
+    def truncate_vlc_log(base_dir: str, app_prefix: str, max_size_mb: int = 5):
         """
-        Maintains logs/vlc.log size by keeping only the last N MB (FIFO).
+        Maintains logs size by keeping only the last N MB (FIFO).
         """
         try:
-            log_path = os.path.join(base_dir, "logs", "vlc.log")
+            log_path = os.path.join(base_dir, "logs", f"{app_prefix}_vlc.log")
             if not os.path.exists(log_path):
                 return
             file_size = os.path.getsize(log_path)

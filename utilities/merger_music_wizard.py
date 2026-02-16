@@ -3,6 +3,7 @@ import os
 import logging
 import threading
 import ctypes
+import traceback
 from logging.handlers import RotatingFileHandler
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QStyle
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
@@ -48,45 +49,62 @@ class MergerMusicWizard(
         self._cache_wall_times()
         self.setWindowTitle("Background Music Selection Wizard")
         self.setModal(True)
+        if os.name == 'nt':
+            import ctypes
+            try:
+                ctypes.windll.ole32.CoInitializeEx(None, 0x0)
+            except: pass
         log_dir = os.path.join(getattr(self.parent_window, "base_dir", "."), "logs")
         os.makedirs(log_dir, exist_ok=True)
-        self.vlc_log_path = os.path.join(log_dir, "vlc.log")
-        ts = int(time.time())
-        self._v_raw_log = os.path.join(log_dir, f"vlc_v_raw_{ts}.log")
-        self._m_raw_log = os.path.join(log_dir, f"vlc_m_raw_{ts}.log")
+        self._v_native_log = os.path.join(log_dir, "vlc_merger_video.log")
+        self._m_native_log = os.path.join(log_dir, "vlc_merger_music.log")
+        for p in [self._v_native_log, self._m_native_log]:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except: pass
         if os.name == 'nt':
             try:
                 ctypes.windll.ole32.CoInitializeEx(None, 0x0)
             except: pass
         plugin_path = os.path.join(self.bin_dir, "plugins").replace('\\', '/')
-        vlc_args_common = [
+        vlc_args_v = [
             "--verbose=2",
             "--no-osd",
             "--aout=directx",
-            "--mmdevice-passthrough=0",
-            "--avcodec-hw=any",
-            "--vout=direct3d11",
+            "--file-logging",
+            f"--logfile={self._v_native_log}",
             "--ignore-config",
-            f"--plugin-path={plugin_path}"
+            f"--plugin-path={plugin_path}",
+            "--user-agent=VLC_MERGER_VIDEO_WORKER"
+        ]
+        vlc_args_m = [
+            "--verbose=2",
+            "--no-osd",
+            "--aout=waveout",
+            "--file-logging",
+            f"--logfile={self._m_native_log}",
+            "--ignore-config",
+            f"--plugin-path={plugin_path}",
+            "--user-agent=VLC_MERGER_MUSIC_WORKER"
         ]
         os.environ["VLC_PLUGIN_PATH"] = os.path.join(self.bin_dir, "plugins")
         self.vlc_v = None
         self.vlc_m = None
         if _vlc_mod:
             try:
-                v_args = vlc_args_common + ["--directx-audio-device-name=VIDEO_PLAYER"]
-                self.vlc_v = _vlc_mod.Instance(v_args)
+                self.vlc_v = _vlc_mod.Instance(vlc_args_v)
+                if self.vlc_v:
+                    self.logger.info(f"WIZARD: [VIDEO_WORKER] Instance Created. ID={hex(id(self.vlc_v))} Log={self._v_native_log}")
             except Exception as ex_v:
-                self.logger.error("WIZARD_VLC: VIDEO primary instance failed: %s", ex_v)
+                self.logger.error("WIZARD: [VIDEO_WORKER] Failed: %s", ex_v)
             try:
-                m_args = vlc_args_common + ["--directx-audio-device-name=MUSIC_PLAYER"]
-                self.vlc_m = _vlc_mod.Instance(m_args)
+                self.vlc_m = _vlc_mod.Instance(vlc_args_m)
+                if self.vlc_m:
+                    self.logger.info(f"WIZARD: [MUSIC_WORKER] Instance Created. ID={hex(id(self.vlc_m))} Log={self._m_native_log}")
             except Exception as ex_m:
-                self.logger.error("WIZARD_VLC: MUSIC primary instance failed: %s", ex_m)
+                self.logger.error("WIZARD: [MUSIC_WORKER] Failed: %s", ex_m)
         if not self.vlc_v: self.vlc_v = self.parent_window.vlc_instance
         if not self.vlc_m: self.vlc_m = self.parent_window.vlc_instance
-        if not self.vlc_v or not self.vlc_m:
-            self.logger.error("WIZARD_VLC: Dedicated instances unavailable. Preview isolation may not work.")
         self.vlc = self.vlc_v
         self._log_running = True
         self._log_thread = threading.Thread(target=self._aggregate_logs, daemon=True)
@@ -133,14 +151,17 @@ class MergerMusicWizard(
         self.btn_cancel_wizard = QPushButton("CANCEL")
         self.btn_cancel_wizard.setFixedWidth(140); self.btn_cancel_wizard.setFixedHeight(42)
         self.btn_cancel_wizard.setStyleSheet(MergerUIStyle.BUTTON_DANGER)
+        self.btn_cancel_wizard.setCursor(Qt.PointingHandCursor)
         self.btn_cancel_wizard.clicked.connect(self._on_nav_cancel_clicked)
         self.btn_back = QPushButton("  BACK")
         self.btn_back.setFixedWidth(135); self.btn_back.setFixedHeight(42)
         self.btn_back.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.btn_back.setCursor(Qt.PointingHandCursor)
         self.btn_back.clicked.connect(self._on_nav_back_clicked)
         self.btn_back.hide()
         self.btn_play_video = QPushButton("  PLAY")
         self.btn_play_video.setFixedWidth(150); self.btn_play_video.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.btn_play_video.setCursor(Qt.PointingHandCursor)
         self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.btn_play_video.clicked.connect(self.toggle_video_preview)
         self.btn_play_video.hide()

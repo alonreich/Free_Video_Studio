@@ -1,8 +1,12 @@
 ﻿from PyQt5.QtWidgets import QListWidget, QWidget, QHBoxLayout, QLabel
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 class SearchableListWidget(QListWidget):
-    """A QListWidget that ignores decorative elements during keyboard search and supports multi-char type-ahead."""
+    """
+    [FIX #8] A QListWidget with forgiving multi-char type-ahead.
+    Matches anywhere in the name and reports buffer to UI.
+    """
+    buffer_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -14,12 +18,14 @@ class SearchableListWidget(QListWidget):
 
     def _clear_buffer(self):
         self._search_buffer = ""
+        self.buffer_changed.emit("")
 
     def keyPressEvent(self, event):
         text = event.text()
         if text and len(text) == 1 and event.modifiers() == Qt.NoModifier:
             self._buffer_timer.stop()
             self._search_buffer += text.lower()
+            self.buffer_changed.emit(self._search_buffer)
             self._buffer_timer.start()
             for i in range(self.count()):
                 item = self.item(i)
@@ -27,22 +33,10 @@ class SearchableListWidget(QListWidget):
                     w = self.itemWidget(item)
                     if w and hasattr(w, 'name_lbl'):
                         clean_text = w.name_lbl.text().lower()
-                        if clean_text.startswith(self._search_buffer):
+                        if self._search_buffer in clean_text:
                             self.setCurrentItem(item)
                             self.scrollToItem(item)
                             return
-            if len(self._search_buffer) > 1:
-                self._search_buffer = text.lower()
-                for i in range(self.count()):
-                    item = self.item(i)
-                    if not item.isHidden():
-                        w = self.itemWidget(item)
-                        if w and hasattr(w, 'name_lbl'):
-                            clean_text = w.name_lbl.text().lower()
-                            if clean_text.startswith(self._search_buffer):
-                                self.setCurrentItem(item)
-                                self.scrollToItem(item)
-                                return
             return
         super().keyPressEvent(event)
 

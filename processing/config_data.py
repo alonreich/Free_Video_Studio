@@ -20,7 +20,8 @@ class VideoConfig:
         self.measure_fudge = 1.12
 
     def get_mobile_coordinates(self, logger=None):
-        conf_path = os.path.join(self.base_dir, 'processing', 'crops_coordinations.conf')
+        conf_dir = os.path.join(self.base_dir, 'processing')
+        conf_path = os.path.join(conf_dir, 'crops_coordinations.conf')
         default_conf_data = {
             "crops_1080p": {
                 "loot": [400, 400, 680, 1220],
@@ -54,6 +55,7 @@ class VideoConfig:
         if not os.path.exists(conf_path):
             if logger: logger.info(f"Config missing at {conf_path}, creating with defaults.")
             try:
+                os.makedirs(conf_dir, exist_ok=True)
                 with open(conf_path, 'w', encoding='utf-8') as f:
                     json.dump(default_conf_data, f, indent=4)
             except Exception as e:
@@ -83,5 +85,16 @@ class VideoConfig:
         else:
             keep_highest_res = False
             if target_mb_override is not None:
-                target_mb = target_mb_override
+                target_mb = float(target_mb_override)
+            else:
+                if q <= 0:
+                    target_mb = 15.0
+                elif q == 1:
+                    target_mb = 25.0
+                elif q == 2:
+                    target_mb = 45.0
+                elif q == 3:
+                    target_mb = 90.0
+                else:
+                    target_mb = 45.0
         return keep_highest_res, target_mb, q

@@ -1,6 +1,6 @@
 ﻿import os
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton, QStackedLayout, QSizePolicy
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_wizard_widgets import SearchableListWidget, MusicItemWidget
 
@@ -32,31 +32,36 @@ class MergerMusicWizardStepPagesMixin:
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
         left_balance_spacer = QWidget()
-        left_balance_spacer.setFixedWidth(200) 
+        left_balance_spacer.setObjectName("headerLeftSpacer")
+        left_balance_spacer.setFixedWidth(185) 
+        left_balance_spacer.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         header_layout.addWidget(left_balance_spacer)
         header_layout.addStretch(1)
         self.lbl_step1 = QLabel("STEP 1: Pick a song from your folder")
         self.lbl_step1.setStyleSheet("font-size: 20px; font-weight: bold; color: #7DD3FC; padding: 0px; margin: 0px;")
         self.lbl_step1.setAlignment(Qt.AlignCenter)
         self.lbl_step1.setFixedHeight(40)
+        self.lbl_step1.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         header_layout.addWidget(self.lbl_step1)
         header_layout.addStretch(1)
         self.select_folder_btn = QPushButton()
-        self.select_folder_btn.setStyleSheet(UIStyles.BUTTON_STANDARD)
-        self.select_folder_btn.setFixedSize(235, 42)
+        self.select_folder_btn.setObjectName("selectFolderBtn")
+        self.select_folder_btn.setFixedSize(100, 42)
+        self.select_folder_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.select_folder_btn.setCursor(Qt.PointingHandCursor)
+        self.select_folder_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + " QPushButton#selectFolderBtn { min-width: 185px; }")
         self.select_folder_btn.clicked.connect(lambda: self.parent_window._on_select_music_folder(self))
         btn_layout = QHBoxLayout(self.select_folder_btn)
-        btn_layout.setContentsMargins(2, 0, 2, 0)
-        btn_layout.setSpacing(3)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(2)
         gear_l = QLabel("⚙️")
-        gear_l.setStyleSheet("font-size: 16px; color: white; background: transparent; border: none;")
+        gear_l.setStyleSheet("font-size: 13px; color: white; background: transparent; border: none; padding: 0;")
         gear_l.setAttribute(Qt.WA_TransparentForMouseEvents)
-        txt_lbl = QLabel("SELECT MUSIC FOLDER")
-        txt_lbl.setStyleSheet("font-size: 12px; color: white; font-weight: bold; background: transparent; border: none;")
+        txt_lbl = QLabel(" SELECT MUSIC FOLDER ")
+        txt_lbl.setStyleSheet("font-size: 11px; color: white; font-weight: bold; background: transparent; border: none; padding: 0;")
         txt_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         gear_r = QLabel("⚙️")
-        gear_r.setStyleSheet("font-size: 16px; color: white; background: transparent; border: none;")
+        gear_r.setStyleSheet("font-size: 13px; color: white; background: transparent; border: none; padding: 0;")
         gear_r.setAttribute(Qt.WA_TransparentForMouseEvents)
         btn_layout.addStretch()
         btn_layout.addWidget(gear_l)
@@ -93,12 +98,16 @@ class MergerMusicWizardStepPagesMixin:
         self.search_input.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(search_icon)
         search_layout.addWidget(self.search_input)
+        self.search_hint_lbl = QLabel("")
+        self.search_hint_lbl.setStyleSheet("color: #7DD3FC; font-weight: bold; font-style: italic; font-size: 11px;")
+        search_layout.addWidget(self.search_hint_lbl)
         layout.addLayout(search_layout)
         layout.addSpacing(10)
         self.track_list = SearchableListWidget()
+        self.track_list.buffer_changed.connect(lambda b: self.search_hint_lbl.setText(f"Searching: '{b}'" if b else ""))
         self.track_list.setStyleSheet("""
             QListWidget {
-                background: #0b141d;
+                background: #142d37;
                 border: 2px solid #1f3545;
                 border-radius: 12px;
                 outline: none;
@@ -115,7 +124,7 @@ class MergerMusicWizardStepPagesMixin:
             }
             QScrollBar:vertical {
                 width: 22px;
-                background: #0b141d;
+                background: #142d37;
                 border: 1px solid #1f3545;
                 border-radius: 10px;
                 margin: 2px;

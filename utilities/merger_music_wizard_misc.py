@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 from PyQt5.QtCore import QPoint, QRect
@@ -36,21 +36,32 @@ class MergerMusicWizardMiscMixin:
             else:
                 self.setMinimumSize(w_def, h_def)
                 self.setMaximumSize(16777215, 16777215)
+            app = QApplication.instance()
+            target_screen = app.primaryScreen()
+            if hasattr(self, "parent_window") and self.parent_window:
+                try:
+                    target_screen = self.parent_window.screen() or target_screen
+                except: pass
             if key in geo_map:
                 g = geo_map[key]
-                self.setGeometry(g['x'], g['y'], g['w'], g['h'])
-            else:
-                self.resize(w_def, h_def)
-                app = QApplication.instance()
-                screen = app.primaryScreen()
-                if hasattr(self, "parent_window") and self.parent_window:
-                    try:
-                        screen = self.parent_window.screen() or screen
-                    except: pass
-                screen_geo = screen.availableGeometry()
-                fg = self.frameGeometry()
-                fg.moveCenter(screen_geo.center())
-                self.move(fg.topLeft())
+                saved_screen_name = g.get('screen')
+                if saved_screen_name:
+                    for s in app.screens():
+                        if s.name() == saved_screen_name:
+                            target_screen = s
+                            break
+                screen_geo = target_screen.availableGeometry()
+                if screen_geo.intersects(QRect(g['x'], g['y'], g['w'], g['h'])):
+                    self.setGeometry(g['x'], g['y'], g['w'], g['h'])
+                    return
+            self.resize(w_def, h_def)
+            screen_geo = target_screen.availableGeometry()
+            final_w = min(w_def, screen_geo.width())
+            final_h = min(h_def, screen_geo.height() - 40)
+            x = screen_geo.x() + (screen_geo.width() - final_w) // 2
+            y = screen_geo.y() + (screen_geo.height() - final_h) // 2
+            self.resize(final_w, final_h)
+            self.move(x, y)
         finally:
             self._is_applying_geometry = False
 
@@ -158,6 +169,17 @@ class MergerMusicWizardMiscMixin:
             else: 
                 self._wave_caret.hide(); self._wave_time_badge.hide(); self._wave_time_badge_bottom.hide()
         except: pass
+
+    def _scaled_vol(self, mix_val):
+        """Scale a 0-100 mix value by the parent's master monitor percentage."""
+        try:
+            if hasattr(self.parent_window, "_vol_eff"):
+                master_ratio = self.parent_window._vol_eff() / 100.0
+                final_vol = int(max(0, min(100, mix_val * master_ratio)))
+                self.logger.info(f"DEBUG_SCALED_VOL: Merger Mix={mix_val}% Master={master_ratio*100:.1f}% -> Final={final_vol}%")
+                return final_vol
+        except: pass
+        return int(max(0, min(100, mix_val)))
 
     def _format_time_long(self, ms):
         total_seconds = int(ms / 1000)
