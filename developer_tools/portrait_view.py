@@ -139,10 +139,10 @@ class PortraitView(QGraphicsView):
             
         from PyQt5.QtWidgets import QMenu, QAction
         menu = QMenu(self)
-        top_action = QAction("Bring to Top", self)
+        top_action = QAction("Bring Forward", self)
         top_action.triggered.connect(lambda: self.window().raise_selected_item())
         menu.addAction(top_action)
-        bottom_action = QAction("Send to Bottom", self)
+        bottom_action = QAction("Send Backward", self)
         bottom_action.triggered.connect(lambda: self.window().lower_selected_item())
         menu.addAction(bottom_action)
         menu.addSeparator()
@@ -152,23 +152,48 @@ class PortraitView(QGraphicsView):
         menu.exec_(event.globalPos())
 
     def _autospace_items(self, items):
-        """Simple algorithm to push overlapping items apart."""
+        """Simple algorithm to push overlapping items apart with coalesced undo."""
         if len(items) < 2: return
-        modified = False
+        app = self.window()
+        if not hasattr(app, '_get_item_state'): return
+        states_before = {item: app._get_item_state(item) for item in items}
+        modified_items = []
         items.sort(key=lambda i: i.scenePos().y())
-        for i in range(len(items)):
-            for j in range(i + 1, len(items)):
-                item_a = items[i]
-                item_b = items[j]
-                rect_a = item_a.sceneBoundingRect()
-                rect_b = item_b.sceneBoundingRect()
-                if rect_a.intersects(rect_b):
-                    overlap_h = rect_a.bottom() - rect_b.top()
-                    item_b.moveBy(0, overlap_h + 10)
-                    modified = True
-        if modified and hasattr(self.parent(), 'on_item_modified'):
-            for item in items:
-                self.parent().on_item_modified(item)
+        was_in_undo = getattr(app, '_in_undo_redo', False)
+        app._in_undo_redo = True
+        try:
+            for i in range(len(items)):
+                for j in range(i + 1, len(items)):
+                    item_a = items[i]
+                    item_b = items[j]
+                    rect_a = item_a.sceneBoundingRect()
+                    rect_b = item_b.sceneBoundingRect()
+                    if rect_a.intersects(rect_b):
+                        overlap_h = rect_a.bottom() - rect_b.top()
+                        item_b.moveBy(0, overlap_h + 10)
+                        if item_b not in modified_items:
+                            modified_items.append(item_b)
+        finally:
+            app._in_undo_redo = was_in_undo
+        if modified_items and hasattr(app, 'register_undo_action'):
+            states_after = {item: app._get_item_state(item) for item in items}
+            
+            def undo_autospace(states=states_before):
+                 for item, state in states.items():
+                     app._apply_item_state(item, state)
+                 app._mark_dirty()
+                 return True
+            
+            def redo_autospace(states=states_after):
+                 for item, state in states.items():
+                     app._apply_item_state(item, state)
+                 app._mark_dirty()
+                 return True
+            app.register_undo_action("Autospace Overlaps", undo_autospace, redo_autospace)
+            for item in modified_items:
+                if item.assigned_role:
+                    app.modified_roles.add(item.assigned_role)
+            app._mark_dirty()
             self.scene().update()
 
     def mouseReleaseEvent(self, event):

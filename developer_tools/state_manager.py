@@ -250,6 +250,22 @@ class StateManager:
         if len(self.undo_stack) > self.max_undo_stack_size:
             self.undo_stack = self.undo_stack[-self.max_undo_stack_size:]
         self.logger.debug(f"Added undo action: {description} ({action_type})")
+
+    def add_or_update_recent_undo(self, action_type: str, description: str, undo_func: Callable[[], bool], redo_func: Callable[[], bool], window_ms: int = 1000) -> None:
+        """
+        Adds a new action or updates the existing one if it matches the type and is within the time window.
+        Used for coalescing micro-actions like nudging.
+        """
+        current_time = time.time()
+        if self.undo_stack:
+            last_action = self.undo_stack[-1]
+            if last_action.action_type == action_type and (current_time - last_action.timestamp) * 1000 < window_ms:
+                last_action.redo_func = redo_func
+                last_action.description = description
+                last_action.timestamp = current_time
+                self.logger.debug(f"Coalesced undo action: {description}")
+                return
+        self.add_undo_action(action_type, description, undo_func, redo_func)
     
     def undo(self) -> bool:
         """Undo the last action with optimized validation."""

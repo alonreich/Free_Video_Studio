@@ -42,16 +42,12 @@ class FilterBuilder:
         w = self._make_even(target_w)
         if keep_highest_res:
             return "scale_cuda=format=nv12"
-        if w in [1920, 1280, 960]:
-             return f"scale_cuda={w}:-2:interp=linear:format=nv12"
-        return f"scale_cuda={w}:-2:interp=linear:format=nv12"
+        return f"scale_cuda={w}:-2:format=nv12"
 
     def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False):
         """
         Builds the complex filter graph for mobile layout.
-        Args:
-            needs_text_overlay (bool): If False, we skip the 'hwdownload' step in NVIDIA mode
-                                       keeping the entire pipeline on VRAM for max speed.
+        Optimized to keep pipeline on GPU even with text overlay.
         """
         coords_data = mobile_coords
 
@@ -98,30 +94,49 @@ class FilterBuilder:
             cmd = "format=nv12,hwupload_cuda[gpu_master];"
             split_count = 1 + len(active_layers)
             cmd += f"[gpu_master]split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
-            cmd += "[bg_in]scale_cuda=1280:1920:interp=linear:force_original_aspect_ratio=increase,crop=1280:1920[bg_pre];"
+            cmd += "[bg_in]scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[bg_pre];"
             hud_gpu_names = []
             for layer in active_layers:
                 cw, ch, cx, cy = layer['crop_orig']
-                raw_w = layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE
-                raw_h = layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE
-                render_w = max(2, self._make_even(raw_w))
-                render_h = max(2, self._make_even(raw_h))
-                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:interp=linear[{layer['name']}_gpu]"
+                render_w = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
+                render_h = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:format=nv12[{layer['name']}_gpu]"
                 cmd += f_str + ";"
                 hud_gpu_names.append(f"{layer['name']}_gpu")
             current_pad = "[bg_pre]"
             for i, layer in enumerate(active_layers):
                 lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = self._make_even((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
+                ly = self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
+                next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
+                cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
+                current_pad = next_pad
+        if use_nvidia:
+            cmd = "format=nv12,hwupload_cuda[gpu_master];"
+            split_count = 1 + len(active_layers)
+            cmd += f"[gpu_master]split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
+            cmd += "[bg_in]scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[bg_pre];"
+            hud_gpu_names = []
+            for layer in active_layers:
+                cw, ch, cx, cy = layer['crop_orig']
+                render_w = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
+                render_h = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:format=nv12[{layer['name']}_gpu]"
+                cmd += f_str + ";"
+                hud_gpu_names.append(f"{layer['name']}_gpu")
+            current_pad = "[bg_pre]"
+            for i, layer in enumerate(active_layers):
+                lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
+                ly = self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
                 next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
                 cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
                 current_pad = next_pad
             if not active_layers:
-                cmd = "format=nv12,hwupload_cuda,scale_cuda=1280:1920:interp=linear:force_original_aspect_ratio=increase,crop=1280:1920[vpreout_gpu];"
+                cmd = "format=nv12,hwupload_cuda,scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[vpreout_gpu];"
+            cmd += "[vpreout_gpu]scale_cuda=1080:1620:format=nv12,pad=1080:1920:0:150:black,format=nv12"
             if needs_text_overlay:
-                return self.build_mobile_filter(mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False)
+                cmd += ",hwdownload,format=nv12"
             else:
-                cmd += "[vpreout_gpu]scale_cuda=1080:1920:interp=linear:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
+                cmd += ",format=nv12"
             return cmd
         else:
             f_main_inner = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
@@ -140,13 +155,13 @@ class FilterBuilder:
             current_pad = "[main_cropped]"
             for i, layer in enumerate(active_layers):
                 lx = scale_round(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = scale_round((float(layer['pos'][1]) - float(PADDING_TOP)) * BACKEND_SCALE)
+                ly = scale_round(float(layer['pos'][1]) * BACKEND_SCALE)
                 next_pad = f"[t{i}]" if i < len(active_layers) - 1 else "[vpreout]"
                 cmd += f"{current_pad}[{layer['name']}_out]overlay=x={lx}:y={ly}{next_pad};"
                 current_pad = next_pad
             if not active_layers:
                  cmd = f"split=1[main_base];[main_base]{f_main_inner}[vpreout];"
-            cmd += "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
+            cmd += "[vpreout]scale=1080:1620:flags=bilinear,pad=1080:1920:0:150:black,format=nv12"
             return cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
@@ -279,14 +294,14 @@ class FilterBuilder:
         full_chain = f"{v_filter_cmd};{';'.join(a_filter_parts)};{a_concat_cmd}"
         return full_chain, "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
 
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=None):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000):
         chain = []
+        target_sample_rate = sample_rate or 48000
         main_audio_filter_parts = [audio_filter_cmd if audio_filter_cmd else "anull"]
         if vfade_in_d > 0:
             main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         main_audio_filter = ",".join(main_audio_filter_parts)
-        resample_filter = f",aresample={sample_rate}" if sample_rate else ""
-        chain.append(f"[0:a]{main_audio_filter}{resample_filter},asetpts=PTS-STARTPTS[a_main_prepared]")
+        chain.append(f"[0:a]{main_audio_filter},aresample={target_sample_rate},asetpts=PTS-STARTPTS[a_main_prepared]")
         if music_config and music_config.get("path"):
             mc = music_config
             t_mapper = time_mapper if time_mapper else (lambda t: (t - video_start_time) / speed_factor)
@@ -311,42 +326,29 @@ class FilterBuilder:
             final_start_pos = file_offset + start_skip
             music_filters = [
                 f"atrim=start={final_start_pos:.3f}:duration={dur_a:.3f}",
-                "asetpts=PTS-STARTPTS"
+                "asetpts=PTS-STARTPTS",
+                f"aresample={target_sample_rate}"
             ]
             if not disable_fades:
-                FADE_DUR = min(1.0, dur_a / 3.0)
-                if dur_a > 0.1:
+                MIN_CLIP_FOR_FADE = 0.3
+                if dur_a > MIN_CLIP_FOR_FADE:
+                    FADE_DUR = min(1.0, dur_a / 3.0)
                     music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
                     music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
             vol = max(0.0, min(1.0, float(mc.get('volume', 1.0))))
             music_filters.append(f"volume={vol:.4f}")
-            music_filters.append(f"aresample={sample_rate}")
             chain.append(f"[1:a]{','.join(music_filters)}[a_music_prepared]")
             if delay_ms > 0:
                 chain.append(f"[a_music_prepared]adelay={delay_ms}|{delay_ms}[a_music_delayed]")
-                chain.append("[a_music_delayed]asplit=2[mus_base][mus_to_filter]")
+                mus_input = "[a_music_delayed]"
             else:
-                chain.append("[a_music_prepared]asplit=2[mus_base][mus_to_filter]")
-            chain.append("[mus_base]lowpass=f=150[mus_low]")
-            chain.append("[mus_to_filter]highpass=f=150[mus_high]")
-            chain.append("[a_main_prepared]asplit=2[game_out][game_trig]")
-            chain.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
-            chain.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
-            d_thresh = mc.get('duck_threshold', 0.15)
-            d_ratio = mc.get('duck_ratio', 2.5)
-            d_attack = mc.get('duck_attack', 1)
-            d_release = mc.get('duck_release', 400)
-            duck_params = f"threshold={d_thresh}:ratio={d_ratio}:attack={d_attack}:release={d_release}:detection=rms"
-            chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
-            chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
+                mus_input = "[a_music_prepared]"
             v_vol = float(mc.get('main_vol', 1.0))
-            chain.append(f"[game_out]volume={v_vol:.4f}[game_scaled]")
-            chain.append(
-                "[game_scaled][a_music_reconstructed]"
-                "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
-                "alimiter=limit=0.95:attack=5:release=50[acore_pre_limiter]"
-            )
-            chain.append(f"[acore_pre_limiter]aresample={sample_rate}[acore]")
+            chain.append(f"[a_main_prepared]volume={v_vol:.4f}[game_scaled]")
+            chain.append(f"[game_scaled]{mus_input}amix=inputs=2:duration=first:dropout_transition=0:normalize=0[acore]")
+        else:
+            chain.append("[a_main_prepared]anull[acore]")
+        return chain
         else:
             chain.append("[a_main_prepared]anull[acore]")
         return chain

@@ -16,6 +16,8 @@ class MergerTimelineWidget(QWidget):
         self.setMinimumHeight(100)
         self.setCursor(Qt.PointingHandCursor)
         self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_OpaquePaintEvent)
+        self.setAttribute(Qt.WA_NoSystemBackground)
         self._bg_buffer = QPixmap()
         self._needs_repaint = True
 
@@ -27,25 +29,29 @@ class MergerTimelineWidget(QWidget):
         self.update()
 
     def set_current_time(self, t):
-        self.current_time = max(0.0, min(self.total_duration, t))
-        self.update()
+        new_time = max(0.0, min(self.total_duration, t))
+        if abs(self.current_time - new_time) > 0.001:
+            self.current_time = new_time
+            self.update()
 
     def resizeEvent(self, event):
         self._needs_repaint = True
         super().resizeEvent(event)
 
     def _render_background(self):
+        """Draws the static heavy content (thumbnails, waveforms) to a pixmap."""
         w = self.width()
         h = self.height()
         if w <= 0 or h <= 0: return
-        self._bg_buffer = QPixmap(self.size())
+        if self._bg_buffer.size() != self.size():
+            self._bg_buffer = QPixmap(self.size())
+        self._bg_buffer.fill(QColor(15, 25, 35))
         p = QPainter(self._bg_buffer)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         lane_h = 45.0
         v_y = 0.0
         m_y = lane_h
-        p.fillRect(self.rect(), QColor(15, 25, 35))
         current_x = 0.0
         separator_color = QColor("#7DD3FC")
         for i, seg in enumerate(self.video_segments):
@@ -58,10 +64,12 @@ class MergerTimelineWidget(QWidget):
             thumbs = seg.get("thumbs", [])
             if thumbs:
                 num_thumbs = len(thumbs)
-                t_render_w = seg_w / float(num_thumbs)
-                for t_idx, thumb in enumerate(thumbs):
-                    t_pos_x = current_x + (t_idx * t_render_w)
-                    p.drawPixmap(QRectF(t_pos_x, v_y, t_render_w + 0.5, lane_h), thumb, QRectF(thumb.rect()))
+                if seg_w > 1:
+                    t_render_w = seg_w / float(num_thumbs)
+                    for t_idx, thumb in enumerate(thumbs):
+                        t_pos_x = current_x + (t_idx * t_render_w)
+                        if t_pos_x < w and t_pos_x + t_render_w > 0:
+                            p.drawPixmap(QRectF(t_pos_x, v_y, t_render_w + 0.5, lane_h), thumb, QRectF(thumb.rect()))
             p.restore()
             if i < len(self.video_segments) - 1:
                 p.setPen(QPen(separator_color, 3))
@@ -94,7 +102,7 @@ class MergerTimelineWidget(QWidget):
         self._needs_repaint = False
 
     def paintEvent(self, event):
-        if self._needs_repaint or self._bg_buffer.isNull() or self._bg_buffer.size() != self.size():
+        if self._needs_repaint or self._bg_buffer.isNull():
             self._render_background()
         p = QPainter(self)
         p.drawPixmap(0, 0, self._bg_buffer)

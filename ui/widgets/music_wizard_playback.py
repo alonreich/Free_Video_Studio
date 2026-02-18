@@ -1,7 +1,7 @@
 ﻿import os
 import time
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QStyle
+from PyQt5.QtWidgets import QStyle, QMessageBox
 from ui.widgets.music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECURSIVE_MS_DRIFT_CORRECTION_MS
 
 class MergerMusicWizardPlaybackMixin:
@@ -11,7 +11,7 @@ class MergerMusicWizardPlaybackMixin:
             return
         eff = self._scaled_vol(val)
         self.logger.info(f"HARDWARE_SET: [VIDEO_PLAYER] Volume -> {eff}% (Raw: {val}%) | PlayerID: {hex(id(self._video_player))}")
-        self._video_player.audio_set_volume(eff)
+        self._video_player.audio_set_volume(val)
         if hasattr(self, "video_vol_val_lbl"): 
             self.video_vol_val_lbl.setText(f"{val}%")
 
@@ -21,13 +21,23 @@ class MergerMusicWizardPlaybackMixin:
             return
         eff = self._scaled_vol(val)
         self.logger.info(f"HARDWARE_SET: [MUSIC_PLAYER] Volume -> {eff}% (Raw: {val}%) | PlayerID: {hex(id(self._player))}")
-        self._player.audio_set_volume(eff)
+        self._player.audio_set_volume(val)
         if hasattr(self, "music_vol_val_lbl"): 
             self.music_vol_val_lbl.setText(f"{val}%")
 
     def toggle_video_preview(self):
         try:
             curr_idx = self.stack.currentIndex()
+            if curr_idx == 1:
+                if not getattr(self, 'vlc_m', None) or not getattr(self.vlc_m, 'is_ready', False):
+                    QMessageBox.warning(self, "Engine Not Ready", 
+                                        "The audio engine is still starting up. Please wait a moment and try again.")
+                    return
+            elif curr_idx == 2:
+                if not getattr(self, 'vlc_v', None) or not getattr(self.vlc_v, 'is_ready', False):
+                    QMessageBox.warning(self, "Engine Not Ready",
+                                        "The video engine is still starting up. Please wait a moment and try again.")
+                    return
             self.logger.info(f"WIZARD: toggle_video_preview called. Page Index: {curr_idx}")
             if curr_idx == 1:
                 if not getattr(self, "_player", None): 
@@ -35,16 +45,18 @@ class MergerMusicWizardPlaybackMixin:
                     return
                 st = self._player.get_state()
                 self.logger.info(f"WIZARD: Step 2 player state: {st}")
+                btn = getattr(self, "btn_play_video", None)
                 if st == 3:
                     self.logger.info("WIZARD: User clicked PAUSE.")
                     self._player.pause()
-                    self.btn_play_video.setText("  PLAY")
-                    self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                    if btn:
+                        btn.setText("  PLAY")
+                        btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
                     if hasattr(self, '_play_timer'): self._play_timer.stop()
                 else:
                     self.logger.info(f"WIZARD: User clicked PLAY at offset {self.offset_slider.value()/1000.0:.1f}s")
                     self._show_caret_step2 = True
-                    if st in (0, 5, 6, 7):
+                    if st in (0, 5, 6, 7, 8):
                         preview_path = getattr(self, "_temp_sync", None) or self.current_track_path
                         if not getattr(self, "vlc_m", None) or not preview_path: 
                             self.logger.error(f"WIZARD: Cannot play Step 2. vlc_m={bool(getattr(self, 'vlc_m', None))}, path={preview_path}")
@@ -62,12 +74,16 @@ class MergerMusicWizardPlaybackMixin:
 
                     def _after_start():
                         if not getattr(self, "_player", None): return
-                        self._player.set_time(int(self.offset_slider.value()))
-                        if not hasattr(self, '_play_timer'):
-                            self._play_timer = QTimer(self); self._play_timer.setInterval(50); self._play_timer.timeout.connect(self._on_play_tick)
-                        self._play_timer.start()
-                        self.btn_play_video.setText("  PAUSE")
-                        self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                        self._last_good_vlc_ms = 0
+                        self._last_step2_tick_ts = time.time()
+                        if st in (0, 5, 6, 7, 8):
+                            self._player.set_time(int(self.offset_slider.value()))
+                        if not hasattr(self, '_play_timer') or not self._play_timer.isActive():
+                            self._play_timer = QTimer(self); self._play_timer.setInterval(80); self._play_timer.timeout.connect(self._on_play_tick)
+                            self._play_timer.start()
+                        if btn:
+                            btn.setText("  PAUSE")
+                            btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
                     QTimer.singleShot(90, _after_start)
             elif curr_idx == 2:
                 if not getattr(self, "_video_player", None): 
@@ -75,20 +91,27 @@ class MergerMusicWizardPlaybackMixin:
                     return
                 st = self._video_player.get_state()
                 self.logger.info(f"WIZARD: Step 3 video_player state: {st}")
+                main_btn = getattr(self, "btn_play_video", None)
                 if st == 3:
                     self.logger.info("WIZARD: User clicked PAUSE Project.")
                     self._video_player.pause()
                     if self._player: self._player.pause()
-                    self.btn_play_video.setText("  PLAY")
-                    self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                    if main_btn:
+                        main_btn.setText("  PLAY")
+                        main_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
                     if hasattr(self, '_play_timer'): self._play_timer.stop()
                 else:
                     self.logger.info(f"WIZARD: Starting Step 3 Playback. Timeline: {self.timeline.current_time:.2f}s / {self.total_video_sec:.2f}s")
+                    if hasattr(self, "_stop_timeline_workers"):
+                        try:
+                            self._stop_timeline_workers()
+                        except Exception:
+                            pass
                     if self.timeline.current_time >= self.total_video_sec - 0.05:
                         self.timeline.set_current_time(0.0)
                         self._sync_caret()
                     self.logger.info(f"WIZARD: User clicked PLAY Project at {self.speed_factor}x.")
-                    if st in (0, 5, 6, 7) or self.timeline.current_time < 0.1:
+                    if st in (0, 4, 5, 6, 7, 8) or self.timeline.current_time < 0.1:
                         self.logger.info("WIZARD: Syncing all players before play.")
                         self._sync_all_players_to_time(self.timeline.current_time)
                     self.logger.info("WIZARD: Calling _video_player.play()")
@@ -125,8 +148,9 @@ class MergerMusicWizardPlaybackMixin:
                             self._player.audio_set_mute(False)
                             QTimer.singleShot(50, lambda: self._player.audio_set_volume(eff))
                         QTimer.singleShot(350, _force_audio_m_tl)
-                    self.btn_play_video.setText("  PAUSE")
-                    self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                    if main_btn:
+                        main_btn.setText("  PAUSE")
+                        main_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
                     v_val_capture = self.video_vol_slider.value()
                     m_val_capture = self.music_vol_slider.value()
                     
@@ -139,7 +163,7 @@ class MergerMusicWizardPlaybackMixin:
                     QTimer.singleShot(1000, _final_vol_safety)
                     if not hasattr(self, '_play_timer') or not self._play_timer.isActive():
                         self.logger.info("WIZARD: Starting play timer.")
-                        self._play_timer = QTimer(self); self._play_timer.setInterval(50); self._play_timer.timeout.connect(self._on_play_tick); self._play_timer.start()
+                        self._play_timer = QTimer(self); self._play_timer.setInterval(30); self._play_timer.timeout.connect(self._on_play_tick); self._play_timer.start()
             else:
                 self.logger.warning(f"WIZARD: toggle_video_preview called on unknown page index: {curr_idx}")
         except Exception as e:
@@ -150,53 +174,68 @@ class MergerMusicWizardPlaybackMixin:
         self._is_syncing = True
         try:
             now = time.time()
-            do_heavy = (now - self._last_tick_ts > 0.1)
+            do_heavy = (now - self._last_tick_ts > 0.16)
             if do_heavy: self._last_tick_ts = now
             if self.stack.currentIndex() == 1 and self._player:
                 try:
-                    st = self._player.get_state()
-                    if st == 3:
-                        vlc_len = self._player.get_length()
-                        if vlc_len > 0 and abs(vlc_len - self.offset_slider.maximum()) > 50:
-                            self.offset_slider.blockSignals(True)
-                            self.offset_slider.setRange(0, vlc_len)
-                            self.current_track_dur = vlc_len / 1000.0
-                            self.offset_slider.blockSignals(False)
-                        vlc_ms = int(self._player.get_time() or 0)
-                        if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
-                        else: self._last_good_vlc_ms = vlc_ms
+                    state_data = self._player.get_full_state()
+                    st = state_data['state']
+                    vlc_len = state_data.get('length', 0)
+                    if vlc_len > 0 and abs(vlc_len - self.offset_slider.maximum()) > 100:
+                        self.offset_slider.blockSignals(True)
+                        self.offset_slider.setRange(0, vlc_len)
+                        self.current_track_dur = vlc_len / 1000.0
+                        self.offset_slider.blockSignals(False)
+                    if st in (1, 2, 3):
+                        vlc_ms = int(state_data.get('time', -1))
+                        now = time.time()
+                        if not hasattr(self, "_last_step2_tick_ts"):
+                            self._last_step2_tick_ts = now
+                        elapsed_since_tick = int((now - self._last_step2_tick_ts) * 1000)
+                        self._last_step2_tick_ts = now
+                        if vlc_ms < 0 or (vlc_ms <= self._last_good_vlc_ms and self._last_good_vlc_ms > 0 and st == 3):
+                             vlc_ms = self._last_good_vlc_ms + elapsed_since_tick
+                        self._last_good_vlc_ms = vlc_ms
                         max_ms = self.offset_slider.maximum()
                         vlc_ms = max(0, min(max_ms, vlc_ms))
-                        if vlc_ms >= max_ms - 10:
+                        if vlc_ms >= max_ms - 15 and max_ms > 0:
                             self._on_vlc_ended()
                             return
                         if not self._dragging and not self._wave_dragging:
                             self.offset_slider.blockSignals(True)
                             self.offset_slider.setValue(vlc_ms)
                             self.offset_slider.blockSignals(False)
-                            self._sync_caret()
-                    elif st == 6: self._on_vlc_ended()
+                            self._sync_caret(override_ms=vlc_ms, override_state=st)
+                            self.offset_slider.update()
+                    elif st == 6:
+                        self._on_vlc_ended()
+                    else:
+                        self._last_step2_tick_ts = time.time()
+                        if not self._dragging and not self._wave_dragging:
+                            self._sync_caret(override_ms=None, override_state=st)
+                except Exception as ex:
+                    self.logger.debug(f"WIZARD: Step2 play tick sync failed: {ex}")
                 except Exception as ex:
                     self.logger.debug(f"WIZARD: Step2 play tick sync skipped: {ex}")
             if self.stack.currentIndex() == 2 and self._video_player:
                 try:
-                    if now - self._last_seek_ts < 0.5:
+                    if now - self._last_seek_ts < 0.25:
                         self._last_clock_ts = now; return
-                    st = self._video_player.get_state()
-                    if st in (1, 2, 3):
-                        v_time_ms = self._video_player.get_time()
+                    state_data = self._video_player.get_full_state()
+                    st = state_data['state']
+                    if st == 3:
+                        v_time_ms = state_data['time']
                         if v_time_ms < 0: v_time_ms = 0
                         clock_delta = now - self._last_clock_ts; self._last_clock_ts = now
                         wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)
                         project_time = self._current_elapsed_offset + max(0.0, wall_now - self._wall_trim_start)
                         project_time = min(self.total_video_sec, max(0.0, project_time))
                         self.timeline.set_current_time(project_time)
-                        self._sync_caret()
-                        if st == 3 and do_heavy and self._player:
+                        if self._player and do_heavy:
                             self._sync_music_only_to_time(project_time)
                         if project_time >= self.total_video_sec - 0.01:
                             self.logger.info("WIZARD: Project end reached in tick.")
-                            if st == 3: self._video_player.pause()
+                            self._video_player.pause()
                             if self._player: self._player.pause()
                             self.btn_play_video.setText("  PLAY")
                             self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
@@ -209,8 +248,8 @@ class MergerMusicWizardPlaybackMixin:
                         self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
                         if hasattr(self, '_play_timer'): self._play_timer.stop()
                         self.timeline.set_current_time(self.total_video_sec)
-                        self._sync_caret()
-                    else: self._last_clock_ts = now
+                    else: 
+                        self._last_clock_ts = now
                 except Exception as ex:
                     self.logger.debug(f"WIZARD: Step3 timeline tick sync skipped: {ex}")
             else: self._last_clock_ts = now

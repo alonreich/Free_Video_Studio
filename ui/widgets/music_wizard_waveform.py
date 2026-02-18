@@ -1,5 +1,5 @@
 ﻿import os
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtGui
 from PyQt5.QtCore import Qt
 from ui.widgets.music_wizard_workers import SingleWaveformWorker
 
@@ -24,6 +24,7 @@ class MergerMusicWizardWaveformMixin:
         self._temp_sync = None
 
     def start_waveform_generation(self):
+        self.wave_preview.setPixmap(QtGui.QPixmap())
         self.wave_preview.setText("Visualizing audio...")
         self._pm_src = None
         self._draw_w = 0
@@ -82,9 +83,9 @@ class MergerMusicWizardWaveformMixin:
 
     def _on_slider_seek(self, val_ms):
         self._show_caret_step2 = True
-        if self._dragging or self._wave_dragging: return
-        if self._player: self._player.set_time(val_ms)
-        self._sync_caret()
+        if not self._dragging and not self._wave_dragging:
+            if self._player: self._player.set_time(val_ms)
+        self._sync_caret(override_ms=val_ms)
 
     def _on_drag_start(self): 
         self._show_caret_step2 = True
@@ -92,8 +93,9 @@ class MergerMusicWizardWaveformMixin:
 
     def _on_drag_end(self):
         self._dragging = False
-        if self._player: self._player.set_time(self.offset_slider.value())
-        self._sync_caret()
+        val_ms = self.offset_slider.value()
+        if self._player: self._player.set_time(val_ms)
+        self._sync_caret(override_ms=val_ms)
 
     def _refresh_wave_scaled(self):
         if not self._pm_src: return

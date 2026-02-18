@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_challenges import test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x
 
 def test_challenge_09_constant_pitch() -> None:
-    pending_test(
-        "CHALLENGE-09",
-        "At 3.1x video speed, background music keeps original pitch and 1.0x playback speed.",
-    )
-
+    test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x()

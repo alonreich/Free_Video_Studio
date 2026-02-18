@@ -82,7 +82,9 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
             logger.warning("Target size is too small for audio track; forcing 300kbps video.")
         return 300
     calculated_kbps = int(video_bits / (1024 * duration))
-    final_kbps = max(300, calculated_kbps)
-    if final_kbps < 300 and logger:
-        logger.warning(f"Calculated bitrate ({final_kbps}k) is very low. Quality will be impacted.")
-    return final_kbps
+    if calculated_kbps < 300:
+        if logger:
+            logger.warning(f"Calculated bitrate ({calculated_kbps}k) is very low. Quality will be impacted.")
+        return 300
+    return calculated_kbps
+    

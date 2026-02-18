@@ -53,18 +53,24 @@ class CropAppHandlers:
         if hasattr(self, '_analyzing_timer') and self._analyzing_timer:
             self._analyzing_timer.stop()
         thread = getattr(self, 'wand_thread', None)
-        if thread and thread.isRunning():
-            worker = getattr(self, 'wand_worker', None)
-            if worker and hasattr(worker, 'cancel'):
-                try:
-                    worker.cancel()
-                except RuntimeError:
-                    pass
-            thread.quit()
-            if not thread.wait(1500):
-                self.logger.error("Magic Wand thread did not stop in time; leaving thread to finish asynchronously")
-        self.wand_thread = None
-        self.wand_worker = None
+        if thread:
+            if thread.isRunning():
+                worker = getattr(self, 'wand_worker', None)
+                if worker and hasattr(worker, 'cancel'):
+                    try:
+                        worker.cancel()
+                    except RuntimeError:
+                        pass
+                thread.quit()
+                if not thread.wait(1500):
+                    self.logger.error("Magic Wand thread did not stop in time; forcing termination")
+                    try:
+                        thread.terminate()
+                        thread.wait(500)
+                    except:
+                        pass
+            self.wand_thread = None
+            self.wand_worker = None
         if hasattr(self, 'progress_bar'):
             self.progress_bar.setVisible(False)
         self._magic_wand_active_id = None
@@ -162,6 +168,7 @@ class CropAppHandlers:
             return
         self.snapshot_path = fallback_snapshot_path
         self._snapshot_owned_by_app = True
+        self.snapshot_resolution = f"{pix.width()}x{pix.height()}"
         try:
             if hasattr(self, 'media_processor') and self.media_processor:
                 self.media_processor.stop()
@@ -186,9 +193,9 @@ class CropAppHandlers:
         self.draw_widget.setFocus()
 
     def update_wizard_step(self, step_num, instruction):
-        """[FIX #17, #22] Short, punchy status labels with Goal/Status split."""
+        """[FIX #17, #22, #5] Short, punchy status labels with Goal/Status split."""
         self.current_step = step_num
-        if hasattr(self, 'progress_bar') and self.progress_bar and not self._is_wand_thread_running():
+        if not self._is_wand_thread_running():
             clamped_step = max(1, min(step_num, 5))
             self.progress_bar.setValue(clamped_step * 20)
             self.progress_bar.setVisible(True)
@@ -207,15 +214,29 @@ class CropAppHandlers:
             "Now, please refine selection.\n(Use the small arrows to adjust the HUD shape)": "REFINE BOX",
             "All elements configured! You can still add more if needed.": "CONFIG READY"
         }
-        if hasattr(self, 'goal_label'):
-            self.goal_label.setText(f"Goal: {goal_map.get(step_num, 'Configure HUD')}")
+        self.goal_label.setText(f"Goal: {goal_map.get(step_num, 'Configure HUD')}")
         short_instr = punchy_map.get(instruction, instruction)
-        if hasattr(self, 'status_label'):
-            self.status_label.setText(short_instr)
+        self.status_label.setText(short_instr)
         self.update_progress_tracker()
         
     def _on_video_info_ready(self, resolution):
-        """[FIX #3, #4] Callback for background resolution detection."""
+        """[FIX #2, #3, #4] Callback for background resolution detection."""
+        if resolution == "UNKNOWN":
+            self.logger.warning("Resolution detection failed, prompting user.")
+
+            from PyQt5.QtWidgets import QInputDialog
+            res, ok = QInputDialog.getText(
+                self, "Manual Resolution Required",
+                "Automated detection failed. Please enter resolution (e.g. 1920x1080):",
+                text="1920x1080"
+            )
+            if ok and "x" in res:
+                self.media_processor.original_resolution = res
+                resolution = res
+            else:
+                QMessageBox.critical(self, "Error", "A valid resolution is required to continue.")
+                self.reset_state(force=True)
+                return
         self.logger.info(f"Background info ready: {resolution}")
         enhanced_logger = self._get_enhanced_logger()
         if enhanced_logger and self.media_processor.input_file_path:
@@ -226,13 +247,12 @@ class CropAppHandlers:
             self.position_slider.setEnabled(True)
             self.snapshot_button.setEnabled(True)
             self.snapshot_button.setText("START CROPPING")
-            if hasattr(self, 'status_label'):
-                self.status_label.setText("Frame ready")
-            if hasattr(self, 'goal_label'):
-                self.goal_label.setText("Goal: Find HUD Frame")
+            self.status_label.setText("Frame ready")
+            self.goal_label.setText("Goal: Find HUD Frame")
 
     def update_progress_tracker(self):
-        if not hasattr(self, 'progress_labels') or not hasattr(self, 'hud_elements'):
+        """[FIX #5] Clean progress tracker without redundant checks."""
+        if not hasattr(self, 'progress_labels'):
             return
         configured_display_names = self._get_configured_roles()
         for element in self.hud_elements:
@@ -401,9 +421,12 @@ class CropAppHandlers:
                 worker = getattr(self, 'wand_worker', None)
                 if worker and hasattr(worker, 'cancel'):
                     worker.cancel()
+                self.wand_thread.requestInterruption()
                 self.wand_thread.quit()
-                if not self.wand_thread.wait(1200):
-                    self.logger.error("Magic Wand timeout cleanup: thread did not stop within timeout")
+                if not self.wand_thread.wait(2000):
+                    self.logger.error("Magic Wand timeout cleanup: thread did not stop within timeout, forcing.")
+                    self.wand_thread.terminate()
+                    self.wand_thread.wait(500)
             except RuntimeError:
                 self.wand_thread = None
         self._cleanup_magic_wand_runtime()
@@ -417,6 +440,7 @@ class CropAppHandlers:
         QMessageBox.warning(self, "Magic Wand Error", str(err))
 
     def _on_magic_wand_finished(self, regions, magic_id):
+        """[FIX #4, #5] Improved feedback on Magic Wand failure."""
         if magic_id != getattr(self, '_magic_wand_active_id', None):
             return
         if getattr(self, '_magic_wand_cancelled', False):
@@ -425,12 +449,24 @@ class CropAppHandlers:
         if regions:
             self._magic_wand_candidates = regions
             self.logger.info(f"Magic Wand found {len(regions)} regions.")
-            if hasattr(self, 'draw_widget'):
-                self.draw_widget.set_candidates(regions)
-                self.update_wizard_step(3, f"Detected {len(regions)} elements! Click one to tag.")
+            self.draw_widget.set_candidates(regions)
+            self.update_wizard_step(3, f"Detected {len(regions)} elements! Click one to tag.")
         else:
-            QMessageBox.information(self, "Magic Wand", "No clear HUD elements detected automatically. Please draw manually.")
+            self.logger.warning("Magic Wand found no elements.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Magic Wand Result")
+            msg.setText("No HUD elements detected automatically.\n\n"
+                       "Tips:\n"
+                       "- Try a frame with higher contrast\n"
+                       "- Ensure HUD is fully visible\n\n"
+                       "You can now draw boxes manually.")
+            for btn in msg.findChildren(QPushButton):
+                btn.setCursor(Qt.PointingHandCursor)
+            msg.exec_()
             self._magic_wand_candidates = None
+            self.update_wizard_step(3, "Please draw boxes manually around HUD elements.")
+            self.draw_widget.setFocus()
 
     def _cycle_magic_wand_preview(self):
         if not getattr(self, '_magic_wand_candidates', None):
@@ -489,9 +525,12 @@ class CropAppHandlers:
                 worker = getattr(self, 'wand_worker', None)
                 if worker and hasattr(worker, 'cancel'):
                     worker.cancel()
+                self.wand_thread.requestInterruption()
                 self.wand_thread.quit()
-                if not self.wand_thread.wait(1000):
-                    self.logger.warning("Magic Wand thread still running during reset")
+                if not self.wand_thread.wait(1500):
+                    self.logger.warning("Magic Wand thread still running during reset, forcing.")
+                    self.wand_thread.terminate()
+                    self.wand_thread.wait(500)
             except RuntimeError as thread_err:
                 self.logger.debug(f"Magic Wand thread cleanup skipped: {thread_err}")
                 self.wand_thread = None
@@ -541,6 +580,10 @@ class CropAppHandlers:
     def open_file(self):
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("Open Video File")
+        if not self.media_processor.vlc_instance:
+             if hasattr(self, 'open_image_fallback'):
+                 self.open_image_fallback()
+             return
         self.timer.stop()
         self._set_upload_hint_active(False)
         file_path, _ = QFileDialog.getOpenFileName(
@@ -640,6 +683,10 @@ class CropAppHandlers:
         self.timer.start()
 
     def take_snapshot(self):
+        if not self.media_processor.original_resolution and self.media_processor.media_player:
+             w, h = self.media_processor.media_player.video_get_size(0)
+             if w > 0 and h > 0:
+                 self.media_processor.original_resolution = f"{w}x{h}"
         max_resolution_wait_attempts = 12
         if not hasattr(self, '_snapshot_wait_attempts'):
             self._snapshot_wait_attempts = 0
@@ -699,12 +746,17 @@ class CropAppHandlers:
         self._snapshot_thread.start()
 
     def _on_snapshot_capture_result(self, success, message):
+        """[FIX #7, #5] Direct signal transition for snapshots, removing polling jitter."""
         self._snapshot_worker = None
         if success:
-            QTimer.singleShot(UI_BEHAVIOR.SNAPSHOT_RETRY_INTERVAL_MS, self._check_and_show_snapshot)
+            if os.path.exists(self.snapshot_path) and os.path.getsize(self.snapshot_path) > 100:
+                self._show_draw_view()
+            else:
+                self.logger.error(f"Snapshot file error after success signal: {self.snapshot_path}")
+                self.status_label.setText("Snapshot file verification failed.")
+                self._reset_snapshot_ui()
             return
-        if hasattr(self, 'status_label'):
-            self.status_label.setText(f"Snapshot Error: {message}")
+        self.status_label.setText(f"Snapshot Error: {message}")
         self._reset_snapshot_ui()
 
     def _on_snapshot_thread_finished(self):
@@ -745,6 +797,7 @@ class CropAppHandlers:
                 self.logger.error("Failed to load snapshot pixmap")
                 self._reset_snapshot_ui()
                 return
+            self.snapshot_resolution = f"{snapshot_pixmap.width()}x{snapshot_pixmap.height()}"
             self.set_background_image(snapshot_pixmap)
             self.view_stack.setCurrentWidget(self.draw_scroll_area)
             QApplication.processEvents()

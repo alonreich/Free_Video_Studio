@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_clamping import test_core_02_music_handles_clamped_by_video_trim
 
 def test_core_02_handle_clamping() -> None:
-    pending_test(
-        "CORE-02",
-        "Pink music handles are blocked from leaving orange video trim boundaries.",
-    )
-
+    test_core_02_music_handles_clamped_by_video_trim()

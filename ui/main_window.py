@@ -147,6 +147,12 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.hardware_strategy = detected_mode
         self.scan_complete = True
         self.logger.info(f"Hardware Strategy finalized: {self.hardware_strategy}")
+        try:
+            cfg = self.config_manager.config
+            cfg["last_hardware_strategy"] = detected_mode
+            self.config_manager.save_config(cfg)
+        except Exception as e:
+            self.logger.error(f"Failed to save hardware strategy to config: {e}")
         if hasattr(self, 'hardware_status_label'):
             mode = self.hardware_strategy
             badge_icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
@@ -224,6 +230,41 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             self._append_live_log(line)
         except Exception:
             pass
+
+    def _sync_main_timeline_badges(self):
+        """[FIX] Positions floating time badges above/below the main slider playhead."""
+        try:
+            slider = getattr(self, "positionSlider", None)
+            top_b = getattr(self, "_main_time_badge_top", None)
+            bot_b = getattr(self, "_main_time_badge_bottom", None)
+            if not slider or not top_b or not bot_b:
+                return
+            is_active = (getattr(slider, "_hovering_handle", None) == 'playhead' or 
+                         getattr(slider, "_dragging_handle", None) == 'playhead' or
+                         slider.isSliderDown())
+            if not is_active or not slider.isEnabled():
+                top_b.hide()
+                bot_b.hide()
+                return
+            cx = slider._map_value_to_pos(slider.value())
+            badge_pos = slider.mapTo(self, QPoint(cx, 0))
+            x_win = badge_pos.x()
+            y_win = badge_pos.y()
+            time_str = slider._fmt(slider.value())
+            top_b.setText(time_str)
+            bot_b.setText(time_str)
+            top_b.adjustSize()
+            bot_b.adjustSize()
+            bw = top_b.width()
+            bh = top_b.height()
+            top_b.move(x_win - bw // 2, y_win - bh - 8)
+            bot_b.move(x_win - bw // 2, y_win + slider.height() + 8)
+            top_b.show()
+            bot_b.show()
+            top_b.raise_()
+            bot_b.raise_()
+        except Exception as e:
+            self.logger.debug(f"DEBUG: Floating badge sync failed: {e}")
 
     def _on_speed_changed(self, value):
         self.playback_rate = value
@@ -314,7 +355,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.logger.info(f"Initialized with Hardware Strategy: {self.hardware_strategy}")
         self._setup_vlc()
         self.timer = QTimer(self)
-        self.timer.setInterval(100)
+        self.timer.setInterval(40)
         self.timer.timeout.connect(self.update_player_state)
         self.setup_persistence(
             config_path=os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'),
@@ -359,8 +400,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         vlc_args = [
             '--verbose=2',
             '--no-video-title-show',
-            '--avcodec-hw=any',
-            '--vout=direct3d11',
+            "--avcodec-hw=any",
+            "--vout=direct3d11",
             '--aout=mmdevice', 
             '--file-caching=3000',
             '--no-osd',
@@ -569,33 +610,32 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             pass
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
-        """[FIX #24] Handles trim time changes with 'Magnetic' music following."""
+        """[FIX #4] Handles trim time changes with 'Magnetic' music following and strict clamping."""
         old_start = self.trim_start_ms
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
             delta_start = start_ms - old_start
-            if delta_start != 0:
-                new_m_start = self.music_timeline_start_ms + delta_start
-                music_dur = self.music_timeline_end_ms - self.music_timeline_start_ms
-                if new_m_start < start_ms: new_m_start = start_ms
-                if new_m_start + music_dur > end_ms: new_m_start = end_ms - music_dur
-                new_m_end = new_m_start + music_dur
-                if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
-                    self.music_timeline_start_ms = new_m_start
-                    self.music_timeline_end_ms = new_m_end
-                    self.positionSlider.set_music_times(new_m_start, new_m_end)
-                    self.logger.info(f"MUSIC: Magnetically shifted to {new_m_start}ms following video trim.")
-            else:
-                new_m_start = max(start_ms, self.music_timeline_start_ms)
-                new_m_end = min(end_ms, self.music_timeline_end_ms)
-                if new_m_start > new_m_end - 100:
+            music_dur = self.music_timeline_end_ms - self.music_timeline_start_ms
+            new_m_start = self.music_timeline_start_ms + delta_start
+            if new_m_start < start_ms:
+                new_m_start = start_ms
+            if new_m_start + music_dur > end_ms:
+                new_m_start = end_ms - music_dur
+                if new_m_start < start_ms:
                     new_m_start = start_ms
-                    new_m_end = start_ms + min(100, end_ms - start_ms)
-                if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
-                    self.music_timeline_start_ms = new_m_start
-                    self.music_timeline_end_ms = new_m_end
-                    self.positionSlider.set_music_times(new_m_start, new_m_end)
+            new_m_end = new_m_start + music_dur
+            if new_m_end > end_ms:
+                new_m_end = end_ms
+            if new_m_end < new_m_start + 100:
+                new_m_end = min(end_ms, new_m_start + 100)
+                if new_m_end > end_ms:
+                    new_m_start = max(start_ms, new_m_end - 100)
+            if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
+                self.music_timeline_start_ms = new_m_start
+                self.music_timeline_end_ms = new_m_end
+                self.positionSlider.set_music_times(new_m_start, new_m_end)
+                self.logger.info(f"MUSIC: Robustly shifted to {new_m_start}-{new_m_end}ms following video trim.")
         self._update_trim_widgets_from_trim_times()
 
     def set_style(self):
@@ -648,7 +688,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 padding-bottom: 9px;
                 padding-right: 17px;
             }
-            QPushButton#WhatsappButton { background-color: #25D366; }
             QPushButton#DoneButton { background-color: #e74c3c; }
             QProgressBar { border: 1px solid #266b89; border-radius: 5px; text-align: center; height: 18px; }
             QProgressBar::chunk { background-color: #2ecc71; }
@@ -1079,15 +1118,3 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                     subprocess.Popen(['xdg-open', path])
             except Exception as e:
                 self.show_message("Error", f"Failed to open folder. Please navigate to {path} manually. Error: {e}")
-
-    def share_via_whatsapp(self):
-        url = "https://web.whatsapp.com"
-        try:
-            if sys.platform == 'win32':
-                os.startfile(url)
-            elif sys.platform == 'darwin':
-                subprocess.Popen(['open', url])
-            else:
-                subprocess.Popen(['xdg-open', url])
-        except Exception as e:
-            self.show_message("Error", f"Failed to open WhatsApp. Please visit {url} manually. Error: {e}")

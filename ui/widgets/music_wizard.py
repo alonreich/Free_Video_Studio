@@ -25,6 +25,101 @@ import socket
 import subprocess
 import random
 import sys
+import mmap
+import struct
+
+class StatusMemoryReader:
+    """[NEW] Reads status data directly from Shared Memory (mmap)."""
+
+    def __init__(self, port):
+        self.tag = f"FVS_VLC_STATUS_{port}"
+        self.shm = None
+        self._is_ready = False
+
+    def connect(self):
+        try:
+            self.shm = mmap.mmap(-1, 64, tagname=self.tag, access=mmap.ACCESS_READ)
+            self._is_ready = True
+            return True
+        except:
+            return False
+
+    def read(self):
+        if not self._is_ready and not self.connect():
+            return None
+        try:
+            self.shm.seek(0)
+            data = self.shm.read(20)
+            if len(data) < 20: return None
+            st, tm, ln = struct.unpack("iqq", data)
+            return {'state': st, 'time': tm, 'length': ln}
+        except:
+            return None
+
+    def close(self):
+        try: self.shm.close()
+        except: pass
+
+class VLCRemotePlayer:
+    """Lightweight player handle that delegates to a mode-specific VLCProcessProxy."""
+
+    def __init__(self, engine):
+        self._engine = engine
+
+    def play(self):
+        return self._engine.play()
+
+    def pause(self):
+        return self._engine.pause()
+
+    def stop(self):
+        return self._engine.stop()
+
+    def set_pause(self, p):
+        return self._engine.set_pause(p)
+
+    def audio_set_volume(self, vol):
+        return self._engine.audio_set_volume(vol)
+
+    def set_media(self, mrl):
+        return self._engine.set_media(mrl)
+
+    def get_media(self):
+        return self._engine.get_media()
+
+    def set_time(self, ms):
+        return self._engine.set_time(ms)
+
+    def set_rate(self, rate):
+        return self._engine.set_rate(rate)
+
+    def set_hwnd(self, wid):
+        return self._engine.set_hwnd(wid)
+
+    def audio_set_mute(self, m):
+        return self._engine.audio_set_mute(m)
+
+    def audio_get_track_description(self):
+        return self._engine.audio_get_track_description()
+
+    def audio_set_track(self, track_id):
+        return self._engine.audio_set_track(track_id)
+
+    def get_state(self):
+        return self._engine.get_state()
+
+    def get_time(self):
+        return self._engine.get_time()
+
+    def get_length(self):
+        return self._engine.get_length()
+
+    def get_full_state(self):
+        return self._engine.get_full_state()
+
+    def release(self):
+        """Player handle is intentionally non-owning; engine lifecycle is managed by dialog."""
+        return None
 
 class VLCProcessProxy:
     """Drastic measure: Proxies VLC commands to a completely separate OS process via Sockets."""
@@ -34,17 +129,21 @@ class VLCProcessProxy:
         self.logger = logger
         self.port = random.randint(10000, 20000)
         self.proc = None
+        self.worker_pid = None
         self.bin_dir = bin_dir
         self._last_vol = -1
         self._last_time_set = 0
         self._cached_state = 0
         self._last_path = ""
+        self._released = False
         self.is_ready = False
         self.is_fallback = False
         self.init_error = None
         self.local_player = None
         self.local_instance = None
         self._persistent_socket = None
+        self._response_buffer = ""
+        self.status_reader = StatusMemoryReader(self.port)
         self._spawn_worker()
 
     def _spawn_worker(self):
@@ -113,14 +212,22 @@ class VLCProcessProxy:
                 return False
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(0.1)
+                    s.settimeout(0.2)
                     s.connect(('127.0.0.1', self.port))
-                    s.sendall(json.dumps({'action': 'ping'}).encode('utf-8'))
-                    resp = s.recv(1024)
-                    if resp:
-                        res = json.loads(resp.decode('utf-8'))
+                    s.sendall((json.dumps({'action': 'ping'}) + "\n").encode('utf-8'))
+                    response_buffer = ""
+                    start_recv = time.time()
+                    while "\n" not in response_buffer and time.time() - start_recv < 0.5:
+                        chunk = s.recv(1024).decode('utf-8')
+                        if not chunk:
+                            break
+                        response_buffer += chunk
+                    if "\n" in response_buffer:
+                        line = response_buffer.split("\n")[0]
+                        res = json.loads(line)
                         if res.get('status') == 'ok':
-                            self.logger.info(f"ISOLATED VLC ({self.mode.upper()}) READY. Remote PID: {res.get('pid')}")
+                            self.worker_pid = res.get('pid')
+                            self.logger.info(f"ISOLATED VLC ({self.mode.upper()}) READY. Remote PID: {self.worker_pid}")
                             self.is_ready = True
                             return True
             except:
@@ -141,6 +248,8 @@ class VLCProcessProxy:
             return None
 
     def _send(self, payload, retries=1):
+        if self._released:
+            return {'status': 'error', 'message': 'engine_released'}
         if self.is_fallback:
             return self._handle_local(payload)
         if not self.is_ready and payload.get('action') != 'quit':
@@ -149,18 +258,38 @@ class VLCProcessProxy:
             s = self._get_socket()
             if not s: continue
             try:
-                msg = json.dumps(payload).encode('utf-8')
+                s.setblocking(False)
+                try:
+                    while s.recv(8192): pass
+                except: pass
+                finally: s.setblocking(True)
+                msg = (json.dumps(payload) + "\n").encode('utf-8')
                 s.sendall(msg)
-                resp = s.recv(4096)
-                if resp:
-                    return json.loads(resp.decode('utf-8'))
+                start_recv = time.time()
+                while "\n" not in self._response_buffer and time.time() - start_recv < 1.0:
+                    try:
+                        s.settimeout(0.2)
+                        chunk = s.recv(4096).decode('utf-8')
+                        if not chunk: break
+                        self._response_buffer += chunk
+                    except socket.timeout:
+                        break
+                if "\n" in self._response_buffer:
+                    line, self._response_buffer = self._response_buffer.split("\n", 1)
+                    try:
+                        return json.loads(line)
+                    except json.JSONDecodeError as je:
+                        self.logger.error(f"IPC JSON ERROR: {je} | Line: {line}")
+                        return {}
             except (socket.timeout, ConnectionResetError, BrokenPipeError, OSError):
                 if self._persistent_socket:
                     try: self._persistent_socket.close()
                     except: pass
                     self._persistent_socket = None
+                self._response_buffer = ""
                 continue
-            except Exception:
+            except Exception as e:
+                self.logger.error(f"IPC GENERAL ERROR: {e}")
                 continue
         return {}
 
@@ -240,54 +369,93 @@ class VLCProcessProxy:
         res = self._send({'action': 'get_tracks'})
         return res.get('tracks', [])
 
-    def audio_set_track(self, track_id):
-        self._send({'action': 'set_track', 'track_id': track_id})
-
     def get_state(self):
+        data = self.status_reader.read()
+        if data: return data['state']
         res = self._send({'action': 'get_state'})
         return res.get('state', 0)
 
     def get_time(self):
+        data = self.status_reader.read()
+        if data: return data['time']
         res = self._send({'action': 'get_state'})
         return res.get('time', 0)
 
     def get_length(self):
+        data = self.status_reader.read()
+        if data: return data['length']
         res = self._send({'action': 'get_state'})
         return res.get('length', 0)
 
+    def get_full_state(self):
+        """Fetches state, time, and length in a single IPC call for performance."""
+        data = self.status_reader.read()
+        if data: return data
+        res = self._send({'action': 'get_state'})
+        return {
+            'state': res.get('state', 0),
+            'time': res.get('time', 0),
+            'length': res.get('length', 0)
+        }
+
+    def audio_set_track(self, track_id):
+        self._send({'action': 'set_track', 'track_id': track_id})
+
     def release(self):
+        if self._released:
+            return
+        self._released = True
         try:
+            if hasattr(self, "status_reader"):
+                self.status_reader.close()
             if self._persistent_socket:
                 try:
                     self._send({'action': 'quit'})
+                except Exception:
+                    pass
                 finally:
-                    try: self._persistent_socket.close()
-                    except: pass
+                    try:
+                        self._persistent_socket.close()
+                    except Exception:
+                        pass
                     self._persistent_socket = None
+                    self._response_buffer = ""
             elif self.is_ready:
-                self._send({'action': 'quit'})
+                try:
+                    self._send({'action': 'quit'})
+                except Exception:
+                    pass
         except Exception:
             pass
         if self.proc:
             try:
                 if self.proc.poll() is None:
                     self.proc.terminate()
+
+                    import time
+                    time.sleep(0.5)
+                    if self.proc.poll() is None:
+                        self.proc.kill()
+                        self.proc.wait(timeout=2)
             except Exception:
                 pass
         if self.local_player:
-            try: self.local_player.stop()
-            except Exception: pass
-            try: self.local_player.release()
-            except Exception: pass
+            try:
+                self.local_player.stop()
+                self.local_player.release()
+            except Exception:
+                pass
             self.local_player = None
         if self.local_instance:
-            try: self.local_instance.release()
-            except Exception: pass
+            try:
+                self.local_instance.release()
+            except Exception:
+                pass
             self.local_instance = None
 
     def media_player_new(self):
-        """Mock the VLC Instance method by returning ourselves as the player."""
-        return self
+        """Return a non-owning player handle bound to this engine."""
+        return VLCRemotePlayer(self)
 
     def media_new(self, path): return path 
 
@@ -348,9 +516,10 @@ class MergerMusicWizard(
             "--user-agent=VLC_MUSIC_WORKER"
         ]
         os.environ["VLC_PLUGIN_PATH"] = os.path.join(self.bin_dir, "plugins")
-        self.vlc_v = VLCProcessProxy('video', self.logger, self.bin_dir)
-        self.vlc_m = VLCProcessProxy('music', self.logger, self.bin_dir)
-        self.vlc = self.vlc_v
+        self.vlc_v = None
+        self.vlc_m = None
+        self._player = None
+        self._video_player = None
         self.setStyleSheet('''
             QDialog { background-color: #2c3e50; color: #ecf0f1; }
             QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: "Helvetica Neue", Arial, sans-serif; }
@@ -367,6 +536,7 @@ class MergerMusicWizard(
         self._editing_track_index = -1
         self._pending_offset_ms = 0
         self._show_caret_step2 = False
+        self._step2_media_ready = False
         self._geometry_restored = False
         self._startup_complete = False
         self._temp_png = None
@@ -393,14 +563,17 @@ class MergerMusicWizard(
         self.btn_cancel_wizard = QPushButton("CANCEL")
         self.btn_cancel_wizard.setFixedWidth(140); self.btn_cancel_wizard.setFixedHeight(42)
         self.btn_cancel_wizard.setStyleSheet(MergerUIStyle.BUTTON_DANGER)
+        self.btn_cancel_wizard.setCursor(Qt.PointingHandCursor)
         self.btn_cancel_wizard.clicked.connect(self._on_nav_cancel_clicked)
         self.btn_back = QPushButton("  BACK")
         self.btn_back.setFixedWidth(135); self.btn_back.setFixedHeight(42)
         self.btn_back.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.btn_back.setCursor(Qt.PointingHandCursor)
         self.btn_back.clicked.connect(self._on_nav_back_clicked)
         self.btn_back.hide()
         self.btn_play_video = QPushButton("  PLAY")
         self.btn_play_video.setFixedWidth(150); self.btn_play_video.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.btn_play_video.setCursor(Qt.PointingHandCursor)
         self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.btn_play_video.clicked.connect(self.toggle_video_preview)
         self.btn_play_video.hide()
@@ -413,22 +586,10 @@ class MergerMusicWizard(
         nav_layout.addStretch(); nav_layout.addWidget(self.btn_play_video)
         nav_layout.addSpacing(80); nav_layout.addStretch(); nav_layout.addWidget(self.btn_nav_next)
         self.main_layout.addLayout(nav_layout)
-        self._engine_timer = QTimer(self)
-        self._engine_timer.setInterval(500)
-        self._engine_timer.timeout.connect(self._check_engine_ready)
-        self._engine_timer.start()
-        self._readiness_count = 0
         self.btn_nav_next.setEnabled(False)
         self._prev_next_text = "NEXT"
-        self.btn_nav_next.setText("CONNECTING...")
-        self._player = self.vlc_m.media_player_new() if self.vlc_m else None
-        self._video_player = self.vlc_v.media_player_new() if self.vlc_v else None
-        if self._player:
-            self._player.audio_set_mute(False)
-        if self._video_player:
-            self._video_player.audio_set_mute(False)
-        if self._video_player:
-            QTimer.singleShot(150, self._bind_video_output)
+        self.btn_nav_next.setText("PREPARING...")
+        QTimer.singleShot(100, self._initialize_audio_engines)
         self._apply_step_geometry(0)
         self._startup_complete = True
         self.stack.currentChanged.connect(self._on_page_changed)
@@ -436,7 +597,25 @@ class MergerMusicWizard(
         self._search_timer.timeout.connect(self._do_search)
         self.update_coverage_ui()
         if self.mp3_dir:
-            QTimer.singleShot(100, lambda: self.load_tracks(self.mp3_dir))
+            QTimer.singleShot(150, lambda: self.load_tracks(self.mp3_dir))
+
+    def _initialize_audio_engines(self):
+        """Heavy lifting: start background VLC processes after window is shown."""
+        self.vlc_v = VLCProcessProxy('video', self.logger, self.bin_dir)
+        self.vlc_m = VLCProcessProxy('music', self.logger, self.bin_dir)
+        self._player = self.vlc_m.media_player_new() if self.vlc_m else None
+        self._video_player = self.vlc_v.media_player_new() if self.vlc_v else None
+        if self._player:
+            self._player.audio_set_mute(False)
+        if self._video_player:
+            self._video_player.audio_set_mute(False)
+            self._bind_video_output()
+        self._engine_timer = QTimer(self)
+        self._engine_timer.setInterval(500)
+        self._engine_timer.timeout.connect(self._check_engine_ready)
+        self._engine_timer.start()
+        self._readiness_count = 0
+        self.btn_nav_next.setText("CONNECTING...")
 
     def _check_engine_ready(self):
         self._readiness_count += 1
@@ -447,17 +626,30 @@ class MergerMusicWizard(
             self._engine_timer.stop()
             self.btn_nav_next.setEnabled(True)
             self.btn_nav_next.setText(self._prev_next_text)
-            self.logger.info("WIZARD: Audio Engines Connected and Ready.")
+            v_shm = self.vlc_v.status_reader.connect()
+            m_shm = self.vlc_m.status_reader.connect()
+            self.logger.info(
+                "WIZARD: Audio Engines Connected. PID[V]=%s PID[M]=%s | SHM[V]=%s SHM[M]=%s",
+                getattr(self.vlc_v, "worker_pid", None),
+                getattr(self.vlc_m, "worker_pid", None),
+                v_shm, m_shm
+            )
             return
         if self._readiness_count >= 20:
+            self.logger.warning("WIZARD: Engine connection timed out. Attempting fallback/restart...")
+            self.btn_nav_next.setText("RETRYING...")
+            if self._readiness_count < 60:
+                if not v_ready: self.vlc_v._spawn_worker()
+                if not m_ready: self.vlc_m._spawn_worker()
+                return
             self._engine_timer.stop()
-            self.btn_nav_next.setEnabled(False)
-            self.btn_nav_next.setText("AUDIO ENGINE FAILED")
+            self.btn_nav_next.setEnabled(True)
+            self.btn_nav_next.setText("TRY ANYWAY")
             v_err = getattr(self.vlc_v, "init_error", None)
             m_err = getattr(self.vlc_m, "init_error", None)
             self.logger.error(
-                "WIZARD: Audio engines not ready after timeout. video_ready=%s music_ready=%s video_error=%s music_error=%s",
-                v_ready, m_ready, v_err, m_err
+                "WIZARD: Audio engines failed after retries. video_ready=%s music_ready=%s",
+                v_ready, m_ready
             )
 
     def showEvent(self, event):
@@ -488,20 +680,67 @@ class MergerMusicWizard(
         try:
             if hasattr(self, "_player") and self._player:
                 self._player.stop()
-                self._player.release()
-                self._player = None
             if hasattr(self, "_video_player") and self._video_player:
                 self._video_player.stop()
-                self._video_player.release()
-                self._video_player = None
-            if hasattr(self, "vlc_v") and self.vlc_v:
-                self.vlc_v.release()
-                self.vlc_v = None
-            if hasattr(self, "vlc_m") and self.vlc_m:
-                self.vlc_m.release()
-                self.vlc_m = None
-        except Exception:
-            pass
+        except Exception as ex:
+            self.logger.debug(f"WIZARD: stop before release failed: {ex}")
+        finally:
+            self._player = None
+            self._video_player = None
+        released = set()
+        for engine_name in ("vlc_v", "vlc_m"):
+            engine = getattr(self, engine_name, None)
+            if not engine:
+                continue
+            if id(engine) in released:
+                setattr(self, engine_name, None)
+                continue
+            try:
+                engine.release()
+                released.add(id(engine))
+            except Exception as ex:
+                self.logger.debug(f"WIZARD: {engine_name} release failed: {ex}")
+            finally:
+                setattr(self, engine_name, None)
+
+    def _disconnect_all_worker_signals(self):
+        """Safely disconnect all worker signal connections to prevent memory leaks."""
+        workers_to_disconnect = [
+            '_track_scanner',
+            '_waveform_worker', 
+            '_wave_worker',
+            '_filmstrip_worker',
+            '_video_worker',
+            '_music_worker'
+        ]
+        for worker_name in workers_to_disconnect:
+            worker = getattr(self, worker_name, None)
+            if not worker:
+                continue
+            try:
+                if hasattr(worker, 'ready'):
+                    try: worker.ready.disconnect()
+                    except: pass
+                if hasattr(worker, 'error'):
+                    try: worker.error.disconnect()
+                    except: pass
+                if hasattr(worker, 'finished'):
+                    try: worker.finished.disconnect()
+                    except: pass
+                if hasattr(worker, 'asset_ready'):
+                    try: worker.asset_ready.disconnect()
+                    except: pass
+                if hasattr(worker, 'scanning_started'):
+                    try: worker.scanning_started.disconnect()
+                    except: pass
+                if hasattr(worker, 'scanning_finished'):
+                    try: worker.scanning_finished.disconnect()
+                    except: pass
+                if hasattr(worker, 'scanning_error'):
+                    try: worker.scanning_error.disconnect()
+                    except: pass
+            except Exception as e:
+                self.logger.debug(f"WIZARD: Failed to disconnect signals from {worker_name}: {e}")
 
     def stop_previews(self):
         if hasattr(self, '_stop_waveform_worker'): self._stop_waveform_worker()
@@ -520,4 +759,14 @@ class MergerMusicWizard(
             try:
                 if self._wave_worker.isRunning(): self._wave_worker.stop(); self._wave_worker.wait(1000)
             except: pass
+        if hasattr(self, '_stop_timeline_workers'):
+            try:
+                self._stop_timeline_workers()
+            except Exception as e:
+                self.logger.debug(f"WIZARD: timeline workers cleanup failed: {e}")
+        if hasattr(self, '_stop_track_scanner'):
+            try:
+                self._stop_track_scanner()
+            except Exception as e:
+                self.logger.debug(f"WIZARD: track scanner cleanup failed: {e}")
 __all__ = ["PREVIEW_VISUAL_LEAD_MS", "VideoFilmstripWorker", "MusicWaveformWorker", "SearchableListWidget", "MusicItemWidget", "MergerMusicWizard"]

@@ -13,6 +13,12 @@ class DummyLogger:
 
     def warning(self, *args: Any, **kwargs: Any) -> None:
         return None
+        
+    def debug(self, *args: Any, **kwargs: Any) -> None:
+        return None
+        
+    def exception(self, *args: Any, **kwargs: Any) -> None:
+        return None
 
 class DummySpinBox:
     def __init__(self, value: float):
@@ -54,9 +60,25 @@ class DummyButton:
         return None
 
 class DummySlider:
-    def __init__(self):
+    def __init__(self, value: int = 0):
+        self._val = value
         self.visible_calls: list[bool] = []
         self.time_calls: list[tuple[int, int]] = []
+
+    def value(self) -> int:
+        return self._val
+
+    def setValue(self, v: int) -> None:
+        self._val = v
+
+    def show(self) -> None:
+        self.visible_calls.append(True)
+
+    def hide(self) -> None:
+        self.visible_calls.append(False)
+
+    def setVisible(self, v: bool) -> None:
+        self.visible_calls.append(bool(v))
 
     def set_music_visible(self, visible: bool) -> None:
         self.visible_calls.append(bool(visible))
@@ -66,6 +88,16 @@ class DummySlider:
 
     def reset_music_times(self) -> None:
         self.time_calls.append((0, 0))
+        
+    def set_trim_times(self, start_ms: int, end_ms: int) -> None:
+        self.time_calls.append((int(start_ms), int(end_ms)))
+        return None
+        
+    def blockSignals(self, *args: Any) -> None:
+        return None
+        
+    def isSliderDown(self) -> bool:
+        return False
 
 class DummyMediaPlayer:
     def __init__(self, playing: bool = False, current_ms: int = 0, rate: float = 1.0):
@@ -99,6 +131,13 @@ class DummyMediaPlayer:
     def set_rate(self, value: float) -> None:
         self._rate = float(value)
         self.set_rate_calls.append(float(value))
+
+    def get_full_state(self) -> dict[str, Any]:
+        return {
+            'state': 3 if self._playing else 0,
+            'time': self._time,
+            'length': 100000
+        }
 
     def stop(self) -> None:
         self._playing = False
@@ -154,9 +193,16 @@ def install_qt_vlc_stubs() -> None:
     qtwidgets = types.ModuleType("PyQt5.QtWidgets")
     qtgui = types.ModuleType("PyQt5.QtGui")
 
+    def _generic_init(self, *args, **kwargs):
+        pass
+
+    def _generic_void(self, *args, **kwargs):
+        return None
+
     class Qt:
         NoModifier = 0
         LeftButton = 1
+        Horizontal = 1
         PointingHandCursor = 13
         ArrowCursor = 0
         AlignLeft = 1
@@ -242,7 +288,98 @@ def install_qt_vlc_stubs() -> None:
 
     class QWidget:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.logger = DummyLogger()
             return None
+            
+        def _delayed_wizard_launch(self) -> None: return None
+
+        def _do_search(self) -> None: return None
+
+        def _do_save_step_geometry(self) -> None: return None
+
+        def _on_vlc_ended(self) -> None: return None
+
+        def _sync_caret(self) -> None: return None
+
+        def _on_play_tick(self) -> None: return None
+
+        def setStyleSheet(self, s: str) -> None: return None
+
+        def setFixedSize(self, *args: Any) -> None: return None
+
+        def setMaximumWidth(self, w: int) -> None: return None
+
+        def setMinimumWidth(self, w: int) -> None: return None
+
+        def setFixedWidth(self, w: int) -> None: return None
+
+        def setFixedHeight(self, h: int) -> None: return None
+
+        def setMouseTracking(self, v: bool) -> None: return None
+
+        def setAttribute(self, *args: Any) -> None: return None
+
+        def setCursor(self, *args: Any) -> None: return None
+
+        def hide(self) -> None: return None
+
+        def show(self) -> None: return None
+
+        def setVisible(self, v: bool) -> None: return None
+
+        def setEnabled(self, e: bool) -> None: return None
+
+        def isVisible(self) -> bool: return True
+
+        def width(self) -> int: return 100
+
+        def height(self) -> int: return 100
+
+        def mapTo(self, *args: Any) -> Any: return DummyPoint(0, 0)
+
+        def mapFromGlobal(self, *args: Any) -> Any: return DummyPoint(0, 0)
+
+        def mapToGlobal(self, *args: Any) -> Any: return DummyPoint(0, 0)
+
+        def rect(self) -> Any: return DummyRect(0, 0, 100, 100)
+
+        def geometry(self) -> Any: return DummyRect(0, 0, 100, 100)
+
+        def move(self, *args: Any) -> None: return None
+
+        def raise_(self) -> None: return None
+
+        def setLayout(self, l: Any) -> None: return None
+
+        def setGraphicsEffect(self, e: Any) -> None: return None
+
+        def installEventFilter(self, f: Any) -> None: return None
+
+    class DummyPoint:
+        def __init__(self, x: int, y: int): self._x, self._y = x, y
+
+        def x(self) -> int: return self._x
+
+        def y(self) -> int: return self._y
+
+    class DummyRect:
+        def __init__(self, x: int, y: int, w: int, h: int): self._x, self._y, self._w, self._h = x, y, w, h
+
+        def x(self) -> int: return self._x
+
+        def y(self) -> int: return self._y
+
+        def width(self) -> int: return self._w
+
+        def height(self) -> int: return self._h
+
+        def center(self) -> Any: return DummyPoint(self._x + self._w // 2, self._y + self._h // 2)
+
+        def topLeft(self) -> Any: return DummyPoint(self._x, self._y)
+
+        def isValid(self) -> bool: return True
+
+        def contains(self, p: Any) -> bool: return True
 
     class QHBoxLayout:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -260,12 +397,41 @@ def install_qt_vlc_stubs() -> None:
     class QLabel:
         def __init__(self, text: str = "", *args: Any, **kwargs: Any) -> None:
             self._text = text
+            self.logger = DummyLogger()
 
         def setStyleSheet(self, *_args: Any) -> None:
             return None
 
         def text(self) -> str:
             return self._text
+            
+        def hide(self) -> None: return None
+
+        def show(self) -> None: return None
+
+        def adjustSize(self) -> None: return None
+
+        def setPixmap(self, p: Any) -> None: return None
+
+        def setAlignment(self, a: Any) -> None: return None
+
+        def move(self, x: int, y: int) -> None: return None
+
+        def setFixedWidth(self, w: int) -> None: return None
+
+        def setAttribute(self, a: Any, v: bool = True) -> None: return None
+
+        def setGeometry(self, *args: Any) -> None: return None
+
+        def width(self) -> int: return 10
+
+        def height(self) -> int: return 10
+
+        def y(self) -> int: return 0
+
+        def raise_(self) -> None: return None
+
+        def setVisible(self, v: bool) -> None: return None
     qtcore.Qt = Qt
     qtcore.QTimer = QTimer
     qtcore.QThread = QThread
@@ -275,8 +441,20 @@ def install_qt_vlc_stubs() -> None:
     qtcore.QCoreApplication = type("QCoreApplication", (), {"instance": staticmethod(lambda: None)})
     qtcore.QPropertyAnimation = type("QPropertyAnimation", (), {})
     qtcore.QAbstractAnimation = type("QAbstractAnimation", (), {})
-    qtcore.QRect = object
-    qtcore.QPoint = object
+    qtcore.QRect = type("QRect", (), {
+        "__init__": _generic_init,
+        "isValid": lambda self: True,
+        "contains": lambda self, p: True,
+        "center": lambda self: QPoint(0, 0),
+        "left": lambda self: 0,
+        "right": lambda self: 100,
+        "top": lambda self: 0,
+        "bottom": lambda self: 100,
+        "width": lambda self: 100,
+        "height": lambda self: 100,
+        "y": lambda self: 0,
+    })
+    qtcore.QPoint = type("QPoint", (), {"__init__": _generic_init, "x": lambda self: 0, "y": lambda self: 0})
     qtcore.pyqtSignal = lambda *_a, **_k: DummySignal()
     qtwidgets.QStyle = QStyle
     qtwidgets.QDialog = QDialog
@@ -305,7 +483,21 @@ def install_qt_vlc_stubs() -> None:
         "QToolTip",
         "QFileDialog",
     ]:
-        setattr(qtwidgets, n, type(n, (), {}))
+        cls = type(n, (), {
+            "__init__": _generic_init,
+            "setMouseTracking": _generic_void,
+            "setAttribute": _generic_void,
+            "setStyleSheet": _generic_void,
+            "setFixedSize": _generic_void,
+            "setMinimumHeight": _generic_void,
+            "update": _generic_void,
+            "setRange": _generic_void,
+            "window": lambda self: QWidget(),
+            "sliderPressed": DummySignal(),
+            "sliderReleased": DummySignal(),
+            "sliderMoved": DummySignal(),
+        })
+        setattr(qtwidgets, n, cls)
     for n in [
         "QPixmap",
         "QPainter",

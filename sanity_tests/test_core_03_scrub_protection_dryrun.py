@@ -5,7 +5,7 @@ def test_core_03_scrub_protection_dryrun() -> None:
     assert_all_present(
         src,
         [
-            "if now - self._last_scrub_ts < 0.05:",
+            "if not force_pause and (now - self._last_scrub_ts < 0.05):",
             "self._last_scrub_ts = now",
             "self.timer.start(50)",
         ],

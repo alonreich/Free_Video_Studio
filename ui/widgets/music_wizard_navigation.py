@@ -11,6 +11,11 @@ class MergerMusicWizardNavigationMixin:
     def _on_page_changed(self, index):
         if not hasattr(self, 'btn_nav_next'): return
         self._apply_step_geometry(index)
+        if hasattr(self, '_play_timer') and self._play_timer:
+            try:
+                self._play_timer.stop()
+            except Exception:
+                pass
         if index in (1, 2):
             self.btn_play_video.setVisible(True)
             self.btn_play_video.setText("  PLAY")
@@ -22,13 +27,14 @@ class MergerMusicWizardNavigationMixin:
             self._bind_video_output()
             self._prepare_timeline_data()
             self.timeline.set_current_time(0.0)
-            self._sync_all_players_to_time(0.0)
-            QTimer.singleShot(200, lambda: self._video_player.set_pause(True) if self._video_player else None)
-            if self._player:
-                QTimer.singleShot(200, lambda: self._player.set_pause(True))
+            self._sync_all_players_to_time(0.0, force_playing=False)
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
             self.update_coverage_ui()
+            if getattr(self, "_auto_reset_step1", False):
+                self._auto_reset_step1 = False
+                self.track_list.clearSelection()
+                self.search_input.clear()
         self._sync_caret()
 
     def _resize_from_center(self, w, h):
@@ -113,6 +119,11 @@ class MergerMusicWizardNavigationMixin:
     def confirm_current_track(self):
         """Records the current track's offset selection and checks coverage."""
         if self._player: self._player.stop()
+        if hasattr(self, '_play_timer') and self._play_timer:
+            try:
+                self._play_timer.stop()
+            except Exception:
+                pass
         offset = self.offset_slider.value() / 1000.0
         actual_dur = max(0.0, self.current_track_dur - offset)
         self.logger.info(
@@ -129,10 +140,13 @@ class MergerMusicWizardNavigationMixin:
             self._refresh_selected_tracks_ui()
         covered = sum(t[2] for t in self.selected_tracks)
         if covered < self.total_video_sec - 0.5:
+            missing = self.total_video_sec - covered
             self.logger.info(f"WIZARD: More music needed ({covered:.1f}s / {self.total_video_sec:.1f}s). Returning to Step 1.")
-            QMessageBox.information(self, "Need more music", 
-                f"You've covered {covered:.1f}s of your {self.total_video_sec:.1f}s project.\n\n"
-                "Please select another song to fill the remaining time!")
+            QMessageBox.information(self, "Almost There!", 
+                f"You've added {covered:.1f}s of music.\n"
+                f"You still need {missing:.1f}s to cover the full video.\n\n"
+                "Please select another song to continue!")
+            self._auto_reset_step1 = True
             self.stack.setCurrentIndex(0)
             self.btn_back.hide()
         else:

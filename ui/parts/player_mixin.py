@@ -32,6 +32,9 @@ class PlayerMixin:
             if self.timer.isActive():
                 self.timer.stop()
             self.vlc_player.pause()
+            if getattr(self, "vlc_music_player", None):
+                try: self.vlc_music_player.pause()
+                except: pass
             self.wants_to_play = False
             self.set_vlc_position(self.vlc_player.get_time(), sync_only=True, force_pause=True)
             self.playPauseButton.setText("PLAY")
@@ -74,7 +77,11 @@ class PlayerMixin:
     def update_player_state(self):
         """On a timer, updates UI slider and keeps music in sync."""
         player = getattr(self, "vlc_player", None)
-        if not player or not player.is_playing():
+        if not player:
+            return
+        state = player.get_state()
+        is_active = state in (vlc.State.Playing, vlc.State.Paused, vlc.State.Opening, vlc.State.Buffering)
+        if not is_active:
             return
         slider = getattr(self, "positionSlider", None)
         if slider and slider.isSliderDown():
@@ -83,11 +90,14 @@ class PlayerMixin:
         if current_time >= 0:
             if slider:
                 slider.blockSignals(True)
-                slider.setValue(current_time)
+                slider.setValue(int(current_time))
                 slider.blockSignals(False)
-            if getattr(self, 'vlc_music_player', None) and hasattr(self, "_wizard_tracks") and self._wizard_tracks and not getattr(self, 'vlc_music_player').is_playing():
-                 if self.music_timeline_start_ms <= current_time < self.music_timeline_end_ms:
-                    self.set_vlc_position(current_time, sync_only=True)
+                slider.update()
+            if getattr(self, 'vlc_music_player', None) and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
+                 m_player = getattr(self, 'vlc_music_player')
+                 if not m_player.is_playing() and getattr(self, "wants_to_play", False):
+                     if self.music_timeline_start_ms <= current_time < self.music_timeline_end_ms:
+                        self.set_vlc_position(current_time, sync_only=True)
             if hasattr(self, 'speed_segments') and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
                 target_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1
                 current_segment_index = -1
@@ -103,14 +113,7 @@ class PlayerMixin:
                     if now - self._last_rate_update_main > 0.1:
                         player.set_rate(target_speed)
                         self._last_rate_update_main = now
-                        if hasattr(self, 'logger'):
-                            seg_info = f"Segment {current_segment_index}" if current_segment_index >= 0 else "Base"
-                            self.logger.info(f"PREVIEW: Switched to {target_speed}x ({seg_info}) at {current_time}ms")
-            elif not getattr(self, 'granular_checkbox', None) or not self.granular_checkbox.isChecked():
-                global_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1
-                if abs(player.get_rate() - global_speed) > 0.05:
-                    player.set_rate(global_speed)
-            is_currently_vlc_playing = player.get_state() == vlc.State.Playing
+            is_currently_vlc_playing = (state == vlc.State.Playing)
             if is_currently_vlc_playing != getattr(self, "is_playing", None):
                 self.is_playing = is_currently_vlc_playing
                 icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
@@ -127,7 +130,7 @@ class PlayerMixin:
             try:
                 now = time.time()
                 if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
-                if now - self._last_scrub_ts < 0.05:
+                if not force_pause and (now - self._last_scrub_ts < 0.05):
                     return
                 self._last_scrub_ts = now
                 target_ms = int(position_ms)
@@ -143,21 +146,25 @@ class PlayerMixin:
                             if music_player.is_playing():
                                 music_player.pause()
                         if is_within_music_bounds:
+                            music_player.set_rate(1.0)
                             time_since_music_start_project_ms = target_ms - self.music_timeline_start_ms
                             speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
+                            real_audio_ms = time_since_music_start_project_ms / speed
                             if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked() and hasattr(self, 'speed_segments'):
                                 wall_now = self._calculate_wall_clock_time(target_ms, self.speed_segments, speed)
                                 wall_start = self._calculate_wall_clock_time(self.music_timeline_start_ms, self.speed_segments, speed)
                                 real_audio_ms = (wall_now - wall_start) * 1000.0
-                            else:
-                                real_audio_ms = time_since_music_start_project_ms / speed
                             file_offset_ms = self._get_music_offset_ms() 
                             music_target_in_file_ms = int(real_audio_ms + file_offset_ms)
                             if abs(music_player.get_time() - music_target_in_file_ms) > 50:
                                 music_player.set_time(music_target_in_file_ms)
-                            music_player.audio_set_mute(False)
-                            if hasattr(self, "_music_eff"):
-                                music_player.audio_set_volume(self._music_eff())
+                            if hasattr(self, "_sync_all_volumes"):
+                                self._sync_all_volumes()
+                            else:
+                                music_player.audio_set_mute(False)
+                                if hasattr(music_player, "audio_set_volume"):
+                                    music_player.audio_set_volume(self._music_eff())
+                            music_player.set_rate(1.0)
                             if music_player.get_rate() != 1.0:
                                 music_player.set_rate(1.0)
                     else:

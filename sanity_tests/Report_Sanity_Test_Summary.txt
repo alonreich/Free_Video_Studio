@@ -1,0 +1,104 @@
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-02-18 17:28:58 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-02-18 17:28:58 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_core_01_constant_tempo_dryrun.py
+    Timestamp: 2026-02-18 17:28:58 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: source-contract dryrun. This file validates that critical logic snippets/API wiring still exist in code after refactors.
+    1. Title: test_core_01_constant_tempo_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 01 constant tempo dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 01 constant tempo dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-02-18 17:29:25 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-02-18 17:29:25 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_core_07_auto_pause_dryrun.py
+    Timestamp: 2026-02-18 17:29:25 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: source-contract dryrun. This file validates that critical logic snippets/API wiring still exist in code after refactors.
+    1. Title: test_core_07_auto_pause_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 07 auto pause dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 07 auto pause dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-02-18 17:30:13 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-02-18 17:30:13 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 4 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_core_13_music_handle_isolation_dryrun.py
+    Timestamp: 2026-02-18 17:30:13 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=4 | failed=0 | skipped=0
+    Purpose: source-contract dryrun. This file validates that critical logic snippets/API wiring still exist in code after refactors.
+    1. Title: test_core_13_merger_step2_uses_music_instance_for_music_player_media_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 13 merger step2 uses music instance for music player media dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 13 merger step2 uses music instance for music player media dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_core_13_merger_step3_sync_does_not_force_music_slider_every_tick_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 13 merger step3 sync does not force music slider every tick dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 13 merger step3 sync does not force music slider every tick dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_core_13_music_handle_controls_music_only_in_wizard_players_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 13 music handle controls music only in wizard players dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 13 music handle controls music only in wizard players dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    4. Title: test_core_13_music_handle_stays_separate_from_video_export_mix_dryrun
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 13 music handle stays separate from video export mix dryrun
+       Expected Behavior: The tested scenario should complete successfully: Core 13 music handle stays separate from video export mix dryrun.
+       Why This Is Expected: Dryrun tests protect code contracts against silent refactors. If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-02-18 17:31:40 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-02-18 17:31:40 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_music_folder_persistence.py
+    Timestamp: 2026-02-18 17:31:40 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_music_wizard_folder_change_persists_to_config_file
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Music wizard folder change persists to config file
+       Expected Behavior: The tested scenario should complete successfully: Music wizard folder change persists to config file.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.

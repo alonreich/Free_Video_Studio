@@ -266,16 +266,19 @@ class ConfigManager:
         return clean
         
     def _acquire_lock(self, timeout_seconds: int = 5) -> bool:
-        """Acquire a file-based atomic lock."""
+        """
+        Acquire a file-based atomic lock with robust stale lock detection (Issue 3).
+        Ensures parent directory existence (Issue 1).
+        """
         try:
-            os.makedirs(os.path.dirname(self._lock_file_path), exist_ok=True)
+            lock_dir = os.path.dirname(self._lock_file_path)
+            if lock_dir and not os.path.exists(lock_dir):
+                os.makedirs(lock_dir, exist_ok=True)
         except Exception as e:
             self.logger.error(f"Failed to create directory for lock file: {e}")
             return False
         start_time = time.time()
-        attempt = 0
         while (time.time() - start_time) < timeout_seconds:
-            attempt += 1
             try:
                 fd = os.open(self._lock_file_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 lock_token = uuid.uuid4().hex
@@ -293,35 +296,28 @@ class ConfigManager:
                 return True
             except FileExistsError:
                 try:
-                    with open(self._lock_file_path, 'r', encoding='utf-8') as f:
-                        raw = f.read().strip()
-                    pid = None
-                    created_at = None
+                    lock_mtime = os.path.getmtime(self._lock_file_path)
+                    lock_age = time.time() - lock_mtime
+                    is_dead_process = False
                     try:
-                        lock_data = json.loads(raw)
-                        pid = int(lock_data.get("pid", 0))
-                        created_at = float(lock_data.get("created_at", 0.0))
-                    except Exception:
-                        pid = int(raw)
-                        created_at = os.path.getmtime(self._lock_file_path)
-                    if HAS_PSUTIL:
-                        if not psutil.pid_exists(pid):
-                            self.logger.warning(f"Breaking stale lock from dead PID {pid}")
-                            try:
-                                os.unlink(self._lock_file_path)
-                            except OSError as unlink_error:
-                                self.logger.warning(f"Failed removing stale lock: {unlink_error}")
-                            continue
-                    lock_age = time.time() - (created_at if created_at else os.path.getmtime(self._lock_file_path))
-                    if lock_age > timeout_seconds:
-                        self.logger.warning(f"Breaking stale lock (timed out) for {self.config_path}")
+                        with open(self._lock_file_path, 'r', encoding='utf-8') as f:
+                            lock_data = json.loads(f.read().strip())
+                            pid = int(lock_data.get("pid", 0))
+                            if HAS_PSUTIL:
+                                import psutil
+                                if not psutil.pid_exists(pid):
+                                    is_dead_process = True
+                    except:
+                        pass
+                    if lock_age > timeout_seconds or is_dead_process:
+                        self.logger.warning(f"Breaking stale lock (age: {lock_age:.1f}s) for {self.config_path}")
                         try:
                             os.unlink(self._lock_file_path)
-                        except OSError as unlink_error:
-                            self.logger.warning(f"Failed removing timed-out lock: {unlink_error}")
+                        except OSError:
+                            pass
                         continue
-                except Exception as parse_error:
-                    self.logger.warning(f"Lock parsing failed for {self._lock_file_path}: {parse_error}")
+                except Exception as e:
+                    self.logger.warning(f"Error checking lock staleness: {e}")
                 time.sleep(0.1)
             except Exception as e:
                 self.logger.error(f"Lock acquisition error: {e}")

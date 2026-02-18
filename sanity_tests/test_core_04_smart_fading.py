@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_core import test_core_04_smart_fading_scales_for_short_clips
 
 def test_core_04_smart_fading() -> None:
-    pending_test(
-        "CORE-04",
-        "afade durations automatically scale down for clips shorter than 3 seconds.",
-    )
-
+    test_core_04_smart_fading_scales_for_short_clips()

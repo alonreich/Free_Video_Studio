@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_clamping import test_challenge_05_video_trim_pushes_music_handles
 
 def test_challenge_05_trimming_conflict() -> None:
-    pending_test(
-        "CHALLENGE-05",
-        "Dragging orange trim into pink handle triggers valid push/block clamping behavior.",
-    )
-
+    test_challenge_05_video_trim_pushes_music_handles()

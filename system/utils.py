@@ -86,13 +86,13 @@ class ProcessManager:
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
         """
-        [FIX #3] Aggressively cleans up temporary files from previous or failed sessions.
-        No longer waits for 6 hours; if they match our patterns, they are deleted.
+        [FIX #9] Aggressively cleans up temporary files from previous or failed sessions.
+        Includes job-specific subdirectories and known prefix patterns.
         """
         temp_dir = tempfile.gettempdir()
         patterns = [
             prefix, "core-", "intro-", "ffmpeg2pass-", "drawtext-", 
-            "filter_complex-", "concat-", "thumb-", "snapshot-"
+            "filter_complex-", "concat-", "thumb-", "snapshot-", "fvs_job_"
         ]
         try:
             for filename in os.listdir(temp_dir):
@@ -102,16 +102,17 @@ class ProcessManager:
                         if os.path.isfile(file_path):
                             os.remove(file_path)
                         elif os.path.isdir(file_path):
-                            shutil.rmtree(file_path)
+                            shutil.rmtree(file_path, ignore_errors=True)
                     except Exception:
                         pass
         except Exception:
             pass
         try:
-            local_tmp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".tmp")
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            local_tmp = os.path.join(project_root, ".tmp")
             if os.path.exists(local_tmp):
-                shutil.rmtree(local_tmp)
-                os.makedirs(local_tmp, exist_ok=True)
+                shutil.rmtree(local_tmp, ignore_errors=True)
+            os.makedirs(local_tmp, exist_ok=True)
         except:
             pass
         try:

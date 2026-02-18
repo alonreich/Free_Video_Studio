@@ -5,6 +5,23 @@ import socket
 import threading
 import json
 import ctypes
+import mmap
+import struct
+BIN_DIR = os.path.join(os.getcwd(), 'binaries')
+if os.path.exists(BIN_DIR):
+    os.environ["PATH"] = BIN_DIR + os.pathsep + os.environ.get("PATH", "")
+    if hasattr(os, 'add_dll_directory'):
+        try:
+            os.add_dll_directory(BIN_DIR)
+        except Exception: pass
+try:
+    import vlc
+except ImportError:
+    sys.path.append(os.getcwd())
+    try:
+        import vlc
+    except ImportError:
+        vlc = None
 LOG_DIR = os.path.join(os.getcwd(), 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 WORKER_LOG = os.path.join(LOG_DIR, f"vlc_worker_native_{os.getpid()}.log")
@@ -16,29 +33,30 @@ def worker_log(msg):
             f.write(f"{time.ctime()} | {msg}\n")
     except Exception:
         pass
-worker_log(f"--- WORKER START (PID={os.getpid()}) ---")
-worker_log(f"Args: {sys.argv}")
-worker_log(f"CWD: {os.getcwd()}")
-BIN_DIR = os.path.join(os.getcwd(), 'binaries')
-os.environ["PATH"] = BIN_DIR + os.pathsep + os.environ.get("PATH", "")
-if hasattr(os, 'add_dll_directory'):
-    try:
-        os.add_dll_directory(BIN_DIR)
-        worker_log(f"Added DLL directory: {BIN_DIR}")
-    except Exception as e:
-        worker_log(f"Failed to add DLL directory: {e}")
-try:
-    import vlc
-    worker_log("VLC module imported successfully.")
-except ImportError:
-    try:
-        sys.path.append(os.getcwd())
 
-        import vlc
-        worker_log("VLC module imported from CWD.")
-    except ImportError:
-        worker_log("FATAL: vlc module not found in worker")
-        sys.exit(1)
+class StatusMemoryBridge:
+    """[NEW] Fast Shared Memory Bridge for zero-latency status updates."""
+
+    def __init__(self, port):
+        self.tag = f"FVS_VLC_STATUS_{port}"
+        self.size = 64
+        self.shm = mmap.mmap(-1, self.size, tagname=self.tag, access=mmap.ACCESS_WRITE)
+        worker_log(f"Shared Memory Bridge initialized: {self.tag}")
+
+    def update(self, state, current_time, length):
+        try:
+            s = int(state)
+            t = int(current_time)
+            l = int(length)
+            data = struct.pack("iqq", s, t, l)
+            self.shm.seek(0)
+            self.shm.write(data)
+        except Exception as e:
+            worker_log(f"SHM Update Error: {e}")
+
+    def close(self):
+        try: self.shm.close()
+        except: pass
 
 class VLCWorker:
     def __init__(self, port, mode):
@@ -47,6 +65,10 @@ class VLCWorker:
         self.player = None
         self.instance = None
         self.running = True
+        self.bridge = StatusMemoryBridge(port)
+        self.parent_pid = os.getppid()
+        self.monitor_thread = threading.Thread(target=self._monitor_parent, daemon=True)
+        self.monitor_thread.start()
         self.server_ready = threading.Event()
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
@@ -54,24 +76,93 @@ class VLCWorker:
             worker_log("FATAL: Server thread failed to bind socket in time.")
             sys.exit(1)
         vlc_args = [
-            "--verbose=0", 
+            "--verbose=2", 
             "--no-osd", 
+            "--no-video-title-show",
             "--ignore-config",
             "--avcodec-hw=any",
             "--vout=direct3d11",
-            "--file-caching=1000",
-            "--network-caching=1000",
+            "--file-caching=500",
+            "--network-caching=500",
+            "--drop-late-frames",
+            "--skip-frames",
             "--clock-jitter=0",
             "--clock-synchro=0"
         ]
         try:
-            worker_log(f"Initializing VLC Instance with args: {vlc_args}")
+            worker_log(f"Initializing VLC Instance ({self.mode}) with args: {vlc_args}")
             self.instance = vlc.Instance(vlc_args)
             self.player = self.instance.media_player_new()
+
+            def vlc_log_callback(data, level, ctx, fmt, args):
+                pass
             worker_log("VLC Player created successfully.")
+            self.status_thread = threading.Thread(target=self._status_loop, daemon=True)
+            self.status_thread.start()
         except Exception as e:
             worker_log(f"FATAL: VLC Initialization failed: {e}")
             sys.exit(1)
+
+    def _coerce_int(self, value, default=0):
+        """Best-effort conversion for VLC values that may arrive as enum/bytes/strings."""
+        try:
+            if value is None:
+                return int(default)
+            if hasattr(value, 'value'):
+                return int(value.value)
+            if isinstance(value, int):
+                return int(value)
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, bytes):
+                if len(value) == 0:
+                    return int(default)
+                if len(value) <= 4:
+                    return int.from_bytes(value, byteorder="little", signed=False)
+                if len(value) <= 8:
+                    return int.from_bytes(value[:8], byteorder="little", signed=False)
+            if isinstance(value, str):
+                raw = value.strip()
+                if raw.startswith("b'") or raw.startswith('b"'):
+                    import ast
+                    try:
+                        b = ast.literal_eval(raw)
+                        if isinstance(b, (bytes, bytearray)):
+                            return int.from_bytes(bytes(b), byteorder="little", signed=False)
+                    except: pass
+                return int(float(raw))
+            return int(value)
+        except Exception:
+            return int(default)
+
+    def _monitor_parent(self):
+        """Periodically checks if parent process is still alive."""
+
+        import psutil
+        while self.running:
+            try:
+                parent = psutil.Process(self.parent_pid)
+                if not parent.is_running() or parent.status() == psutil.STATUS_ZOMBIE:
+                    worker_log(f"Parent process {self.parent_pid} terminated. Shutting down worker.")
+                    self.running = False
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                worker_log(f"Parent process {self.parent_pid} not found. Shutting down worker.")
+                self.running = False
+                break
+            time.sleep(2.0)
+
+    def _status_loop(self):
+        """High-speed loop to update shared memory."""
+        while self.running:
+            try:
+                if self.player:
+                    st = self._coerce_int(self.player.get_state(), 0)
+                    tm = self._coerce_int(self.player.get_time(), 0)
+                    ln = self._coerce_int(self.player.get_length(), 0)
+                    self.bridge.update(st, tm, ln)
+            except: pass
+            time.sleep(0.025)
 
     def _run_server(self):
         """Runs the IPC server to listen for commands from the main app."""
@@ -91,19 +182,27 @@ class VLCWorker:
                 conn, addr = sock.accept()
                 with conn:
                     conn.settimeout(None)
+                    buffer = ""
                     while self.running:
                         data = conn.recv(8192).decode('utf-8')
-                        if not data: break
-                        try:
-                            cmd = json.loads(data)
-                            response = self._handle_command(cmd)
-                            conn.sendall(json.dumps(response).encode('utf-8'))
-                            if cmd.get('action') == 'quit':
-                                break
-                        except json.JSONDecodeError:
-                             worker_log(f"JSON Error: Received malformed data: {data}")
-                        except Exception as e:
-                            worker_log(f"Command Execution Error: {e}")
+                        if not data:
+                            break
+                        buffer += data
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            if not line.strip():
+                                continue
+                            try:
+                                cmd = json.loads(line)
+                                response = self._handle_command(cmd)
+                                conn.sendall((json.dumps(response) + "\n").encode('utf-8'))
+                                if cmd.get('action') == 'quit':
+                                    self.running = False
+                                    break
+                            except json.JSONDecodeError:
+                                worker_log(f"JSON Error: Received malformed line: {line}")
+                            except Exception as e:
+                                worker_log(f"Command Execution Error: {e}")
             except socket.timeout:
                 continue
             except Exception as e: 
@@ -131,7 +230,7 @@ class VLCWorker:
             return {'status': 'ok'}
         elif action == 'set_volume':
             try:
-                vol_pct = int(cmd.get('volume', 100))
+                vol_pct = self._coerce_int(cmd.get('volume', 100), 100)
                 self.player.audio_set_volume(vol_pct)
             except (ValueError, TypeError) as e:
                 worker_log(f"Volume Parse Error: {e} | Value: {cmd.get('volume')}")
@@ -145,16 +244,16 @@ class VLCWorker:
             return {'status': 'ok'}
         elif action == 'set_time':
             try:
-                ms = int(cmd.get('time', 0))
+                ms = self._coerce_int(cmd.get('time', 0), 0)
                 self.player.set_time(ms)
             except (ValueError, TypeError) as e:
                 worker_log(f"Time Parse Error: {e} | Value: {cmd.get('time')}")
             return {'status': 'ok'}
         elif action == 'get_state':
             return {
-                'state': int(self.player.get_state()), 
-                'time': self.player.get_time(), 
-                'length': self.player.get_length()
+                'state': self._coerce_int(self.player.get_state(), 0), 
+                'time': self._coerce_int(self.player.get_time(), 0), 
+                'length': self._coerce_int(self.player.get_length(), 0)
             }
         elif action == 'set_rate':
             try:
@@ -170,12 +269,14 @@ class VLCWorker:
                     import ast
                     raw_hwnd = ast.literal_eval(raw_hwnd)
                 if isinstance(raw_hwnd, bytes):
-                    import struct
-                    if len(raw_hwnd) == 4: wid = struct.unpack('<I', raw_hwnd)[0]
-                    elif len(raw_hwnd) == 8: wid = struct.unpack('<Q', raw_hwnd)[0]
-                    else: wid = int(raw_hwnd)
+                    if len(raw_hwnd) == 4:
+                        wid = int.from_bytes(raw_hwnd, byteorder='little', signed=False)
+                    elif len(raw_hwnd) == 8:
+                        wid = int.from_bytes(raw_hwnd, byteorder='little', signed=False)
+                    else:
+                        wid = self._coerce_int(raw_hwnd, 0)
                 else:
-                    wid = int(raw_hwnd)
+                    wid = self._coerce_int(raw_hwnd, 0)
                 if sys.platform.startswith('win'):
                     self.player.set_hwnd(wid)
             except Exception as e:
@@ -191,7 +292,7 @@ class VLCWorker:
             return {'status': 'ok', 'tracks': tracks}
         elif action == 'set_track':
             try:
-                track_id = int(cmd.get('track_id', 1))
+                track_id = self._coerce_int(cmd.get('track_id', 1), 1)
                 self.player.audio_set_track(track_id)
             except (ValueError, TypeError):
                 pass

@@ -40,6 +40,8 @@ class UiBuilderMixin:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
                 QMessageBox.information(self, "No Video", "Please load a video first.")
                 return
+            if hasattr(self, "_thumb_thread") and self._thumb_thread.is_alive():
+                self.logger.debug("THUMB: Previous extraction still running. Swapping...")
             pos_ms = 0
             try:
                 pos_ms = int(self.positionSlider.value())
@@ -68,8 +70,8 @@ class UiBuilderMixin:
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
                 
             from threading import Thread
-            t = Thread(target=_run_extract)
-            t.start()
+            self._thumb_thread = Thread(target=_run_extract, daemon=True)
+            self._thumb_thread.start()
             if hasattr(self, "logger"):
                 self.logger.info("THUMB: Selected absolute time %.3fs", self.selected_intro_abs_time)
             self.status_update_signal.emit(f"✅ Thumbnail frame selected: {mm:02d}:{ss:05.2f}")
@@ -168,6 +170,22 @@ class UiBuilderMixin:
         """Click-safe entrypoint: log, ensure trims, then call existing processing."""
         try:
             if hasattr(self, "logger"): self.logger.info("CLICK: Process Video")
+            if not getattr(self, "scan_complete", False):
+                self.status_update_signal.emit("⌛ Finishing hardware scan... please wait.")
+
+                from PyQt5.QtWidgets import QApplication
+                from PyQt5.QtCore import Qt, QCoreApplication
+                import time
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                for _ in range(150):
+                    QCoreApplication.processEvents()
+                    if getattr(self, "scan_complete", False):
+                        break
+                    time.sleep(0.1)
+                QApplication.restoreOverrideCursor()
+                if not getattr(self, "scan_complete", False):
+                    self.logger.warning("Hardware scan timed out, defaulting to CPU.")
+                    self.on_hardware_scan_finished("CPU")
             try:
                 if getattr(self, "vlc_player", None):
                     self.vlc_player.stop()
@@ -192,11 +210,8 @@ class UiBuilderMixin:
         """
         Turn on the Process button once duration exists,
         and if user hasn’t set trims yet, default to full video.
-        checks if hardware scan is complete [Fix #2].
         """
         try:
-            if not getattr(self, "scan_complete", False):
-                return
             has_duration = (self.positionSlider.maximum() > 0) or (self.end_minute_input.maximum() > 0)
             if has_duration:
                 if not self.process_button.isEnabled():
@@ -300,6 +315,16 @@ class UiBuilderMixin:
         self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
+        badge_style = "background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;"
+        self._main_time_badge_top = QLabel(self)
+        self._main_time_badge_top.setStyleSheet(badge_style)
+        self._main_time_badge_top.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._main_time_badge_top.hide()
+        self._main_time_badge_bottom = QLabel(self)
+        self._main_time_badge_bottom.setStyleSheet(badge_style)
+        self._main_time_badge_bottom.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._main_time_badge_bottom.hide()
+        self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
         player_col.addWidget(self.positionSlider)
         player_col.setStretch(1, 0)
         self._init_trim_controls()

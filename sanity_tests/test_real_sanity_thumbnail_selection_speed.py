@@ -47,7 +47,7 @@ def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkey
         {"start": 0, "end": 2000, "speed": 0.5},
         {"start": 2000, "end": 7000, "speed": 2.2},
     ]
-    host.bin_dir = tempfile.gettempdir()
+    host.bin_dir = str(tmp_path)
     host.thumb_pick_btn = _DummyBtn()
     host.status_update_signal = _DummySig()
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None)
@@ -69,7 +69,7 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     host.original_duration_ms = 10_000
     host.positionSlider = types.SimpleNamespace(value=lambda: 15_000)
     host.vlc_player = types.SimpleNamespace(get_time=lambda: 0)
-    host.bin_dir = tempfile.gettempdir()
+    host.bin_dir = str(tmp_path)
     host.thumb_pick_btn = _DummyBtn()
     host.status_update_signal = _DummySig()
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None)

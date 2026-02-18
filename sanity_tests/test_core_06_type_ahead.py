@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_core import test_core_06_type_ahead_multi_char_focus
 
 def test_core_06_type_ahead() -> None:
-    pending_test(
-        "CORE-06",
-        "Sequential type-ahead input (e.g. 'aki') jumps to matching Step 1 songs.",
-    )
-
+    test_core_06_type_ahead_multi_char_focus()

@@ -2,10 +2,12 @@
 from pathlib import Path
 import types
 from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
+from sanity_tests._ai_sanity_helpers import read_source
 install_qt_vlc_stubs()
 
 from processing.filter_builder import FilterBuilder
 from processing.worker import ProcessThread
+from ui.widgets.granular_speed_editor import GranularSpeedEditor
 
 class _Sig:
     def __init__(self) -> None:
@@ -33,10 +35,10 @@ def test_trim_start_ss_is_correct_with_speed_and_granular_segments(monkeypatch, 
         def wait(self, timeout=None):
             return 0
 
-    def _fake_create_subprocess(cmd, _logger):
-        captured_cmds.append(list(cmd))
-        return _Proc()
-    monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
+        def _fake_create_subprocess(cmd, _logger):
+            captured_cmds.append(list(cmd))
+            return _Proc()
+        monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
     monkeypatch.setattr("processing.worker.monitor_ffmpeg_progress", lambda *a, **k: None)
     monkeypatch.setattr("processing.worker.check_disk_space", lambda *a, **k: True)
     monkeypatch.setattr("processing.worker.calculate_video_bitrate", lambda *a, **k: 1500)
@@ -87,3 +89,107 @@ def test_trim_relative_time_mapper_with_multiple_speed_segments() -> None:
     assert abs(tmap(0.0) - 0.0) < 1e-6
     assert abs(tmap(2.0) - 4.0) < 0.05
     assert abs(tmap(4.0) - 5.0) < 0.05
+
+class _FakeMedia:
+    def __init__(self, duration_ms: int) -> None:
+        self._duration_ms = int(duration_ms)
+
+    def parse(self) -> None:
+        return None
+
+    def get_duration(self) -> int:
+        return self._duration_ms
+
+class _FakeVlcInstance:
+    def __init__(self, duration_ms: int) -> None:
+        self._duration_ms = int(duration_ms)
+
+    def media_new(self, _path: str) -> _FakeMedia:
+        return _FakeMedia(self._duration_ms)
+
+class _FakePlayer:
+    def __init__(self) -> None:
+        self._time = 0
+        self._playing = False
+        self.set_time_calls: list[int] = []
+
+    def set_media(self, _media) -> None:
+        return None
+
+    def set_xwindow(self, _wid) -> None:
+        return None
+
+    def set_hwnd(self, _wid) -> None:
+        return None
+
+    def set_nsobject(self, _wid) -> None:
+        return None
+
+    def audio_set_mute(self, _mute: bool) -> None:
+        return None
+
+    def audio_set_volume(self, _vol: int) -> None:
+        return None
+
+    def play(self) -> None:
+        self._playing = True
+
+    def pause(self) -> None:
+        self._playing = False
+
+    def set_time(self, value: int) -> None:
+        self._time = int(value)
+        self.set_time_calls.append(int(value))
+
+class _FakeTimeline:
+    def __init__(self) -> None:
+        self.range_calls: list[tuple[int, int]] = []
+        self.trim_calls: list[tuple[int, int]] = []
+
+    def setRange(self, start: int, end: int) -> None:
+        self.range_calls.append((int(start), int(end)))
+
+    def set_duration_ms(self, _duration: int) -> None:
+        return None
+
+    def set_segments(self, _segments) -> None:
+        return None
+
+    def set_trim_times(self, start: int, end: int) -> None:
+        self.trim_calls.append((int(start), int(end)))
+
+    def setValue(self, _value: int) -> None:
+        return None
+
+def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview() -> None:
+    main_preview_paused_ms = 4500
+    trim_start_ms = 2000
+    trim_end_ms = 7000
+    editor = GranularSpeedEditor.__new__(GranularSpeedEditor)
+    editor.input_file_path = "dummy.mp4"
+    editor.parent_app = types.SimpleNamespace(
+        trim_start_ms=trim_start_ms,
+        trim_end_ms=trim_end_ms,
+        logger=_logger(),
+    )
+    editor.vlc_instance = _FakeVlcInstance(duration_ms=12_000)
+    editor.vlc_player = _FakePlayer()
+    editor.video_frame = types.SimpleNamespace(winId=lambda: 1)
+    editor.timeline = _FakeTimeline()
+    editor.speed_segments = []
+    editor.start_time_ms = main_preview_paused_ms
+    editor.volume = 100
+    editor.selection_modified = False
+    editor.update_pending_visualization = lambda: None
+    editor.play_btn = types.SimpleNamespace(setText=lambda *_: None, setIcon=lambda *_: None)
+    editor.style = lambda: types.SimpleNamespace(standardIcon=lambda *_: None)
+    GranularSpeedEditor.setup_player(editor)
+    assert editor.timeline.range_calls, "Granular editor must set timeline range"
+    assert editor.timeline.range_calls[-1] == (trim_start_ms, trim_end_ms)
+    assert editor.vlc_player.set_time_calls, "Granular editor must seek to startup frame"
+    assert editor.vlc_player.set_time_calls[-1] == main_preview_paused_ms
+
+def test_main_app_click_contract_passes_paused_time_into_granular_editor() -> None:
+    src = read_source("ui/main_window.py")
+    assert "current_ms = max(0, self.vlc_player.get_time())" in src
+    assert "start_time_ms=current_ms" in src

@@ -72,7 +72,7 @@ class MediaProcessor(QObject):
         vlc_args = [
             '--no-xlib', '--no-video-title-show',
             '--aout=waveout', 
-            '--avcodec-hw=any', '--vout=direct3d9',
+            '--avcodec-hw=any', '--vout=direct3d11',
             '--no-stats', '--no-lua', '--no-interact',
             '--file-logging', '--logmode=text',
             f"--logfile={os.environ.get('FVS_VLC_RAW_LOG', self.vlc_log_path)}",
@@ -162,8 +162,12 @@ class MediaProcessor(QObject):
             for proc in self._ffprobe_procs:
                 try:
                     if proc.poll() is None:
-                        proc.kill()
-                        proc.communicate(timeout=0.2)
+                        proc.terminate()
+                        try:
+                             proc.communicate(timeout=0.2)
+                        except subprocess.TimeoutExpired:
+                             proc.kill()
+                             proc.communicate(timeout=0.1)
                 except Exception:
                     pass
             self._ffprobe_procs = []
@@ -300,6 +304,7 @@ class MediaProcessor(QObject):
         return None
 
     def _fetch_vlc_resolution(self):
+        """[FIX #2] Explicit resolution detection with no silent 1080p fallback."""
         if not self.original_resolution and self.media_player:
             logger.info("Attempting to fetch resolution fallback from VLC.")
             w, h = self.media_player.video_get_size(0)
@@ -307,10 +312,11 @@ class MediaProcessor(QObject):
                 self.original_resolution = f"{w}x{h}"
                 logger.info(f"VLC fallback got resolution: {self.original_resolution}")
                 self.info_retrieved.emit(self.original_resolution)
+                return
         if not self.original_resolution:
-            self.original_resolution = "1920x1080"
-            logger.warning("All resolution detection failed. Defaulting to 1920x1080.")
-            self.info_retrieved.emit(self.original_resolution)
+            logger.warning("All automated resolution detection failed.")
+            self.original_resolution = None
+            self.info_retrieved.emit("UNKNOWN")
 
     def take_snapshot(self, snapshot_path, preferred_time=None):
         """[FIX #8, #11] Reliable snapshot with atomic overwrite."""

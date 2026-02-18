@@ -50,7 +50,11 @@ def test_break_scenario_trim_near_zero_never_generates_negative_seek(monkeypatch
 
         def wait(self, timeout=None):
             return 0
-    monkeypatch.setattr("processing.worker.create_subprocess", lambda cmd, *_a, **_k: (captured_cmds.append(list(cmd)) or _Proc()))
+
+    def _fake_create_subprocess(cmd, _logger):
+        captured_cmds.append(list(cmd))
+        return _Proc()
+    monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
     monkeypatch.setattr("processing.worker.monitor_ffmpeg_progress", lambda *a, **k: None)
     monkeypatch.setattr("processing.worker.check_disk_space", lambda *a, **k: True)
     monkeypatch.setattr("processing.worker.calculate_video_bitrate", lambda *a, **k: 1200)

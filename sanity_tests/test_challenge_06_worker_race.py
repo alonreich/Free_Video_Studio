@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_challenges import test_challenge_06_worker_race_stop_kills_process_tree
 
-def test_challenge_06_worker_race() -> None:
-    pending_test(
-        "CHALLENGE-06",
-        "Rapid BACK after song start cleanly kills FFmpeg process tree and prevents zombie binaries.",
-    )
-
+def test_challenge_06_worker_race(monkeypatch) -> None:
+    test_challenge_06_worker_race_stop_kills_process_tree(monkeypatch)

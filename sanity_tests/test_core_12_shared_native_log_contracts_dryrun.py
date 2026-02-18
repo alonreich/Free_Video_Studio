@@ -5,7 +5,7 @@ def test_core_12_main_and_crop_native_logging_contract_dryrun() -> None:
     assert_all_present(
         src,
         [
-            'vlc_log_path = os.path.join(log_dir, "vlc.log")',
+            'vlc_log_path = os.path.join(log_dir, f"{app_prefix}_vlc.log")',
             'raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")',
             "os.dup2(f.fileno(), sys.stdout.fileno())",
             "os.dup2(f.fileno(), sys.stderr.fileno())",

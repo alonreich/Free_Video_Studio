@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_core import test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay
 
-def test_core_08_pink_overlay() -> None:
-    pending_test(
-        "CORE-08",
-        "Pink timeline overlay line appears automatically after wizard selection.",
-    )
-
+def test_core_08_pink_overlay(monkeypatch) -> None:
+    test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch)

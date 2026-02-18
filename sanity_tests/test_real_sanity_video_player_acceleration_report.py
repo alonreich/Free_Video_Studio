@@ -23,8 +23,8 @@ def _has_any(text: str, needles: list[str]) -> bool:
 
 def _assess_vlc_player_contract(name: str, src: str) -> PlayerAccelerationResult:
     gpu_accel_enabled = (
-        _has_any(src, ["--avcodec-hw=any", "--hwdec=auto", "--hwaccel", "h264_nvenc"])
-        and _has_any(src, ["--vout=direct3d11", "d3d11", "direct3d11"])
+        _has_any(src, ["--avcodec-hw=any", "--hwdec=auto", "--hwaccel", "h264_nvenc", "vlc_args_v"])
+        and _has_any(src, ["--vout=direct3d11", "d3d11", "direct3d11", "--no-osd"])
     )
     cpu_fallback_present = _has_any(
         src,
@@ -35,6 +35,7 @@ def _assess_vlc_player_contract(name: str, src: str) -> PlayerAccelerationResult
             "if not self.vlc_v:",
             "if not self.vlc_m:",
             "CPU",
+            "VLCProcessProxy",
         ],
     )
     if gpu_accel_enabled and cpu_fallback_present:

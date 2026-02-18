@@ -13,9 +13,12 @@ class HUDExtractor:
         self._load_anchors()
 
     def _load_anchors(self):
+        """[FIX #6] Load anchors with detailed health status reporting."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
         anchor_dir = os.path.join(script_dir, 'anchors')
+        self.anchor_status = {}
         if not os.path.isdir(anchor_dir):
+            self.logger.error(f"Critical Error: Anchor directory missing at {anchor_dir}")
             return
         anchor_files = {
             'loot_start': 'ref_keybind_1.png',
@@ -25,13 +28,25 @@ class HUDExtractor:
         }
         for key, filename in anchor_files.items():
             path = os.path.join(anchor_dir, filename)
+            self.anchor_status[key] = {"path": path, "ok": False, "reason": "Missing"}
             if os.path.exists(path):
                 try:
                     data = np.fromfile(path, dtype=np.uint8)
                     img = cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
-                    self.anchors[key] = img if not self._looks_like_placeholder_anchor(img) else None
-                except:
-                    self.anchors[key] = None
+                    if not self._looks_like_placeholder_anchor(img):
+                        self.anchors[key] = img
+                        self.anchor_status[key].update({"ok": True, "reason": "Valid"})
+                    else:
+                        self.anchor_status[key].update({"ok": False, "reason": "Placeholder/Empty"})
+                except Exception as e:
+                    self.anchor_status[key].update({"ok": False, "reason": f"Corrupt: {str(e)}"})
+
+    def health_check(self) -> dict:
+        """Returns health report for the anchor system."""
+        return {
+            "overall": all(s["ok"] for s in self.anchor_status.values()),
+            "details": self.anchor_status
+        }
 
     def _looks_like_placeholder_anchor(self, img_gray):
         if img_gray is None or img_gray.size == 0:

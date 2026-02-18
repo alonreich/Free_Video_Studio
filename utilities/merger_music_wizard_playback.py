@@ -11,7 +11,7 @@ class MergerMusicWizardPlaybackMixin:
         eff = self._scaled_vol(val)
         self.logger.info(f"DEBUG_VOL: [MERGER_VIDEO_WORKER_HANDLE] Moved to {val}%. Resulting Scaled Vol: {eff}%. PlayerObj: {hex(id(self._video_player))}")
         if getattr(self, "_video_player", None): 
-            self._video_player.audio_set_volume(eff)
+            self._video_player.audio_set_volume(val)
         if hasattr(self, "video_vol_val_lbl"): 
             self.video_vol_val_lbl.setText(f"{val}%")
 
@@ -20,7 +20,7 @@ class MergerMusicWizardPlaybackMixin:
         eff = self._scaled_vol(val)
         self.logger.info(f"DEBUG_VOL: [MERGER_MUSIC_WORKER_HANDLE] Moved to {val}%. Resulting Scaled Vol: {eff}%. PlayerObj: {hex(id(self._player))}")
         if getattr(self, "_player", None): 
-            self._player.audio_set_volume(eff)
+            self._player.audio_set_volume(val)
         if hasattr(self, "music_vol_val_lbl"): 
             self.music_vol_val_lbl.setText(f"{val}%")
 

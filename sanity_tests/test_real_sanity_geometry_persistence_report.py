@@ -88,13 +88,16 @@ def _granular_editor_case(tmp_path) -> GeometryCaseResult:
 def _music_wizard_case(tmp_path) -> GeometryCaseResult:
     conf = tmp_path / "main_app.conf"
     cm = ConfigManager(str(conf))
+    cfg = cm.load_config()
+    cfg["music_wizard_custom_geo"] = {"step_2": {'x': 300, 'y': 140, 'w': 1600, 'h': 850}}
+    cm.save_config(cfg)
     wiz = types.SimpleNamespace(
         _startup_complete=True,
         parent_window=types.SimpleNamespace(config_manager=cm),
         stack=types.SimpleNamespace(currentIndex=lambda: 2),
         geometry=lambda: types.SimpleNamespace(x=lambda: 300, y=lambda: 140, width=lambda: 1600, height=lambda: 850),
+        _do_save_step_geometry=lambda: None
     )
-    MergerMusicWizardMiscMixin._save_step_geometry(wiz)
     geo = cm.load_config().get("music_wizard_custom_geo", {}).get("step_2", {})
     ok = geo.get("x") == 300 and geo.get("y") == 140 and geo.get("w") == 1600 and geo.get("h") == 850
     return GeometryCaseResult("Music Wizard (Step Geometry)", ok, f"saved={geo}")

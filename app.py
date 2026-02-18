@@ -25,7 +25,8 @@ PLUGINS   = os.path.join(BIN_DIR, 'plugins')
 PID_APP_NAME = "fortnite_video_software_main"
 ORIGINAL_PATH = os.environ.get("PATH", "")
 DEBUG_ENABLED = "--debug" in sys.argv or os.environ.get("FVS_DEBUG") == "1"
-ENCODER_TEST_TIMEOUT = int(os.environ.get("FVS_ENCODER_TIMEOUT", "8"))
+ENCODER_TEST_TIMEOUT = int(os.environ.get("FVS_ENCODER_TIMEOUT", "15"))
+FORCE_GPU = os.environ.get("FVS_FORCE_GPU")
 LOCALE_CODE = QLocale.system().name().split("_")[0].lower()
 HARDWARE_SCAN_DETAILS = {"errors": {}, "timed_out": []}
 
@@ -176,6 +177,11 @@ class HardwareWorker(QObject):
         """
         os.environ.pop("VIDEO_HW_ENCODER", None)
         os.environ.pop("VIDEO_FORCE_CPU", None)
+        
+        if FORCE_GPU == "NVIDIA":
+            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+            return "NVIDIA"
+
         if self.stop_requested:
             os.environ["VIDEO_FORCE_CPU"] = "1"
             return "CPU"
@@ -246,6 +252,11 @@ def determine_hardware_strategy(ffmpeg_path):
     """
     os.environ.pop("VIDEO_HW_ENCODER", None)
     os.environ.pop("VIDEO_FORCE_CPU", None)
+    
+    if FORCE_GPU == "NVIDIA":
+        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+        return "NVIDIA"
+
     if check_encoder_capability(ffmpeg_path, "h264_nvenc"):
         os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
         return "NVIDIA"
@@ -420,8 +431,17 @@ if __name__ == "__main__":
     except Exception:
         pass
     
+    # [FIX #4] Reuse last hardware strategy if available
+    from system.config import ConfigManager
+    config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf')
+    cm = ConfigManager(config_path)
+    cached_hw = cm.config.get("last_hardware_strategy")
+    
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    ex = VideoCompressorApp(file_arg, "Scanning...")
+    
+    # If we have a cached strategy, use it to avoid the scan dialog
+    initial_strategy = cached_hw if cached_hw else "Scanning..."
+    ex = VideoCompressorApp(file_arg, initial_strategy)
     try:
         if icon_path and os.path.exists(icon_path):
             ex.setWindowIcon(QIcon(icon_path))
@@ -441,31 +461,42 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    scan_dialog = QProgressDialog(tr("hardware_scan_text"), "", 0, 0, ex)
-    scan_dialog.setWindowTitle(tr("hardware_scan_title"))
-    scan_dialog.setWindowModality(Qt.NonModal)
-    scan_dialog.setCancelButton(None)
-    scan_dialog.setMinimumDuration(0)
-    scan_dialog.setMinimumWidth(450) # [FIX] Larger width for scanning dialog
-    scan_dialog.show()
+    if not cached_hw:
+        scan_dialog = QProgressDialog(tr("hardware_scan_text"), tr("hardware_scan_cpu"), 0, 0, ex)
+        scan_dialog.setWindowTitle(tr("hardware_scan_title"))
+        scan_dialog.setWindowModality(Qt.WindowModal)
+        scan_dialog.setMinimumDuration(0)
+        scan_dialog.setMinimumWidth(450)
+        scan_dialog.show()
 
-
-    hw_thread = QThread()
-    hw_worker = HardwareWorker(ffmpeg_path)
-    hw_worker.moveToThread(hw_thread)
-    hw_thread.started.connect(hw_worker.run)
-    hw_worker.finished.connect(ex.on_hardware_scan_finished)
-    def handle_hardware_scan_result(mode: str):
-        try:
-            if scan_dialog:
-                scan_dialog.close()
-        except Exception:
-            pass
-    hw_worker.finished.connect(handle_hardware_scan_result)
-    hw_worker.finished.connect(hw_thread.quit)
-    hw_worker.finished.connect(hw_worker.deleteLater)
-    hw_thread.finished.connect(hw_thread.deleteLater)
-    hw_thread.start()
+        hw_thread = QThread()
+        hw_worker = HardwareWorker(ffmpeg_path)
+        
+        def on_skip():
+            hw_worker.stop()
+            ex.on_hardware_scan_finished("CPU")
+            scan_dialog.close()
+            
+        scan_dialog.canceled.connect(on_skip)
+        
+        hw_worker.moveToThread(hw_thread)
+        hw_thread.started.connect(hw_worker.run)
+        hw_worker.finished.connect(ex.on_hardware_scan_finished)
+        def handle_hardware_scan_result(mode: str):
+            try:
+                if scan_dialog:
+                    scan_dialog.close()
+            except Exception:
+                pass
+        hw_worker.finished.connect(handle_hardware_scan_result)
+        hw_worker.finished.connect(hw_thread.quit)
+        hw_worker.finished.connect(hw_worker.deleteLater)
+        hw_thread.finished.connect(hw_thread.deleteLater)
+        hw_thread.start()
+    else:
+        # Silently verify in background if needed, but for now just accept cached
+        debug_log(f"DEBUG: Using cached hardware strategy: {cached_hw}")
+        ex.scan_complete = True
 
     debug_log("DEBUG: Main window shown. Entering app.exec_().")
     ret = app.exec_()

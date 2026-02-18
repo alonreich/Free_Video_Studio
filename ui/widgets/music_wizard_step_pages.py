@@ -1,27 +1,135 @@
 ﻿import os
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton, QStackedLayout, QSizePolicy
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton, QStackedLayout, QSizePolicy, QStyle
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_wizard_widgets import SearchableListWidget, MusicItemWidget
 
+class TrackScannerWorker(QThread):
+    """Background worker for scanning MP3 files without UI freeze."""
+    scanning_started = pyqtSignal()
+    scanning_finished = pyqtSignal(list)
+    scanning_error = pyqtSignal(str)
+
+    def __init__(self, folder_path):
+        super().__init__()
+        self.folder_path = folder_path
+        self._running = True
+
+    def stop(self):
+        self._running = False
+        self.quit()
+        if not self.wait(300):
+            self.terminate()
+
+    def run(self):
+        try:
+            self.scanning_started.emit()
+            if not os.path.isdir(self.folder_path):
+                self.scanning_error.emit(f"Folder not found: {self.folder_path}")
+                return
+            files = []
+            for f in os.listdir(self.folder_path):
+                if not self._running:
+                    return
+                if f.lower().endswith(".mp3"):
+                    full_path = os.path.join(self.folder_path, f)
+                    files.append((f, full_path))
+            if self._running:
+                files.sort(key=lambda x: x[0].lower())
+                self.scanning_finished.emit(files)
+        except Exception as e:
+            if self._running:
+                self.scanning_error.emit(str(e))
+
 class MergerMusicWizardStepPagesMixin:
     def load_tracks(self, folder_path):
-        """Scans the folder for MP3 files and populates the list."""
+        """Scans the folder for MP3 files in background without UI freeze."""
         if not os.path.isdir(folder_path):
             self.logger.warning(f"WIZARD: MP3 folder not found: {folder_path}")
             return
+        self._stop_track_scanner()
         self.track_list.clear()
-        files = [f for f in os.listdir(folder_path) if f.lower().endswith(".mp3")]
-        files.sort()
-        for filename in files:
-            full_path = os.path.join(folder_path, filename)
+        self.coverage_progress.setRange(0, 0)
+        self.coverage_progress.setFormat("Scanning folder...")
+        self._track_scanner = TrackScannerWorker(folder_path)
+        self._track_scanner.scanning_started.connect(self._on_scanning_started)
+        self._track_scanner.scanning_finished.connect(self._on_scanning_finished)
+        self._track_scanner.scanning_error.connect(self._on_scanning_error)
+        self._track_scanner.start()
+
+    def _stop_track_scanner(self):
+        """Safely stop and disconnect the track scanner worker."""
+        if not hasattr(self, '_track_scanner') or not self._track_scanner:
+            return
+        try:
+            self._track_scanner.scanning_started.disconnect()
+            self._track_scanner.scanning_finished.disconnect()
+            self._track_scanner.scanning_error.disconnect()
+        except Exception:
+            pass
+        try:
+            if self._track_scanner.isRunning():
+                self._track_scanner.stop()
+                self._track_scanner.wait(500)
+        except Exception:
+            pass
+        self._track_scanner = None
+
+    def _on_scanning_started(self):
+        self.logger.info("WIZARD: Scanning MP3 folder in background...")
+
+    def _on_scanning_finished(self, files):
+        """files: list of (filename, full_path)"""
+        self.coverage_progress.setRange(0, 100)
+        self.coverage_progress.setFormat("%p%")
+        self.track_list.clear()
+        for filename, full_path in files:
             item = QListWidgetItem(self.track_list)
             custom_widget = MusicItemWidget(filename)
             item.setSizeHint(custom_widget.sizeHint())
             item.setData(Qt.UserRole, full_path)
             self.track_list.addItem(item)
             self.track_list.setItemWidget(item, custom_widget)
-        self.logger.info(f"WIZARD: Loaded {len(files)} tracks from {folder_path}")
+        self.logger.info(f"WIZARD: Loaded {len(files)} tracks from folder")
+        self._report_non_mp3_files()
+
+    def _on_scanning_error(self, error_msg):
+        self.coverage_progress.setRange(0, 100)
+        self.coverage_progress.setFormat("%p%")
+        self.logger.error(f"WIZARD: Scanning error: {error_msg}")
+
+    def _report_non_mp3_files(self):
+        """Count and log non-MP3 audio files in the folder."""
+        if not hasattr(self, '_track_scanner') or not self._track_scanner:
+            return
+        folder = self._track_scanner.folder_path
+        try:
+            import glob
+            all_files = glob.glob(os.path.join(folder, "*"))
+            audio_exts = {'.wav', '.flac', '.aac', '.m4a', '.ogg', '.wma'}
+            non_mp3 = [f for f in all_files if os.path.splitext(f)[1].lower() in audio_exts]
+            if non_mp3:
+                self.logger.info(f"WIZARD: {len(non_mp3)} non‑MP3 audio files ignored")
+                if hasattr(self, 'search_hint_lbl'):
+                    self.search_hint_lbl.setText(f"{len(non_mp3)} non‑MP3 files ignored")
+                    QTimer.singleShot(3000, lambda: self.search_hint_lbl.setText(""))
+        except Exception:
+            pass
+
+    def _on_search_buffer_changed(self, buffer_text):
+        """Update search hint label with auto‑hide timer."""
+        if not hasattr(self, 'search_hint_lbl'):
+            return
+        if buffer_text:
+            self.search_hint_lbl.setText(f"Searching: '{buffer_text}'")
+            if hasattr(self, '_search_hint_timer'):
+                self._search_hint_timer.stop()
+            self._search_hint_timer = QTimer()
+            self._search_hint_timer.setSingleShot(True)
+            self._search_hint_timer.timeout.connect(lambda: self.search_hint_lbl.setText(""))
+            self._search_hint_timer.start(3000)
+        else:
+            self.search_hint_lbl.setText("")
 
     def setup_step1_select(self):
         from ui.styles import UIStyles
@@ -104,7 +212,7 @@ class MergerMusicWizardStepPagesMixin:
         layout.addLayout(search_layout)
         layout.addSpacing(10)
         self.track_list = SearchableListWidget()
-        self.track_list.buffer_changed.connect(lambda b: self.search_hint_lbl.setText(f"Searching: '{b}'" if b else ""))
+        self.track_list.buffer_changed.connect(self._on_search_buffer_changed)
         self.track_list.setStyleSheet("""
             QListWidget {
                 background: #142d37;
@@ -194,6 +302,7 @@ class MergerMusicWizardStepPagesMixin:
         self.offset_slider.setProperty("is_wizard_slider", True)
         self.offset_slider.setFixedHeight(100)
         self.offset_slider.valueChanged.connect(self._on_slider_seek)
+        self.offset_slider.sliderMoved.connect(self._on_slider_seek)
         try:
             self.offset_slider.sliderPressed.connect(self._on_drag_start)
             self.offset_slider.sliderReleased.connect(self._on_drag_end)

@@ -72,41 +72,6 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # ==============================================================================
 # PRODUCTION SANITY TEST SUITE
 # ==============================================================================
-
-# 1. AI AGENT SANITY CHECK QUESTIONS (CORE)
-# 1. CONSTANT TEMPO: Does background music always play at 1.0x speed, even if the video is accelerated or slowed?
-# 2. HANDLE CLAMPING: Are pink music handles physically blocked from going outside orange video trims?
-# 3. SCRUB PROTECTION: Is VLC scrubbing throttled to 20fps to prevent native thread deadlocks?
-# 4. SMART FADING: Do afade durations scale down automatically for clips under 3 seconds?
-# 5. GEOMETRY MEMORY: Does the wizard save geometry on every move/resize event?
-# 6. TYPE-AHEAD: Can users type sequential letters (e.g. 'aki') to jump to songs in Step 1?
-# 7. AUTO-PAUSE: Does the background video pause immediately when 'ADD MUSIC' is clicked?
-# 8. PINK OVERLAY: Does the pink timeline line appear automatically after wizard selection?
-# 9. NATIVE LOGS: Are C++ VLC crashes captured in main_app.log via faulthandler?
-# 10. FOLDER PERSISTENCE: Is 'custom_mp3_dir' prioritized over default path on launch?
-
-# 2. AI AGENT SANITY CHECK QUESTIONS (CRAZY CHALLENGING SCENARIOS)
-# 1. GRANULAR SPEED SYNC: Video has 3 segments (0.5x, 2.0x, 1.1x). Music starts in seg 1, ends in seg 3. 
-#    - Test: Does the wall-clock math correctly predict the audio mark in the final export despite constant 1.0x music?
-# 2. IMPOSSIBLE FADE: A music clip is 0.1s long. 
-#    - Test: Does the 'min(1.0, dur/3)' fade logic prevent division-by-zero or negative duration errors?
-# 3. DJ SCRUBBING: User wiggles the timeline 15 times per second while playback is active.
-#    - Test: Does the 50ms throttle keep the VLC audio buffer from overflowing or crashing?
-# 4. NETWORK DISCONNECT: 'custom_mp3_dir' points to a drive that is unplugged.
-#    - Test: Does the app gracefully fall back to the local ./mp3 folder without hanging?
-# 5. TRIMMING CONFLICT: User drags orange handle INTO a pink handle.
-#    - Test: Does the clamping logic correctly 'push' or 'block' the pink handle to maintain validity?
-# 6. WORKER RACE: User double-clicks a song and clicks 'BACK' 0.1s later while FFmpeg is starting.
-#    - Test: Is the Popen process tree (taskkill /T /F) successfully purged to prevent zombie binaries?
-# 7. BITRATE EXHAUSTION: 1-second video with 320kbps MP3 at 'Bad' quality.
-#    - Test: Does the calculator clamp to a safe minimum (e.g. 400k) instead of calculating a negative bitrate?
-# 8. ULTRA-WIDE SCALING: 21:9 source video in Mobile Portrait mode.
-#    - Test: Does the scale-out math correctly center the content while keeping HUD anchors accurate?
-# 9. CONSTANT PITCH: Speed is 3.1x.
-#    - Test: Does the music maintain its original pitch and speed (1.0x) while the video zooms by?
-# 10. MULTI-INSTANCE CONFIG: Compressor and Merger are both open. One changes the music folder.
-#     - Test: Does the second app correctly refresh its path from the .conf file without a restart?
-
 # 3. MANUAL SANITY CHECK TASKS
 # 1. FOLDER PICKER: Click 'SELECT MUSIC FOLDER', pick a path. Verify list reloads and config saves.
 # 2. MULTI-CHAR SEARCH: In Step 1, type 3 letters quickly. Verify focus jumps to the exact song.

@@ -1,4 +1,4 @@
-import time
+﻿import time
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
@@ -88,7 +88,9 @@ class MergerMusicWizardTimelineMixin:
                 m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
 
                 def _mus_v_safe():
-                    if self._player: self._player.audio_set_volume(self.music_vol_slider.value())
+                    if self._player: 
+                        vol_to_set = self.music_vol_slider.value()
+                        self._player.audio_set_volume(vol_to_set)
                 QTimer.singleShot(200, _mus_v_safe)
                 self._player.set_time(int(music_offset * 1000))
             else:
@@ -99,7 +101,8 @@ class MergerMusicWizardTimelineMixin:
                     if self._player.get_state() != 3: 
                         self._player.play()
                         self._player.set_rate(1.0)
-                    self._player.audio_set_volume(self.music_vol_slider.value())
+                    eff_vol = self.music_vol_slider.value()
+                    self._player.audio_set_volume(eff_vol)
                 except Exception as ex:
                     self.logger.debug("WIZARD: music sync drift correction skipped: %s", ex)
         else:
@@ -129,7 +132,9 @@ class MergerMusicWizardTimelineMixin:
                     self._video_player.set_rate(self.speed_factor)
             
             def _seek_v_safe():
-                if self._video_player: self._video_player.audio_set_volume(self.video_vol_slider.value())
+                if self._video_player: 
+                    v_vol_raw = self.video_vol_slider.value()
+                    self._video_player.audio_set_volume(v_vol_raw)
             QTimer.singleShot(200, _seek_v_safe)
             real_v_pos_ms = self._project_time_to_source_ms(target_sec if 'target_sec' in locals() else timeline_sec)
             self._video_player.set_time(real_v_pos_ms)
@@ -152,7 +157,8 @@ class MergerMusicWizardTimelineMixin:
             if not curr_media or v_st == 6 or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
                 m = self.vlc_v.media_new(target_path); self._video_player.set_media(m); self._video_player.play(); self._video_player.set_rate(self.speed_factor)
                 self._video_player.audio_set_mute(False)
-                self._video_player.audio_set_volume(self._scaled_vol(self.video_vol_slider.value()))
+                v_vol_raw = self.video_vol_slider.value()
+                self._video_player.audio_set_volume(v_vol_raw)
                 self._video_player.audio_set_track(1)
             real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
             self._video_player.set_time(real_v_pos_ms)
@@ -167,7 +173,8 @@ class MergerMusicWizardTimelineMixin:
                 if target_path != self._last_m_mrl:
                     m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
                     self._player.audio_set_mute(False)
-                    self._player.audio_set_volume(self._scaled_vol(self.music_vol_slider.value()))
+                    m_vol_raw = self.music_vol_slider.value()
+                    self._player.audio_set_volume(m_vol_raw)
                 self._player.set_time(int(music_offset * 1000))
             else: self._player.stop()
 

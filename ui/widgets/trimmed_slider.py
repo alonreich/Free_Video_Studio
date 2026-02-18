@@ -159,8 +159,9 @@ class TrimmedSlider(QSlider):
                     return
         if e.button() == Qt.LeftButton and not self._dragging_handle and not self._dragging_music_handle:
             val = self._map_pos_to_value(e.pos().x())
-            self.setSliderPosition(val)
-            self.sliderMoved.emit(val)
+            if val != self.value():
+                self.setValue(val)
+                self.sliderMoved.emit(val)
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e):
@@ -202,9 +203,11 @@ class TrimmedSlider(QSlider):
             return
         if self._dragging_handle == 'playhead':
             new_val = self._map_pos_to_value(e.pos().x())
-            if new_val != self.sliderPosition():
-                self.setSliderPosition(new_val)
+            if new_val != self.value():
+                self.setValue(new_val)
                 self.sliderMoved.emit(new_val)
+                if hasattr(self.window(), "_sync_main_timeline_badges"):
+                    self.window()._sync_main_timeline_badges()
                 self.update()
             return
         elif self._dragging_handle in ('start', 'end'):
@@ -214,9 +217,22 @@ class TrimmedSlider(QSlider):
             if self._dragging_handle == 'start':
                 new_start = min(new_time_ms, self.trimmed_end_ms - 10)
                 new_start = max(0, new_start)
+                if self._show_music:
+                    if self.music_start_ms < new_start:
+                        diff = new_start - self.music_start_ms
+                        self.music_start_ms = new_start
+                        self.music_end_ms = min(self._duration_ms, self.music_end_ms + diff)
+                        self.music_end_ms = min(self.music_end_ms, self.trimmed_end_ms if self.trimmed_end_ms > 0 else self._duration_ms)
+                        self.music_trim_changed.emit(self.music_start_ms, self.music_end_ms)
             elif self._dragging_handle == 'end':
                 new_end = max(new_time_ms, self.trimmed_start_ms + 10)
                 new_end = min(self._duration_ms, new_end)
+                if self._show_music:
+                    if self.music_end_ms > new_end:
+                        self.music_end_ms = new_end
+                        self.music_start_ms = min(self.music_start_ms, self.music_end_ms - 100)
+                        self.music_start_ms = max(self.music_start_ms, self.trimmed_start_ms)
+                        self.music_trim_changed.emit(self.music_start_ms, self.music_end_ms)
             if new_start != self.trimmed_start_ms or new_end != self.trimmed_end_ms:
                 self.trimmed_start_ms = new_start
                 self.trimmed_end_ms = new_end
@@ -250,12 +266,16 @@ class TrimmedSlider(QSlider):
             self._hovering_handle = new_hover_handle
             self._hovering_music_handle = new_hover_music_handle
             self.setCursor(QCursor(Qt.PointingHandCursor) if self._hovering_handle or self._hovering_music_handle else QCursor(Qt.ArrowCursor))
+            if hasattr(self.window(), "_sync_main_timeline_badges"):
+                self.window()._sync_main_timeline_badges()
             self.update()
         if self._is_pressed and not self._dragging_handle and not self._dragging_music_handle:
             val = self._map_pos_to_value(e.pos().x())
-            if val != self.sliderPosition():
-                self.setSliderPosition(val)
+            if val != self.value():
+                self.setValue(val)
                 self.sliderMoved.emit(val)
+                if hasattr(self.window(), "_sync_main_timeline_badges"):
+                    self.window()._sync_main_timeline_badges()
         super().mouseMoveEvent(e)
 
     def _on_pressed(self):
@@ -366,16 +386,18 @@ class TrimmedSlider(QSlider):
                 p.setBrush(color)
                 p.drawRoundedRect(handle_rect, 4, 4)
             playhead_rect = self._get_playhead_rect()
+            playhead_rect = self._get_playhead_rect()
             if playhead_rect.isValid():
                 knob_w = 15
                 knob_h = 40
                 cx = playhead_rect.center().x()
                 cy = groove_rect.center().y()
                 knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
+                is_active = (self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead')
                 g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
                 c1 = QColor("#5a5a5a")
                 c2 = QColor("#9a9a9a")
-                if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
+                if is_active:
                     c1 = c1.lighter(110); c2 = c2.lighter(110)
                     p.setPen(QPen(QColor("#7DD3FC"), 2))
                 else:

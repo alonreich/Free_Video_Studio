@@ -70,6 +70,8 @@ class MergerMusicWizard(
         vlc_args_v = [
             "--verbose=2",
             "--no-osd",
+            "--avcodec-hw=any",
+            "--vout=direct3d11",
             "--aout=directx",
             "--file-logging",
             f"--logfile={self._v_native_log}",

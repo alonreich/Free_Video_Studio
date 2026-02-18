@@ -17,7 +17,7 @@ def test_core_11_bootstrap_paths_and_init_contracts_dryrun() -> None:
     )
     assert_all_present(
         ui_main_src,
-        ["ConfigManager(os.path.join(self.base_dir, 'config', 'main_app.conf'))"],
+        ["ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))"],
     )
     assert_all_present(
         merger_src,

@@ -6,14 +6,36 @@ import shutil
 import tempfile
 import subprocess
 import logging
+import atexit
 from pathlib import Path
 from typing import Any, Sequence
 from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QPixmap
 
+class ProcessRegistry:
+    _processes = set()
+    @classmethod
+    def register(cls, proc):
+        if proc:
+            cls._processes.add(proc)
+    @classmethod
+    def unregister(cls, proc):
+        if proc in cls._processes:
+            cls._processes.discard(proc)
+    @classmethod
+    def kill_all(cls):
+        """Aggressively terminates all registered processes."""
+        for p in list(cls._processes):
+            _kill_process_tree(p)
+        cls._processes.clear()
+atexit.register(ProcessRegistry.kill_all)
+
 def _kill_process_tree(proc: Any | None) -> None:
-    if proc is None or proc.poll() is not None:
+    if proc is None:
+        return
+    ProcessRegistry.unregister(proc)
+    if proc.poll() is not None:
         return
     try:
         if sys.platform == "win32":
@@ -77,7 +99,6 @@ def _prune_cache_dir(cache_dir: Path, *, max_entries: int = 500, max_age_seconds
         pass
 
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
 
 class VideoFilmstripWorker(QtCore.QThread):
     asset_ready = pyqtSignal(int, list, str)
@@ -92,9 +113,6 @@ class VideoFilmstripWorker(QtCore.QThread):
         max_workers: int = 8,
         speed_segments: list = None,
     ):
-        """
-        video_segments_info: list of (path, dur_to_extract, t_start_source, speed, original_seg_index)
-        """
         super().__init__(None)
         self.video_segments_info = list(video_segments_info)
         self.bin_dir = bin_dir
@@ -103,9 +121,12 @@ class VideoFilmstripWorker(QtCore.QThread):
         self.cache_dir = _CACHE_ROOT / "video"
         self.speed_segments = speed_segments or []
         self._running = True
+        self._active_procs = []
 
     def stop(self):
         self._running = False
+        for p in list(self._active_procs):
+            _kill_process_tree(p)
 
     def _cache_path(self, path: str, duration: float, t_start: float, speed: float) -> Path:
         sig = _safe_media_signature(path)
@@ -131,6 +152,7 @@ class VideoFilmstripWorker(QtCore.QThread):
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         tmp_pattern_dir = ""
         thumbs: list[QPixmap] = []
+        proc = None
         try:
             fps, scale, qv = self._segment_settings(duration)
             tmp_pattern_dir = tempfile.mkdtemp(prefix="fvs_thumbs_")
@@ -151,7 +173,14 @@ class VideoFilmstripWorker(QtCore.QThread):
                 "-q:v", qv,
                 out_pattern,
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, timeout=15)
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            ProcessRegistry.register(proc)
+            self._active_procs.append(proc)
+            while self._running and proc.poll() is None:
+                time.sleep(0.05)
+            if not self._running:
+                _kill_process_tree(proc)
+                return orig_idx, []
             if os.path.exists(tmp_pattern_dir):
                 files = sorted([f for f in os.listdir(tmp_pattern_dir) if f.endswith(".jpg")])
                 for f in files:
@@ -162,6 +191,10 @@ class VideoFilmstripWorker(QtCore.QThread):
         except Exception as e:
             logger.error("GPU_CHUNK_WORKER[%s]: error: %s", self.stage, e)
         finally:
+            if proc:
+                ProcessRegistry.unregister(proc)
+                try: self._active_procs.remove(proc)
+                except: pass
             if tmp_pattern_dir and os.path.isdir(tmp_pattern_dir):
                 try:
                     shutil.rmtree(tmp_pattern_dir, ignore_errors=True)
@@ -185,6 +218,7 @@ class VideoFilmstripWorker(QtCore.QThread):
                             self.asset_ready.emit(orig_idx, list(final_results[orig_idx]), self.stage)
                     except Exception: pass
         finally:
+            self.stop()
             self.finished.emit(self.stage)
 
 class MusicWaveformWorker(QtCore.QThread):
@@ -206,9 +240,12 @@ class MusicWaveformWorker(QtCore.QThread):
         self.max_workers = max(1, int(max_workers or 1))
         self.cache_dir = _CACHE_ROOT / "wave"
         self._running = True
+        self._active_procs = []
 
     def stop(self):
         self._running = False
+        for p in list(self._active_procs):
+            _kill_process_tree(p)
 
     def _wave_cache_path(self, path: str, offset: float, dur: float) -> Path:
         sig = _safe_media_signature(path)
@@ -246,6 +283,7 @@ class MusicWaveformWorker(QtCore.QThread):
         ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         tmp_path = ""
+        proc = None
         try:
             tf = tempfile.NamedTemporaryFile(prefix="fvs_wave_", suffix=".png", delete=False)
             tmp_path = tf.name
@@ -265,7 +303,14 @@ class MusicWaveformWorker(QtCore.QThread):
                 "1",
                 tmp_path,
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            ProcessRegistry.register(proc)
+            self._active_procs.append(proc)
+            while self._running and proc.poll() is None:
+                time.sleep(0.05)
+            if not self._running:
+                _kill_process_tree(proc)
+                return i, None
             if os.path.exists(tmp_path):
                 pm = QPixmap(tmp_path)
                 if not pm.isNull():
@@ -278,6 +323,10 @@ class MusicWaveformWorker(QtCore.QThread):
         except Exception as e:
             logger.error("CPU_WORKER[%s]: waveform %s failed: %s", self.stage, i, e)
         finally:
+            if proc:
+                ProcessRegistry.unregister(proc)
+                try: self._active_procs.remove(proc)
+                except: pass
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -309,6 +358,7 @@ class MusicWaveformWorker(QtCore.QThread):
                 if pm is not None and not pm.isNull():
                     self.asset_ready.emit(wave_idx, pm, self.stage)
         finally:
+            self.stop()
             self.finished.emit(self.stage)
 
 class SingleWaveformWorker(QtCore.QThread):
@@ -380,9 +430,11 @@ class SingleWaveformWorker(QtCore.QThread):
         try:
             logger.info("WIZARD_STEP2: Straightening audio for perfect sync...")
             self._proc = subprocess.Popen(conv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            ProcessRegistry.register(self._proc)
             while self._running:
                 if self._proc.poll() is not None: break
                 self.msleep(50)
+            ProcessRegistry.unregister(self._proc)
             if not self._running:
                 _kill_process_tree(self._proc)
                 if os.path.exists(tmp_sync): os.remove(tmp_sync)
@@ -413,6 +465,7 @@ class SingleWaveformWorker(QtCore.QThread):
         started = time.time()
         try:
             self._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+            ProcessRegistry.register(self._proc)
             while self._running:
                 if self._proc.poll() is not None:
                     break
@@ -423,6 +476,7 @@ class SingleWaveformWorker(QtCore.QThread):
                     if os.path.exists(tmp_sync): os.remove(tmp_sync)
                     return
                 self.msleep(40)
+            ProcessRegistry.unregister(self._proc)
             if not self._running:
                 _kill_process_tree(self._proc)
                 if os.path.exists(tmp_png): os.remove(tmp_png)

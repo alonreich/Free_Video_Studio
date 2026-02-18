@@ -1147,7 +1147,10 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def register_undo_action(self, desc, uf, rf):
         if not self._suppress_undo_registration:
-            self.state_manager.add_undo_action("portrait_edit", desc, uf, rf)
+            if desc.startswith("Move/Resize"):
+                self.state_manager.add_or_update_recent_undo("portrait_edit", desc, uf, rf, window_ms=1000)
+            else:
+                self.state_manager.add_undo_action("portrait_edit", desc, uf, rf)
         self.update_undo_redo_buttons(); self._refresh_portrait_controls_enabled()
 
     def _refresh_portrait_controls_enabled(self):
@@ -1180,18 +1183,25 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 if isinstance(item, ResizablePixmapItem) and item.assigned_role:
                     item_data = self._get_item_state(item)
                     item_data['role'] = item.assigned_role
-                    if self.snapshot_path:
+                    if item.crop_rect:
                         item_data['crop_rect'] = [item.crop_rect.x(), item.crop_rect.y(), item.crop_rect.width(), item.crop_rect.height()]
-                        items_data.append(item_data)
+                    items_data.append(item_data)
             if not items_data:
                 if os.path.exists(self._autosave_file):
                     try: os.unlink(self._autosave_file)
                     except: pass
                 return
+            recovery_snap = os.path.join(tempfile.gettempdir(), "fvs_recovery_snapshot.png")
+            if self.snapshot_path and os.path.exists(self.snapshot_path):
+                import shutil
+                try:
+                    shutil.copy2(self.snapshot_path, recovery_snap)
+                except Exception as copy_err:
+                    self.logger.warning(f"Could not backup snapshot for recovery: {copy_err}")
             state = {
                 'timestamp': time.time(),
                 'input_file': self.media_processor.input_file_path,
-                'snapshot': self.snapshot_path,
+                'snapshot': recovery_snap if os.path.exists(recovery_snap) else self.snapshot_path,
                 'items': items_data
             }
             with open(self._autosave_file, 'w') as f:
@@ -1208,34 +1218,40 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                     try: os.unlink(self._autosave_file)
                     except: pass
                     return
-                if 'input_file' not in data or 'snapshot' not in data: return
-                if not os.path.exists(data['input_file']) or not os.path.exists(data['snapshot']):
+                restore_path = data.get('snapshot')
+                input_file = data.get('input_file')
+                if not restore_path or not os.path.exists(restore_path):
+                    self.logger.warning(f"Recovery failed: snapshot missing at {restore_path}")
                     return
                 reply = QMessageBox.question(self, "Restore Session", 
                                            "An unsaved session was found. Restore it?",
                                            QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
-                    self.load_file(data['input_file'])
-                    self.snapshot_path = data['snapshot']
-                    if os.path.exists(self.snapshot_path):
-                        pixmap = QPixmap(self.snapshot_path)
-                        if not pixmap.isNull():
-                            self.set_background_image(pixmap)
-                            for item_data in data.get('items', []):
-                                rect = QRectF(*item_data['crop_rect'])
-                                crop_pix = pixmap.copy(rect.toRect())
-                                item = ResizablePixmapItem(crop_pix, rect)
-                                item.current_width = item_data['width']
-                                item.current_height = item_data['height']
-                                item.setPos(item_data['x'], item_data['y'])
-                                item.setZValue(item_data['z'])
-                                item.assigned_role = item_data['role']
-                                item.update_handle_positions()
-                                self.portrait_scene.addItem(item)
-                                item.item_changed.connect(lambda i=item: self._handle_item_changed(i))
-                                self.modified_roles.add(item.assigned_role)
-                            self._mark_dirty()
-                            self.logger.info("Session restored.")
+                    if input_file and os.path.exists(input_file):
+                        self.load_file(input_file)
+                    self.snapshot_path = restore_path
+                    pixmap = QPixmap(self.snapshot_path)
+                    if not pixmap.isNull():
+                        self.set_background_image(pixmap)
+                        self.view_stack.setCurrentWidget(self.draw_scroll_area)
+                        self.draw_widget.setImage(self.snapshot_path)
+                        for item_data in data.get('items', []):
+                            if 'crop_rect' not in item_data: continue
+                            rect = QRectF(*item_data['crop_rect'])
+                            crop_pix = pixmap.copy(rect.toRect())
+                            item = ResizablePixmapItem(crop_pix, rect)
+                            item.current_width = item_data['width']
+                            item.current_height = item_data['height']
+                            item.setPos(item_data['x'], item_data['y'])
+                            item.setZValue(item_data['z'])
+                            item.assigned_role = item_data['role']
+                            item.update_handle_positions()
+                            self.portrait_scene.addItem(item)
+                            item.item_changed.connect(lambda i=item: self._handle_item_changed(i))
+                            self.modified_roles.add(item.assigned_role)
+                        self._mark_dirty()
+                        self.show_video_view()
+                        self.logger.info("Session restored.")
                 else:
                     try: os.unlink(self._autosave_file)
                     except: pass

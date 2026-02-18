@@ -14,11 +14,8 @@ class MusicMixin:
         """Return the absolute path to the project's central MP3 folder or custom path from config."""
         try:
             custom = self.config_manager.config.get('custom_mp3_dir')
-            if custom:
-                if os.path.exists(custom) and os.path.isdir(custom):
-                    return custom
-                else:
-                    self.logger.warning(f"Custom music folder '{custom}' does not exist or is not a directory. Falling back to default.")
+            if custom and os.path.isdir(custom):
+                return custom
         except Exception as e:
             self.logger.debug(f"DEBUG: custom_mp3_dir check failed: {e}")
         d = os.path.join(self.base_dir, "mp3")
@@ -53,7 +50,8 @@ class MusicMixin:
                 cfg = dict(self.config_manager.config)
                 cfg['custom_mp3_dir'] = folder
                 self.config_manager.save_config(cfg)
-            except: pass
+            except Exception as ex:
+                self.logger.error(f"WIZARD: Failed saving custom music folder '{folder}': {ex}")
             wizard.mp3_dir = folder
             wizard.load_tracks(folder)
             self._custom_mp3_dir = folder
@@ -62,24 +60,30 @@ class MusicMixin:
         if hasattr(self, 'music_button'):
             self.music_button.setEnabled(False)
         self._pre_wizard_state = {}
-        if getattr(self, "vlc_player", None):
+        if hasattr(self, "vlc_player") and self.vlc_player:
             try:
                 self._pre_wizard_state['vlc_player_playing'] = self.vlc_player.is_playing()
                 self._pre_wizard_state['vlc_player_mute'] = self.vlc_player.audio_get_mute()
-                self.vlc_player.set_pause(1)
+                if self._pre_wizard_state['vlc_player_playing']:
+                    self.vlc_player.pause()
                 self.vlc_player.audio_set_mute(True)
-            except: pass
+            except Exception as ex:
+                self.logger.debug(f"WIZARD: Failed to capture/prepare main player state: {ex}")
         if getattr(self, "vlc_music_player", None):
             try:
-                self._pre_wizard_state['vlc_music_player_playing'] = self.vlc_music_player.is_playing()
+                self._pre_wizard_state['vlc_music_player_playing'] = bool(self.vlc_music_player.is_playing())
                 self._pre_wizard_state['vlc_music_player_mute'] = self.vlc_music_player.audio_get_mute()
-                self.vlc_music_player.set_pause(1)
+                if self._pre_wizard_state['vlc_music_player_playing']:
+                    self.vlc_music_player.set_pause(1)
                 self.vlc_music_player.audio_set_mute(True)
-            except: pass
+            except Exception as ex:
+                self.logger.debug(f"WIZARD: Failed to capture/prepare music player state: {ex}")
         self.wants_to_play = False
         if hasattr(self, 'playPauseButton'):
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+        self.positionSlider.show()
+        self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
         if hasattr(self, 'timer') and self.timer.isActive():
             self.timer.stop()
         QTimer.singleShot(150, self._delayed_wizard_launch)
@@ -121,6 +125,10 @@ class MusicMixin:
             wizard.selected_tracks = list(self._wizard_tracks)
         res = wizard.exec_()
         if hasattr(self, 'music_button'): self.music_button.setEnabled(True)
+        self.wants_to_play = False
+        if hasattr(self, "vlc_player") and self.vlc_player:
+            try: self.vlc_player.pause()
+            except: pass
         if res == QDialog.Accepted:
             self._wizard_tracks = list(wizard.selected_tracks)
             if self._wizard_tracks:
@@ -141,7 +149,8 @@ class MusicMixin:
                     cfg['music_mix_volume'] = self._music_volume_pct
                     cfg['video_mix_volume'] = self._video_volume_pct
                     self.config_manager.save_config(cfg)
-                except: pass
+                except Exception as ex:
+                    self.logger.error(f"WIZARD: Failed to persist mix volumes: {ex}")
                 if hasattr(self, "positionSlider"):
                     self.positionSlider.set_music_visible(True)
                     self.positionSlider.set_music_times(t_start, t_end)
@@ -154,6 +163,19 @@ class MusicMixin:
                         self.vlc_music_player = self.vlc_instance.media_player_new()
                     m = self.vlc_instance.media_new(first_track[0])
                     self.vlc_music_player.set_media(m)
+                    self.vlc_music_player.pause()
+                    if hasattr(self, "_sync_all_volumes"):
+                        self._sync_all_volumes()
+                        QTimer.singleShot(200, self._sync_all_volumes)
+                        QTimer.singleShot(1000, self._sync_all_volumes)
+                if getattr(self, "vlc_player", None):
+                    self.vlc_player.pause()
+                self.wants_to_play = False
+                if hasattr(self, 'playPauseButton'):
+                    self.playPauseButton.setText("PLAY")
+                    self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                if hasattr(self, 'timer'):
+                    self.timer.start(40)
             else:
                 self._reset_music_player()
         else:
@@ -173,7 +195,7 @@ class MusicMixin:
                         self.vlc_player.play()
                         self.wants_to_play = True
                         if hasattr(self, 'timer') and not self.timer.isActive():
-                            self.timer.start(50)
+                            self.timer.start(40)
                         if hasattr(self, 'playPauseButton'):
                             self.playPauseButton.setText("PAUSE")
                             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))

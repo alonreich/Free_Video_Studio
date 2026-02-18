@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_challenges import test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad
 
 def test_challenge_08_ultra_wide_scaling() -> None:
-    pending_test(
-        "CHALLENGE-08",
-        "21:9 source in portrait mode stays centered while HUD anchor mapping remains correct.",
-    )
-
+    test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad()

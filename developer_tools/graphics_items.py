@@ -102,7 +102,12 @@ class ResizablePixmapItem(QGraphicsObject):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(0, 0, 0, 210))
             painter.drawRoundedRect(label_rect, 6, 6)
-            painter.setPen(QColor(UI_COLORS.TEXT_WARNING))
+            if rank == 1:
+                painter.setPen(QColor(UI_COLORS.TEXT_WARNING))
+            elif rank <= 3:
+                painter.setPen(QColor(UI_COLORS.TEXT_ACCENT))
+            else:
+                painter.setPen(QColor(UI_COLORS.TEXT_SECONDARY))
             painter.drawText(label_rect, Qt.AlignCenter, title_text)
         if self.isSelected():
             pattern_str = getattr(UI_BEHAVIOR, 'ANT_DASH_PATTERN', "4, 4")
@@ -292,8 +297,6 @@ class ResizablePixmapItem(QGraphicsObject):
 
     def calculate_snapping(self, proposed_pos, resize_edge=None, proposed_value=None):
         if not self.scene(): return proposed_pos if resize_edge is None else None
-        if len(self.scene().selectedItems()) > 1 and resize_edge is None:
-            return proposed_pos
         view = None
         if self.scene().views():
             view = self.scene().views()[0]

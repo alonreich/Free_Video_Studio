@@ -1,8 +1,4 @@
-﻿from sanity_tests._pending import pending_test
+from sanity_tests.test_real_sanity_core import test_core_01_constant_tempo_music_rate_locked_to_1x
 
 def test_core_01_constant_tempo() -> None:
-    pending_test(
-        "CORE-01",
-        "Background music always stays at 1.0x speed regardless of video speed changes.",
-    )
-
+    test_core_01_constant_tempo_music_rate_locked_to_1x()

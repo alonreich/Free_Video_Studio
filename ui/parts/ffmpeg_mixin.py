@@ -120,7 +120,7 @@ class FfmpegMixin:
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
             music_path = None
             music_offset_s = 0.0
-            linear_video_vol = getattr(self, "_video_volume_pct", 100) / 100.0
+            linear_video_vol = self._get_master_eff() / 100.0
             if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
                 music_path = self._wizard_tracks[0][0]
                 music_offset_s = self._wizard_tracks[0][1]
@@ -250,6 +250,18 @@ class FfmpegMixin:
             l.addWidget(t)
             t.verticalScrollBar().setValue(t.verticalScrollBar().maximum())
             d.exec_()
+
+    def share_via_whatsapp(self):
+        url = "https://web.whatsapp.com"
+        try:
+            if sys.platform == 'win32':
+                os.startfile(url)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', url])
+            else:
+                subprocess.Popen(['xdg-open', url])
+        except Exception as e:
+            self.show_message("Error", f"Failed to open WhatsApp. Please visit {url} manually. Error: {e}")
 
     def on_process_finished(self, success, message):
         button_size = (250, 55)

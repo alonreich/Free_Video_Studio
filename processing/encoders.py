@@ -46,7 +46,7 @@ class EncoderManager:
         vcodec.extend(['-g', '60', '-keyint_min', '60'])
         if encoder_name == 'h264_nvenc':
             vcodec.extend([
-                '-preset', 'p1',
+                '-preset', 'p4',
                 '-tune', 'hq',
                 '-rc', 'vbr',
                 '-forced-idr', '1',

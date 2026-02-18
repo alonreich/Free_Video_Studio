@@ -25,7 +25,15 @@ class MergerMusicWizardTimelineMixin:
     def _start_timeline_workers(self, video_info_list, unique_music_segments_info, *, stage: str, speed_segments: list = None):
         stage_name = str(stage or "fast").lower()
         chunked_video_info = []
-        num_chunks = 8 if stage_name in ("fast", "progressive") else 4
+        if stage_name == "fast":
+            num_chunks = 4
+            max_video_workers = 2
+        elif stage_name == "progressive":
+            num_chunks = 2
+            max_video_workers = 1
+        else:
+            num_chunks = 2
+            max_video_workers = 1
         for orig_idx, (path, duration, t_start, speed) in enumerate(video_info_list):
             chunk_dur = duration / num_chunks
             for i in range(num_chunks):
@@ -42,12 +50,12 @@ class MergerMusicWizardTimelineMixin:
             chunked_video_info,
             self.bin_dir,
             stage=stage_name,
-            max_workers=num_chunks,
+            max_workers=max_video_workers,
             speed_segments=speed_segments,
         )
         self._video_worker.asset_ready.connect(self._on_video_asset_ready)
         self._video_worker.finished.connect(self._on_worker_finished)
-        m_workers = 2 if stage_name in ("fast", "progressive") else 1
+        m_workers = 1
         self._music_worker = MusicWaveformWorker(
             unique_music_segments_info,
             self.bin_dir,
@@ -73,7 +81,8 @@ class MergerMusicWizardTimelineMixin:
 
     def _sync_music_only_to_time(self, project_time):
         if not self._video_player: return
-        v_state = self._video_player.get_state()
+        v_state_data = self._video_player.get_full_state()
+        v_state = v_state_data['state']
         if v_state != 3:
             if self._player: self._player.pause()
             return
@@ -95,10 +104,12 @@ class MergerMusicWizardTimelineMixin:
                 self._player.set_time(int(music_offset * 1000))
             else:
                 try:
-                    curr_audio_time = self._player.get_time() / 1000.0
+                    m_state_data = self._player.get_full_state()
+                    curr_audio_time = m_state_data['time'] / 1000.0
                     target_audio_time = music_offset 
-                    if abs(curr_audio_time - target_audio_time) > 0.5: self._player.set_time(int(target_audio_time * 1000))
-                    if self._player.get_state() != 3: 
+                    if abs(curr_audio_time - target_audio_time) > 0.5: 
+                        self._player.set_time(int(target_audio_time * 1000))
+                    if m_state_data['state'] != 3: 
                         self._player.play()
                         self._player.set_rate(1.0)
                     self._player.audio_set_mute(False)
@@ -106,22 +117,23 @@ class MergerMusicWizardTimelineMixin:
                 except Exception as ex:
                     self.logger.debug("WIZARD: music sync drift correction skipped: %s", ex)
         else:
-            self._player.stop(); self._last_m_mrl = ""
+            if self._player:
+                self._player.stop(); self._last_m_mrl = ""
 
     def _on_timeline_seek(self, pct):
         self._last_seek_ts = time.time(); target_sec = pct * self.total_video_sec
         is_playing = False
-        if self._video_player: is_playing = (self._video_player.get_state() == 3)
+        if self._video_player: 
+            v_state_data = self._video_player.get_full_state()
+            is_playing = (v_state_data['state'] == 3)
         self.timeline.set_current_time(target_sec)
         if self.stack.currentIndex() == 2 and self._video_player:
-            target_vid_idx = len(self.video_segments) - 1; video_offset = 0.0; current_count_elapsed = 0.0
+            target_vid_idx = len(self.video_segments) - 1; current_count_elapsed = 0.0
             for i, seg in enumerate(self.video_segments):
                 if current_count_elapsed + seg["duration"] > target_sec + 0.001:
-                    target_vid_idx = i; video_offset = target_sec - current_count_elapsed; break
+                    target_vid_idx = i; break
                 current_count_elapsed += seg["duration"]
-            final_elapsed = 0.0
-            for i in range(target_vid_idx): final_elapsed += self.video_segments[i]["duration"]
-            self._current_elapsed_offset = final_elapsed
+            self._current_elapsed_offset = current_count_elapsed
             target_path = self.video_segments[target_vid_idx]["path"]
             curr_media = self._video_player.get_media()
             curr_mrl = str(curr_media.get_mrl()).replace("%20", " ") if curr_media else ""
@@ -130,44 +142,31 @@ class MergerMusicWizardTimelineMixin:
                 if is_playing: 
                     self._video_player.play()
                     self._video_player.set_rate(self.speed_factor)
-            
-            def _seek_v_safe():
-                if self._video_player: 
-                    self._video_player.audio_set_volume(self._scaled_vol(self.video_vol_slider.value()))
-            QTimer.singleShot(200, _seek_v_safe)
-            real_v_pos_ms = self._project_time_to_source_ms(target_sec if 'target_sec' in locals() else timeline_sec)
+                self._video_player.audio_set_volume(self._scaled_vol(self.video_vol_slider.value()))
+            real_v_pos_ms = self._project_time_to_source_ms(target_sec)
             self._video_player.set_time(real_v_pos_ms)
-            if not is_playing: self._video_player.set_pause(True)
-        self._sync_all_players_to_time(target_sec)
-        if not is_playing:
-            if self._video_player: self._video_player.set_pause(True)
-            if self._player: self._player.set_pause(True)
+        self._sync_all_players_to_time(target_sec, force_playing=is_playing)
         self._sync_caret()
 
-    def _sync_all_players_to_time(self, timeline_sec):
+    def _sync_all_players_to_time(self, timeline_sec, force_playing=None):
         elapsed = 0.0; target_video_idx = 0; video_offset = 0.0
         for i, seg in enumerate(self.video_segments):
             if elapsed + seg["duration"] > timeline_sec:
-                target_video_idx = i; video_offset = timeline_sec - elapsed; break
+                target_video_idx = i; break
             elapsed += seg["duration"]
         if self._video_player:
-            target_path = self.video_segments[target_video_idx]["path"]; curr_media = self._video_player.get_media()
-            v_st = self._video_player.get_state()
-            if not curr_media or v_st == 6 or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
-                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m); self._video_player.play(); self._video_player.set_rate(self.speed_factor)
+            target_path = self.video_segments[target_video_idx]["path"]
+            curr_media = self._video_player.get_media()
+            if not curr_media or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
+                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m)
+                if force_playing is not False:
+                    self._video_player.play(); self._video_player.set_rate(self.speed_factor)
                 self._video_player.audio_set_mute(False)
                 self._video_player.audio_set_volume(self._scaled_vol(self.video_vol_slider.value()))
-                
-                def _track_safety_tl():
-                    if not self._video_player: return
-                    v_tracks = self._video_player.audio_get_track_description()
-                    if v_tracks and len(v_tracks) > 1:
-                        self._video_player.audio_set_track(v_tracks[1][0])
-                    else:
-                        self._video_player.audio_set_track(1)
-                QTimer.singleShot(400, _track_safety_tl)
             real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
             self._video_player.set_time(real_v_pos_ms)
+            if force_playing is False:
+                self._video_player.set_pause(True)
         elapsed = 0.0; target_music_idx = -1; music_offset = 0.0
         for i, (path, start_off, dur) in enumerate(self.selected_tracks):
             if elapsed + dur > timeline_sec:
@@ -177,11 +176,17 @@ class MergerMusicWizardTimelineMixin:
             if target_music_idx != -1:
                 target_path = self.selected_tracks[target_music_idx][0]
                 if target_path != self._last_m_mrl:
-                    m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
+                    m = self.vlc_m.media_new(target_path); self._player.set_media(m)
+                    if force_playing is not False:
+                        self._player.play(); self._player.set_rate(1.0)
+                    self._last_m_mrl = target_path
                     self._player.audio_set_mute(False)
                     self._player.audio_set_volume(self._scaled_vol(self.music_vol_slider.value()))
                 self._player.set_time(int(music_offset * 1000))
-            else: self._player.stop()
+                if force_playing is False:
+                    self._player.set_pause(True)
+            else: 
+                self._player.stop()
 
     def _prepare_timeline_data(self):
         videos = []; video_info_list = []
