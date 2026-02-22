@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_core_15_main_app_player_acceleration_contracts_dryrun() -> None:
@@ -20,7 +20,7 @@ def test_core_15_main_app_player_acceleration_contracts_dryrun() -> None:
         [
             '"--avcodec-hw=any"',
             '"--vout=direct3d11"',
-            "self.vlc_instance = vlc.Instance(vlc_args)",
+            "self.mpv_instance = mpv.MPV(mpv_args)",
         ],
     )
     assert_all_present(
@@ -29,15 +29,15 @@ def test_core_15_main_app_player_acceleration_contracts_dryrun() -> None:
             "'--no-video-title-show'",
             "'--avcodec-hw=any'",
             "'--vout=direct3d11'",
-            "self.vlc_instance = vlc.Instance(vlc_args)",
+            "self.mpv_instance = mpv.MPV(mpv_args)",
         ],
     )
     assert_all_present(
         main_wizard_src,
         [
-            "self.vlc_v = VLCProcessProxy('video', self.logger, self.bin_dir)",
-            "self.vlc_m = VLCProcessProxy('music', self.logger, self.bin_dir)",
-            "self._video_player = self.vlc_v.media_player_new() if self.vlc_v else None",
+            "self.mpv_v = mpvProcessProxy('video', self.logger, self.bin_dir)",
+            "self.mpv_m = mpvProcessProxy('music', self.logger, self.bin_dir)",
+            "self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None",
         ],
     )
 
@@ -58,6 +58,6 @@ def test_core_15_crop_and_merger_step3_acceleration_contracts_dryrun() -> None:
         [
             '"--avcodec-hw=any"',
             '"--vout=direct3d11"',
-            "self._video_player = self.vlc_v.media_player_new() if self.vlc_v else None",
+            "self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None",
         ],
     )

@@ -1,4 +1,4 @@
-﻿from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
+from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_core_05_geometry_memory_dryrun() -> None:
     src = read_source("ui/widgets/music_wizard_misc.py")

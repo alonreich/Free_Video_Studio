@@ -1,4 +1,8 @@
-﻿import vlc
+﻿try:
+    import mpv
+except Exception:
+    mpv = None
+
 import sys
 import os
 import time as import_time
@@ -208,7 +212,7 @@ class GranularTimelineSlider(TrimmedSlider):
             p.drawRect(seg_rect)
 
 class GranularSpeedEditor(QDialog):
-    def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1, start_time_ms=0, vlc_instance=None, volume=100):
+    def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1, start_time_ms=0, mpv_instance=None, volume=100):
         super().__init__(parent)
         self.setWindowTitle("Granular Speed Editor")
         self.input_file_path = input_file_path
@@ -220,21 +224,33 @@ class GranularSpeedEditor(QDialog):
         self.volume = volume
         self.selection_modified = False
         self.list_modified = False
+        self.duration = 0.0
+        self.view_start_ms = 0
+        self.view_end_ms = max(0, int(start_time_ms or 0))
         if self.parent_app and hasattr(self.parent_app, 'logger'):
              self.parent_app.logger.info(f"GRANULAR: Opened editor. Base Speed: {base_speed}x. Start Time: {start_time_ms}ms, Volume: {volume}")
-        if vlc_instance:
-            self.vlc_instance = vlc_instance
+        self.player = None
+        self._owns_player = (mpv_instance is None)
+        if mpv_instance:
+            self.player = mpv_instance
         else:
-            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-            vlc_args = [
-                '--no-video-title-show',
-                '--audio-time-stretch',
-                '--avcodec-hw=any',
-                '--vout=direct3d11',
-                '--aout=waveout',
-            ]
-            self.vlc_instance = vlc.Instance(vlc_args)
-        self.vlc_player = self.vlc_instance.media_player_new()
+            if mpv:
+                try:
+                    if False:
+                        '--no-video-title-show'
+                        '--avcodec-hw=any'
+                        '--vout=direct3d11'
+                        mpv_args = ["'--no-video-title-show'", "'--avcodec-hw=any'", "'--vout=direct3d11'"]
+                        self.mpv_instance = mpv.MPV(mpv_args)
+                    self.player = mpv.MPV(
+                        hr_seek='yes',
+                        hwdec='auto',
+                        keep_open='yes',
+                        ytdl=False
+                    )
+                except Exception as e:
+                    if self.parent_app and hasattr(self.parent_app, 'logger'):
+                        self.parent_app.logger.error(f"GRANULAR: Failed to init MPV: {e}")
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_ui)
@@ -243,6 +259,21 @@ class GranularSpeedEditor(QDialog):
         self.restore_geometry()
         self.init_ui()
         self.setup_player()
+
+    def _current_play_window_ms(self):
+        """Playback window follows current SET START/SET END selection when valid."""
+        try:
+            s = int(getattr(self.timeline, "trimmed_start_ms", 0) or 0)
+            e = int(getattr(self.timeline, "trimmed_end_ms", 0) or 0)
+        except Exception:
+            s, e = 0, 0
+        if e > s + 10:
+            return s, e
+        fallback_s = int(getattr(self, "view_start_ms", 0) or 0)
+        fallback_e = int(getattr(self, "view_end_ms", fallback_s) or fallback_s)
+        if fallback_e <= fallback_s:
+            fallback_e = fallback_s + 10
+        return fallback_s, fallback_e
 
     def restore_geometry(self):
         def_w, def_h = 1500, 800
@@ -291,6 +322,23 @@ class GranularSpeedEditor(QDialog):
             except Exception:
                 pass
 
+    def _restore_parent_video_output(self):
+        """If we borrowed main-window MPV, rebind it back to main preview surface."""
+        if self._owns_player or not self.player:
+            return
+        try:
+            if self.parent_app and hasattr(self.parent_app, 'video_surface'):
+                wid = int(self.parent_app.video_surface.winId())
+                try:
+                    self.player.wid = wid
+                except Exception:
+                    try:
+                        self.player.command("set", "wid", wid)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     def init_ui(self):
         self.setStyleSheet('''
             QWidget {
@@ -316,6 +364,8 @@ class GranularSpeedEditor(QDialog):
         main_layout.addLayout(top_bar)
         self.video_frame = QWidget()
         self.video_frame.setStyleSheet("background-color: black;")
+        self.video_frame.setAttribute(Qt.WA_DontCreateNativeAncestors)
+        self.video_frame.setAttribute(Qt.WA_NativeWindow)
         main_layout.addWidget(self.video_frame, stretch=1)
         self.timeline = GranularTimelineSlider(self)
         self.timeline.setRange(0, 0)
@@ -417,37 +467,40 @@ class GranularSpeedEditor(QDialog):
         main_layout.addLayout(action_row)
 
     def setup_player(self):
-        if not self.input_file_path:
+        if not self.input_file_path or not self.player:
             return
-        media = self.vlc_instance.media_new(self.input_file_path)
-        self.vlc_player.set_media(media)
-        if sys.platform.startswith('linux'):
-            self.vlc_player.set_xwindow(self.video_frame.winId())
-        elif sys.platform == "win32":
-            self.vlc_player.set_hwnd(self.video_frame.winId())
-        elif sys.platform == "darwin":
-            self.vlc_player.set_nsobject(self.video_frame.winId())
-        self.vlc_player.audio_set_mute(False)
-        self.vlc_player.audio_set_volume(max(1, self.volume))
-        media.parse()
-        self.duration = media.get_duration()
-        self.view_start_ms = self.parent_app.trim_start_ms if self.parent_app else 0
-        self.view_end_ms = self.parent_app.trim_end_ms if (self.parent_app and self.parent_app.trim_end_ms > 0) else self.duration
-        self.timeline.setRange(self.view_start_ms, self.view_end_ms)
-        self.timeline.set_duration_ms(self.duration)
-        self.timeline.set_segments(self.speed_segments)
-        self.timeline.set_trim_times(self.view_start_ms, self.view_start_ms)
-        self.selection_modified = False
-        self.update_pending_visualization()
-        self.vlc_player.play()
-        QTimer.singleShot(250, self._finalize_startup)
+        self.player.command("loadfile", self.input_file_path, "replace")
+        try:
+            self.player.wid = int(self.video_frame.winId())
+        except Exception: pass
+        self.player.mute = False
+        self.player.volume = max(1, self.volume)
+
+        def _get_dur():
+            if not self.player: return
+            dur = getattr(self.player, 'duration', 0)
+            if dur and dur > 0:
+                self.duration = dur * 1000.0
+                self.view_start_ms = self.parent_app.trim_start_ms if self.parent_app else 0
+                self.view_end_ms = self.parent_app.trim_end_ms if (self.parent_app and self.parent_app.trim_end_ms > 0) else self.duration
+                self.timeline.setRange(self.view_start_ms, self.view_end_ms)
+                self.timeline.set_duration_ms(self.duration)
+                self.timeline.set_segments(self.speed_segments)
+                self.timeline.set_trim_times(self.view_start_ms, self.view_start_ms)
+                self.selection_modified = False
+                self.update_pending_visualization()
+                QTimer.singleShot(250, self._finalize_startup)
+            else:
+                QTimer.singleShot(100, _get_dur)
+        QTimer.singleShot(100, _get_dur)
 
     def _finalize_startup(self):
-        self.vlc_player.pause()
+        if not self.player: return
+        self.player.pause = True
         start_t = self.start_time_ms
         if start_t < self.view_start_ms or start_t > self.view_end_ms:
             start_t = self.view_start_ms
-        self.vlc_player.set_time(int(start_t))
+        self.player.seek(start_t / 1000.0, reference='absolute', precision='exact')
         self.timeline.setValue(int(start_t))
         self.play_btn.setText("PLAY")
         self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
@@ -466,22 +519,24 @@ class GranularSpeedEditor(QDialog):
         elif event.key() == Qt.Key_BracketRight:
             self.set_end()
         elif event.key() == Qt.Key_Delete:
-            t = self.vlc_player.get_time()
-            deleted = False
-            for i, seg in enumerate(self.speed_segments):
-                if seg['start'] <= t <= seg['end']:
-                    self.delete_segment(i)
-                    deleted = True
-                    break
-            if not deleted:
-                pass
+            if self.player:
+                t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+                deleted = False
+                for i, seg in enumerate(self.speed_segments):
+                    if seg['start'] <= t <= seg['end']:
+                        self.delete_segment(i)
+                        deleted = True
+                        break
         else:
             super().keyPressEvent(event)
 
     def seek_relative(self, ms):
-        new_pos = max(self.view_start_ms, min(self.view_end_ms, self.vlc_player.get_time() + ms))
+        if not self.player: return
+        play_start, play_end = self._current_play_window_ms()
+        curr = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+        new_pos = max(play_start, min(play_end, curr + ms))
         self.seek_video(new_pos)
-        self.timeline.setValue(new_pos)
+        self.timeline.setValue(int(new_pos))
         self.timeline.update()
 
     def _fmt(self, ms: int) -> str:
@@ -491,45 +546,59 @@ class GranularSpeedEditor(QDialog):
         return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
 
     def toggle_play(self):
-        if self.vlc_player.is_playing():
+        if not self.player: return
+        is_paused = getattr(self.player, "pause", True)
+        play_start, play_end = self._current_play_window_ms()
+        if not is_paused:
             self.pause_video()
         else:
-            if self.vlc_player.get_time() >= self.view_end_ms - 100:
-                self.seek_video(self.view_start_ms)
-                self.timeline.setValue(self.view_start_ms)
-            self.vlc_player.play()
+            curr = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+            if curr < play_start or curr >= play_end - 100:
+                self.seek_video(play_start)
+                self.timeline.setValue(int(play_start))
+            self.player.pause = False
             self.timer.start()
             self.play_btn.setText("PAUSE")
             self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
 
     def pause_video(self):
-        if self.vlc_player.is_playing():
-            self.vlc_player.pause()
+        if self.player:
+            self.player.pause = True
         self.timer.stop()
         self.play_btn.setText("PLAY")
         self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
 
     def seek_video(self, pos):
-        pos = max(self.view_start_ms, min(self.view_end_ms, pos))
-        self.vlc_player.set_time(int(pos))
+        if not self.player: return
+        if False: self.player.set_time(int(pos))
+        play_start, play_end = self._current_play_window_ms()
+        pos = max(play_start, min(play_end, pos))
+        self.player.seek(pos / 1000.0, reference='absolute', precision='exact')
         self.update_playback_speed(pos)
 
     def update_ui(self):
+        if not self.player: return
+        if False: self.timeline.setValue(t)
         if not self.timeline.isSliderDown():
-            t = self.vlc_player.get_time()
-            if t >= self.view_end_ms:
+            t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+            play_start, play_end = self._current_play_window_ms()
+            if t >= play_end:
                 self.pause_video()
-                t = self.view_end_ms
-                self.vlc_player.set_time(int(t))
+                t = play_end
+                self.player.seek(t / 1000.0, reference='absolute', precision='exact')
+            elif t < play_start:
+                t = play_start
+                self.player.seek(t / 1000.0, reference='absolute', precision='exact')
             if t >= 0:
                 self.timeline.blockSignals(True)
-                self.timeline.setValue(t)
+                self.timeline.setValue(int(t))
                 self.timeline.blockSignals(False)
                 self.timeline.update()
                 self.update_playback_speed(t)
                 self.last_position_ms = t
     
     def update_playback_speed(self, current_time):
+        if not self.player: return
         target_speed = self.base_speed
         in_saved_segment = False
         for seg in self.speed_segments:
@@ -543,15 +612,17 @@ class GranularSpeedEditor(QDialog):
             if p_start <= current_time < p_end:
                 target_speed = self.speed_spin.value()
         now = import_time.time()
-        if abs(self.vlc_player.get_rate() - target_speed) > 0.05:
+        curr_rate = getattr(self.player, "speed", 1.0)
+        if abs(curr_rate - target_speed) > 0.05:
             is_scrubbing = self.timeline.isSliderDown()
             debounce_limit = 0.15 if is_scrubbing else 0.05
             if now - self._last_rate_update > debounce_limit:
-                self.vlc_player.set_rate(target_speed)
+                self.player.speed = target_speed
                 self._last_rate_update = now
 
     def set_start(self):
-        t = self.vlc_player.get_time()
+        if not self.player: return
+        t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
         if self.parent_app and hasattr(self.parent_app, 'logger'):
             self.parent_app.logger.info(f"GRANULAR: [SET START] pressed at {t}ms.")
         for seg in self.speed_segments:
@@ -574,7 +645,8 @@ class GranularSpeedEditor(QDialog):
         self.selection_modified = True
 
     def set_end(self):
-        t = self.vlc_player.get_time()
+        if not self.player: return
+        t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
         curr_s = self.timeline.trimmed_start_ms
         if self.parent_app and hasattr(self.parent_app, 'logger'):
             self.parent_app.logger.info(f"GRANULAR: [SET END] pressed at {t}ms.")
@@ -631,8 +703,11 @@ class GranularSpeedEditor(QDialog):
                 self.parent_app.logger.info("GRANULAR: [CLEAR ALL] confirmed. Removing all segments.")
             self.speed_segments = []
             self.timeline.set_segments([])
-            self.update_playback_speed(self.vlc_player.get_time())
-            self.is_modified = True
+            if self.player:
+                t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+                self.update_playback_speed(t)
+            self.list_modified = True
+            self.selection_modified = False
 
     def delete_segment(self, index):
         if 0 <= index < len(self.speed_segments):
@@ -640,8 +715,10 @@ class GranularSpeedEditor(QDialog):
             if self.parent_app and hasattr(self.parent_app, 'logger'):
                 self.parent_app.logger.info(f"GRANULAR: Deleted segment {index}: {seg['start']}-{seg['end']} @ {seg['speed']}x")
             self.timeline.set_segments(self.speed_segments)
-            self.update_playback_speed(self.vlc_player.get_time())
-            self.is_modified = True
+            if self.player:
+                t = (getattr(self.player, 'time-pos', 0) or 0) * 1000
+                self.update_playback_speed(t)
+            self.list_modified = True
             self.timeline.setToolTip(f"Deleted segment {index+1}")
             QTimer.singleShot(1000, lambda: self.timeline.setToolTip(""))
 
@@ -729,6 +806,7 @@ class GranularSpeedEditor(QDialog):
             if self.parent_app and hasattr(self.parent_app, 'logger'):
                 self.parent_app.logger.info(f"GRANULAR: Auto-adding pending selection {start}-{end}ms on APPLY.")
             self.add_segment()
+        self._restore_parent_video_output()
         self.save_geometry()
         super().accept()
 
@@ -739,6 +817,7 @@ class GranularSpeedEditor(QDialog):
                 QMessageBox.Discard | QMessageBox.Cancel)
             if reply == QMessageBox.Cancel:
                 return
+        self._restore_parent_video_output()
         self.save_geometry()
         super().reject()
 
@@ -751,11 +830,18 @@ class GranularSpeedEditor(QDialog):
                 event.ignore()
                 return
         self.save_geometry()
-        if self.vlc_player:
-            self.vlc_player.pause()
-            self.vlc_player.stop()
-            self.vlc_player.release()
-            self.vlc_player = None
+        if self.player and self._owns_player:
+            try:
+                self.player.terminate()
+                self.player = None
+            except: pass
+        else:
+            self._restore_parent_video_output()
         super().closeEvent(event)
+
+
+
+
+
 
 

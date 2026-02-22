@@ -11,8 +11,9 @@ except ImportError:
         from shared_paths import SharedPaths
     except ImportError:
         class SharedPaths:
+            import tempfile
             ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-            TEMP = os.path.join(ROOT, 'temp')
+            TEMP = os.path.join(tempfile.gettempdir(), 'FVS_Temp')
 
 class StateTransfer:
     """

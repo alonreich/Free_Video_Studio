@@ -9,22 +9,22 @@ from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSizePolicy
 from utilities.merger_trimmed_slider import MergerTrimmedSlider
 try:
-    import vlc as _vlc_mod
+    import mpv
 except Exception:
-    _vlc_mod = None
-PREVIEW_VISUAL_LEAD_MS = 1100
+    mpv = None
+PREVIEW_VISUAL_LEAD_MS = 0
 
 class MergerMusicOffsetDialog(QDialog):
     _ui_call = pyqtSignal(object)
 
-    def __init__(self, parent, vlc_instance, audio_path: str, initial_offset: float, bin_dir: str, hardware_strategy="CPU"):
+    def __init__(self, parent, mpv_instance, audio_path: str, initial_offset: float, bin_dir: str, hardware_strategy="CPU"):
         super().__init__(parent)
         self._ui_call.connect(self._run_ui_call)
         self.setWindowTitle("Choose Background Music Start")
         self.setModal(True)
         self.resize(1300, 350)
         self.setMinimumSize(1000, 170)
-        self._vlc = vlc_instance
+        self._mpv_instance = mpv_instance 
         self._mpath = audio_path
         self._bin = bin_dir
         self.hardware_strategy = hardware_strategy
@@ -41,7 +41,7 @@ class MergerMusicOffsetDialog(QDialog):
         self._draw_w = 1
         self._draw_y0 = 0
         self._draw_h = 1
-        self._last_good_vlc_ms = 0
+        self._last_good_mpv_ms = 0
         self.logger = logging.getLogger("Video_Merger")
         v = QVBoxLayout(self)
         self.wave = QLabel("Generating waveform...")
@@ -134,7 +134,8 @@ class MergerMusicOffsetDialog(QDialog):
         current = self.slider.value()
         target = max(0, min(self._total_ms, current + delta_ms))
         self.slider.setValue(target)
-        if self._player and self._player.is_playing():
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing:
             self._seek_player(target)
         self._sync_caret()
 
@@ -164,7 +165,8 @@ class MergerMusicOffsetDialog(QDialog):
                 try:
                     if self._wave_dragging:
                         self._wave_dragging = False
-                        if self._player and self._player.is_playing():
+                        is_playing = self._player and not getattr(self._player, "pause", True)
+                        if is_playing:
                             self._seek_player(int(self.slider.value()))
                         return True
                 except Exception: return True
@@ -201,7 +203,8 @@ class MergerMusicOffsetDialog(QDialog):
         target_ms = int(rel * float(self._total_ms))
         target_ms = max(0, min(self._total_ms, target_ms))
         self.slider.setValue(target_ms)
-        if seek_if_playing and self._player and self._player.is_playing():
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if seek_if_playing and is_playing:
             self._seek_player(target_ms)
         self._sync_caret()
 
@@ -293,38 +296,36 @@ class MergerMusicOffsetDialog(QDialog):
         except Exception: pass
 
     def _ensure_player(self):
-        if self._player or self._vlc is None: return
+        if self._player: return
         try:
-            self._player = self._vlc.media_player_new()
-            m = self._vlc.media_new(self._mpath)
-            self._player.set_media(m)
-            if _vlc_mod is not None:
-                try:
-                    em = self._player.event_manager()
-                    em.event_attach(_vlc_mod.EventType.MediaPlayerEndReached, self._on_vlc_ended)
-                except Exception: pass
+            if mpv:
+                self._player = mpv.MPV(hr_seek='yes', hwdec='auto', keep_open='yes')
+                self._player.command("loadfile", self._mpath, "replace")
+                self._player.pause = True
         except Exception as e:
-            self.logger.error(f"VLC Player init failed: {e}")
+            self.logger.error(f"MPV Player init failed: {e}")
             self._player = None
 
     def _stop_player(self):
         try:
             if self._timer.isActive(): self._timer.stop()
-            if self._player: self._player.stop()
+            if self._player: 
+                self._player.terminate()
+                self._player = None
         except Exception: pass
 
     def _toggle_play_pause(self):
         self._ensure_player()
         if not self._player: return
         try:
-            st = str(self._player.get_state()).lower()
-            if st.endswith("playing"):
-                self._player.pause()
+            is_paused = getattr(self._player, "pause", True)
+            if not is_paused:
+                self._player.pause = True
                 self.play_btn.setText("▶ Play")
                 self._timer.stop()
             else:
                 want_ms = int(self.slider.value())
-                self._player.play()
+                self._player.pause = False
 
                 def _after_start():
                     self._seek_player(want_ms)
@@ -336,18 +337,20 @@ class MergerMusicOffsetDialog(QDialog):
     def _seek_player(self, ms: int):
         try:
             if self._player:
-                self._player.set_time(max(0, int(ms)))
-                self._last_good_vlc_ms = ms
+                self._player.seek(ms / 1000.0, reference='absolute', precision='exact')
+                self._last_good_mpv_ms = ms
         except Exception: pass
 
     def _on_drag_start(self): self._dragging = True
 
     def _on_drag_end(self):
         self._dragging = False
-        if self._player and self._player.is_playing(): self._seek_player(int(self.slider.value()))
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing: self._seek_player(int(self.slider.value()))
 
     def _on_slider_changed(self, v):
-        if self._player and self._player.is_playing() and self._dragging: self._seek_player(int(v))
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing and self._dragging: self._seek_player(int(v))
         self._sync_caret()
 
     def _sync_caret(self):
@@ -368,26 +371,30 @@ class MergerMusicOffsetDialog(QDialog):
     def _tick(self):
         if not self._player: return
         try:
-            st = str(self._player.get_state()).lower()
-            if not st.endswith("playing"):
-                self._timer.stop()
-                self.play_btn.setText("▶ Play")
+            is_paused = getattr(self._player, "pause", True)
+            idle_active = getattr(self._player, "idle-active", False)
+            if is_paused or idle_active:
+                if idle_active:
+                    self._on_player_ended()
+                else:
+                    self._timer.stop()
+                    self.play_btn.setText("▶ Play")
                 return
-            vlc_ms = int(self._player.get_time() or 0)
-            if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
-            else: self._last_good_vlc_ms = vlc_ms
-            vlc_ms = max(0, min(self._total_ms, int(vlc_ms + PREVIEW_VISUAL_LEAD_MS)))
-            if vlc_ms >= self._total_ms - 10:
-                self._on_vlc_ended()
+            mpv_ms = int((getattr(self._player, "time-pos", 0) or 0) * 1000)
+            if mpv_ms <= 0: mpv_ms = self._last_good_mpv_ms
+            else: self._last_good_mpv_ms = mpv_ms
+            mpv_ms = max(0, min(self._total_ms, mpv_ms))
+            if mpv_ms >= self._total_ms - 10:
+                self._on_player_ended()
                 return
             if not self._dragging and not self._wave_dragging:
                 self.slider.blockSignals(True)
-                self.slider.setValue(vlc_ms)
+                self.slider.setValue(mpv_ms)
                 self.slider.blockSignals(False)
                 self._sync_caret()
         except Exception: pass
 
-    def _on_vlc_ended(self, event=None):
+    def _on_player_ended(self, event=None):
         def _ui():
             try:
                 self._timer.stop()

@@ -47,17 +47,23 @@ class UiBuilderMixin:
                 pos_ms = int(self.positionSlider.value())
             except Exception:
                 pass
-            if (not pos_ms) and getattr(self, 'vlc_player', None):
-                pos_ms = int(self.vlc_player.get_time() or 0)
+            if (not pos_ms) and getattr(self, 'player', None):
+                pos_ms = int((getattr(self.player, 'time-pos', 0) or 0) * 1000)
             pos_s = float(pos_ms) / 1000.0
             if self.original_duration_ms > 0 and pos_ms > self.original_duration_ms:
                 pos_s = self.original_duration_ms / 1000.0
             self.selected_intro_abs_time = pos_s
             mm = int(self.selected_intro_abs_time // 60)
             ss = self.selected_intro_abs_time % 60.0
-            label = f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"
-            self.thumb_pick_btn.setText(label)
-
+            if hasattr(self.thumb_pick_btn, 'text') and callable(self.thumb_pick_btn.text):
+                original_text = self.thumb_pick_btn.text()
+            else:
+                original_text = str(getattr(self.thumb_pick_btn, 'text', self.thumb_pick_btn))
+            if hasattr(self.thumb_pick_btn, 'setText'):
+                self.thumb_pick_btn.setText("⏳ EXTRACTING...")
+            if hasattr(self.thumb_pick_btn, 'setEnabled') and callable(self.thumb_pick_btn.setEnabled):
+                self.thumb_pick_btn.setEnabled(False)
+            
             import tempfile
             temp_thumb = os.path.join(tempfile.gettempdir(), f"thumb_preview_{os.getpid()}.jpg")
             ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
@@ -68,6 +74,12 @@ class UiBuilderMixin:
 
             def _run_extract():
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
+                if hasattr(self.thumb_pick_btn, 'setText') and callable(self.thumb_pick_btn.setText):
+                    QTimer.singleShot(0, lambda: self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}"))
+                if hasattr(self.thumb_pick_btn, 'setEnabled') and callable(self.thumb_pick_btn.setEnabled):
+                    QTimer.singleShot(0, lambda: self.thumb_pick_btn.setEnabled(True))
+                if hasattr(self.thumb_pick_btn, 'setText') and callable(self.thumb_pick_btn.setText):
+                    QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
                 
             from threading import Thread
             self._thumb_thread = Thread(target=_run_extract, daemon=True)
@@ -80,7 +92,8 @@ class UiBuilderMixin:
                 if hasattr(self, "logger"):
                     self.logger.exception("Thumbnail pick failed: %s", e)
             finally:
-                QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
+                if hasattr(QMessageBox, 'warning'):
+                    QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
 
     def _on_boss_hp_toggled(self, checked):
         if hasattr(self, "logger"):
@@ -187,8 +200,8 @@ class UiBuilderMixin:
                     self.logger.warning("Hardware scan timed out, defaulting to CPU.")
                     self.on_hardware_scan_finished("CPU")
             try:
-                if getattr(self, "vlc_player", None):
-                    self.vlc_player.stop()
+                if getattr(self, "player", None):
+                    self.player.stop()
             except Exception:
                 pass
             if (self.end_minute_input.maximum() == 0 and
@@ -311,7 +324,7 @@ class UiBuilderMixin:
         self.positionSlider.setStyleSheet(UIStyles.SLIDER_TIMELINE_METALLIC)
         self.positionSlider.setEnabled(False)
         self.tooltip_manager.add_tooltip(self.positionSlider, "Seek: ← / →\nFast Seek: Shift + ← / →\nFine Seek: Ctrl + ← / →")
-        self.positionSlider.sliderMoved.connect(self.set_vlc_position)
+        self.positionSlider.sliderMoved.connect(self.set_player_position)
         self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
@@ -433,6 +446,7 @@ class UiBuilderMixin:
         _center_row.setSpacing(0)
         self.video_surface = QWidget()
         self.video_surface.setStyleSheet("background-color: black;")
+        self.video_surface.setAttribute(Qt.WA_DontCreateNativeAncestors)
         self.video_surface.setAttribute(Qt.WA_NativeWindow)
         _center_row.addWidget(self.video_surface)
         self.video_stack.addWidget(self.video_viewport_container)

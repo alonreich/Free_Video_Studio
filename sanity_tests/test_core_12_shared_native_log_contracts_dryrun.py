@@ -5,8 +5,8 @@ def test_core_12_main_and_crop_native_logging_contract_dryrun() -> None:
     assert_all_present(
         src,
         [
-            'vlc_log_path = os.path.join(log_dir, f"{app_prefix}_vlc.log")',
-            'raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")',
+            'mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")',
+            'raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")',
             "os.dup2(f.fileno(), sys.stdout.fileno())",
             "os.dup2(f.fileno(), sys.stderr.fileno())",
             "faulthandler.enable(f)",
@@ -16,13 +16,13 @@ def test_core_12_main_and_crop_native_logging_contract_dryrun() -> None:
         ],
     )
 
-def test_core_12_merger_native_logging_should_share_vlc_log_dryrun() -> None:
+def test_core_12_merger_native_logging_should_share_mpv_log_dryrun() -> None:
     src = read_source("utilities/merger_system.py")
     assert_all_present(
         src,
         [
-            'vlc_log_path = os.path.join(log_dir, "vlc.log")',
-            'raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")',
+            'mpv.log_path = os.path.join(log_dir, "mpv.log")',
+            'raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")',
             "os.dup2(f.fileno(), sys.stdout.fileno())",
             "os.dup2(f.fileno(), sys.stderr.fileno())",
             "faulthandler.enable(f)",

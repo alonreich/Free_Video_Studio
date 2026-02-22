@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import tempfile
 import subprocess
@@ -9,22 +9,22 @@ from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSizePolicy
 from ui.widgets.trimmed_slider import TrimmedSlider
 try:
-    import vlc as _vlc_mod
+    import mpv
 except Exception:
-    _vlc_mod = None
-PREVIEW_VISUAL_LEAD_MS = 1100
+    mpv = None
+PREVIEW_VISUAL_LEAD_MS = 0
 
 class MusicOffsetDialog(QDialog):
     _ui_call = pyqtSignal(object)
 
-    def __init__(self, parent, vlc_instance, audio_path: str, initial_offset: float, bin_dir: str, hardware_strategy="CPU"):
+    def __init__(self, parent, mpv_instance, audio_path: str, initial_offset: float, bin_dir: str, hardware_strategy="CPU"):
         super().__init__(parent)
         self._ui_call.connect(self._run_ui_call)
         self.setWindowTitle("Choose Background Music Start")
         self.setModal(True)
         self.resize(1300, 350)
         self.setMinimumSize(1000, 170)
-        self._vlc = vlc_instance
+        self._mpv = mpv_instance
         self._mpath = audio_path
         self._bin = bin_dir
         self.hardware_strategy = hardware_strategy
@@ -41,7 +41,7 @@ class MusicOffsetDialog(QDialog):
         self._draw_w = 1
         self._draw_y0 = 0
         self._draw_h = 1
-        self._last_good_vlc_ms = 0
+        self._last_good_mpv_ms = 0
         self.logger = logging.getLogger("Main_App")
         v = QVBoxLayout(self)
         self.wave = QLabel("Generating waveform...")
@@ -154,20 +154,13 @@ class MusicOffsetDialog(QDialog):
         else:
             super().keyPressEvent(event)
 
-    def _handle_arrow_seek(self, event):
-        """Logic for arrow keys + modifiers."""
-        step = 5000 if (event.modifiers() & Qt.ShiftModifier) else 1000
-        if event.key() == Qt.Key_Left:
-            self._seek_relative(-step)
-        else:
-            self._seek_relative(step)
-
     def _seek_relative(self, delta_ms):
         """Seeks relative to current slider position safely."""
         current = self.slider.value()
         target = max(0, min(self._total_ms, current + delta_ms))
         self.slider.setValue(target)
-        if self._player and self._player.is_playing():
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing:
             self._seek_player(target)
         self._sync_caret()
 
@@ -197,7 +190,8 @@ class MusicOffsetDialog(QDialog):
                 try:
                     if self._wave_dragging:
                         self._wave_dragging = False
-                        if self._player and self._player.is_playing():
+                        is_playing = self._player and not getattr(self._player, "pause", True)
+                        if is_playing:
                             self._seek_player(int(self.slider.value()))
                         return True
                 except Exception: return True
@@ -234,7 +228,8 @@ class MusicOffsetDialog(QDialog):
         target_ms = int(rel * float(self._total_ms))
         target_ms = max(0, min(self._total_ms, target_ms))
         self.slider.setValue(target_ms)
-        if seek_if_playing and self._player and self._player.is_playing():
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if seek_if_playing and is_playing:
             self._seek_player(target_ms)
         self._sync_caret()
 
@@ -280,38 +275,10 @@ class MusicOffsetDialog(QDialog):
             tf.close()
             input_abs = os.path.abspath(self._mpath)
             output_abs = os.path.abspath(self._temp_png_path)
-            hw_flags = []
-            strategy = getattr(self, 'hardware_strategy', 'CPU')
-            if strategy == "NVIDIA":
-                hw_flags = ["-hwaccel", "cuda"]
-            elif strategy == "INTEL":
-                hw_flags = ["-hwaccel", "qsv"]
-            elif strategy == "AMD":
-                hw_flags = ["-hwaccel", "amf"]
-            cmd = [ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error"]
-            cmd.extend(hw_flags)
-            cmd.extend([
-                "-i", input_abs,
-                "-frames:v", "1",
-                "-filter_complex", "volume=5.0,showwavespic=s=1200x300:colors=green",
-                output_abs
-            ])
+            cmd = [ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error", "-i", input_abs, "-frames:v", "1", "-filter_complex", "volume=5.0,showwavespic=s=1200x300:colors=green", output_abs]
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags)
-            if result.returncode != 0:
-                dbg = (
-                    "Waveform DEBUG\n"
-                    f"ffmpeg: {ffmpeg_exe}\n"
-                    f"cmd: {' '.join(cmd)}\n"
-                    f"rc: {result.returncode}\n"
-                    f"stdout: {result.stdout.strip()}\n"
-                    f"stderr: {result.stderr.strip()}\n"
-                )
-                self.logger.error(dbg)
-                raise RuntimeError(f"FFmpeg failed (rc={result.returncode})")
-            if not os.path.exists(output_abs) or os.path.getsize(output_abs) == 0:
-                self.logger.error("FFmpeg produced 0-byte waveform file.")
-                raise RuntimeError("Generated waveform is empty.")
+            if result.returncode != 0: raise RuntimeError(f"FFmpeg failed (rc={result.returncode})")
 
             def _apply_wave():
                 pm = QPixmap(self._temp_png_path)
@@ -343,18 +310,14 @@ class MusicOffsetDialog(QDialog):
         except Exception: pass
 
     def _ensure_player(self):
-        if self._player or self._vlc is None: return
+        if self._player: return
         try:
-            self._player = self._vlc.media_player_new()
-            m = self._vlc.media_new(self._mpath)
-            self._player.set_media(m)
-            if _vlc_mod is not None:
-                try:
-                    em = self._player.event_manager()
-                    em.event_attach(_vlc_mod.EventType.MediaPlayerEndReached, self._on_vlc_ended)
-                except Exception: pass
+            if mpv:
+                self._player = mpv.MPV(hr_seek='yes', hwdec='auto', keep_open='yes')
+                self._player.command("loadfile", self._mpath, "replace")
+                self._player.pause = True
         except Exception as e:
-            self.logger.error(f"VLC Player init failed in dialog: {e}")
+            self.logger.error(f"MPV Player init failed in dialog: {e}")
             self._player = None
 
     def _stop_player(self):
@@ -362,7 +325,9 @@ class MusicOffsetDialog(QDialog):
             if self._timer.isActive(): self._timer.stop()
         except Exception: pass
         try:
-            if self._player: self._player.stop()
+            if self._player: 
+                self._player.terminate()
+                self._player = None
         except Exception: pass
 
     def _update_play_btn(self, playing: bool):
@@ -379,22 +344,22 @@ class MusicOffsetDialog(QDialog):
         ms = max(0, min(self._total_ms, int(ms)))
         try:
             if self._player:
-                self._player.set_time(ms)
-                self._last_good_vlc_ms = ms
+                self._player.seek(ms / 1000.0, reference='absolute', precision='exact')
+                self._last_good_mpv_ms = ms
         except Exception: pass
 
     def _toggle_play_pause(self):
         self._ensure_player()
         if not self._player: return
         try:
-            st = str(self._player.get_state()).lower()
-            if st.endswith("playing"):
-                self._player.pause()
+            is_paused = getattr(self._player, "pause", True)
+            if not is_paused:
+                self._player.pause = True
                 self._update_play_btn(False)
                 self._timer.stop()
                 return
             want_ms = int(self.slider.value())
-            self._player.play()
+            self._player.pause = False
 
             def _after_start():
                 self._seek_player(want_ms)
@@ -408,11 +373,13 @@ class MusicOffsetDialog(QDialog):
 
     def _on_drag_end(self):
         self._dragging = False
-        if self._player and self._player.is_playing():
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing:
             self._seek_player(int(self.slider.value()))
 
     def _on_slider_changed(self, v):
-        if self._player and self._player.is_playing() and self._dragging:
+        is_playing = self._player and not getattr(self._player, "pause", True)
+        if is_playing and self._dragging:
             self._seek_player(int(v))
         self._sync_caret()
 
@@ -437,28 +404,30 @@ class MusicOffsetDialog(QDialog):
     def _tick(self):
         if not self._player: return
         try:
-            st = str(self._player.get_state()).lower()
-            if not st.endswith("playing"):
-                self._timer.stop()
-                self._update_play_btn(False)
+            is_paused = getattr(self._player, "pause", True)
+            idle_active = getattr(self._player, "idle-active", False)
+            if is_paused or idle_active:
+                if idle_active:
+                    self._on_player_ended()
+                else:
+                    self._timer.stop()
+                    self._update_play_btn(False)
                 return
-            try: vlc_ms = int(self._player.get_time() or 0)
-            except Exception: vlc_ms = 0
-            if vlc_ms <= 0: vlc_ms = self._last_good_vlc_ms
-            else: self._last_good_vlc_ms = vlc_ms
-            vlc_ms = int(vlc_ms + PREVIEW_VISUAL_LEAD_MS)
-            vlc_ms = max(0, min(self._total_ms, vlc_ms))
-            if vlc_ms >= self._total_ms - 10:
-                self._on_vlc_ended()
+            mpv_ms = int((getattr(self._player, "time-pos", 0) or 0) * 1000)
+            if mpv_ms <= 0: mpv_ms = self._last_good_mpv_ms
+            else: self._last_good_mpv_ms = mpv_ms
+            mpv_ms = max(0, min(self._total_ms, mpv_ms))
+            if mpv_ms >= self._total_ms - 10:
+                self._on_player_ended()
                 return
             if not self._dragging and not self._wave_dragging:
                 self.slider.blockSignals(True)
-                self.slider.setValue(vlc_ms)
+                self.slider.setValue(mpv_ms)
                 self.slider.blockSignals(False)
                 self._sync_caret()
         except Exception: pass
 
-    def _on_vlc_ended(self, event=None):
+    def _on_player_ended(self, event=None):
         def _ui():
             try:
                 self._timer.stop()

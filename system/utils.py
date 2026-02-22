@@ -8,12 +8,19 @@ import subprocess
 import shutil
 import time
 import threading
+import faulthandler
+try:
+    import mpv
+except ImportError:
+    class MockMPV: pass
+    mpv = MockMPV()
+
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
 class DependencyDoctor:
     """
-    Centralized health check for external dependencies (VLC, FFmpeg).
+    Centralized health check for external dependencies (FFmpeg).
     """
     @staticmethod
     def get_bin_dir(base_dir: str) -> str:
@@ -36,37 +43,15 @@ class DependencyDoctor:
         if path_ffmpeg and path_ffprobe:
             return True, path_ffmpeg, ""
         return False, "", "FFmpeg or FFprobe binaries are missing."
-    @staticmethod
-    def find_vlc_path() -> Optional[str]:
-        """
-        Attempts to locate VLC installation dynamically.
-        """
-        common_paths = [
-            r"C:\Program Files\VideoLAN\VLC",
-            r"C:\Program Files (x86)\VideoLAN\VLC"
-        ]
-        for p in common_paths:
-            if os.path.exists(os.path.join(p, "libvlc.dll")):
-                return p
-        if sys.platform == "win32":
-            import winreg
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VideoLAN\VLC")
-                val, _ = winreg.QueryValueEx(key, "InstallDir")
-                if val and os.path.exists(os.path.join(val, "libvlc.dll")):
-                    return val
-            except Exception:
-                pass
-        return None
 
 class ProcessManager:
     """
     Manages application lifecycle, PID locking, and zombie cleanup.
     """
     @staticmethod
-    def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe"]):
+    def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe", "mpv.exe", "ffplay.exe"]):
         """
-        [FIX #10] Aggressively kills stray processes associated with this project.
+        [FIX #3] Aggressively kills stray processes associated with this project.
         """
         my_pid = os.getpid()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,24 +60,27 @@ class ProcessManager:
             try:
                 if proc.info['pid'] == my_pid:
                     continue
-                name = proc.info['name']
-                if name in process_names:
+                name = (proc.info['name'] or "").lower()
+                target_names = [n.lower() for n in process_names]
+                if name in target_names or any(tn in name for tn in target_names):
                     proc_exe = proc.info.get('exe')
                     cmdline = " ".join(proc.info.get('cmdline') or [])
-                    if (proc_exe and bin_dir in os.path.abspath(proc_exe)) or (base_dir in cmdline):
-                        proc.kill()
+                    if (proc_exe and bin_dir.lower() in os.path.abspath(proc_exe).lower()) or (base_dir.lower() in cmdline.lower()):
+                        try:
+                            proc.kill()
+                        except:
+                            pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
         """
-        [FIX #9] Aggressively cleans up temporary files from previous or failed sessions.
-        Includes job-specific subdirectories and known prefix patterns.
+        [FIX #3] Aggressively cleans up temporary files from previous or failed sessions.
         """
         temp_dir = tempfile.gettempdir()
         patterns = [
             prefix, "core-", "intro-", "ffmpeg2pass-", "drawtext-", 
-            "filter_complex-", "concat-", "thumb-", "snapshot-", "fvs_job_"
+            "filter_complex-", "concat-", "thumb-", "snapshot-", "fvs_job_", "thumb_preview_"
         ]
         try:
             for filename in os.listdir(temp_dir):
@@ -106,14 +94,6 @@ class ProcessManager:
                     except Exception:
                         pass
         except Exception:
-            pass
-        try:
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            local_tmp = os.path.join(project_root, ".tmp")
-            if os.path.exists(local_tmp):
-                shutil.rmtree(local_tmp, ignore_errors=True)
-            os.makedirs(local_tmp, exist_ok=True)
-        except:
             pass
         try:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -154,6 +134,39 @@ class ProcessManager:
                 continue
         return False, None
 
+class UIManager:
+    """
+    Shared UI helper for standardizing diagnostic dialogs.
+    """
+    @staticmethod
+    def style_and_size_msg_box(msg_box: 'QMessageBox', copy_text: str, copy_btn_label: str = "Copy to Clipboard"):
+        """
+        Standardizes diagnostic popups: 800x500 size, adds 'Copy to Clipboard',
+        and ensures all buttons have a pointing hand cursor.
+        """
+
+        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout, QApplication
+        from PyQt5.QtCore import Qt, QTimer
+        layout = msg_box.layout()
+        if isinstance(layout, QGridLayout):
+            layout.addItem(QSpacerItem(800, 500, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+        copy_btn = msg_box.addButton(copy_btn_label, msg_box.ActionRole)
+        
+        def on_copy():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(copy_text)
+            copy_btn.setText("✓ Copied!")
+            
+            def _reset_text():
+                try:
+                    copy_btn.setText(copy_btn_label)
+                except RuntimeError:
+                    pass
+            QTimer.singleShot(2000, _reset_text)
+        copy_btn.clicked.connect(on_copy)
+        for btn in msg_box.buttons():
+            btn.setCursor(Qt.PointingHandCursor)
+
 class ConsoleManager:
     @staticmethod
     def _source_tag(logger_name: str) -> str:
@@ -164,62 +177,14 @@ class ConsoleManager:
         }
         return mapping.get(str(logger_name), str(logger_name).strip().lower())
     @staticmethod
-    def _start_native_bridge(source_tag: str, raw_log_path: str, shared_vlc_log_path: str):
-        bridge_logger = logging.getLogger(f"VLC_Aggregator_{source_tag}_{os.getpid()}")
-        for h in bridge_logger.handlers[:]:
-            bridge_logger.removeHandler(h)
-        bridge_logger.setLevel(logging.INFO)
-        bridge_logger.propagate = False
-        bridge_handler = RotatingFileHandler(
-            shared_vlc_log_path,
-            maxBytes=5*1024*1024,
-            backupCount=1,
-            encoding='utf-8',
-        )
-        bridge_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
-        bridge_logger.addHandler(bridge_handler)
-
-        def _tail_raw_forever():
-            pos = 0
-            while True:
-                try:
-                    if not os.path.exists(raw_log_path):
-                        time.sleep(0.5)
-                        continue
-                    with open(raw_log_path, 'rb') as rf:
-                        rf.seek(pos)
-                        chunk_bytes = rf.read()
-                        if chunk_bytes:
-                            pos += len(chunk_bytes)
-                            chunk = chunk_bytes.decode('utf-8', errors='ignore')
-                            for line in chunk.splitlines():
-                                clean_line = line.strip()
-                                if clean_line:
-                                    bridge_logger.info("[%s] %s", source_tag, clean_line)
-                        else:
-                            time.sleep(0.2)
-                except Exception:
-                    time.sleep(1.0)
-        t = threading.Thread(target=_tail_raw_forever, daemon=True)
-        t.start()
-    @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
         app_prefix = logger_name.lower().replace(" ", "_")
-        LogManager.truncate_vlc_log(base_dir, app_prefix, max_size_mb=5)
         if not log_filename.startswith(app_prefix):
             final_log_filename = f"{app_prefix}_{log_filename}"
         else:
             final_log_filename = log_filename
         logger = LogManager.setup_logger(base_dir, final_log_filename, logger_name)
-        log_dir = os.path.join(base_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        vlc_log_path = os.path.join(log_dir, f"{app_prefix}_vlc.log")
-        source_tag = ConsoleManager._source_tag(logger_name)
-        raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")
-        os.environ["FVS_VLC_SOURCE_TAG"] = source_tag
-        os.environ["FVS_VLC_RAW_LOG"] = raw_log_path
-        ConsoleManager._start_native_bridge(source_tag, raw_log_path, vlc_log_path)
-
+        
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
                 sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -233,23 +198,40 @@ class ConsoleManager:
                     msg_box.setIcon(QMessageBox.Critical)
                     msg_box.setWindowTitle("Critical Error")
                     msg_box.setText(f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
-                    layout = msg_box.layout()
-                    if isinstance(layout, QGridLayout):
-                        layout.addItem(QSpacerItem(600, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+                    UIManager.style_and_size_msg_box(msg_box, error_msg)
                     msg_box.exec_()
             except: pass
         sys.excepthook = global_exception_handler
+        log_dir = os.path.join(base_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        source_tag = ConsoleManager._source_tag(logger_name)
+        if str(logger_name) == "Video_Merger":
+            source_tag = "video_merger"
+            mpv.log_path = os.path.join(log_dir, "mpv.log")
+            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+            try:
+                ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
+                f = ConsoleManager._f_keepalive
+                os.dup2(f.fileno(), sys.stdout.fileno())
+                os.dup2(f.fileno(), sys.stderr.fileno())
+                faulthandler.enable(f)
+                source_tag = "video_merger"
+            except: pass
+        else:
+            mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
+            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+            try:
+                ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
+                f = ConsoleManager._f_keepalive
+                os.dup2(f.fileno(), sys.stdout.fileno())
+                os.dup2(f.fileno(), sys.stderr.fileno())
+                faulthandler.enable(f)
+            except: pass
         try:
-            ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-            f = ConsoleManager._f_keepalive
-            os.dup2(f.fileno(), sys.stdout.fileno())
-            os.dup2(f.fileno(), sys.stderr.fileno())
-
-            import faulthandler
-            faulthandler.enable(f)
             stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
-            f.flush()
+            if 'f' in locals():
+                f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
+                f.flush()
         except Exception as e:
             print(f"Failed FD redirection: {e}")
         if sys.platform == "win32":
@@ -262,25 +244,6 @@ class ConsoleManager:
         return logger
 
 class LogManager:
-    @staticmethod
-    def truncate_vlc_log(base_dir: str, app_prefix: str, max_size_mb: int = 5):
-        """
-        Maintains logs size by keeping only the last N MB (FIFO).
-        """
-        try:
-            log_path = os.path.join(base_dir, "logs", f"{app_prefix}_vlc.log")
-            if not os.path.exists(log_path):
-                return
-            file_size = os.path.getsize(log_path)
-            max_bytes = max_size_mb * 1024 * 1024
-            if file_size > max_bytes:
-                with open(log_path, 'rb') as f:
-                    f.seek(-max_bytes, os.SEEK_END)
-                    data = f.read()
-                with open(log_path, 'wb') as f:
-                    f.write(data)
-        except Exception:
-            pass
     @staticmethod
     def setup_logger(base_dir: str, log_filename: str, logger_name: str) -> logging.Logger:
         """

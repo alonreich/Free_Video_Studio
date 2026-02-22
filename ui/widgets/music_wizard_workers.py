@@ -9,6 +9,7 @@ import logging
 import atexit
 from pathlib import Path
 from typing import Any, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QPixmap
@@ -55,6 +56,14 @@ def _kill_process_tree(proc: Any | None) -> None:
             pass
 _CACHE_ROOT = Path(tempfile.gettempdir()) / "fvs_timeline_cache"
 
+def _read_file_bytes(path: str) -> bytes | None:
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        return data if data else None
+    except Exception:
+        return None
+
 def _safe_media_signature(path: str) -> tuple[int, int]:
     try:
         st = os.stat(path)
@@ -98,10 +107,8 @@ def _prune_cache_dir(cache_dir: Path, *, max_entries: int = 500, max_age_seconds
     except Exception:
         pass
 
-from concurrent.futures import ThreadPoolExecutor
-
 class VideoFilmstripWorker(QtCore.QThread):
-    asset_ready = pyqtSignal(int, list, str)
+    asset_ready = pyqtSignal(int, object, str)
     finished = pyqtSignal(str)
 
     def __init__(
@@ -135,15 +142,19 @@ class VideoFilmstripWorker(QtCore.QThread):
 
     def _segment_settings(self, duration: float) -> tuple[float, str, str]:
         dur = max(1.0, float(duration or 0.0))
-        if self.stage in ("fast", "progressive"):
-            target_thumbs = 8.0
-            fps = max(0.10, min(0.55, target_thumbs / dur))
-            return fps, "160:90", "20"
-        target_thumbs = 24.0
-        fps = max(0.12, min(1.00, target_thumbs / dur))
-        return fps, "192:108", "15"
+        if self.stage == "fast":
+            target_thumbs = 4.0
+            fps = max(0.20, min(0.70, target_thumbs / dur))
+            return fps, "224:126", "16"
+        if self.stage == "progressive":
+            target_thumbs = 6.0
+            fps = max(0.30, min(1.10, target_thumbs / dur))
+            return fps, "288:162", "10"
+        target_thumbs = 8.0
+        fps = max(0.35, min(1.40, target_thumbs / dur))
+        return fps, "320:180", "8"
 
-    def _render_chunk(self, info: tuple) -> tuple[int, list[QPixmap]]:
+    def _render_chunk(self, info: tuple) -> tuple[int, list[bytes]]:
         path, duration, t_start, speed, orig_idx = info
         logger = logging.getLogger("Video_Merger")
         if not self._running:
@@ -151,13 +162,14 @@ class VideoFilmstripWorker(QtCore.QThread):
         ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         tmp_pattern_dir = ""
-        thumbs: list[QPixmap] = []
+        thumbs: list[bytes] = []
         proc = None
         try:
             fps, scale, qv = self._segment_settings(duration)
             tmp_pattern_dir = tempfile.mkdtemp(prefix="fvs_thumbs_")
             out_pattern = os.path.join(tmp_pattern_dir, "thumb_%04d.jpg")
-            source_dur = duration * speed
+            source_dur = max(0.25, float(duration or 0.0) * float(speed or 1.0))
+            source_start = max(0.0, float(t_start or 0.0) / 1000.0)
             vf_parts = [f"fps={fps:.3f}", f"scale={scale.split(':')[0]}:-1"]
             cmd: list[str] = [
                 ffmpeg_exe,
@@ -165,10 +177,10 @@ class VideoFilmstripWorker(QtCore.QThread):
                 "-hide_banner",
                 "-loglevel", "error",
                 "-hwaccel", "auto",
-                "-hwaccel_device", "d3d11va",
-                "-ss", f"{t_start/1000.0:.3f}",
+                "-ss", f"{source_start:.3f}",
                 "-t", f"{source_dur:.3f}",
                 "-i", path,
+                "-an",
                 "-vf", ",".join(vf_parts),
                 "-q:v", qv,
                 out_pattern,
@@ -185,9 +197,9 @@ class VideoFilmstripWorker(QtCore.QThread):
                 files = sorted([f for f in os.listdir(tmp_pattern_dir) if f.endswith(".jpg")])
                 for f in files:
                     src = os.path.join(tmp_pattern_dir, f)
-                    pm = QPixmap(src)
-                    if not pm.isNull():
-                        thumbs.append(pm)
+                    blob = _read_file_bytes(src)
+                    if blob:
+                        thumbs.append(blob)
         except Exception as e:
             logger.error("GPU_CHUNK_WORKER[%s]: error: %s", self.stage, e)
         finally:
@@ -202,27 +214,74 @@ class VideoFilmstripWorker(QtCore.QThread):
                     pass
         return orig_idx, thumbs
 
+    def _render_single_thumb(self, info: tuple) -> tuple[int, list[bytes]]:
+        path, _, t_start, _, orig_idx = info
+        ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        tmp_thumb = ""
+        try:
+            tf = tempfile.NamedTemporaryFile(prefix="fvs_thumb_fb_", suffix=".jpg", delete=False)
+            tmp_thumb = tf.name
+            tf.close()
+            source_start = max(0.0, float(t_start or 0.0) / 1000.0)
+            scale_w = "288" if self.stage in ("fast", "progressive") else "320"
+            cmd = [
+                ffmpeg_exe,
+                "-y",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-hwaccel", "auto",
+                "-ss", f"{source_start:.3f}",
+                "-i", path,
+                "-frames:v", "1",
+                "-an",
+                "-vf", f"scale={scale_w}:-1",
+                "-q:v", "8",
+                tmp_thumb,
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, timeout=12)
+            blob = _read_file_bytes(tmp_thumb)
+            if blob:
+                return orig_idx, [blob]
+        except Exception:
+            pass
+        finally:
+            if tmp_thumb and os.path.exists(tmp_thumb):
+                try:
+                    os.remove(tmp_thumb)
+                except Exception:
+                    pass
+        return orig_idx, []
+
     def run(self):
         logger = logging.getLogger("Video_Merger")
-        logger.info("GPU_WORKER[%s]: Initializing CHUNKED PARALLEL extraction.", self.stage)
+        logger.info("GPU_WORKER[%s]: Initializing extraction.", self.stage)
         try:
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = [executor.submit(self._render_chunk, info) for info in self.video_segments_info]
-                final_results = {}
-                for future in futures:
-                    if not self._running: break
+            final_results = {}
+            with ThreadPoolExecutor(max_workers=max(1, int(self.max_workers or 2))) as pool:
+                future_to_info = {pool.submit(self._render_chunk, info): info for info in self.video_segments_info}
+                for fut in as_completed(future_to_info):
+                    if not self._running:
+                        break
+                    info = future_to_info[fut]
                     try:
-                        orig_idx, chunk_thumbs = future.result()
-                        if chunk_thumbs:
-                            final_results.setdefault(orig_idx, []).extend(chunk_thumbs)
-                            self.asset_ready.emit(orig_idx, list(final_results[orig_idx]), self.stage)
-                    except Exception: pass
+                        orig_idx, chunk_thumbs = fut.result()
+                    except Exception:
+                        orig_idx, chunk_thumbs = info[4], []
+                    if not chunk_thumbs:
+                        try:
+                            orig_idx, chunk_thumbs = self._render_single_thumb(info)
+                        except Exception:
+                            pass
+                    if chunk_thumbs:
+                        final_results.setdefault(orig_idx, []).extend(chunk_thumbs)
+                        self.asset_ready.emit(orig_idx, list(chunk_thumbs), self.stage)
         finally:
             self.stop()
             self.finished.emit(self.stage)
 
 class MusicWaveformWorker(QtCore.QThread):
-    asset_ready = pyqtSignal(int, QPixmap, str)
+    asset_ready = pyqtSignal(int, object, str)
     finished = pyqtSignal(str)
 
     def __init__(
@@ -265,19 +324,19 @@ class MusicWaveformWorker(QtCore.QThread):
 
     def _wave_filter(self) -> str:
         if self.stage == "fast":
-            return "aformat=channel_layouts=mono,showwavespic=s=1200x120:colors=0x2ecc71:draw=full"
-        return "aformat=channel_layouts=mono,compand=attacks=0:decays=0.20:points=-90/-90|-45/-30|-20/-8|0/-2,showwavespic=s=4000x400:colors=0x2ecc71:scale=sqrt:draw=full"
+            return "aformat=channel_layouts=mono,volume=1.35,showwavespic=s=1800x180:colors=0x7DD3FC:draw=full"
+        return "aformat=channel_layouts=mono,volume=1.55,compand=attacks=0:decays=0.20:points=-90/-90|-55/-28|-25/-8|0/-2,showwavespic=s=3200x200:colors=0x7DD3FC:draw=full"
 
-    def _render_wave(self, i: int, path: str, offset: float, dur: float) -> tuple[int, QPixmap | None]:
+    def _render_wave(self, i: int, path: str, offset: float, dur: float) -> tuple[int, bytes | None]:
         logger = logging.getLogger("Video_Merger")
         if not self._running:
             return i, None
         cache_path = self._wave_cache_path(path, offset, dur)
         try:
             if cache_path.exists():
-                pm = QPixmap(str(cache_path))
-                if not pm.isNull():
-                    return i, pm
+                blob = _read_file_bytes(str(cache_path))
+                if blob:
+                    return i, blob
         except Exception:
             pass
         ffmpeg_exe = os.path.join(self.bin_dir, "ffmpeg.exe")
@@ -292,9 +351,9 @@ class MusicWaveformWorker(QtCore.QThread):
                 ffmpeg_exe,
                 "-y",
                 "-ss",
-                f"{offset:.3f}",
+                f"{max(0.0, float(offset or 0.0)):.3f}",
                 "-t",
-                f"{dur:.3f}",
+                f"{max(0.25, float(dur or 0.0)):.3f}",
                 "-i",
                 path,
                 "-filter_complex",
@@ -312,14 +371,14 @@ class MusicWaveformWorker(QtCore.QThread):
                 _kill_process_tree(proc)
                 return i, None
             if os.path.exists(tmp_path):
-                pm = QPixmap(tmp_path)
-                if not pm.isNull():
+                blob = _read_file_bytes(tmp_path)
+                if blob:
                     try:
                         self.cache_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(tmp_path, cache_path)
                     except Exception:
                         pass
-                    return i, pm
+                    return i, blob
         except Exception as e:
             logger.error("CPU_WORKER[%s]: waveform %s failed: %s", self.stage, i, e)
         finally:
@@ -334,9 +393,9 @@ class MusicWaveformWorker(QtCore.QThread):
                     pass
         try:
             if cache_path.exists():
-                pm = QPixmap(str(cache_path))
-                if not pm.isNull():
-                    return i, pm
+                blob = _read_file_bytes(str(cache_path))
+                if blob:
+                    return i, blob
         except Exception:
             pass
         return i, None
@@ -351,12 +410,12 @@ class MusicWaveformWorker(QtCore.QThread):
                 if not self._running:
                     break
                 try:
-                    wave_idx, pm = self._render_wave(i, path, offset, dur)
+                    wave_idx, blob = self._render_wave(i, path, offset, dur)
                 except Exception as e:
                     logger.error("CPU_WORKER[%s]: waveform %s failed: %s", self.stage, i, e)
                     continue
-                if pm is not None and not pm.isNull():
-                    self.asset_ready.emit(wave_idx, pm, self.stage)
+                if blob:
+                    self.asset_ready.emit(wave_idx, blob, self.stage)
         finally:
             self.stop()
             self.finished.emit(self.stage)

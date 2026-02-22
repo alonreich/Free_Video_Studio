@@ -4,6 +4,43 @@ from PyQt5.QtCore import Qt
 from ui.widgets.music_wizard_workers import SingleWaveformWorker
 
 class MergerMusicWizardWaveformMixin:
+    def _ensure_step2_seek_timer(self):
+        if getattr(self, "_step2_seek_timer", None):
+            return
+        self._step2_seek_timer = QtCore.QTimer(self)
+        self._step2_seek_timer.setSingleShot(True)
+        self._step2_seek_timer.setInterval(35)
+        self._step2_seek_timer.timeout.connect(self._flush_step2_seek)
+
+    def _request_step2_seek(self, target_ms, immediate=False):
+        try:
+            max_ms = int(self.offset_slider.maximum()) if hasattr(self, "offset_slider") else 0
+            t_ms = int(target_ms)
+            if max_ms > 0:
+                t_ms = max(0, min(max_ms, t_ms))
+            else:
+                t_ms = max(0, t_ms)
+        except Exception:
+            t_ms = 0
+        self._pending_step2_seek_ms = t_ms
+        if immediate:
+            self._flush_step2_seek()
+            return
+        self._ensure_step2_seek_timer()
+        self._step2_seek_timer.start()
+
+    def _flush_step2_seek(self):
+        player = getattr(self, "player", None)
+        target_ms = getattr(self, "_pending_step2_seek_ms", None)
+        if not player or target_ms is None:
+            return
+        self._pending_step2_seek_ms = None
+        try:
+            player.seek(target_ms / 1000.0, reference='absolute')
+            self._last_good_mpv_ms = int(target_ms)
+        except Exception as ex:
+            self.logger.debug(f"WIZARD_STEP2: safe seek skipped: {ex}")
+
     def _stop_waveform_worker(self):
         worker = getattr(self, "_waveform_worker", None)
         if not worker:
@@ -18,6 +55,12 @@ class MergerMusicWizardWaveformMixin:
         except Exception as ex:
             self.logger.debug(f"WIZARD_STEP2: waveform worker stop skipped: {ex}")
         self._waveform_worker = None
+        if getattr(self, "_step2_seek_timer", None):
+            try:
+                self._step2_seek_timer.stop()
+            except Exception:
+                pass
+        self._pending_step2_seek_ms = None
         if hasattr(self, "_temp_sync") and self._temp_sync and os.path.exists(self._temp_sync):
             try: os.remove(self._temp_sync)
             except Exception: pass
@@ -82,9 +125,18 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
-        self._show_caret_step2 = True
-        if not self._dragging and not self._wave_dragging:
+        if self.player: self.player.set_time(val_ms)
+        if False:
             if self._player: self._player.set_time(val_ms)
+        self._show_caret_step2 = True
+        slider_dragging = bool(
+            getattr(self, "_dragging", False)
+            or getattr(self, "_wave_dragging", False)
+            or getattr(self.offset_slider, "_dragging_handle", None) == 'playhead'
+            or self.offset_slider.isSliderDown()
+        )
+        if self.player:
+            self._request_step2_seek(val_ms, immediate=not slider_dragging)
         self._sync_caret(override_ms=val_ms)
 
     def _on_drag_start(self): 
@@ -94,7 +146,8 @@ class MergerMusicWizardWaveformMixin:
     def _on_drag_end(self):
         self._dragging = False
         val_ms = self.offset_slider.value()
-        if self._player: self._player.set_time(val_ms)
+        if self.player:
+            self._request_step2_seek(val_ms, immediate=True)
         self._sync_caret(override_ms=val_ms)
 
     def _refresh_wave_scaled(self):
@@ -127,6 +180,8 @@ class MergerMusicWizardWaveformMixin:
                     return True
             if event.type() == QtCore.QEvent.MouseButtonRelease:
                 self._wave_dragging = False
+                if self.player:
+                    self._request_step2_seek(self.offset_slider.value(), immediate=True)
                 return True
         return super().eventFilter(obj, event)
 
@@ -137,7 +192,9 @@ class MergerMusicWizardWaveformMixin:
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
         self.offset_slider.setValue(target_ms)
-        if self._player:
+        self.player.set_time(target_ms)
+        if False:
             self._player.set_time(target_ms)
-            self._last_good_vlc_ms = target_ms
+        if self.player:
+            self._request_step2_seek(target_ms, immediate=not self._wave_dragging)
         self._sync_caret()

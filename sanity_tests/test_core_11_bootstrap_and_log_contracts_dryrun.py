@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import re
 from sanity_tests._ai_sanity_helpers import read_source, assert_all_present
 

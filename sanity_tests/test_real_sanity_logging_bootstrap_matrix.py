@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass
 import re
 from system.config import ConfigManager
@@ -51,12 +51,12 @@ def test_logging_bootstrap_matrix(tmp_path, capsys) -> None:
         )
     )
     merger_native_src = read_source("utilities/merger_system.py")
-    shared_native_ok = 'vlc_log_path = os.path.join(log_dir, "vlc.log")' in merger_native_src
+    shared_native_ok = 'mpv.log_path = os.path.join(log_dir, "mpv.log")' in merger_native_src
     results.append(
         LoggingCaseResult(
             "Shared native C++ log target (main/crop/merger)",
             shared_native_ok,
-            "merger uses shared logs/vlc.log" if shared_native_ok else "merger does not target logs/vlc.log",
+            "merger uses shared logs/mpv.log" if shared_native_ok else "merger does not target logs/mpv.log",
         )
     )
     print("\n=== LOGGING BOOTSTRAP MATRIX REPORT ===")

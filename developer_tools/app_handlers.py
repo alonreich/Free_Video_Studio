@@ -135,7 +135,7 @@ class CropAppHandlers:
         self.show_video_view()
 
     def open_image_fallback(self):
-        """Fallback path for VLC-missing environments: load a local screenshot safely."""
+        """Fallback path for MPV-missing environments: load a local screenshot safely."""
         image_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Screenshot",
@@ -580,7 +580,7 @@ class CropAppHandlers:
     def open_file(self):
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("Open Video File")
-        if not self.media_processor.vlc_instance:
+        if not self.media_processor.player:
              if hasattr(self, 'open_image_fallback'):
                  self.open_image_fallback()
              return
@@ -866,7 +866,8 @@ class CropAppHandlers:
         self.is_scrubbing = False
         self.set_position(self.position_slider.value())
         if getattr(self, '_was_playing_before_scrub', False):
-            self.media_processor.media_player.play()
+            if self.media_processor.player:
+                self.media_processor.player.pause = False
             self._sync_play_pause_button(True)
         self._was_playing_before_scrub = False
 

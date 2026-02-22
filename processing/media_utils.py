@@ -85,6 +85,5 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     if calculated_kbps < 300:
         if logger:
             logger.warning(f"Calculated bitrate ({calculated_kbps}k) is very low. Quality will be impacted.")
-        return 300
-    return calculated_kbps
+    return max(300, calculated_kbps)
     

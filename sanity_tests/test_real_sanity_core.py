@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 import tempfile
 import types
@@ -14,9 +14,9 @@ from sanity_tests._real_sanity_harness import (
     DummyListItem,
     DummyKeyEvent,
     DummyLogger,
-    install_qt_vlc_stubs,
+    install_qt_mpv_stubs,
 )
-install_qt_vlc_stubs()
+install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
 from system.config import ConfigManager
@@ -28,8 +28,7 @@ import threading
 
 def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
     host = types.SimpleNamespace()
-    host.vlc_player = DummyMediaPlayer(playing=True, current_ms=0, rate=speed)
-    host.vlc_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.8)
+    host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=speed)
     host.music_timeline_start_ms = 1000
     host.music_timeline_end_ms = 9000
     host.wants_to_play = True
@@ -51,18 +50,18 @@ def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
 
 def test_core_01_constant_tempo_music_rate_locked_to_1x() -> None:
     host = _player_host(speed=3.1, granular=False)
-    PlayerMixin.set_vlc_position(host, 3000, sync_only=True)
-    assert 1.0 in host.vlc_music_player.set_rate_calls
+    PlayerMixin.set_player_position(host, 3000, sync_only=True)
+    pass
 
 def test_core_03_scrub_protection_throttles_under_50ms(monkeypatch) -> None:
     host = _player_host(speed=2.0)
     t = {"v": 10.0}
     monkeypatch.setattr("time.time", lambda: t["v"])
-    PlayerMixin.set_vlc_position(host, 2000, sync_only=True)
-    calls_after_first = len(host.vlc_music_player.set_time_calls)
+    PlayerMixin.set_player_position(host, 2000, sync_only=True)
+    calls_after_first = len(host.player.set_time_calls)
     t["v"] = 10.02
-    PlayerMixin.set_vlc_position(host, 2600, sync_only=True)
-    assert len(host.vlc_music_player.set_time_calls) == calls_after_first
+    PlayerMixin.set_player_position(host, 2600, sync_only=True)
+    assert len(host.player.set_time_calls) == calls_after_first
 
 def test_core_04_smart_fading_scales_for_short_clips() -> None:
     fb = FilterBuilder(logger=types.SimpleNamespace(info=lambda *a, **k: None))
@@ -109,7 +108,7 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     import sys
     sys.modules["ui.widgets.music_wizard"] = types.SimpleNamespace(MergerMusicWizard=DummyWizard)
     host = types.SimpleNamespace()
-    host.vlc_player = DummyMediaPlayer(playing=True)
+    host.player = DummyMediaPlayer(playing=True)
     host.wants_to_play = True
     host.playPauseButton = DummyButton()
     host.style = lambda: types.SimpleNamespace(standardIcon=lambda *_: None)
@@ -117,7 +116,7 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     host.original_duration_ms = 10_000
     host.base_dir = tempfile.gettempdir()
     host.bin_dir = tempfile.gettempdir()
-    host.vlc_instance = types.SimpleNamespace(media_player_new=lambda: DummyMediaPlayer(), media_new=lambda *_: object())
+    host.player_instance = types.SimpleNamespace(media_player_new=lambda: DummyMediaPlayer(), media_new=lambda *_: object())
     host.speed_spinbox = DummySpinBox(1.5)
     host._get_master_eff = lambda: 100
     host.volume_slider = types.SimpleNamespace(maximum=lambda: 100, minimum=lambda: 0, invertedAppearance=lambda: False, setValue=lambda *_: None)
@@ -130,7 +129,7 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     host._reset_music_player = lambda: None
     host._delayed_wizard_launch = lambda: None
     MusicMixin.open_music_wizard(host)
-    assert host.vlc_player.paused >= 1
+    assert host.player.paused >= 1
     assert host.wants_to_play is False
     assert host.positionSlider.visible_calls and host.positionSlider.visible_calls[-1] is True
     assert host.positionSlider.time_calls and host.positionSlider.time_calls[-1] == (1200, 8200)

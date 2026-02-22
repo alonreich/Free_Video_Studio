@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
 
 from processing.worker import ProcessThread
 from ui.styles import UIStyles
+from system.utils import UIManager
 
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
@@ -224,8 +225,13 @@ class FfmpegMixin:
         msg.setWindowTitle("Processing Error")
         msg.setText("An error occurred during processing.")
         msg.setInformativeText(message)
+        UIManager.style_and_size_msg_box(msg, message)
         details_btn = msg.addButton("Show Technical Logs", QMessageBox.ActionRole)
         ok_btn = msg.addButton(QMessageBox.Ok)
+
+        from PyQt5.QtCore import Qt
+        for btn in msg.buttons():
+            btn.setCursor(Qt.PointingHandCursor)
         msg.exec_()
         if msg.clickedButton() == details_btn:
             log_path = os.path.join(self.base_dir, "logs", "main_app.log")

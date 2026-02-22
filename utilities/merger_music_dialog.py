@@ -3,33 +3,28 @@ from PyQt5.QtWidgets import QDialog, QApplication, QMessageBox
 from PyQt5.QtCore import Qt
 from utilities.merger_music_offset_dialog import MergerMusicOffsetDialog
 try:
-    import vlc as _vlc_mod
+    import mpv
 except Exception:
-    _vlc_mod = None
+    mpv = None
 
 class MusicDialogHandler:
     def __init__(self, parent):
         self.parent = parent
         self.logger = parent.logger
 
-    def _ensure_vlc_instance(self) -> bool:
-        if getattr(self.parent, "vlc_instance", None) is not None:
+    def _ensure_mpv_instance(self) -> bool:
+        if getattr(self.parent, "player", None) is not None:
             return True
-        if _vlc_mod is None:
+        if mpv is None:
             return False
         try:
             bin_dir = getattr(self.parent, "bin_dir", "") or ""
-            vlc_args = ['--no-xlib', '--no-video-title-show', '--no-plugins-cache']
-            plugin_path = os.path.join(bin_dir, "plugins")
-            if plugin_path and os.path.exists(plugin_path):
-                vlc_args.append(f"--plugin-path={plugin_path.replace('\\', '/')}")
-                os.environ["VLC_PLUGIN_PATH"] = plugin_path
             if bin_dir and os.path.isdir(bin_dir):
-                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
-            self.parent.vlc_instance = _vlc_mod.Instance(vlc_args)
-            return self.parent.vlc_instance is not None
+                os.environ["PATH"] += os.pathsep + os.path.abspath(bin_dir)
+            self.parent.player = mpv.MPV(hr_seek='yes', hwdec='auto', keep_open='yes')
+            return self.parent.player is not None
         except Exception:
-            self.parent.vlc_instance = None
+            self.parent.player = None
             return False
 
     def _on_select_music_folder(self, wizard):
@@ -48,8 +43,8 @@ class MusicDialogHandler:
 
     def open_music_wizard(self):
         from utilities.merger_music_wizard import MergerMusicWizard
-        if not self._ensure_vlc_instance():
-            self.logger.warning("WIZARD: VLC initialization failed. Preview will be unavailable.")
+        if not self._ensure_mpv_instance():
+            self.logger.warning("WIZARD: MPV initialization failed. Preview will be unavailable.")
         total_sec = self.parent.estimate_total_duration_seconds()
         if total_sec <= 0:
             QMessageBox.warning(self.parent, "No Videos", "Please add at least one video first!")
@@ -57,7 +52,7 @@ class MusicDialogHandler:
         mp3_dir = self.parent.config_manager.config.get('custom_mp3_dir')
         if not mp3_dir or not os.path.isdir(mp3_dir):
             mp3_dir = os.path.join(self.parent.base_dir, "mp3")
-        wizard = MergerMusicWizard(self.parent, self.parent.vlc_instance, self.parent.bin_dir, mp3_dir, total_sec, speed_factor=1.0)
+        wizard = MergerMusicWizard(self.parent, self.parent.player, self.parent.bin_dir, mp3_dir, total_sec, speed_factor=1.0)
         if hasattr(self.parent, "unified_music_widget"):
             wizard.video_vol_slider.setValue(self.parent.unified_music_widget.get_video_volume())
             wizard.music_vol_slider.setValue(self.parent.unified_music_widget.get_volume())
@@ -71,10 +66,10 @@ class MusicDialogHandler:
         wizard.stop_previews()
 
     def show_music_offset_dialog(self, path):
-        if not self._ensure_vlc_instance():
-            QMessageBox.warning(self.parent, "Preview unavailable", "Could not initialize VLC audio preview engine.")
+        if not self._ensure_mpv_instance():
+            QMessageBox.warning(self.parent, "Preview unavailable", "Could not initialize MPV audio preview engine.")
         initial_offset = self.parent.unified_music_widget.get_offset()
-        dlg = MergerMusicOffsetDialog(self.parent, self.parent.vlc_instance, path, initial_offset, self.parent.bin_dir)
+        dlg = MergerMusicOffsetDialog(self.parent, self.parent.player, path, initial_offset, self.parent.bin_dir)
         dlg.setWindowModality(Qt.ApplicationModal)
         saved_geo = self.parent.config_manager.config.get("music_dialog_geometry")
         if saved_geo and len(saved_geo) == 4:

@@ -5,6 +5,7 @@ os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon
+from system.utils import UIManager
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -44,7 +45,13 @@ def main():
         sys.exit(0)
     is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR)
     if not is_valid_deps:
-        QMessageBox.critical(None, "Dependency Error", f"FFmpeg is missing: {dep_error}\nPlease run the Main App to diagnose.")
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Dependency Error")
+        text = f"FFmpeg is missing: {dep_error}\nPlease run the Main App to diagnose."
+        msg.setText(text)
+        UIManager.style_and_size_msg_box(msg, text)
+        msg.exec_()
         sys.exit(1)
 
     from utilities.merger_config import MergerConfigManager as ConfigManager
@@ -56,7 +63,7 @@ def main():
         window = VideoMergerWindow(
             ffmpeg_path=ffmpeg_path,
             parent=None,
-            vlc_instance=None,
+            mpv_instance=None,
             bin_dir=bin_dir,
             config_manager=config_manager,
             base_dir=BASE_DIR
@@ -76,8 +83,14 @@ def main():
         if pid_handle: pid_handle.close()
         sys.exit(exit_code)
     except Exception as e:
+        error_details = traceback.format_exc()
         logger.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
-        QMessageBox.critical(None, "Crash", f"An unexpected error occurred:\n{e}")
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Crash")
+        msg.setText(f"An unexpected error occurred:\n{e}")
+        UIManager.style_and_size_msg_box(msg, error_details)
+        msg.exec_()
         if pid_handle: pid_handle.close()
         sys.exit(1)
 if __name__ == "__main__":

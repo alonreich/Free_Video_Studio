@@ -13,7 +13,7 @@ class MergerTimelineWidget(QWidget):
         self.video_segments = []
         self.music_segments = []
         self.current_time = 0.0
-        self.setMinimumHeight(100)
+        self.setMinimumHeight(88)
         self.setCursor(Qt.PointingHandCursor)
         self.setMouseTracking(True)
         self.setAttribute(Qt.WA_OpaquePaintEvent)
@@ -49,9 +49,14 @@ class MergerTimelineWidget(QWidget):
         p = QPainter(self._bg_buffer)
         p.setRenderHint(QPainter.Antialiasing, False)
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        lane_h = 45.0
-        v_y = 0.0
-        m_y = lane_h
+        lane_h = 40.0
+        lane_gap = 5.0
+        content_h = (lane_h * 2.0) + lane_gap
+        top_pad = max(0.0, min(5.0, float(h) - content_h))
+        base_v_y = top_pad
+        base_m_y = base_v_y + lane_h + lane_gap
+        v_y = base_v_y + 2.0
+        m_y = base_m_y + 5.0
         current_x = 0.0
         separator_color = QColor("#7DD3FC")
         for i, seg in enumerate(self.video_segments):
@@ -81,12 +86,12 @@ class MergerTimelineWidget(QWidget):
             dur = seg.get("duration", 0)
             seg_w = (dur / self.total_duration) * w
             rect_f = QRectF(current_x, m_y, seg_w, lane_h)
-            p.fillRect(rect_f, QColor(10, 20, 10))
+            p.fillRect(rect_f, QColor(10, 20, 24))
             wave = seg.get("wave")
             if wave and not wave.isNull():
                 p.drawPixmap(rect_f, wave, QRectF(wave.rect()))
-                p.fillRect(rect_f, QColor(0, 150, 0, 40)) 
-            p.setPen(QPen(QColor(0, 200, 0, 80), 1))
+                p.fillRect(rect_f, QColor(0, 229, 255, 24))
+            p.setPen(QPen(QColor(0, 229, 255, 110), 1))
             cl_y = int(m_y + lane_h/2)
             p.drawLine(int(current_x), cl_y, int(current_x + seg_w), cl_y)
             if i < len(self.music_segments) - 1:
@@ -109,13 +114,14 @@ class MergerTimelineWidget(QWidget):
         w = float(self.width())
         h = float(self.height())
         caret_x = (self.current_time / self.total_duration) * w
+        caret_top = -5.0
         p.setPen(QPen(QColor(52, 152, 219, 100), 6))
-        p.drawLine(int(caret_x), 0, int(caret_x), int(h))
+        p.drawLine(int(caret_x), int(caret_top), int(caret_x), int(h))
         p.setPen(QPen(QColor(255, 255, 255), 2))
-        p.drawLine(int(caret_x), 0, int(caret_x), int(h))
+        p.drawLine(int(caret_x), int(caret_top), int(caret_x), int(h))
         p.setBrush(QColor(52, 152, 219))
         p.setPen(QPen(Qt.white, 1))
-        handle_poly = [QPoint(int(caret_x) - 10, 0), QPoint(int(caret_x) + 10, 0), QPoint(int(caret_x), 15)]
+        handle_poly = [QPoint(int(caret_x) - 10, int(caret_top)), QPoint(int(caret_x) + 10, int(caret_top)), QPoint(int(caret_x), 15)]
         p.drawPolygon(*handle_poly)
 
     def mousePressEvent(self, event):

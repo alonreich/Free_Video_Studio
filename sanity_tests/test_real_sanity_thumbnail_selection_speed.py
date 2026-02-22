@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 import tempfile
 import types
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
 from ui.parts.ui_builder_mixin import UiBuilderMixin
 
@@ -41,7 +41,7 @@ def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkey
     host.input_file_path = str(video_file)
     host.original_duration_ms = 10_000
     host.positionSlider = types.SimpleNamespace(value=lambda: 4321)
-    host.vlc_player = types.SimpleNamespace(get_time=lambda: 9999)
+    host.player = types.SimpleNamespace(get_time=lambda: 9999)
     host.speed_spinbox = types.SimpleNamespace(value=lambda: 3.1)
     host.speed_segments = [
         {"start": 0, "end": 2000, "speed": 0.5},
@@ -68,7 +68,7 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     host.input_file_path = str(video_file)
     host.original_duration_ms = 10_000
     host.positionSlider = types.SimpleNamespace(value=lambda: 15_000)
-    host.vlc_player = types.SimpleNamespace(get_time=lambda: 0)
+    host.player = types.SimpleNamespace(get_time=lambda: 0)
     host.bin_dir = str(tmp_path)
     host.thumb_pick_btn = _DummyBtn()
     host.status_update_signal = _DummySig()

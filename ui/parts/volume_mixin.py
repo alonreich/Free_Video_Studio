@@ -23,16 +23,32 @@ class VolumeMixin:
 
     def _sync_all_volumes(self):
         """[FIX #8] One-stop shop for player volume synchronization."""
+        if bool(getattr(self, "_suspend_volume_sync", False)):
+            return
         v_eff = self._vol_eff()
         m_eff = self._music_eff()
-        v_player = getattr(self, "vlc_player", None)
-        if v_player:
-            v_player.audio_set_volume(v_eff)
-            v_player.audio_set_mute(False)
-        m_player = getattr(self, "vlc_music_player", None)
-        if m_player:
-            m_player.audio_set_volume(m_eff)
-            m_player.audio_set_mute(False)
+        player = getattr(self, "player", None)
+        if player:
+            try:
+                player.volume = v_eff
+                player.mute = False
+            except Exception:
+                pass
+
+    def _schedule_volume_reinforce(self, delay_ms: int = 350):
+        """Use one managed timer instead of many stacked singleShot callbacks."""
+        if bool(getattr(self, "_suspend_volume_sync", False)):
+            return
+        try:
+            timer = getattr(self, "_volume_reinforce_timer", None)
+            if timer is None:
+                timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._sync_all_volumes)
+                self._volume_reinforce_timer = timer
+            timer.start(max(60, int(delay_ms)))
+        except Exception:
+            pass
 
     def _update_volume_badge(self):
         """Update badge text to show effective %."""
@@ -49,20 +65,14 @@ class VolumeMixin:
                 self.logger.error(f"Volume Badge Error: {e}")
 
     def apply_master_volume(self):
-        """Sync UI -> VLC and start reinforcement."""
+        """Sync UI -> MPV and start reinforcement."""
         self._sync_all_volumes()
         self._update_volume_badge()
-
-        def _reinforce():
-            try:
-                self._sync_all_volumes()
-            except: pass
-        for delay in [100, 500, 1000, 2000, 4000, 7000, 10000, 15000]:
-            QTimer.singleShot(delay, _reinforce)
+        self._schedule_volume_reinforce(350)
 
     def _on_master_volume_changed(self, v: int):
         """
-        Direction: UI Slider -> VLC Volume
+        Direction: UI Slider -> MPV Volume
         """
         self._sync_all_volumes()
         eff_pct = self._vol_eff(v)
@@ -74,3 +84,4 @@ class VolumeMixin:
                 self.config_manager.save_config(cfg)
             except: pass
         self._update_volume_badge()
+        self._schedule_volume_reinforce(250)

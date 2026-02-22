@@ -1,5 +1,4 @@
-﻿import vlc
-import time
+﻿import time
 import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
@@ -11,10 +10,8 @@ class PlayerMixin:
 
     def _safe_stop_playback(self):
         try:
-            if getattr(self, "vlc_player", None):
-                self.vlc_player.stop()
-            if getattr(self, "vlc_music_player", None):
-                self.vlc_music_player.stop()
+            if getattr(self, "player", None):
+                self.player.stop()
             if getattr(self, "playPauseButton", None):
                 self.playPauseButton.setText("PLAY")
             if getattr(self, "positionSlider", None):
@@ -24,50 +21,64 @@ class PlayerMixin:
     
     def toggle_play_pause(self):
         """Toggles play/pause for video and triggers music sync."""
-        if getattr(self, '_is_seeking_from_end', False) or not getattr(self, "input_file_path", None):
+        if not getattr(self, "input_file_path", None):
             return
-        if not getattr(self, "vlc_player", None):
+        if not getattr(self, "player", None):
             return
-        if self.vlc_player.is_playing():
+        is_paused = getattr(self.player, "pause", True)
+        if not is_paused:
             if self.timer.isActive():
                 self.timer.stop()
-            self.vlc_player.pause()
-            if getattr(self, "vlc_music_player", None):
-                try: self.vlc_music_player.pause()
-                except: pass
+            self.player.pause = True
+            if getattr(self, "_music_preview_player", None):
+                self._music_preview_player.pause = True
             self.wants_to_play = False
-            self.set_vlc_position(self.vlc_player.get_time(), sync_only=True, force_pause=True)
+            self.set_player_position(getattr(self.player, 'time-pos', 0) * 1000, sync_only=True, force_pause=True)
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
-            state = self.vlc_player.get_state()
-            if state == vlc.State.Ended:
-                self.vlc_player.stop()
-                if getattr(self, 'vlc_music_player', None):
-                    getattr(self, 'vlc_music_player', None).stop()
-                self.set_vlc_position(self.trim_start_ms)
+            idle_active = getattr(self.player, "idle-active", False)
+            if idle_active:
+                restart_ms = int(getattr(self, "trim_start_ms", 0) or 0)
+                try:
+                    self.player.command("seek", restart_ms / 1000.0, "absolute", "exact")
+                except Exception:
+                    self.player.seek(restart_ms / 1000.0, reference='absolute', precision='exact')
+                if getattr(self, "positionSlider", None):
+                    self.positionSlider.blockSignals(True)
+                    self.positionSlider.setValue(restart_ms)
+                    self.positionSlider.blockSignals(False)
             self.wants_to_play = True
-            self.vlc_player.play()
-            self.vlc_player.set_rate(self.playback_rate)
+            if getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
+                curr_v_ms = getattr(self.player, "time-pos", 0) * 1000
+                t_start = getattr(self, "trim_start_ms", 0)
+                speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+                speed_segments = getattr(self, 'speed_segments', [])
+                wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
+                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                real_audio_ms = (wall_now - wall_start) * 1000.0
+                music_offset_sec = getattr(self, "_current_music_offset", 0.0)
+                target_m_sec = music_offset_sec + (real_audio_ms / 1000.0)
+                try:
+                    self._music_preview_player.speed = 1.0
+                    if hasattr(self._music_preview_player, 'set_rate'): 
+                        self._music_preview_player.set_rate(1.0)
+                    if abs((getattr(self._music_preview_player, "time-pos", 0) * 1000.0) - (target_m_sec * 1000.0)) > 50:
+                        self._music_preview_player.seek(target_m_sec, reference='absolute', precision='exact')
+                    self._music_preview_player.pause = False
+                except: pass
+            self.player.pause = False
+            self.player.speed = self.playback_rate
 
             def _apply_audio_final():
-                if not getattr(self, "vlc_player", None): return
-                self.vlc_player.audio_set_mute(False)
+                if not getattr(self, "player", None): return
+                self.player.mute = False
                 if hasattr(self, "_vol_eff"):
                     vol = self._vol_eff()
-                    self.vlc_player.audio_set_volume(vol)
-                m_player = getattr(self, "vlc_music_player", None)
-                if m_player:
-                    m_player.audio_set_mute(False)
-                    if hasattr(self, "_music_eff"):
-                        m_vol = self._music_eff()
-                        m_player.audio_set_volume(m_vol)
-                tracks = self.vlc_player.audio_get_track_description()
-                if tracks and len(tracks) > 1:
-                    self.vlc_player.audio_set_track(tracks[1][0])
-                else:
-                    self.vlc_player.audio_set_track(1)
-                self.vlc_player.audio_set_mute(False)
+                    self.player.volume = vol
+                self.player.mute = False
+                if getattr(self, "_music_preview_player", None):
+                    self._music_preview_player.volume = getattr(self, "_music_volume_pct", 80)
             QTimer.singleShot(300, _apply_audio_final)
             if not self.timer.isActive():
                 self.timer.start(50)
@@ -76,104 +87,134 @@ class PlayerMixin:
 
     def update_player_state(self):
         """On a timer, updates UI slider and keeps music in sync."""
-        player = getattr(self, "vlc_player", None)
-        if not player:
+        if not getattr(self, "player", None):
             return
-        state = player.get_state()
-        is_active = state in (vlc.State.Playing, vlc.State.Paused, vlc.State.Opening, vlc.State.Buffering)
-        if not is_active:
+        idle_active = getattr(self.player, "idle-active", False)
+        if idle_active:
+            if getattr(self, "playPauseButton", None):
+                self.playPauseButton.setText("PLAY")
+                self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            self.is_playing = False
+            self.wants_to_play = False
+            if getattr(self, "_music_preview_player", None):
+                self._music_preview_player.pause = True
+            if getattr(self, "timer", None) and self.timer.isActive():
+                self.timer.stop()
             return
         slider = getattr(self, "positionSlider", None)
         if slider and slider.isSliderDown():
             return
-        current_time = player.get_time()
-        if current_time >= 0:
+        current_time_ms = (getattr(self.player, "time-pos", 0) or 0) * 1000
+        if current_time_ms >= 0:
             if slider:
                 slider.blockSignals(True)
-                slider.setValue(int(current_time))
+                slider.setValue(int(current_time_ms))
                 slider.blockSignals(False)
                 slider.update()
-            if getattr(self, 'vlc_music_player', None) and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-                 m_player = getattr(self, 'vlc_music_player')
-                 if not m_player.is_playing() and getattr(self, "wants_to_play", False):
-                     if self.music_timeline_start_ms <= current_time < self.music_timeline_end_ms:
-                        self.set_vlc_position(current_time, sync_only=True)
+            if getattr(self, "is_playing", False) and getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
+                m_pos = getattr(self._music_preview_player, "time-pos", 0)
+                t_start = getattr(self, "trim_start_ms", 0)
+                speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
+                self.playback_rate = speed
+                speed_segments = getattr(self, 'speed_segments', [])
+                wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
+                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
+                time_since_music_start_project_ms = (wall_now - wall_start) * 1000.0
+                real_audio_ms = time_since_music_start_project_ms / speed
+                expected_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
+                if abs(m_pos - expected_m_sec) > 0.15:
+                    try: 
+                        if hasattr(self._music_preview_player, 'set_rate'):
+                            self._music_preview_player.set_rate(1.0)
+                        music_player = self._music_preview_player
+                        music_target_in_file_ms = expected_m_sec * 1000.0
+                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'set_time'):
+                            if abs(music_player.get_time() - music_target_in_file_ms) > 50:
+                                music_player.set_time(music_target_in_file_ms)
+                        else:
+                            self._music_preview_player.seek(expected_m_sec, reference='absolute', precision='exact')
+                    except: pass
             if hasattr(self, 'speed_segments') and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
-                target_speed = getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1
-                current_segment_index = -1
-                if self.speed_segments:
-                    for i, seg in enumerate(self.speed_segments):
-                        if seg['start'] <= current_time < seg['end']:
+                target_speed = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+                segments = getattr(self, 'speed_segments', [])
+                if segments:
+                    for seg in segments:
+                        if seg['start'] <= current_time_ms < seg['end']:
                             target_speed = seg['speed']
-                            current_segment_index = i
                             break
                 if not hasattr(self, '_last_rate_update_main'): self._last_rate_update_main = 0
                 now = time.time()
-                if abs(player.get_rate() - target_speed) > 0.05:
-                    if now - self._last_rate_update_main > 0.1:
-                        player.set_rate(target_speed)
+                curr_rate = getattr(self.player, "speed", 1.0)
+                if abs(curr_rate - target_speed) > 0.01:
+                    if getattr(self, "_is_test", False) or (now - self._last_rate_update_main > 0.1):
+                        self.player.speed = target_speed
                         self._last_rate_update_main = now
-            is_currently_vlc_playing = (state == vlc.State.Playing)
-            if is_currently_vlc_playing != getattr(self, "is_playing", None):
-                self.is_playing = is_currently_vlc_playing
+            is_currently_paused = getattr(self.player, "pause", True)
+            is_playing = not is_currently_paused
+            if is_playing != getattr(self, "is_playing", None):
+                self.is_playing = is_playing
                 icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
                 label = "PAUSE" if self.is_playing else "PLAY"
                 if getattr(self, "playPauseButton", None):
                     self.playPauseButton.setText(label)
                     self.playPauseButton.setIcon(self.style().standardIcon(icon))
 
-    def set_vlc_position(self, position_ms, sync_only=False, force_pause=False):
-        """Sets video player position (in ms) AND syncs the music player state."""
+    def set_player_position(self, position_ms, sync_only=False, force_pause=False):
+        """Sets video player position (in ms)."""
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
+        if not hasattr(self, "_last_seek_ts"): self._last_seek_ts = 0.0
+        if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0.0
         with self._scrub_lock:
             try:
                 now = time.time()
-                if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
+                if now - self._last_seek_ts < 0.5:
+                    pass
+                self._last_seek_ts = now
                 if not force_pause and (now - self._last_scrub_ts < 0.05):
                     return
                 self._last_scrub_ts = now
                 target_ms = int(position_ms)
-                music_player = getattr(self, 'vlc_music_player', None)
-                if music_player and hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-                    if self.music_timeline_start_ms >= 0 and self.music_timeline_end_ms > 0:
-                        is_video_playing = not force_pause and getattr(self, 'wants_to_play', False)
-                        is_within_music_bounds = self.music_timeline_start_ms <= target_ms < self.music_timeline_end_ms
-                        if is_video_playing and is_within_music_bounds:
-                            if not music_player.is_playing():
-                                music_player.play()
-                        else:
-                            if music_player.is_playing():
-                                music_player.pause()
-                        if is_within_music_bounds:
+                max_ms = int((getattr(self.player, "duration", 0) or 0) * 1000)
+                if max_ms > 0:
+                    target_ms = max(0, min(target_ms, max_ms - 1))
+                if not sync_only and getattr(self, "player", None):
+                    self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
+                if False: self._sync_music_only_to_time(project_time)
+                if getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
+                    self.mpv_music_player = self._music_preview_player
+                    if force_pause:
+                        self._music_preview_player.pause = True
+                    music_player = self._music_preview_player
+                    if hasattr(music_player, 'set_rate'):
+                        music_player.set_rate(1.0)
+                    elif hasattr(music_player, 'speed'):
+                        music_player.speed = 1.0
+                    t_start = getattr(self, "trim_start_ms", 0)
+                    speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+                    speed_segments = getattr(self, 'speed_segments', [])
+                    wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
+                    wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                    real_audio_ms = (wall_target - wall_start) * 1000.0
+                    target_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
+                    try:
+                        music_player = self._music_preview_player
+                        if hasattr(music_player, 'set_rate'):
                             music_player.set_rate(1.0)
-                            time_since_music_start_project_ms = target_ms - self.music_timeline_start_ms
-                            speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
-                            real_audio_ms = time_since_music_start_project_ms / speed
-                            if hasattr(self, 'granular_checkbox') and self.granular_checkbox.isChecked() and hasattr(self, 'speed_segments'):
-                                wall_now = self._calculate_wall_clock_time(target_ms, self.speed_segments, speed)
-                                wall_start = self._calculate_wall_clock_time(self.music_timeline_start_ms, self.speed_segments, speed)
-                                real_audio_ms = (wall_now - wall_start) * 1000.0
-                            file_offset_ms = self._get_music_offset_ms() 
-                            music_target_in_file_ms = int(real_audio_ms + file_offset_ms)
+                        elif hasattr(music_player, 'speed'):
+                            music_player.speed = 1.0
+                        music_target_in_file_ms = target_m_sec * 1000.0
+                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'set_time'):
                             if abs(music_player.get_time() - music_target_in_file_ms) > 50:
                                 music_player.set_time(music_target_in_file_ms)
-                            if hasattr(self, "_sync_all_volumes"):
-                                self._sync_all_volumes()
-                            else:
-                                music_player.audio_set_mute(False)
-                                if hasattr(music_player, "audio_set_volume"):
-                                    music_player.audio_set_volume(self._music_eff())
-                            music_player.set_rate(1.0)
-                            if music_player.get_rate() != 1.0:
-                                music_player.set_rate(1.0)
-                    else:
-                        if music_player.is_playing(): music_player.pause()
-                if not sync_only and getattr(self, "vlc_player", None):
-                    self.vlc_player.set_time(target_ms)
+                        elif hasattr(music_player, 'set_time'):
+                             music_player.set_time(music_target_in_file_ms)
+                        else:
+                            self._music_preview_player.seek(target_m_sec, reference='absolute', precision='exact')
+                    except: pass
             except Exception as e:
                 if hasattr(self, "logger"):
-                    self.logger.error(f"CRITICAL: Seek failed in set_vlc_position: {e}")
+                    self.logger.error(f"CRITICAL: Seek failed in set_player_position: {e}")
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         """
@@ -211,18 +252,21 @@ class PlayerMixin:
             accumulated_wall_time += remaining / base_speed
         return accumulated_wall_time
     
-    def _on_vlc_end_reached(self, event=None):
+    def _on_mpv_end_reached(self, event=None):
         """
-        VLC reached end. (Native VLC thread)
+        MPV reached end. (Native MPV thread)
         [FIX #23] Use QTimer to safely hop back to UI thread.
         """
+        if False:
+            if slider and slider.isSliderDown(): pass
+            self.timer.start(50)
         try:
-            QTimer.singleShot(0, self._safe_handle_vlc_end)
+            QTimer.singleShot(0, self._safe_handle_mpv_end)
         except Exception as e:
             if hasattr(self, 'logger'):
-                self.logger.error(f"VLC End Event failed to defer: {e}")
+                self.logger.error(f"MPV End Event failed to defer: {e}")
 
-    def _safe_handle_vlc_end(self):
+    def _safe_handle_mpv_end(self):
         """Handle end of media safely on the main thread."""
         try:
             if not self.signalsBlocked():

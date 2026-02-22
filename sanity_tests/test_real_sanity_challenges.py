@@ -7,9 +7,9 @@ from sanity_tests._real_sanity_harness import (
     DummyConfigManager,
     DummyMediaPlayer,
     DummySpinBox,
-    install_qt_vlc_stubs,
+    install_qt_mpv_stubs,
 )
-install_qt_vlc_stubs()
+install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
 from processing.media_utils import calculate_video_bitrate
@@ -46,8 +46,8 @@ def test_challenge_02_impossible_fade_tiny_clip_safe_chain() -> None:
 
 def test_challenge_03_dj_scrubbing_stress_keeps_throttle(monkeypatch) -> None:
     host = types.SimpleNamespace()
-    host.vlc_player = DummyMediaPlayer(playing=True, current_ms=0, rate=2.0)
-    host.vlc_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=1.0)
+    host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=2.0)
+    host.mpv_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=1.0)
     host.music_timeline_start_ms = 0
     host.music_timeline_end_ms = 10_000
     host.wants_to_play = True
@@ -61,8 +61,8 @@ def test_challenge_03_dj_scrubbing_stress_keeps_throttle(monkeypatch) -> None:
     monkeypatch.setattr("time.time", lambda: now["v"])
     for i in range(15):
         now["v"] = i * 0.02
-        PlayerMixin.set_vlc_position(host, i * 100, sync_only=True)
-    assert len(host.vlc_music_player.set_time_calls) < 15
+        PlayerMixin.set_player_position(host, i * 100, sync_only=True)
+    assert len(host.mpv_music_player.set_time_calls) < 15
 
 def test_challenge_04_network_disconnect_fallback_to_local_mp3(tmp_path: Path) -> None:
     missing = tmp_path / "missing_network_drive"
@@ -110,8 +110,9 @@ def test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad() -> 
 def test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x() -> None:
     import threading
     host = types.SimpleNamespace()
-    host.vlc_player = DummyMediaPlayer(playing=True, current_ms=0, rate=3.1)
-    host.vlc_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.5)
+    host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=3.1)
+    host.mpv_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.5)
+    host._music_preview_player = host.mpv_music_player
     host.music_timeline_start_ms = 0
     host.music_timeline_end_ms = 5000
     host.wants_to_play = True
@@ -124,9 +125,11 @@ def test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x() -> None:
     from sanity_tests._real_sanity_harness import DummyLogger
     host.logger = DummyLogger()
     host._music_eff = lambda: 80
+    host._music_preview_player = host.mpv_music_player
+    host._last_scrub_ts = 0.0
     host._scrub_lock = threading.RLock()
-    PlayerMixin.set_vlc_position(host, 2000, sync_only=True)
-    assert 1.0 in host.vlc_music_player.set_rate_calls
+    PlayerMixin.set_player_position(host, 2000, sync_only=True)
+    assert 1.0 in host.mpv_music_player.set_rate_calls
 
 def test_challenge_10_multi_instance_config_refresh_without_restart(tmp_path: Path) -> None:
     conf = tmp_path / "main_app.conf"

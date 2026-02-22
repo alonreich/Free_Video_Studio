@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 import types
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
 from system.config import ConfigManager
 from ui.parts.music_mixin import MusicMixin

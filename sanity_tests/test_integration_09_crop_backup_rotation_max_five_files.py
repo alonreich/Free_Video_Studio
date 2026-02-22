@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_integration_09_crop_backup_rotation_max_five_files() -> None:

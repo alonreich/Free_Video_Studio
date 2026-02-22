@@ -1,17 +1,33 @@
 import sys
 import os
+import struct
+import platform
+
 # [STRICT] Prevent bytecode generation BEFORE any other imports
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+
+# [STRICT] Ensure MPV DLLs and dependencies can be found by ctypes on Windows (Python 3.8+)
+# This MUST happen before any project-specific imports that might trigger mpv loading.
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
+PLUGINS   = os.path.join(BIN_DIR, 'plugins')
+os.environ["MPV_HOME"] = BIN_DIR
+os.environ["MPV_DYLIB_PATH"] = os.path.join(BIN_DIR, "libmpv-2.dll")
+if sys.platform == 'win32' and hasattr(os, 'add_dll_directory'):
+    try:
+        os.add_dll_directory(BIN_DIR)
+    except Exception:
+        pass
+os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
+
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
 from ui.styles import UIStyles
-
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
 
 from system.utils import ConsoleManager, DependencyDoctor, ProcessManager, LogManager
 logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
@@ -20,8 +36,6 @@ import tempfile, psutil, traceback
 import threading
 import subprocess, ctypes
 
-BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
-PLUGINS   = os.path.join(BIN_DIR, 'plugins')
 PID_APP_NAME = "fortnite_video_software_main"
 ORIGINAL_PATH = os.environ.get("PATH", "")
 DEBUG_ENABLED = "--debug" in sys.argv or os.environ.get("FVS_DEBUG") == "1"
@@ -29,6 +43,58 @@ ENCODER_TEST_TIMEOUT = int(os.environ.get("FVS_ENCODER_TIMEOUT", "15"))
 FORCE_GPU = os.environ.get("FVS_FORCE_GPU")
 LOCALE_CODE = QLocale.system().name().split("_")[0].lower()
 HARDWARE_SCAN_DETAILS = {"errors": {}, "timed_out": []}
+
+def _has_ffmpeg_encoder(ffmpeg_path: str, encoder_name: str) -> bool:
+    """Fast capability hint: checks whether FFmpeg binary advertises a given encoder."""
+    try:
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        r = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            startupinfo=startupinfo,
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+            timeout=8,
+        )
+        blob = (r.stdout or b"") + b"\n" + (r.stderr or b"")
+        return encoder_name.lower() in blob.decode(errors="ignore").lower()
+    except Exception:
+        return False
+
+def _has_nvidia_adapter() -> bool:
+    """Best-effort Windows GPU presence check to avoid false CPU fallback on valid NVIDIA systems."""
+    if sys.platform != "win32":
+        return False
+    candidates = [
+        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+        ["wmic", "path", "win32_VideoController", "get", "name"],
+        ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join \"`n\""],
+    ]
+    for cmd in candidates:
+        try:
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            r = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                startupinfo=startupinfo,
+                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+                timeout=6,
+            )
+            text = ((r.stdout or b"") + b"\n" + (r.stderr or b"")).decode(errors="ignore").lower()
+            if "nvidia" in text and any(k in text for k in ("geforce", "rtx", "quadro", "tesla", "nvidia")):
+                return True
+        except Exception:
+            continue
+    return False
 
 TRANSLATIONS = {
     "en": {
@@ -50,6 +116,7 @@ TRANSLATIONS = {
         "hardware_scan_cpu_details": "GPU encoders not detected. You can update your graphics driver and try again.",
         "ffmpeg_path_message": "Using FFmpeg: {ffmpeg}",
         "diagnostics_title": "Diagnostics",
+        "copy_to_clipboard": "Copy to Clipboard",
     },
     "he": {
         "app_name": "תוכנת וידאו פורטנייט",
@@ -70,8 +137,11 @@ TRANSLATIONS = {
         "hardware_scan_cpu_details": "לא נמצאו מקודדי GPU. אפשר לעדכן דרייבר ולנסות שוב.",
         "ffmpeg_path_message": "משתמש ב-FFmpeg: {ffmpeg}",
         "diagnostics_title": "אבחון",
+        "copy_to_clipboard": "העתק ללוח",
     }
 }
+
+from system.utils import UIManager
 
 def tr(key: str) -> str:
     return TRANSLATIONS.get(LOCALE_CODE, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
@@ -92,48 +162,82 @@ def cleanup_pid_lock():
             pass
         PID_FILE_HANDLE = None
 
-def check_vlc_dependencies():
-    """[FIX #1] Checks for essential VLC binaries using DependencyDoctor logic."""
-    vlc_path = DependencyDoctor.find_vlc_path()
-    
-    # If we found a system install, add it to PATH/DLL directory
-    if vlc_path:
-        os.environ["PATH"] = vlc_path + os.pathsep + os.environ["PATH"]
-        if hasattr(os, 'add_dll_directory'):
-            try:
-                os.add_dll_directory(vlc_path)
-            except Exception: pass
-        return True
+def _pe_machine_name(pe_path: str):
+    """Return PE machine architecture name for a .dll/.exe file."""
+    try:
+        with open(pe_path, "rb") as f:
+            head = f.read(4096)
+        pe_off = int.from_bytes(head[0x3C:0x40], "little")
+        if pe_off + 6 >= len(head):
+            with open(pe_path, "rb") as f:
+                f.seek(pe_off + 4)
+                machine = int.from_bytes(f.read(2), "little")
+        else:
+            machine = int.from_bytes(head[pe_off + 4:pe_off + 6], "little")
+        return {
+            0x014C: "x86",
+            0x8664: "x64",
+            0xAA64: "arm64",
+        }.get(machine, f"unknown(0x{machine:04x})")
+    except Exception:
+        return "unknown"
 
-    # Fallback to local binaries
-    required = ["libvlc.dll", "libvlccore.dll"]
+def _python_machine_name():
+    m = (platform.machine() or "").lower()
+    if "arm" in m:
+        return "arm64"
+    return "x64" if struct.calcsize("P") * 8 == 64 else "x86"
+
+def check_mpv_dependencies():
+    """Checks for essential MPV binaries."""
+    # Check for libmpv-2.dll
+    required = ["libmpv-2.dll"]
     missing = [f for f in required if not os.path.exists(os.path.join(BIN_DIR, f))]
     
     if missing:
-        import webbrowser
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
-        msg_box.setWindowTitle("VLC Not Found")
-        msg_box.setText("VLC is required for video playback.\n\nPlease install VLC Media Player to continue.")
-        msg_box.setDetailedText(f"Missing files in {BIN_DIR}: " + ", ".join(missing) + 
-                                "\n\nYou can download VLC from videolan.org. Click 'Download VLC' to open the website.")
-        
-        # [FIX] Make the dialog larger
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
-        layout = msg_box.layout()
-        if isinstance(layout, QGridLayout):
-            layout.addItem(QSpacerItem(500, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
-        
-        download_button = msg_box.addButton("Download VLC", QMessageBox.ActionRole)
-        exit_button = msg_box.addButton("Exit", QMessageBox.RejectRole)
-        
+        msg_box.setWindowTitle("MPV Not Found")
+        msg_box.setText("MPV is required for video playback.\n\nPlease ensure 'libmpv-2.dll' is in the 'binaries' folder.")
         msg_box.exec_()
-        clicked = msg_box.clickedButton()
-        if clicked == download_button:
-            webbrowser.open("https://www.videolan.org/vlc/")
-        # Exit anyway
         return False
-    return True
+    
+    libmpv_path = os.path.join(BIN_DIR, "libmpv-2.dll")
+    py_arch = _python_machine_name()
+    dll_arch = _pe_machine_name(libmpv_path)
+    if dll_arch in ("x86", "x64", "arm64") and dll_arch != py_arch:
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle("MPV Architecture Mismatch")
+        msg_box.setText(
+            "Failed to import mpv library:\n\n"
+            f"Python architecture: {py_arch}\n"
+            f"libmpv architecture: {dll_arch}\n\n"
+            "They must match exactly.\n"
+            "Replace 'binaries\\libmpv-2.dll' with a matching build."
+        )
+        msg_box.exec_()
+        return False
+
+    try:
+        import mpv
+        return True
+    except Exception as e:
+        arch = platform.machine()
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle("MPV Import Error")
+        
+        err_msg = str(e)
+        if "WinError 193" in err_msg or "could not load" in err_msg:
+            err_msg = (f"Architecture Mismatch: The MPV DLL in 'binaries' is not compatible with this Python version.\n\n"
+                       f"System Arch: {arch} / Python: {py_arch} / libmpv: {dll_arch}\n"
+                       f"Error: {e}\n\n"
+                       f"Please ensure you have a matching version of 'libmpv-2.dll' in the 'binaries' folder.")
+        
+        msg_box.setText(f"Failed to import mpv library:\n\n{err_msg}")
+        msg_box.exec_()
+        return False
 
 class HardwareWorker(QObject):
     """
@@ -188,6 +292,14 @@ class HardwareWorker(QObject):
         if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"):
             os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
             return "NVIDIA"
+        # Fallback: some systems fail strict 1-frame probe intermittently even when NVENC is valid.
+        if _has_ffmpeg_encoder(self.ffmpeg_path, "h264_nvenc") and _has_nvidia_adapter():
+            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+            HARDWARE_SCAN_DETAILS["errors"]["h264_nvenc"] = (
+                "Strict NVENC probe failed, but NVIDIA adapter + FFmpeg NVENC encoder were detected. "
+                "Using NVIDIA mode via fallback."
+            )
+            return "NVIDIA"
         if self.stop_requested:
             os.environ["VIDEO_FORCE_CPU"] = "1"
             return "CPU"
@@ -202,9 +314,6 @@ class HardwareWorker(QObject):
             return "INTEL"
         os.environ["VIDEO_FORCE_CPU"] = "1"
         return "CPU"
-
-os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
-from ui.main_window import VideoCompressorApp
 
 def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
     """
@@ -260,6 +369,13 @@ def determine_hardware_strategy(ffmpeg_path):
     if check_encoder_capability(ffmpeg_path, "h264_nvenc"):
         os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
         return "NVIDIA"
+    if _has_ffmpeg_encoder(ffmpeg_path, "h264_nvenc") and _has_nvidia_adapter():
+        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+        HARDWARE_SCAN_DETAILS["errors"]["h264_nvenc"] = (
+            "Strict NVENC probe failed, but NVIDIA adapter + FFmpeg NVENC encoder were detected. "
+            "Using NVIDIA mode via fallback."
+        )
+        return "NVIDIA"
     if check_encoder_capability(ffmpeg_path, "h264_amf"):
         os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
         return "AMD"
@@ -282,13 +398,11 @@ def show_dependency_error_dialog(ffmpeg_path: str, ffprobe_path: str, error_text
     msg_box.setIcon(QMessageBox.Critical)
     msg_box.setWindowTitle(tr("dependency_error_title"))
     msg_box.setText(tr("dependency_error_text"))
-    msg_box.setDetailedText(build_diagnostics(ffmpeg_path, ffprobe_path, error_text))
+    details = build_diagnostics(ffmpeg_path, ffprobe_path, error_text)
+    msg_box.setDetailedText(details)
     
-    # [FIX] Make the dialog larger
-    from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
-    layout = msg_box.layout()
-    if isinstance(layout, QGridLayout):
-        layout.addItem(QSpacerItem(500, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+    # [FIX] Make the dialog larger and add Copy button and Hand Cursor
+    UIManager.style_and_size_msg_box(msg_box, details, tr("copy_to_clipboard"))
     
     open_button = msg_box.addButton(tr("dependency_error_open_folder"), QMessageBox.ActionRole)
     retry_button = msg_box.addButton(tr("dependency_error_retry"), QMessageBox.AcceptRole)
@@ -335,11 +449,8 @@ def exception_hook(exctype, value, tb):
             msg_box.setText(str(value))
             msg_box.setDetailedText(error_text)
             
-            # [FIX] Make the dialog larger
-            from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout
-            layout = msg_box.layout()
-            if isinstance(layout, QGridLayout):
-                layout.addItem(QSpacerItem(600, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+            # [FIX] Make the dialog larger and add Copy button and Hand Cursor
+            UIManager.style_and_size_msg_box(msg_box, f"Value: {value}\n\nTraceback:\n{error_text}", tr("copy_to_clipboard"))
                 
             msg_box.exec_()
     except Exception:
@@ -387,13 +498,13 @@ if __name__ == "__main__":
         sys.exit(0)
     PID_FILE_HANDLE = pid_handle
 
-    # [FIX #16] VLC Dynamic Path Check
-    if not check_vlc_dependencies():
-        if PID_FILE_HANDLE: PID_FILE_HANDLE.close()
-        sys.exit(1)
+    # [FIX #16] MPV Dynamic Path Check
+    if not check_mpv_dependencies():
+        logger.warning("MPV dependencies missing or incompatible. Playback will be disabled.")
+        # if PID_FILE_HANDLE: PID_FILE_HANDLE.close()
+        # sys.exit(1)
 
-    # Force VLC to find its plugins
-    os.environ["VLC_PLUGIN_PATH"] = os.path.join(BIN_DIR, "plugins")
+    from ui.main_window import VideoCompressorApp
 
     if not is_valid_deps:
          # Fallback error handling logic
@@ -436,11 +547,25 @@ if __name__ == "__main__":
     config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf')
     cm = ConfigManager(config_path)
     cached_hw = cm.config.get("last_hardware_strategy")
+    # Never lock the app permanently into CPU mode from an old/temporary failed probe.
+    if str(cached_hw or "").upper() == "CPU":
+        cached_hw = None
     
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
     
     # If we have a cached strategy, use it to avoid the scan dialog
     initial_strategy = cached_hw if cached_hw else "Scanning..."
+    
+    # Set environment variables for the cached strategy immediately
+    if cached_hw == "NVIDIA":
+        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+    elif cached_hw == "AMD":
+        os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
+    elif cached_hw == "INTEL":
+        os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
+    elif cached_hw == "CPU":
+        os.environ["VIDEO_FORCE_CPU"] = "1"
+
     ex = VideoCompressorApp(file_arg, initial_strategy)
     try:
         if icon_path and os.path.exists(icon_path):
@@ -464,7 +589,7 @@ if __name__ == "__main__":
     if not cached_hw:
         scan_dialog = QProgressDialog(tr("hardware_scan_text"), tr("hardware_scan_cpu"), 0, 0, ex)
         scan_dialog.setWindowTitle(tr("hardware_scan_title"))
-        scan_dialog.setWindowModality(Qt.WindowModal)
+        scan_dialog.setWindowModality(Qt.NonModal) # Changed from WindowModal to allow immediate interaction
         scan_dialog.setMinimumDuration(0)
         scan_dialog.setMinimumWidth(450)
         scan_dialog.show()

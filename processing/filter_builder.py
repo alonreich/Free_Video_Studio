@@ -91,36 +91,21 @@ class FilterBuilder:
             register_layer("team", "team", "team", "team")
         active_layers.sort(key=lambda x: x["z"])
         if use_nvidia:
-            cmd = "format=nv12,hwupload_cuda[gpu_master];"
             split_count = 1 + len(active_layers)
-            cmd += f"[gpu_master]split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
-            cmd += "[bg_in]scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[bg_pre];"
+            cmd = f"split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
+            cmd += "[bg_in]scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920,hwupload_cuda[bg_pre];"
             hud_gpu_names = []
             for layer in active_layers:
                 cw, ch, cx, cy = layer['crop_orig']
                 render_w = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
                 render_h = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
-                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:format=nv12[{layer['name']}_gpu]"
-                cmd += f_str + ";"
-                hud_gpu_names.append(f"{layer['name']}_gpu")
-            current_pad = "[bg_pre]"
-            for i, layer in enumerate(active_layers):
-                lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
-                next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vpreout_gpu]"
-                cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
-                current_pad = next_pad
-        if use_nvidia:
-            cmd = "format=nv12,hwupload_cuda[gpu_master];"
-            split_count = 1 + len(active_layers)
-            cmd += f"[gpu_master]split={split_count}[bg_in]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
-            cmd += "[bg_in]scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[bg_pre];"
-            hud_gpu_names = []
-            for layer in active_layers:
-                cw, ch, cx, cy = layer['crop_orig']
-                render_w = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
-                render_h = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
-                f_str = f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale_cuda={render_w}:{render_h}:format=nv12[{layer['name']}_gpu]"
+                f_str = (
+                    f"[{layer['name']}_in]"
+                    f"crop={cw}:{ch}:{cx}:{cy},"
+                    f"scale={render_w}:{render_h}:flags=bilinear,"
+                    f"format=nv12,hwupload_cuda"
+                    f"[{layer['name']}_gpu]"
+                )
                 cmd += f_str + ";"
                 hud_gpu_names.append(f"{layer['name']}_gpu")
             current_pad = "[bg_pre]"
@@ -131,12 +116,8 @@ class FilterBuilder:
                 cmd += f"{current_pad}[{hud_gpu_names[i]}]overlay_cuda=x={lx}:y={ly}{next_pad};"
                 current_pad = next_pad
             if not active_layers:
-                cmd = "format=nv12,hwupload_cuda,scale_cuda=1280:1920:force_original_aspect_ratio=increase:format=nv12,crop=1280:1920[vpreout_gpu];"
-            cmd += "[vpreout_gpu]scale_cuda=1080:1620:format=nv12,pad=1080:1920:0:150:black,format=nv12"
-            if needs_text_overlay:
-                cmd += ",hwdownload,format=nv12"
-            else:
-                cmd += ",format=nv12"
+                cmd = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920,format=nv12,hwupload_cuda[vpreout_gpu];"
+            cmd += "[vpreout_gpu]hwdownload,format=nv12,scale=1080:1620:flags=bilinear,pad=1080:1920:0:150:black,format=nv12"
             return cmd
         else:
             f_main_inner = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
@@ -161,7 +142,7 @@ class FilterBuilder:
                 current_pad = next_pad
             if not active_layers:
                  cmd = f"split=1[main_base];[main_base]{f_main_inner}[vpreout];"
-            cmd += "[vpreout]scale=1080:1620:flags=bilinear,pad=1080:1920:0:150:black,format=nv12"
+            cmd += "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
             return cmd
 
     def add_drawtext_filter(self, video_filter_cmd, text_file_path, font_px, line_spacing):
@@ -331,10 +312,11 @@ class FilterBuilder:
             ]
             if not disable_fades:
                 MIN_CLIP_FOR_FADE = 0.3
-                if dur_a > MIN_CLIP_FOR_FADE:
-                    FADE_DUR = min(1.0, dur_a / 3.0)
-                    music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
-                    music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
+                if dur_a > 0.1:
+                    if dur_a > MIN_CLIP_FOR_FADE:
+                        FADE_DUR = min(1.0, dur_a / 3.0)
+                        music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
+                        music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
             vol = max(0.0, min(1.0, float(mc.get('volume', 1.0))))
             music_filters.append(f"volume={vol:.4f}")
             chain.append(f"[1:a]{','.join(music_filters)}[a_music_prepared]")
@@ -349,6 +331,4 @@ class FilterBuilder:
         else:
             chain.append("[a_main_prepared]anull[acore]")
         return chain
-        else:
-            chain.append("[a_main_prepared]anull[acore]")
-        return chain
+        

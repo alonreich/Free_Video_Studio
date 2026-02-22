@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 import types
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
 from processing.worker import ProcessThread

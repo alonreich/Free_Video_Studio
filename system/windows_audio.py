@@ -34,7 +34,7 @@ def _get_session_for_pid(mgr_ptr, target_pid):
 def set_app_session_volume(level, pid=None):
     """
     Fallback implementation: Since comtypes is missing, we use a lighter 
-    VLC-only approach until the environment is fixed.
+    MPV-compatible approach until the environment is fixed.
     """
     return False
 

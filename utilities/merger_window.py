@@ -33,12 +33,12 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
     status_updated = pyqtSignal(str)
     return_to_main = pyqtSignal()
 
-    def __init__(self, ffmpeg_path: str | None = None, parent: QMainWindow | None = None, vlc_instance=None, bin_dir: str = '', config_manager=None, base_dir: str = ''):
+    def __init__(self, ffmpeg_path: str | None = None, parent: QMainWindow | None = None, mpv_instance=None, bin_dir: str = '', config_manager=None, base_dir: str = ''):
         super().__init__(parent)
         self._loaded = False
         self.base_dir = base_dir
         self.ffmpeg = ffmpeg_path or "ffmpeg"
-        self.vlc_instance = vlc_instance
+        self.mpv_instance = mpv_instance
         self.bin_dir = bin_dir
         self.original_duration = 0.0
         self.process = None

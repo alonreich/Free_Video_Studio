@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from sanity_tests._ai_sanity_helpers import read_source
@@ -21,21 +21,18 @@ def _final_verdict(r: PlayerAccelerationResult) -> str:
 def _has_any(text: str, needles: list[str]) -> bool:
     return any(n in text for n in needles)
 
-def _assess_vlc_player_contract(name: str, src: str) -> PlayerAccelerationResult:
+def _assess_mpv_player_contract(name: str, src: str) -> PlayerAccelerationResult:
     gpu_accel_enabled = (
-        _has_any(src, ["--avcodec-hw=any", "--hwdec=auto", "--hwaccel", "h264_nvenc", "vlc_args_v"])
-        and _has_any(src, ["--vout=direct3d11", "d3d11", "direct3d11", "--no-osd"])
+        _has_any(src, ["--avcodec-hw=any", "--hwdec=auto", "--hwaccel", "h264_nvenc", "mpv.MPV"])
+        and _has_any(src, ["hr_seek", "keep_open", "ytdl=False"])
     )
     cpu_fallback_present = _has_any(
         src,
         [
             "VIDEO_FORCE_CPU",
             "fallback_args",
-            "--vout=dummy",
-            "if not self.vlc_v:",
-            "if not self.vlc_m:",
+            "if not self.player:",
             "CPU",
-            "VLCProcessProxy",
         ],
     )
     if gpu_accel_enabled and cpu_fallback_present:
@@ -65,11 +62,11 @@ def test_real_sanity_video_player_acceleration_report_end_user_readable(
         and 'if check_encoder_capability(ffmpeg_path, "h264_nvenc"):' in app_boot_src
     )
     results = [
-        _assess_vlc_player_contract("Main App - Preview Player", main_preview_src),
-        _assess_vlc_player_contract("Main App - Granular Speed Editor Player", granular_src),
-        _assess_vlc_player_contract("Main App - Music Wizard Step 3 Video Player", main_wizard_src),
-        _assess_vlc_player_contract("Crop Tool - Media Processor Player", crop_src),
-        _assess_vlc_player_contract("Video Merger - Music Wizard Step 3 Video Player", merger_wizard_src),
+        _assess_mpv_player_contract("Main App - Preview Player", main_preview_src),
+        _assess_mpv_player_contract("Main App - Granular Speed Editor Player", granular_src),
+        _assess_mpv_player_contract("Main App - Music Wizard Step 3 Video Player", main_wizard_src),
+        _assess_mpv_player_contract("Crop Tool - Media Processor Player", crop_src),
+        _assess_mpv_player_contract("Video Merger - Music Wizard Step 3 Video Player", merger_wizard_src),
     ]
     print("\n=== VIDEO PLAYER ACCELERATION REPORT ===")
     print(

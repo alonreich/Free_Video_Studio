@@ -29,33 +29,6 @@ class MergerDependencyDoctor:
         if path_ffmpeg and path_ffprobe:
             return True, path_ffmpeg, ""
         return False, "", f"FFmpeg or FFprobe binaries are missing in {bin_dir} or System PATH."
-    @staticmethod
-    def find_vlc_path() -> Optional[str]:
-        vlc_from_path = shutil.which("vlc.exe")
-        if vlc_from_path:
-            vlc_dir = os.path.dirname(vlc_from_path)
-            if os.path.exists(os.path.join(vlc_dir, "libvlc.dll")):
-                return vlc_dir
-        if sys.platform == "win32":
-            import winreg
-            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-                try:
-                    key = winreg.OpenKey(root, r"SOFTWARE\VideoLAN\VLC")
-                    val, _ = winreg.QueryValueEx(key, "InstallDir")
-                    if val and os.path.exists(os.path.join(val, "libvlc.dll")):
-                        return val
-                except Exception:
-                    continue
-        common_paths = [
-            r"C:\Program Files\VideoLAN\VLC",
-            r"C:\Program Files (x86)\VideoLAN\VLC",
-            os.path.expandvars(r"%ProgramFiles%\VideoLAN\VLC"),
-            os.path.expandvars(r"%ProgramFiles(x86)%\VideoLAN\VLC")
-        ]
-        for p in common_paths:
-            if os.path.exists(os.path.join(p, "libvlc.dll")):
-                return p
-        return None
 
 class MergerProcessManager:
     @staticmethod
@@ -136,56 +109,31 @@ class MergerProcessManager:
             return False, None
 
 class MergerConsoleManager:
-    @staticmethod
-    def _start_native_bridge(source_tag: str, raw_log_path: str, shared_vlc_log_path: str):
-        bridge_logger = logging.getLogger(f"VLC_Aggregator_{source_tag}_{os.getpid()}")
-        for h in bridge_logger.handlers[:]:
-            bridge_logger.removeHandler(h)
-        bridge_logger.setLevel(logging.INFO)
-        bridge_logger.propagate = False
-        bridge_handler = RotatingFileHandler(
-            shared_vlc_log_path,
-            maxBytes=5*1024*1024,
-            backupCount=1,
-            encoding='utf-8',
-        )
-        bridge_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
-        bridge_logger.addHandler(bridge_handler)
-
-        def _tail_raw_forever():
-            pos = 0
-            while True:
-                try:
-                    if not os.path.exists(raw_log_path):
-                        time.sleep(0.5)
-                        continue
-                    with open(raw_log_path, 'rb') as rf:
-                        rf.seek(pos)
-                        chunk_bytes = rf.read()
-                        if chunk_bytes:
-                            pos += len(chunk_bytes)
-                            chunk = chunk_bytes.decode('utf-8', errors='ignore')
-                            for line in chunk.splitlines():
-                                clean_line = line.strip()
-                                if clean_line:
-                                    bridge_logger.info("[%s] %s", source_tag, clean_line)
-                        else:
-                            time.sleep(0.2)
-                except Exception:
-                    time.sleep(1.0)
-        t = threading.Thread(target=_tail_raw_forever, daemon=True)
-        t.start()
+    _f_keepalive = None
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
         logger = MergerLogManager.setup_logger(base_dir, log_filename, logger_name)
         log_dir = os.path.join(base_dir, "logs")
-        vlc_log_path = os.path.join(log_dir, "vlc.log")
+        try:
+            import mpv
+        except ImportError:
+            class MockMPV: pass
+            mpv = MockMPV()
         source_tag = "video_merger"
-        raw_log_path = os.path.join(log_dir, f"vlc_{source_tag}.raw.log")
-        os.environ["FVS_VLC_SOURCE_TAG"] = source_tag
-        os.environ["FVS_VLC_RAW_LOG"] = raw_log_path
-        MergerConsoleManager._start_native_bridge(source_tag, raw_log_path, vlc_log_path)
+        if str(logger_name) == "Video_Merger":
+            mpv.log_path = os.path.join(log_dir, "mpv.log")
+            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+            try:
+                MergerConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
+                f = MergerConsoleManager._f_keepalive
+                os.dup2(f.fileno(), sys.stdout.fileno())
+                os.dup2(f.fileno(), sys.stderr.fileno())
 
+                import faulthandler
+                faulthandler.enable(f)
+                source_tag = "video_merger"
+            except: pass
+            
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
                 sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -194,22 +142,16 @@ class MergerConsoleManager:
             logger.critical(f"UNCAUGHT EXCEPTION:\n{error_msg}")
             try:
                 from PyQt5.QtWidgets import QMessageBox, QApplication
+                from system.utils import UIManager
                 if QApplication.instance():
-                    QMessageBox.critical(None, "Critical Error", f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
+                    msg = QMessageBox()
+                    msg.setIcon(QMessageBox.Critical)
+                    msg.setWindowTitle("Critical Error")
+                    msg.setText(f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
+                    UIManager.style_and_size_msg_box(msg, error_msg)
+                    msg.exec_()
             except: pass
         sys.excepthook = global_exception_handler
-        try:
-            MergerConsoleManager._f_keepalive = open(raw_log_path, 'a', buffering=1, encoding='utf-8')
-            f = MergerConsoleManager._f_keepalive
-            os.dup2(f.fileno(), sys.stdout.fileno())
-            os.dup2(f.fileno(), sys.stderr.fileno())
-
-            import faulthandler
-            faulthandler.enable(f)
-            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
-            f.flush()
-        except Exception: pass
         if sys.platform == "win32":
             try:
                 import ctypes

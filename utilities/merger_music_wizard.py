@@ -19,9 +19,9 @@ from utilities.merger_music_wizard_playback import MergerMusicWizardPlaybackMixi
 from utilities.merger_music_wizard_timeline import MergerMusicWizardTimelineMixin
 from utilities.merger_music_wizard_misc import MergerMusicWizardMiscMixin
 try:
-    import vlc as _vlc_mod
+    import mpv
 except Exception:
-    _vlc_mod = None
+    mpv = None
 
 class MergerMusicWizard(
     MergerMusicWizardStepPagesMixin,
@@ -35,7 +35,7 @@ class MergerMusicWizard(
 ):
     _ui_call = pyqtSignal(object)
 
-    def __init__(self, parent, vlc_instance, bin_dir, mp3_dir, total_project_sec, speed_factor=1.0, trim_start_ms=0, trim_end_ms=0, speed_segments=None):
+    def __init__(self, parent, mpv_instance, bin_dir, mp3_dir, total_project_sec, speed_factor=1.0, trim_start_ms=0, trim_end_ms=0, speed_segments=None):
         super().__init__(parent)
         self.parent_window = parent
         self.bin_dir = bin_dir
@@ -54,63 +54,6 @@ class MergerMusicWizard(
             try:
                 ctypes.windll.ole32.CoInitializeEx(None, 0x0)
             except: pass
-        log_dir = os.path.join(getattr(self.parent_window, "base_dir", "."), "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        self._v_native_log = os.path.join(log_dir, "vlc_merger_video.log")
-        self._m_native_log = os.path.join(log_dir, "vlc_merger_music.log")
-        for p in [self._v_native_log, self._m_native_log]:
-            if os.path.exists(p):
-                try: os.remove(p)
-                except: pass
-        if os.name == 'nt':
-            try:
-                ctypes.windll.ole32.CoInitializeEx(None, 0x0)
-            except: pass
-        plugin_path = os.path.join(self.bin_dir, "plugins").replace('\\', '/')
-        vlc_args_v = [
-            "--verbose=2",
-            "--no-osd",
-            "--avcodec-hw=any",
-            "--vout=direct3d11",
-            "--aout=directx",
-            "--file-logging",
-            f"--logfile={self._v_native_log}",
-            "--ignore-config",
-            f"--plugin-path={plugin_path}",
-            "--user-agent=VLC_MERGER_VIDEO_WORKER"
-        ]
-        vlc_args_m = [
-            "--verbose=2",
-            "--no-osd",
-            "--aout=waveout",
-            "--file-logging",
-            f"--logfile={self._m_native_log}",
-            "--ignore-config",
-            f"--plugin-path={plugin_path}",
-            "--user-agent=VLC_MERGER_MUSIC_WORKER"
-        ]
-        os.environ["VLC_PLUGIN_PATH"] = os.path.join(self.bin_dir, "plugins")
-        self.vlc_v = None
-        self.vlc_m = None
-        if _vlc_mod:
-            try:
-                self.vlc_v = _vlc_mod.Instance(vlc_args_v)
-                if self.vlc_v:
-                    self.logger.info(f"WIZARD: [VIDEO_WORKER] Instance Created. ID={hex(id(self.vlc_v))} Log={self._v_native_log}")
-            except Exception as ex_v:
-                self.logger.error("WIZARD: [VIDEO_WORKER] Failed: %s", ex_v)
-            try:
-                self.vlc_m = _vlc_mod.Instance(vlc_args_m)
-                if self.vlc_m:
-                    self.logger.info(f"WIZARD: [MUSIC_WORKER] Instance Created. ID={hex(id(self.vlc_m))} Log={self._m_native_log}")
-            except Exception as ex_m:
-                self.logger.error("WIZARD: [MUSIC_WORKER] Failed: %s", ex_m)
-        if not self.vlc_v: self.vlc_v = self.parent_window.vlc_instance
-        if not self.vlc_m: self.vlc_m = self.parent_window.vlc_instance
-        self.vlc = self.vlc_v
-        self._log_running = True
-        self._log_thread = threading.Thread(target=self._aggregate_logs, daemon=True)
-        self._log_thread.start()
         self.setStyleSheet('''
             QDialog { background-color: #2c3e50; color: #ecf0f1; }
             QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: "Helvetica Neue", Arial, sans-serif; }
@@ -139,8 +82,12 @@ class MergerMusicWizard(
         self._last_tick_ts = 0.0; self._is_syncing = False 
         self._current_elapsed_offset = 0.0; self._last_seek_ts = 0.0 
         self._last_clock_ts = time.time()
-        self._vlc_state_playing = 3; self._last_good_vlc_ms = 0
+        self._last_good_mpv_ms = 0
         self._last_v_mrl = ""; self._last_m_mrl = ""
+        if False:
+            self.mpv_v = mpvProcessProxy('video', self.logger, self.bin_dir)
+            self.mpv_m = mpvProcessProxy('music', self.logger, self.bin_dir)
+            self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 10, 20, 20)
         self.main_layout.setSpacing(15)
@@ -149,6 +96,35 @@ class MergerMusicWizard(
         self.setup_step2_offset()
         self.setup_step3_timeline()
         self.main_layout.addWidget(self.stack)
+        log_dir = os.path.join(getattr(self.parent_window, "base_dir", "."), "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        self.player = None
+        if mpv:
+            try:
+                wid = int(self.video_container.winId())
+                self.logger.info(f"WIZARD: Initializing MPV with window ID {wid}")
+                "--avcodec-hw=any"
+                "--vout=direct3d11"
+                self.player = mpv.MPV(
+                    wid=wid,
+                    osc=False,
+                    input_default_bindings=False,
+                    input_vo_keyboard=False,
+                    hr_seek='yes',
+                    hwdec='auto',
+                    keep_open='yes',
+                    log_handler=self.logger.debug,
+                    loglevel="info",
+                    vo='gpu',
+                    ytdl=False,
+                    demuxer_max_bytes='500M',
+                    demuxer_max_back_bytes='100M',
+                )
+                self.logger.info("WIZARD: MPV Instance Created.")
+            except Exception as e:
+                self.logger.error(f"WIZARD: Failed to initialize MPV: {e}")
+        self._player = self.player
+        self._video_player = self.player
         nav_layout = QHBoxLayout()
         self.btn_cancel_wizard = QPushButton("CANCEL")
         self.btn_cancel_wizard.setFixedWidth(140); self.btn_cancel_wizard.setFixedHeight(42)
@@ -176,13 +152,9 @@ class MergerMusicWizard(
         nav_layout.addStretch(); nav_layout.addWidget(self.btn_play_video)
         nav_layout.addSpacing(80); nav_layout.addStretch(); nav_layout.addWidget(self.btn_nav_next)
         self.main_layout.addLayout(nav_layout)
-        self._player = self.vlc_m.media_player_new() if self.vlc_m else None
-        self._video_player = self.vlc_v.media_player_new() if self.vlc_v else None
-        if self._player:
-            self._player.audio_set_mute(False)
-        if self._video_player:
-            self._video_player.audio_set_mute(False)
-        if self._video_player:
+        if self.player:
+            self.player.mute = False
+            self.player.volume = 80
             self._bind_video_output()
             QTimer.singleShot(0, self._bind_video_output)
         self._apply_step_geometry(0)
@@ -192,36 +164,6 @@ class MergerMusicWizard(
         self._search_timer.timeout.connect(self._do_search)
         self.update_coverage_ui()
         if self.mp3_dir: self.load_tracks(self.mp3_dir)
-
-    def _aggregate_logs(self):
-        """Python-level aggregator to merge two native logs into one rotating vlc.log."""
-        handler = RotatingFileHandler(self.vlc_log_path, maxBytes=5 * 1024 * 1024, backupCount=1, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-        logger = logging.getLogger("VLC_Aggregator")
-        for h in logger.handlers[:]: logger.removeHandler(h)
-        logger.addHandler(handler)
-        logger.setLevel(logging.DEBUG)
-        logger.propagate = False
-        logger.info("[Video_Merger::Wizard] aggregator started (pid=%s)", os.getpid())
-        files = [(self._v_raw_log, "VIDEO"), (self._m_raw_log, "MUSIC")]
-        cursors = {f[0]: 0 for f in files}
-        while self._log_running:
-            did_work = False
-            for path, label in files:
-                if os.path.exists(path):
-                    try:
-                        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                            f.seek(cursors[path])
-                            chunk = f.read()
-                            if chunk:
-                                for line in chunk.splitlines():
-                                    if line.strip():
-                                        logger.debug(f"[Video_Merger::Wizard][{label}] {line.strip()}")
-                                cursors[path] = f.tell()
-                                did_work = True
-                    except: pass
-            if not did_work:
-                time.sleep(0.5)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -233,7 +175,7 @@ class MergerMusicWizard(
         except Exception:
             pass
         self.stop_previews()
-        self._release_vlc()
+        self._release_player()
         super().reject()
 
     def closeEvent(self, event):
@@ -243,27 +185,17 @@ class MergerMusicWizard(
         except Exception:
             pass
         self.stop_previews()
-        self._release_vlc()
+        self._release_player()
         super().closeEvent(event)
 
-    def _release_vlc(self):
-        """Safely release VLC players and instances."""
-        self._log_running = False
+    def _release_player(self):
+        """Safely release MPV player instance."""
         try:
-            if hasattr(self, "_player") and self._player:
-                self._player.stop()
-                self._player.release()
+            if hasattr(self, "player") and self.player:
+                self.player.terminate()
+                self.player = None
                 self._player = None
-            if hasattr(self, "_video_player") and self._video_player:
-                self._video_player.stop()
-                self._video_player.release()
                 self._video_player = None
-            if hasattr(self, "vlc_v") and self.vlc_v and self.vlc_v != self.parent_window.vlc_instance:
-                self.vlc_v.release()
-                self.vlc_v = None
-            if hasattr(self, "vlc_m") and self.vlc_m and self.vlc_m != self.parent_window.vlc_instance:
-                self.vlc_m.release()
-                self.vlc_m = None
         except Exception:
             pass
 
@@ -273,8 +205,9 @@ class MergerMusicWizard(
             try: os.remove(self._temp_sync)
             except: pass
         self._temp_sync = None
-        if hasattr(self, '_player') and self._player: self._player.stop()
-        if hasattr(self, '_video_player') and self._video_player: self._video_player.stop()
+        if hasattr(self, 'player') and self.player: 
+            try: self.player.stop()
+            except: pass
         if hasattr(self, '_play_timer'): self._play_timer.stop()
         if hasattr(self, '_filmstrip_worker') and self._filmstrip_worker:
             try:

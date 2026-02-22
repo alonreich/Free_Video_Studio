@@ -11,7 +11,7 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # 3. Audio Protection: Main video audio uses Volume/EQ Ducking (150Hz split) against background music.
 # 4. Strict UI Rules: "No Junk" policy. All temp files (.wav, .png, .txt) must be deleted on cancel/close.
 # 5. UI Spacing: Exactly 10px vertical gap above/below STEP titles. Navigation buttons are strictly 42px height.
-# 6. Stability: VLC scrubbing is throttled to 20fps (50ms) to prevent native thread deadlocks.
+# 6. Stability: MPV scrubbing is throttled to 20fps (50ms) to prevent native thread deadlocks.
 # 7. Independence: Main App and Merger share widget logic but remain technically decoupled (local method copies).
 
 # ==============================================================================
@@ -32,7 +32,7 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 │
 ├── !!!_Output_Video_Files_!!!/: Final rendered videos.
 │
-├── binaries/: FFmpeg, FFprobe, and VLC native libraries.
+├── binaries/: FFmpeg, FFprobe, and MPV native libraries.
 ├── config/: JSON/Conf settings (main_app.conf, crops_coordinations.conf).
 ├── logs/: Rotating logs (main_app.log). Captured native stderr/faulthandler output.
 │
@@ -50,7 +50,7 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 │   ├── main_window.py: The central hub of the Compressor app.
 │   ├── parts/: Mixins providing modular functionality to the main window.
 │   │   ├── music_mixin.py: Controls wizard launch, persistent folder selection, and auto-pause.
-│   │   ├── player_mixin.py: Handles VLC playback, wall-clock sync math, and scrubbing protection.
+│   │   ├── player_mixin.py: Handles MPV playback, wall-clock sync math, and scrubbing protection.
 │   │   ├── ui_builder_mixin.py: Constructs 3D-styled UI. 'ADD MUSIC' button uses nested layout.
 │   │   └── (events, ffmpeg, keyboard, phase_overlay, trim, volume)
 │   │

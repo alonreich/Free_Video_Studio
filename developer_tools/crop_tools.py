@@ -295,25 +295,22 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         except Exception as e:
             logger_initial.critical(f"Connect Signals Failed: {e}", exc_info=True)
             raise e
-        if not self.media_processor.vlc_instance:
-            if hasattr(self, 'vlc_error_label'):
-                self.vlc_error_label.setVisible(True)
+        if not self.media_processor.player:
+            if hasattr(self, 'mpv_error_label'):
+                self.mpv_error_label.setVisible(True)
+                self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")
             if hasattr(self, 'upload_hint_label'):
                 self.upload_hint_label.setVisible(False)
             if hasattr(self, 'open_image_button'):
                 self.open_image_button.setVisible(True)
-                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (VLC MISSING)")
+                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Critical)
-            msg.setWindowTitle("VLC Player Required")
-            msg.setText("Video playback is disabled because VLC Media Player (64-bit) was not found.")
-            msg.setInformativeText("The app can still crop snapshots, but you cannot play/seek video.\n\nPlease install VLC to fix this.")
-            download_btn = msg.addButton("Download VLC", QMessageBox.ActionRole)
+            msg.setWindowTitle("MPV Player Required")
+            msg.setText("Video playback is disabled because MPV Media Player was not found.")
+            msg.setInformativeText("The app can still crop snapshots, but you cannot play/seek video.\n\nPlease ensure libmpv-2.dll is in the binaries folder.")
             msg.addButton(QMessageBox.Ok)
             msg.exec_()
-            if msg.clickedButton() == download_btn:
-                import webbrowser
-                webbrowser.open("https://www.videolan.org/vlc/")
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_ui)

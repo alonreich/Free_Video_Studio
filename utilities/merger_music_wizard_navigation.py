@@ -97,7 +97,7 @@ class MergerMusicWizardNavigationMixin:
             pass
         self._dragging = False
         self._wave_dragging = False
-        self._last_good_vlc_ms = initial_offset_ms
+        self._last_good_mpv_ms = initial_offset_ms
         self._pending_offset_ms = initial_offset_ms
         try:
             self.offset_slider.blockSignals(True)

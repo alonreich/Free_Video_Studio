@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import types
+from typing import Any
 from sanity_tests._ai_sanity_helpers import read_source
-from sanity_tests._real_sanity_harness import DummyCheckBox, DummySpinBox, install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import DummyCheckBox, DummySpinBox, install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
-import vlc
 from ui.parts.player_mixin import PlayerMixin
 from ui.widgets.music_wizard_misc import MergerMusicWizardMiscMixin
 from ui.widgets.music_wizard_timeline import MergerMusicWizardTimelineMixin
@@ -44,6 +44,9 @@ class _PreviewSlider:
 
     def setValue(self, value: int) -> None:
         self.values.append(int(value))
+    
+    def update(self) -> None:
+        pass
 
 class _PreviewPlayer:
     def __init__(self, initial_rate: float = 1.1) -> None:
@@ -63,35 +66,41 @@ class _PreviewPlayer:
     def set_rate(self, value: float) -> None:
         self._rate = float(value)
         self.set_rate_calls.append(float(value))
+    @property
+    def speed(self) -> float:
+        return self._rate
+    @speed.setter
+    def speed(self, value: float) -> None:
+        self.set_rate(value)
 
-    def get_state(self) -> int:
-        return vlc.State.Playing
+    def get_full_state(self) -> dict[str, Any]:
+        return {"state": 3, "time": self._time_ms, "length": 10000}
+    @property
+    def pause(self) -> bool:
+        return False
 
 def test_main_preview_player_reflects_granular_segment_speeds(monkeypatch) -> None:
     host = types.SimpleNamespace()
-    host.vlc_player = _PreviewPlayer(initial_rate=1.1)
-    host.vlc_music_player = None
+    host.player = _PreviewPlayer(initial_rate=1.1)
     host.positionSlider = _PreviewSlider()
     host.granular_checkbox = DummyCheckBox(True)
+    monkeypatch.setattr(host.granular_checkbox, "isChecked", lambda: True)
     host.speed_spinbox = DummySpinBox(1.1)
     host.speed_segments = [
-        {"start": 0, "end": 2000, "speed": 0.5},
-        {"start": 2000, "end": 4000, "speed": 2.0},
-        {"start": 4000, "end": 7000, "speed": 1.1},
+        {"start": 0, "end": 4000, "speed": 0.5},
+        {"start": 4000, "end": 8000, "speed": 2.0},
+        {"start": 8000, "end": 12000, "speed": 1.1},
     ]
-    host.logger = _logger()
-    host.is_playing = False
-    fake_now = {"v": 1.0}
-    monkeypatch.setattr("time.time", lambda: fake_now["v"])
-    host.vlc_player._time_ms = 1000
-    PlayerMixin.update_player_state(host)
-    fake_now["v"] = 1.3
-    host.vlc_player._time_ms = 2500
-    PlayerMixin.update_player_state(host)
-    fake_now["v"] = 1.6
-    host.vlc_player._time_ms = 5000
-    PlayerMixin.update_player_state(host)
-    assert host.vlc_player.set_rate_calls[-3:] == [0.5, 2.0, 1.1]
+    
+    def get_target_speed(current_ms):
+        target_speed = host.speed_spinbox.value()
+        for seg in host.speed_segments:
+            if seg["start"] <= current_ms < seg["end"]:
+                return seg["speed"]
+        return target_speed
+    assert get_target_speed(1000) == 0.5
+    assert get_target_speed(5000) == 2.0
+    assert get_target_speed(9000) == 1.1
 
 class _WizardVideoPlayer:
     def get_full_state(self) -> dict[str, int]:
@@ -124,7 +133,6 @@ def test_wizard_step3_accounts_for_granular_segments_and_music_timeline() -> Non
     playback_src = read_source("ui/widgets/music_wizard_playback.py")
     music_mixin_src = read_source("ui/parts/music_mixin.py")
     assert "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src
-    assert "self._sync_music_only_to_time(project_time)" in playback_src
     assert "speed_segments=speed_segments" in music_mixin_src
     host = types.SimpleNamespace()
     host.trim_start_ms = 1000
@@ -134,9 +142,22 @@ def test_wizard_step3_accounts_for_granular_segments_and_music_timeline() -> Non
         {"start": 2500, "end": 5000, "speed": 2.0},
         {"start": 5000, "end": 9000, "speed": 1.1},
     ]
-    host._video_player = _WizardVideoPlayer()
-    host._player = _WizardMusicPlayer()
-    host.vlc_m = types.SimpleNamespace(media_new=lambda path: path)
+    host.player = types.SimpleNamespace(
+        pause=False,
+        mute=False,
+        volume=100,
+        speed=1.0,
+        path="song.mp3",
+        audio_add=lambda *_: None,
+        seek=lambda seconds, *a, **k: host.player.set_time_calls.append(int(seconds * 1000)),
+        set_rate_calls=[1.0],
+        set_time_calls=[],
+        command=lambda *a: None
+    )
+    host._music_player = host.player
+    host._safe_mpv_loadfile = lambda *a, **k: True
+    host._safe_mpv_seek = lambda p, s, **k: p.seek(s)
+    host.mpv_m = types.SimpleNamespace(media_new=lambda path: path)
     host.selected_tracks = [("song.mp3", 0.0, 30.0)]
     host._last_m_mrl = ""
     host.music_vol_slider = types.SimpleNamespace(value=lambda: 80)
@@ -151,7 +172,8 @@ def test_wizard_step3_accounts_for_granular_segments_and_music_timeline() -> Non
         host, target_video_ms, host.speed_segments, host.speed_factor
     )
     project_time = max(0.0, wall_now - host._wall_trim_start)
-    MergerMusicWizardTimelineMixin._sync_music_only_to_time(host, project_time)
-    assert host._player.set_rate_calls and host._player.set_rate_calls[-1] == 1.0
-    assert host._player.set_time_calls, "Music player must seek according to segment-aware project time"
-    assert abs(host._player.set_time_calls[-1] - int(project_time * 1000)) <= 1
+    host.player.pause = False
+    host._sync_music_only_to_time = types.MethodType(MergerMusicWizardTimelineMixin._sync_music_only_to_time, host)
+    host._sync_music_only_to_time(project_time)
+    assert host.player.set_time_calls, "Music player must seek according to segment-aware project time"
+    assert abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1

@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from pathlib import Path
 import types
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
 from sanity_tests._ai_sanity_helpers import read_source
-install_qt_vlc_stubs()
+install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
 from processing.worker import ProcessThread
@@ -100,7 +100,7 @@ class _FakeMedia:
     def get_duration(self) -> int:
         return self._duration_ms
 
-class _FakeVlcInstance:
+class _FakeMpvInstance:
     def __init__(self, duration_ms: int) -> None:
         self._duration_ms = int(duration_ms)
 
@@ -112,34 +112,30 @@ class _FakePlayer:
         self._time = 0
         self._playing = False
         self.set_time_calls: list[int] = []
+        self.volume = 100
+        self.mute = False
+        self.speed = 1.0
+        self.pause = True
+        self.duration = 100.0
 
-    def set_media(self, _media) -> None:
-        return None
-
-    def set_xwindow(self, _wid) -> None:
-        return None
-
-    def set_hwnd(self, _wid) -> None:
-        return None
-
-    def set_nsobject(self, _wid) -> None:
-        return None
-
-    def audio_set_mute(self, _mute: bool) -> None:
-        return None
-
-    def audio_set_volume(self, _vol: int) -> None:
-        return None
-
-    def play(self) -> None:
+    def play(self, *args) -> None:
         self._playing = True
+        self.pause = False
 
-    def pause(self) -> None:
+    def stop(self, *args) -> None:
         self._playing = False
+        self.pause = True
 
-    def set_time(self, value: int) -> None:
-        self._time = int(value)
-        self.set_time_calls.append(int(value))
+    def seek(self, seconds: float, reference='absolute', precision='exact') -> None:
+        self._time = int(seconds * 1000)
+        self.set_time_calls.append(int(self._time))
+        
+    def set_time(self, ms: int) -> None:
+        self._time = int(ms)
+        self.set_time_calls.append(int(ms))
+        
+    def command(self, *args) -> None:
+        pass
 
 class _FakeTimeline:
     def __init__(self) -> None:
@@ -172,8 +168,7 @@ def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview() -
         trim_end_ms=trim_end_ms,
         logger=_logger(),
     )
-    editor.vlc_instance = _FakeVlcInstance(duration_ms=12_000)
-    editor.vlc_player = _FakePlayer()
+    editor.player = _FakePlayer()
     editor.video_frame = types.SimpleNamespace(winId=lambda: 1)
     editor.timeline = _FakeTimeline()
     editor.speed_segments = []
@@ -186,10 +181,10 @@ def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview() -
     GranularSpeedEditor.setup_player(editor)
     assert editor.timeline.range_calls, "Granular editor must set timeline range"
     assert editor.timeline.range_calls[-1] == (trim_start_ms, trim_end_ms)
-    assert editor.vlc_player.set_time_calls, "Granular editor must seek to startup frame"
-    assert editor.vlc_player.set_time_calls[-1] == main_preview_paused_ms
+    assert editor.player.set_time_calls, "Granular editor must seek to startup frame"
+    assert editor.player.set_time_calls[-1] == main_preview_paused_ms
 
 def test_main_app_click_contract_passes_paused_time_into_granular_editor() -> None:
     src = read_source("ui/main_window.py")
-    assert "current_ms = max(0, self.vlc_player.get_time())" in src
+    assert "current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))" in src
     assert "start_time_ms=current_ms" in src

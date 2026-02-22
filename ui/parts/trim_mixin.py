@@ -53,8 +53,9 @@ class TrimMixin:
             self.logger.info("TRIM: end set at %d ms from slider", self.trim_end_ms)
         self._update_trim_widgets_from_trim_times()
         self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-        if self.vlc_player.is_playing():
-            self.vlc_player.pause()
+        is_playing = self.player and not getattr(self.player, "pause", True)
+        if is_playing:
+            self.player.pause = True
             self.playPauseButton.setText("Play")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
     

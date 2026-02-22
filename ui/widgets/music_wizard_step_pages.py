@@ -312,8 +312,8 @@ class MergerMusicWizardStepPagesMixin:
         layout.addWidget(self.slider_unified_container)
         layout.addStretch(1)
         self._wave_caret = QLabel(self)
-        self._wave_caret.setStyleSheet("background: #3498db; border: none;")
-        self._wave_caret.setFixedWidth(2)
+        self._wave_caret.setStyleSheet("background: rgba(46, 204, 113, 210); border: none;")
+        self._wave_caret.setFixedWidth(1)
         self._wave_caret.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._wave_caret.hide()
         badge_style = "background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;"

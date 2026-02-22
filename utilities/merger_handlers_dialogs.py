@@ -64,7 +64,7 @@ class MergerHandlersDialogsMixin:
         mp3_dir = os.path.join(self.parent.base_dir, "mp3")
         wizard = MergerMusicWizard(
             self.parent, 
-            self.parent.vlc_instance, 
+            getattr(self.parent, "player", None), 
             self.parent.bin_dir, 
             mp3_dir, 
             total_sec

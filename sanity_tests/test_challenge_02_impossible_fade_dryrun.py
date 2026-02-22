@@ -1,4 +1,4 @@
-﻿from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
+from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_challenge_02_impossible_fade_dryrun() -> None:
     src = read_source("processing/filter_builder.py")

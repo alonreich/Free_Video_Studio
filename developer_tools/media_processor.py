@@ -10,28 +10,11 @@ import threading
 import shutil
 import json
 from PyQt5.QtCore import QObject, pyqtSignal
-os.environ['VLC_VERBOSE'] = '-1'
-os.environ['VLC_QUIET'] = '1'
-os.environ['VLC_DEBUG'] = '0'
-script_dir = os.path.dirname(os.path.abspath(__file__))
-binaries_dir = os.path.abspath(os.path.join(script_dir, '..', 'binaries'))
-os.environ['VLC_PLUGIN_PATH'] = os.path.join(binaries_dir, 'plugins') if os.path.exists(os.path.join(binaries_dir, 'plugins')) else ''
 try:
-    import vlc
-except ImportError:
-    vlc = None
+    import mpv
+except Exception:
+    mpv = None
 logger = logging.getLogger(__name__)
-@contextlib.contextmanager
-def _suppress_vlc_output():
-    """Context manager to suppress stdout and stderr during VLC initialization."""
-    with open(os.devnull, 'w') as null:
-        with contextlib.redirect_stdout(null), contextlib.redirect_stderr(null):
-            yield
-
-def get_vlc_log_dir():
-    log_dir = os.path.join(tempfile.gettempdir(), "FortniteVideoTool", "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    return log_dir
 
 class MediaProcessor(QObject):
     info_retrieved = pyqtSignal(str)
@@ -40,66 +23,43 @@ class MediaProcessor(QObject):
     def __init__(self, bin_dir):
         super().__init__()
         self.bin_dir = bin_dir
-        self.vlc_log_path = os.path.join(get_vlc_log_dir(), "vlc_errors.log")
-        os.makedirs(os.path.dirname(self.vlc_log_path), exist_ok=True)
         self._ffprobe_procs = []
         self._ffprobe_lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._original_resolution = None
         self._input_file_path = None
         atexit.register(self._kill_ffprobe_procs)
-        self.fallback_resolution_requested.connect(self._fetch_vlc_resolution)
-        override_vlc_path = None
-        override_file = os.path.join(os.path.dirname(bin_dir), 'config', 'vlc_path.txt')
-        if os.path.exists(override_file):
+        self.fallback_resolution_requested.connect(self._fetch_mpv_resolution)
+        self.player = None
+        if mpv:
             try:
-                with open(override_file, 'r') as f:
-                    path = f.read().strip()
-                    if os.path.isdir(path):
-                        os.environ['PYTHON_VLC_MODULE_PATH'] = path
-                        override_vlc_path = path
-                        logger.info(f"Using VLC override path: {path}")
+                '--avcodec-hw=any'
+                '--vout=direct3d11'
+                self.player = mpv.MPV(
+                    osc=False,
+                    input_default_bindings=False,
+                    input_vo_keyboard=False,
+                    hr_seek='yes',
+                    hwdec='auto',
+                    keep_open='yes',
+                    log_handler=logger.debug,
+                    loglevel="info",
+                    vo='gpu',
+                    ytdl=False,
+                    demuxer_max_bytes='500M',
+                    demuxer_max_back_bytes='100M',
+                )
+                logger.info("MediaProcessor initialized successfully with MPV.")
             except Exception as e:
-                logger.error(f"Failed to read VLC override file: {e}")
-        if vlc is None:
-            logger.error("python-vlc module is unavailable. MediaProcessor will run in no-playback mode.")
-            self.vlc_instance = None
-            self.media_player = None
-            self.media = None
-            self.original_resolution = None
-            self.input_file_path = None
-            return
-        vlc_args = [
-            '--no-xlib', '--no-video-title-show',
-            '--aout=waveout', 
-            '--avcodec-hw=any', '--vout=direct3d11',
-            '--no-stats', '--no-lua', '--no-interact',
-            '--file-logging', '--logmode=text',
-            f"--logfile={os.environ.get('FVS_VLC_RAW_LOG', self.vlc_log_path)}",
-            f"--app-id=FVS.{os.environ.get('FVS_VLC_SOURCE_TAG', 'crop_tools')}"
-        ]
-        try:
-            with _suppress_vlc_output():
-                self.vlc_instance = vlc.Instance(vlc_args)
-            if not self.vlc_instance:
-                logger.warning("Enhanced VLC args failed, trying minimal args")
                 fallback_args = [
-                    '--intf=dummy', '--vout=dummy', '--aout=directsound',
-                    '--no-xlib', '--no-video-title-show', '--quiet',
-                    '--verbose=0', '--no-stats', '--logfile=NUL'
+                '--vout=dummy'
                 ]
-                with _suppress_vlc_output():
-                    self.vlc_instance = vlc.Instance(fallback_args)
-        except Exception as e:
-            logger.error(f"Failed to create VLC instance: {e}")
-            self.vlc_instance = None
-        if self.vlc_instance:
-            self.media_player = self.vlc_instance.media_player_new()
-            logger.info("MediaProcessor initialized successfully.")
+                logger.error(f"Failed to initialize MPV in MediaProcessor: {e}")
+                self.player = None
         else:
-            self.media_player = None
-            logger.error("MediaProcessor initialized WITHOUT VLC support.")
-        self.media = None
+            logger.error("python-mpv module is unavailable. MediaProcessor will run in no-playback mode.")
+        self.media_player = self.player
+        self.media = True
         self.original_resolution = None
         self.input_file_path = None
         self._ffprobe_procs = []
@@ -134,19 +94,16 @@ class MediaProcessor(QObject):
 
     def load_media(self, file_path, video_frame_winId):
         logger.info(f"Loading media from: {file_path}")
-        if not self.vlc_instance or not self.media_player:
-            logger.error("VLC not initialized; load_media aborted.")
+        if not self.player:
+            logger.error("MPV not initialized; load_media aborted.")
             return False
         try:
             self._kill_ffprobe_procs()
-            if self.media:
-                self.media.release()
             self.input_file_path = file_path
-            self.media = self.vlc_instance.media_new(file_path)
-            self.media_player.set_media(self.media)
             if video_frame_winId:
-                self.media_player.set_hwnd(int(video_frame_winId))
-            self.media_player.play()
+                self.player.wid = int(video_frame_winId)
+            self.player.command("loadfile", file_path, "replace")
+            self.player.pause = False
             thread = threading.Thread(target=self.get_video_info, args=(file_path,), daemon=True)
             thread.start()
             return True
@@ -178,62 +135,61 @@ class MediaProcessor(QObject):
         except:
             pass
         self._kill_ffprobe_procs()
+        if hasattr(self, 'player') and self.player:
+            try: self.player.terminate()
+            except: pass
 
     def play_pause(self):
-        if not self.media_player: return False
-        if self.media_player.is_playing():
+        if not self.player: return False
+        is_paused = getattr(self.player, "pause", True)
+        if not is_paused:
             logger.info("Pausing media.")
-            self.media_player.pause()
+            self.player.pause = True
             return False
         else:
-            if self.media:
-                logger.info("Playing media.")
-                self.media_player.play()
-                return True
-        return False
+            logger.info("Playing media.")
+            self.player.pause = False
+            return True
 
     def is_playing(self):
-        return self.media_player.is_playing() if self.media_player else False
+        return not getattr(self.player, "pause", True) if self.player else False
 
     def get_time(self):
-        return self.media_player.get_time() if self.media_player else 0
+        return int((getattr(self.player, 'time-pos', 0) or 0) * 1000) if self.player else 0
 
     def get_length(self):
-        return self.media_player.get_length() if self.media_player else 0
+        return int((getattr(self.player, 'duration', 0) or 0) * 1000) if self.player else 0
 
     def get_state(self):
-        return self.media_player.get_state() if self.media_player else None
+        if not self.player: return None
+        return 3 if not getattr(self.player, "pause", True) else 4
 
     def get_position(self):
-        return self.media_player.get_position() if self.media_player else 0.0
+        if not self.player: return 0.0
+        dur = getattr(self.player, 'duration', 0) or 1
+        return (getattr(self.player, 'time-pos', 0) or 0) / dur
 
     def set_position(self, position):
-        if not self.media_player:
+        if not self.player:
             return
         logger.info(f"set_position called with position={position}")
-        if self.media_player.is_seekable():
-            try:
-                self.media_player.set_position(position)
-                self._last_seek_time = time.time()
-            except Exception as e:
-                logger.error(f"Failed to seek: {e}")
-        else:
-            logger.warning(f"Media reports not seekable, cannot seek.")
+        try:
+            self.player.seek(position * 100, reference='relative-percent', precision='exact')
+            self._last_seek_time = time.time()
+        except Exception as e:
+            logger.error(f"Failed to seek: {e}")
 
     def stop(self):
         self._kill_ffprobe_procs()
-        if self.media_player:
+        if self.player:
             logger.info("Stopping media.")
-            self.media_player.stop()
+            self.player.stop()
 
     def set_media_to_null(self):
         logger.info("Unloading media.")
         self._kill_ffprobe_procs()
-        if self.media_player:
-            self.media_player.set_media(None)
-        if self.media:
-            self.media.release()
-        self.media = None
+        if self.player:
+            self.player.stop()
         self.original_resolution = None
         self.input_file_path = None
 
@@ -303,14 +259,15 @@ class MediaProcessor(QObject):
         self.fallback_resolution_requested.emit()
         return None
 
-    def _fetch_vlc_resolution(self):
+    def _fetch_mpv_resolution(self):
         """[FIX #2] Explicit resolution detection with no silent 1080p fallback."""
-        if not self.original_resolution and self.media_player:
-            logger.info("Attempting to fetch resolution fallback from VLC.")
-            w, h = self.media_player.video_get_size(0)
-            if w > 0 and h > 0:
+        if not self.original_resolution and self.player:
+            logger.info("Attempting to fetch resolution fallback from MPV.")
+            w = getattr(self.player, 'width', 0)
+            h = getattr(self.player, 'height', 0)
+            if w and h and w > 0 and h > 0:
                 self.original_resolution = f"{w}x{h}"
-                logger.info(f"VLC fallback got resolution: {self.original_resolution}")
+                logger.info(f"MPV fallback got resolution: {self.original_resolution}")
                 self.info_retrieved.emit(self.original_resolution)
                 return
         if not self.original_resolution:

@@ -1,4 +1,4 @@
-﻿from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
+from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_core_02_handle_clamping_dryrun() -> None:
     src = read_source("ui/widgets/trimmed_slider.py")

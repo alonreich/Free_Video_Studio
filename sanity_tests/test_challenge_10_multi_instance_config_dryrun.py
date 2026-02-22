@@ -1,4 +1,4 @@
-﻿from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
+from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_challenge_10_multi_instance_config_dryrun() -> None:
     src_config = read_source("system/config.py")

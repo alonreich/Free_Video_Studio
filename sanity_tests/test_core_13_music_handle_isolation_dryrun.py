@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import re
 from sanity_tests._ai_sanity_helpers import read_source, assert_all_present
 
@@ -57,8 +57,8 @@ def test_core_13_merger_step3_sync_does_not_force_music_slider_every_tick_dryrun
     assert "self._player.audio_set_volume(self.music_vol_slider.value())" not in else_part
 
 def test_core_13_merger_step2_uses_music_instance_for_music_player_media_dryrun() -> None:
-    """Music preview must bind _player media via vlc_m instance, not self.vlc alias."""
+    """Music preview must bind _player media via mpv_m instance, not self.mpv alias."""
     src = read_source("utilities/merger_music_wizard_playback.py")
     step2_block = _def_block(src, "toggle_video_preview")
-    assert "m = self.vlc_m.media_new(preview_path)" in step2_block
-    assert "m = self.vlc.media_new(preview_path)" not in step2_block
+    assert "m = self.mpv_m.media_new(preview_path)" in step2_block
+    assert "m = self.mpv.media_new(preview_path)" not in step2_block

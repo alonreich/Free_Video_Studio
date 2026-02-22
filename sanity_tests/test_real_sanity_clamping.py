@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import types
 from PyQt5.QtCore import Qt, QPoint
 from ui.widgets.trimmed_slider import TrimmedSlider
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
 class MockEvent:
     def __init__(self, x, y, button=Qt.LeftButton):

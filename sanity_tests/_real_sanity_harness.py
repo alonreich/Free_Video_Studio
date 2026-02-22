@@ -104,6 +104,8 @@ class DummyMediaPlayer:
         self._playing = playing
         self._time = int(current_ms)
         self._rate = float(rate)
+        self._volume = 100
+        self._mute = False
         self.set_time_calls: list[int] = []
         self.set_rate_calls: list[float] = []
         self.paused = 0
@@ -111,25 +113,59 @@ class DummyMediaPlayer:
     def is_playing(self) -> bool:
         return self._playing
 
-    def play(self) -> None:
+    def play(self, *args) -> None:
         self._playing = True
-
-    def pause(self) -> None:
-        self._playing = False
-        self.paused += 1
+    @property
+    def pause(self) -> bool:
+        return not self._playing
+    @pause.setter
+    def pause(self, value: bool) -> None:
+        if value and not self._playing:
+            pass
+        elif value and self._playing:
+            self.paused += 1
+        if value:
+            if not hasattr(self, 'pause_calls'): self.pause_calls = 0
+            self.pause_calls += 1
+        self._playing = not value
+    @property
+    def volume(self) -> int:
+        return self._volume
+    @volume.setter
+    def volume(self, value: int) -> None:
+        self._volume = value
+    @property
+    def speed(self) -> float:
+        return self._rate
+    @speed.setter
+    def speed(self, value: float) -> None:
+        self._rate = float(value)
+        if not hasattr(self, 'set_rate_calls'): self.set_rate_calls = []
+        self.set_rate_calls.append(float(value))
+    @property
+    def mute(self) -> bool:
+        return self._mute
+    @mute.setter
+    def mute(self, value: bool) -> None:
+        self._mute = value
 
     def get_time(self) -> int:
         return self._time
 
     def set_time(self, value: int) -> None:
         self._time = int(value)
+        if not hasattr(self, 'set_time_calls'): self.set_time_calls = []
         self.set_time_calls.append(int(value))
+
+    def seek(self, seconds: float, reference='absolute', precision='exact') -> None:
+        self.set_time(int(seconds * 1000))
 
     def get_rate(self) -> float:
         return self._rate
 
     def set_rate(self, value: float) -> None:
         self._rate = float(value)
+        if not hasattr(self, 'set_rate_calls'): self.set_rate_calls = []
         self.set_rate_calls.append(float(value))
 
     def get_full_state(self) -> dict[str, Any]:
@@ -142,11 +178,26 @@ class DummyMediaPlayer:
     def stop(self) -> None:
         self._playing = False
 
+    def terminate(self) -> None:
+        self.stop()
+
     def set_media(self, _media: Any) -> None:
         return None
 
     def audio_set_volume(self, _vol: int) -> None:
-        return None
+        self.volume = _vol
+
+    def audio_set_mute(self, _mute: bool) -> None:
+        self.mute = _mute
+    
+    def audio_get_track_description(self) -> list:
+        return [[1, "Track 1"]]
+    
+    def audio_set_track(self, _id: int) -> None:
+        pass
+    
+    def audio_add(self, _path: str) -> None:
+        pass
 @dataclass
 class DummyConfigManager:
     config: dict[str, Any]
@@ -175,6 +226,9 @@ class DummyKeyEvent:
 
     def modifiers(self) -> int:
         return self._mods
+    
+    def key(self) -> int:
+        return 0
 
 class DummyListItem:
     def __init__(self, label: str) -> None:
@@ -184,9 +238,9 @@ class DummyListItem:
     def isHidden(self) -> bool:
         return self._hidden
 
-def install_qt_vlc_stubs() -> None:
-    """Install lightweight stubs for PyQt5/vlc so logic modules can be imported in tests."""
-    if "PyQt5" in sys.modules and "vlc" in sys.modules:
+def install_qt_mpv_stubs() -> None:
+    """Install lightweight stubs for PyQt5/mpv so logic modules can be imported in tests."""
+    if "PyQt5" in sys.modules and "mpv" in sys.modules:
         return
     pyqt5 = types.ModuleType("PyQt5")
     qtcore = types.ModuleType("PyQt5.QtCore")
@@ -216,6 +270,7 @@ def install_qt_vlc_stubs() -> None:
         WA_TransparentForMouseEvents = 0
         ActiveWindowFocusReason = 0
         NoFocus = 0
+        Key_Backspace = 16777219
         @staticmethod
         def Alignment() -> int:
             return 0
@@ -285,6 +340,10 @@ def install_qt_vlc_stubs() -> None:
 
         def keyPressEvent(self, _event: Any) -> None:
             return None
+        
+        def width(self) -> int: return 100
+        
+        def height(self) -> int: return 100
 
     class QWidget:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -297,7 +356,7 @@ def install_qt_vlc_stubs() -> None:
 
         def _do_save_step_geometry(self) -> None: return None
 
-        def _on_vlc_ended(self) -> None: return None
+        def _on_mpv_ended(self) -> None: return None
 
         def _sync_caret(self) -> None: return None
 
@@ -405,9 +464,17 @@ def install_qt_vlc_stubs() -> None:
         def text(self) -> str:
             return self._text
             
+        def setText(self, t: str) -> None:
+            self._text = t
+
+        def sizeHint(self) -> Any:
+            return DummyRect(0, 0, 100, 30)
+
         def hide(self) -> None: return None
 
         def show(self) -> None: return None
+
+        def setVisible(self, v: bool) -> None: return None
 
         def adjustSize(self) -> None: return None
 
@@ -430,8 +497,6 @@ def install_qt_vlc_stubs() -> None:
         def y(self) -> int: return 0
 
         def raise_(self) -> None: return None
-
-        def setVisible(self, v: bool) -> None: return None
     qtcore.Qt = Qt
     qtcore.QTimer = QTimer
     qtcore.QThread = QThread
@@ -471,7 +536,6 @@ def install_qt_vlc_stubs() -> None:
         "QFrame",
         "QPushButton",
         "QSlider",
-        "QLabel",
         "QSpinBox",
         "QDoubleSpinBox",
         "QCheckBox",
@@ -519,10 +583,29 @@ def install_qt_vlc_stubs() -> None:
     pyqt5.QtCore = qtcore
     pyqt5.QtWidgets = qtwidgets
     pyqt5.QtGui = qtgui
-    vlc_mod = types.ModuleType("vlc")
-    vlc_mod.State = types.SimpleNamespace(Ended=9, Playing=1)
-    vlc_mod.EventType = types.SimpleNamespace()
-    sys.modules["vlc"] = vlc_mod
+    qtwidgets.QLabel = QLabel
+    mpv_mod = types.ModuleType("mpv")
+
+    class MockMPV:
+        def __init__(self, *args, **kwargs):
+            self.pause = True
+            self.volume = 100
+            self.speed = 1.0
+            self.time_pos = 0.0
+            self.duration = 100.0
+            self.path = ""
+
+        def play(self, path): self.path = path
+
+        def stop(self): pass
+
+        def seek(self, *args, **kwargs): pass
+
+        def audio_add(self, path): pass
+
+        def terminate(self): pass
+    mpv_mod.MPV = MockMPV
+    sys.modules["mpv"] = mpv_mod
 
 
 

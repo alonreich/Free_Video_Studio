@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass
 import types
 import sys
-from sanity_tests._real_sanity_harness import install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
+install_qt_mpv_stubs()
 qtcore = sys.modules.get("PyQt5.QtCore")
 if qtcore is not None and not hasattr(qtcore, "QByteArray"):
     class _QByteArray:

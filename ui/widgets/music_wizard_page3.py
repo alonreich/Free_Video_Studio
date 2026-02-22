@@ -20,6 +20,8 @@ class MergerMusicWizardStep3PageMixin:
         self.video_container = QWidget()
         self.video_container.setMinimumHeight(350)
         self.video_container.setStyleSheet("background: #000; border: 2px solid #34495e;")
+        self.video_container.setAttribute(Qt.WA_DontCreateNativeAncestors)
+        self.video_container.setAttribute(Qt.WA_NativeWindow)
         self.video_container.setAttribute(Qt.WA_OpaquePaintEvent)
         self.video_container.setAttribute(Qt.WA_NoSystemBackground)
         player_volume_row.addWidget(self.video_container, 1)

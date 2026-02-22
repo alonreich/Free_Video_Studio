@@ -10,9 +10,7 @@ class MergerMusicWizardMiscMixin:
         if not hasattr(self, "video_container"): return
         try:
             wid = int(self.video_container.winId())
-            if sys.platform.startswith("win"): self._video_player.set_hwnd(wid)
-            elif sys.platform.startswith("linux"): self._video_player.set_xwindow(wid)
-            elif sys.platform == "darwin": self._video_player.set_nsobject(wid)
+            self._video_player.wid = wid
         except: pass
 
     def _get_default_size(self, step_idx):
@@ -104,15 +102,10 @@ class MergerMusicWizardMiscMixin:
         try:
             curr_idx = self.stack.currentIndex()
             if curr_idx == 1:
-                if override_state is not None:
-                    st = override_state
-                elif getattr(self, "_player", None):
-                    st = self._player.get_state()
-                else:
-                    st = 0
-                if st in (1, 2, 3):
-                    self._show_caret_step2 = True
                 show_st2 = getattr(self, "_show_caret_step2", False)
+                if not show_st2 and hasattr(self, "offset_slider") and self.offset_slider.maximum() > 0:
+                    self._show_caret_step2 = True
+                    show_st2 = True
                 if not show_st2 or not self.wave_preview.isVisible(): 
                     self._wave_caret.hide()
                     self._wave_time_badge.hide()
@@ -131,8 +124,8 @@ class MergerMusicWizardMiscMixin:
                     draw_x0 = getattr(self, "_draw_x0", 0)
                 x = label_pos.x() + draw_x0 + int(frac * draw_w) - 1
                 y = label_pos.y() + getattr(self, "_draw_y0", 0)
-                total_h = self.wave_preview.height() if self.wave_preview.height() > 0 else 265
-                self._wave_caret.setGeometry(x, y, 2, total_h)
+                total_h = getattr(self, "_draw_h", 0) or self.wave_preview.height() or 265
+                self._wave_caret.setGeometry(x, y, 1, total_h)
                 self._wave_caret.show()
                 self._wave_caret.raise_()
                 time_str = self._format_time_long(val_ms)

@@ -4,11 +4,16 @@ import os
 import signal
 import subprocess
 import sys
+import time
 import threading
 import traceback
 from logging.handlers import RotatingFileHandler
-import vlc
-from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication, QEvent, QRect
+try:
+    import mpv
+except Exception:
+    mpv = None
+
+from PyQt5.QtCore import pyqtSignal, QTimer, QUrl, Qt, QCoreApplication, QEvent, QRect, QPoint
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QStyle, QFileDialog, 
                              QMessageBox, QShortcut, QStatusBar, QLabel, QDialog)
@@ -43,11 +48,12 @@ class _QtLiveLogHandler(logging.Handler):
         self.ui = ui_owner
 
     def emit(self, record):
+        if not QCoreApplication.instance() or getattr(self.ui, "_switching_app", False):
+            return
         try:
             msg = self.format(record)
-            if hasattr(self.ui, "live_log_signal"):
-                self.ui.live_log_signal.emit(msg)
-        except Exception:
+            self.ui.live_log_signal.emit(msg)
+        except:
             pass
 
 class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, PersistentWindowMixin):
@@ -82,11 +88,14 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 return
             else:
                 pass
+            self._opening_granular_dialog = True
+            self._ignore_mpv_end_until = time.time() + 2.0
             current_ms = 0
-            if self.vlc_player:
-                if self.vlc_player.is_playing():
-                    self.vlc_player.set_pause(1)
-                current_ms = max(0, self.vlc_player.get_time())
+            if self.player:
+                is_paused = getattr(self.player, "pause", True)
+                if not is_paused:
+                    self.player.pause = True
+                current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
@@ -102,10 +111,13 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 self.speed_segments, 
                 base_speed=current_base_speed, 
                 start_time_ms=current_ms,
-                vlc_instance=self.vlc_instance,
+                mpv_instance=self.player,
                 volume=current_volume
             )
             result = dlg.exec_()
+            self._opening_granular_dialog = False
+            self._ignore_mpv_end_until = time.time() + 0.6
+            self._bind_main_player_output()
             self.timer.start()
             if result == QDialog.Accepted:
                 self.speed_segments = sorted(dlg.speed_segments, key=lambda x: x['start'])
@@ -129,8 +141,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 self.granular_checkbox.blockSignals(False)
             resume_time = dlg.last_position_ms
             if resume_time < 0: resume_time = 0
-            if getattr(self, "vlc_player", None):
-                self.vlc_player.set_time(int(resume_time))
+            if getattr(self, "player", None):
+                self.player.seek(resume_time / 1000.0, reference='absolute', precision='exact')
             self.positionSlider.setValue(int(resume_time))
             self.is_playing = False
             self.playPauseButton.setText("PLAY")
@@ -139,11 +151,39 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             self.logger.critical(f"CRITICAL: Error in Granular Speed Dialog: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"An error occurred opening the editor:\n{e}")
             self.granular_checkbox.setChecked(False)
+            self._opening_granular_dialog = False
+            self._ignore_mpv_end_until = time.time() + 0.6
+
+    def _bind_main_player_output(self):
+        """Rebind MPV video output to main preview surface to avoid black/frozen preview."""
+        try:
+            if not getattr(self, "player", None) or not getattr(self, "video_surface", None):
+                return
+            wid = int(self.video_surface.winId())
+            try:
+                self.player.wid = wid
+            except Exception:
+                try:
+                    self.player.command("set", "wid", wid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def on_hardware_scan_finished(self, detected_mode: str):
         """Receives the result from the background hardware scan."""
         if not hasattr(self, 'status_bar'):
             return
+        prev_mode = str(getattr(self, "hardware_strategy", "Scanning...") or "Scanning...")
+        if getattr(self, "scan_complete", False) and prev_mode != "Scanning...":
+            if prev_mode != "CPU" and str(detected_mode) == "CPU":
+                self.logger.warning(
+                    "Ignoring stale hardware callback: requested CPU after finalized %s",
+                    prev_mode,
+                )
+                return
+            if prev_mode == str(detected_mode):
+                return
         self.hardware_strategy = detected_mode
         self.scan_complete = True
         self.logger.info(f"Hardware Strategy finalized: {self.hardware_strategy}")
@@ -207,10 +247,18 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         Safely stops the player and resets the UI.
         """
         try:
-            if getattr(self, "vlc_player", None):
-                self.vlc_player.stop()
-            if getattr(self, "vlc_music_player", None):
-                self.vlc_music_player.stop()
+            if bool(getattr(self, "_opening_granular_dialog", False)):
+                return
+            if time.time() < float(getattr(self, "_ignore_mpv_end_until", 0.0) or 0.0):
+                return
+            if bool(getattr(self, "_handling_video_end", False)):
+                return
+            self._handling_video_end = True
+            if getattr(self, "player", None):
+                try:
+                    self.player.pause = True
+                except Exception:
+                    pass
             self.positionSlider.blockSignals(True)
             self.positionSlider.setValue(self.positionSlider.maximum())
             self.positionSlider.blockSignals(False)
@@ -223,6 +271,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.exception("End-of-media handler failed: %s", e)
+        finally:
+            self._handling_video_end = False
 
     def log_overlay_sink(self, line: str):
         """Thread-safe slot to receive log messages."""
@@ -268,13 +318,15 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
 
     def _on_speed_changed(self, value):
         self.playback_rate = value
-        if self.vlc_player and self.vlc_player.is_playing():
-            self.vlc_player.set_pause(1)
-            self.playPauseButton.setText("PLAY")
-            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-            self.is_playing = False
-            if self.timer.isActive():
-                self.timer.stop()
+        if self.player:
+            is_paused = getattr(self.player, "pause", True)
+            if not is_paused:
+                self.player.pause = True
+                self.playPauseButton.setText("PLAY")
+                self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                self.is_playing = False
+                if self.timer.isActive():
+                    self.timer.stop()
         self.logger.info(f"Playback speed changed to {value}x. Player paused.")
 
     def __init__(self, file_path=None, hardware_strategy="CPU"):
@@ -318,6 +370,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.is_processing = False
         self.wants_to_play = False
         self._is_seeking_from_end = False
+        self._suspend_volume_sync = True
+        self._opening_granular_dialog = False
+        self._ignore_mpv_end_until = 0.0
+        self._handling_video_end = False
+        self._last_mpv_end_emit = 0.0
         self.volume_shortcut_target = 'main'
         self._phase_is_processing = False
         self._phase_dots = 1
@@ -345,15 +402,15 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.video_ended_signal.connect(self._handle_video_end)
         self.duration_changed_signal.connect(self._safe_handle_duration_changed)
         try:
-            if not any(isinstance(h, _QtLiveLogHandler) for h in self.logger.handlers):
-                qt_handler = _QtLiveLogHandler(self) 
-                qt_handler.setLevel(logging.INFO)
-                self.logger.addHandler(qt_handler)
+            self.logger.handlers = [h for h in self.logger.handlers if not isinstance(h, _QtLiveLogHandler)]
+            qt_handler = _QtLiveLogHandler(self)
+            qt_handler.setLevel(logging.INFO)
+            self.logger.addHandler(qt_handler)
         except Exception:
             pass
         self.logger.info("=== Application started ===")
         self.logger.info(f"Initialized with Hardware Strategy: {self.hardware_strategy}")
-        self._setup_vlc()
+        self._setup_mpv()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.update_player_state)
@@ -388,65 +445,60 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         """Return original duration in seconds (float)."""
         return self.original_duration_ms / 1000.0 if self.original_duration_ms else 0.0
 
-    def _setup_vlc(self):
-        """Initializes the VLC instance and player."""
+    def _setup_mpv(self):
+        """Initializes the MPV instance and player."""
         log_dir = os.path.join(self.base_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
-        if hasattr(os, 'add_dll_directory'):
+        self.player = None
+        if mpv:
             try:
-                os.add_dll_directory(self.bin_dir)
-            except Exception: pass
-        plugin_path = os.path.join(self.bin_dir, "plugins").replace('\\', '/')
-        vlc_args = [
-            '--verbose=2',
-            '--no-video-title-show',
-            "--avcodec-hw=any",
-            "--vout=direct3d11",
-            '--aout=mmdevice', 
-            '--file-caching=3000',
-            '--no-osd',
-            '--ignore-config',
-            f'--plugin-path={plugin_path}'
-        ]
-        os.environ["PATH"] = self.bin_dir + os.pathsep + os.environ["PATH"]
-        self.vlc_player = None
-        try:
-            self.vlc_instance = vlc.Instance(vlc_args)
-            if self.vlc_instance:
-                self.vlc_player = self.vlc_instance.media_player_new()
-                if self.vlc_player:
-                    self.vlc_player.audio_set_volume(100)
-            else:
-                self.logger.error("VLC Instance creation returned None.")
-        except Exception as e:
-            self.logger.error(f"CRITICAL: VLC Failed to initialize. Error: {e}")
-            self.vlc_instance = None
-        if self.vlc_player:
-            try:
-                self.vlc_event_manager = self.vlc_player.event_manager()
-                if self.vlc_event_manager:
-                    self.vlc_event_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_vlc_end_reached)
-                    self.vlc_event_manager.event_attach(vlc.EventType.MediaPlayerMediaChanged, self._on_duration_changed)
-                    self.vlc_event_manager.event_attach(vlc.EventType.MediaDurationChanged, self._on_duration_changed)
-                else:
-                    self.logger.warning("Could not get VLC event manager.")
+                wid = int(self.video_surface.winId())
+                self.logger.info(f"UI: Initializing MPV with window ID {wid}")
+                if False:
+                    mpv_args = ["--no-video-title-show", "--avcodec-hw=any", "--vout=direct3d11"]
+                    self.mpv_instance = mpv.MPV(mpv_args)
+                self.player = mpv.MPV(wid=wid, osc=False, hr_seek='yes', hwdec='auto', keep_open='yes', log_handler=self.logger.debug, loglevel="info", vo='gpu', ytdl=False, demuxer_max_bytes='500M', demuxer_max_back_bytes='100M')
+                if False:
+                    '--no-video-title-show'
+                    '--avcodec-hw=any'
+                    '--vout=direct3d11'
+                if self.player:
+                    self.player.volume = 100
+                    try:
+                        self.player.speed = float(getattr(self, "playback_rate", 1.1) or 1.1)
+                    except Exception:
+                        pass
+                    self._bind_main_player_output()
+                    try:
+                        @self.player.event_callback('end-file')
+                        def handle_end_file(_event):
+                            QTimer.singleShot(0, self._on_mpv_end_reached)
+                        self._mpv_end_file_cb = handle_end_file
+                    except Exception as cb_err:
+                        self.logger.warning(f"MPV end-file callback registration failed: {cb_err}")
+                        try:
+                            @self.player.property_observer('eof-reached')
+                            def handle_eof_prop(_name, value):
+                                if bool(value):
+                                    QTimer.singleShot(0, self._on_mpv_end_reached)
+                            self._mpv_eof_prop_cb = handle_eof_prop
+                        except Exception as obs_err:
+                            self.logger.warning(f"MPV eof-reached property observer registration failed: {obs_err}")
             except Exception as e:
-                self.logger.error("Failed to attach VLC event handlers: %s", e)
+                self.logger.error(f"CRITICAL: MPV Failed to initialize. Error: {e}")
+                self.player = None
+        if self.player:
             try:
-                self.apply_master_volume()
-            except Exception: pass
-    
-    def _on_duration_changed(self, event, player=None):
-        """Event handler for when media duration becomes available. (Native VLC thread)"""
-        try:
-            player = player or self.vlc_player
-            if player and player.get_media():
-                duration_ms = player.get_media().get_duration()
-                if duration_ms > 0:
-                    self.duration_changed_signal.emit(int(duration_ms))
-        except Exception as e:
-            self.logger.error("Error in _on_duration_changed VLC callback: %s", e)
+                self._suspend_volume_sync = True
 
+                def _enable_volume_sync_after_bootstrap():
+                    if not getattr(self, "player", None):
+                        return
+                    self._suspend_volume_sync = False
+                QTimer.singleShot(600, _enable_volume_sync_after_bootstrap)
+            except Exception:
+                pass
+    
     def _safe_handle_duration_changed(self, duration_ms: int):
         """Slot to safely update UI with duration. (Main thread)"""
         try:
@@ -524,8 +576,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 "resolution": getattr(self, "original_resolution", None)
             }
             StateTransfer.save_state(state)
-            if self.vlc_player:
-                self.vlc_player.stop()
+            if self.player:
+                self.player.stop()
             env = os.environ.copy()
             norm_root = os.path.normpath(root_dir)
             norm_dev = os.path.normpath(dev_tools_dir)
@@ -572,8 +624,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             command = [sys.executable, os.path.join(self.base_dir, 'advanced', 'advanced_video_editor.py')]
             if self.input_file_path:
                 command.append(self.input_file_path)
-            if self.vlc_player:
-                self.vlc_player.stop()
+            if self.player:
+                self.player.stop()
             subprocess.Popen(command, cwd=self.base_dir)
             self.logger.info("Advanced Editor process started. Closing main app.")
             self.close()
@@ -604,6 +656,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
     def showEvent(self, e):
         super().showEvent(e)
         try:
+            self._bind_main_player_output()
             self._layout_volume_slider()
             self._update_volume_badge()
         except Exception:
@@ -620,6 +673,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             new_m_start = self.music_timeline_start_ms + delta_start
             if new_m_start < start_ms:
                 new_m_start = start_ms
+            new_m_start = max(start_ms, self.music_timeline_start_ms)
+            new_m_end = min(end_ms, self.music_timeline_end_ms)
             if new_m_start + music_dur > end_ms:
                 new_m_start = end_ms - music_dur
                 if new_m_start < start_ms:
@@ -761,7 +816,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         [FIX #12] Proportional scaling for the Upload Hint overlay.
         Calculates relative sizes based on current window height and width to prevent overlap.
         """
-        if not hasattr(self, 'upload_hint_container') or not self.upload_hint_container.isVisible():
+        if not hasattr(self, 'upload_hint_container'):
             return
             
         from PyQt5.QtGui import QPainter, QPixmap, QColor, QPolygon
@@ -837,8 +892,8 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
     def select_file(self):
         self._set_upload_hint_active(False)
         try:
-            if getattr(self, "vlc_player", None) and self.vlc_player.is_playing():
-                self.vlc_player.set_pause(1)
+            if getattr(self, "player", None):
+                self.player.pause = True
             if getattr(self, "timer", None) and self.timer.isActive():
                 self.timer.stop()
         except Exception as e:
@@ -885,19 +940,15 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
     def handle_file_selection(self, file_path):
         """Loads a file, starts playback, and initiates duration polling."""
         try:
-            player = getattr(self, "vlc_player", None)
-            if player:
-                if player.is_playing():
-                    player.stop()
-                current_media = player.get_media()
-                if current_media:
-                    current_media.release()
-                    player.set_media(None)
+            if self.player:
+                is_paused = getattr(self.player, "pause", True)
+                if not is_paused:
+                    self.player.stop()
             timer = getattr(self, "timer", None)
             if timer and timer.isActive():
                 timer.stop()
         except Exception as stop_err:
-            self.logger.error("Error stopping existing player/media: %s", stop_err)
+            self.logger.error("Error stopping existing player: %s", stop_err)
         try:
             self.reset_app_state()
         except Exception as reset_err:
@@ -914,31 +965,36 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         if not os.path.isfile(p):
             self.logger.error("Selected file not found: %s", p)
             return
-        if self.vlc_instance and self.vlc_player:
-            media = self.vlc_instance.media_new_path(p)
-            if media is None:
-                try:
-                    mrl = QUrl.fromLocalFile(p).toString()
-                except Exception:
-                    mrl = "file:///" + p.replace("\\\\", "/")
-                media = self.vlc_instance.media_new(mrl)
-            if media is None:
-                self.logger.error("Failed to open media: %s", p)
-                return
-            self.vlc_player.set_media(media)
+        if self.player:
             try:
-                if sys.platform.startswith('win'):
-                    self.vlc_player.set_hwnd(int(self.video_surface.winId()))
-            except Exception as hwnd_err:
-                self.logger.error("Failed to set HWND for player: %s", hwnd_err)
-            self.vlc_player.play()
-            if hasattr(self, "apply_master_volume"):
-                self.apply_master_volume()
-                QTimer.singleShot(1000, self.apply_master_volume)
-            if hasattr(self, "_on_mobile_toggled"):
-                QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
+                self._bind_main_player_output()
+                self.player.command("loadfile", p, "replace")
+                try:
+                    current_rate = float(self.speed_spinbox.value()) if hasattr(self, "speed_spinbox") else float(getattr(self, "playback_rate", 1.1) or 1.1)
+                    self.playback_rate = current_rate
+                    self.player.speed = current_rate
+                except Exception as rate_err:
+                    self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
+                self.player.pause = False
+
+                def _poll_dur():
+                    if not self.player: return
+                    dur = getattr(self.player, 'duration', 0)
+                    if dur and dur > 0:
+                        self.duration_changed_signal.emit(int(dur * 1000))
+                    else:
+                        QTimer.singleShot(500, _poll_dur)
+                QTimer.singleShot(500, _poll_dur)
+                if hasattr(self, "apply_master_volume"):
+                    self._suspend_volume_sync = False
+                    self.apply_master_volume()
+                    QTimer.singleShot(400, self.apply_master_volume)
+                if hasattr(self, "_on_mobile_toggled"):
+                    QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
+            except Exception as e:
+                self.logger.error("Failed to play media with MPV: %s", e)
         else:
-            self.logger.warning("VLC not available. Skipping playback. (CPU Mode)")
+            self.logger.warning("MPV not available. Skipping playback. (CPU Mode)")
             pass
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
@@ -1011,25 +1067,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             if self.process_thread.isRunning():
                 self.process_thread.wait(3000)
         try:
-            if hasattr(self, "vlc_event_manager") and self.vlc_event_manager:
-                try:
-                    self.vlc_event_manager.event_detach(vlc.EventType.MediaPlayerEndReached)
-                    self.vlc_event_manager.event_detach(vlc.EventType.MediaPlayerMediaChanged)
-                    self.vlc_event_manager.event_detach(vlc.EventType.MediaDurationChanged)
-                except Exception: pass
-            if getattr(self, "vlc_player", None):
-                self.vlc_player.stop()
-                self.vlc_player.release()
-                self.vlc_player = None
-            if getattr(self, "vlc_music_player", None):
-                self.vlc_music_player.stop()
-                self.vlc_music_player.release()
-                self.vlc_music_player = None
-            if getattr(self, "vlc_instance", None):
-                self.vlc_instance.release()
-                self.vlc_instance = None
+            if getattr(self, "player", None):
+                self.player.terminate()
+                self.player = None
         except Exception as e:
-            self.logger.error("Failed to safely stop VLC on close: %s", e)
+            self.logger.error("Failed to safely stop MPV on close: %s", e)
 
         from system.utils import ProcessManager
         ProcessManager.cleanup_temp_files()

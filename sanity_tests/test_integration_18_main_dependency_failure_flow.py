@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_integration_18_main_dependency_failure_flow() -> None:

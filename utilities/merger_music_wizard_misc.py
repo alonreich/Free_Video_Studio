@@ -10,9 +10,7 @@ class MergerMusicWizardMiscMixin:
         if not hasattr(self, "video_container"): return
         try:
             wid = int(self.video_container.winId())
-            if sys.platform.startswith("win"): self._video_player.set_hwnd(wid)
-            elif sys.platform.startswith("linux"): self._video_player.set_xwindow(wid)
-            elif sys.platform == "darwin": self._video_player.set_nsobject(wid)
+            self._video_player.wid = wid
         except: pass
 
     def _get_default_size(self, step_idx):

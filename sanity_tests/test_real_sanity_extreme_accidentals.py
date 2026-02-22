@@ -2,8 +2,8 @@
 from pathlib import Path
 import threading
 import types
-from sanity_tests._real_sanity_harness import DummyCheckBox, DummySpinBox, install_qt_vlc_stubs
-install_qt_vlc_stubs()
+from sanity_tests._real_sanity_harness import DummyCheckBox, DummySpinBox, install_qt_mpv_stubs
+install_qt_mpv_stubs()
 
 from processing.media_utils import MediaProber
 from processing.system_utils import monitor_ffmpeg_progress, parse_time_to_seconds
@@ -182,10 +182,17 @@ class _MusicPlayer:
 
     def play(self) -> None:
         self._playing = True
+    @property
+    def pause(self) -> bool:
+        return not self._playing
+    @pause.setter
+    def pause(self, value: bool) -> None:
+        self._playing = not value
+        if value:
+            self.pause_calls += 1
 
-    def pause(self) -> None:
-        self._playing = False
-        self.pause_calls += 1
+    def pause_method(self) -> None:
+        self.pause = True
 
     def get_time(self) -> int:
         return int(self._time)
@@ -205,11 +212,12 @@ class _MusicPlayer:
     def set_rate(self, value: float) -> None:
         self._rate = float(value)
 
-def test_extreme_10_set_vlc_position_force_pause_beats_autoplay_inside_music_window() -> None:
+def test_extreme_10_set_player_position_force_pause_beats_autoplay_inside_music_window() -> None:
     music = _MusicPlayer()
     host = types.SimpleNamespace(
         _scrub_lock=threading.RLock(),
-        vlc_music_player=music,
+        mpv_music_player=music,
+        _music_preview_player=music,
         _wizard_tracks=[("song.mp3", 0.0, 10.0)],
         music_timeline_start_ms=1000,
         music_timeline_end_ms=5000,
@@ -219,8 +227,8 @@ def test_extreme_10_set_vlc_position_force_pause_beats_autoplay_inside_music_win
         _get_music_offset_ms=lambda: 0,
         _music_eff=lambda: 80,
         logger=_logger(),
-        vlc_player=types.SimpleNamespace(set_time=lambda *_: None),
+        player=types.SimpleNamespace(set_time=lambda *_: None),
     )
-    PlayerMixin.set_vlc_position(host, 2500, sync_only=True, force_pause=True)
+    PlayerMixin.set_player_position(host, 2500, sync_only=True, force_pause=True)
     assert music.pause_calls >= 1
     assert music.is_playing() is False

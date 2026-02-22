@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_preview_players_have_anti_stutter_tick_and_seek_guards_dryrun() -> None:
@@ -105,7 +105,7 @@ def test_granular_editor_seek_and_timeline_sync_contracts_dryrun() -> None:
         [
             "self.timeline.sliderMoved.connect(self.seek_video)",
             "def seek_video(self, pos):",
-            "self.vlc_player.set_time(int(pos))",
+            "self.player.set_time(int(pos))",
             "if not self.timeline.isSliderDown():",
             "self.timeline.setValue(t)",
         ],

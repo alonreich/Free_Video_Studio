@@ -6,10 +6,23 @@ class EncoderManager:
     """
     ENCODER_PREFERENCE = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
 
-    def __init__(self, logger):
+    def __init__(self, logger, hardware_strategy: str = None):
         self.logger = logger
         self.primary_encoder = os.environ.get('VIDEO_HW_ENCODER', 'h264_nvenc')
         self.forced_cpu = (os.environ.get('VIDEO_FORCE_CPU') == '1')
+        if hardware_strategy:
+            if hardware_strategy == "NVIDIA":
+                self.primary_encoder = "h264_nvenc"
+                self.forced_cpu = False
+            elif hardware_strategy == "AMD":
+                self.primary_encoder = "h264_amf"
+                self.forced_cpu = False
+            elif hardware_strategy == "INTEL":
+                self.primary_encoder = "h264_qsv"
+                self.forced_cpu = False
+            elif hardware_strategy == "CPU":
+                self.primary_encoder = "libx264"
+                self.forced_cpu = True
         self.attempted_encoders = set()
 
     def get_initial_encoder(self):

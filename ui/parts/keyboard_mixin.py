@@ -88,15 +88,15 @@ class KeyboardMixin(QWidget):
 
     def seek_relative_time(self, ms_offset: int):
         """Moves the player's position by a given millisecond offset."""
-        if not getattr(self, "vlc_player", None):
+        if not getattr(self, "player", None):
             return
-        current_time = self.vlc_player.get_time()
+        current_time = (getattr(self.player, "time-pos", 0) or 0) * 1000
         new_time = max(0, current_time + ms_offset)
-        max_time = self.vlc_player.get_length()
+        max_time = (getattr(self.player, "duration", 0) or 0) * 1000
         if max_time > 0:
             new_time = min(new_time, max_time)
-        self.set_vlc_position(new_time)
-        if not self.vlc_player.is_playing():
-            self.positionSlider.setValue(new_time)
+        self.set_player_position(new_time)
+        if getattr(self.player, "pause", True):
+            self.positionSlider.setValue(int(new_time))
         if hasattr(self, "logger"):
             self.logger.debug("KEYBOARD: Seeked %dms to %dms", ms_offset, new_time)

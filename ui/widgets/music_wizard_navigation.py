@@ -1,4 +1,5 @@
 ﻿import os
+import time
 from PyQt5.QtWidgets import QMessageBox, QStyle, QWidget
 from PyQt5.QtCore import Qt, QTimer
 
@@ -27,7 +28,18 @@ class MergerMusicWizardNavigationMixin:
             self._bind_video_output()
             self._prepare_timeline_data()
             self.timeline.set_current_time(0.0)
-            self._sync_all_players_to_time(0.0, force_playing=False)
+            self._sync_all_players_to_time(0.0, force_playing=True)
+            self._last_clock_ts = time.time()
+            self._last_seek_ts = 0.0
+            self._step3_end_finalize_pending = False
+            self.btn_play_video.setText("  PAUSE")
+            self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+            if not hasattr(self, '_play_timer') or self._play_timer is None:
+                self._play_timer = QTimer(self)
+                self._play_timer.setInterval(40)
+                self._play_timer.timeout.connect(self._on_play_tick)
+            if not self._play_timer.isActive():
+                self._play_timer.start()
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
             self.update_coverage_ui()
@@ -59,6 +71,10 @@ class MergerMusicWizardNavigationMixin:
             self.confirm_current_track()
         elif idx == 2:
             self.logger.info("WIZARD: User clicked DONE on Timeline. Finishing.")
+            try:
+                self.final_timeline_time = float(getattr(self.timeline, "current_time", 0.0))
+            except Exception:
+                self.final_timeline_time = 0.0
             self._save_step_geometry() 
             self.stop_previews()
             self.accept()
@@ -103,7 +119,7 @@ class MergerMusicWizardNavigationMixin:
             pass
         self._dragging = False
         self._wave_dragging = False
-        self._last_good_vlc_ms = initial_offset_ms
+        self._last_good_mpv_ms = initial_offset_ms
         self._pending_offset_ms = initial_offset_ms
         try:
             self.offset_slider.blockSignals(True)

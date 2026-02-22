@@ -72,10 +72,9 @@ class MergerMusicWizardTimelineMixin:
         self.splash_overlay.hide()
 
     def _sync_music_only_to_time(self, project_time):
-        if not self._video_player: return
-        v_state = self._video_player.get_state()
-        if v_state != 3:
-            if self._player: self._player.pause()
+        if not self.player: return
+        is_paused = getattr(self.player, "pause", True)
+        if is_paused:
             return
         elapsed = 0.0; target_idx = -1; music_offset = 0.0
         for i, (path, start_off, dur) in enumerate(self.selected_tracks):
@@ -83,100 +82,58 @@ class MergerMusicWizardTimelineMixin:
                 target_idx = i; music_offset = (project_time - elapsed) + start_off; break
             elapsed += dur
         if target_idx != -1:
-            target_path = self.selected_tracks[target_idx][0]
-            if target_path != self._last_m_mrl:
-                m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
-
-                def _mus_v_safe():
-                    if self._player: 
-                        vol_to_set = self.music_vol_slider.value()
-                        self._player.audio_set_volume(vol_to_set)
-                QTimer.singleShot(200, _mus_v_safe)
-                self._player.set_time(int(music_offset * 1000))
-            else:
-                try:
-                    curr_audio_time = self._player.get_time() / 1000.0
-                    target_audio_time = music_offset 
-                    if abs(curr_audio_time - target_audio_time) > 0.5: self._player.set_time(int(target_audio_time * 1000))
-                    if self._player.get_state() != 3: 
-                        self._player.play()
-                        self._player.set_rate(1.0)
-                    eff_vol = self.music_vol_slider.value()
-                    self._player.audio_set_volume(eff_vol)
-                except Exception as ex:
-                    self.logger.debug("WIZARD: music sync drift correction skipped: %s", ex)
+            self.player.seek(music_offset, reference='absolute', precision='exact')
         else:
-            self._player.stop(); self._last_m_mrl = ""
+            self.player.stop(); self._last_m_mrl = ""
 
     def _on_timeline_seek(self, pct):
         self._last_seek_ts = time.time(); target_sec = pct * self.total_video_sec
-        is_playing = False
-        if self._video_player: is_playing = (self._video_player.get_state() == 3)
         self.timeline.set_current_time(target_sec)
-        if self.stack.currentIndex() == 2 and self._video_player:
-            target_vid_idx = len(self.video_segments) - 1; video_offset = 0.0; current_count_elapsed = 0.0
-            for i, seg in enumerate(self.video_segments):
-                if current_count_elapsed + seg["duration"] > target_sec + 0.001:
-                    target_vid_idx = i; video_offset = target_sec - current_count_elapsed; break
-                current_count_elapsed += seg["duration"]
-            final_elapsed = 0.0
-            for i in range(target_vid_idx): final_elapsed += self.video_segments[i]["duration"]
-            self._current_elapsed_offset = final_elapsed
-            target_path = self.video_segments[target_vid_idx]["path"]
-            curr_media = self._video_player.get_media()
-            curr_mrl = str(curr_media.get_mrl()).replace("%20", " ") if curr_media else ""
-            if target_path.replace("\\", "/").lower() not in curr_mrl.lower():
-                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m)
-                if is_playing: 
-                    self._video_player.play()
-                    self._video_player.set_rate(self.speed_factor)
-            
-            def _seek_v_safe():
-                if self._video_player: 
-                    v_vol_raw = self.video_vol_slider.value()
-                    self._video_player.audio_set_volume(v_vol_raw)
-            QTimer.singleShot(200, _seek_v_safe)
-            real_v_pos_ms = self._project_time_to_source_ms(target_sec if 'target_sec' in locals() else timeline_sec)
+        if False:
             self._video_player.set_time(real_v_pos_ms)
-            if not is_playing: self._video_player.set_pause(True)
-        self._sync_all_players_to_time(target_sec)
-        if not is_playing:
-            if self._video_player: self._video_player.set_pause(True)
-            if self._player: self._player.set_pause(True)
+            self._sync_all_players_to_time(target_sec)
+        if not self.player: return
+        is_paused = getattr(self.player, "pause", True)
+        self.timeline.set_current_time(target_sec)
+        if self.stack.currentIndex() == 2:
+            self._sync_all_players_to_time(target_sec)
+        if is_paused:
+            self.player.pause = True
         self._sync_caret()
 
     def _sync_all_players_to_time(self, timeline_sec):
+        if not self.player: return
         elapsed = 0.0; target_video_idx = 0; video_offset = 0.0
+        elapsed = 0.0
         for i, seg in enumerate(self.video_segments):
             if elapsed + seg["duration"] > timeline_sec:
-                target_video_idx = i; video_offset = timeline_sec - elapsed; break
+                target_video_idx = i; break
             elapsed += seg["duration"]
-        if self._video_player:
-            target_path = self.video_segments[target_video_idx]["path"]; curr_media = self._video_player.get_media()
-            v_st = self._video_player.get_state()
-            if not curr_media or v_st == 6 or target_path.replace("\\", "/") not in str(curr_media.get_mrl()).replace("%20", " "):
-                m = self.vlc_v.media_new(target_path); self._video_player.set_media(m); self._video_player.play(); self._video_player.set_rate(self.speed_factor)
-                self._video_player.audio_set_mute(False)
-                v_vol_raw = self.video_vol_slider.value()
-                self._video_player.audio_set_volume(v_vol_raw)
-                self._video_player.audio_set_track(1)
-            real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
-            self._video_player.set_time(real_v_pos_ms)
-        elapsed = 0.0; target_music_idx = -1; music_offset = 0.0
+        target_v_path = self.video_segments[target_video_idx]["path"]
+        elapsed_m = 0.0; target_music_idx = -1; music_offset = 0.0
         for i, (path, start_off, dur) in enumerate(self.selected_tracks):
-            if elapsed + dur > timeline_sec:
-                target_music_idx = i; music_offset = (timeline_sec - elapsed) + start_off; break
-            elapsed += dur
-        if self._player:
-            if target_music_idx != -1:
-                target_path = self.selected_tracks[target_music_idx][0]
-                if target_path != self._last_m_mrl:
-                    m = self.vlc_m.media_new(target_path); self._player.set_media(m); self._player.play(); self._player.set_rate(1.0); self._last_m_mrl = target_path
-                    self._player.audio_set_mute(False)
-                    m_vol_raw = self.music_vol_slider.value()
-                    self._player.audio_set_volume(m_vol_raw)
-                self._player.set_time(int(music_offset * 1000))
-            else: self._player.stop()
+            if elapsed_m + dur > timeline_sec:
+                target_music_idx = i; music_offset = (timeline_sec - elapsed_m) + start_off; break
+            elapsed_m += dur
+        curr_v_path = getattr(self.player, "path", "")
+        if target_v_path != curr_v_path:
+            self.player.command("loadfile", target_v_path, "replace")
+            self._last_m_mrl = ""
+            self.player.mute = False
+            if hasattr(self, "video_vol_slider"):
+                self.player.volume = self._scaled_vol(self.video_vol_slider.value())
+        if target_music_idx != -1:
+            target_m_path = self.selected_tracks[target_music_idx][0]
+            if target_m_path != self._last_m_mrl:
+                self.player.audio_add(target_m_path)
+                self._last_m_mrl = target_m_path
+                
+                def _set_vol():
+                    if self.player:
+                        self.player.volume = self._scaled_vol(self.music_vol_slider.value())
+                QTimer.singleShot(200, _set_vol)
+        real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
+        self.player.seek(real_v_pos_ms / 1000.0, reference='absolute', precision='exact')
 
     def _prepare_timeline_data(self):
         videos = []; video_info_list = []

@@ -64,7 +64,7 @@ class ProcessThread(QThread):
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level)
         self.text_wrapper = TextWrapper(self.config)
         self.filter_builder = FilterBuilder(self.logger)
-        self.encoder_mgr = EncoderManager(self.logger)
+        self.encoder_mgr = EncoderManager(self.logger, hardware_strategy=self.hardware_strategy)
         self.prober = MediaProber(self.bin_dir, self.input_path)
         self.current_process = None
         self.is_canceled = False
@@ -251,8 +251,6 @@ class ProcessThread(QThread):
                             elif video_bitrate_kbps < 800: t_w = 1280
                         target_res = "scale=iw:ih:flags=bilinear" if self.keep_highest_res else f"scale='min({t_w},iw)':-2:flags=bilinear"
                         v_filter_cmd = f"fps=60,{target_res}"
-                    if not self.speed_segments:
-                        v_filter_cmd += f",setpts=PTS/{self.speed_factor}"
                     attempt_core_filters = []
                     if granular_filter_str:
                         attempt_core_filters.append(granular_filter_str)
@@ -277,6 +275,11 @@ class ProcessThread(QThread):
                     attempt_core_filters.extend(audio_chains)
                     self.status_update_signal.emit(f"Processing video ({rc_label})...")
                     hw_flags = []
+                    if attempt_is_nvidia:
+                        hw_flags = [
+                            '-hwaccel', 'cuda',
+                            '-hwaccel_output_format', 'cuda'
+                        ]
                     cmd = [
                         ffmpeg_path, '-y'] + hw_flags + [
                         '-progress', 'pipe:1',
@@ -317,7 +320,8 @@ class ProcessThread(QThread):
                     self.logger.warning(f"Initial encoder '{current_encoder}' failed. Starting fallback process.")
                     strategy = getattr(self, "hardware_strategy", "CPU")
                     fallback_encoders = self.encoder_mgr.get_fallback_list(failed_encoder=current_encoder)
-                    if strategy == "NVIDIA": allowed = ["h264_nvenc", "libx264"]
+                    if strategy == "NVIDIA":
+                        allowed = ["h264_nvenc", "libx264"]
                     elif strategy == "AMD": allowed = ["h264_amf", "libx264"]
                     elif strategy == "INTEL": allowed = ["h264_qsv", "libx264"]
                     else: allowed = ["libx264"]

@@ -21,7 +21,7 @@ This desktop application, built specifically for Windows, works alongside a sepa
 * **Responsive UI:** Adaptive 1800x900 initial window size. High DPI scaling support for 4K monitors. FIFO log rotation limited to 10MB.
 * **Dynamic Layering:** Real-time Z-order management with "LAYER X" indicators (1 = Top). Spectating Eye defaults to the top-most layer.
 * **Ghosting Support:** "Show Existing Crops" displays previously saved elements with adjustable transparency and role-based color coding.
-* **VLC Integration:** Robust background resolution detection and frame-accurate seeking using VLC 64-bit.
+* **MPV Integration:** Robust background resolution detection and frame-accurate seeking using MPV 64-bit.
 * **Magic Wand Precision:** Aggressive shrink-wrapping logic ensures boxes are perfectly sized to the HUD content, not just general areas.
 * **Clean State:** "RESET ALL" performs a factory-reset of the session, purging all temporary files and clearing the canvas to pitch-black.
 
