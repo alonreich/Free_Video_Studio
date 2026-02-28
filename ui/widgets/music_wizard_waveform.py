@@ -125,9 +125,9 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
-        if self.player: self.player.set_time(val_ms)
+        if self.player: self.player.time_pos = val_ms / 1000.0
         if False:
-            if self._player: self._player.set_time(val_ms)
+            if self._player: self.player.time_pos = val_ms / 1000.0
         self._show_caret_step2 = True
         slider_dragging = bool(
             getattr(self, "_dragging", False)
@@ -192,9 +192,9 @@ class MergerMusicWizardWaveformMixin:
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
         self.offset_slider.setValue(target_ms)
-        self.player.set_time(target_ms)
+        if self.player: self.player.time_pos = target_ms / 1000.0
         if False:
-            self._player.set_time(target_ms)
+            self.player.time_pos = target_ms / 1000.0
         if self.player:
             self._request_step2_seek(target_ms, immediate=not self._wave_dragging)
         self._sync_caret()

@@ -65,14 +65,14 @@ def _has_ffmpeg_encoder(ffmpeg_path: str, encoder_name: str) -> bool:
     except Exception:
         return False
 
-def _has_nvidia_adapter() -> bool:
-    """Best-effort Windows GPU presence check to avoid false CPU fallback on valid NVIDIA systems."""
+def _has_gpu_adapter(vendor: str) -> bool:
+    """Universal GPU presence check for NVIDIA, AMD, or Intel."""
     if sys.platform != "win32":
         return False
+    v = vendor.lower()
     candidates = [
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+        ["powershell", "-NoProfile", "-Command", f"Get-CimInstance Win32_VideoController | Where-Object {{ $_.Name -like '*{vendor}*' }} | Select-Object -ExpandProperty Name"],
         ["wmic", "path", "win32_VideoController", "get", "name"],
-        ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join \"`n\""],
     ]
     for cmd in candidates:
         try:
@@ -90,11 +90,17 @@ def _has_nvidia_adapter() -> bool:
                 timeout=6,
             )
             text = ((r.stdout or b"") + b"\n" + (r.stderr or b"")).decode(errors="ignore").lower()
-            if "nvidia" in text and any(k in text for k in ("geforce", "rtx", "quadro", "tesla", "nvidia")):
-                return True
+            if v in text:
+                if v == "nvidia" and any(k in text for k in ("geforce", "rtx", "quadro", "tesla")): return True
+                if v == "amd" and any(k in text for k in ("radeon", "ryzen", "rx")): return True
+                if v == "intel" and any(k in text for k in ("graphics", "arc", "iris", "xe")): return True
         except Exception:
             continue
     return False
+
+def _has_nvidia_adapter(): return _has_gpu_adapter("NVIDIA")
+def _has_amd_adapter():    return _has_gpu_adapter("AMD")
+def _has_intel_adapter():  return _has_gpu_adapter("Intel")
 
 TRANSLATIONS = {
     "en": {
@@ -239,9 +245,36 @@ def check_mpv_dependencies():
         msg_box.exec_()
         return False
 
+def get_ffmpeg_hwaccels(ffmpeg_path: str) -> list:
+    """Detects available FFmpeg hardware acceleration methods."""
+    try:
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        result = subprocess.run(
+            [ffmpeg_path, '-hwaccels'],
+            capture_output=True,
+            text=True,
+            check=True,
+            startupinfo=startupinfo,
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+            timeout=5
+        )
+        hwaccels = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line and not line.startswith("Hardware acceleration methods:"):
+                hwaccels.append(line)
+        return hwaccels
+    except Exception:
+        return []
+
 class HardwareWorker(QObject):
     """
     Worker thread to offload slow hardware capability checks from the main UI thread.
+    Dynamically identifies the absolute best path for the current machine.
     """
     finished = pyqtSignal(str)
 
@@ -257,16 +290,17 @@ class HardwareWorker(QObject):
 
     def run(self):
         """Performs the hardware scan and emits the result."""
-        # Start a watchdog timer that will force stop after 15 seconds total
         import threading
         def watchdog():
             self.stop_requested = True
-        self.watchdog_timer = threading.Timer(15.0, watchdog)
+        self.watchdog_timer = threading.Timer(10.0, watchdog)
         self.watchdog_timer.daemon = True
         self.watchdog_timer.start()
         
         try:
-            detected_mode = self._determine_hardware_strategy_with_stop()
+            available = get_ffmpeg_hwaccels(self.ffmpeg_path)
+            debug_log(f"DEBUG: Available FFmpeg hwaccels: {available}")
+            detected_mode = self._determine_hardware_strategy_with_stop(available)
             self.finished.emit(detected_mode)
         except Exception as e:
             debug_log(f"Hardware scan error: {e}")
@@ -275,43 +309,42 @@ class HardwareWorker(QObject):
             if self.watchdog_timer:
                 self.watchdog_timer.cancel()
 
-    def _determine_hardware_strategy_with_stop(self):
+    def _determine_hardware_strategy_with_stop(self, available_accels):
         """
-        Failover logic with stop flag checking.
+        Failover logic with stop flag checking and multi-accel support.
         """
         os.environ.pop("VIDEO_HW_ENCODER", None)
         os.environ.pop("VIDEO_FORCE_CPU", None)
         
-        if FORCE_GPU == "NVIDIA":
-            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-            return "NVIDIA"
+        if FORCE_GPU:
+            if FORCE_GPU == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"; return "NVIDIA"
+            if FORCE_GPU == "AMD":    os.environ["VIDEO_HW_ENCODER"] = "h264_amf";   return "AMD"
+            if FORCE_GPU == "INTEL":  os.environ["VIDEO_HW_ENCODER"] = "h264_qsv";   return "INTEL"
 
-        if self.stop_requested:
-            os.environ["VIDEO_FORCE_CPU"] = "1"
-            return "CPU"
-        if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"):
-            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-            return "NVIDIA"
-        # Fallback: some systems fail strict 1-frame probe intermittently even when NVENC is valid.
-        if _has_ffmpeg_encoder(self.ffmpeg_path, "h264_nvenc") and _has_nvidia_adapter():
-            os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-            HARDWARE_SCAN_DETAILS["errors"]["h264_nvenc"] = (
-                "Strict NVENC probe failed, but NVIDIA adapter + FFmpeg NVENC encoder were detected. "
-                "Using NVIDIA mode via fallback."
-            )
-            return "NVIDIA"
-        if self.stop_requested:
-            os.environ["VIDEO_FORCE_CPU"] = "1"
-            return "CPU"
-        if check_encoder_capability(self.ffmpeg_path, "h264_amf"):
-            os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
-            return "AMD"
-        if self.stop_requested:
-            os.environ["VIDEO_FORCE_CPU"] = "1"
-            return "CPU"
-        if check_encoder_capability(self.ffmpeg_path, "h264_qsv"):
-            os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
-            return "INTEL"
+        # 1. TEST NVIDIA
+        if not self.stop_requested and "cuda" in available_accels:
+            if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"):
+                os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
+                return "NVIDIA"
+
+        # 2. TEST AMD
+        if not self.stop_requested and "d3d11va" in available_accels:
+            if check_encoder_capability(self.ffmpeg_path, "h264_amf"):
+                os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
+                return "AMD"
+
+        # 3. TEST INTEL
+        if not self.stop_requested and ("qsv" in available_accels or "d3d11va" in available_accels):
+            if check_encoder_capability(self.ffmpeg_path, "h264_qsv"):
+                os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
+                return "INTEL"
+
+        # 4. FINAL FALLBACK CHECKS
+        if not self.stop_requested:
+            if _has_nvidia_adapter(): return "NVIDIA"
+            if _has_amd_adapter():    return "AMD"
+            if _has_intel_adapter():  return "INTEL"
+
         os.environ["VIDEO_FORCE_CPU"] = "1"
         return "CPU"
 
@@ -338,7 +371,7 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
             stderr=subprocess.PIPE,
             startupinfo=startupinfo,
             creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-            timeout=ENCODER_TEST_TIMEOUT
+            timeout=4.5 # [FIX #5] Aggressive 4.5s probe timeout for fast discovery
         )
         if result.returncode == 0:
             debug_log(f"DEBUG: Encoder '{encoder_name}' is WORKING.")

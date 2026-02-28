@@ -33,22 +33,24 @@ class MediaProcessor(QObject):
         self.player = None
         if mpv:
             try:
-                '--avcodec-hw=any'
-                '--vout=direct3d11'
-                self.player = mpv.MPV(
-                    osc=False,
-                    input_default_bindings=False,
-                    input_vo_keyboard=False,
-                    hr_seek='yes',
-                    hwdec='auto',
-                    keep_open='yes',
-                    log_handler=logger.debug,
-                    loglevel="info",
-                    vo='gpu',
-                    ytdl=False,
-                    demuxer_max_bytes='500M',
-                    demuxer_max_back_bytes='100M',
-                )
+                mpv_kwargs = {
+                    'osc': False,
+                    'input_default_bindings': False,
+                    'input_vo_keyboard': False,
+                    'hr_seek': 'yes',
+                    'hwdec': 'auto',
+                    'keep_open': 'yes',
+                    'log_handler': logger.debug,
+                    'loglevel': "info",
+                    'vo': 'gpu',
+                    'ytdl': False,
+                    'demuxer_max_bytes': '500M',
+                    'demuxer_max_back_bytes': '100M',
+                }
+                if sys.platform == 'win32':
+                    mpv_kwargs['gpu-context'] = 'd3d11'
+                    os.environ["LC_NUMERIC"] = "C"
+                self.player = mpv.MPV(**mpv_kwargs)
                 logger.info("MediaProcessor initialized successfully with MPV.")
             except Exception as e:
                 fallback_args = [

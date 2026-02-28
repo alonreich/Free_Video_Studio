@@ -1,11 +1,32 @@
-﻿import os
-import sys
-import subprocess
-from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtWidgets import QWidget, QApplication
+﻿from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtWidgets import (
+    QWidget,
+    QApplication,
+    QLineEdit,
+    QTextEdit,
+    QPlainTextEdit,
+    QAbstractSpinBox,
+    QComboBox,
+)
 
 class KeyboardMixin(QWidget):
     """Handles global keyboard shortcuts for the main window."""
+
+    def _is_editing_widget_focused(self) -> bool:
+        """Return True when keyboard focus is inside a text/edit control."""
+        fw = QApplication.focusWidget()
+        if fw is None:
+            return False
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
+            return True
+        if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()):
+            return True
+        try:
+            if bool(fw.property("ignore_global_shortcuts")):
+                return True
+        except Exception:
+            pass
+        return False
 
     def _launch_dev_tool(self):
         """Launches the crop tool using the centralized method."""
@@ -17,6 +38,8 @@ class KeyboardMixin(QWidget):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
             if QApplication.activeModalWidget() is not None:
+                return super().eventFilter(obj, event)
+            if self._is_editing_widget_focused():
                 return super().eventFilter(obj, event)
             key = event.key()
             if key == Qt.Key_F12:
@@ -59,7 +82,12 @@ class KeyboardMixin(QWidget):
                 vol_step = 15 if modifiers == Qt.ShiftModifier else 1
                 if key == Qt.Key_Down:
                     vol_step = -vol_step
-            if self.volume_shortcut_target == 'music':
+            use_music_target = (
+                getattr(self, "volume_shortcut_target", "main") == 'music'
+                and hasattr(self, "music_volume_slider")
+                and hasattr(self, "_on_music_volume_changed")
+            )
+            if use_music_target:
                 slider = self.music_volume_slider
                 eff_func = self._music_eff
                 callback = self._on_music_volume_changed

@@ -211,21 +211,12 @@ class ConsoleManager:
             raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
             try:
                 ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-                f = ConsoleManager._f_keepalive
-                os.dup2(f.fileno(), sys.stdout.fileno())
-                os.dup2(f.fileno(), sys.stderr.fileno())
-                faulthandler.enable(f)
-                source_tag = "video_merger"
             except: pass
         else:
             mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
             raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
             try:
                 ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-                f = ConsoleManager._f_keepalive
-                os.dup2(f.fileno(), sys.stdout.fileno())
-                os.dup2(f.fileno(), sys.stderr.fileno())
-                faulthandler.enable(f)
             except: pass
         try:
             stamp = time.strftime("%Y-%m-%d %H:%M:%S")

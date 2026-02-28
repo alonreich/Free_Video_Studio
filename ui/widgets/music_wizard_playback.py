@@ -47,7 +47,6 @@ class MergerMusicWizardPlaybackMixin:
 
     def toggle_video_preview(self):
         try:
-            if False: m = self.mpv_m.media_new(preview_path)
             curr_idx = self.stack.currentIndex()
             if not self.player:
                 self.logger.error("WIZARD: player is None")
@@ -56,7 +55,7 @@ class MergerMusicWizardPlaybackMixin:
             btn = getattr(self, "btn_play_video", None)
             is_paused = getattr(self.player, "pause", True)
             idle_active = bool(getattr(self.player, "idle-active", False))
-            has_media = bool(getattr(self.player, "path", "") or "")
+            has_media = bool(getattr(self.player, "path", "") or getattr(self.player, "filename", ""))
             is_effectively_playing = (not is_paused) and (not idle_active) and has_media
             if is_effectively_playing:
                 self.logger.info("WIZARD: User clicked PAUSE.")
@@ -70,12 +69,20 @@ class MergerMusicWizardPlaybackMixin:
             else:
                 self.logger.info(f"WIZARD: User clicked PLAY at offset {self.offset_slider.value()/1000.0:.1f}s")
                 self._show_caret_step2 = True
+                if hasattr(self, "video_container"):
+                    try:
+                        wid = int(self.video_container.winId())
+                        if getattr(self.player, 'wid', 0) != wid:
+                            self.player.wid = wid
+
+                            import time
+                            time.sleep(0.15)
+                    except Exception: pass
                 if curr_idx == 1:
                     preview_path = getattr(self, "_temp_sync", None) or self.current_track_path
                     if not preview_path: 
                         self.logger.error("WIZARD: Cannot play Step 2. path is None")
                         return
-                    m = self.mpv_m.media_new(preview_path)
                     self.player.command("loadfile", preview_path, "replace")
                     self.player.pause = False
                     if btn:
@@ -146,15 +153,6 @@ class MergerMusicWizardPlaybackMixin:
 
     def _on_play_tick(self):
         if getattr(self, "_is_syncing", False): return
-        if False: m = self.mpv_m.media_new(preview_path)
-        if False: 
-            if self._player: self._player.set_time(val_ms)
-            self._player.set_time(target_ms)
-            self._video_player.set_time(real_v_pos_ms)
-            self._sync_all_players_to_time(target_sec, force_playing=is_playing)
-            self._sync_music_only_to_time(project_time)
-            if now - self._last_seek_ts < 0.5: pass
-        if self.player: self.player.set_time(val_ms) if 'val_ms' in locals() else None
         if getattr(self, "_is_scrubbing_timeline", False):
             return
         self._is_syncing = True
@@ -165,6 +163,15 @@ class MergerMusicWizardPlaybackMixin:
             if do_heavy: self._last_tick_ts = now
             is_paused = getattr(self.player, "pause", True)
             idle_active = getattr(self.player, "idle-active", False)
+            is_playing = (not is_paused) and (not idle_active)
+            btn = getattr(self, "btn_play_video", None)
+            if btn:
+                if is_playing and btn.text() != "  PAUSE":
+                    btn.setText("  PAUSE")
+                    btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                elif not is_playing and btn.text() != "  PLAY":
+                    btn.setText("  PLAY")
+                    btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             if self.stack.currentIndex() == 1:
                 if not is_paused:
                     mpv_dur = getattr(self.player, "duration", 0) or 0
@@ -189,6 +196,15 @@ class MergerMusicWizardPlaybackMixin:
                         self._sync_caret()
             if self.stack.currentIndex() == 2:
                 try:
+                    lock_until = float(getattr(self, "_step3_seek_lock_until", 0.0) or 0.0)
+                    if now < lock_until:
+                        pinned_project = float(getattr(self, "_step3_seek_target_project", getattr(self, "_last_good_step3_project_time", 0.0)) or 0.0)
+                        pinned_project = min(max(0.0, pinned_project), float(self.total_video_sec))
+                        self._last_clock_ts = now
+                        self._last_good_step3_project_time = pinned_project
+                        self.timeline.set_current_time(pinned_project)
+                        self._sync_caret()
+                        return
                     if now - self._last_seek_ts < 0.35:
                         self._last_clock_ts = now; return
                     if not is_paused:
@@ -207,6 +223,7 @@ class MergerMusicWizardPlaybackMixin:
                         project_time = min(max(0.0, float(self.total_video_sec)), max(0.0, project_time))
                         self._last_good_step3_project_time = project_time
                         self.timeline.set_current_time(project_time)
+                        self._sync_caret()
                         if project_time >= float(self.total_video_sec) - 0.025:
                             self.logger.info("WIZARD: Project end reached in tick.")
                             if not getattr(self, "_step3_end_finalize_pending", False):

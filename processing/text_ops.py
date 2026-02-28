@@ -16,20 +16,6 @@ try:
 except ImportError:
     HAS_BIDI_LIB = False
 
-def safe_text(text: str) -> str:
-    """
-    Sanitizes text for FFmpeg filter chains.
-    Escapes special characters that confuse the drawtext filter.
-    """
-    if not text:
-        return ""
-    text = str(text)
-    text = text.replace("\\", "\\\\") 
-    text = text.replace("'", r"'\''")
-    text = text.replace(":", "\\:")
-    text = text.replace("%", "") 
-    return text
-
 def fix_hebrew_text(text: str) -> str:
     """
     [DEPRECATED] Legacy fallback. 

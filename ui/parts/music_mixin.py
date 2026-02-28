@@ -126,11 +126,19 @@ class MusicMixin:
             self._restore_pre_wizard_state()
             return
         mp3_dir = self._mp3_dir()
+        current_source_ms = self.positionSlider.value()
+        if speed_segments:
+            wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+            wall_current = self._calculate_wall_clock_time(current_source_ms, speed_segments, speed_factor)
+            current_project_sec = max(0.0, wall_current - wall_start)
+        else:
+            current_project_sec = max(0.0, ((current_source_ms - t_start) / 1000.0) / speed_factor)
         wizard = MergerMusicWizard(
             self, self.player, self.bin_dir, mp3_dir, 
             total_project_sec, speed_factor,
             trim_start_ms=t_start, trim_end_ms=t_end,
-            speed_segments=speed_segments
+            speed_segments=speed_segments,
+            initial_project_sec=current_project_sec
         )
         curr_eff = self._get_master_eff()
         wizard.video_vol_slider.setValue(curr_eff)
@@ -227,6 +235,8 @@ class MusicMixin:
                 del self._pre_wizard_state
 
     def _reset_music_player(self):
+        self.music_timeline_start_ms = 0
+        self.music_timeline_end_ms = 0
         self.music_timeline_start_sec = None
         self.music_timeline_end_sec = None
         self._wizard_tracks = []
@@ -243,12 +253,6 @@ class MusicMixin:
         if self.volume_slider.invertedAppearance():
             return self.volume_slider.maximum() + self.volume_slider.minimum() - val
         return val
-
-    def _music_eff(self, raw=None):
-        if not hasattr(self, "_music_volume_pct"):
-            try: self._music_volume_pct = int(self.config_manager.config.get('music_volume', 80))
-            except: self._music_volume_pct = 80
-        return self._music_volume_pct
 
     def _get_music_offset_ms(self):
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks:

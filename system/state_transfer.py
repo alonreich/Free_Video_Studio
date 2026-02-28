@@ -1,6 +1,7 @@
 ﻿import os
 import json
 import logging
+import tempfile
 try:
     from system.shared_paths import SharedPaths
 except ImportError:
@@ -30,12 +31,33 @@ class StateTransfer:
         """
         Overwrites the current session state with new data.
         """
+        logger = logging.getLogger("StateTransfer")
+        final_path = StateTransfer.get_session_file()
+        parent_dir = os.path.dirname(final_path)
+        os.makedirs(parent_dir, exist_ok=True)
+        fd = None
+        tmp_path = None
         try:
-            with open(StateTransfer.get_session_file(), 'w') as f:
+            fd, tmp_path = tempfile.mkstemp(prefix="fvs_session_state_", suffix=".tmp", dir=parent_dir)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                fd = None
                 json.dump(state_data, f, indent=2)
-            logging.getLogger("StateTransfer").info(f"Session state saved to {StateTransfer.get_session_file()}")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, final_path)
+            logger.info(f"Session state saved atomically to {final_path}")
         except Exception as e:
-            logging.getLogger("StateTransfer").error(f"Failed to save session state: {e}")
+            logger.error(f"Failed to save session state: {e}")
+            try:
+                if fd is not None:
+                    os.close(fd)
+            except Exception:
+                pass
+            try:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
     @staticmethod
     def update_state(updates: dict):
         """
@@ -54,10 +76,21 @@ class StateTransfer:
         if not os.path.exists(path):
             return {}
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             logging.getLogger("StateTransfer").info("Session state loaded.")
             return data
+        except json.JSONDecodeError as e:
+            logging.getLogger("StateTransfer").error(f"Failed to load session state (corrupted JSON): {e}")
+            try:
+                broken_path = path + ".corrupted"
+                if os.path.exists(broken_path):
+                    os.remove(broken_path)
+                os.replace(path, broken_path)
+                logging.getLogger("StateTransfer").warning(f"Corrupted session file moved to: {broken_path}")
+            except Exception as move_err:
+                logging.getLogger("StateTransfer").warning(f"Failed to move corrupted session state: {move_err}")
+            return {}
         except Exception as e:
             logging.getLogger("StateTransfer").error(f"Failed to load session state: {e}")
             return {}

@@ -1,6 +1,7 @@
 ﻿import os
 import sys
 import subprocess
+from fractions import Fraction
 
 class MediaProber:
     def __init__(self, bin_dir, input_path):
@@ -40,10 +41,12 @@ class MediaProber:
 
     def get_audio_bitrate(self):
         kbps = self.run_probe(["-select_streams", "a:0", "-show_entries", "stream=bit_rate"])
-        if kbps:
+        if kbps and 8 <= kbps <= 1536:
             return kbps
         kbps = self.run_probe(["-show_entries", "format=bit_rate"])
-        return kbps
+        if kbps and 8 <= kbps <= 1536:
+            return kbps
+        return None
 
     def get_sample_rate(self):
         val_str = self._run_command(["-select_streams", "a:0", "-show_entries", "stream=sample_rate"])
@@ -53,6 +56,42 @@ class MediaProber:
             except ValueError:
                 pass
         return 48000
+
+    def get_video_fps_expr(self, fallback: str = "60000/1001"):
+        """
+        Returns a stable ffmpeg fps expression string (e.g. "60000/1001").
+        We prefer broadcast-friendly rationals to avoid micro-jitter from 59.94<->60 drift.
+        """
+        raw = self._run_command([
+            "-select_streams", "v:0",
+            "-show_entries", "stream=avg_frame_rate"
+        ])
+        if not raw:
+            return fallback
+        try:
+            frac = Fraction(str(raw).strip())
+            fps = float(frac)
+            if fps <= 1.0:
+                return fallback
+            if abs(fps - 120.0) <= 3.0 or abs(fps - 119.88) <= 3.0:
+                return "120"
+            if abs(fps - 60.0) <= 1.0 or abs(fps - 59.94) <= 1.0:
+                return "60000/1001"
+            if abs(fps - 30.0) <= 0.7 or abs(fps - 29.97) <= 0.7:
+                return "30000/1001"
+            if abs(fps - 24.0) <= 0.7 or abs(fps - 23.976) <= 0.7:
+                return "24000/1001"
+            if fps >= 90.0:
+                return "120"
+            if fps >= 45.0:
+                return "60000/1001"
+            if fps >= 26.0:
+                return "30000/1001"
+            if fps >= 20.0:
+                return "24000/1001"
+            return fallback
+        except Exception:
+            return fallback
 
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None):
     """
@@ -71,9 +110,9 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     if not is_max_quality:
         if target_mb is None:
             target_mb = 52.0
-        mb_in_bits = target_mb * 8 * 1024 * 1024
+        mb_in_bits = target_mb * 8 * 1024 * 1024 * 0.95
         target_size_bits = mb_in_bits
-    audio_bits = audio_kbps * 1024 * duration
+    audio_bits = audio_kbps * 1000 * duration
     video_bits = target_size_bits - audio_bits
     if duration <= 0: 
         return None
@@ -81,7 +120,7 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
         if logger:
             logger.warning("Target size is too small for audio track; forcing 300kbps video.")
         return 300
-    calculated_kbps = int(video_bits / (1024 * duration))
+    calculated_kbps = int(video_bits / (1000 * duration))
     if calculated_kbps < 300:
         if logger:
             logger.warning(f"Calculated bitrate ({calculated_kbps}k) is very low. Quality will be impacted.")

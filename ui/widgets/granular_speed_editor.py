@@ -236,18 +236,16 @@ class GranularSpeedEditor(QDialog):
         else:
             if mpv:
                 try:
-                    if False:
-                        '--no-video-title-show'
-                        '--avcodec-hw=any'
-                        '--vout=direct3d11'
-                        mpv_args = ["'--no-video-title-show'", "'--avcodec-hw=any'", "'--vout=direct3d11'"]
-                        self.mpv_instance = mpv.MPV(mpv_args)
-                    self.player = mpv.MPV(
-                        hr_seek='yes',
-                        hwdec='auto',
-                        keep_open='yes',
-                        ytdl=False
-                    )
+                    mpv_kwargs = {
+                        'hr_seek': 'yes',
+                        'hwdec': 'auto',
+                        'keep_open': 'yes',
+                        'ytdl': False,
+                        'vo': 'gpu'
+                    }
+                    if sys.platform == 'win32':
+                        mpv_kwargs['gpu-context'] = 'd3d11'
+                    self.player = mpv.MPV(**mpv_kwargs)
                 except Exception as e:
                     if self.parent_app and hasattr(self.parent_app, 'logger'):
                         self.parent_app.logger.error(f"GRANULAR: Failed to init MPV: {e}")
@@ -258,7 +256,9 @@ class GranularSpeedEditor(QDialog):
         self._last_rate_update = 0
         self.restore_geometry()
         self.init_ui()
-        self.setup_player()
+        if sys.platform == 'win32':
+             os.environ["LC_NUMERIC"] = "C"
+        QTimer.singleShot(50, self.setup_player)
 
     def _current_play_window_ms(self):
         """Playback window follows current SET START/SET END selection when valid."""
@@ -467,30 +467,41 @@ class GranularSpeedEditor(QDialog):
         main_layout.addLayout(action_row)
 
     def setup_player(self):
-        if not self.input_file_path or not self.player:
+        if not self.input_file_path or not getattr(self, "player", None):
             return
-        self.player.command("loadfile", self.input_file_path, "replace")
         try:
-            self.player.wid = int(self.video_frame.winId())
+            self.player.command("loadfile", self.input_file_path, "replace")
+        except Exception as e:
+            if self.parent_app and hasattr(self.parent_app, "logger"):
+                self.parent_app.logger.warning(f"GRANULAR: loadfile failed: {e}")
+            return
+        try:
+            wid = int(self.video_frame.winId())
+            self.player.wid = wid
         except Exception: pass
-        self.player.mute = False
-        self.player.volume = max(1, self.volume)
+        try:
+            self.player.mute = False
+            self.player.volume = max(1, self.volume)
+        except Exception: pass
 
         def _get_dur():
-            if not self.player: return
-            dur = getattr(self.player, 'duration', 0)
-            if dur and dur > 0:
-                self.duration = dur * 1000.0
-                self.view_start_ms = self.parent_app.trim_start_ms if self.parent_app else 0
-                self.view_end_ms = self.parent_app.trim_end_ms if (self.parent_app and self.parent_app.trim_end_ms > 0) else self.duration
-                self.timeline.setRange(self.view_start_ms, self.view_end_ms)
-                self.timeline.set_duration_ms(self.duration)
-                self.timeline.set_segments(self.speed_segments)
-                self.timeline.set_trim_times(self.view_start_ms, self.view_start_ms)
-                self.selection_modified = False
-                self.update_pending_visualization()
-                QTimer.singleShot(250, self._finalize_startup)
-            else:
+            if not getattr(self, "player", None): return
+            try:
+                dur = getattr(self.player, 'duration', 0)
+                if dur and dur > 0:
+                    self.duration = dur * 1000.0
+                    self.view_start_ms = self.parent_app.trim_start_ms if self.parent_app else 0
+                    self.view_end_ms = self.parent_app.trim_end_ms if (self.parent_app and self.parent_app.trim_end_ms > 0) else self.duration
+                    self.timeline.setRange(self.view_start_ms, self.view_end_ms)
+                    self.timeline.set_duration_ms(self.duration)
+                    self.timeline.set_segments(self.speed_segments)
+                    self.timeline.set_trim_times(self.view_start_ms, self.view_start_ms)
+                    self.selection_modified = False
+                    self.update_pending_visualization()
+                    QTimer.singleShot(250, self._finalize_startup)
+                else:
+                    QTimer.singleShot(100, _get_dur)
+            except Exception:
                 QTimer.singleShot(100, _get_dur)
         QTimer.singleShot(100, _get_dur)
 
@@ -570,7 +581,7 @@ class GranularSpeedEditor(QDialog):
 
     def seek_video(self, pos):
         if not self.player: return
-        if False: self.player.set_time(int(pos))
+        if False: self.player.time_pos = int(pos) / 1000.0
         play_start, play_end = self._current_play_window_ms()
         pos = max(play_start, min(play_end, pos))
         self.player.seek(pos / 1000.0, reference='absolute', precision='exact')
@@ -609,16 +620,20 @@ class GranularSpeedEditor(QDialog):
         if not in_saved_segment:
             p_start = self.timeline.trimmed_start_ms
             p_end = self.timeline.trimmed_end_ms
-            if p_start <= current_time < p_end:
-                target_speed = self.speed_spin.value()
+            if p_end > p_start + 10:
+                if p_start <= current_time < p_end:
+                    target_speed = self.speed_spin.value()
         now = import_time.time()
         curr_rate = getattr(self.player, "speed", 1.0)
-        if abs(curr_rate - target_speed) > 0.05:
+        if abs(curr_rate - target_speed) > 0.01:
             is_scrubbing = self.timeline.isSliderDown()
             debounce_limit = 0.15 if is_scrubbing else 0.05
             if now - self._last_rate_update > debounce_limit:
-                self.player.speed = target_speed
-                self._last_rate_update = now
+                try:
+                    self.player.speed = target_speed
+                    self._last_rate_update = now
+                except Exception:
+                    pass
 
     def set_start(self):
         if not self.player: return
@@ -637,9 +652,6 @@ class GranularSpeedEditor(QDialog):
             if self.parent_app and hasattr(self.parent_app, 'logger'):
                 self.parent_app.logger.info(f"GRANULAR: Smart Auto-Add of previous range {curr_s}-{curr_e}ms.")
             self.add_segment()
-        self.speed_spin.blockSignals(True)
-        self.speed_spin.setValue(self.base_speed)
-        self.speed_spin.blockSignals(False)
         self.timeline.set_trim_times(t, t)
         self.update_pending_visualization()
         self.selection_modified = True
@@ -752,7 +764,7 @@ class GranularSpeedEditor(QDialog):
             self.parent_app.logger.info("!!! TRIGGER: add_segment function entered !!!")
         start = self.timeline.trimmed_start_ms
         end = self.timeline.trimmed_end_ms
-        speed = self.speed_spin.value()
+        speed = float(self.speed_spin.value())
         if self.parent_app and hasattr(self.parent_app, 'logger'):
             self.parent_app.logger.info(f"GRANULAR: [ADD NEW SPEED SEGMENT] state check: Start={start}, End={end}, Speed={speed}. Current list size: {len(self.speed_segments)}")
         if end <= start:
@@ -787,6 +799,8 @@ class GranularSpeedEditor(QDialog):
             merged.append(current)
         self.speed_segments = merged
         self.timeline.set_segments(self.speed_segments)
+        self.timeline.set_trim_times(start, end)
+        self.update_pending_visualization()
         self.selection_modified = False
         self.list_modified = True
         if self.parent_app and hasattr(self.parent_app, 'logger'):
@@ -838,6 +852,8 @@ class GranularSpeedEditor(QDialog):
         else:
             self._restore_parent_video_output()
         super().closeEvent(event)
+
+
 
 
 

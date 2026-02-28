@@ -94,11 +94,47 @@ def check_disk_space(path: str, required_gb: float) -> bool:
     except Exception:
         return True
 
-def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger):
+def check_filter_option(ffmpeg_path: str, filter_name: str, option_name: str) -> bool:
+    """Checks if a specific FFmpeg filter supports a given option."""
+    try:
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        result = subprocess.run(
+            [ffmpeg_path, '-h', f'filter={filter_name}'],
+            capture_output=True,
+            text=True,
+            check=True,
+            startupinfo=startupinfo,
+            creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+            timeout=5
+        )
+        return option_name.lower() in result.stdout.lower()
+    except Exception:
+        return False
+
+def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger, on_error_line=None):
     """
     Monitors FFmpeg stdout for progress stats and handles cancellation/disk checks.
     """
     last_poll_time = time.time()
+    critical_signatures = (
+        "error",
+        "failed",
+        "option not found",
+        "invalid data found",
+        "non-monotonous dts",
+        "moov atom not found",
+        "corrupt",
+        "decode slice",
+        "error while decoding",
+        "timestamp",
+        "audio sync",
+        "queue input is backward in time",
+        "application provided invalid",
+    )
     while True:
         current_time = time.time()
         if current_time - last_poll_time > 0.5:
@@ -115,6 +151,9 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
         s = line.strip()
         if not s:
             continue
+        low = s.lower()
+        if on_error_line and any(sig in low for sig in critical_signatures):
+            on_error_line(s)
         if '=' in s:
             key, _, val = s.partition('=')
             key = key.strip()
@@ -124,7 +163,8 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
                     us = int(val)
                     current_seconds = us / 1000000.0
                     if duration_sec > 0:
-                        percent = current_seconds / float(duration_sec)
+                        raw_percent = current_seconds / float(duration_sec)
+                        percent = (raw_percent ** 1.3) if raw_percent > 0 else 0.0
                         calc_prog = int(max(0, min(100, percent * 100)))
                         progress_signal.emit(calc_prog)
                 except ValueError:
@@ -132,5 +172,5 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
             elif key == 'error':
                  logger.error(f"FFmpeg reported error: {val}")
         else:
-            if "error" in s.lower() or "failed" in s.lower():
+            if any(sig in low for sig in critical_signatures):
                 logger.error(f"FFmpeg Output: {s}")

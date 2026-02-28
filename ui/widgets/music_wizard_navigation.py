@@ -27,19 +27,16 @@ class MergerMusicWizardNavigationMixin:
             self.btn_nav_next.setText("✓  DONE")
             self._bind_video_output()
             self._prepare_timeline_data()
-            self.timeline.set_current_time(0.0)
-            self._sync_all_players_to_time(0.0, force_playing=True)
+            start_time = getattr(self, "initial_project_sec", 0.0)
+            self.timeline.set_current_time(start_time)
+            self._sync_all_players_to_time(start_time, force_playing=False)
             self._last_clock_ts = time.time()
             self._last_seek_ts = 0.0
             self._step3_end_finalize_pending = False
-            self.btn_play_video.setText("  PAUSE")
-            self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
-            if not hasattr(self, '_play_timer') or self._play_timer is None:
-                self._play_timer = QTimer(self)
-                self._play_timer.setInterval(40)
-                self._play_timer.timeout.connect(self._on_play_tick)
-            if not self._play_timer.isActive():
-                self._play_timer.start()
+            self.btn_play_video.setText("  PLAY")
+            self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            if hasattr(self, '_play_timer') and self._play_timer:
+                self._play_timer.stop()
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
             self.update_coverage_ui()

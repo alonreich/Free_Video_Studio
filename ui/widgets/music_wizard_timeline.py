@@ -193,21 +193,31 @@ class MergerMusicWizardTimelineMixin:
         self._step3_seek_timer.timeout.connect(self._flush_pending_step3_seek)
         self._step3_seek_pending_sec = None
         self._last_step3_seek_apply_ts = 0.0
+        self._step3_seek_lock_until = 0.0
+        self._step3_seek_target_project = 0.0
 
     def _apply_step3_seek_target(self, target_sec: float):
         safe_sec = max(0.0, min(float(self.total_video_sec), float(target_sec or 0.0)))
+        now = time.time()
+        self._step3_seek_target_project = safe_sec
+        self._step3_seek_lock_until = now + 0.30
         try:
             self._last_good_step3_project_time = safe_sec
             self._last_good_step3_video_ms = float(self._project_time_to_source_ms(safe_sec))
-            self._last_clock_ts = time.time()
+            self._last_clock_ts = now
         except Exception:
             pass
+        is_currently_playing = False
+        try:
+            is_currently_playing = (not bool(getattr(self.player, "pause", True))) and (not bool(getattr(self.player, "idle-active", False)))
+        except Exception:
+            is_currently_playing = False
         try:
             self._is_syncing = True
-            self._sync_all_players_to_time(safe_sec, force_playing=None)
+            self._sync_all_players_to_time(safe_sec, force_playing=is_currently_playing, seek_exact=True)
         finally:
             self._is_syncing = False
-        self._last_step3_seek_apply_ts = time.time()
+        self._last_step3_seek_apply_ts = now
 
     def _flush_pending_step3_seek(self):
         pending = getattr(self, "_step3_seek_pending_sec", None)
@@ -219,12 +229,13 @@ class MergerMusicWizardTimelineMixin:
             self._is_scrubbing_timeline = False
             return
         self._apply_step3_seek_target(float(pending))
+        self._is_scrubbing_timeline = False
 
     def _on_timeline_seek(self, pct):
         self._last_seek_ts = time.time(); target_sec = pct * self.total_video_sec
         self.timeline.set_current_time(target_sec)
         if False:
-            self._video_player.set_time(real_v_pos_ms)
+            self._video_player.time_pos = real_v_pos_ms / 1000.0
             self._sync_all_players_to_time(target_sec, force_playing=is_playing)
         if not self.player:
             return
@@ -246,7 +257,7 @@ class MergerMusicWizardTimelineMixin:
                 pass
         self._sync_caret()
 
-    def _sync_all_players_to_time(self, timeline_sec, force_playing=None):
+    def _sync_all_players_to_time(self, timeline_sec, force_playing=None, seek_exact=False):
         if not self.player: return
         music_player = getattr(self, "_music_player", None)
         elapsed = 0.0; target_video_idx = 0; video_offset = 0.0
@@ -274,12 +285,12 @@ class MergerMusicWizardTimelineMixin:
                         self._safe_mpv_loadfile(music_player, target_m_path)
                     self._last_m_mrl = target_m_path
                 if not used_start_load:
-                    self._safe_mpv_seek(music_player, music_offset, exact_first=False, label="music_player")
+                    self._safe_mpv_seek(music_player, music_offset, exact_first=bool(seek_exact), label="music_player")
             else:
                 music_player.stop()
                 self._last_m_mrl = ""
         real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
-        self._safe_mpv_seek(self.player, real_v_pos_ms / 1000.0, exact_first=False, label="video_player")
+        self._safe_mpv_seek(self.player, real_v_pos_ms / 1000.0, exact_first=bool(seek_exact), label="video_player")
         try:
             self._last_good_step3_video_ms = float(real_v_pos_ms)
             self._last_good_step3_project_time = float(timeline_sec)

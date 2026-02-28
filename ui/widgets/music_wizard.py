@@ -32,12 +32,13 @@ class MergerMusicWizard(
 ):
     _ui_call = pyqtSignal(object)
 
-    def __init__(self, parent, mpv_instance, bin_dir, mp3_dir, total_project_sec, speed_factor=1.1, trim_start_ms=0, trim_end_ms=0, speed_segments=None):
+    def __init__(self, parent, mpv_instance, bin_dir, mp3_dir, total_project_sec, speed_factor=1.1, trim_start_ms=0, trim_end_ms=0, speed_segments=None, initial_project_sec=0.0):
         super().__init__(parent)
         self.parent_window = parent
         self.bin_dir = bin_dir
         self.mp3_dir = mp3_dir
         self.total_video_sec = total_project_sec
+        self.initial_project_sec = max(0.0, min(float(total_project_sec), float(initial_project_sec)))
         self.speed_factor = speed_factor
         self.trim_start_ms = trim_start_ms
         self.trim_end_ms = trim_end_ms
@@ -83,10 +84,6 @@ class MergerMusicWizard(
         self._last_good_mpv_ms = 0
         self._last_v_mrl = ""; self._last_m_mrl = ""
         self.final_timeline_time = 0.0
-        if False:
-            self.mpv_v = mpvProcessProxy('video', self.logger, self.bin_dir)
-            self.mpv_m = mpvProcessProxy('music', self.logger, self.bin_dir)
-            self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 10, 20, 20)
         self.main_layout.setSpacing(15)
@@ -281,10 +278,14 @@ class MergerMusicWizard(
 
     def stop_previews(self):
         if hasattr(self, '_stop_waveform_worker'): self._stop_waveform_worker()
-        if hasattr(self, '_temp_sync') and self._temp_sync and os.path.exists(self._temp_sync):
-            try: os.remove(self._temp_sync)
-            except: pass
+        temp_files = [getattr(self, '_temp_sync', None), getattr(self, '_temp_png', None)]
+        for f in temp_files:
+            if f and os.path.exists(f):
+                try: os.remove(f)
+                except: pass
         self._temp_sync = None
+        self._temp_png = None
+        self._pm_src = None
         if hasattr(self, '_player') and self._player: self._player.stop()
         if hasattr(self, '_video_player') and self._video_player: self._video_player.stop()
         if hasattr(self, '_music_player') and self._music_player: self._music_player.stop()

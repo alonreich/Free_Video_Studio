@@ -1,4 +1,4 @@
-WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
+﻿WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
 
 import os
 import sys
@@ -326,26 +326,39 @@ def main():
     print(f"Target: {target_dir}")
     print("Exclusions loaded.")
     files = get_target_files(target_dir)
-    table1_data = [] 
-    files_with_junk = {}
-    print("Scanning for comments and empty lines...")
-    for f in files:
-        items = analyze_comments(f)
-        if items:
-            files_with_junk[f] = items
-            for item in items:
-                cont = (item['content'][:30] + '..') if len(item['content']) > 30 else item['content']
-                display_type = f"{item['action']}: {item['type']}"
-                table1_data.append([os.path.basename(f), os.path.dirname(f), item['line'], display_type, cont])
-    print_table("TABLE 1: Comments & Empty Lines", table1_data, ["File", "Path", "Line", "Type", "Content"])
-    if table1_data:
-        q = input(">>> Nuking junk from Table 1. Correct these? (Y/N): ").strip().upper()
-        if q == 'Y':
-            for f, items in files_with_junk.items():
-                nuke_comments(f, items)
-            print("Cleanup complete.")
+    for pass_num in range(1, 3):
+        table1_data = [] 
+        files_with_junk = {}
+        print(f"Scanning for comments and empty lines...")
+        for f in files:
+            items = analyze_comments(f)
+            if items:
+                files_with_junk[f] = items
+                for item in items:
+                    cont = (item['content'][:30] + '..') if len(item['content']) > 30 else item['content']
+                    display_type = f"{item['action']}: {item['type']}"
+                    table1_data.append([os.path.basename(f), os.path.dirname(f), item['line'], display_type, cont])
+        if pass_num == 1:
+            if table1_data:
+                print_table("TABLE 1: Comments & Empty Lines", table1_data, ["File", "Path", "Line", "Type", "Content"])
+                q = input(">>> Nuking junk from Table 1. Correct these? (Y/N): ").strip().upper()
+                if q == 'Y':
+                    for f, items in files_with_junk.items():
+                        nuke_comments(f, items)
+                    print("Cleanup complete.")
+                else:
+                    print("Skipping cleanup.")
+                    break
+            else:
+                break
         else:
-            print("Skipping cleanup.")
+            if table1_data:
+                print_table("TABLE 1: Comments & Empty Lines", table1_data, ["File", "Path", "Line", "Type", "Content"])
+                for f, items in files_with_junk.items():
+                    nuke_comments(f, items)
+                print("Cleanup complete.")
+            else:
+                print_table("TABLE 1: Comments & Empty Lines", table1_data, ["File", "Path", "Line", "Type", "Content"])
     table2_data = []
     files_broken = {}
     print("\nScanning for Syntax/Indentation errors...")

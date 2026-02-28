@@ -13,8 +13,8 @@ class SpinningWheelSlider(QWidget):
         self._labels = ["BAD", "OKAY", "STD", "GOOD", "MAX"]
         self._rotation = 2.0 
         self._anim = QPropertyAnimation(self, b"rotation")
-        self._anim.setDuration(300)
-        self._anim.setEasingCurve(QEasingCurve.OutBack)
+        self._anim.setDuration(150)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self.setFixedSize(180, 35)
         self.setCursor(Qt.OpenHandCursor)
         self.setEnabled(False)
@@ -32,11 +32,15 @@ class SpinningWheelSlider(QWidget):
     @rotation.setter
     def rotation(self, val):
         self._rotation = self._clamp_rotation(val)
+        new_val = int(round(max(self._range[0], min(self._range[1], self._rotation))))
+        if new_val != self._value:
+            self._value = new_val
+            self.valueChanged.emit(new_val)
         self.update()
 
     def setValue(self, val):
-        val = max(self._range[0], min(self._range[1], val))
-        if val != self._value:
+        val = max(self._range[0], min(self._range[1], int(val)))
+        if val != self._value or abs(self._rotation - val) > 0.01:
             self._value = val
             self._anim.stop()
             self._anim.setStartValue(self._rotation)
@@ -59,10 +63,9 @@ class SpinningWheelSlider(QWidget):
         if not self._is_dragging: return
         dx = event.x() - self._last_mouse_x
         self._last_mouse_x = event.x()
-        sensitivity = 0.013
+        sensitivity = 0.011
         new_rot = self._rotation - (dx * sensitivity)
-        self._rotation = self._clamp_rotation(new_rot)
-        self.update()
+        self.rotation = new_rot
 
     def mouseReleaseEvent(self, event):
         if not self._is_dragging: return

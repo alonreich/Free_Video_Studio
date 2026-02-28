@@ -65,14 +65,19 @@ class TrimmedSlider(QSlider):
         self.update()
 
     def _get_groove_rect(self):
-        opt = QStyleOptionSlider()
-        self.initStyleOption(opt)
-        groove = self.style().subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
-        if groove.width() <= 0:
-            h = 4
-            top = (self.height() - h) // 2
-            groove = QRect(8, top, self.width() - 16, h)
-        return QRect(groove.left(), groove.center().y() - 2, groove.width(), 4)
+        try:
+            opt = QStyleOptionSlider()
+            self.initStyleOption(opt)
+            s = self.style()
+            if s:
+                groove = s.subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
+                if groove.isValid() and groove.width() > 0:
+                    return QRect(groove.left(), groove.center().y() - 2, groove.width(), 4)
+        except Exception:
+            pass
+        h = 4
+        top = (self.height() - h) // 2
+        return QRect(8, top, max(1, self.width() - 16), h)
 
     def _map_pos_to_value(self, x_pos):
         groove = self._get_groove_rect()
@@ -116,7 +121,7 @@ class TrimmedSlider(QSlider):
     def _get_playhead_rect(self):
         cx = self._map_value_to_pos(self.value())
         groove = self._get_groove_rect()
-        playhead_width = 12
+        playhead_width = 15
         playhead_height = groove.height() + 26
         playhead_y = groove.center().y() - playhead_height // 2
         return QRect(cx - playhead_width // 2, playhead_y, playhead_width, playhead_height)

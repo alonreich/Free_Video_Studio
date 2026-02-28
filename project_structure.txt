@@ -15,12 +15,40 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # 7. Independence: Main App and Merger share widget logic but remain technically decoupled (local method copies).
 
 # ==============================================================================
-# COORDINATE SYSTEM & SCALING LOGIC
+# COORDINATE SYSTEM & SCALING LOGIC (PORTRAIT CANVAS TRICK)
 # ==============================================================================
-# 1. UI Space: 1080x1920 (Portrait). Content Area: 1080x1620 (Excludes top 150px text canvas).
-# 2. Backend Space: 1280x1920 (High-fidelity scaling before 1080p center-crop).
-# 3. Transformation: Source -> 1280p Scale -> 1080p Crop -> HUD Overlay -> Encode.
-# 4. Drift Prevention: Extra 1px padding on HUD selection borders (Left for Map/Stats, Right for Loot).
+# QUICK SUMMARY:
+# We do NOT compose directly at 1080x1920.
+# We first compose in a larger internal canvas (1280x1920), then "zoom out / fit"
+# that result into the final portrait frame. This preserves detail and keeps the top
+# black strip reserved for clip text.
+#
+# 1) SPACES USED
+#    - Final Portrait Output: 1080x1920.
+#    - Visible Content Lane: 1080x1620.
+#    - Reserved Text/Header Zone: top 150px (final compose places content at y=150).
+#    - Internal Backend Compose Space: 1280x1920 (higher-fidelity working canvas).
+#
+# 2) PIPELINE (IN ORDER)
+#    a. Source video is scaled + center-cropped into 1280x1920.
+#    b. HUD crops/overlays are computed and composited in this same 1280x1920 space.
+#    c. The full composed result is scaled down to 1080x1620.
+#    d. That 1080x1620 content is placed onto a 1080x1920 black canvas at y=150.
+#    e. Result: portrait output keeps the upper strip free for title/text rendering.
+#
+# 3) COORDINATE CONTRACTS (CRITICAL)
+#    - Crop rectangles are stored in 1080x1620 CONTENT coordinates (no top-padding baked in).
+#    - Overlay positions are handled in full portrait semantics and transformed with BACKEND_SCALE.
+#    - BACKEND_SCALE = 1280 / 1080.
+#
+# 4) DRIFT PROTECTION / ROUNDING BIAS (DO NOT REMOVE)
+#    - Map/Stats/Health-style regions: +1px on LEFT edge.
+#    - Loot region: +1px on RIGHT edge.
+#    This protects thin HUD borders from clipping due to rounding transforms.
+#
+# 5) SAFETY RULE
+#    Do not change this math casually. It is a round-trip contract:
+#    Original -> 1280x1920 internal compose -> 1080x1620 content -> 1080x1920 final frame.
 
 # ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE

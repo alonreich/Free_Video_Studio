@@ -120,7 +120,7 @@ class PlayerMixin:
                 wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
                 wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
                 time_since_music_start_project_ms = (wall_now - wall_start) * 1000.0
-                real_audio_ms = time_since_music_start_project_ms / speed
+                real_audio_ms = time_since_music_start_project_ms 
                 expected_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
                 if abs(m_pos - expected_m_sec) > 0.15:
                     try: 
@@ -128,9 +128,9 @@ class PlayerMixin:
                             self._music_preview_player.set_rate(1.0)
                         music_player = self._music_preview_player
                         music_target_in_file_ms = expected_m_sec * 1000.0
-                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'set_time'):
-                            if abs(music_player.get_time() - music_target_in_file_ms) > 50:
-                                music_player.set_time(music_target_in_file_ms)
+                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'time_pos'):
+                            if abs((getattr(music_player, 'time_pos', 0) or 0)*1000.0 - music_target_in_file_ms) > 50:
+                                music_player.time_pos = music_target_in_file_ms / 1000.0
                         else:
                             self._music_preview_player.seek(expected_m_sec, reference='absolute', precision='exact')
                     except: pass
@@ -168,8 +168,6 @@ class PlayerMixin:
         with self._scrub_lock:
             try:
                 now = time.time()
-                if now - self._last_seek_ts < 0.5:
-                    pass
                 self._last_seek_ts = now
                 if not force_pause and (now - self._last_scrub_ts < 0.05):
                     return
@@ -180,9 +178,7 @@ class PlayerMixin:
                     target_ms = max(0, min(target_ms, max_ms - 1))
                 if not sync_only and getattr(self, "player", None):
                     self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
-                if False: self._sync_music_only_to_time(project_time)
                 if getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
-                    self.mpv_music_player = self._music_preview_player
                     if force_pause:
                         self._music_preview_player.pause = True
                     music_player = self._music_preview_player
@@ -204,11 +200,11 @@ class PlayerMixin:
                         elif hasattr(music_player, 'speed'):
                             music_player.speed = 1.0
                         music_target_in_file_ms = target_m_sec * 1000.0
-                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'set_time'):
-                            if abs(music_player.get_time() - music_target_in_file_ms) > 50:
-                                music_player.set_time(music_target_in_file_ms)
-                        elif hasattr(music_player, 'set_time'):
-                             music_player.set_time(music_target_in_file_ms)
+                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'time_pos'):
+                            if abs((getattr(music_player, 'time_pos', 0) or 0)*1000.0 - music_target_in_file_ms) > 50:
+                                music_player.time_pos = music_target_in_file_ms / 1000.0
+                        elif hasattr(music_player, 'time_pos'):
+                             music_player.time_pos = music_target_in_file_ms / 1000.0
                         else:
                             self._music_preview_player.seek(target_m_sec, reference='absolute', precision='exact')
                     except: pass
@@ -257,9 +253,6 @@ class PlayerMixin:
         MPV reached end. (Native MPV thread)
         [FIX #23] Use QTimer to safely hop back to UI thread.
         """
-        if False:
-            if slider and slider.isSliderDown(): pass
-            self.timer.start(50)
         try:
             QTimer.singleShot(0, self._safe_handle_mpv_end)
         except Exception as e:

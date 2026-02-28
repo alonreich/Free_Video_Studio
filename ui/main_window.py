@@ -410,7 +410,6 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             pass
         self.logger.info("=== Application started ===")
         self.logger.info(f"Initialized with Hardware Strategy: {self.hardware_strategy}")
-        self._setup_mpv()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.update_player_state)
@@ -440,6 +439,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             self._set_upload_hint_active(False)
         if file_path:
             self.handle_file_selection(file_path)
+        QTimer.singleShot(10, self._setup_mpv)
     @property
     def original_duration(self):
         """Return original duration in seconds (float)."""
@@ -454,15 +454,23 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             try:
                 wid = int(self.video_surface.winId())
                 self.logger.info(f"UI: Initializing MPV with window ID {wid}")
-                if False:
-                    mpv_args = ["--no-video-title-show", "--avcodec-hw=any", "--vout=direct3d11"]
-                    self.mpv_instance = mpv.MPV(mpv_args)
-                self.player = mpv.MPV(wid=wid, osc=False, hr_seek='yes', hwdec='auto', keep_open='yes', log_handler=self.logger.debug, loglevel="info", vo='gpu', ytdl=False, demuxer_max_bytes='500M', demuxer_max_back_bytes='100M')
-                if False:
-                    '--no-video-title-show'
-                    '--avcodec-hw=any'
-                    '--vout=direct3d11'
+                mpv_kwargs = {
+                    'wid': wid,
+                    'osc': False,
+                    'hr_seek': 'yes',
+                    'hwdec': 'auto',
+                    'keep_open': 'yes',
+                    'ytdl': False,
+                    'demuxer_max_bytes': '500M',
+                    'demuxer_max_back_bytes': '100M'
+                }
+                if sys.platform == 'win32':
+                    mpv_kwargs['vo'] = 'gpu'
+                    mpv_kwargs['gpu-context'] = 'd3d11'
+                    os.environ["LC_NUMERIC"] = "C" 
+                self.player = mpv.MPV(**mpv_kwargs)
                 if self.player:
+                    self.player.loglevel = 'info'
                     self.player.volume = 100
                     try:
                         self.player.speed = float(getattr(self, "playback_rate", 1.1) or 1.1)
@@ -671,21 +679,13 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             delta_start = start_ms - old_start
             music_dur = self.music_timeline_end_ms - self.music_timeline_start_ms
             new_m_start = self.music_timeline_start_ms + delta_start
+            new_m_end = new_m_start + music_dur
             if new_m_start < start_ms:
                 new_m_start = start_ms
-            new_m_start = max(start_ms, self.music_timeline_start_ms)
-            new_m_end = min(end_ms, self.music_timeline_end_ms)
-            if new_m_start + music_dur > end_ms:
-                new_m_start = end_ms - music_dur
-                if new_m_start < start_ms:
-                    new_m_start = start_ms
-            new_m_end = new_m_start + music_dur
+                new_m_end = new_m_start + music_dur
             if new_m_end > end_ms:
                 new_m_end = end_ms
-            if new_m_end < new_m_start + 100:
-                new_m_end = min(end_ms, new_m_start + 100)
-                if new_m_end > end_ms:
-                    new_m_start = max(start_ms, new_m_end - 100)
+                new_m_start = max(start_ms, new_m_end - music_dur)
             if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
                 self.music_timeline_start_ms = new_m_start
                 self.music_timeline_end_ms = new_m_end
@@ -891,8 +891,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
 
     def select_file(self):
         self._set_upload_hint_active(False)
+        had_existing_media = bool(getattr(self, "input_file_path", None))
+        was_playing_before_dialog = False
         try:
             if getattr(self, "player", None):
+                was_playing_before_dialog = not bool(getattr(self.player, "pause", True))
                 self.player.pause = True
             if getattr(self, "timer", None) and self.timer.isActive():
                 self.timer.stop()
@@ -934,6 +937,26 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             self.handle_file_selection(file_to_load)
         else:
             self.logger.info("FILE: dialog canceled")
+            if had_existing_media:
+                try:
+                    if getattr(self, "player", None):
+                        self.player.pause = not was_playing_before_dialog
+                    if was_playing_before_dialog:
+                        self.is_playing = True
+                        self.wants_to_play = True
+                        if hasattr(self, "playPauseButton"):
+                            self.playPauseButton.setText("PAUSE")
+                            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                        if hasattr(self, "timer") and not self.timer.isActive():
+                            self.timer.start(40)
+                    else:
+                        self.is_playing = False
+                        self.wants_to_play = False
+                        if hasattr(self, "playPauseButton"):
+                            self.playPauseButton.setText("PLAY")
+                            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                except Exception as restore_err:
+                    self.logger.debug("FILE: failed restoring playback state after cancel: %s", restore_err)
             if not getattr(self, 'input_file_path', None):
                 self._set_upload_hint_active(True)
 
