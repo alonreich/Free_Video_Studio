@@ -27,6 +27,7 @@ from utilities.merger_phase_overlay_mixin import MergerPhaseOverlayMixin
 from utilities.merger_phase_overlay_logic import MergerPhaseOverlayLogic
 from utilities.merger_phase_overlay_draw import MergerPhaseOverlayDraw
 from utilities.merger_music_dialog import MusicDialogHandler
+from ui.widgets.spinning_wheel_slider import SpinningWheelSlider
 
 class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlayLogic, MergerPhaseOverlayDraw):
     MAX_FILES = 100
@@ -836,7 +837,15 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             cmd.extend(["-filter_complex_script", str(filter_script_path)])
         cmd.extend(["-map", map_video])
         if map_audio: cmd.extend(["-map", map_audio])
-        self.engine = MergerEngine(self.ffmpeg, cmd, self._output_path, total_duration, use_gpu=True, target_v_bitrate=target_v_bitrate, target_a_bitrate=target_a_bitrate, target_a_rate=target_a_rate)
+        quality = 4
+        if hasattr(self, "quality_slider"):
+            quality = self.quality_slider.value()
+        self.engine = MergerEngine(
+            self.ffmpeg, cmd, self._output_path, total_duration, 
+            use_gpu=True, target_v_bitrate=target_v_bitrate, 
+            target_a_bitrate=target_a_bitrate, target_a_rate=target_a_rate,
+            quality_level=quality
+        )
         self.engine.progress.connect(self._update_progress)
         self.engine.log_line.connect(self._append_log)
         self.engine.finished.connect(self._merge_finished_cleanup)

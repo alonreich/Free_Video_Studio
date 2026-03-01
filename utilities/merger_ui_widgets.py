@@ -25,12 +25,34 @@ class MergerUIWidgetsMixin:
         return row
 
     def create_merge_row(self):
+        from ui.widgets.spinning_wheel_slider import SpinningWheelSlider
+        self.parent.quality_slider = SpinningWheelSlider(self.parent)
+        self.parent.quality_slider.setRange(0, 4)
+        self.parent.quality_slider._labels = ["20%", "40%", "60%", "80%", "100%"]
+        self.parent.quality_slider.setValue(4)
+        self.parent.quality_slider.setEnabled(True)
+        tooltips = {
+            0: "20% Quality: Maximum compression. Results in very small file sizes, significantly smaller than all combined videos.",
+            1: "40% Quality: High compression. Great for saving space while keeping the video watchable.",
+            2: "60% Quality: Balanced. Good reduction in file size with decent visual clarity.",
+            3: "80% Quality: High Quality. Slight reduction in quality, results in roughly 80% of original combined sizes.",
+            4: "100% Quality: Original Quality. No extra compression, matches the combined original videos exactly."
+        }
+        
+        def update_tooltip(val):
+            self.parent.quality_slider.setToolTip(tooltips.get(val, ""))
+        self.parent.quality_slider.valueChanged.connect(update_tooltip)
+        update_tooltip(4)
         self.parent.btn_back = QPushButton("RETURN TO MAIN APP")
         self.parent.btn_back.setFixedSize(135, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
         self.parent.btn_back.setCursor(Qt.PointingHandCursor)
         self.parent.btn_back.setToolTip("Exit merger and return to main application")
+        right_col = QVBoxLayout()
+        right_col.setSpacing(5)
+        right_col.addWidget(self.parent.quality_slider, 0, Qt.AlignCenter)
+        right_col.addWidget(self.parent.btn_back, 0, Qt.AlignCenter)
         self.parent.merge_row = QHBoxLayout()
         merge_wrap = QWidget()
         merge_wrap.setLayout(self.parent.merge_row)
@@ -44,7 +66,7 @@ class MergerUIWidgetsMixin:
         self.parent.btn_merge.setToolTip("Start merging the video list (Ctrl+Enter)")
         self.parent.merge_row.addWidget(self.parent.btn_merge)
         self.parent.merge_row.addStretch(1)
-        self.parent.merge_row.addWidget(self.parent.btn_back)
+        self.parent.merge_row.addLayout(right_col)
         self.parent.merge_row.addSpacing(60)
         return merge_wrap
 

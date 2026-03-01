@@ -1484,6 +1484,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
 def main():
     try:
+        from system.utils import ProcessManager
+        ProcessManager.start_parent_watchdog()
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
         enhanced_logger_instance = setup_logger()

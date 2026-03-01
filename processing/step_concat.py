@@ -29,7 +29,7 @@ class ConcatProcessor:
         """Register a temporary file for automatic cleanup."""
         self._temp_files.append(path)
 
-    def run_concat(self, intro_path, core_path, progress_signal, video_bitrate_kbps=None, cancellation_check=None, fps_expr="60000/1001", preferred_encoder=None, force_reencode=False, audio_kbps=320, audio_sample_rate=48000):
+    def run_concat(self, intro_path, core_path, progress_signal, video_bitrate_kbps=None, cancellation_check=None, fps_expr="60000/1001", preferred_encoder=None, force_reencode=False, audio_kbps=320, audio_sample_rate=48000, is_mobile=True):
         files_to_concat = []
         if intro_path and os.path.exists(intro_path): 
             files_to_concat.append(intro_path)
@@ -39,6 +39,7 @@ class ConcatProcessor:
             self.logger.error("ConcatProcessor: No valid input files (Intro/Core missing). Aborting.")
             progress_signal.emit(100)
             return None
+        target_w, target_h = (1080, 1920) if is_mobile else (1920, 1080)
         output_dir = os.path.join(self.base_dir, '!!!_Output_Video_Files_!!!')
         os.makedirs(output_dir, exist_ok=True)
         if not os.access(output_dir, os.W_OK):
@@ -82,14 +83,14 @@ class ConcatProcessor:
 
         def _build_concat_cmd(enc: str):
             if use_reencode:
-                cmd = [self.ffmpeg_path, "-y", "-progress", "pipe:1"]
+                cmd = [self.ffmpeg_path, "-y", "-progress", "pipe:1", "-threads", "0"]
                 cmd.extend(["-fflags", "+genpts"])
                 for fp in files_to_concat:
                     cmd.extend(["-i", fp])
                 if len(files_to_concat) > 1:
                     filter_parts = []
                     for i in range(len(files_to_concat)):
-                        filter_parts.append(f"[{i}:v]setpts=PTS-STARTPTS,setsar=1[v{i}]")
+                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setpts=PTS-STARTPTS,setsar=1[v{i}]")
                         filter_parts.append(f"[{i}:a]aresample=async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
                     concat_in = "".join([f"[v{i}][a{i}]" for i in range(len(files_to_concat))])
                     filter_parts.append(f"{concat_in}concat=n={len(files_to_concat)}:v=1:a=1[vout][aout]")
@@ -149,27 +150,19 @@ class ConcatProcessor:
                     pass
             concat_cmd = _build_concat_cmd(enc)
             self.logger.info(f"STEP 3/3 CONCAT (encoder={enc}, reencode={use_reencode})")
+            total_dur = 0.0
+
+            from .media_utils import MediaProber
+            for f in files_to_concat:
+                try:
+                    p = MediaProber(os.path.dirname(self.ffmpeg_path), f)
+                    total_dur += p.get_duration()
+                except:
+                    pass
             self.current_process = create_subprocess(concat_cmd, self.logger)
-            fake_prog = 0.0
-            while True:
-                if cancellation_check and cancellation_check():
-                    self.logger.info("Concat cancelled by user.")
-                    try:
-                        self.current_process.terminate()
-                    except:
-                        pass
-                    return False
-                line = self.current_process.stdout.readline()
-                if not line:
-                    if self.current_process.poll() is not None:
-                        break
-                    continue
-                s = line.strip()
-                if s:
-                    if "=" not in s:
-                        self.logger.info(s)
-                fake_prog += (99.0 - fake_prog) * 0.05
-                progress_signal.emit(int(fake_prog))
+
+            from .system_utils import monitor_ffmpeg_progress
+            monitor_ffmpeg_progress(self.current_process, total_dur, progress_signal, cancellation_check, self.logger)
             self.current_process.wait()
             return self.current_process.returncode == 0
         success = _run_once(preferred_encoder)

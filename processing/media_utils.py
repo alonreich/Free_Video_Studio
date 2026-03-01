@@ -115,10 +115,10 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
         target_mb = 45.0
     mb_for_bits = float(target_mb)
     mb_in_bits = mb_for_bits * 8 * 1024 * 1024 * 1.0
-    target_size_bits = mb_in_bits
+    target_size_bits = mb_in_bits * 0.95
     audio_bits = audio_kbps * 1024 * (duration)
     video_bits = target_size_bits - audio_bits
     if duration <= 0:
         return 6000
     calculated_kbps = int(video_bits / (1024 * duration))
-    return max(2000, calculated_kbps)
+    return max(300, calculated_kbps)

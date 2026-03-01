@@ -10,7 +10,7 @@ class SpinningWheelSlider(QWidget):
         super().__init__(parent)
         self._value = 2
         self._range = (0, 4)
-        self._labels = ["BAD", "OKAY", "STD", "GOOD", "MAX"]
+        self._labels = ["BAD", "OKAY", "STANDARD", "GOOD", "MAXIMUM"]
         self._rotation = 2.0 
         self._anim = QPropertyAnimation(self, b"rotation")
         self._anim.setDuration(150)

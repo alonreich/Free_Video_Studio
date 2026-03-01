@@ -51,27 +51,57 @@ class ProcessManager:
     @staticmethod
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe", "mpv.exe", "ffplay.exe"]):
         """
-        [FIX #3] Aggressively kills stray processes associated with this project.
+        [FIX #1 & #3] Aggressively kills stray processes associated with this project.
+        Enhanced to be more precise and avoid killing unrelated system processes.
         """
         my_pid = os.getpid()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         bin_dir = os.path.join(base_dir, 'binaries')
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline', 'ppid']):
             try:
                 if proc.info['pid'] == my_pid:
                     continue
+                is_orphan = proc.info.get('ppid') == 1
                 name = (proc.info['name'] or "").lower()
                 target_names = [n.lower() for n in process_names]
                 if name in target_names or any(tn in name for tn in target_names):
                     proc_exe = proc.info.get('exe')
                     cmdline = " ".join(proc.info.get('cmdline') or [])
-                    if (proc_exe and bin_dir.lower() in os.path.abspath(proc_exe).lower()) or (base_dir.lower() in cmdline.lower()):
+                    is_our_binary = proc_exe and bin_dir.lower() in os.path.abspath(proc_exe).lower()
+                    is_our_project = base_dir.lower() in cmdline.lower()
+                    if is_our_binary or is_our_project:
                         try:
                             proc.kill()
-                        except:
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
                             pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+    @staticmethod
+    def start_parent_watchdog():
+        """
+        [FIX #1] Starts a background thread that monitors the parent process.
+        If the parent dies, this process will immediately kill itself.
+        Used by sub-tools like Crop Tool to avoid becoming zombies.
+        """
+        parent_pid = os.getppid()
+        if parent_pid <= 1:
+            return
+            
+        def watchdog():
+            while True:
+                try:
+                    if not psutil.pid_exists(parent_pid):
+                        break
+                    p = psutil.Process(parent_pid)
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    break
+                time.sleep(2.0)
+            ProcessManager.kill_orphans()
+            os._exit(1)
+        t = threading.Thread(target=watchdog, daemon=True)
+        t.start()
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
         """

@@ -10,7 +10,7 @@ class IntroProcessor:
         self.temp_dir = temp_dir
         self.current_process = None
 
-    def create_intro(self, input_path, intro_abs_time, intro_still_sec, is_mobile, audio_kbps, video_bitrate_kbps, progress_signal, is_canceled_func, sample_rate=48000, fps_expr="60000/1001", preferred_encoder=None, target_width=None):
+    def create_intro(self, input_path, intro_abs_time, intro_still_sec, is_mobile, audio_kbps, video_bitrate_kbps, progress_signal, is_canceled_func, sample_rate=48000, fps_expr="60000/1001", preferred_encoder=None, target_width=None, original_res_str="1920x1080"):
         intro_path = os.path.join(self.temp_dir, f"intro-{os.getpid()}-{int(time.time())}.mp4")
         still_len = max(0.01, float(intro_still_sec))
         fps_num = 60000.0
@@ -27,6 +27,7 @@ class IntroProcessor:
             fps_num, fps_den = 60000.0, 1001.0
         fps_val = max(1.0, fps_num / fps_den)
         loop_frames = max(1, int(round(still_len * fps_val)))
+        target_w, target_h = (1080, 1920) if is_mobile else (1920, 1080)
         base_intro = (
             f"select='eq(n\\,0)',format=nv12,setsar=1,"
             f"loop=loop={loop_frames}:size=1:start=0,setpts=N/({fps_expr})/TB,fps={fps_expr}[vintro];"
@@ -43,39 +44,40 @@ class IntroProcessor:
                     hw_flags = ['-hwaccel', 'cuda']
                 elif enc_name in ('h264_amf', 'h264_qsv'):
                     hw_flags = ['-hwaccel', 'd3d11va']
-            if is_mobile:
-                if is_nvidia and use_hw:
-                    try:
-                        iw, ih = 1920, 1080
-                        tw, th = 1080, 1920
-                        tar = tw / th
-                        sar = iw / ih
-                        if sar > tar:
-                            ws, hs = int(th * sar), th
-                        else:
-                            ws, hs = tw, int(tw / sar)
-                        ws = (ws // 2) * 2; hs = (hs // 2) * 2
-                        xo = (tw - ws) // 2; yo = (th - hs) // 2
-                        intro_filter = (
-                            f"[0:v]select='eq(n\\,0)',setsar=1,"
-                            f"loop=loop={loop_frames}:size=1:start=0,setpts=N/({fps_expr})/TB,fps={fps_expr},format=nv12,hwupload_cuda[intro_scaled_hw];"
-                            f"color=c=black:s=1080x1920:r={fps_expr},format=nv12,hwupload_cuda[intro_bg];"
-                            f"[intro_scaled_hw]scale_cuda=w={ws}:h={hs}[intro_scaled_resized];"
-                            f"[intro_bg][intro_scaled_resized]overlay_cuda=x={xo}:y={yo},hwdownload,format=nv12,setsar=1[vintro];"
-                            f"anullsrc=r={sample_rate}:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
-                        )
-                    except:
-                        intro_filter = f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1080:1920,{base_intro}"
+            try:
+                if "x" in original_res_str:
+                    iw_str, ih_str = original_res_str.lower().split("x")
+                    src_w, src_h = int(iw_str), int(ih_str)
                 else:
-                    intro_filter = f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1080:1920,{base_intro}"
+                    src_w, src_h = 1920, 1080
+            except:
+                src_w, src_h = 1920, 1080
+            if is_nvidia and use_hw:
+                try:
+                    tar = target_w / target_h
+                    sar = src_w / src_h
+                    if sar > tar:
+                        ws, hs = int(target_h * sar), target_h
+                    else:
+                        ws, hs = target_w, int(target_w / sar)
+                    ws = (ws // 2) * 2; hs = (hs // 2) * 2
+                    xo = (target_w - ws) // 2; yo = (target_h - hs) // 2
+                    intro_filter = (
+                        f"[0:v]select='eq(n\\,0)',setsar=1,"
+                        f"loop=loop={loop_frames}:size=1:start=0,setpts=N/({fps_expr})/TB,fps={fps_expr},format=nv12,hwupload_cuda[intro_scaled_hw];"
+                        f"color=c=black:s={target_w}x{target_h}:r={fps_expr},format=nv12,hwupload_cuda[intro_bg];"
+                        f"[intro_scaled_hw]scale_cuda=w={ws}:h={hs}[intro_scaled_resized];"
+                        f"[intro_bg][intro_scaled_resized]overlay_cuda=x={xo}:y={yo},hwdownload,format=nv12,setsar=1[vintro];"
+                        f"anullsrc=r={sample_rate}:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
+                    )
+                except:
+                    intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
             else:
-                if target_width:
-                    intro_filter = f"[0:v]scale='min({target_width},iw)':-2:flags=lanczos,{base_intro}"
-                else:
-                    intro_filter = f"[0:v]{base_intro}"
+                intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
             cmd = [
                 self.ffmpeg_path, "-y",
                 "-progress", "pipe:1",
+                "-threads", "0",
             ] + hw_flags + [
                 "-fflags", "+genpts+igndts",
                 "-ss", f"{intro_abs_time:.6f}", 
@@ -94,25 +96,11 @@ class IntroProcessor:
             self.logger.info(f"STEP 2/3 INTRO (Hardware: {use_hw})")
             proc = create_subprocess(cmd, self.logger)
             self.current_process = proc
-            output_lines = []
-            while True:
-                if is_canceled_func and is_canceled_func():
-                    try:
-                        proc.terminate()
-                    except Exception:
-                        pass
-                    return False, False
-                line = proc.stdout.readline()
-                if not line:
-                    if proc.poll() is not None: break
-                    continue
-                output_lines.append(line)
-                if progress_signal: progress_signal.emit(50)
+
+            from .system_utils import monitor_ffmpeg_progress
+            monitor_ffmpeg_progress(proc, still_len, progress_signal, is_canceled_func, self.logger)
             proc.wait()
-            success = (proc.returncode == 0)
-            full_out = "".join(output_lines)
-            is_cuda_err = any(x in full_out for x in ("CUDA_ERROR", "cuvid", "failed setup"))
-            return success, is_cuda_err
+            return proc.returncode == 0, False
         enc_name = preferred_encoder or self.encoder_mgr.get_initial_encoder()
         is_hw_preferred = enc_name in ('h264_nvenc', 'h264_amf', 'h264_qsv')
         if is_hw_preferred:

@@ -69,17 +69,8 @@ class PlayerMixin:
                 except: pass
             self.player.pause = False
             self.player.speed = self.playback_rate
-
-            def _apply_audio_final():
-                if not getattr(self, "player", None): return
-                self.player.mute = False
-                if hasattr(self, "_vol_eff"):
-                    vol = self._vol_eff()
-                    self.player.volume = vol
-                self.player.mute = False
-                if getattr(self, "_music_preview_player", None):
-                    self._music_preview_player.volume = getattr(self, "_music_volume_pct", 80)
-            QTimer.singleShot(300, _apply_audio_final)
+            if hasattr(self, "apply_master_volume"):
+                self.apply_master_volume()
             if not self.timer.isActive():
                 self.timer.start(50)
             self.playPauseButton.setText("PAUSE")

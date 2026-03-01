@@ -34,6 +34,15 @@ class VolumeMixin:
                 player.mute = False
             except Exception:
                 pass
+        music_player = getattr(self, "_music_preview_player", None)
+        if music_player:
+            try:
+                music_player.volume = m_eff
+                music_player.mute = False
+                if hasattr(self, "logger"):
+                    self.logger.info(f"HARDWARE_SET: [MUSIC_PREVIEW] Volume -> {m_eff}%")
+            except Exception:
+                pass
 
     def _schedule_volume_reinforce(self, delay_ms: int = 350):
         """Use one managed timer instead of many stacked singleShot callbacks."""

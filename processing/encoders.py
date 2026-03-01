@@ -67,7 +67,7 @@ class EncoderManager:
         if video_bitrate_kbps is not None:
             kbps = int(video_bitrate_kbps)
             bitrate_arg = f'{kbps}k'
-            maxrate_arg = f'{int(kbps * 1.5)}k' 
+            maxrate_arg = f'{kbps}k' 
             bufsize_arg = f'{int(kbps * 2.0)}k'
             vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
         gop = '60'
@@ -86,11 +86,11 @@ class EncoderManager:
                 '-pix_fmt', 'nv12',
                 '-preset', 'p7',
                 '-tune', 'hq',
-                '-rc', 'vbr',
+                '-rc', 'cbr',
                 '-multipass', 'fullres',
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
-                '-aq-strength', '4',
+                '-aq-strength', '15',
                 '-bf', '3',
                 '-b_ref_mode', 'each',
                 '-rc-lookahead', '32',

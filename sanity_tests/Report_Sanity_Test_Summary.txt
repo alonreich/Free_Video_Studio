@@ -106465,3 +106465,847 @@ OVERALL RESULT => WORKED: 3 | FAILED: 0 | SKIPPED: 0
        Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
        Expected vs Actual: No gap detected; expected and observed behavior are aligned.
        Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:16:51 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:17:20 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 3 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 20:17:20 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[2] TEST FILE: sanity_tests/test_real_sanity_max_quality.py
+    Timestamp: 2026-03-01 20:17:20 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_max_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video max quality
+       Expected Behavior: The tested scenario should complete successfully: Real video max quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[3] TEST FILE: sanity_tests/test_real_sanity_std_quality.py
+    Timestamp: 2026-03-01 20:17:20 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_std_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video std quality
+       Expected Behavior: The tested scenario should complete successfully: Real video std quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:17:24 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:17:24 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 2 | FAILED: 1 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_granular_speed_pipeline_sync.py
+    Timestamp: 2026-03-01 20:17:24 Jerusalem Standard Time+0200
+    File Status: FAILED
+    Counts: passed=2 | failed=1 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_speed_segments_reach_export_backend_contract
+       Status: FAILED
+       Test Scenario (Detailed): Granular speed segments reach export backend contract
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "if self.speed_segments:" in worker_src; "build_granular_speed_chain(" in worker_src; "granular_filter_str = g_str" in worker_src; "granular_video_label = g_v" in worker_src.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: pytest failure trace indicates -> sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Failure Evidence (traceback focus):
+         - E assert 'if self.speed_segments:' in '\ufeffimport os\nimport tempfile\nimport uuid\nimport shutil\nfrom typing import Tuple, Dict, Any, Optional, List\nfrom PyQt5.QtCore import QThread\nfrom .config_data import VideoConfig\nfrom .syste...
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/worker.py, processing/filter_builder.py, ui/widgets/music_wizard_playback.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py, ui/widgets/music_wizard_misc.py.
+         2. Trace assertion conditions such as: "if self.speed_segments:" in worker_src, "build_granular_speed_chain(" in worker_src, "granular_filter_str = g_str" in worker_src.
+         3. Focus on this logic area: Inspect the control flow and state updates touched by this scenario; one of the guards/calculations likely regressed.
+         4. Reproduce the exact scenario under test: Granular speed segments reach export backend contract
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    2. Title: test_main_preview_player_reflects_granular_segment_speeds
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview player reflects granular segment speeds
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: get_target_speed(1000) == 0.5; get_target_speed(5000) == 2.0; get_target_speed(9000) == 1.1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_wizard_step3_accounts_for_granular_segments_and_music_timeline
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Wizard step3 accounts for granular segments and music timeline
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src; "speed_segments=speed_segments" in music_mixin_src; host.player.set_time_calls; abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:18:23 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:18:32 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 20:18:32 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:18:38 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:18:48 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 20:18:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:18:54 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 7 | FAILED: 1 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[2] TEST FILE: sanity_tests/test_real_sanity_clamping.py
+    Timestamp: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=2 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_challenge_05_video_trim_pushes_music_handles
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 05 video trim pushes music handles
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 5000; slider.music_end_ms >= 5100.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_core_02_music_handles_clamped_by_video_trim
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 02 music handles clamped by video trim
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 2000; slider.music_end_ms == 8000.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[3] TEST FILE: sanity_tests/test_real_sanity_granular_speed_pipeline_sync.py
+    Timestamp: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+    File Status: FAILED
+    Counts: passed=2 | failed=1 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_speed_segments_reach_export_backend_contract
+       Status: FAILED
+       Test Scenario (Detailed): Granular speed segments reach export backend contract
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "if self.speed_segments:" in worker_src; "build_granular_speed_chain(" in worker_src; "granular_filter_str = g_str" in worker_src; "granular_video_label = g_v" in worker_src.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: pytest failure trace indicates -> sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Failure Evidence (traceback focus):
+         - E assert 'if self.speed_segments:' in '\ufeffimport os\nimport tempfile\nimport uuid\nimport shutil\nfrom typing import Tuple, Dict, Any, Optional, List\nfrom PyQt5.QtCore import QThread\nfrom .config_data import VideoConfig\nfrom .syste...
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/worker.py, processing/filter_builder.py, ui/widgets/music_wizard_playback.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py, ui/widgets/music_wizard_misc.py.
+         2. Trace assertion conditions such as: "if self.speed_segments:" in worker_src, "build_granular_speed_chain(" in worker_src, "granular_filter_str = g_str" in worker_src.
+         3. Focus on this logic area: Inspect the control flow and state updates touched by this scenario; one of the guards/calculations likely regressed.
+         4. Reproduce the exact scenario under test: Granular speed segments reach export backend contract
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    2. Title: test_main_preview_player_reflects_granular_segment_speeds
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview player reflects granular segment speeds
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: get_target_speed(1000) == 0.5; get_target_speed(5000) == 2.0; get_target_speed(9000) == 1.1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_wizard_step3_accounts_for_granular_segments_and_music_timeline
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Wizard step3 accounts for granular segments and music timeline
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src; "speed_segments=speed_segments" in music_mixin_src; host.player.set_time_calls; abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[4] TEST FILE: sanity_tests/test_real_sanity_max_quality.py
+    Timestamp: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_max_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video max quality
+       Expected Behavior: The tested scenario should complete successfully: Real video max quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[5] TEST FILE: sanity_tests/test_real_sanity_std_quality.py
+    Timestamp: 2026-03-01 20:19:23 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_std_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video std quality
+       Expected Behavior: The tested scenario should complete successfully: Real video std quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:29 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:29 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 2 | FAILED: 1 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_granular_speed_pipeline_sync.py
+    Timestamp: 2026-03-01 20:19:29 Jerusalem Standard Time+0200
+    File Status: FAILED
+    Counts: passed=2 | failed=1 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_speed_segments_reach_export_backend_contract
+       Status: FAILED
+       Test Scenario (Detailed): Granular speed segments reach export backend contract
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "if self.speed_segments:" in worker_src; "build_granular_speed_chain(" in worker_src; "granular_filter_str = g_str" in worker_src; "granular_video_label = g_v" in worker_src.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: pytest failure trace indicates -> sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:25: in test_granular_speed_segments_reach_export_backend_contract
+       Failure Evidence (traceback focus):
+         - E assert 'if self.speed_segments:' in '\ufeffimport os\nimport tempfile\nimport uuid\nimport shutil\nfrom typing import Tuple, Dict, Any, Optional, List\nfrom PyQt5.QtCore import QThread\nfrom .config_data import VideoConfig\nfrom .syste...
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/worker.py, processing/filter_builder.py, ui/widgets/music_wizard_playback.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py, ui/widgets/music_wizard_misc.py.
+         2. Trace assertion conditions such as: "if self.speed_segments:" in worker_src, "build_granular_speed_chain(" in worker_src, "granular_filter_str = g_str" in worker_src.
+         3. Focus on this logic area: Inspect the control flow and state updates touched by this scenario; one of the guards/calculations likely regressed.
+         4. Reproduce the exact scenario under test: Granular speed segments reach export backend contract
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    2. Title: test_main_preview_player_reflects_granular_segment_speeds
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview player reflects granular segment speeds
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: get_target_speed(1000) == 0.5; get_target_speed(5000) == 2.0; get_target_speed(9000) == 1.1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_wizard_step3_accounts_for_granular_segments_and_music_timeline
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Wizard step3 accounts for granular segments and music timeline
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src; "speed_segments=speed_segments" in music_mixin_src; host.player.set_time_calls; abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:33 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:33 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_video_player_acceleration_report.py
+    Timestamp: 2026-03-01 20:19:33 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_sanity_video_player_acceleration_report_end_user_readable
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real sanity video player acceleration report end user readable
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "VIDEO PLAYER ACCELERATION REPORT" in out; "Main App - Preview Player" in out; "Main App - Granular Speed Editor Player" in out; "Main App - Music Wizard Step 3 Video Player" in out.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:37 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:38 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_geometry_persistence_report.py
+    Timestamp: 2026-03-01 20:19:38 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_geometry_persistence_report_end_user_readable
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Geometry persistence report end user readable
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "GEOMETRY PERSISTENCE REPORT" in out; "Main App" in out; "Granular Speed Editor" in out; "Music Wizard" in out.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:41 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:41 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_logging_bootstrap_matrix.py
+    Timestamp: 2026-03-01 20:19:41 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_logging_bootstrap_matrix
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Logging bootstrap matrix
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "LOGGING BOOTSTRAP MATRIX REPORT" in out; not failed.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:45 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:45 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 1 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_music_folder_persistence.py
+    Timestamp: 2026-03-01 20:19:45 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_music_wizard_folder_change_persists_to_config_file
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Music wizard folder change persists to config file
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: wizard.mp3_dir == str(custom_music); loaded_folders == [str(custom_music)]; cfg_reloaded.config.get("custom_mp3_dir") == str(custom_music).
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:49 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:49 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 6 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_preview_responsiveness_seek_sync.py
+    Timestamp: 2026-03-01 20:19:49 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=6 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_preview_rate_updates_are_debounced_to_avoid_sluggy_playback
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Granular preview rate updates are debounced to avoid sluggy playback
+       Expected Behavior: The tested scenario should complete successfully: Granular preview rate updates are debounced to avoid sluggy playback.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_main_preview_slider_guard_and_seek_throttle_reduce_stutter
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview slider guard and seek throttle reduce stutter
+       Expected Behavior: The tested scenario should complete successfully: Main preview slider guard and seek throttle reduce stutter.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_main_wizard_step2_click_to_seek_keeps_player_and_caret_in_sync
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main wizard step2 click to seek keeps player and caret in sync
+       Expected Behavior: The tested scenario should complete successfully: Main wizard step2 click to seek keeps player and caret in sync.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    4. Title: test_main_wizard_step3_timeline_seek_syncs_video_and_caret_without_lag
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main wizard step3 timeline seek syncs video and caret without lag
+       Expected Behavior: The tested scenario should complete successfully: Main wizard step3 timeline seek syncs video and caret without lag.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    5. Title: test_merger_wizard_step2_click_to_seek_keeps_player_and_caret_in_sync
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Merger wizard step2 click to seek keeps player and caret in sync
+       Expected Behavior: The tested scenario should complete successfully: Merger wizard step2 click to seek keeps player and caret in sync.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    6. Title: test_merger_wizard_step3_timeline_seek_syncs_video_and_caret_without_lag
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Merger wizard step3 timeline seek syncs video and caret without lag
+       Expected Behavior: The tested scenario should complete successfully: Merger wizard step3 timeline seek syncs video and caret without lag.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 20:19:53 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 20:19:53 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 2 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_thumbnail_selection_speed.py
+    Timestamp: 2026-03-01 20:19:53 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=2 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Thumbnail pick clamps to duration when slider exceeds length
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: abs(host.selected_intro_abs_time - 10.0) < 1e-6; "SET: 00:10.00" in host.thumb_pick_btn.text; captured[0][ss_idx + 1] == "10.000".
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Thumbnail pick uses absolute slider time even when speed changes
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: abs(host.selected_intro_abs_time - 4.321) < 1e-3; "SET: 00:04.32" in host.thumb_pick_btn.text; captured; captured[0][ss_idx + 1] == "4.321".
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 21:44:38 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 7 | FAILED: 1 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[2] TEST FILE: sanity_tests/test_real_sanity_clamping.py
+    Timestamp: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=2 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_challenge_05_video_trim_pushes_music_handles
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 05 video trim pushes music handles
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 5000; slider.music_end_ms >= 5100.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_core_02_music_handles_clamped_by_video_trim
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 02 music handles clamped by video trim
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 2000; slider.music_end_ms == 8000.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[3] TEST FILE: sanity_tests/test_real_sanity_granular_speed_pipeline_sync.py
+    Timestamp: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+    File Status: FAILED
+    Counts: passed=2 | failed=1 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_speed_segments_reach_export_backend_contract
+       Status: FAILED
+       Test Scenario (Detailed): Granular speed segments reach export backend contract
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "if self.speed_segments:" in worker_src; "build_granular_speed_chain(" in worker_src; "granular_filter_str = g_str" in worker_src; "granular_video_label = g_v" in worker_src.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: pytest failure trace indicates -> sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:30: in test_granular_speed_segments_reach_export_backend_contract
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): sanity_tests\test_real_sanity_granular_speed_pipeline_sync.py:30: in test_granular_speed_segments_reach_export_backend_contract
+       Failure Evidence (traceback focus):
+         - E assert 'attempt_core_filters.append(granular_filter_str)' in '\ufeffimport os\nimport tempfile\nimport uuid\nimport shutil\nfrom typing import Tuple, Dict, Any, Optional, List\nfrom PyQt5.QtCore import QThread\nfrom .config_data import...
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/worker.py, processing/filter_builder.py, ui/widgets/music_wizard_playback.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py, ui/widgets/music_wizard_misc.py.
+         2. Trace assertion conditions such as: "if self.speed_segments:" in worker_src, "build_granular_speed_chain(" in worker_src, "granular_filter_str = g_str" in worker_src.
+         3. Focus on this logic area: Inspect the control flow and state updates touched by this scenario; one of the guards/calculations likely regressed.
+         4. Reproduce the exact scenario under test: Granular speed segments reach export backend contract
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    2. Title: test_main_preview_player_reflects_granular_segment_speeds
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview player reflects granular segment speeds
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: get_target_speed(1000) == 0.5; get_target_speed(5000) == 2.0; get_target_speed(9000) == 1.1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_wizard_step3_accounts_for_granular_segments_and_music_timeline
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Wizard step3 accounts for granular segments and music timeline
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src; "speed_segments=speed_segments" in music_mixin_src; host.player.set_time_calls; abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[4] TEST FILE: sanity_tests/test_real_sanity_max_quality.py
+    Timestamp: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_max_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video max quality
+       Expected Behavior: The tested scenario should complete successfully: Real video max quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[5] TEST FILE: sanity_tests/test_real_sanity_std_quality.py
+    Timestamp: 2026-03-01 21:45:06 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_std_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video std quality
+       Expected Behavior: The tested scenario should complete successfully: Real video std quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 21:45:12 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 21:45:13 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 7 | FAILED: 2 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_challenges.py
+    Timestamp: 2026-03-01 21:45:13 Jerusalem Standard Time+0200
+    File Status: FAILED
+    Counts: passed=7 | failed=2 | skipped=0
+    Purpose: extreme challenge scenarios. This file stress-tests edge conditions and accidental-user behavior where robustness can break.
+    1. Title: test_challenge_01_granular_speed_wall_clock_math
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 01 granular speed wall clock math
+       Expected Behavior: The tested scenario should complete successfully: Challenge 01 granular speed wall clock math.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_challenge_02_impossible_fade_tiny_clip_safe_chain
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 02 impossible fade tiny clip safe chain
+       Expected Behavior: The tested scenario should complete successfully: Challenge 02 impossible fade tiny clip safe chain.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_challenge_03_dj_scrubbing_stress_keeps_throttle
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 03 dj scrubbing stress keeps throttle
+       Expected Behavior: The tested scenario should complete successfully: Challenge 03 dj scrubbing stress keeps throttle.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    4. Title: test_challenge_04_network_disconnect_fallback_to_local_mp3
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 04 network disconnect fallback to local mp3
+       Expected Behavior: The tested scenario should complete successfully: Challenge 04 network disconnect fallback to local mp3.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    5. Title: test_challenge_06_worker_race_stop_kills_process_tree
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 06 worker race stop kills process tree
+       Expected Behavior: The tested scenario should complete successfully: Challenge 06 worker race stop kills process tree.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    6. Title: test_challenge_07_bitrate_exhaustion_clamps_to_safe_minimum
+       Status: FAILED
+       Test Scenario (Detailed): Challenge 07 bitrate exhaustion clamps to safe minimum
+       Expected Behavior: The tested scenario should complete successfully: Challenge 07 bitrate exhaustion clamps to safe minimum.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: pytest failure trace indicates -> sanity_tests\test_real_sanity_challenges.py:95: in test_challenge_07_bitrate_exhaustion_clamps_to_safe_minimum
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): sanity_tests\test_real_sanity_challenges.py:95: in test_challenge_07_bitrate_exhaustion_clamps_to_safe_minimum
+       Failure Evidence (traceback focus):
+         - E assert 2000 == 300
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/filter_builder.py, processing/media_utils.py, system/config.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py.
+         2. Trace the exact branch and state transitions used by this test scenario.
+         3. Focus on this logic area: Inspect the control flow and state updates touched by this scenario; one of the guards/calculations likely regressed.
+         4. Reproduce the exact scenario under test: Challenge 07 bitrate exhaustion clamps to safe minimum
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    7. Title: test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad
+       Status: FAILED
+       Test Scenario (Detailed): Challenge 08 ultra wide scaling mobile filter has center crop pad
+       Expected Behavior: The tested scenario should complete successfully: Challenge 08 ultra wide scaling mobile filter has center crop pad.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: pytest failure trace indicates -> assert 'force_original_aspect_ratio=increase' in ('[v_stabilized]split=5[main_base_sw][healthbar_in_sw][lootbar_in_sw][stats_in_sw][spectating_in_sw];[main_base_sw]scale=1280:1920:force_original_aspect_ratio=increase:flags=bicubic,crop=1280:1920:(iw-1280)/2...
+       Expected vs Actual: Behavior gap detected: expected contract/runtime outcome did not match observed output. Use the AI instructions below to trace where implementation diverges from expectation.
+       Why Failed (Primary): assert 'force_original_aspect_ratio=increase' in ('[v_stabilized]split=5[main_base_sw][healthbar_in_sw][lootbar_in_sw][stats_in_sw][spectating_in_sw];[main_base_sw]scale=1280:1920:force_original_aspect_ratio=increase:flags=bicubic,crop=1280:1920:(iw-1280)/2:(ih-1920)/2[main_base_composed];[healthbar_in_sw]crop=68:21:926:106,scale=118:36:flags=lanczos[healthbar_out_sw];[main_base_composed][healthbar_out_sw]overlay=x=12:y=236:eof_action=pass[t0];[lootbar_in_sw]crop=54:14:933:113,scale=94:24:flags=lanczos[lootbar_out_sw];[t0][lootbar_out_sw]overlay=x=24:y=308:eof_action=pass[t1];[stats_in_sw]crop=41:14:940:120,scale=70:24:flags=lanczos[stats_out_sw];[t1][stats_out_sw]overlay=x=36:y=378:eof_action=pass[t2];[spectating_in_sw]crop=48:14:946:126,scale=82:24:flags=lanczos[spectating_out_sw];[t2][spectating_out_sw]overlay=x=46:y=450:eof_action=pass[internal_composed_sw];[internal_composed_sw]scale=1080:1620:flags=bicubic[content_scaled_sw];color=c=black:s=1080x1920:r=60:d=3600,format=nv12[bg_canvas_sw];[bg_canvas_sw][content_scaled_sw]overlay=x=0:y=150:eof_action=pass[vpreout_sw];[vpreout_sw]setsar=1[vfinal_sw]', '[vfinal_sw]')
+       Failure Evidence (traceback focus):
+         - E AssertionError: assert 'force_original_aspect_ratio=increase' in ('[v_stabilized]split=5[main_base_sw][healthbar_in_sw][lootbar_in_sw][stats_in_sw][spectating_in_sw];[main_base_sw]scale=1280:1920:force_original_aspect_ratio=increase:fl...
+       AI Agent Instruction:
+         1. Open and inspect these probable files first: processing/filter_builder.py, processing/media_utils.py, system/config.py, ui/parts/music_mixin.py, ui/parts/player_mixin.py.
+         2. Trace the exact branch and state transitions used by this test scenario.
+         3. Focus on this logic area: Assertion mismatch: inspect conditional math/state transitions for this scenario and align behavior with expected contract.
+         4. Reproduce the exact scenario under test: Challenge 08 ultra wide scaling mobile filter has center crop pad
+         5. Set temporary debug logs/breakpoints at the failing branch, compare expected vs actual values, and isolate first divergence.
+         6. Apply a minimal targeted fix, then rerun this test file and the related dryrun/runtime pair.
+    8. Title: test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 09 constant pitch music rate stays 1x even at 3 1x
+       Expected Behavior: The tested scenario should complete successfully: Challenge 09 constant pitch music rate stays 1x even at 3 1x.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    9. Title: test_challenge_10_multi_instance_config_refresh_without_restart
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 10 multi instance config refresh without restart
+       Expected Behavior: The tested scenario should complete successfully: Challenge 10 multi instance config refresh without restart.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+======================================================================================================================
+SANITY TEST RUN STARTED: 2026-03-01 21:46:20 Jerusalem Standard Time+0200
+SANITY TEST RUN FINISHED: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+OVERALL RESULT => WORKED: 17 | FAILED: 0 | SKIPPED: 0
+======================================================================================================================
+
+[1] TEST FILE: sanity_tests/test_real_sanity_bad_quality.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_bad_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video bad quality
+       Expected Behavior: The tested scenario should complete successfully: Real video bad quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[2] TEST FILE: sanity_tests/test_real_sanity_challenges.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=9 | failed=0 | skipped=0
+    Purpose: extreme challenge scenarios. This file stress-tests edge conditions and accidental-user behavior where robustness can break.
+    1. Title: test_challenge_01_granular_speed_wall_clock_math
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 01 granular speed wall clock math
+       Expected Behavior: The tested scenario should complete successfully: Challenge 01 granular speed wall clock math.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_challenge_02_impossible_fade_tiny_clip_safe_chain
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 02 impossible fade tiny clip safe chain
+       Expected Behavior: The tested scenario should complete successfully: Challenge 02 impossible fade tiny clip safe chain.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_challenge_03_dj_scrubbing_stress_keeps_throttle
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 03 dj scrubbing stress keeps throttle
+       Expected Behavior: The tested scenario should complete successfully: Challenge 03 dj scrubbing stress keeps throttle.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    4. Title: test_challenge_04_network_disconnect_fallback_to_local_mp3
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 04 network disconnect fallback to local mp3
+       Expected Behavior: The tested scenario should complete successfully: Challenge 04 network disconnect fallback to local mp3.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    5. Title: test_challenge_06_worker_race_stop_kills_process_tree
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 06 worker race stop kills process tree
+       Expected Behavior: The tested scenario should complete successfully: Challenge 06 worker race stop kills process tree.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    6. Title: test_challenge_07_bitrate_exhaustion_clamps_to_safe_minimum
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 07 bitrate exhaustion clamps to safe minimum
+       Expected Behavior: The tested scenario should complete successfully: Challenge 07 bitrate exhaustion clamps to safe minimum.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    7. Title: test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 08 ultra wide scaling mobile filter has center crop pad
+       Expected Behavior: The tested scenario should complete successfully: Challenge 08 ultra wide scaling mobile filter has center crop pad.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    8. Title: test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 09 constant pitch music rate stays 1x even at 3 1x
+       Expected Behavior: The tested scenario should complete successfully: Challenge 09 constant pitch music rate stays 1x even at 3 1x.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    9. Title: test_challenge_10_multi_instance_config_refresh_without_restart
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 10 multi instance config refresh without restart
+       Expected Behavior: The tested scenario should complete successfully: Challenge 10 multi instance config refresh without restart.
+       Why This Is Expected: Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[3] TEST FILE: sanity_tests/test_real_sanity_clamping.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=2 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_challenge_05_video_trim_pushes_music_handles
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Challenge 05 video trim pushes music handles
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 5000; slider.music_end_ms >= 5100.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_core_02_music_handles_clamped_by_video_trim
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Core 02 music handles clamped by video trim
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: slider.music_start_ms == 2000; slider.music_end_ms == 8000.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[4] TEST FILE: sanity_tests/test_real_sanity_granular_speed_pipeline_sync.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=3 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_granular_speed_segments_reach_export_backend_contract
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Granular speed segments reach export backend contract
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "if self.speed_segments:" in worker_src; "build_granular_speed_chain(" in worker_src; "granular_filter_str = g_str" in worker_src; "granular_video_label = g_v" in worker_src.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    2. Title: test_main_preview_player_reflects_granular_segment_speeds
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Main preview player reflects granular segment speeds
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: get_target_speed(1000) == 0.5; get_target_speed(5000) == 2.0; get_target_speed(9000) == 1.1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+    3. Title: test_wizard_step3_accounts_for_granular_segments_and_music_timeline
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Wizard step3 accounts for granular segments and music timeline
+       Expected Behavior: This runtime/behavior test expects all assertion conditions to hold under the scenario. Key expected checks: "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src; "speed_segments=speed_segments" in music_mixin_src; host.player.set_time_calls; abs(host.player.set_time_calls[-1] - int(project_time * 1000)) <= 1.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[5] TEST FILE: sanity_tests/test_real_sanity_max_quality.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_max_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video max quality
+       Expected Behavior: The tested scenario should complete successfully: Real video max quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.
+
+[6] TEST FILE: sanity_tests/test_real_sanity_std_quality.py
+    Timestamp: 2026-03-01 21:46:48 Jerusalem Standard Time+0200
+    File Status: SUCCEEDED
+    Counts: passed=1 | failed=0 | skipped=0
+    Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes.
+    1. Title: test_real_video_std_quality
+       Status: SUCCEEDED
+       Test Scenario (Detailed): Real video std quality
+       Expected Behavior: The tested scenario should complete successfully: Real video std quality.
+       Why This Is Expected: This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow.
+       Actual Behavior: Observed result: all assertions/conditions in this test passed exactly as expected.
+       Expected vs Actual: No gap detected; expected and observed behavior are aligned.
+       Result Explanation: Scenario executed correctly and all checks aligned with the expected contract.

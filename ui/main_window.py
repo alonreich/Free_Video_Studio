@@ -154,21 +154,21 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             self._opening_granular_dialog = False
             self._ignore_mpv_end_until = time.time() + 0.6
 
-    def _bind_main_player_output(self):
-        """Rebind MPV video output to main preview surface to avoid black/frozen preview."""
+    def show_priority_message(self, message: str, duration_ms: int = 5000, is_critical: bool = False):
+        """
+        [FIX #6] Priority status message system.
+        Critical messages (errors/success) block standard status updates for a period.
+        """
         try:
-            if not getattr(self, "player", None) or not getattr(self, "video_surface", None):
+            now = time.time()
+            if not is_critical and now < float(getattr(self, "_block_status_until", 0.0)):
                 return
-            wid = int(self.video_surface.winId())
-            try:
-                self.player.wid = wid
-            except Exception:
-                try:
-                    self.player.command("set", "wid", wid)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            self.status_bar.showMessage(message, duration_ms)
+            if is_critical:
+                self._block_status_until = now + (duration_ms / 1000.0)
+                QCoreApplication.processEvents()
+        except Exception as e:
+            self.logger.debug(f"Status priority failed: {e}")
 
     def on_hardware_scan_finished(self, detected_mode: str):
         """Receives the result from the background hardware scan."""
@@ -202,7 +202,7 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         if self.hardware_strategy == "CPU":
             self.show_status_warning("⚠️ No compatible GPU detected. Running in slower CPU-only mode.")
         else:
-            self.status_bar.showMessage(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000)
+            self.show_priority_message(f"✅ Hardware Acceleration Enabled ({self.hardware_strategy})", 5000, is_critical=True)
         self._maybe_enable_process()
 
     def show_status_warning(self, message: str):
@@ -563,12 +563,14 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         return super().eventFilter(obj, event)
 
     def launch_crop_tool(self):
-        """Launches the crop tool application and closes the main app."""
+        """
+        [FIX #2] Launches the crop tool application safely.
+        Ensures the new tool actually starts before closing the main window.
+        """
         self.logger.info("TRIGGER: launch_crop_tool called.")
         try:
             self.setEnabled(False)
-            if hasattr(self, 'statusBar'):
-                self.statusBar().showMessage("🚀 Switching to Crop Tool...", 5000)
+            self.show_priority_message("🚀 Launching Crop Tool... Please wait.", 8000, is_critical=True)
             QCoreApplication.processEvents()
             root_dir = os.path.abspath(self.base_dir)
             dev_tools_dir = os.path.join(root_dir, 'developer_tools')
@@ -589,20 +591,14 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
             env = os.environ.copy()
             norm_root = os.path.normpath(root_dir)
             norm_dev = os.path.normpath(dev_tools_dir)
-            current_pythonpath = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = os.pathsep.join(filter(None, [
-                norm_dev,
-                norm_root,
-                current_pythonpath
-            ]))
+            env["PYTHONPATH"] = os.pathsep.join(filter(None, [norm_dev, norm_root, env.get("PYTHONPATH", "")]))
             cmd = [sys.executable, "-B", script_path]
             if self.input_file_path:
                 cmd.append(self.input_file_path)
-            self.logger.info(f"ACTION: Launching detached Crop Tool: {' '.join(cmd)}")
             creation_flags = 0
             if sys.platform == "win32":
                 creation_flags = 0x00000008 | 0x00000200
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd, 
                 cwd=norm_dev, 
                 env=env,
@@ -610,13 +606,16 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
                 close_fds=True,
                 shell=False
             )
+            time.sleep(1.0)
+            if proc.poll() is not None:
+                raise RuntimeError(f"Crop Tool failed to start (Exit Code: {proc.returncode})")
             self._switching_app = True
             self.logger.info("Crop Tool launched successfully. Closing parent.")
             self.close()
         except Exception as e:
             self.setEnabled(True)
-            self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool.\n\nError: {e}")
+            self.logger.critical(f"ERROR: Failed to launch Crop Tool. Error: {e}")
+            QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool.\n\nVerify that the 'developer_tools' folder and 'crop_tools.py' exist.\n\nError: {e}")
 
     def launch_advanced_editor(self):
         """Launches the advanced video editor application."""
@@ -1164,27 +1163,3 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.cleanup_and_exit()
         super().closeEvent(event)
 
-    def show_message(self, title, message):
-        """
-        Displays a custom message box instead of alert().
-        """
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Information)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-        msg_box.exec_()
-
-    def open_folder(self, path):
-        """
-        Opens the specified folder using the default file explorer.
-        """
-        if os.path.exists(path):
-            try:
-                if sys.platform == 'win32':
-                    os.startfile(path, 'explore')
-                elif sys.platform == 'darwin':
-                    subprocess.Popen(['open', path])
-                else:
-                    subprocess.Popen(['xdg-open', path])
-            except Exception as e:
-                self.show_message("Error", f"Failed to open folder. Please navigate to {path} manually. Error: {e}")

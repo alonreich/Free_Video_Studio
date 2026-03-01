@@ -575,29 +575,27 @@ if __name__ == "__main__":
     except Exception:
         pass
     
-    # [FIX #4] Reuse last hardware strategy if available
+    # [FIX #4] Reuse last hardware strategy if available (But never lock into CPU mode permanently)
     from system.config import ConfigManager
     config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf')
     cm = ConfigManager(config_path)
     cached_hw = cm.config.get("last_hardware_strategy")
-    # Never lock the app permanently into CPU mode from an old/temporary failed probe.
+    
+    # If the last scan resulted in CPU, we re-scan every time to give the GPU another chance (e.g. after driver update)
     if str(cached_hw or "").upper() == "CPU":
         cached_hw = None
     
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
     
-    # If we have a cached strategy, use it to avoid the scan dialog
+    # If we have a cached GPU strategy, use it immediately for a fast start
     initial_strategy = cached_hw if cached_hw else "Scanning..."
     
-    # Set environment variables for the cached strategy immediately
     if cached_hw == "NVIDIA":
         os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
     elif cached_hw == "AMD":
         os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
     elif cached_hw == "INTEL":
         os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
-    elif cached_hw == "CPU":
-        os.environ["VIDEO_FORCE_CPU"] = "1"
 
     ex = VideoCompressorApp(file_arg, initial_strategy)
     try:
@@ -619,42 +617,32 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    if not cached_hw:
-        scan_dialog = QProgressDialog(tr("hardware_scan_text"), tr("hardware_scan_cpu"), 0, 0, ex)
-        scan_dialog.setWindowTitle(tr("hardware_scan_title"))
-        scan_dialog.setWindowModality(Qt.NonModal) # Changed from WindowModal to allow immediate interaction
-        scan_dialog.setMinimumDuration(0)
-        scan_dialog.setMinimumWidth(450)
-        scan_dialog.show()
+    # [FIX #1] Delayed non-blocking hardware scan to prevent UI freeze
+    def start_hw_scan():
+        if cached_hw:
+            debug_log(f"DEBUG: Using cached hardware strategy: {cached_hw}")
+            ex.on_hardware_scan_finished(cached_hw)
+            ex.scan_complete = True
+            return
 
         hw_thread = QThread()
         hw_worker = HardwareWorker(ffmpeg_path)
-        
-        def on_skip():
-            hw_worker.stop()
-            ex.on_hardware_scan_finished("CPU")
-            scan_dialog.close()
-            
-        scan_dialog.canceled.connect(on_skip)
-        
         hw_worker.moveToThread(hw_thread)
         hw_thread.started.connect(hw_worker.run)
         hw_worker.finished.connect(ex.on_hardware_scan_finished)
-        def handle_hardware_scan_result(mode: str):
-            try:
-                if scan_dialog:
-                    scan_dialog.close()
-            except Exception:
-                pass
-        hw_worker.finished.connect(handle_hardware_scan_result)
         hw_worker.finished.connect(hw_thread.quit)
         hw_worker.finished.connect(hw_worker.deleteLater)
         hw_thread.finished.connect(hw_thread.deleteLater)
+        
+        # Reference to prevent GC
+        ex._hw_thread = hw_thread
+        ex._hw_worker = hw_worker
+        
         hw_thread.start()
-    else:
-        # Silently verify in background if needed, but for now just accept cached
-        debug_log(f"DEBUG: Using cached hardware strategy: {cached_hw}")
-        ex.scan_complete = True
+        debug_log("DEBUG: Background hardware scan started.")
+
+    # [FIX] Start scan after UI loop has settled (500ms delay)
+    QTimer.singleShot(500, start_hw_scan)
 
     debug_log("DEBUG: Main window shown. Entering app.exec_().")
     ret = app.exec_()

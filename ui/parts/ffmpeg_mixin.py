@@ -147,6 +147,7 @@ class FfmpegMixin:
             self.progress_bar.setRange(0, 0)
             self.progress_bar.setValue(0)
             self._pulse_timer.start()
+            self.show_priority_message("🎬 Starting Video Encoding...", 5000, is_critical=True)
             self.process_button.setText("Processing...")
             self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
             self._safe_set_phase("Processing")
@@ -159,24 +160,28 @@ class FfmpegMixin:
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
             music_conf = {
+                'path': music_path,
                 'ducking_threshold': 0.15,
                 'ducking_ratio': 2.5,
                 'eq_enabled': True,
                 'main_vol': linear_video_vol,
                 'music_vol': music_vol_linear if music_path else 1.0,
-                'timeline_start_ms': int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms)),
-                'timeline_end_ms': int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms))
+                'timeline_start_sec': int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms)) / 1000.0,
+                'timeline_end_sec': int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms)) / 1000.0,
+                'file_offset_sec': music_offset_s
             }
-            music_conf['timeline_start_ms'] = max(self.trim_start_ms, min(music_conf['timeline_start_ms'], self.trim_end_ms))
-            music_conf['timeline_end_ms'] = max(music_conf['timeline_start_ms'], min(music_conf['timeline_end_ms'], self.trim_end_ms))
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
                 raw_text = self.portrait_text_input.text().strip()
                 if raw_text:
                     p_text = raw_text
             intro_abs_time = getattr(self, 'selected_intro_abs_time', 0.0)
-            if intro_abs_time is None:
-                intro_abs_time = 0.0
+            if not intro_abs_time or intro_abs_time <= 0:
+                import random
+                segment_duration = (end_time_ms - start_time_ms) / 1000.0
+                jitter = random.uniform(0.66, 0.67)
+                intro_abs_time = (start_time_ms / 1000.0) + (segment_duration * jitter)
+                self.logger.info(f"THUMB: No custom thumb. Defaulting to 2/3 point: {intro_abs_time:.3f}s")
             intro_abs_time_ms = int(intro_abs_time * 1000)
             self.process_thread = ProcessThread(
                 self.input_file_path, start_time_ms, end_time_ms, self.original_resolution,
@@ -389,12 +394,17 @@ class FfmpegMixin:
             grid.setContentsMargins(20, 20, 20, 20)
             whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆")
             whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40", font_size=12))
-            whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), dialog.accept()))
+            whatsapp_button.clicked.connect(lambda: (
+                self.share_via_whatsapp(), 
+                dialog.accept(),
+                self.cleanup_and_exit()
+            ))
             open_folder_button = QPushButton("OPEN FOLDER")
             open_folder_button.setStyleSheet(self._dialog_button_style("#6c5f9e", "#4E4476", font_size=12))
             open_folder_button.clicked.connect(lambda: (
                 dialog.accept(),
-                self.open_folder(os.path.dirname(output_path))
+                self.open_folder(os.path.dirname(output_path)),
+                self.cleanup_and_exit()
             ))
             new_file_button = QPushButton("📂  UPLOAD NEW  📂")
             new_file_button.setStyleSheet(self._dialog_button_style("#4a90e2", "#2D6DB8", font_size=12))

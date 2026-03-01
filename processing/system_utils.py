@@ -163,8 +163,7 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
                     us = int(val)
                     current_seconds = us / 1000000.0
                     if duration_sec > 0:
-                        raw_percent = current_seconds / float(duration_sec)
-                        percent = (raw_percent ** 1.3) if raw_percent > 0 else 0.0
+                        percent = current_seconds / float(duration_sec)
                         calc_prog = int(max(0, min(100, percent * 100)))
                         progress_signal.emit(calc_prog)
                 except ValueError:

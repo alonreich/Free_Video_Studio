@@ -17,7 +17,7 @@ class MergerEngine(QThread):
     finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
 
-    def __init__(self, ffmpeg_path, cmd_base, output_path, total_duration_sec=0, use_gpu=False, target_v_bitrate=0, target_a_bitrate=0, target_a_rate=48000):
+    def __init__(self, ffmpeg_path, cmd_base, output_path, total_duration_sec=0, use_gpu=False, target_v_bitrate=0, target_a_bitrate=0, target_a_rate=48000, quality_level=4):
         super().__init__()
         self.ffmpeg_path = ffmpeg_path
         self.cmd_base = cmd_base
@@ -27,6 +27,7 @@ class MergerEngine(QThread):
         self.target_v_bitrate = target_v_bitrate
         self.target_a_bitrate = target_a_bitrate
         self.target_a_rate = target_a_rate
+        self.quality_level = quality_level
         self.logger = _get_logger()
         self._process = None
         self._is_cancelled = False
@@ -36,14 +37,20 @@ class MergerEngine(QThread):
         """
         Detects available GPU encoders (NVENC, AMF, QSV).
         Falls back to libx264 if none found.
+        Adjusts quality based on self.quality_level (0=20% to 4:100%).
         """
+        quality_multipliers = {0: 0.20, 1: 0.40, 2: 0.60, 3: 0.80, 4: 1.0}
+        mult = quality_multipliers.get(self.quality_level, 1.0)
+        crf_map = {4: 22, 3: 26, 2: 30, 1: 34, 0: 40}
+        crf_val = crf_map.get(self.quality_level, 26)
         v_bitrate_args = []
         if self.target_v_bitrate > 0:
-            v_bitrate_args = ["-b:v", f"{self.target_v_bitrate}", "-maxrate:v", f"{int(self.target_v_bitrate * 1.5)}", "-bufsize:v", f"{int(self.target_v_bitrate * 2)}"]
+            effective_bitrate = int(self.target_v_bitrate * mult)
+            v_bitrate_args = ["-b:v", f"{effective_bitrate}", "-maxrate:v", f"{int(effective_bitrate * 1.5)}", "-bufsize:v", f"{int(effective_bitrate * 2)}"]
         if not self.use_gpu:
             base = ["-c:v", "libx264", "-preset", "medium"]
             if not v_bitrate_args:
-                base.extend(["-crf", "28"])
+                base.extend(["-crf", str(crf_val)])
             else:
                 base.extend(v_bitrate_args)
             return base
@@ -53,26 +60,29 @@ class MergerEngine(QThread):
             res = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
             out = res.stdout
             if re.search(r"\s+h264_nvenc\s+", out):
-                self.logger.info(f"GPU: NVIDIA NVENC detected. Target Bitrate: {self.target_v_bitrate}")
+                self.logger.info(f"GPU: NVIDIA NVENC detected. Quality Level: {self.quality_level}")
                 base = ["-c:v", "h264_nvenc", "-preset", "p4"]
-                if not v_bitrate_args: base.extend(["-cq", "28"])
+                if not v_bitrate_args: base.extend(["-cq", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
             elif re.search(r"\s+h264_amf\s+", out):
-                self.logger.info(f"GPU: AMD AMF detected. Target Bitrate: {self.target_v_bitrate}")
+                self.logger.info(f"GPU: AMD AMF detected. Quality Level: {self.quality_level}")
                 base = ["-c:v", "h264_amf", "-quality", "balanced"]
-                if not v_bitrate_args: base.extend(["-rc", "cqp", "-qp_i", "28", "-qp_p", "28"])
+                if not v_bitrate_args: base.extend(["-rc", "cqp", "-qp_i", str(crf_val), "-qp_p", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
             elif re.search(r"\s+h264_qsv\s+", out):
-                self.logger.info(f"GPU: Intel QSV detected. Target Bitrate: {self.target_v_bitrate}")
+                self.logger.info(f"GPU: Intel QSV detected. Quality Level: {self.quality_level}")
                 base = ["-c:v", "h264_qsv"]
-                if not v_bitrate_args: base.extend(["-global_quality", "28"])
+                if not v_bitrate_args: base.extend(["-global_quality", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
-        return ["-c:v", "libx264", "-preset", "medium", "-crf", "28"] if not v_bitrate_args else ["-c:v", "libx264", "-preset", "medium"] + v_bitrate_args
+        base = ["-c:v", "libx264", "-preset", "medium"]
+        if not v_bitrate_args: base.extend(["-crf", str(crf_val)])
+        else: base.extend(v_bitrate_args)
+        return base
 
     def run(self):
         self._is_cancelled = False

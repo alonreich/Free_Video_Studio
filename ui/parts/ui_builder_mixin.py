@@ -35,13 +35,16 @@ class UiBuilderMixin:
         """
         Capture the current absolute player time (seconds) as the desired
         thumbnail frame using FFmpeg for precision.
+        Handles concurrent calls by ignoring old requests.
         """
         try:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
                 QMessageBox.information(self, "No Video", "Please load a video first.")
                 return
-            if hasattr(self, "_thumb_thread") and self._thumb_thread.is_alive():
-                self.logger.debug("THUMB: Previous extraction still running. Swapping...")
+
+            import uuid
+            request_id = str(uuid.uuid4())
+            self._current_thumb_request = request_id
             pos_ms = 0
             try:
                 pos_ms = int(self.positionSlider.value())
@@ -55,14 +58,8 @@ class UiBuilderMixin:
             self.selected_intro_abs_time = pos_s
             mm = int(self.selected_intro_abs_time // 60)
             ss = self.selected_intro_abs_time % 60.0
-            if hasattr(self.thumb_pick_btn, 'text') and callable(self.thumb_pick_btn.text):
-                original_text = self.thumb_pick_btn.text()
-            else:
-                original_text = str(getattr(self.thumb_pick_btn, 'text', self.thumb_pick_btn))
-            if hasattr(self.thumb_pick_btn, 'setText'):
-                self.thumb_pick_btn.setText("⏳ EXTRACTING...")
-            if hasattr(self.thumb_pick_btn, 'setEnabled') and callable(self.thumb_pick_btn.setEnabled):
-                self.thumb_pick_btn.setEnabled(False)
+            self.thumb_pick_btn.setText("⏳ EXTRACTING...")
+            self.thumb_pick_btn.setEnabled(False)
             
             import tempfile
             temp_thumb = os.path.join(tempfile.gettempdir(), f"thumb_preview_{os.getpid()}.jpg")
@@ -72,28 +69,29 @@ class UiBuilderMixin:
                 "-vframes", "1", "-q:v", "2", temp_thumb
             ]
 
-            def _run_extract():
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
-                if hasattr(self.thumb_pick_btn, 'setText') and callable(self.thumb_pick_btn.setText):
-                    QTimer.singleShot(0, lambda: self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}"))
-                if hasattr(self.thumb_pick_btn, 'setEnabled') and callable(self.thumb_pick_btn.setEnabled):
-                    QTimer.singleShot(0, lambda: self.thumb_pick_btn.setEnabled(True))
-                if hasattr(self.thumb_pick_btn, 'setText') and callable(self.thumb_pick_btn.setText):
-                    QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
-                
+            def _run_extract(rid):
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, 
+                             creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
+                if getattr(self, "_current_thumb_request", None) == rid:
+                    QTimer.singleShot(0, lambda: self._on_thumb_extracted(mm, ss))
+
             from threading import Thread
-            self._thumb_thread = Thread(target=_run_extract, daemon=True)
-            self._thumb_thread.start()
+            Thread(target=_run_extract, args=(request_id,), daemon=True).start()
             if hasattr(self, "logger"):
                 self.logger.info("THUMB: Selected absolute time %.3fs", self.selected_intro_abs_time)
             self.status_update_signal.emit(f"✅ Thumbnail frame selected: {mm:02d}:{ss:05.2f}")
         except Exception as e:
-            try:
-                if hasattr(self, "logger"):
-                    self.logger.exception("Thumbnail pick failed: %s", e)
-            finally:
-                if hasattr(QMessageBox, 'warning'):
-                    QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
+            self.thumb_pick_btn.setEnabled(True)
+            self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
+            if hasattr(self, "logger"):
+                self.logger.exception("Thumbnail pick failed: %s", e)
+            QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
+
+    def _on_thumb_extracted(self, mm, ss):
+        """Update UI after thumbnail extraction."""
+        self.thumb_pick_btn.setEnabled(True)
+        self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}")
+        QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
 
     def _on_boss_hp_toggled(self, checked):
         if hasattr(self, "logger"):
@@ -184,21 +182,10 @@ class UiBuilderMixin:
         try:
             if hasattr(self, "logger"): self.logger.info("CLICK: Process Video")
             if not getattr(self, "scan_complete", False):
-                self.status_update_signal.emit("⌛ Finishing hardware scan... please wait.")
-
-                from PyQt5.QtWidgets import QApplication
-                from PyQt5.QtCore import Qt, QCoreApplication
-                import time
-                QApplication.setOverrideCursor(Qt.WaitCursor)
-                for _ in range(150):
-                    QCoreApplication.processEvents()
-                    if getattr(self, "scan_complete", False):
-                        break
-                    time.sleep(0.1)
-                QApplication.restoreOverrideCursor()
-                if not getattr(self, "scan_complete", False):
-                    self.logger.warning("Hardware scan timed out, defaulting to CPU.")
-                    self.on_hardware_scan_finished("CPU")
+                self.process_button.setEnabled(False)
+                self.process_button.setText("WAITING FOR SCAN...")
+                self.status_update_signal.emit("⌛ Hardware scan in progress... Please wait a few seconds.")
+                return
             try:
                 if getattr(self, "player", None):
                     self.player.stop()
@@ -221,16 +208,20 @@ class UiBuilderMixin:
 
     def _maybe_enable_process(self):
         """
-        Turn on the Process button once duration exists,
-        and if user hasn’t set trims yet, default to full video.
+        Turn on the Process button once duration exists AND scan is complete.
         """
         try:
             has_duration = (self.positionSlider.maximum() > 0) or (self.end_minute_input.maximum() > 0)
-            if has_duration:
+            is_ready = has_duration and getattr(self, "scan_complete", False)
+            if is_ready:
                 if not self.process_button.isEnabled():
-                    if hasattr(self, "logger"): self.logger.info("READY: Media loaded; enabling Process button")
+                    if hasattr(self, "logger"): self.logger.info("READY: Media loaded and scan complete; enabling Process button")
                     self.process_button.setEnabled(True)
+                    self.process_button.setText("PROCESS VIDEO")
                     self._ensure_default_trim()
+            elif has_duration and not getattr(self, "scan_complete", False):
+                self.process_button.setEnabled(False)
+                self.process_button.setText("SCANNING HW...")
         except Exception:
             pass
 
