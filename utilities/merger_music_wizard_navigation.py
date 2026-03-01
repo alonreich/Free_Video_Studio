@@ -1,4 +1,4 @@
-import os
+﻿import os
 from PyQt5.QtWidgets import QMessageBox, QStyle, QWidget
 from PyQt5.QtCore import Qt, QTimer
 
@@ -23,9 +23,11 @@ class MergerMusicWizardNavigationMixin:
             self._prepare_timeline_data()
             self.timeline.set_current_time(0.0)
             self._sync_all_players_to_time(0.0)
-            QTimer.singleShot(200, lambda: self._video_player.set_pause(True) if self._video_player else None)
-            if self._player:
-                QTimer.singleShot(200, lambda: self._player.set_pause(True))
+
+            def _mute_them():
+                if self._video_player: self._video_player.pause = True
+                if self._player: self._player.pause = True
+            QTimer.singleShot(200, _mute_them)
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
             self.update_coverage_ui()

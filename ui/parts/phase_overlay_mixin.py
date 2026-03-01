@@ -71,9 +71,14 @@ class PhaseOverlayMixin:
         if getattr(self, "_overlay", None):
             return
         self._overlay = QWidget(self)
-        self._overlay.setWindowFlags(Qt.FramelessWindowHint)
         self._overlay.setAttribute(Qt.WA_NoSystemBackground, True)
-        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        
+        def _paint_overlay(event):
+            painter = QPainter(self._overlay)
+            painter.fillRect(self._overlay.rect(), QColor(11, 20, 29, 250))
+            painter.end()
+        self._overlay.paintEvent = _paint_overlay
         self._overlay.hide()
         self._graph = QWidget(self._overlay)
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)
@@ -110,30 +115,32 @@ class PhaseOverlayMixin:
     def _resize_overlay(self) -> None:
         """Called by the main resizeEvent to resize/mask the overlay."""
         try:
-            if getattr(self, "_overlay", None) and self._overlay.isVisible():
+            if getattr(self, "_overlay", None):
                 self._overlay.setGeometry(self.rect())
-                self._update_overlay_mask()
+                if self._overlay.isVisible():
+                    self._update_overlay_mask()
         except Exception:
             pass
 
     def _update_overlay_mask(self):
-        """Positions graph/log and raises interaction widgets above the overlay."""
+        """Positions graph/log and cuts holes in the overlay for interactive widgets."""
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
             main_rect = self.rect()
             self._overlay.setGeometry(main_rect)
-            self._overlay.raise_()
+            full_region = QRegion(main_rect)
             mask_region = QRegion(main_rect)
-            for w_name in ["process_button", "cancel_button", "progress_bar"]:
+            widgets_to_show = ["process_button", "cancel_button", "progress_bar"]
+            for w_name in widgets_to_show:
                 w = getattr(self, w_name, None)
                 if w and w.isVisible():
                     tl = w.mapToGlobal(w.rect().topLeft())
                     local_tl = self._overlay.mapFromGlobal(tl)
                     w_rect = QRect(local_tl, w.size())
                     mask_region = mask_region.subtracted(QRegion(w_rect))
-                    w.raise_()
             self._overlay.setMask(mask_region)
+            self._overlay.raise_()
             margin_x = 40
             margin_y = 40
             avail_w = main_rect.width() - (2 * margin_x)
@@ -149,6 +156,10 @@ class PhaseOverlayMixin:
         """Shows the overlay and starts stats/pulse timers."""
         self._ensure_overlay_widgets()
         try:
+            if hasattr(self, "process_button") and not hasattr(self, "_original_process_btn_style"):
+                self._original_process_btn_style = self.process_button.styleSheet()
+            if hasattr(self, "cancel_button") and not hasattr(self, "_original_cancel_btn_style"):
+                self._original_cancel_btn_style = self.cancel_button.styleSheet()
             for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
                 if hasattr(self, nm):
                     getattr(self, nm).clear()
@@ -156,6 +167,8 @@ class PhaseOverlayMixin:
             self._overlay.show()
             self._overlay.raise_()
             QTimer.singleShot(0, self._update_overlay_mask)
+            QTimer.singleShot(100, self._update_overlay_mask)
+            QTimer.singleShot(500, self._update_overlay_mask)
             self._sample_perf_counters_safe()
             self._stats_timer.start()
             if hasattr(self, "_gpu_worker") and not self._gpu_worker.isRunning():
@@ -181,9 +194,10 @@ class PhaseOverlayMixin:
             if getattr(self, "_color_pulse_timer", None):
                 self._color_pulse_timer.stop()
             if hasattr(self, "process_button") and hasattr(self, "_original_process_btn_style"):
-                self.process_button.setText("Process Video")
                 self.process_button.setStyleSheet(self._original_process_btn_style)
                 self.process_button.setIcon(QIcon())
+            if hasattr(self, "cancel_button") and hasattr(self, "_original_cancel_btn_style"):
+                self.cancel_button.setStyleSheet(self._original_cancel_btn_style)
         except Exception:
             pass
         try:
@@ -211,14 +225,18 @@ class PhaseOverlayMixin:
             self.process_button.setStyleSheet(f"""
                 QPushButton {{
                     background-color: rgb({r},{g},{b});
-                    color: black;
+                    color: #ffffff;
                     font-weight: bold;
-                    font-size: 14px;
-                    border-radius: 15px;
-                    margin-bottom: 6px;
+                    font-size: 12px;
+                    border-radius: 10px;
+                    padding: 10px 18px;
+                    border-style: solid;
+                    border-top: 1px solid rgba(255, 255, 255, 0.2);
+                    border-left: 1px solid rgba(255, 255, 255, 0.2);
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+                    border-right: 1px solid rgba(0, 0, 0, 0.6);
                 }}
-                QPushButton:hover {{ background-color: #c8f7c5;
-                }}
+                QPushButton:hover {{ background-color: #c8f7c5; }}
             """)
             self.process_button.setText(current_text)
             self.process_button.setIcon(current_icon)

@@ -22,17 +22,29 @@ class FilterBuilder:
     def __init__(self, logger):
         self.logger = logger
 
-    def _make_even(self, n):
-        """Ensure dimensions are even numbers for NVENC/CUDA compatibility."""
+    def _make_multiple(self, n, m=8):
         i = int(round(n))
-        return i if i % 2 == 0 else i + 1
+        return (i // m) * m
 
-    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False, use_hwaccel=False, needs_hw_download=True, target_fps=60, input_pad="[v_stabilized]"):
-        """
-        Builds the complex filter graph for mobile layout.
-        REFACTORED: Prioritizes CUDA-residency and eliminates redundant CPU-GPU roundtrips.
-        """
+    def _make_even(self, n):
+        return self._make_multiple(n, 2)
+
+    def _fps_to_float(self, fps_val):
+        from fractions import Fraction
+        try:
+            return float(Fraction(str(fps_val)))
+        except:
+            try: return float(fps_val)
+            except: return 60.0
+
+    def build_mobile_filter(self, mobile_coords, original_res_str, is_boss_hp, show_teammates, use_nvidia=False, needs_text_overlay=False, use_hwaccel=False, needs_hw_download=True, target_fps=60, input_pad="[v_stabilized]", txt_input_label=None, speed_factor=1.0):
         coords_data = mobile_coords
+        FINAL_W, FINAL_H = 1080, 1920
+        CONTENT_AREA_W, CONTENT_AREA_H = 1080, 1620
+        INTERNAL_W, INTERNAL_H = 1280, 1920
+        CONTENT_OFFSET_Y = 150
+        parts = []
+        curr_input = input_pad
 
         def get_rect(section, key):
             return tuple(coords_data.get(section, {}).get(key, [0,0,0,0]))
@@ -42,105 +54,54 @@ class FilterBuilder:
         hp_key = "boss_hp" if is_boss_hp else "normal_hp"
         active_layers = []
 
-        def is_valid_config(rect, scale):
-            return rect and len(rect) >= 4 and rect[0] >= 1 and rect[1] >= 1 and float(scale) > 0.001
-
         def register_layer(name, conf_key, crop_key_1080, ov_key):
             rect_1080 = get_rect("crops_1080p", crop_key_1080)
             sc = float(scales.get(conf_key, 1.0))
-            if is_valid_config(rect_1080, sc):
+            if rect_1080 and rect_1080[0] >= 1:
                 w_ui, h_ui, x_ui, y_ui = rect_1080
-                if any(k in name.lower() for k in ["stats", "healthbar", "team"]):
-                    x_ui -= 1; w_ui += 1
-                elif "loot" in name.lower():
-                    w_ui += 1
                 transformed = inverse_transform_from_content_area_int((x_ui, y_ui, w_ui, h_ui), original_res_str)
                 crop_orig = (transformed[2], transformed[3], transformed[0], transformed[1])
                 ov = overlays.get(ov_key, {"x": 0, "y": 0})
                 z = z_orders.get(ov_key, 50)
                 active_layers.append({
-                    "name": name,
-                    "crop_orig": crop_orig,
-                    "ui_wh": (rect_1080[0], rect_1080[1]),
-                    "scale": sc,
-                    "pos": (ov["x"], ov["y"]),
-                    "z": z
+                    "name": name, "crop_orig": crop_orig, "ui_wh": (rect_1080[0], rect_1080[1]),
+                    "scale": sc, "pos": (ov["x"], ov["y"]), "z": z
                 })
         register_layer("healthbar", hp_key, hp_key, hp_key)
         register_layer("lootbar", "loot", "loot", "loot")
         register_layer("stats", "stats", "stats", "stats")
         register_layer("spectating", "spectating", "spectating", "spectating")
-        if show_teammates:
-            register_layer("team", "team", "team", "team")
+        if show_teammates: register_layer("team", "team", "team", "team")
         active_layers.sort(key=lambda x: x["z"])
-        if use_nvidia:
-            try:
-                iw_orig, ih_orig = map(int, original_res_str.lower().split('x'))
-            except:
-                iw_orig, ih_orig = 1920, 1080
-            target_w, target_h = 1280, 1920
-            target_ar = target_w / target_h
-            src_ar = iw_orig / ih_orig
-            if src_ar > target_ar:
-                scale_h = 1920
-                scale_w = self._make_even(scale_h * src_ar)
-            else:
-                scale_w = 1280
-                scale_h = self._make_even(scale_w / src_ar)
-            offset_x = self._make_even((1280 - scale_w) / 2)
-            offset_y = self._make_even((1920 - scale_h) / 2)
-            sc_fmt = ":format=nv12" if getattr(self, "cuda_caps", {}).get("scale_format") else ""
-            safe_fps = str(int(target_fps)) if float(target_fps).is_integer() else str(target_fps)
-            split_count = 1 + len(active_layers)
-            cmd = f"{input_pad}split=outputs={split_count}[main_base]" + "".join([f"[hud_in_{i}]" for i in range(len(active_layers))]) + ";"
-            cmd += f"[main_base]hwupload_cuda,scale_cuda={scale_w}:{scale_h}[main_scaled];"
-            cmd += f"color=c=black:s=1280x1920:r={safe_fps},format=nv12,hwupload_cuda[bg_canvas];"
-            cmd += f"[bg_canvas][main_scaled]overlay_cuda=x={offset_x}:y={offset_y}[bg_ready];"
-            current_pad = "[bg_ready]"
-            for i, layer in enumerate(active_layers):
-                cw, ch, cx, cy = layer['crop_orig']
-                cw_e, ch_e = self._make_even(cw), self._make_even(ch)
-                render_w = self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE)
-                render_h = self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE)
-                lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
-                layer_pad = f"[hud_{i}]"
-                cmd += f"[hud_in_{i}]crop={cw_e}:{ch_e}:{cx}:{cy},hwupload_cuda,scale_cuda={render_w}:{render_h}{layer_pad};"
-                next_pad = f"[vov_{i}]" if i < len(active_layers) - 1 else "[vcontent_gpu]"
-                cmd += f"{current_pad}{layer_pad}overlay_cuda=x={lx}:y={ly}{next_pad};"
-                current_pad = next_pad
-            if not active_layers:
-                cmd += "[bg_ready]null[vcontent_gpu];"
-            cmd += f"[vcontent_gpu]scale_cuda=1080:1620[vcontent_scaled];"
-            cmd += f"color=c=black:s=1080x1920:r={safe_fps},format=nv12,hwupload_cuda[black_canvas];"
-            cmd += f"[black_canvas][vcontent_scaled]overlay_cuda=x=0:y=150[vpreout_gpu]"
-            if needs_hw_download:
-                return cmd + f";[vpreout_gpu]hwdownload,format=nv12"
-            else:
-                return cmd + f";[vpreout_gpu]format=cuda"
+        split_count = 1 + len(active_layers)
+        parts.append(f"{curr_input}split={split_count}[main_base_sw]" + "".join([f"[{l['name']}_in_sw]" for l in active_layers]))
+        f_main_sw = f"scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=bicubic,crop={INTERNAL_W}:{INTERNAL_H}:(iw-{INTERNAL_W})/2:(ih-{INTERNAL_H})/2"
+        parts.append(f"[main_base_sw]{f_main_sw}[main_base_composed]")
+        current_pad = "[main_base_composed]"
+        for i, layer in enumerate(active_layers):
+            cw, ch, cx, cy = layer['crop_orig']
+            rw = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
+            rh = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
+            lx, ly = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE), self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
+            next_pad = f"[t{i}]" if i < len(active_layers) - 1 else "[internal_composed_sw]"
+            parts.append(f"[{layer['name']}_in_sw]crop={cw}:{ch}:{cx}:{cy},scale={rw}:{rh}:flags=lanczos[{layer['name']}_out_sw]")
+            parts.append(f"{current_pad}[{layer['name']}_out_sw]overlay=x={lx}:y={ly}:eof_action=pass{next_pad}")
+            current_pad = next_pad
+        if not active_layers:
+            parts.append(f"[main_base_composed]null[internal_composed_sw]")
+        parts.append(f"[internal_composed_sw]scale={CONTENT_AREA_W}:{CONTENT_AREA_H}:flags=bicubic[content_scaled_sw]")
+        parts.append(f"color=c=black:s={FINAL_W}x{FINAL_H}:r={target_fps}:d=3600,format=nv12[bg_canvas_sw]")
+        parts.append(f"[bg_canvas_sw][content_scaled_sw]overlay=x=0:y={CONTENT_OFFSET_Y}:eof_action=pass[vpreout_sw]")
+        last_v_pad = "[vpreout_sw]"
+        if txt_input_label:
+            parts.append(f"{last_v_pad}{txt_input_label}overlay=x=0:y=0:eof_action=repeat,setsar=1[vfinal_sw]")
+            last_v_pad = "[vfinal_sw]"
         else:
-            f_main_inner = f"scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
-            split_count = 1 + len(active_layers)
-            cmd = f"{input_pad}split=outputs={split_count}[main_base]" + "".join([f"[{l['name']}_in]" for l in active_layers]) + ";"
-            cmd += f"[main_base]{f_main_inner}[main_cropped];"
-            current_pad = "[main_cropped]"
-            for i, layer in enumerate(active_layers):
-                cw, ch, cx, cy = layer['crop_orig']
-                render_w = max(2, self._make_even(layer['ui_wh'][0] * layer['scale'] * BACKEND_SCALE))
-                render_h = max(2, self._make_even(layer['ui_wh'][1] * layer['scale'] * BACKEND_SCALE))
-                lx = self._make_even(float(layer['pos'][0]) * BACKEND_SCALE)
-                ly = self._make_even(float(layer['pos'][1]) * BACKEND_SCALE)
-                next_pad = f"[t{i}]" if i < len(active_layers) - 1 else "[vpreout]"
-                cmd += f"[{layer['name']}_in]crop={cw}:{ch}:{cx}:{cy},scale={render_w}:{render_h}:flags=lanczos[{layer['name']}_out];"
-                cmd += f"{current_pad}[{layer['name']}_out]overlay=x={lx}:y={ly}{next_pad};"
-                current_pad = next_pad
-            if not active_layers:
-                 cmd = f"{input_pad}{f_main_inner}[vpreout];"
-            cmd += f"[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
-            return cmd
+            parts.append(f"{last_v_pad}setsar=1[vfinal_sw]")
+            last_v_pad = "[vfinal_sw]"
+        return ";".join(parts), last_v_pad
 
     def add_drawtext_filter(self, filter_cmd, textfile_path, font_size, line_spacing):
-        """Appends a drawtext filter to the end of the filter chain."""
         safe_path = textfile_path.replace("\\", "/").replace(":", "\\:")
         font_arg = ""
         if os.name == 'nt':
@@ -149,10 +110,10 @@ class FilterBuilder:
                     safe_font = fpath.replace("\\", "/").replace(":", "\\:")
                     font_arg = f":fontfile='{safe_font}'"
                     break
-        drawtext = f",drawtext=textfile='{safe_path}':fontcolor=white:fontsize={font_size}:x=(w-tw)/2:y=(h-th-50):line_spacing={line_spacing}{font_arg}"
+        drawtext = f",drawtext=textfile='{safe_path}':fontcolor=white:fontsize={font_size}:x=(w-tw)/2:y=50:line_spacing={line_spacing}{font_arg}"
         return filter_cmd + drawtext
 
-    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0, input_v_label="[v_stabilized]", input_a_label="[0:a]"):
+    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0, input_v_label="[v_stabilized]", input_a_label="[0:a]", target_fps="60"):
         segments = []
         for s in speed_segments:
             rel_start = s['start'] - source_cut_start_ms
@@ -181,18 +142,14 @@ class FilterBuilder:
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
             dur = end - start
             out_dur = dur / speed
-            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,setpts='(PTS)/{speed:.4f}'[v_chunk_{i}]")
+            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=(PTS-STARTPTS)/{speed:.4f}[v_chunk_{i}]")
             v_pads.append(f"[v_chunk_{i}]")
             audio_speed_filters = []
             tmp_s = speed
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-            fade_ms = 0.005
             a_chain = [f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f}", "asetpts=PTS-STARTPTS", ",".join(audio_speed_filters)]
-            if out_dur > (fade_ms * 2.1):
-                a_chain.append(f"afade=t=in:st=0:d={fade_ms:.3f}")
-                a_chain.append(f"afade=t=out:st={max(0.0, out_dur - fade_ms):.3f}:d={fade_ms:.3f}")
             a_chain.append("aresample=48000:async=1:min_comp=0.001:min_hard_comp=0.1")
             full_chain_parts.append(f"{','.join(a_chain)}[a_chunk_{i}]")
             a_pads.append(f"[a_chunk_{i}]")
@@ -256,7 +213,9 @@ class FilterBuilder:
                 mus_input = "[a_music_prepared]"
             v_vol = float(mc.get('main_vol', 1.0))
             chain.append(f"[a_main_prepared]volume={v_vol:.4f},highpass=f=150[game_scaled]")
-            chain.append(f"[game_scaled]{mus_input}amix=inputs=2:duration=first:dropout_transition=0:normalize=0,volume=0.9[acore]")
+            chain.append(f"[game_scaled]asplit=2[game_mix][game_sc]")
+            chain.append(f"{mus_input}[game_sc]sidechaincompress=threshold=0.08:ratio=3:attack=5:release=50[music_ducked]")
+            chain.append(f"[game_mix][music_ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.98[acore]")
         else:
             chain.append("[a_main_prepared]anull[acore]")
         return chain

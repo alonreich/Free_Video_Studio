@@ -67,8 +67,8 @@ class EncoderManager:
         if video_bitrate_kbps is not None:
             kbps = int(video_bitrate_kbps)
             bitrate_arg = f'{kbps}k'
-            maxrate_arg = f'{int(kbps * 2.5)}k' 
-            bufsize_arg = f'{int(kbps * 2.5)}k'
+            maxrate_arg = f'{int(kbps * 1.5)}k' 
+            bufsize_arg = f'{int(kbps * 2.0)}k'
             vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
         gop = '60'
         try:
@@ -81,25 +81,24 @@ class EncoderManager:
             gop = '60'
         vcodec.extend(['-g', gop, '-keyint_min', gop])
         if encoder_name == 'h264_nvenc':
-            h264_level = '5.1' if fps_value >= 100.0 else '4.2'
+            h264_level = '5.1' if (fps_value >= 59.0) else '4.2'
             vcodec.extend([
                 '-pix_fmt', 'nv12',
                 '-preset', 'p7',
                 '-tune', 'hq',
-                '-rc', 'vbr',        
-                '-multipass', 'fullres', 
+                '-rc', 'vbr',
+                '-multipass', 'fullres',
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
-                '-aq-strength', '8',
+                '-aq-strength', '4',
                 '-bf', '3',
                 '-b_ref_mode', 'each',
                 '-rc-lookahead', '32',
-                '-profile:v', 'high',   
-                '-level:v', h264_level,
-                '-sc_threshold', '0', 
-                '-forced-idr', '1'
+                '-nonref_p', '1',
+                '-profile:v', 'high',
+                '-level:v', h264_level
             ])
-            rc_label = "NVENC (Titan-Motion VBR)"
+            rc_label = "Titan-Locked Strict VBR NVENC"
         elif encoder_name == 'h264_amf':
             vcodec.extend([
                 '-pix_fmt', 'nv12',
@@ -108,9 +107,11 @@ class EncoderManager:
                 '-rc', 'vbr_peak',
                 '-enforce_hrd', '1',
                 '-vbaq', '1',           
-                '-bf', '2',             
+                '-bf', '3',             
                 '-profile:v', 'high',
-                '-level', '5.1'
+                '-level', '5.1',
+                '-header_insertion_mode', 'idr',
+                '-filler_data', '0'
             ])
             rc_label = "AMD AMF (Titan-Motion VBR)"
         elif encoder_name == 'h264_qsv':
@@ -121,22 +122,24 @@ class EncoderManager:
                 '-look_ahead', '1', 
                 '-look_ahead_depth', '32',
                 '-profile:v', 'high',
-                '-extbrc', '1'
+                '-extbrc', '1',
+                '-adaptive_i', '1',
+                '-adaptive_b', '1'
             ])
             rc_label = "Intel QSV (Titan-Motion VBR)"
         elif encoder_name == 'libx264':
             vcodec.append('-pix_fmt')
             vcodec.append('yuv420p')
             if video_bitrate_kbps is None:
-                vcodec.extend(['-preset', 'slower', '-crf', '17', '-bf', '3'])
-                return vcodec, "CPU libx264 (CRF HQ)"
+                vcodec.extend(['-preset', 'veryslow', '-crf', '16', '-bf', '3', '-x264-params', 'aq-mode=2:me=umh:subme=10'])
+                return vcodec, "CPU libx264 (Titan-CRF Ultra)"
             else:
                 vcodec.extend([
-                    '-preset', 'slower', 
+                    '-preset', 'veryslow', 
                     '-bf', '3',
                     '-profile:v', 'high',
                     '-level:v', ('5.1' if fps_value >= 100.0 else '4.2'),
-                    '-x264-params', 'me=umh:subme=10:rc-lookahead=32:ref=4:aq-mode=2:mbtree=1'
+                    '-x264-params', 'me=umh:subme=10:rc-lookahead=60:ref=4:aq-mode=2:mbtree=1:direct=auto:partitions=all:trellis=2'
                 ])
                 return vcodec, "CPU libx264 (Titan-Motion VBR)"
         else:

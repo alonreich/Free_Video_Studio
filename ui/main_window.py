@@ -1034,6 +1034,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         self.original_duration_ms = 0
         self.trim_start_ms = 0
         self.trim_end_ms = 0
+        self.speed_segments = []
+        if hasattr(self, 'granular_checkbox'):
+            self.granular_checkbox.blockSignals(True)
+            self.granular_checkbox.setChecked(False)
+            self.granular_checkbox.blockSignals(False)
         self.process_button.setEnabled(False)
         self._set_video_controls_enabled(False)
         self.progress_update_signal.emit(0)

@@ -57,6 +57,19 @@ class MediaProber:
                 pass
         return 48000
 
+    def get_video_bitrate(self):
+        kbps = self.run_probe(["-select_streams", "v:0", "-show_entries", "stream=bit_rate"])
+        if kbps: return kbps
+        kbps = self.run_probe(["-show_entries", "format=bit_rate"])
+        return kbps or 25000
+
+    def get_duration(self):
+        val_str = self._run_command(["-show_entries", "format=duration"])
+        try:
+            return float(val_str)
+        except:
+            return 0.0
+
     def get_video_fps_expr(self, fallback: str = "60000/1001"):
         """
         Returns a stable ffmpeg fps expression string (e.g. "60000/1001").
@@ -70,59 +83,42 @@ class MediaProber:
             return fallback
         try:
             frac = Fraction(str(raw).strip())
+            if frac.denominator == 0:
+                return fallback
             fps = float(frac)
             if fps <= 1.0:
                 return fallback
-            if abs(fps - 120.0) <= 3.0 or abs(fps - 119.88) <= 3.0:
-                return "120"
-            if abs(fps - 60.0) <= 1.0 or abs(fps - 59.94) <= 1.0:
-                return "60000/1001"
-            if abs(fps - 30.0) <= 0.7 or abs(fps - 29.97) <= 0.7:
-                return "30000/1001"
-            if abs(fps - 24.0) <= 0.7 or abs(fps - 23.976) <= 0.7:
-                return "24000/1001"
-            if fps >= 90.0:
-                return "120"
-            if fps >= 45.0:
-                return "60000/1001"
-            if fps >= 26.0:
-                return "30000/1001"
-            if fps >= 20.0:
-                return "24000/1001"
-            return fallback
+            if fps > 60.0:
+                fps = 60.0
+                return "60"
+            if abs(fps - 60.0) < 0.001: return "60"
+            if abs(fps - 59.94) < 0.01: return "60000/1001"
+            if abs(fps - 30.0) < 0.001: return "30"
+            if abs(fps - 29.97) < 0.01: return "30000/1001"
+            if abs(fps - 24.0) < 0.001: return "24"
+            if abs(fps - 23.976) < 0.01: return "24000/1001"
+            if abs(fps - round(fps)) < 0.001:
+                return str(int(round(fps)))
+            return str(frac)
         except Exception:
             return fallback
 
-def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None):
+def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
     """
-    [FIX #11] Calculates video bitrate to hit target MB. 
-    Conservative calculation (using 1024 divisor) ensures we rarely exceed target size.
+    [FIX #11] Calculates video bitrate to hit target MB accurately.
+    'Maximum' quality now matches original source bitrate with a small buffer for assembly.
     """
-    target_size_bits = 0
-    is_max_quality = False
-    if keep_highest_res:
-        try:
-            src_bytes = os.path.getsize(input_path)
-            target_size_bits = max(1, src_bytes) * 8 
-            is_max_quality = True
-        except Exception:
-            target_mb = 52.0
-    if not is_max_quality:
-        if target_mb is None:
-            target_mb = 52.0
-        mb_in_bits = target_mb * 8 * 1024 * 1024 * 0.95
-        target_size_bits = mb_in_bits
-    audio_bits = audio_kbps * 1000 * duration
+    if keep_highest_res and prober:
+        orig_br = prober.get_video_bitrate()
+        return int(orig_br * 1.25)
+    if target_mb is None:
+        target_mb = 45.0
+    mb_for_bits = float(target_mb)
+    mb_in_bits = mb_for_bits * 8 * 1024 * 1024 * 1.0
+    target_size_bits = mb_in_bits
+    audio_bits = audio_kbps * 1024 * (duration)
     video_bits = target_size_bits - audio_bits
-    if duration <= 0: 
-        return None
-    if video_bits <= 0:
-        if logger:
-            logger.warning("Target size is too small for audio track; forcing 300kbps video.")
-        return 300
-    calculated_kbps = int(video_bits / (1000 * duration))
-    if calculated_kbps < 300:
-        if logger:
-            logger.warning(f"Calculated bitrate ({calculated_kbps}k) is very low. Quality will be impacted.")
-    return max(300, calculated_kbps)
-    
+    if duration <= 0:
+        return 6000
+    calculated_kbps = int(video_bits / (1024 * duration))
+    return max(2000, calculated_kbps)

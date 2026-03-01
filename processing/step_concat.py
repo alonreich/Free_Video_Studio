@@ -89,11 +89,11 @@ class ConcatProcessor:
                 if len(files_to_concat) > 1:
                     filter_parts = []
                     for i in range(len(files_to_concat)):
-                        filter_parts.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
+                        filter_parts.append(f"[{i}:v]setpts=PTS-STARTPTS,setsar=1[v{i}]")
                         filter_parts.append(f"[{i}:a]aresample=async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
                     concat_in = "".join([f"[v{i}][a{i}]" for i in range(len(files_to_concat))])
                     filter_parts.append(f"{concat_in}concat=n={len(files_to_concat)}:v=1:a=1[vout][aout]")
-                    filter_parts.append(f"[vout]setpts=PTS-STARTPTS[vout2]")
+                    filter_parts.append(f"[vout]setpts=PTS-STARTPTS,setsar=1[vout2]")
                     cmd.extend([
                         "-filter_complex", ";".join(filter_parts),
                         "-map", "[vout2]",
@@ -102,6 +102,7 @@ class ConcatProcessor:
                 else:
                     cmd.extend(["-map", "0:v:0", "-map", "0:a:0?"])
                 cmd.extend([
+                    "-r", str(fps_expr),
                     "-fps_mode", "cfr",
                     "-video_track_timescale", str(video_track_timescale),
                 ])
@@ -130,7 +131,7 @@ class ConcatProcessor:
                     "-b:a", f"{int(max(192, min(int(audio_kbps), 512)))}k",
                     "-ar", str(int(audio_sample_rate) if audio_sample_rate else 48000),
                     "-ac", "2",
-                    "-af", "aresample=async=1:first_pts=0:min_comp=0.001",
+                    "-af", "aresample=async=1:first_pts=0:min_comp=0.001:min_hard_comp=0.1",
                     "-fps_mode", "cfr",
                     "-video_track_timescale", str(video_track_timescale),
                 ])

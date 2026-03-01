@@ -261,14 +261,7 @@ class GranularSpeedEditor(QDialog):
         QTimer.singleShot(50, self.setup_player)
 
     def _current_play_window_ms(self):
-        """Playback window follows current SET START/SET END selection when valid."""
-        try:
-            s = int(getattr(self.timeline, "trimmed_start_ms", 0) or 0)
-            e = int(getattr(self.timeline, "trimmed_end_ms", 0) or 0)
-        except Exception:
-            s, e = 0, 0
-        if e > s + 10:
-            return s, e
+        """Playback window follows the full viewable range to prevent navigation traps."""
         fallback_s = int(getattr(self, "view_start_ms", 0) or 0)
         fallback_e = int(getattr(self, "view_end_ms", fallback_s) or fallback_s)
         if fallback_e <= fallback_s:

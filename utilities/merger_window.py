@@ -653,8 +653,10 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         has_audio_input = False
         all_have_audio = True
         audio_plan = []
-        peak_v_bitrate = 0
-        peak_a_bitrate = 0
+        total_v_bits = 0.0
+        total_a_bits = 0.0
+        total_v_dur = 0.0
+        total_a_dur = 0.0
         peak_a_rate = 44100
         for i in range(self.listw.count()):
             it = self.listw.item(i)
@@ -664,8 +666,15 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             if not info:
                 self._merge_finished_cleanup(False, f"Probe data missing for file: {path}")
                 return
-            peak_v_bitrate = max(peak_v_bitrate, info.get("video_bitrate", 0))
-            peak_a_bitrate = max(peak_a_bitrate, info.get("audio_bitrate", 0))
+            dur = float(info.get("duration") or 0.0)
+            v_bitrate = info.get("video_bitrate", 0)
+            a_bitrate = info.get("audio_bitrate", 0)
+            if v_bitrate > 0 and dur > 0:
+                total_v_bits += v_bitrate * dur
+                total_v_dur += dur
+            if a_bitrate > 0 and dur > 0:
+                total_a_bits += a_bitrate * dur
+                total_a_dur += dur
             peak_a_rate = max(peak_a_rate, info.get("audio_rate", 0))
             res = info.get("resolution")
             if not res or len(res) != 2 or not all(isinstance(v, int) and v > 0 for v in res):
@@ -680,14 +689,14 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             all_have_audio = all_have_audio and clip_has_audio
             audio_plan.append({
                 "path": path,
-                "duration": float(info.get("duration") or 0.0),
+                "duration": dur,
                 "has_audio": clip_has_audio,
             })
         audio_mixed = has_audio_input and (not all_have_audio)
         if audio_mixed:
             normalize_video = True
-        if peak_v_bitrate == 0: peak_v_bitrate = 8000000
-        if peak_a_bitrate == 0: peak_a_bitrate = 192000
+        target_v_bitrate = int(total_v_bits / total_v_dur) if total_v_dur > 0 else 0
+        target_a_bitrate = int(total_a_bits / total_a_dur) if total_a_dur > 0 else 192000
         if peak_a_rate == 0: peak_a_rate = 48000
         self._finalize_merge_setup(
             video_files,
@@ -695,8 +704,8 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             has_audio_input,
             first_res,
             normalize_video,
-            peak_v_bitrate,
-            peak_a_bitrate,
+            target_v_bitrate,
+            target_a_bitrate,
             peak_a_rate,
             audio_plan=audio_plan,
             audio_mixed=audio_mixed,

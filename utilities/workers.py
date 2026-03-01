@@ -277,7 +277,13 @@ class ProbeWorker(QThread):
                                     a_channels = 0
                                 break
                         if v_bitrate == 0 and format_bitrate > 0:
-                            v_bitrate = format_bitrate - a_bitrate
+                            v_bitrate = max(0, format_bitrate - a_bitrate)
+                        if v_bitrate == 0 and duration > 0:
+                            try:
+                                size_bytes = os.path.getsize(path)
+                                v_bitrate = int((size_bytes * 8) / duration) - a_bitrate
+                                v_bitrate = max(0, v_bitrate)
+                            except: pass
                         has_audio = any(s.get("codec_type") == "audio" for s in streams)
                     else:
                         logger.warning(f"ffprobe failed for {path}: {error_msg}")

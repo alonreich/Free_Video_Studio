@@ -4,10 +4,10 @@ import time
 import subprocess
 import json
 import threading
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QAbstractAnimation
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QUrl
+from PyQt5.QtGui import QIcon, QFont, QDesktopServices, QPixmap, QPainter
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
-                             QGridLayout, QPushButton, QMessageBox)
+                             QGridLayout, QPushButton, QMessageBox, QSizePolicy)
 
 from processing.worker import ProcessThread
 from ui.styles import UIStyles
@@ -260,17 +260,51 @@ class FfmpegMixin:
     def share_via_whatsapp(self):
         url = "https://web.whatsapp.com"
         try:
-            if sys.platform == 'win32':
-                os.startfile(url)
-            elif sys.platform == 'darwin':
-                subprocess.Popen(['open', url])
-            else:
-                subprocess.Popen(['xdg-open', url])
+            QDesktopServices.openUrl(QUrl(url))
         except Exception as e:
             self.show_message("Error", f"Failed to open WhatsApp. Please visit {url} manually. Error: {e}")
 
+    def open_folder(self, path: str):
+        folder_path = os.path.abspath(path)
+        if not folder_path or not os.path.isdir(folder_path):
+            self.logger.warning("OPEN_FOLDER: Path is not a directory or does not exist: %s", folder_path)
+            return
+        try:
+            if os.name == "nt":
+                os.startfile(folder_path, "explore")
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", folder_path])
+            else:
+                subprocess.Popen(["xdg-open", folder_path])
+            self.logger.info("OPEN_FOLDER: Opened %s", folder_path)
+        except Exception as e:
+            self.logger.error("OPEN_FOLDER: Failed to open folder %s | Error: %s", folder_path, e)
+            self.show_message("Error", f"Failed to open folder. Please navigate to {folder_path} manually. Error: {e}")
+
+    def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
+        return f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed});
+                color: white;
+                font-weight: bold;
+                font-family: Arial;
+                font-size: {font_size}px;
+                border-radius: 8px;
+                border: 1px solid rgba(0,0,0,0.45);
+                padding: 0px;
+                text-align: center;
+                min-width: 180px;
+                max-width: 180px;
+                min-height: 45px;
+                max-height: 45px;
+            }}
+            QPushButton:hover {{ border: 1px solid #7DD3FC; }}
+            QPushButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {pressed}, stop:1 {color});
+            }}
+        """
+
     def on_process_finished(self, success, message):
-        button_size = (250, 55)
         self.is_processing = False
         self._proc_start_ts = None
         self._phase_is_processing = False
@@ -319,7 +353,7 @@ class FfmpegMixin:
         except Exception:
             pass
         if success:
-            output_dir = os.path.dirname(message)
+            output_path = message
 
             class FinishedDialog(QDialog):
                 def closeEvent(self, e):
@@ -327,62 +361,76 @@ class FfmpegMixin:
             dialog = FinishedDialog(self)
             dialog.setWindowTitle("Done! Video Processed Successfully!")
             dialog.setModal(True)
-            dialog.resize(int(self.width() * 0.5), 100)
+            dlg_w = 800
+            dlg_h = 460
+            dialog.setFixedSize(dlg_w, dlg_h)
+            screen_geo = QApplication.primaryScreen().availableGeometry()
+            dialog.move(
+                screen_geo.center().x() - dlg_w // 2,
+                screen_geo.center().y() - dlg_h // 2
+            )
+            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint)
+            dialog.show()
+            dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowStaysOnTopHint)
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
             layout = QVBoxLayout(dialog)
-            label = QLabel(f"File saved to:\n{message}")
+            layout.setContentsMargins(30, 30, 30, 30)
+            layout.setSpacing(20)
+            label = QLabel(f"File successfully saved to:\n{output_path}")
+            label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
+            label.setWordWrap(True)
+            label.setAlignment(Qt.AlignCenter)
             layout.addWidget(label)
             grid = QGridLayout()
-            grid.setSpacing(40)
-            grid.setContentsMargins(30, 50, 30, 50)
-            whatsapp_button = QPushButton("✆   SHARE VIA WHATSAPP   ✆")
-            whatsapp_button.setFont(QFont("Segoe UI Emoji", 10))
-            whatsapp_button.setFixedSize(*button_size)
-            whatsapp_button.setStyleSheet(UIStyles.get_3d_style("#328742", font_size=10))
-            whatsapp_button.setCursor(Qt.PointingHandCursor)
-            whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), self._quit_application(dialog)))
-            open_folder_button = QPushButton("OPEN OUTPUT FOLDER")
-            open_folder_button.setFixedSize(*button_size)
-            open_folder_button.setStyleSheet(UIStyles.get_3d_style("#6c5f9e"))
-            open_folder_button.setCursor(Qt.PointingHandCursor)
+            grid.setHorizontalSpacing(54)
+            grid.setVerticalSpacing(44)
+            grid.setContentsMargins(20, 20, 20, 20)
+            whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆")
+            whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40", font_size=12))
+            whatsapp_button.clicked.connect(lambda: (self.share_via_whatsapp(), dialog.accept()))
+            open_folder_button = QPushButton("OPEN FOLDER")
+            open_folder_button.setStyleSheet(self._dialog_button_style("#6c5f9e", "#4E4476", font_size=12))
             open_folder_button.clicked.connect(lambda: (
                 dialog.accept(),
-                self.open_folder(os.path.dirname(message)),
-                self._save_app_state_and_config(),
-                QCoreApplication.instance().quit()
+                self.open_folder(os.path.dirname(output_path))
             ))
-            new_file_button = QPushButton("📂   UPLOAD A NEW FILE   📂")
-            new_file_button.setFont(QFont("Segoe UI Emoji", 10))
-            new_file_button.setFixedSize(*button_size)
-            new_file_button.setStyleSheet(UIStyles.get_3d_style("#6c5f9e", font_size=10))
-            new_file_button.setCursor(Qt.PointingHandCursor)
+            new_file_button = QPushButton("📂  UPLOAD NEW  📂")
+            new_file_button.setStyleSheet(self._dialog_button_style("#4a90e2", "#2D6DB8", font_size=12))
             new_file_button.clicked.connect(dialog.reject)
+            done_button = QPushButton("DONE")
+            done_button.setStyleSheet(self._dialog_button_style("#821e1e", "#5D1515", font_size=12))
+            done_button.clicked.connect(dialog.accept)
+            
+            def _hard_exit():
+                dialog.accept()
+                try:
+                    self.cleanup_and_exit()
+                except: pass
+            finished_button = QPushButton("EXIT APP!")
+            finished_button.setStyleSheet(self._dialog_button_style("#c90e0e", "#950808", font_size=12))
+            finished_button.clicked.connect(_hard_exit) 
+            for b in [whatsapp_button, open_folder_button, new_file_button, done_button, finished_button]:
+                b.setFixedSize(180, 45)
+                b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                b.setCursor(Qt.PointingHandCursor)
             grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
             grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
             grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)
-            done_button = QPushButton("DONE")
-            done_button.setFixedSize(*button_size)
-            done_button.setStyleSheet(UIStyles.get_3d_style("#821e1e", padding="8px 16px"))
-            done_button.setCursor(Qt.PointingHandCursor)
-            done_button.clicked.connect(dialog.accept)
             grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
-            finished_button = QPushButton("CLOSE THE APP!\r\n(EXIT)")
-            finished_button.setFixedSize(*button_size)
-            finished_button.setStyleSheet(UIStyles.get_3d_style("#c90e0e", padding="8px 16px"))
-            finished_button.setCursor(Qt.PointingHandCursor)
-            finished_button.clicked.connect(lambda: self._quit_application(dialog)) 
             grid.addWidget(finished_button, 2, 0, 1, 3, alignment=Qt.AlignCenter)
             layout.addLayout(grid)
-            dialog.setLayout(layout)
-            anim = QPropertyAnimation(dialog, b"windowOpacity")
-            anim.setDuration(1200)
-            anim.setStartValue(1.0)
-            anim.setKeyValueAt(0.5, 0.75)
-            anim.setEndValue(1.0)
-            anim.setLoopCount(-1)
-            anim.start()
-            dialog.finished.connect(anim.stop)
+            fade_anim = QPropertyAnimation(dialog, b"windowOpacity")
+            fade_anim.setDuration(2000)
+            fade_anim.setStartValue(1.0)
+            fade_anim.setKeyValueAt(0.5, 0.4)
+            fade_anim.setEndValue(1.0)
+            fade_anim.setLoopCount(-1)
+            fade_anim.start()
+            dialog._fade_anim = fade_anim
             result = dialog.exec_()
-            anim.stop()
+            fade_anim.stop()
             if hasattr(self, '_update_portrait_mask_overlay_state'):
                 self._update_portrait_mask_overlay_state()
             if result == QDialog.Rejected:
@@ -401,7 +449,7 @@ class FfmpegMixin:
                     stream.flush()
         except Exception:
             pass
-    
+
     def get_video_info(self):
         if not self.input_file_path or not os.path.exists(self.input_file_path):
             self.show_message("Error", "No valid video file selected.")

@@ -16,27 +16,26 @@ try:
 except ImportError:
     HAS_BIDI_LIB = False
 
+def is_pure_rtl(text: str) -> bool:
+    if not text:
+        return False
+    has_rtl = any("\u0590" <= c <= "\u06ff" for c in text)
+    has_latin = any(c.isalpha() and c <= "\u007f" for c in text)
+    return has_rtl and not has_latin
+
 def fix_hebrew_text(text: str) -> str:
-    """
-    [DEPRECATED] Legacy fallback. 
-    Use apply_bidi_formatting which handles mixed content correctly.
-    """
     if not text:
         return ""
     return text[::-1]
 
 def apply_bidi_formatting(text: str) -> str:
-    """
-    Applies Bidirectional algorithm to text to ensure correct display of RTL languages
-    in environments (like FFmpeg drawtext) that do not support automatic shaping.
-    Returns:
-        str: Text converted to 'Visual' order.
-    """
     if not text:
         return ""
     if HAS_BIDI_LIB:
         try:
-            return "\n".join([get_display(line) for line in text.split('\n')])
+            pure_rtl = is_pure_rtl(text)
+            base_dir = 'R' if pure_rtl else 'L'
+            return "\n".join([get_display(line, base_dir=base_dir) for line in text.split('\n')])
         except Exception:
             pass
 
@@ -80,24 +79,24 @@ class TextWrapper:
                 w = int(fm.horizontalAdvance(s))
             except Exception:
                 w = int(fm.width(s))
-            return int(w) + self.cfg.shadow_pad_px
+            return int(w * 1.05) + self.cfg.shadow_pad_px
         if self.use_pil:
             try:
                 font = ImageFont.truetype("arial.ttf", int(px_size))
                 if hasattr(font, 'getlength'):
-                    return int(font.getlength(s)) + self.cfg.shadow_pad_px
-                return font.getsize(s)[0] + self.cfg.shadow_pad_px
+                    return int(font.getlength(s) * 1.05) + self.cfg.shadow_pad_px
+                return int(font.getsize(s)[0] * 1.05) + self.cfg.shadow_pad_px
             except Exception:
                 pass
-        return int(len(s) * (px_size * 0.55)) + self.cfg.shadow_pad_px
+        return int(len(s) * (px_size * 0.6)) + self.cfg.shadow_pad_px
 
-    def _split_long_token(self, tok: str, px_size: int):
+    def _split_long_token(self, tok: str, px_size: int, max_w: int):
         chunks = []
         cur = ""
         for ch in tok:
             cand = cur + ch
             width = self._measure_px(cand, px_size)
-            if cur and width > self.MAX_LINE_W:
+            if cur and width > max_w:
                 chunks.append(cur)
                 cur = ch
             else:
@@ -106,12 +105,12 @@ class TextWrapper:
             chunks.append(cur)
         return chunks
 
-    def _wrap_text(self, s: str, px_size: int):
+    def _wrap_text(self, s: str, px_size: int, max_w: int):
         tokens = []
         raw_tokens = (s or "").split()
         for t in raw_tokens:
-            if self._measure_px(t, px_size) > self.MAX_LINE_W:
-                sub_tokens = self._split_long_token(t, px_size)
+            if self._measure_px(t, px_size) > max_w:
+                sub_tokens = self._split_long_token(t, px_size, max_w)
                 tokens.extend(sub_tokens)
             else:
                 tokens.append(t)
@@ -119,7 +118,7 @@ class TextWrapper:
         cur = ""
         for t in tokens:
             cand = t if not cur else (cur + " " + t)
-            if not cur or self._measure_px(cand, px_size) <= self.MAX_LINE_W:
+            if not cur or self._measure_px(cand, px_size) <= max_w:
                 cur = cand
             else:
                 lines.append(cur)
@@ -128,24 +127,34 @@ class TextWrapper:
             lines.append(cur)
         return lines if lines else [""]
 
-    def fit_and_wrap(self, s: str):
+    def fit_and_wrap(self, s: str, target_width: int = None, logger=None):
+        max_w = target_width if target_width else self.MAX_LINE_W
         size = self.cfg.base_font_size
-        for _ in range(25):
-            lines = self._wrap_text(s, size)
+        MAX_TOTAL_H = 135
+        if logger: logger.info(f"WRAP_START: text='{s}' target_w={max_w} base_size={size}")
+        best_size = size
+        best_lines = [s]
+        for i in range(40):
+            lines = self._wrap_text(s, size, max_w)
             widest = 0
             if lines:
                 widest = max(self._measure_px(ln, size) for ln in lines)
-            if widest <= self.MAX_LINE_W and len(lines) <= 2:
+            total_h = len(lines) * size * 1.25
+            if logger: logger.info(f"WRAP_ITER_{i}: size={size} lines={len(lines)} widest={widest} total_h={total_h:.1f}")
+            if widest <= max_w and total_h <= MAX_TOTAL_H and len(lines) <= 3:
+                if logger: logger.info(f"WRAP_SUCCESS: final_size={size} rows={len(lines)}")
                 return size, lines
-            ratio = (widest / float(self.MAX_LINE_W)) if self.MAX_LINE_W else 1.25
-            ratio = max(1.08, ratio)
-            penalty = max(0, len(lines) - 2) * 5
-            new_size = int(max(self.cfg.min_font_size, (size / ratio) - penalty))
+            ratio_w = (widest / float(max_w)) if max_w else 1.1
+            ratio_h = (total_h / float(MAX_TOTAL_H)) if MAX_TOTAL_H else 1.1
+            ratio = max(ratio_w, ratio_h, 1.04)
+            new_size = int(size / ratio)
             if new_size >= size:
-                new_size = size - 2
-            if new_size <= self.cfg.min_font_size:
+                new_size = size - 1
+            if new_size < self.cfg.min_font_size:
+                size = self.cfg.min_font_size
                 break
             size = new_size
-        size = max(self.cfg.min_font_size, int(size))
-        lines = self._wrap_text(s, size)
-        return size, lines
+        final_size = max(self.cfg.min_font_size, int(size))
+        final_lines = self._wrap_text(s, final_size, max_w)
+        if logger: logger.info(f"WRAP_LIMIT: forced_size={final_size} rows={len(final_lines)}")
+        return final_size, final_lines

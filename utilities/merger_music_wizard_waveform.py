@@ -81,12 +81,11 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
-        if self.player: self.player.set_time(val_ms)
-        if False:
-            if self._player: self._player.set_time(val_ms)
+        if self.player:
+            try: self.player.seek(val_ms / 1000.0, reference='absolute', precision='exact')
+            except: pass
         self._show_caret_step2 = True
         if self._dragging or self._wave_dragging: return
-        if self.player: self.player.seek(val_ms / 1000.0, reference='absolute', precision='exact')
         self._sync_caret()
 
     def _on_drag_start(self): 
@@ -95,7 +94,9 @@ class MergerMusicWizardWaveformMixin:
 
     def _on_drag_end(self):
         self._dragging = False
-        if self.player: self.player.seek(self.offset_slider.value() / 1000.0, reference='absolute', precision='exact')
+        if self.player:
+            try: self.player.seek(self.offset_slider.value() / 1000.0, reference='absolute', precision='exact')
+            except: pass
         self._sync_caret()
 
     def _refresh_wave_scaled(self):
@@ -138,9 +139,6 @@ class MergerMusicWizardWaveformMixin:
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
         self.offset_slider.setValue(target_ms)
-        self.player.set_time(target_ms)
-        if False:
-            self._player.set_time(target_ms)
         if self.player:
             self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
             self._last_good_mpv_ms = target_ms

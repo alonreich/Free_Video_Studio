@@ -293,7 +293,7 @@ class HardwareWorker(QObject):
         import threading
         def watchdog():
             self.stop_requested = True
-        self.watchdog_timer = threading.Timer(10.0, watchdog)
+        self.watchdog_timer = threading.Timer(15.0, watchdog)
         self.watchdog_timer.daemon = True
         self.watchdog_timer.start()
         
