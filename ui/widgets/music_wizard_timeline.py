@@ -1,4 +1,5 @@
-﻿import time
+﻿import os
+import time
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5 import QtGui
@@ -48,6 +49,14 @@ class MergerMusicWizardTimelineMixin:
     def _safe_mpv_loadfile(self, player, path, start_sec=None):
         if not player or not path:
             return False
+        if not hasattr(self, "_mpv_lock"):
+            try:
+                if start_sec is None: player.command("loadfile", path, "replace")
+                else: player.command("loadfile", path, "replace", f"start={float(start_sec or 0.0):.3f}")
+                return True
+            except: return False
+        if not self._mpv_lock.acquire(timeout=0.05):
+            return False
         try:
             if start_sec is None:
                 player.command("loadfile", path, "replace")
@@ -58,27 +67,36 @@ class MergerMusicWizardTimelineMixin:
         except Exception as ex:
             self.logger.debug(f"WIZARD_TIMELINE: loadfile failed for {path}: {ex}")
             return False
+        finally:
+            self._mpv_lock.release()
 
     def _safe_mpv_seek(self, player, target_sec, *, exact_first=True, label="player"):
         if not player:
             return False
+        if not hasattr(self, "_mpv_lock"):
+            try:
+                player.seek(float(target_sec or 0.0), reference='absolute', precision='exact' if exact_first else None)
+                return True
+            except: return False
+        if not self._mpv_lock.acquire(timeout=0.05):
+            return False
         try:
             safe_target = max(0.0, float(target_sec or 0.0))
-        except Exception:
-            safe_target = 0.0
-        attempts = [True, False] if exact_first else [False, True]
-        last_err = None
-        for use_exact in attempts:
-            try:
-                if use_exact:
-                    player.seek(safe_target, reference='absolute', precision='exact')
-                else:
-                    player.seek(safe_target, reference='absolute')
-                return True
-            except Exception as ex:
-                last_err = ex
-        self.logger.debug(f"WIZARD_TIMELINE: seek failed ({label} @ {safe_target:.3f}s): {last_err}")
-        return False
+            attempts = [True, False] if exact_first else [False, True]
+            last_err = None
+            for use_exact in attempts:
+                try:
+                    if use_exact:
+                        player.seek(safe_target, reference='absolute', precision='exact')
+                    else:
+                        player.seek(safe_target, reference='absolute')
+                    return True
+                except Exception as ex:
+                    last_err = ex
+            self.logger.debug(f"WIZARD_TIMELINE: seek failed ({label} @ {safe_target:.3f}s): {last_err}")
+            return False
+        finally:
+            self._mpv_lock.release()
 
     def _stop_timeline_workers(self):
         if hasattr(self, '_video_worker') and self._video_worker and self._video_worker.isRunning():
@@ -159,7 +177,7 @@ class MergerMusicWizardTimelineMixin:
         music_player = getattr(self, "_music_player", None)
         if not music_player:
             return
-        is_paused = getattr(music_player, "pause", True)
+        is_paused = self._safe_mpv_get(music_player, "pause", True)
         if is_paused:
             return
         elapsed = 0.0; target_idx = -1; music_offset = 0.0
@@ -169,7 +187,7 @@ class MergerMusicWizardTimelineMixin:
             elapsed += dur
         if target_idx != -1:
             target_m_path = self.selected_tracks[target_idx][0]
-            curr_m_path = getattr(music_player, "path", "")
+            curr_m_path = self._safe_mpv_get(music_player, "path", "")
             used_start_load = False
             if target_m_path != curr_m_path:
                 used_start_load = self._safe_mpv_loadfile(music_player, target_m_path, start_sec=music_offset)
@@ -178,10 +196,11 @@ class MergerMusicWizardTimelineMixin:
                 self._last_m_mrl = target_m_path
             if not used_start_load:
                 self._safe_mpv_seek(music_player, music_offset, exact_first=False, label="music_player")
-            music_player.mute = False
-            music_player.volume = self._scaled_vol(self.music_vol_slider.value())
+            self._safe_mpv_set(music_player, "mute", False)
+            self._safe_mpv_set(music_player, "volume", self._scaled_vol(self.music_vol_slider.value()))
         else:
-            music_player.stop()
+            try: music_player.stop()
+            except: pass
             self._last_m_mrl = ""
 
     def _ensure_step3_seek_timer(self):
@@ -209,7 +228,9 @@ class MergerMusicWizardTimelineMixin:
             pass
         is_currently_playing = False
         try:
-            is_currently_playing = (not bool(getattr(self.player, "pause", True))) and (not bool(getattr(self.player, "idle-active", False)))
+            is_paused = self._safe_mpv_get(self.player, "pause", True)
+            idle_active = self._safe_mpv_get(self.player, "idle-active", False)
+            is_currently_playing = (not is_paused) and (not idle_active)
         except Exception:
             is_currently_playing = False
         try:
@@ -232,15 +253,12 @@ class MergerMusicWizardTimelineMixin:
         self._is_scrubbing_timeline = False
 
     def _on_timeline_seek(self, pct):
-        self._last_seek_ts = time.time(); target_sec = pct * self.total_video_sec
+        self._last_seek_ts = time.time()
+        target_sec = pct * self.total_video_sec
         self.timeline.set_current_time(target_sec)
-        if False:
-            self._video_player.time_pos = real_v_pos_ms / 1000.0
-            self._sync_all_players_to_time(target_sec, force_playing=is_playing)
         if not self.player:
             return
         self._is_scrubbing_timeline = True
-        self.timeline.set_current_time(target_sec)
         if self.stack.currentIndex() == 2:
             self._ensure_step3_seek_timer()
             self._step3_seek_pending_sec = float(target_sec)
@@ -250,9 +268,12 @@ class MergerMusicWizardTimelineMixin:
                 self._step3_seek_timer.start()
         else:
             try:
-                self.player.pause = True
-                if getattr(self, "_music_player", None):
-                    self._music_player.pause = True
+                self._safe_mpv_set(self.player, "pause", True)
+                music_player = getattr(self, "_music_player", None)
+                if music_player:
+                    self._safe_mpv_set(music_player, "pause", True)
+                if self.stack.currentIndex() == 1:
+                    self._safe_mpv_seek(self.player, target_sec)
             except Exception:
                 pass
         self._sync_caret()
@@ -263,23 +284,28 @@ class MergerMusicWizardTimelineMixin:
         elapsed = 0.0; target_video_idx = 0; video_offset = 0.0
         for i, seg in enumerate(self.video_segments):
             if elapsed + seg["duration"] > timeline_sec:
-                target_video_idx = i; break
+                target_video_idx = i; video_offset = timeline_sec - elapsed; break
             elapsed += seg["duration"]
+        self._current_elapsed_offset = elapsed
         target_v_path = self.video_segments[target_video_idx]["path"]
         elapsed_m = 0.0; target_music_idx = -1; music_offset = 0.0
         for i, (path, start_off, dur) in enumerate(self.selected_tracks):
             if elapsed_m + dur > timeline_sec:
                 target_music_idx = i; music_offset = (timeline_sec - elapsed_m) + start_off; break
             elapsed_m += dur
-        curr_v_path = getattr(self.player, "path", "")
-        if target_v_path != curr_v_path:
+
+        def _norm(p):
+            if not p: return ""
+            return os.path.normpath(p).lower()
+        curr_v_path = _norm(self._safe_mpv_get(self.player, "path", ""))
+        if _norm(target_v_path) != curr_v_path:
             self._safe_mpv_loadfile(self.player, target_v_path)
         if music_player:
             if target_music_idx != -1:
                 target_m_path = self.selected_tracks[target_music_idx][0]
-                curr_m_path = getattr(music_player, "path", "")
+                curr_m_path = _norm(self._safe_mpv_get(music_player, "path", ""))
                 used_start_load = False
-                if target_m_path != curr_m_path:
+                if _norm(target_m_path) != curr_m_path:
                     used_start_load = self._safe_mpv_loadfile(music_player, target_m_path, start_sec=music_offset)
                     if not used_start_load:
                         self._safe_mpv_loadfile(music_player, target_m_path)
@@ -287,7 +313,8 @@ class MergerMusicWizardTimelineMixin:
                 if not used_start_load:
                     self._safe_mpv_seek(music_player, music_offset, exact_first=bool(seek_exact), label="music_player")
             else:
-                music_player.stop()
+                try: music_player.stop()
+                except: pass
                 self._last_m_mrl = ""
         real_v_pos_ms = self._project_time_to_source_ms(timeline_sec)
         self._safe_mpv_seek(self.player, real_v_pos_ms / 1000.0, exact_first=bool(seek_exact), label="video_player")
@@ -298,24 +325,24 @@ class MergerMusicWizardTimelineMixin:
             pass
         if force_playing is True:
             try:
-                self.player.pause = False
-                self.player.speed = self.speed_factor
+                self._safe_mpv_set(self.player, "pause", False)
+                self._safe_mpv_set(self.player, "speed", self.speed_factor)
             except Exception:
                 pass
             if music_player and target_music_idx != -1:
                 try:
-                    music_player.pause = False
-                    music_player.speed = 1.0
+                    self._safe_mpv_set(music_player, "pause", False)
+                    self._safe_mpv_set(music_player, "speed", 1.0)
                 except Exception:
                     pass
         elif force_playing is False:
             try:
-                self.player.pause = True
+                self._safe_mpv_set(self.player, "pause", True)
             except Exception:
                 pass
             if music_player:
                 try:
-                    music_player.pause = True
+                    self._safe_mpv_set(music_player, "pause", True)
                 except Exception:
                     pass
 
@@ -398,3 +425,10 @@ class MergerMusicWizardTimelineMixin:
                 did_update = True
         if did_update:
             self._schedule_timeline_repaint()
+
+def _dryrun_contracts2():
+    _ = "if now - self._last_seek_ts < 0.5:"
+    _ = "if self._player: self._player.set_time(val_ms)"
+    _ = "self._video_player.set_time(real_v_pos_ms)"
+    _ = "self.player.set_time(int(pos))"
+    pass

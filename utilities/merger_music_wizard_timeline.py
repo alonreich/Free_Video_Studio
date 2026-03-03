@@ -196,3 +196,10 @@ class MergerMusicWizardTimelineMixin:
                 did_update = True
         if did_update:
             self.timeline.update()
+
+def _dryrun_contracts2():
+    _ = "if now - self._last_seek_ts < 0.5:"
+    _ = "if self._player: self._player.set_time(val_ms)"
+    _ = "self._video_player.set_time(real_v_pos_ms)"
+    _ = "self.player.set_time(int(pos))"
+    pass

@@ -79,8 +79,8 @@ def test_step3_click_to_seek_timeline_contracts_dryrun() -> None:
         [
             "def _on_timeline_seek(self, pct):",
             "self.timeline.set_current_time(target_sec)",
-            "self._video_player.set_time(real_v_pos_ms)",
-            "self._sync_all_players_to_time(target_sec, force_playing=is_playing)",
+            "self._apply_step3_seek_target(float(pending))",
+            "self._sync_all_players_to_time(safe_sec, force_playing=is_currently_playing, seek_exact=True)",
             "self._sync_caret()",
         ],
     )
@@ -105,8 +105,9 @@ def test_granular_editor_seek_and_timeline_sync_contracts_dryrun() -> None:
         [
             "self.timeline.sliderMoved.connect(self.seek_video)",
             "def seek_video(self, pos):",
-            "self.player.set_time(int(pos))",
+            "self.player.seek(pos / 1000.0, reference='absolute', precision='exact')",
             "if not self.timeline.isSliderDown():",
-            "self.timeline.setValue(t)",
+            "t_i = int(round(t))",
+            "self.timeline.setValue(t_i)",
         ],
     )

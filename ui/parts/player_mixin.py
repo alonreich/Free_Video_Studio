@@ -7,6 +7,32 @@ class PlayerMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._scrub_lock = threading.RLock()
+        self._mpv_lock = threading.Lock()
+
+    def _safe_mpv_set(self, prop, value, target_player=None):
+        p = target_player if target_player is not None else getattr(self, "player", None)
+        if not p: return
+        if not self._mpv_lock.acquire(timeout=0.05):
+            return
+        try:
+            if prop == "pause": p.pause = value
+            elif prop == "speed": p.speed = value
+            elif prop == "volume": p.volume = value
+            elif prop == "mute": p.mute = value
+            else: p.set_property(prop, value)
+        except: pass
+        finally:
+            self._mpv_lock.release()
+
+    def _safe_mpv_get(self, prop, default=None, target_player=None):
+        p = target_player if target_player is not None else getattr(self, "player", None)
+        if not p: return default
+        if not self._mpv_lock.acquire(timeout=0.05):
+            return default
+        try: return getattr(p, prop, default)
+        except: return default
+        finally:
+            self._mpv_lock.release()
 
     def _safe_stop_playback(self):
         try:
@@ -21,23 +47,27 @@ class PlayerMixin:
     
     def toggle_play_pause(self):
         """Toggles play/pause for video and triggers music sync."""
+        if getattr(self, "_in_transition", False):
+            return
         if not getattr(self, "input_file_path", None):
             return
         if not getattr(self, "player", None):
             return
-        is_paused = getattr(self.player, "pause", True)
+        is_paused = self._safe_mpv_get("pause", True)
         if not is_paused:
             if self.timer.isActive():
                 self.timer.stop()
-            self.player.pause = True
-            if getattr(self, "_music_preview_player", None):
-                self._music_preview_player.pause = True
+            self._safe_mpv_set("pause", True)
+            music_player = getattr(self, "_music_preview_player", None)
+            if music_player:
+                self._safe_mpv_set("pause", True, target_player=music_player)
             self.wants_to_play = False
-            self.set_player_position(getattr(self.player, 'time-pos', 0) * 1000, sync_only=True, force_pause=True)
+            curr_pos = self._safe_mpv_get("time-pos", 0) or 0
+            self.set_player_position(curr_pos * 1000, sync_only=True, force_pause=True)
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
-            idle_active = getattr(self.player, "idle-active", False)
+            idle_active = self._safe_mpv_get("idle-active", False)
             if idle_active:
                 restart_ms = int(getattr(self, "trim_start_ms", 0) or 0)
                 try:
@@ -49,8 +79,9 @@ class PlayerMixin:
                     self.positionSlider.setValue(restart_ms)
                     self.positionSlider.blockSignals(False)
             self.wants_to_play = True
-            if getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
-                curr_v_ms = getattr(self.player, "time-pos", 0) * 1000
+            music_player = getattr(self, "_music_preview_player", None)
+            if music_player and getattr(self, "_wizard_tracks", None):
+                curr_v_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
                 t_start = getattr(self, "trim_start_ms", 0)
                 speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
                 speed_segments = getattr(self, 'speed_segments', [])
@@ -59,18 +90,17 @@ class PlayerMixin:
                 real_audio_ms = (wall_now - wall_start) * 1000.0
                 music_offset_sec = getattr(self, "_current_music_offset", 0.0)
                 target_m_sec = music_offset_sec + (real_audio_ms / 1000.0)
-                try:
-                    self._music_preview_player.speed = 1.0
-                    if hasattr(self._music_preview_player, 'set_rate'): 
-                        self._music_preview_player.set_rate(1.0)
-                    if abs((getattr(self._music_preview_player, "time-pos", 0) * 1000.0) - (target_m_sec * 1000.0)) > 50:
-                        self._music_preview_player.seek(target_m_sec, reference='absolute', precision='exact')
-                    self._music_preview_player.pause = False
-                except: pass
-            self.player.pause = False
-            self.player.speed = self.playback_rate
-            if hasattr(self, "apply_master_volume"):
-                self.apply_master_volume()
+                self._safe_mpv_set("speed", 1.0, target_player=music_player)
+                curr_m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
+                if abs(curr_m_pos * 1000.0 - (target_m_sec * 1000.0)) > 50:
+                    try:
+                        if self._mpv_lock.acquire(timeout=0.05):
+                            try: music_player.seek(target_m_sec, reference='absolute', precision='exact')
+                            finally: self._mpv_lock.release()
+                    except: pass
+                self._safe_mpv_set("pause", False, target_player=music_player)
+            self._safe_mpv_set("speed", self.playback_rate)
+            self._safe_mpv_set("pause", False)
             if not self.timer.isActive():
                 self.timer.start(50)
             self.playPauseButton.setText("PAUSE")
@@ -78,80 +108,94 @@ class PlayerMixin:
 
     def update_player_state(self):
         """On a timer, updates UI slider and keeps music in sync."""
-        if not getattr(self, "player", None):
+        if getattr(self, "_in_transition", False):
             return
-        idle_active = getattr(self.player, "idle-active", False)
-        if idle_active:
-            if getattr(self, "playPauseButton", None):
-                self.playPauseButton.setText("PLAY")
-                self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-            self.is_playing = False
-            self.wants_to_play = False
-            if getattr(self, "_music_preview_player", None):
-                self._music_preview_player.pause = True
-            if getattr(self, "timer", None) and self.timer.isActive():
-                self.timer.stop()
-            return
-        slider = getattr(self, "positionSlider", None)
-        if slider and slider.isSliderDown():
-            return
-        current_time_ms = (getattr(self.player, "time-pos", 0) or 0) * 1000
-        if current_time_ms >= 0:
-            if slider:
-                slider.blockSignals(True)
-                slider.setValue(int(current_time_ms))
-                slider.blockSignals(False)
-                slider.update()
-            if getattr(self, "is_playing", False) and getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
-                m_pos = getattr(self._music_preview_player, "time-pos", 0)
-                t_start = getattr(self, "trim_start_ms", 0)
-                speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
-                self.playback_rate = speed
-                speed_segments = getattr(self, 'speed_segments', [])
-                wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
-                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
-                time_since_music_start_project_ms = (wall_now - wall_start) * 1000.0
-                real_audio_ms = time_since_music_start_project_ms 
-                expected_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
-                if abs(m_pos - expected_m_sec) > 0.15:
-                    try: 
-                        if hasattr(self._music_preview_player, 'set_rate'):
-                            self._music_preview_player.set_rate(1.0)
-                        music_player = self._music_preview_player
-                        music_target_in_file_ms = expected_m_sec * 1000.0
-                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'time_pos'):
-                            if abs((getattr(music_player, 'time_pos', 0) or 0)*1000.0 - music_target_in_file_ms) > 50:
-                                music_player.time_pos = music_target_in_file_ms / 1000.0
-                        else:
-                            self._music_preview_player.seek(expected_m_sec, reference='absolute', precision='exact')
-                    except: pass
-            if hasattr(self, 'speed_segments') and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
-                target_speed = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
-                segments = getattr(self, 'speed_segments', [])
-                if segments:
-                    for seg in segments:
-                        if seg['start'] <= current_time_ms < seg['end']:
-                            target_speed = seg['speed']
-                            break
-                if not hasattr(self, '_last_rate_update_main'): self._last_rate_update_main = 0
-                now = time.time()
-                curr_rate = getattr(self.player, "speed", 1.0)
-                if abs(curr_rate - target_speed) > 0.01:
-                    if getattr(self, "_is_test", False) or (now - self._last_rate_update_main > 0.1):
-                        self.player.speed = target_speed
-                        self._last_rate_update_main = now
-            is_currently_paused = getattr(self.player, "pause", True)
-            is_playing = not is_currently_paused
-            if is_playing != getattr(self, "is_playing", None):
-                self.is_playing = is_playing
-                icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
-                label = "PAUSE" if self.is_playing else "PLAY"
+        try:
+            p = getattr(self, "player", None)
+            if not p:
+                return
+            idle_active = self._safe_mpv_get("idle-active", True)
+            if idle_active:
                 if getattr(self, "playPauseButton", None):
-                    self.playPauseButton.setText(label)
-                    self.playPauseButton.setIcon(self.style().standardIcon(icon))
+                    self.playPauseButton.setText("PLAY")
+                    self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                self.is_playing = False
+                self.wants_to_play = False
+                music_player = getattr(self, "_music_preview_player", None)
+                if music_player:
+                    self._safe_mpv_set("pause", True, target_player=music_player)
+                if getattr(self, "timer", None) and self.timer.isActive():
+                    self.timer.stop()
+                return
+            slider = getattr(self, "positionSlider", None)
+            if slider and slider.isSliderDown():
+                return
+            current_time_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
+            if current_time_ms >= 0:
+                if slider:
+                    if slider.maximum() <= 0:
+                        dur = self._safe_mpv_get("duration", 0)
+                        if dur > 0:
+                            slider.setRange(0, int(dur * 1000))
+                            if hasattr(slider, 'set_duration_ms'):
+                                slider.set_duration_ms(int(dur * 1000))
+                    slider.blockSignals(True)
+                    slider.setValue(int(current_time_ms))
+                    slider.blockSignals(False)
+                    slider.update()
+                music_player = getattr(self, "_music_preview_player", None)
+                if getattr(self, "is_playing", False) and music_player and getattr(self, "_wizard_tracks", None):
+                    try:
+                        m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
+                        t_start = getattr(self, "trim_start_ms", 0)
+                        speed = float(getattr(self, 'speed_spinbox', None).value() if hasattr(self, 'speed_spinbox') else 1.1)
+                        self.playback_rate = speed
+                        speed_segments = getattr(self, 'speed_segments', [])
+                        wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
+                        wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
+                        time_since_music_start_project_ms = (wall_now - wall_start) * 1000.0
+                        real_audio_ms = time_since_music_start_project_ms / speed 
+                        expected_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
+                        if abs(m_pos - expected_m_sec) > 0.15:
+                            self._safe_mpv_set("speed", 1.0, target_player=music_player)
+                            if self._mpv_lock.acquire(timeout=0.05):
+                                try:
+                                    music_player.seek(expected_m_sec, reference='absolute', precision='exact')
+                                finally: self._mpv_lock.release()
+                    except: pass
+                if hasattr(self, 'speed_segments') and getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
+                    try:
+                        target_speed = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+                        segments = getattr(self, 'speed_segments', [])
+                        if segments:
+                            for seg in segments:
+                                if seg['start'] <= current_time_ms < seg['end']:
+                                    target_speed = seg['speed']
+                                    break
+                        if not hasattr(self, '_last_rate_update_main'): self._last_rate_update_main = 0
+                        now = time.time()
+                        curr_rate = self._safe_mpv_get("speed", 1.0)
+                        if abs(curr_rate - target_speed) > 0.01:
+                            if getattr(self, "_is_test", False) or (now - self._last_rate_update_main > 0.1):
+                                self._safe_mpv_set("speed", target_speed)
+                                self._last_rate_update_main = now
+                    except: pass
+                try:
+                    is_currently_paused = self._safe_mpv_get("pause", True)
+                    is_playing = not is_currently_paused
+                    if is_playing != getattr(self, "is_playing", None):
+                        self.is_playing = is_playing
+                        icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay
+                        label = "PAUSE" if self.is_playing else "PLAY"
+                        if getattr(self, "playPauseButton", None):
+                            self.playPauseButton.setText(label)
+                            self.playPauseButton.setIcon(self.style().standardIcon(icon))
+                except: pass
+        except Exception:
+            pass
 
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
-        """Sets video player position (in ms)."""
+        """Sets video player position (in ms) with enhanced throttling for stability."""
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
         if not hasattr(self, "_last_seek_ts"): self._last_seek_ts = 0.0
@@ -160,23 +204,25 @@ class PlayerMixin:
             try:
                 now = time.time()
                 self._last_seek_ts = now
-                if not force_pause and (now - self._last_scrub_ts < 0.05):
+                if not force_pause and (now - self._last_scrub_ts < 0.1):
                     return
                 self._last_scrub_ts = now
                 target_ms = int(position_ms)
-                max_ms = int((getattr(self.player, "duration", 0) or 0) * 1000)
+                p_dur = self._safe_mpv_get("duration", 0) or 0
+                max_ms = int(p_dur * 1000)
                 if max_ms > 0:
                     target_ms = max(0, min(target_ms, max_ms - 1))
                 if not sync_only and getattr(self, "player", None):
-                    self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
-                if getattr(self, "_music_preview_player", None) and getattr(self, "_wizard_tracks", None):
+                    if self._mpv_lock.acquire(timeout=0.05):
+                        try:
+                            time.sleep(0.01)
+                            self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
+                        finally: self._mpv_lock.release()
+                music_player = getattr(self, "_music_preview_player", None)
+                if music_player and getattr(self, "_wizard_tracks", None):
                     if force_pause:
-                        self._music_preview_player.pause = True
-                    music_player = self._music_preview_player
-                    if hasattr(music_player, 'set_rate'):
-                        music_player.set_rate(1.0)
-                    elif hasattr(music_player, 'speed'):
-                        music_player.speed = 1.0
+                        self._safe_mpv_set("pause", True, target_player=music_player)
+                    self._safe_mpv_set("speed", 1.0, target_player=music_player)
                     t_start = getattr(self, "trim_start_ms", 0)
                     speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
                     speed_segments = getattr(self, 'speed_segments', [])
@@ -185,19 +231,11 @@ class PlayerMixin:
                     real_audio_ms = (wall_target - wall_start) * 1000.0
                     target_m_sec = getattr(self, "_current_music_offset", 0.0) + (real_audio_ms / 1000.0)
                     try:
-                        music_player = self._music_preview_player
-                        if hasattr(music_player, 'set_rate'):
-                            music_player.set_rate(1.0)
-                        elif hasattr(music_player, 'speed'):
-                            music_player.speed = 1.0
-                        music_target_in_file_ms = target_m_sec * 1000.0
-                        if hasattr(music_player, 'get_time') and hasattr(music_player, 'time_pos'):
-                            if abs((getattr(music_player, 'time_pos', 0) or 0)*1000.0 - music_target_in_file_ms) > 50:
-                                music_player.time_pos = music_target_in_file_ms / 1000.0
-                        elif hasattr(music_player, 'time_pos'):
-                             music_player.time_pos = music_target_in_file_ms / 1000.0
-                        else:
-                            self._music_preview_player.seek(target_m_sec, reference='absolute', precision='exact')
+                        if self._mpv_lock.acquire(timeout=0.05):
+                            try:
+                                time.sleep(0.005)
+                                music_player.seek(target_m_sec, reference='absolute', precision='exact')
+                            finally: self._mpv_lock.release()
                     except: pass
             except Exception as e:
                 if hasattr(self, "logger"):
@@ -249,6 +287,46 @@ class PlayerMixin:
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.error(f"MPV End Event failed to defer: {e}")
+
+    def _bind_main_player_output(self):
+        """[FIX] Explicitly re-binds MPV output to the UI surface safely with re-entry protection."""
+        if not getattr(self, "player", None):
+            return
+        if getattr(self, "_binding_player_output", False):
+            return
+        self._binding_player_output = True
+        
+        def _perform_bind():
+            try:
+                wid = None
+                surf = getattr(self, 'video_surface', None)
+                if surf and not surf.isHidden():
+                    try:
+                        wid = int(surf.winId())
+                    except (RuntimeError, AttributeError):
+                        pass
+                if wid is None:
+                    frame = getattr(self, 'video_frame', None)
+                    if frame and not frame.isHidden():
+                        try:
+                            wid = int(frame.winId())
+                        except (RuntimeError, AttributeError):
+                            pass
+                if wid is not None:
+                    self._safe_mpv_set("wid", wid)
+                    try:
+                        if self._mpv_lock.acquire(timeout=0.05):
+                            try: 
+                                if hasattr(self.player, 'command'):
+                                    self.player.command("video-reconfig")
+                            finally: self._mpv_lock.release()
+                    except: pass
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.error(f"Failed to bind MPV output: {e}")
+            finally:
+                self._binding_player_output = False
+        QTimer.singleShot(50, _perform_bind)
 
     def _safe_handle_mpv_end(self):
         """Handle end of media safely on the main thread."""

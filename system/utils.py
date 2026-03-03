@@ -9,9 +9,10 @@ import shutil
 import time
 import threading
 import faulthandler
+from PyQt5.QtCore import QTimer
 try:
     import mpv
-except ImportError:
+except (ImportError, OSError):
     class MockMPV: pass
     mpv = MockMPV()
 
@@ -222,7 +223,7 @@ class ConsoleManager:
             error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
             logger.critical(f"UNCAUGHT EXCEPTION:\n{error_msg}")
             try:
-                from PyQt5.QtWidgets import QMessageBox, QApplication, QSpacerItem, QSizePolicy, QGridLayout
+                from PyQt5.QtWidgets import QMessageBox, QApplication
                 if QApplication.instance():
                     msg_box = QMessageBox(None)
                     msg_box.setIcon(QMessageBox.Critical)
@@ -232,29 +233,6 @@ class ConsoleManager:
                     msg_box.exec_()
             except: pass
         sys.excepthook = global_exception_handler
-        log_dir = os.path.join(base_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        source_tag = ConsoleManager._source_tag(logger_name)
-        if str(logger_name) == "Video_Merger":
-            source_tag = "video_merger"
-            mpv.log_path = os.path.join(log_dir, "mpv.log")
-            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
-            try:
-                ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-            except: pass
-        else:
-            mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
-            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
-            try:
-                ConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-            except: pass
-        try:
-            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            if 'f' in locals():
-                f.write(f"\n[{stamp}] [{source_tag}] [pid={os.getpid()}] --- NATIVE DEBUG LOGGING ACTIVE ---\n")
-                f.flush()
-        except Exception as e:
-            print(f"Failed FD redirection: {e}")
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -286,4 +264,134 @@ class LogManager:
         logger.addHandler(console)
         return logger
 
+class MPVSafetyManager:
+    """
+    Comprehensive MPV thread safety and lifecycle management utilities.
+    """
+    _mpv_creation_lock = threading.Lock()
+    @staticmethod
+    def safe_mpv_shutdown(player, timeout=2.0):
+        """
+        Safely shutdown an MPV player with thread synchronization.
+        """
+        if not player:
+            return True
+        try:
+            try:
+                player.pause = True
+            except:
+                pass
+            try:
+                player.stop()
+            except:
+                pass
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    _ = player.time_pos
+                except:
+                    break
+                time.sleep(0.1)
+            MPVSafetyManager.cleanup_mpv_event_callbacks(player)
+            return True
+        except Exception as e:
+            return False
+    @staticmethod
+    def safe_mpv_set(player, property_name, value, max_attempts=3):
+        if not player: return False
+        for attempt in range(max_attempts):
+            try:
+                setattr(player, property_name, value)
+                return True
+            except:
+                time.sleep(0.1)
+        return False
+    @staticmethod
+    def safe_mpv_command(player, command, *args, max_attempts=3):
+        if not player: return False
+        for attempt in range(max_attempts):
+            try:
+                player.command(command, *args)
+                return True
+            except:
+                time.sleep(0.1)
+        return False
+    @staticmethod
+    def cleanup_mpv_event_callbacks(player):
+        if not player: return
+        try:
+            if hasattr(player, '_event_callbacks'):
+                player._event_callbacks.clear()
+            if hasattr(player, '_property_observers'):
+                player._property_observers.clear()
+            if hasattr(player, 'event_callback'):
+                player.event_callback = None
+        except:
+            pass
+    @staticmethod
+    def create_safe_mpv(**kwargs):
+        """
+        Create an MPV instance with safety features enabled.
+        [FIX] Restores native thread loop for playback stability.
+        [FIX] Enforces basic logging and validates WID.
+        """
+        with MPVSafetyManager._mpv_creation_lock:
+            try:
+                import mpv
+                original_log_handler = kwargs.pop('log_handler', None)
+                if original_log_handler:
+                    def safe_log_proxy(level, prefix, text):
+                        try:
+                            original_log_handler(level, prefix, text)
+                        except:
+                            pass
+                    kwargs['log_handler'] = safe_log_proxy
+                wid = kwargs.get('wid')
+                if wid is not None:
+                    try:
+                        wid_int = int(wid)
+                        if wid_int <= 0:
+                            kwargs.pop('wid')
+                        else:
+                            kwargs['wid'] = wid_int
+                    except (ValueError, TypeError):
+                        kwargs.pop('wid')
+                safe_kwargs = {
+                    'hr_seek': 'yes',
+                    'osc': False,
+                    'ytdl': False,
+                    'keep_open': kwargs.get('keep_open', 'yes'),
+                    'loglevel': 'error',
+                }
+                extra_flags = kwargs.pop('extra_mpv_flags', [])
+                safe_kwargs.update(kwargs)
+                player = mpv.MPV(**safe_kwargs)
+                player._safe_shutdown_initiated = False
+                for prop, val in extra_flags:
+                    try:
+                        player.set_property(prop, val)
+                    except:
+                        pass
+                return player
+            except Exception as e:
+                print(f"Failed to create safe MPV instance: {e}")
+                return None
+    @staticmethod
+    def register_global_shutdown_handler():
+        import atexit
 
+        def global_shutdown():
+            import gc
+            mpv_instances = []
+            for obj in gc.get_objects():
+                try:
+                    if hasattr(obj, '__class__') and obj.__class__.__name__ == 'MPV':
+                        mpv_instances.append(obj)
+                except: pass
+            for player in mpv_instances:
+                try:
+                    if hasattr(player, '_safe_shutdown_initiated') and not player._safe_shutdown_initiated:
+                        player._safe_shutdown_initiated = True
+                        MPVSafetyManager.safe_mpv_shutdown(player, timeout=1.0)
+                except: pass
+        atexit.register(global_shutdown)

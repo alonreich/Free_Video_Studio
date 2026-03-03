@@ -14,6 +14,9 @@ class _DummyBtn:
     def setText(self, text: str) -> None:
         self.text = text
 
+    def setEnabled(self, enabled: bool) -> None:
+        pass
+
 class _DummySig:
     def __init__(self) -> None:
         self.calls: list[str] = []

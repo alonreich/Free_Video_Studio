@@ -90,11 +90,11 @@ class ConcatProcessor:
                 if len(files_to_concat) > 1:
                     filter_parts = []
                     for i in range(len(files_to_concat)):
-                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setpts=PTS-STARTPTS,setsar=1[v{i}]")
-                        filter_parts.append(f"[{i}:a]aresample=async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
+                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setpts=PTS-STARTPTS,format=nv12,setsar=1[v{i}]")
+                        filter_parts.append(f"[{i}:a]aresample=48000:async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
                     concat_in = "".join([f"[v{i}][a{i}]" for i in range(len(files_to_concat))])
                     filter_parts.append(f"{concat_in}concat=n={len(files_to_concat)}:v=1:a=1[vout][aout]")
-                    filter_parts.append(f"[vout]setpts=PTS-STARTPTS,setsar=1[vout2]")
+                    filter_parts.append(f"[vout]fps={fps_expr},setpts=PTS-STARTPTS,setsar=1[vout2]")
                     cmd.extend([
                         "-filter_complex", ";".join(filter_parts),
                         "-map", "[vout2]",

@@ -76,7 +76,7 @@ class ProcessThread(QThread):
             self.job_id = str(uuid.uuid4())[:8]
             self.temp_job_dir = os.path.join(tempfile.gettempdir(), f"fvs_job_{self.job_id}")
             os.makedirs(self.temp_job_dir, exist_ok=True)
-            scaler_core = ProgressScaler(self.progress_update_signal, 0, 80)
+            scaler_core = ProgressScaler(self.progress_update_signal, 0, 50)
             source_audio_kbps = self.prober.get_audio_bitrate() or 192
             audio_kbps = max(192, int(source_audio_kbps))
             target_fps_expr = self.prober.get_video_fps_expr()
@@ -108,6 +108,7 @@ class ProcessThread(QThread):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags('h264_nvenc' if use_cuda else 'libx264', video_bitrate_kbps, self.duration_corrected_sec, target_fps_expr)
                 v_label = "[0:v]"
                 attempt_core_filters = []
+                working_duration_sec = self.duration_corrected_sec
                 if self.speed_segments:
                     g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
                         self.input_path, 
@@ -115,7 +116,7 @@ class ProcessThread(QThread):
                         self.speed_segments,
                         self.speed_factor,
                         source_cut_start_ms=self.start_time_ms,
-                        input_v_label=f"{v_label}fps={target_fps_expr},",
+                        input_v_label=v_label,
                         input_a_label="[0:a]",
                         target_fps=target_fps_expr
                     )
@@ -126,6 +127,7 @@ class ProcessThread(QThread):
                     v_stabilized_pad = granular_video_label
                     a_prepared_pad = granular_audio_label
                     attempt_core_filters.append(granular_filter_str)
+                    working_duration_sec = g_dur
                 else:
                     sync_chain = f"{v_label}fps={target_fps_expr},setpts=(PTS-STARTPTS)/{self.speed_factor}[v_stabilized]"
                     v_stabilized_pad = "[v_stabilized]"
@@ -176,21 +178,19 @@ class ProcessThread(QThread):
                     final_audio_parts.append(part)
                 filter_parts = attempt_core_filters + [v_finalize] + final_audio_parts
                 complex_filter = ";".join([p for p in filter_parts if p.strip()])
-                complex_filter = ";".join([p for p in filter_parts if p.strip()])
                 script_path = os.path.join(self.temp_job_dir, "f.txt")
                 with open(script_path, "w", encoding='utf-8') as f: f.write(complex_filter)
                 self.logger.info(f"FILTER_SCRIPT_CONTENT: {complex_filter}")
                 safe_script_path = script_path.replace("\\", "/")
                 hw_args_pre = []
-                input_threads = ['-threads', '0']
+                input_args = []
                 if use_cuda:
-                    hw_args_pre = ['-hwaccel', 'cuda']
-                    input_threads = ['-threads', '0'] 
-                cmd = [os.path.join(self.bin_dir, 'ffmpeg.exe'), '-y', '-progress', 'pipe:1'] + hw_args_pre + input_threads + ffmpeg_inputs + [
+                    hw_args_pre = ['-hwaccel', 'd3d11va']
+                cmd = [os.path.join(self.bin_dir, 'ffmpeg.exe'), '-y', '-progress', 'pipe:1'] + hw_args_pre + ffmpeg_inputs[:2] + input_args + ffmpeg_inputs[2:] + [
                     '-filter_complex_script', safe_script_path, '-map', out_v_pad, '-map', '[acore]',
                     '-r', str(target_fps_expr),
                     '-fps_mode', 'cfr',
-                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-t', f"{self.duration_corrected_sec:.3f}"
+                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-t', f"{working_duration_sec:.3f}"
                 ] + vcodec + [core_path]
                 self.logger.info(f"TITAN_CMD_JOINED: {' '.join(cmd)}")
                 self.current_process = create_subprocess(cmd, self.logger)
@@ -204,9 +204,9 @@ class ProcessThread(QThread):
                 success = run_ffmpeg(use_cuda=False)
             if success and not self.is_canceled:
                 intro_path = None
-                if self.intro_still_sec > 0:
+                if self.intro_still_sec > 0.05:
                     self._emit_status("Generating Intro Sequence...")
-                    scaler_intro = ProgressScaler(self.progress_update_signal, 80, 10)
+                    scaler_intro = ProgressScaler(self.progress_update_signal, 50, 10)
                     intro_proc = IntroProcessor(os.path.join(self.bin_dir, 'ffmpeg.exe'), self.logger, self.encoder_mgr, self.temp_job_dir)
                     intro_abs = self.intro_abs_time_ms / 1000.0 if self.intro_abs_time_ms is not None else (self.start_time_ms / 1000.0)
                     intro_path = intro_proc.create_intro(
@@ -215,8 +215,10 @@ class ProcessThread(QThread):
                         fps_expr=target_fps_expr, preferred_encoder='h264_nvenc' if self.hardware_strategy == "NVIDIA" else None,
                         original_res_str=self.original_resolution
                     )
+                else:
+                    self.progress_update_signal.emit(60)
                 self._emit_status("Finalizing Video Assembly...")
-                scaler_concat = ProgressScaler(self.progress_update_signal, 90, 10)
+                scaler_concat = ProgressScaler(self.progress_update_signal, 60, 40)
                 concat_proc = ConcatProcessor(os.path.join(self.bin_dir, 'ffmpeg.exe'), self.logger, self.base_dir, self.temp_job_dir)
                 output_final = concat_proc.run_concat(
                     intro_path, core_path, scaler_concat,

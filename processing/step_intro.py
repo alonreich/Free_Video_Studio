@@ -30,8 +30,8 @@ class IntroProcessor:
         target_w, target_h = (1080, 1920) if is_mobile else (1920, 1080)
         base_intro = (
             f"select='eq(n\\,0)',format=nv12,setsar=1,"
-            f"loop=loop={loop_frames}:size=1:start=0,setpts=N/({fps_expr})/TB,fps={fps_expr}[vintro];"
-            f"anullsrc=r={sample_rate}:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
+            f"loop=loop={loop_frames}:size=1:start=0,fps={fps_expr},setpts=N/({fps_expr})/TB[vintro];"
+            f"anullsrc=r=48000:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
         )
         
         def run_intro_cmd(use_hw):
@@ -41,7 +41,7 @@ class IntroProcessor:
             is_nvidia = (enc_name == 'h264_nvenc')
             if use_hw:
                 if is_nvidia:
-                    hw_flags = ['-hwaccel', 'cuda']
+                    hw_flags = ['-hwaccel', 'd3d11va']
                 elif enc_name in ('h264_amf', 'h264_qsv'):
                     hw_flags = ['-hwaccel', 'd3d11va']
             try:
@@ -52,28 +52,7 @@ class IntroProcessor:
                     src_w, src_h = 1920, 1080
             except:
                 src_w, src_h = 1920, 1080
-            if is_nvidia and use_hw:
-                try:
-                    tar = target_w / target_h
-                    sar = src_w / src_h
-                    if sar > tar:
-                        ws, hs = int(target_h * sar), target_h
-                    else:
-                        ws, hs = target_w, int(target_w / sar)
-                    ws = (ws // 2) * 2; hs = (hs // 2) * 2
-                    xo = (target_w - ws) // 2; yo = (target_h - hs) // 2
-                    intro_filter = (
-                        f"[0:v]select='eq(n\\,0)',setsar=1,"
-                        f"loop=loop={loop_frames}:size=1:start=0,setpts=N/({fps_expr})/TB,fps={fps_expr},format=nv12,hwupload_cuda[intro_scaled_hw];"
-                        f"color=c=black:s={target_w}x{target_h}:r={fps_expr},format=nv12,hwupload_cuda[intro_bg];"
-                        f"[intro_scaled_hw]scale_cuda=w={ws}:h={hs}[intro_scaled_resized];"
-                        f"[intro_bg][intro_scaled_resized]overlay_cuda=x={xo}:y={yo},hwdownload,format=nv12,setsar=1[vintro];"
-                        f"anullsrc=r={sample_rate}:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
-                    )
-                except:
-                    intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
-            else:
-                intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
+            intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
             cmd = [
                 self.ffmpeg_path, "-y",
                 "-progress", "pipe:1",

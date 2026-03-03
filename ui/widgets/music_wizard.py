@@ -1,5 +1,6 @@
 ﻿import time
 import os
+import sys
 import threading
 import traceback
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QStyle
@@ -19,6 +20,8 @@ try:
     import mpv
 except Exception:
     mpv = None
+
+from system.utils import MPVSafetyManager
 
 class MergerMusicWizard(
     MergerMusicWizardStepPagesMixin,
@@ -44,6 +47,8 @@ class MergerMusicWizard(
         self.trim_end_ms = trim_end_ms
         self.speed_segments = speed_segments or []
         self.logger = parent.logger
+        self._mpv_lock = threading.Lock()
+        self._registered_workers = []
         self._cache_wall_times()
         self.setWindowTitle("Background Music Selection Wizard")
         self.setModal(True)
@@ -121,33 +126,41 @@ class MergerMusicWizard(
         self.main_layout.addLayout(nav_layout)
         log_dir = os.path.join(getattr(self.parent_window, "base_dir", "."), "logs")
         os.makedirs(log_dir, exist_ok=True)
-        self.player = None
-        self._music_player = None
+        self._wizard_video_player = None
+        self._wizard_music_player = None
+        self._borrowed_video_player = mpv_instance
         if mpv:
             try:
-                wid = int(self.video_container.winId())
-                self.logger.info(f"WIZARD: Initializing MPV with window ID {wid}")
-                if False:
-                    '--avcodec-hw=any'
-                    '--vout=direct3d11'
-                    fallback_args = ['--vout=dummy']
-                    self.player = mpv.MPV(args=fallback_args)
-                self.player = mpv.MPV(
-                    wid=wid,
-                    osc=False,
-                    hr_seek='yes',
-                    hwdec='auto',
-                    keep_open='yes',
-                    log_handler=self.logger.debug,
-                    loglevel="info",
-                    vo='gpu',
-                    ytdl=False,
-                    demuxer_max_bytes='500M',
-                    demuxer_max_back_bytes='100M',
-                )
-                self.logger.info("WIZARD: MPV Instance Created.")
-                time.sleep(0.15) 
-                self._music_player = mpv.MPV(
+                if mpv_instance and hasattr(mpv_instance, 'command'):
+                    self.logger.info("WIZARD: Using main app's video player instance.")
+                    self._wizard_video_player = mpv_instance
+                    self._owns_video_player = False
+                else:
+                    self.logger.info("WIZARD: Creating new video player engine...")
+                    kwargs = {
+                        'osc': False,
+                        'hr_seek': 'yes',
+                        'hwdec': 'no',
+                        'keep_open': 'yes',
+                        'loglevel': "info",
+                        'ytdl': False,
+                        'demuxer_max_bytes': '500M',
+                        'demuxer_max_back_bytes': '100M',
+                    }
+                    if sys.platform == 'win32':
+                        kwargs['vo'] = 'gpu'
+                        kwargs['gpu-context'] = 'd3d11'
+                    self._wizard_video_player = MPVSafetyManager.create_safe_mpv(**kwargs)
+                    if self._wizard_video_player:
+                        self.logger.info("WIZARD: Video player instance created.")
+                        self._owns_video_player = True
+                    else:
+                        self.logger.error("WIZARD: Failed to create video player")
+                        self._wizard_video_player = None
+                        self._owns_video_player = False
+                time.sleep(0.3) 
+                self.logger.info("WIZARD: Creating music player engine...")
+                self._wizard_music_player = MPVSafetyManager.create_safe_mpv(
                     vid='no',
                     vo='null',
                     osc=False,
@@ -156,18 +169,27 @@ class MergerMusicWizard(
                     hr_seek='yes',
                     hwdec='no',
                     keep_open='yes',
-                    log_handler=self.logger.debug,
                     loglevel="info",
                     ytdl=False,
                     demuxer_max_bytes='300M',
                     demuxer_max_back_bytes='60M',
                 )
-                self.logger.info("WIZARD: MPV music-only player created.")
+                if self._wizard_music_player:
+                    self.logger.info("WIZARD: Music player instance created.")
+                else:
+                    self.logger.error("WIZARD: Failed to create music player")
+                    self._wizard_music_player = None
             except Exception as e:
                 self.logger.error(f"WIZARD: Failed to initialize MPV: {e}")
-                self._music_player = None
-        self._player = self.player
-        self._video_player = self.player
+                self._wizard_video_player = None
+                self._wizard_music_player = None
+                self._owns_video_player = False
+        else:
+            self._owns_video_player = False
+        self.player = self._wizard_video_player
+        self._player = self._wizard_video_player
+        self._video_player = self._wizard_video_player
+        self._music_player = self._wizard_music_player
         self.btn_nav_next.setEnabled(False)
         self._prev_next_text = "NEXT"
         self.btn_nav_next.setText("PREPARING...")
@@ -204,6 +226,7 @@ class MergerMusicWizard(
                 self._save_step_geometry()
         except Exception:
             pass
+        self._disconnect_all_worker_signals()
         self.stop_previews()
         self._release_player()
         super().reject()
@@ -214,28 +237,78 @@ class MergerMusicWizard(
                 self._save_step_geometry()
         except Exception:
             pass
+        self._disconnect_all_worker_signals()
         self.stop_previews()
         self._release_player()
         super().closeEvent(event)
 
-    def _release_player(self):
-        """Safely release MPV player instances."""
+    def register_worker(self, worker):
+        if worker not in self._registered_workers:
+            self._registered_workers.append(worker)
+
+    def _safe_mpv_shutdown(self, player_attr_name, timeout=2.0):
+        """Safely shutdown an MPV player with thread synchronization."""
+
+        import time
+        player = getattr(self, player_attr_name, None)
+        if not player:
+            return True
         try:
-            if hasattr(self, "player") and self.player:
-                self.player.terminate()
-                self.player = None
+            try:
+                player.pause = True
+            except:
+                pass
+            try:
+                player.stop()
+            except:
+                pass
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    _ = player.time_pos
+                except:
+                    break
+                time.sleep(0.1)
+            setattr(self, player_attr_name, None)
+            return True
+        except Exception as e:
+            self.logger.debug(f"WIZARD: Safe shutdown of {player_attr_name} failed: {e}")
+            setattr(self, player_attr_name, None)
+            return False
+
+    def _release_player(self):
+        """Safely release MPV player instances with proper synchronization."""
+        try:
+            self._safe_mpv_shutdown("_wizard_music_player")
+            if getattr(self, '_owns_video_player', False):
+                self._safe_mpv_shutdown("_wizard_video_player")
+            else:
+                if self._wizard_video_player:
+                    try:
+                        self._wizard_video_player.pause = True
+                    except:
+                        pass
+                self._wizard_video_player = None
+            if hasattr(self, "_mpv_end_file_cb"):
+                try:
+                    if self._wizard_video_player:
+                        self._wizard_video_player.unbind_event_callback(self._mpv_end_file_cb)
+                except:
+                    pass
+                self._mpv_end_file_cb = None
         except Exception as ex:
             self.logger.debug(f"WIZARD: release failed: {ex}")
-        try:
-            if hasattr(self, "_music_player") and self._music_player:
-                self._music_player.terminate()
-                self._music_player = None
-        except Exception as ex:
-            self.logger.debug(f"WIZARD: music player release failed: {ex}")
         finally:
+            if getattr(self, '_owns_video_player', False):
+                self._wizard_video_player = None
+            self._wizard_music_player = None
+            self.player = None
             self._player = None
             self._video_player = None
             self._music_player = None
+
+            import gc
+            gc.collect()
 
     def _disconnect_all_worker_signals(self):
         """Safely disconnect all worker signal connections to prevent memory leaks."""
@@ -277,6 +350,13 @@ class MergerMusicWizard(
                 self.logger.debug(f"WIZARD: Failed to disconnect signals from {worker_name}: {e}")
 
     def stop_previews(self):
+        for worker in getattr(self, '_registered_workers', []):
+            try:
+                if worker and hasattr(worker, 'isRunning') and worker.isRunning():
+                    if hasattr(worker, 'stop'): worker.stop()
+                    worker.wait(1000)
+            except Exception as e:
+                self.logger.debug(f"WIZARD: Failed to stop registered worker: {e}")
         if hasattr(self, '_stop_waveform_worker'): self._stop_waveform_worker()
         temp_files = [getattr(self, '_temp_sync', None), getattr(self, '_temp_png', None)]
         for f in temp_files:
@@ -286,10 +366,13 @@ class MergerMusicWizard(
         self._temp_sync = None
         self._temp_png = None
         self._pm_src = None
-        if hasattr(self, '_player') and self._player: self._player.stop()
-        if hasattr(self, '_video_player') and self._video_player: self._video_player.stop()
-        if hasattr(self, '_music_player') and self._music_player: self._music_player.stop()
-        if hasattr(self, '_play_timer'): self._play_timer.stop()
+        if hasattr(self, 'player') and self.player: 
+            try: self.player.pause = True
+            except: pass
+        if hasattr(self, '_music_player') and self._music_player:
+            try: self._music_player.pause = True
+            except: pass
+        if hasattr(self, '_play_timer') and self._play_timer: self._play_timer.stop()
         if hasattr(self, '_filmstrip_worker') and self._filmstrip_worker:
             try:
                 if self._filmstrip_worker.isRunning(): self._filmstrip_worker.stop(); self._filmstrip_worker.wait(1000)

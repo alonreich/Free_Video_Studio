@@ -644,6 +644,10 @@ if __name__ == "__main__":
     # [FIX] Start scan after UI loop has settled (500ms delay)
     QTimer.singleShot(500, start_hw_scan)
 
+    # [FIX] Register global MPV shutdown handler for clean exit
+    from system.utils import MPVSafetyManager
+    MPVSafetyManager.register_global_shutdown_handler()
+
     debug_log("DEBUG: Main window shown. Entering app.exec_().")
     ret = app.exec_()
     debug_log(f"DEBUG: app.exec_() returned with code: {ret}. App is exiting.")

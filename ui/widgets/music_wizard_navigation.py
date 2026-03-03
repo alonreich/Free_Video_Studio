@@ -27,8 +27,13 @@ class MergerMusicWizardNavigationMixin:
             self.btn_nav_next.setText("✓  DONE")
             self._bind_video_output()
             self._prepare_timeline_data()
-            start_time = getattr(self, "initial_project_sec", 0.0)
+            start_time = 0.0
             self.timeline.set_current_time(start_time)
+            if hasattr(self, "video_container") and self.player:
+                try:
+                    wid = int(self.video_container.winId())
+                    self._safe_mpv_set(self.player, 'wid', wid)
+                except Exception: pass
             self._sync_all_players_to_time(start_time, force_playing=False)
             self._last_clock_ts = time.time()
             self._last_seek_ts = 0.0

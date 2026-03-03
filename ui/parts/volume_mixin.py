@@ -23,17 +23,21 @@ class VolumeMixin:
 
     def _sync_all_volumes(self):
         """[FIX #8] One-stop shop for player volume synchronization."""
-        if bool(getattr(self, "_suspend_volume_sync", False)):
+        if bool(getattr(self, "_suspend_volume_sync", False)) or getattr(self, "_in_transition", False):
             return
         v_eff = self._vol_eff()
         m_eff = self._music_eff()
-        player = getattr(self, "player", None)
-        if player:
-            try:
-                player.volume = v_eff
-                player.mute = False
-            except Exception:
-                pass
+        if hasattr(self, "_safe_mpv_set"):
+            self._safe_mpv_set("volume", v_eff)
+            self._safe_mpv_set("mute", False)
+        else:
+            player = getattr(self, "player", None)
+            if player:
+                try:
+                    player.volume = v_eff
+                    player.mute = False
+                except Exception:
+                    pass
         music_player = getattr(self, "_music_preview_player", None)
         if music_player:
             try:

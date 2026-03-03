@@ -50,6 +50,27 @@ class _SeekOnlyPlayer:
     def get_time(self) -> int:
         return self._time
 
+class _SeekHost:
+    """Tiny host object compatible with PlayerMixin.set_player_position self-contract."""
+
+    def __init__(self, player: _SeekOnlyPlayer) -> None:
+        self.player = player
+        self._wizard_tracks = []
+        self.wants_to_play = False
+        self.music_timeline_start_ms = 0
+        self.music_timeline_end_ms = 0
+        self._mpv_lock = __import__("threading").Lock()
+
+    def _safe_mpv_get(self, prop, default=None):
+        return default
+
+    def _safe_mpv_set(self, prop, value, target_player=None):
+        p = target_player if target_player is not None else self.player
+        try:
+            setattr(p, prop, value)
+        except Exception:
+            return None
+
 def test_main_preview_slider_guard_and_seek_throttle_reduce_stutter(monkeypatch) -> None:
     """
     Main opening preview should avoid fighting user drag and should throttle seeks
@@ -70,13 +91,7 @@ def test_main_preview_slider_guard_and_seek_throttle_reduce_stutter(monkeypatch)
     )
     t = {"v": 100.0}
     monkeypatch.setattr("time.time", lambda: t["v"])
-    seek_host = types.SimpleNamespace(
-        player=_SeekOnlyPlayer(),
-        _wizard_tracks=[],
-        wants_to_play=False,
-        music_timeline_start_ms=0,
-        music_timeline_end_ms=0,
-    )
+    seek_host = _SeekHost(_SeekOnlyPlayer())
     PlayerMixin.set_player_position(seek_host, 1000, sync_only=False)
     t["v"] = 100.01
     PlayerMixin.set_player_position(seek_host, 1200, sync_only=False)
@@ -122,6 +137,55 @@ def test_granular_preview_rate_updates_are_debounced_to_avoid_sluggy_playback(mo
         "Expected debounce to skip immediate 2nd rate update and allow later update; "
         f"actual set_rate_calls={host.player.set_rate_calls}."
     )
+
+class _StrictIntTimeline:
+    def __init__(self) -> None:
+        self.values: list[int] = []
+
+    def isSliderDown(self) -> bool:
+        return False
+
+    def blockSignals(self, _block: bool) -> None:
+        return None
+
+    def setValue(self, value: int) -> None:
+        assert isinstance(value, int), (
+            "Granular editor must pass int into timeline.setValue; "
+            f"got type={type(value).__name__}, value={value!r}"
+        )
+        self.values.append(value)
+
+    def update(self) -> None:
+        return None
+
+def test_granular_update_ui_writes_int_only_to_timeline_slider_contract() -> None:
+    """
+    Regression contract: update_ui must never pass float to QSlider.setValue.
+    Qt requires int and raises TypeError on float (real crash seen by users).
+    """
+
+    class _FloatPosPlayer:
+        def __init__(self) -> None:
+            self._time_pos = 0.0
+            setattr(self, "time-pos", 0.0)
+    player = _FloatPosPlayer()
+    setattr(player, "time-pos", 1.23456)
+    speed_calls: list[int] = []
+    host = types.SimpleNamespace(
+        player=player,
+        timeline=_StrictIntTimeline(),
+        _current_play_window_ms=lambda: (0, 5000),
+        pause_video=lambda: None,
+        update_playback_speed=lambda t: speed_calls.append(t),
+        last_position_ms=0,
+    )
+    GranularSpeedEditor.update_ui(host)
+    assert host.timeline.values, "Expected update_ui to push current time into slider."
+    assert isinstance(host.timeline.values[-1], int), "Slider write must stay int-only."
+    assert speed_calls and speed_calls[-1] == host.timeline.values[-1], (
+        "Expected speed update to use same int timeline value written to slider."
+    )
+    assert isinstance(host.last_position_ms, int), "Resume position must be stored as int ms."
 
 class _OffsetSlider:
     def __init__(self, max_ms: int) -> None:
@@ -277,6 +341,8 @@ def test_main_wizard_step3_timeline_seek_syncs_video_and_caret_without_lag() -> 
     host._ensure_step3_seek_timer = types.MethodType(MainTimelineMixin._ensure_step3_seek_timer, host)
     host._flush_pending_step3_seek = types.MethodType(MainTimelineMixin._flush_pending_step3_seek, host)
     host._apply_step3_seek_target = types.MethodType(MainTimelineMixin._apply_step3_seek_target, host)
+    host._safe_mpv_get = lambda p, prop, default=None: getattr(p, prop, default)
+    host._safe_mpv_set = lambda p, prop, val: setattr(p, prop, val)
     host._safe_mpv_loadfile = lambda *a, **k: True
     host._safe_mpv_seek = lambda p, s, **k: p.seek(s)
     MainTimelineMixin._on_timeline_seek(host, 0.4)

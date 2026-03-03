@@ -302,6 +302,14 @@ def install_qt_mpv_stubs() -> None:
     class QThread:
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             return None
+
+        def start(self, *args: Any, **kwargs: Any) -> None: return None
+
+        def wait(self, *args: Any, **kwargs: Any) -> None: return None
+
+        def isRunning(self) -> bool: return False
+
+        def terminate(self) -> None: return None
         @staticmethod
         def msleep(_ms: int) -> None:
             return None
@@ -527,6 +535,18 @@ def install_qt_mpv_stubs() -> None:
     qtwidgets.QWidget = QWidget
     qtwidgets.QHBoxLayout = QHBoxLayout
     qtwidgets.QLabel = QLabel
+
+    class QApplication:
+        def __init__(self, *args, **kwargs): pass
+        @staticmethod
+        def instance(): return QApplication([])
+        @staticmethod
+        def processEvents(): pass
+
+        def setStyle(self, *args): pass
+
+        def exec_(self): return 0
+    qtwidgets.QApplication = QApplication
     for n in [
         "QGridLayout",
         "QStyleOptionSlider",
@@ -542,7 +562,6 @@ def install_qt_mpv_stubs() -> None:
         "QProgressBar",
         "QComboBox",
         "QSizePolicy",
-        "QApplication",
         "QMessageBox",
         "QToolTip",
         "QFileDialog",

@@ -86,19 +86,19 @@ class EncoderManager:
                 '-pix_fmt', 'nv12',
                 '-preset', 'p7',
                 '-tune', 'hq',
-                '-rc', 'cbr',
+                '-rc', 'vbr',
                 '-multipass', 'fullres',
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
-                '-aq-strength', '15',
+                '-aq-strength', '12',
                 '-bf', '3',
                 '-b_ref_mode', 'each',
-                '-rc-lookahead', '32',
+                '-rc-lookahead', '60',
                 '-nonref_p', '1',
                 '-profile:v', 'high',
                 '-level:v', h264_level
             ])
-            rc_label = "Titan-Locked Strict VBR NVENC"
+            rc_label = "Titan-Locked CVBR NVENC (High Motion)"
         elif encoder_name == 'h264_amf':
             vcodec.extend([
                 '-pix_fmt', 'nv12',
@@ -113,25 +113,25 @@ class EncoderManager:
                 '-header_insertion_mode', 'idr',
                 '-filler_data', '0'
             ])
-            rc_label = "AMD AMF (Titan-Motion VBR)"
+            rc_label = "AMD AMF (Motion-Adaptive VBR)"
         elif encoder_name == 'h264_qsv':
             vcodec.extend([
                 '-pix_fmt', 'nv12',
                 '-preset', 'slow', 
                 '-bf', '3', 
                 '-look_ahead', '1', 
-                '-look_ahead_depth', '32',
+                '-look_ahead_depth', '60',
                 '-profile:v', 'high',
                 '-extbrc', '1',
                 '-adaptive_i', '1',
                 '-adaptive_b', '1'
             ])
-            rc_label = "Intel QSV (Titan-Motion VBR)"
+            rc_label = "Intel QSV (Motion-Adaptive VBR)"
         elif encoder_name == 'libx264':
             vcodec.append('-pix_fmt')
             vcodec.append('yuv420p')
             if video_bitrate_kbps is None:
-                vcodec.extend(['-preset', 'veryslow', '-crf', '16', '-bf', '3', '-x264-params', 'aq-mode=2:me=umh:subme=10'])
+                vcodec.extend(['-preset', 'veryslow', '-crf', '16', '-bf', '3', '-x264-params', 'aq-mode=2:me=umh:subme=10:rc-lookahead=60'])
                 return vcodec, "CPU libx264 (Titan-CRF Ultra)"
             else:
                 vcodec.extend([
@@ -141,7 +141,7 @@ class EncoderManager:
                     '-level:v', ('5.1' if fps_value >= 100.0 else '4.2'),
                     '-x264-params', 'me=umh:subme=10:rc-lookahead=60:ref=4:aq-mode=2:mbtree=1:direct=auto:partitions=all:trellis=2'
                 ])
-                return vcodec, "CPU libx264 (Titan-Motion VBR)"
+                return vcodec, "CPU libx264 (Motion-Optimized VBR)"
         else:
             vcodec.extend(['-pix_fmt', 'nv12'])
             rc_label = f"{encoder_name} (Generic)"

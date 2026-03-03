@@ -155,6 +155,8 @@ def test_wizard_step3_accounts_for_granular_segments_and_music_timeline() -> Non
         command=lambda *a: None
     )
     host._music_player = host.player
+    host._safe_mpv_get = lambda p, prop, default=None: getattr(p, prop, default)
+    host._safe_mpv_set = lambda p, prop, val: setattr(p, prop, val)
     host._safe_mpv_loadfile = lambda *a, **k: True
     host._safe_mpv_seek = lambda p, s, **k: p.seek(s)
     host.mpv_m = types.SimpleNamespace(media_new=lambda path: path)

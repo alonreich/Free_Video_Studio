@@ -70,6 +70,14 @@ class MediaProber:
         except:
             return 0.0
 
+    def get_resolution(self):
+        """Returns resolution as 'WIDTHxHEIGHT' string."""
+        w = self._run_command(["-select_streams", "v:0", "-show_entries", "stream=width"])
+        h = self._run_command(["-select_streams", "v:0", "-show_entries", "stream=height"])
+        if w and h:
+            return f"{w}x{h}"
+        return None
+
     def get_video_fps_expr(self, fallback: str = "60000/1001"):
         """
         Returns a stable ffmpeg fps expression string (e.g. "60000/1001").
@@ -118,6 +126,8 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     target_size_bits = mb_in_bits * 0.95
     audio_bits = audio_kbps * 1024 * (duration)
     video_bits = target_size_bits - audio_bits
+    if video_bits <= 0:
+        return 300
     if duration <= 0:
         return 6000
     calculated_kbps = int(video_bits / (1024 * duration))

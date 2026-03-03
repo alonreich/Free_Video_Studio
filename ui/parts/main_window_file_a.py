@@ -1,0 +1,165 @@
+﻿import os, sys, time, threading, logging, subprocess, traceback
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
+class MainWindowFileAMixin:
+    def select_file(self):
+        self._set_upload_hint_active(False)
+        had_existing_media = bool(getattr(self, "input_file_path", None))
+        was_playing_before_dialog = False
+        try:
+            if getattr(self, "player", None):
+                was_playing_before_dialog = not bool(getattr(self.player, "pause", True))
+                self.player.pause = True
+            if getattr(self, "timer", None) and self.timer.isActive():
+                self.timer.stop()
+        except Exception as e:
+            try:
+                self.logger.error("FILE: failed to pause before dialog: %s", e)
+            except Exception:
+                pass
+
+        from ui.widgets.custom_file_dialog import CustomFileDialog
+        dialog = CustomFileDialog(
+            None, 
+            "Select Video File(s)",
+            self.last_dir,
+            "Video Files (*.mp4 *.mkv *.mov *.avi)",
+            config=self.config_manager,
+        )
+        dialog.setWindowModality(Qt.ApplicationModal)
+        file_paths = []
+        if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
+            self.portrait_mask_overlay.hide()
+        if dialog.exec_():
+            file_paths = dialog.selectedFiles()
+        if hasattr(self, "_update_portrait_mask_overlay_state"):
+            self._update_portrait_mask_overlay_state()
+        self.refresh_ui_styles()
+        if file_paths:
+            file_to_load = file_paths[0]
+            if len(file_paths) > 1:
+                self.logger.warning(f"User selected {len(file_paths)} files. Loading only the first one.")
+                QMessageBox.information(self, "Multiple Files Selected", f"You selected {len(file_paths)} files. Only the first file will be loaded.")
+            self.logger.info("FILE: selected via dialog: %s", file_to_load)
+            self._set_upload_hint_active(False)
+            self.handle_file_selection(file_to_load)
+        else:
+            self.logger.info("FILE: dialog canceled")
+            if had_existing_media:
+                try:
+                    if getattr(self, "player", None):
+                        self.player.pause = not was_playing_before_dialog
+                    if was_playing_before_dialog:
+                        self.is_playing = True
+                        self.wants_to_play = True
+                        if hasattr(self, "playPauseButton"):
+                            self.playPauseButton.setText("PAUSE")
+                            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                        if hasattr(self, "timer") and not self.timer.isActive():
+                            self.timer.start(40)
+                    else:
+                        self.is_playing = False
+                        self.wants_to_play = False
+                        if hasattr(self, "playPauseButton"):
+                            self.playPauseButton.setText("PLAY")
+                            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+                except Exception as restore_err:
+                    self.logger.debug("FILE: failed restoring playback state: %s", restore_err)
+            if not getattr(self, 'input_file_path', None):
+                self._set_upload_hint_active(True)
+
+    def handle_file_selection(self, file_path):
+        try:
+            if self.player:
+                is_paused = getattr(self.player, "pause", True)
+                if not is_paused:
+                    self.player.stop()
+            timer = getattr(self, "timer", None)
+            if timer and timer.isActive():
+                timer.stop()
+        except Exception as stop_err:
+            self.logger.error("Error stopping existing player: %s", stop_err)
+        try:
+            self.reset_app_state()
+        except Exception as reset_err:
+            self.logger.error("Error during UI reset: %s", reset_err)
+        self.logger.info("FILE: loading for playback: %s", file_path)
+        self.input_file_path = file_path
+        self._set_upload_hint_active(False)
+        self.drop_label.setWordWrap(True)
+        self.drop_label.setText(os.path.basename(self.input_file_path))
+        dir_path = os.path.dirname(file_path)
+        if os.path.isdir(dir_path):
+            self.last_dir = dir_path
+        p = os.path.abspath(str(file_path))
+        if not os.path.isfile(p):
+            self.logger.error("Selected file not found: %s", p)
+            return
+        if self.player:
+            try:
+                self._bind_main_player_output()
+                self.player.command("loadfile", p, "replace")
+                try:
+                    current_rate = float(self.speed_spinbox.value()) if hasattr(self, "speed_spinbox") else float(getattr(self, "playback_rate", 1.1) or 1.1)
+                    self.playback_rate = current_rate
+                    self.player.speed = current_rate
+                except Exception as rate_err:
+                    self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
+                self.player.pause = False
+
+                def _poll_dur():
+                    if not self.player: return
+                    dur = getattr(self.player, 'duration', 0)
+                    if dur and dur > 0:
+                        self.duration_changed_signal.emit(int(dur * 1000))
+                    else:
+                        QTimer.singleShot(500, _poll_dur)
+                QTimer.singleShot(500, _poll_dur)
+                if hasattr(self, "apply_master_volume"):
+                    self._suspend_volume_sync = False
+                    self.apply_master_volume()
+                    QTimer.singleShot(400, self.apply_master_volume)
+                if hasattr(self, "_on_mobile_toggled"):
+                    QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
+            except Exception as e:
+                self.logger.error("Failed to play media with MPV: %s", e)
+        else:
+            self.logger.warning("MPV not available. Skipping playback. (CPU Mode)")
+        self.get_video_info()
+        self._update_portrait_mask_overlay_state()
+        self._set_video_controls_enabled(True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

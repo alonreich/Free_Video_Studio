@@ -86,7 +86,7 @@ class MergerEngine(QThread):
 
     def run(self):
         self._is_cancelled = False
-        cmd = list(self.cmd_base)
+        cmd = [self.ffmpeg_path] + list(self.cmd_base)
         a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
         a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
         cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
@@ -142,9 +142,10 @@ class MergerEngine(QThread):
             return
         self._process.wait()
         rc = self._process.returncode
+        print("FFMPEG LOG DUMP:", "\\n".join(log_buffer))
         if rc == 0:
             if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:
-                self.finished.emit(True, self.output_path)
+                self.finished.emit(True, str(self.output_path))
             else:
                 self.finished.emit(False, "Render complete but output file is empty.")
         else:
@@ -152,8 +153,9 @@ class MergerEngine(QThread):
                 l for l in log_buffer
                 if re.search(r"error|failed|invalid|unable|cannot|no such", l, re.IGNORECASE)
             ]
-            err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
-            self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
+            err_msg = "\\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
+            print("FFMPEG ERROR OUTPUT:", err_msg)
+            self.finished.emit(False, f"Encoding Failed:\\n{err_msg}")
 
     def _parse_progress(self, line):
         if "time=" in line:

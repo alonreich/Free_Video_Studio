@@ -5,6 +5,24 @@ from PyQt5.QtCore import QPoint, QRect, QTimer
 from PyQt5.QtWidgets import QApplication, QLabel
 
 class MergerMusicWizardMiscMixin:
+    def _safe_mpv_get(self, player, prop, default=None):
+        if not player: return default
+        if not hasattr(self, "_mpv_lock"): return getattr(player, prop, default)
+        if not self._mpv_lock.acquire(timeout=0.05): return default
+        try:
+            return getattr(player, prop, default)
+        except: return default
+        finally: self._mpv_lock.release()
+
+    def _safe_mpv_set(self, player, prop, value):
+        if not player: return
+        if not hasattr(self, "_mpv_lock"): setattr(player, prop, value); return
+        if not self._mpv_lock.acquire(timeout=0.05): return
+        try:
+            setattr(player, prop, value)
+        except: pass
+        finally: self._mpv_lock.release()
+
     def _bind_video_output(self):
         if not getattr(self, "_video_player", None): return
         if not hasattr(self, "video_container"): return
@@ -101,43 +119,44 @@ class MergerMusicWizardMiscMixin:
     def _sync_caret(self, override_ms=None, override_state=None):
         try:
             curr_idx = self.stack.currentIndex()
-            if curr_idx == 1:
+            if curr_idx in (1, 2):
                 show_st2 = getattr(self, "_show_caret_step2", False)
                 if not show_st2 and hasattr(self, "offset_slider") and self.offset_slider.maximum() > 0:
                     self._show_caret_step2 = True
                     show_st2 = True
-                if not show_st2 or not self.wave_preview.isVisible(): 
+                if curr_idx == 1:
+                    if not show_st2 or not self.wave_preview.isVisible(): 
+                        self._wave_caret.hide()
+                        self._wave_time_badge.hide()
+                        self._wave_time_badge_bottom.hide()
+                        return
+                    max_ms = self.offset_slider.maximum()
+                    if max_ms <= 0: return
+                    val_ms = override_ms if override_ms is not None else self.offset_slider.value()
+                    frac = val_ms / float(max_ms)
+                    label_pos = self.wave_preview.mapTo(self, QPoint(0, 0))
+                    draw_w = getattr(self, "_draw_w", 0)
+                    if draw_w <= 0:
+                        draw_w = self.wave_preview.width()
+                        draw_x0 = 0
+                    else:
+                        draw_x0 = getattr(self, "_draw_x0", 0)
+                    x = label_pos.x() + draw_x0 + int(frac * draw_w) - 1
+                    y = label_pos.y() + getattr(self, "_draw_y0", 0)
+                    total_h = getattr(self, "_draw_h", 0) or self.wave_preview.height() or 265
+                    self._wave_caret.setGeometry(x, y, 1, total_h)
+                    self._wave_caret.show()
+                    self._wave_caret.raise_()
+                    time_str = self._format_time_long(val_ms)
+                    self._wave_time_badge.setText(time_str); self._wave_time_badge.adjustSize()
+                    self._wave_time_badge_bottom.setText(time_str); self._wave_time_badge_bottom.adjustSize()
+                    bw = self._wave_time_badge.width()
+                    self._wave_time_badge.move(x - bw // 2, y - 25); self._wave_time_badge.show(); self._wave_time_badge.raise_()
+                    self._wave_time_badge_bottom.move(x - bw // 2, y + total_h + 5); self._wave_time_badge_bottom.show(); self._wave_time_badge_bottom.raise_()
+                else:
                     self._wave_caret.hide()
                     self._wave_time_badge.hide()
                     self._wave_time_badge_bottom.hide()
-                    return
-                max_ms = self.offset_slider.maximum()
-                if max_ms <= 0: return
-                val_ms = override_ms if override_ms is not None else self.offset_slider.value()
-                frac = val_ms / float(max_ms)
-                label_pos = self.wave_preview.mapTo(self, QPoint(0, 0))
-                draw_w = getattr(self, "_draw_w", 0)
-                if draw_w <= 0:
-                    draw_w = self.wave_preview.width()
-                    draw_x0 = 0
-                else:
-                    draw_x0 = getattr(self, "_draw_x0", 0)
-                x = label_pos.x() + draw_x0 + int(frac * draw_w) - 1
-                y = label_pos.y() + getattr(self, "_draw_y0", 0)
-                total_h = getattr(self, "_draw_h", 0) or self.wave_preview.height() or 265
-                self._wave_caret.setGeometry(x, y, 1, total_h)
-                self._wave_caret.show()
-                self._wave_caret.raise_()
-                time_str = self._format_time_long(val_ms)
-                self._wave_time_badge.setText(time_str); self._wave_time_badge.adjustSize()
-                self._wave_time_badge_bottom.setText(time_str); self._wave_time_badge_bottom.adjustSize()
-                bw = self._wave_time_badge.width()
-                self._wave_time_badge.move(x - bw // 2, y - 25); self._wave_time_badge.show(); self._wave_time_badge.raise_()
-                self._wave_time_badge_bottom.move(x - bw // 2, y + total_h + 5); self._wave_time_badge_bottom.show(); self._wave_time_badge_bottom.raise_()
-            elif curr_idx == 2:
-                self._wave_caret.hide()
-                self._wave_time_badge.hide()
-                self._wave_time_badge_bottom.hide()
             else: 
                 self._wave_caret.hide(); self._wave_time_badge.hide(); self._wave_time_badge_bottom.hide()
         except: pass
@@ -168,14 +187,6 @@ class MergerMusicWizardMiscMixin:
             r = subprocess.run(cmd, capture_output=True, text=True, creationflags=0x08000000, timeout=5)
             return float(r.stdout.strip()) if r.returncode == 0 else 0.0
         except: return 0.0
-
-    def stop_previews(self):
-        if hasattr(self, '_stop_waveform_worker'):
-            try: self._stop_waveform_worker()
-            except: pass
-        if hasattr(self, '_player') and self._player: self._player.stop()
-        if hasattr(self, '_video_player') and self._video_player: self._video_player.stop()
-        if hasattr(self, '_play_timer'): self._play_timer.stop()
 
     def update_coverage_ui(self):
         covered = sum(t[2] for t in self.selected_tracks)

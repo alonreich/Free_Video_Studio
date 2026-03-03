@@ -60,23 +60,44 @@ class UiBuilderMixin:
             ss = self.selected_intro_abs_time % 60.0
             self.thumb_pick_btn.setText("⏳ EXTRACTING...")
             self.thumb_pick_btn.setEnabled(False)
-            
+
+            def _safety_reset():
+                if getattr(self, "_current_thumb_request", None) == request_id:
+                    if self.thumb_pick_btn.text() == "⏳ EXTRACTING...":
+                        self.thumb_pick_btn.setEnabled(True)
+                        self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
+                        if hasattr(self, "logger"): self.logger.warning("THUMB: Safety reset triggered (thread hang suspected)")
+            QTimer.singleShot(20000, _safety_reset)
+
             import tempfile
-            temp_thumb = os.path.join(tempfile.gettempdir(), f"thumb_preview_{os.getpid()}.jpg")
-            ffmpeg_path = os.path.join(self.bin_dir, 'ffmpeg.exe')
+            temp_thumb = os.path.normpath(os.path.join(tempfile.gettempdir(), f"fvs_thumb_{os.getpid()}_{request_id[:8]}.jpg"))
+            ffmpeg_path = os.path.normpath(os.path.join(getattr(self, 'bin_dir', ''), 'ffmpeg.exe'))
+            if not os.path.exists(ffmpeg_path):
+                ffmpeg_path = "ffmpeg.exe"
             cmd = [
-                ffmpeg_path, "-y", "-ss", f"{pos_s:.3f}", "-i", self.input_file_path,
-                "-vframes", "1", "-q:v", "2", temp_thumb
+                ffmpeg_path, "-y", "-ss", f"{pos_s:.3f}", "-i", os.path.normpath(self.input_file_path),
+                "-frames:v", "1", "-an", "-f", "image2", "-q:v", "2", temp_thumb
             ]
 
-            def _run_extract(rid):
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, 
-                             creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))
-                if getattr(self, "_current_thumb_request", None) == rid:
-                    QTimer.singleShot(0, lambda: self._on_thumb_extracted(mm, ss))
+            def _run_extract(rid, m, s):
+                try:
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0),
+                                 timeout=10)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        is_latest = (getattr(self, "_current_thumb_request", None) == rid)
+                        if hasattr(self, "thumbnail_extracted_signal"):
+                            self.thumbnail_extracted_signal.emit(m, s, is_latest)
+                        else:
+                            QTimer.singleShot(0, lambda: self._on_thumb_extracted(m, s, is_latest))
+                    except:
+                        pass
 
             from threading import Thread
-            Thread(target=_run_extract, args=(request_id,), daemon=True).start()
+            Thread(target=lambda: _run_extract(request_id, mm, ss), daemon=True).start()
             if hasattr(self, "logger"):
                 self.logger.info("THUMB: Selected absolute time %.3fs", self.selected_intro_abs_time)
             self.status_update_signal.emit(f"✅ Thumbnail frame selected: {mm:02d}:{ss:05.2f}")
@@ -87,11 +108,14 @@ class UiBuilderMixin:
                 self.logger.exception("Thumbnail pick failed: %s", e)
             QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
 
-    def _on_thumb_extracted(self, mm, ss):
+    def _on_thumb_extracted(self, mm, ss, is_latest=True):
         """Update UI after thumbnail extraction."""
         self.thumb_pick_btn.setEnabled(True)
-        self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}")
-        QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
+        if is_latest:
+            self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}")
+            QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
+        else:
+            self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
 
     def _on_boss_hp_toggled(self, checked):
         if hasattr(self, "logger"):
@@ -261,10 +285,19 @@ class UiBuilderMixin:
             QMessageBox.critical(self, "Launch Error", f"Failed to start the Video Merger:\n{e}")
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Resize:
-            if obj is getattr(self, "video_surface", None):
+        if event.type() in (QEvent.Resize, QEvent.Move):
+            if event.type() == QEvent.Resize and obj is getattr(self, "video_surface", None):
                 if hasattr(self, 'portrait_mask_overlay'):
                     self._update_portrait_mask_overlay_state()
+            if obj in (
+                self,
+                getattr(self, "video_frame", None),
+                getattr(self, "video_surface", None),
+                getattr(self, "right_panel", None),
+                getattr(self, "upload_button", None),
+            ):
+                if hasattr(self, '_update_upload_hint_responsive'):
+                    QTimer.singleShot(0, self._update_upload_hint_responsive)
         return super().eventFilter(obj, event)
 
     def init_ui(self):
@@ -422,12 +455,14 @@ class UiBuilderMixin:
         self.video_frame.setMinimumHeight(360)
         self.video_frame.setFocusPolicy(Qt.NoFocus)
         self.video_frame.installEventFilter(self)
-        self.REF_WIDTH = 1513.0
-        self.REF_BOX_W, self.REF_BOX_H = 620, 115
-        self.REF_FONT_SIZE = 28
-        self.REF_ARROW_L, self.REF_ARROW_S = 400, 40
-        self.REF_OFFSET_X = 190
-        self.REF_GAP = 20
+        self.REF_WINDOW_W = 1574.0
+        self.REF_WINDOW_H = 912.0
+        self.REF_BOX_W, self.REF_BOX_H = 705, 121
+        self.REF_FONT_SIZE = 29
+        self.REF_ARROW_L, self.REF_ARROW_S = 425, 42
+        self.REF_OFFSET_X = 182
+        self.REF_GAP = 18
+        self.REF_RIGHT_SAFETY = 72
         self.video_stack = QStackedLayout(self.video_frame)
         self.video_stack.setStackingMode(QStackedLayout.StackAll)
         self.video_viewport_container = QWidget()
@@ -651,12 +686,26 @@ class UiBuilderMixin:
         speed_layout.addWidget(self.speed_spinbox, alignment=Qt.AlignHCenter)
         speed_widget = QWidget(); speed_widget.setLayout(speed_layout)
         speed_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        granular_layout = QHBoxLayout()
+        granular_layout.setContentsMargins(0, 0, 0, 0)
+        granular_layout.setSpacing(5)
         self.granular_checkbox = QCheckBox("Granular Speed")
         self.granular_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         self.granular_checkbox.setCursor(Qt.PointingHandCursor)
         self.granular_checkbox.setEnabled(False)
         self.granular_checkbox.clicked.connect(self._handle_granular_click)
         self.tooltip_manager.add_tooltip(self.granular_checkbox, "Enable variable speed segments throughout the video.")
+        self.clear_segments_btn = QPushButton("Clear")
+        self.clear_segments_btn.setFixedSize(50, 24)
+        self.clear_segments_btn.setStyleSheet(UIStyles.BUTTON_DANGER)
+        self.clear_segments_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_segments_btn.setEnabled(False)
+        self.clear_segments_btn.clicked.connect(self._clear_speed_segments)
+        self.tooltip_manager.add_tooltip(self.clear_segments_btn, "Clear all speed segments.")
+        granular_layout.addWidget(self.granular_checkbox)
+        granular_layout.addWidget(self.clear_segments_btn)
+        granular_widget = QWidget()
+        granular_widget.setLayout(granular_layout)
         self.mobile_checkbox = QCheckBox("Mobile Format (Portrait)")
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         self.mobile_checkbox.setCursor(Qt.PointingHandCursor)
@@ -719,7 +768,7 @@ class UiBuilderMixin:
         self.progress_bar.setStyleSheet(UIStyles.PROGRESS_BAR)
         self.progress_bar.setValue(0)
         self.status_container = QWidget()
-        self.status_container.setFixedHeight(18)
+        self.status_container.setFixedHeight(23)
         status_layout = QHBoxLayout(self.status_container)
         status_layout.setContentsMargins(10, 0, 10, 0)
         status_layout.setSpacing(0)
@@ -744,7 +793,7 @@ class UiBuilderMixin:
         status_layout.addStretch(1)
         status_layout.addWidget(self.right_separator, 0)
         if hasattr(self, 'status_bar') and self.status_bar:
-            self.status_bar.setFixedHeight(20)
+            self.status_bar.setFixedHeight(25)
             self.status_bar.setStyleSheet(UIStyles.STATUS_BAR)
             self.status_bar.addPermanentWidget(self.status_container, 1)
         self.progress_update_signal.connect(self.on_progress)
@@ -753,6 +802,7 @@ class UiBuilderMixin:
 
     def _build_right_panel(self):
         self.right_panel = QWidget()
+        self.right_panel.installEventFilter(self)
         self.right_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         right_col = QVBoxLayout(self.right_panel)
         right_col.setContentsMargins(0, 10, 0, 0)
@@ -779,6 +829,7 @@ class UiBuilderMixin:
         right_col.addLayout(drop_slider_row)
         self.upload_button = QPushButton("📂 UPLOAD VIDEO FILE 📂")
         self.upload_button.setObjectName("uploadButton")
+        self.upload_button.installEventFilter(self)
         self.upload_button.clicked.connect(self.select_file)
         self.upload_button.setFixedSize(150, 65)
         self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton#uploadButton { margin-top: 20px; padding-left: 6px; padding-right: 6px; }")

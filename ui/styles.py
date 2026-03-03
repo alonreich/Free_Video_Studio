@@ -111,6 +111,29 @@
             padding-right: 17px;
         }
     """ + _HOVER_BORDER
+    BUTTON_DANGER = _3D_COMMON + """
+        QPushButton {
+            background-color: #c0392b;
+            color: white;
+            font-size: 10px;
+            border-radius: 4px;
+            padding: 4px 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+            border-right: 1px solid rgba(0, 0, 0, 0.6);
+        }
+        QPushButton:pressed:!disabled {
+            border-top: 1px solid rgba(0, 0, 0, 0.7);
+            border-left: 1px solid rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 5px;
+            padding-left: 9px;
+            padding-bottom: 3px;
+            padding-right: 7px;
+        }
+    """ + _HOVER_BORDER
     BUTTON_TOOL = _3D_COMMON + """
         QPushButton {
             background-color: #318181;

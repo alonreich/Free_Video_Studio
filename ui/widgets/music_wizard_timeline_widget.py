@@ -75,6 +75,17 @@ class MergerTimelineWidget(QWidget):
                         t_pos_x = current_x + (t_idx * t_render_w)
                         if t_pos_x < w and t_pos_x + t_render_w > 0:
                             p.drawPixmap(QRectF(t_pos_x, v_y, t_render_w + 0.5, lane_h), thumb, QRectF(thumb.rect()))
+            else:
+                p.setPen(QPen(QColor(125, 211, 252, 120), 1))
+                font = QFont("Arial", 10, QFont.Bold)
+                p.setFont(font)
+                fm = p.fontMetrics()
+                txt = " 🕒 Loading... "
+                tw = fm.width(txt)
+                if tw > 0:
+                    num_repeats = max(1, int(seg_w / tw) + 1)
+                    for r in range(num_repeats):
+                        p.drawText(QRectF(current_x + (r * tw), v_y, tw, lane_h), Qt.AlignCenter, txt)
             p.restore()
             if i < len(self.video_segments) - 1:
                 p.setPen(QPen(separator_color, 3))
@@ -126,10 +137,14 @@ class MergerTimelineWidget(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            pct = event.pos().x() / float(self.width())
-            self.clicked_pos.emit(max(0.0, min(1.0, pct)))
+            self._process_mouse_seek(event.pos())
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            pct = event.pos().x() / float(self.width())
+            self._process_mouse_seek(event.pos())
+
+    def _process_mouse_seek(self, pos):
+        w = float(self.width())
+        if w > 0:
+            pct = pos.x() / w
             self.clicked_pos.emit(max(0.0, min(1.0, pct)))

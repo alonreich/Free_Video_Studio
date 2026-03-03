@@ -23,6 +23,8 @@ try:
 except Exception:
     mpv = None
 
+from system.utils import MPVSafetyManager
+
 class MergerMusicWizard(
     MergerMusicWizardStepPagesMixin,
     MergerMusicWizardStep3PageMixin,
@@ -105,7 +107,7 @@ class MergerMusicWizard(
                 self.logger.info(f"WIZARD: Initializing MPV with window ID {wid}")
                 "--avcodec-hw=any"
                 "--vout=direct3d11"
-                self.player = mpv.MPV(
+                self.player = MPVSafetyManager.create_safe_mpv(
                     wid=wid,
                     osc=False,
                     input_default_bindings=False,
@@ -120,7 +122,10 @@ class MergerMusicWizard(
                     demuxer_max_bytes='500M',
                     demuxer_max_back_bytes='100M',
                 )
-                self.logger.info("WIZARD: MPV Instance Created.")
+                if self.player:
+                    self.logger.info("WIZARD: MPV Instance Created.")
+                else:
+                    self.logger.error("WIZARD: Failed to create MPV instance")
             except Exception as e:
                 self.logger.error(f"WIZARD: Failed to initialize MPV: {e}")
         self._player = self.player

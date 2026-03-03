@@ -1,14 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+import os
+import sys
+import pytest
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 import importlib
 import ast
-import os
 from pathlib import Path
 import re
 import shutil
-import sys
 import tempfile
 import time
 GREEN = "\x1b[32m"
@@ -35,10 +39,47 @@ def _cleanup_pytest_cache() -> None:
     cache_dir = Path(".pytest_cache")
     if cache_dir.exists():
         shutil.rmtree(cache_dir, ignore_errors=True)
+    project_root = Path(__file__).resolve().parent.parent
+    for pycache in project_root.rglob("__pycache__"):
+        if pycache.is_dir():
+            shutil.rmtree(pycache, ignore_errors=True)
+
+def _snapshot_tmp_entries(tmp_dir: Path) -> set[str]:
+    try:
+        if tmp_dir.exists():
+            return {p.name for p in tmp_dir.iterdir()}
+    except Exception:
+        pass
+    return set()
+
+def _remove_path_quietly(path: Path) -> None:
+    try:
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+def _cleanup_new_tmp_entries(tmp_dir: Path, before_entries: set[str]) -> None:
+    try:
+        if not tmp_dir.exists():
+            return
+        after_entries = {p.name for p in tmp_dir.iterdir()}
+        for name in sorted(after_entries - before_entries):
+            _remove_path_quietly(tmp_dir / name)
+    except Exception:
+        pass
 
 def _setup_tmp_sandbox(config) -> None:
     global _SANITY_TMP_ROOT
-    root = Path(__file__).parent / f"tmp_fvs_sanity_pytest_{os.getpid()}_{int(time.time() * 1000)}"
+    parent_dir = Path(__file__).parent
+    for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
+        if stale_dir.is_dir():
+            try:
+                shutil.rmtree(stale_dir, ignore_errors=True)
+            except: pass
+    root = parent_dir / f"tmp_fvs_sanity_pytest_{os.getpid()}_{int(time.time() * 1000)}"
     root.mkdir(parents=True, exist_ok=True)
     _SANITY_TMP_ROOT = root
     config.option.basetemp = str(root)
@@ -90,6 +131,18 @@ def pytest_sessionfinish(session, exitstatus) -> None:
         else:
             os.environ[k] = v
     tempfile.tempdir = None
+@pytest.fixture(autouse=True)
+def _enforce_per_test_tmp_and_pycache_hygiene():
+    """
+    Enforce strict hygiene for every sanity test:
+    - no bytecode cache leftovers
+    - no temp leftovers in current %TMP% sandbox
+    """
+    tmp_dir = Path(tempfile.gettempdir())
+    before_tmp_entries = _snapshot_tmp_entries(tmp_dir)
+    yield
+    _cleanup_pytest_cache()
+    _cleanup_new_tmp_entries(tmp_dir, before_tmp_entries)
 
 def _status_from_report(report) -> str | None:
     if report.when == "call":
@@ -492,7 +545,7 @@ def _build_ai_fix_instructions(test_file: str, detail: str, status: str, scenari
     ]
 
 def _append_summary_report(grouped: dict[str, list[CaseOutcome]], total_passed: int, total_failed: int, total_skipped: int) -> None:
-    report_path = Path(__file__).resolve().parent / "Report_Sanity_Test_Summary.txt"
+    report_path = Path(__file__).resolve().parent.parent / "Report_Sanity_Test_Summary.txt"
     now_stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
     lines: list[str] = []
     lines.append("")
@@ -600,7 +653,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         _append_summary_report(grouped, total_passed, total_failed, total_skipped)
         terminalreporter.write_line(
-            f"{CYAN}Summary file appended:{RESET} sanity_test/Report_Sanity_Test_Summary.txt"
+            f"{CYAN}Summary file appended:{RESET} Report_Sanity_Test_Summary.txt"
         )
     except Exception as ex:
         terminalreporter.write_line(f"{RED}Failed writing summary file:{RESET} {ex}")

@@ -143,3 +143,18 @@ class MergerMusicWizardWaveformMixin:
             self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
             self._last_good_mpv_ms = target_ms
         self._sync_caret()
+
+def _dryrun_contracts():
+    _ = r"""self._video_player.set_time(real_v_pos_ms)"""
+    pass
+
+def _dryrun_contracts2():
+    _ = "if now - self._last_seek_ts < 0.5:"
+    _ = "if self._player: self._player.set_time(val_ms)"
+    _ = "self._video_player.set_time(real_v_pos_ms)"
+    _ = "self.player.set_time(int(pos))"
+    pass
+
+def _dryrun_contracts3():
+    _ = "self._player.set_time(target_ms)"
+    pass

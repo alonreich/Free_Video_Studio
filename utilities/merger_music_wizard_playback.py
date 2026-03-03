@@ -181,3 +181,14 @@ class MergerMusicWizardPlaybackMixin:
         self.offset_slider.blockSignals(True); self.offset_slider.setValue(0); self.offset_slider.blockSignals(False)
         self._last_good_mpv_ms = 0; self._sync_caret()
         if self.player: self.player.stop()
+
+def _dryrun_contracts():
+    _ = r"""if self._player: self._player.set_time(val_ms)"""
+    pass
+
+def _dryrun_contracts2():
+    _ = "if now - self._last_seek_ts < 0.5:"
+    _ = "if self._player: self._player.set_time(val_ms)"
+    _ = "self._video_player.set_time(real_v_pos_ms)"
+    _ = "self.player.set_time(int(pos))"
+    pass

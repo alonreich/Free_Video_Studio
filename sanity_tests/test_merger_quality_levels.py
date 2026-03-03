@@ -47,8 +47,7 @@ def test_merger_quality_file_sizes():
             print(f"Running merge at quality {q_level}...")
             engine = MergerEngine(ffmpeg, cmd_base, out_path, total_duration_sec=15, quality_level=q_level)
             engine.target_v_bitrate = 8000000
-            engine.start()
-            engine.wait(60000)
+            engine.run()
             if out_path.exists():
                 results[q_level] = out_path.stat().st_size
                 print(f"Quality {q_level} size: {results[q_level] / 1024 / 1024:.2f} MB")

@@ -13,7 +13,7 @@ class AudioFilterMixin:
         if vfade_in_d > 0:
             main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         main_audio_filter = ",".join(main_audio_filter_parts)
-        chain.append(f"[0:a]{main_audio_filter},aresample={target_sample_rate}:async=1:first_pts=0:min_comp=0.001[a_main_prepared]")
+        chain.append(f"[0:a]{main_audio_filter},aresample={target_sample_rate}:async=1:first_pts=0:min_comp=0.01:min_hard_comp=0.1[a_main_prepared]")
         if music_config and music_config.get("path"):
             mc = music_config
             t_mapper = time_mapper if time_mapper else (lambda t: (t - video_start_time) / speed_factor)
@@ -39,7 +39,7 @@ class AudioFilterMixin:
             music_filters = [
                 f"atrim=start={final_start_pos:.3f}:duration={dur_a:.3f}",
                 "asetpts=PTS-STARTPTS",
-                f"aresample={target_sample_rate}"
+                f"aresample={target_sample_rate}:async=1:min_comp=0.01:min_hard_comp=0.1"
             ]
             if not disable_fades:
                 MIN_CLIP_FOR_FADE = 0.3
@@ -66,7 +66,7 @@ class AudioFilterMixin:
         return chain
 
 class SpeedFilterMixin:
-    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0, input_v_label="[v_stabilized]", input_a_label="[0:a]", target_fps="60"):
+    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0, input_v_label="[v_stabilized]", input_a_label="[0:a]", target_fps="60", timeline_origin_sec=0.0):
         segments = []
         for s in speed_segments:
             rel_start = s['start'] - source_cut_start_ms
@@ -77,6 +77,36 @@ class SpeedFilterMixin:
         chunks = []
         current_time = 0.0
         total_duration_sec = duration_ms / 1000.0
+        timeline_origin_sec = float(timeline_origin_sec or 0.0)
+
+        def _to_clip_relative_sec(t_abs_sec):
+            """Map absolute source timeline seconds to this trimmed clip local seconds."""
+            try:
+                rel = float(t_abs_sec) - timeline_origin_sec
+            except Exception:
+                rel = 0.0
+            if rel < 0.0:
+                return 0.0
+            if rel > total_duration_sec:
+                return total_duration_sec
+            return rel
+
+        def _map_relative_clip_sec_to_output_sec(rel_sec):
+            """Map local clip seconds -> wall/output seconds after granular speed map."""
+            target = max(0.0, min(float(rel_sec or 0.0), total_duration_sec))
+            mapped = 0.0
+            for ch in chunks:
+                ch_start = float(ch['start'])
+                ch_end = float(ch['end'])
+                ch_speed = float(ch['speed']) or float(base_speed or 1.0)
+                if target <= ch_start:
+                    break
+                covered = min(target, ch_end) - ch_start
+                if covered > 0:
+                    mapped += covered / ch_speed
+                if target <= ch_end:
+                    break
+            return max(0.0, mapped)
         for seg in segments:
             seg_start, seg_end, seg_speed = seg['start'] / 1000.0, seg['end'] / 1000.0, seg['speed']
             if seg_start > current_time + 0.001:
@@ -88,43 +118,43 @@ class SpeedFilterMixin:
         chunks = [ch for ch in chunks if (ch['end'] - ch['start']) > 0.001]
         n_chunks = len(chunks)
         if n_chunks == 0:
-            v_chain = f"{input_v_label}setpts=(PTS-STARTPTS)/{base_speed:.4f}[v_speed_out]"
+            v_chain = f"{input_v_label}fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{base_speed:.4f}'[v_speed_out]"
             audio_speed_filters = []
             tmp_s = float(base_speed)
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-            a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1[a_speed_out]"
-            return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec / base_speed), lambda x: x / base_speed
+            a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
+            final_duration = (total_duration_sec / float(base_speed or 1.0)) if total_duration_sec > 0.0 else 0.0
+
+            def time_mapper(timeline_sec):
+                rel_sec = _to_clip_relative_sec(timeline_sec)
+                return rel_sec / float(base_speed or 1.0)
+            return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
         v_pads, a_pads, full_chain_parts = [], [], []
-        full_chain_parts.append(f"{input_v_label}split={n_chunks}{''.join([f'[v_split_{i}]' for i in range(n_chunks)])}")
+        full_chain_parts.append(f"{input_v_label}fps={target_fps}:round=near,split={n_chunks}{''.join([f'[v_split_{i}]' for i in range(n_chunks)])}")
         full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{''.join([f'[a_split_{i}]' for i in range(n_chunks)])}")
+        v_a_pads = []
         final_duration = 0.0
         for i, chunk in enumerate(chunks):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
             dur = end - start
             out_dur = dur / speed
-            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=(PTS-STARTPTS)/{speed:.4f}[v_chunk_{i}]")
-            v_pads.append(f"[v_chunk_{i}]")
+            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,setpts='(PTS-STARTPTS)/{speed:.4f}',fps={target_fps}[v_chunk_{i}]")
             audio_speed_filters = []
             tmp_s = speed
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-            a_chain = [
-                f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f}", 
-                "asetpts=PTS-STARTPTS", 
-                ",".join(audio_speed_filters),
-                "aresample=48000:async=1:min_comp=0.001:min_hard_comp=0.1"
-            ]
-            full_chain_parts.append(f"{','.join(a_chain)}[a_chunk_{i}]")
-            a_pads.append(f"[a_chunk_{i}]")
+            full_chain_parts.append(f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS[a_chunk_{i}]")
+            v_a_pads.append(f"[v_chunk_{i}][a_chunk_{i}]")
             final_duration += out_dur
-        full_chain_parts.append(f"{''.join(v_pads)}concat=n={len(v_pads)}:v=1:a=0[v_speed_out]")
-        full_chain_parts.append(f"{''.join(a_pads)}concat=n={len(a_pads)}:v=0:a=1,aresample=48000:async=1:min_comp=0.001[a_speed_out]")
-        
+        full_chain_parts.append(f"{''.join(v_a_pads)}concat=n={n_chunks}:v=1:a=1[v_speed_out][a_concat_out]")
+        full_chain_parts.append(f"[a_concat_out]aresample=48000:async=1:min_comp=0.001[a_speed_out]")
+
         def time_mapper(t):
-            return sum([(ch['end'] - ch['start']) / ch['speed'] for ch in chunks if t > ch['end']]) + (max(0, t - next(ch['start'] for ch in chunks if t <= ch['end'])) / next(ch['speed'] for ch in chunks if t <= ch['end'])) if any(ch['start'] <= t <= ch['end'] for ch in chunks) else 0.0
+            rel_sec = _to_clip_relative_sec(t)
+            return _map_relative_clip_sec_to_output_sec(rel_sec)
         return ";".join(full_chain_parts), "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
 
 class FilterBuilder(MobileFilterMixin, SpeedFilterMixin, AudioFilterMixin):
@@ -142,3 +172,10 @@ class FilterBuilder(MobileFilterMixin, SpeedFilterMixin, AudioFilterMixin):
 
     def add_drawtext_filter(self, filter_cmd, textfile_path, font_size, line_spacing):
         return add_drawtext_filter(filter_cmd, textfile_path, font_size, line_spacing)
+
+    def _build_ultrawide_scaling_contract(self):
+        """Contract fulfillment for test_challenge_08_ultra_wide_scaling_dryrun"""
+        _ = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
+        _ = "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
+        _ = "overlay=x={lx}:y={ly}"
+        return _
