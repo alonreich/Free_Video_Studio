@@ -160,7 +160,10 @@ class MergerMusicWizardPlaybackMixin:
                     mpv_len_ms = int(mpv_dur * 1000)
                     if mpv_len_ms > 0 and abs(mpv_len_ms - self.offset_slider.maximum()) > 100:
                         self.offset_slider.blockSignals(True)
-                        self.offset_slider.setRange(0, mpv_len_ms)
+                        if hasattr(self.offset_slider, "set_duration_ms"):
+                            self.offset_slider.set_duration_ms(mpv_len_ms)
+                        else:
+                            self.offset_slider.setRange(0, mpv_len_ms)
                         self.current_track_dur = mpv_dur
                         self.offset_slider.blockSignals(False)
                     mpv_ms = int((self._safe_mpv_get(self.player, "time-pos", 0) or 0) * 1000)
@@ -209,11 +212,13 @@ class MergerMusicWizardPlaybackMixin:
                             self._last_good_step3_project_time = project_time
                             self.timeline.set_current_time(project_time)
                             self._sync_caret()
-                        if project_time >= float(self.total_video_sec) - 0.025:
-                            self.logger.info("WIZARD: Project end reached in tick.")
+                        # [FIX] Stricter end detection and reliable dual-player stop
+                        if project_time >= float(self.total_video_sec) - 0.050:
+                            self.logger.info("WIZARD: Project end reached in tick. Finalizing.")
                             if not getattr(self, "_step3_end_finalize_pending", False):
                                 self._step3_end_finalize_pending = True
-                                QTimer.singleShot(0, self._finalize_step3_end)
+                                # Stop immediately rather than waiting for next event loop
+                                self._finalize_step3_end()
                             return
                 except Exception as ex:
                     self.logger.debug(f"WIZARD: Step3 timeline tick sync skipped: {ex}")
@@ -222,13 +227,20 @@ class MergerMusicWizardPlaybackMixin:
 
     def _finalize_step3_end(self):
         self._step3_end_finalize_pending = False
+        self.logger.info("WIZARD: Finalizing Step 3 project end.")
         try:
             if self.player:
-                self.player.pause = True
+                self._safe_mpv_set(self.player, "pause", True)
             if getattr(self, "_music_player", None):
-                self._music_player.pause = True
-        except Exception:
-            pass
+                self._safe_mpv_set(self._music_player, "pause", True)
+                # [FIX] Force stop music player to ensure no audio bleed
+                try:
+                    self._music_player.stop()
+                except:
+                    pass
+        except Exception as e:
+            self.logger.debug(f"WIZARD: End-of-project stop failed: {e}")
+        
         try:
             self.timeline.set_current_time(self.total_video_sec)
             self._sync_caret()

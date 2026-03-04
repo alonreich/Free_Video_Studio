@@ -1,4 +1,4 @@
-﻿from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
+from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
 from .filter_mobile import MobileFilterMixin
 
 class FilterResult(tuple):
@@ -6,7 +6,8 @@ class FilterResult(tuple):
         return any(item in str(x) for x in self)
 
 class AudioFilterMixin:
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None):
+        """[FIX #1] Supports multiple background music tracks with precise timing and mixing."""
         chain = []
         target_sample_rate = sample_rate or 48000
         main_audio_filter_parts = [audio_filter_cmd if audio_filter_cmd else "anull"]
@@ -14,168 +15,133 @@ class AudioFilterMixin:
             main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         main_audio_filter = ",".join(main_audio_filter_parts)
         chain.append(f"[0:a]{main_audio_filter},aresample={target_sample_rate}:async=1:first_pts=0:min_comp=0.01:min_hard_comp=0.1[a_main_prepared]")
-        if music_config and music_config.get("path"):
-            mc = music_config
-            t_mapper = time_mapper if time_mapper else (lambda t: (t - video_start_time) / speed_factor)
-            orig_timeline_start = mc.get('timeline_start_sec', 0.0)
-            orig_user_end = mc.get('timeline_end_sec', video_end_time)
-            file_offset = mc.get('file_offset_sec', 0.0)
-            if time_mapper:
-                new_timeline_start = t_mapper(orig_timeline_start)
-                new_timeline_end = t_mapper(orig_user_end)
-                new_video_start = t_mapper(video_start_time)
-                new_video_end = t_mapper(video_end_time)
-                relative_start_new = new_timeline_start - new_video_start
-                dur_a = max(0.0, new_timeline_end - new_timeline_start)
-                delay_ms = max(0, int(relative_start_new * 1000))
-                start_skip = max(0.0, new_video_start - new_timeline_start)
-            else:
-                relative_start = orig_timeline_start - video_start_time
-                start_skip = (abs(relative_start) / speed_factor) if relative_start < 0 else 0.0
-                delay_ms = int((relative_start / speed_factor) * 1000) if relative_start > 0 else 0
-                dur_v = max(0.0, orig_user_end - orig_timeline_start)
-                dur_a = dur_v / speed_factor
-            final_start_pos = file_offset + start_skip
+        
+        # Use provided music_tracks or fallback to legacy music_config
+        tracks = music_tracks if music_tracks else []
+        if not tracks and music_config and music_config.get("path"):
+            path = music_config.get("path")
+            offset = music_config.get("file_offset_sec", 0.0)
+            dur = (video_end_time - video_start_time) / speed_factor
+            tracks = [(path, offset, dur)]
+
+        if not tracks:
+            return chain, "[a_main_prepared]"
+
+        # [FIX] Calculate initial delay from pink handles in project time
+        initial_delay_sec = 0.0
+        if music_config:
+            # These are now project wall-clock seconds relative to video start
+            m_start_proj = float(music_config.get('timeline_start_sec', 0.0))
+            v_start_proj = 0.0 # project timeline starts at 0 for the trimmed clip
+            initial_delay_sec = max(0.0, m_start_proj)
+
+        prepared_music_labels = []
+        accum_project_sec = initial_delay_sec
+        
+        for i, (path, file_offset, dur_sec) in enumerate(tracks):
+            input_label = f"[{i+1}:a]"
+            out_label = f"[a_mus_{i}]"
+            
             music_filters = [
-                f"atrim=start={final_start_pos:.3f}:duration={dur_a:.3f}",
+                f"atrim=start={file_offset:.3f}:duration={dur_sec:.3f}",
                 "asetpts=PTS-STARTPTS",
                 f"aresample={target_sample_rate}:async=1:min_comp=0.01:min_hard_comp=0.1"
             ]
-            if not disable_fades:
-                MIN_CLIP_FOR_FADE = 0.3
-                if dur_a > 0.1:
-                    if dur_a > MIN_CLIP_FOR_FADE:
-                        FADE_DUR = min(1.0, dur_a / 3.0)
-                        music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
-                        music_filters.append(f"afade=t=out:st={max(0.0, dur_a - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
-            vol = max(0.0, min(1.0, float(mc.get('volume', 1.0))))
-            music_filters.append(f"volume={vol:.4f}")
-            chain.append(f"[1:a]{','.join(music_filters)}[a_music_prepared]")
+            
+            if not disable_fades and dur_sec > 0.5:
+                FADE_DUR = min(0.5, dur_sec / 4.0)
+                music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
+                music_filters.append(f"afade=t=out:st={max(0.0, dur_sec - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
+            
+            m_vol = float(music_config.get('music_vol', music_config.get('volume', 0.8))) if music_config else 0.8
+            music_filters.append(f"volume={m_vol:.4f}")
+            
+            chain.append(f"{input_label}{','.join(music_filters)}{out_label}_pre")
+            
+            delay_ms = int(accum_project_sec * 1000)
             if delay_ms > 0:
-                chain.append(f"[a_music_prepared]adelay={delay_ms}|{delay_ms}[a_music_delayed]")
-                mus_input = "[a_music_delayed]"
+                chain.append(f"{out_label}_pre adelay={delay_ms}|{delay_ms}{out_label}")
             else:
-                mus_input = "[a_music_prepared]"
-            v_vol = float(mc.get('main_vol', 1.0))
-            chain.append(f"[a_main_prepared]volume={v_vol:.4f},highpass=f=150[game_scaled]")
-            chain.append(f"[game_scaled]asplit=2[game_mix][game_sc]")
-            chain.append(f"{mus_input}[game_sc]sidechaincompress=threshold=0.08:ratio=3:attack=5:release=50[music_ducked]")
-            chain.append(f"[game_mix][music_ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.98[acore]")
-        else:
-            chain.append("[a_main_prepared]anull[acore]")
-        return chain
+                chain.append(f"{out_label}_pre anull{out_label}")
+            
+            prepared_music_labels.append(out_label)
+            accum_project_sec += dur_sec
 
-class SpeedFilterMixin:
-    def build_granular_speed_chain(self, video_path, duration_ms, speed_segments, base_speed, source_cut_start_ms=0, input_v_label="[v_stabilized]", input_a_label="[0:a]", target_fps="60", timeline_origin_sec=0.0):
-        segments = []
-        for s in speed_segments:
-            rel_start = s['start'] - source_cut_start_ms
-            rel_end = s['end'] - source_cut_start_ms
-            if rel_end <= 0 or rel_start >= duration_ms: continue
-            segments.append({'start': max(0.0, float(rel_start)), 'end': min(float(duration_ms), float(rel_end)), 'speed': float(s['speed'])})
-        segments.sort(key=lambda x: x['start'])
-        chunks = []
+        if len(prepared_music_labels) > 1:
+            mix_inputs = "".join(prepared_music_labels)
+            chain.append(f"{mix_inputs}amix=inputs={len(prepared_music_labels)}:duration=longest:dropout_transition=0[a_bg_music]")
+            bg_music_label = "[a_bg_music]"
+        else:
+            bg_music_label = prepared_music_labels[0]
+
+        v_vol = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
+        chain.append(f"[a_main_prepared]volume={v_vol:.4f},highpass=f=150[game_scaled]")
+        chain.append(f"[game_scaled]{bg_music_label}amix=inputs=2:duration=first:dropout_transition=0[a_final_mixed]")
+        
+        return chain, "[a_final_mixed]"
+
+class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
+    def __init__(self, logger=None):
+        self.logger = logger
+
+    def build_granular_speed_chain(self, input_path, total_duration_ms, segments, base_speed, source_cut_start_ms=0, input_v_label="[0:v]", input_a_label="[0:a]", target_fps="60"):
+        total_duration_sec = float(total_duration_ms) / 1000.0
         current_time = 0.0
-        total_duration_sec = duration_ms / 1000.0
-        timeline_origin_sec = float(timeline_origin_sec or 0.0)
+        chunks = []
+        timeline_origin_sec = float(source_cut_start_ms or 0.0) / 1000.0
 
         def _to_clip_relative_sec(t_abs_sec):
-            """Map absolute source timeline seconds to this trimmed clip local seconds."""
-            try:
-                rel = float(t_abs_sec) - timeline_origin_sec
-            except Exception:
-                rel = 0.0
-            if rel < 0.0:
-                return 0.0
-            if rel > total_duration_sec:
-                return total_duration_sec
-            return rel
+            try: rel = float(t_abs_sec) - timeline_origin_sec
+            except: rel = 0.0
+            return max(0.0, min(rel, total_duration_sec))
 
-        def _map_relative_clip_sec_to_output_sec(rel_sec):
-            """Map local clip seconds -> wall/output seconds after granular speed map."""
-            target = max(0.0, min(float(rel_sec or 0.0), total_duration_sec))
+        def time_mapper(timeline_sec):
+            target = _to_clip_relative_sec(timeline_sec)
             mapped = 0.0
             for ch in chunks:
-                ch_start = float(ch['start'])
-                ch_end = float(ch['end'])
-                ch_speed = float(ch['speed']) or float(base_speed or 1.0)
-                if target <= ch_start:
-                    break
+                ch_start, ch_end, ch_speed = ch['start'], ch['end'], ch['speed']
+                if target <= ch_start: break
                 covered = min(target, ch_end) - ch_start
-                if covered > 0:
-                    mapped += covered / ch_speed
-                if target <= ch_end:
-                    break
+                if covered > 0: mapped += covered / ch_speed
+                if target <= ch_end: break
             return max(0.0, mapped)
+
         for seg in segments:
-            seg_start, seg_end, seg_speed = seg['start'] / 1000.0, seg['end'] / 1000.0, seg['speed']
-            if seg_start > current_time + 0.001:
-                chunks.append({'start': current_time, 'end': seg_start, 'speed': float(base_speed)})
-            chunks.append({'start': seg_start, 'end': seg_end, 'speed': seg_speed})
-            current_time = seg_end
+            seg_start, seg_end, seg_speed = seg['start_ms'] / 1000.0, seg['end_ms'] / 1000.0, seg['speed']
+            rel_start = _to_clip_relative_sec(seg_start)
+            rel_end = _to_clip_relative_sec(seg_end)
+            if rel_start > current_time + 0.001:
+                chunks.append({'start': current_time, 'end': rel_start, 'speed': float(base_speed)})
+            chunks.append({'start': rel_start, 'end': rel_end, 'speed': seg_speed})
+            current_time = rel_end
         if current_time < total_duration_sec - 0.001:
             chunks.append({'start': current_time, 'end': total_duration_sec, 'speed': float(base_speed)})
+        
         chunks = [ch for ch in chunks if (ch['end'] - ch['start']) > 0.001]
         n_chunks = len(chunks)
         if n_chunks == 0:
             v_chain = f"{input_v_label}fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{base_speed:.4f}'[v_speed_out]"
-            audio_speed_filters = []
-            tmp_s = float(base_speed)
+            tmp_s = float(base_speed); audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
             a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
-            final_duration = (total_duration_sec / float(base_speed or 1.0)) if total_duration_sec > 0.0 else 0.0
+            return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec/base_speed), time_mapper
 
-            def time_mapper(timeline_sec):
-                rel_sec = _to_clip_relative_sec(timeline_sec)
-                return rel_sec / float(base_speed or 1.0)
-            return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
-        v_pads, a_pads, full_chain_parts = [], [], []
+        full_chain_parts = []
         full_chain_parts.append(f"{input_v_label}fps={target_fps}:round=near,split={n_chunks}{''.join([f'[v_split_{i}]' for i in range(n_chunks)])}")
         full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{''.join([f'[a_split_{i}]' for i in range(n_chunks)])}")
-        v_a_pads = []
-        final_duration = 0.0
+        v_a_pads, final_duration = [], 0.0
         for i, chunk in enumerate(chunks):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
-            dur = end - start
-            out_dur = dur / speed
+            dur = end - start; out_dur = dur / speed
             full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,setpts='(PTS-STARTPTS)/{speed:.4f}',fps={target_fps}[v_chunk_{i}]")
-            audio_speed_filters = []
-            tmp_s = speed
+            tmp_s = speed; audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
             full_chain_parts.append(f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS[a_chunk_{i}]")
             v_a_pads.append(f"[v_chunk_{i}][a_chunk_{i}]")
             final_duration += out_dur
-        full_chain_parts.append(f"{''.join(v_a_pads)}concat=n={n_chunks}:v=1:a=1[v_speed_out][a_concat_out]")
-        full_chain_parts.append(f"[a_concat_out]aresample=48000:async=1:min_comp=0.001[a_speed_out]")
-
-        def time_mapper(t):
-            rel_sec = _to_clip_relative_sec(t)
-            return _map_relative_clip_sec_to_output_sec(rel_sec)
+        full_chain_parts.append(f"{''.join(v_a_pads)}concat=n={n_chunks}:v=1:a=1[v_speed_out][a_speed_out]")
         return ";".join(full_chain_parts), "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper
-
-class FilterBuilder(MobileFilterMixin, SpeedFilterMixin, AudioFilterMixin):
-    def __init__(self, logger):
-        self.logger = logger
-
-    def _make_multiple(self, n, m=8):
-        return make_multiple(n, m)
-
-    def _make_even(self, n):
-        return make_even(n)
-
-    def _fps_to_float(self, fps_val):
-        return fps_to_float(fps_val)
-
-    def add_drawtext_filter(self, filter_cmd, textfile_path, font_size, line_spacing):
-        return add_drawtext_filter(filter_cmd, textfile_path, font_size, line_spacing)
-
-    def _build_ultrawide_scaling_contract(self):
-        """Contract fulfillment for test_challenge_08_ultra_wide_scaling_dryrun"""
-        _ = "scale=1280:1920:force_original_aspect_ratio=increase:flags=bilinear,crop=1280:1920"
-        _ = "[vpreout]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
-        _ = "overlay=x={lx}:y={ly}"
-        return _

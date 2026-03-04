@@ -1,6 +1,6 @@
-﻿import os
+import os
 import time
-from PyQt5.QtWidgets import QMessageBox, QStyle, QWidget
+from PyQt5.QtWidgets import QMessageBox, QStyle, QWidget, QPushButton
 from PyQt5.QtCore import Qt, QTimer
 
 class MergerMusicWizardNavigationMixin:
@@ -23,6 +23,8 @@ class MergerMusicWizardNavigationMixin:
             self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         else:
             self.btn_play_video.setVisible(False)
+            
+        # [FIX] Explicitly set NEXT/DONE based on index
         if index == 2:
             self.btn_nav_next.setText("✓  DONE")
             self._bind_video_output()
@@ -42,6 +44,9 @@ class MergerMusicWizardNavigationMixin:
             self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             if hasattr(self, '_play_timer') and self._play_timer:
                 self._play_timer.stop()
+        elif index == 1:
+            self.btn_nav_next.setText("NEXT")
+            self.update_coverage_ui()
         elif index == 0:
             self.btn_nav_next.setText("NEXT")
             self.update_coverage_ui()
@@ -147,26 +152,44 @@ class MergerMusicWizardNavigationMixin:
         self.logger.info(
             f"WIZARD: User confirmed track '{os.path.basename(self.current_track_path)}' starting at {offset:.1f}s (Covers {actual_dur:.1f}s)"
         )
-        if self._editing_track_index >= 0 and self._editing_track_index < len(self.selected_tracks):
+        if hasattr(self, "_editing_track_index") and self._editing_track_index >= 0 and self._editing_track_index < len(self.selected_tracks):
             self.selected_tracks[self._editing_track_index] = (self.current_track_path, offset, actual_dur)
             self.logger.info("WIZARD: Updated timeline track #%d", self._editing_track_index + 1)
             self._editing_track_index = -1
         else:
             self.selected_tracks.append((self.current_track_path, offset, actual_dur))
+            
         self.update_coverage_ui()
         if hasattr(self, "_refresh_selected_tracks_ui"):
             self._refresh_selected_tracks_ui()
+            
         covered = sum(t[2] for t in self.selected_tracks)
+        
+        # [FIX] Allow user to skip full coverage instead of forcing return to Step 1
         if covered < self.total_video_sec - 0.5:
             missing = self.total_video_sec - covered
-            self.logger.info(f"WIZARD: More music needed ({covered:.1f}s / {self.total_video_sec:.1f}s). Returning to Step 1.")
-            QMessageBox.information(self, "Almost There!", 
-                f"You've added {covered:.1f}s of music.\n"
-                f"You still need {missing:.1f}s to cover the full video.\n\n"
-                "Please select another song to continue!")
-            self._auto_reset_step1 = True
-            self.stack.setCurrentIndex(0)
-            self.btn_back.hide()
+            self.logger.info(f"WIZARD: Incomplete coverage ({covered:.1f}s / {self.total_video_sec:.1f}s). Prompting user.")
+            
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Almost There!")
+            msg.setText(f"You've added {covered:.1f}s of music.\nYou still need {missing:.1f}s to cover the full video.\n\nWould you like to add more music or continue to the timeline as is?")
+            btn_add = msg.addButton("Add More Music", QMessageBox.ActionRole)
+            btn_cont = msg.addButton("Continue to Timeline", QMessageBox.AcceptRole)
+            msg.setDefaultButton(btn_add)
+            
+            # Apply hand cursor to buttons
+            for b in msg.findChildren(QPushButton): b.setCursor(Qt.PointingHandCursor)
+            
+            msg.exec_()
+            
+            if msg.clickedButton() == btn_add:
+                self._auto_reset_step1 = True
+                self.stack.setCurrentIndex(0)
+                self.btn_back.hide()
+            else:
+                self.logger.info("WIZARD: User chose to continue with partial coverage.")
+                self.stack.setCurrentIndex(2)
         else:
             self.logger.info("WIZARD: Coverage complete. Moving to Step 3 Timeline.")
             self.stack.setCurrentIndex(2)

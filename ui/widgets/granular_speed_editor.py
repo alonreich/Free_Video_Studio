@@ -237,31 +237,41 @@ class GranularSpeedEditor(QDialog):
     def _ensure_mpv_lock(self):
         lock = getattr(self, "_mpv_lock", None)
         if lock is None: lock = threading.Lock(); self._mpv_lock = lock
+        if not hasattr(self, "_mpv_lock_timeout"): self._mpv_lock_timeout = 0.20
         return lock
 
     def _safe_mpv_set(self, prop, value):
         if not getattr(self, "player", None): return False
         with self._ensure_mpv_lock():
             try:
-                if prop == "wid": self.player.wid = value
-                elif prop == "pause": self.player.pause = value
-                elif prop == "speed": self.player.speed = value
-                elif prop == "volume": self.player.volume = value
-                elif prop == "mute": self.player.mute = value
-                else: self.player.set_property(prop, value)
+                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return False
+                try:
+                    if prop == "wid": self.player.wid = value
+                    elif prop == "pause": self.player.pause = value
+                    elif prop == "speed": self.player.speed = value
+                    elif prop == "volume": self.player.volume = value
+                    elif prop == "mute": self.player.mute = value
+                    else: self.player.set_property(prop, value)
+                finally: self._mpv_lock.release()
             except: return False
         return True
 
     def _safe_mpv_get(self, prop, default=None):
         if not getattr(self, "player", None): return default
         with self._ensure_mpv_lock():
-            try: return getattr(self.player, prop, default)
+            try:
+                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return default
+                try: return getattr(self.player, prop, default)
+                finally: self._mpv_lock.release()
             except: return default
 
     def _safe_mpv_command(self, *args):
         if not getattr(self, "player", None): return False
         with self._ensure_mpv_lock():
-            try: self.player.command(*args); return True
+            try:
+                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return False
+                try: self.player.command(*args); return True
+                finally: self._mpv_lock.release()
             except: return False
 
     def _init_state(self): self.selection_modified = False; self.list_modified = False
@@ -297,7 +307,8 @@ class GranularSpeedEditor(QDialog):
         self._owns_player = True
         self._parent_mpv_instance = mpv_instance
         self.timer = QTimer(self)
-        self.timer.setInterval(150)
+        self.timer.setInterval(40)
+        self._mpv_lock_timeout = 0.20
         self.timer.timeout.connect(self.update_ui)
         self.is_playing = False
         self._last_rate_update = 0

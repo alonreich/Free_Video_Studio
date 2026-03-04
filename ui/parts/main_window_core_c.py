@@ -41,28 +41,26 @@ class MainWindowCoreCMixin:
         QCoreApplication.instance().quit()
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
-        old_start = self.trim_start_ms
+        """[FIX #1] Ensure music handles follow video trim handles immediately."""
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
-        if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-            new_m_start = max(start_ms, self.music_timeline_start_ms)
-            new_m_end = min(end_ms, self.music_timeline_end_ms)
-            music_dur = self.music_timeline_end_ms - self.music_timeline_start_ms
-            if (new_m_end - new_m_start) < music_dur:
-                delta_start = start_ms - old_start
-                new_m_start = self.music_timeline_start_ms + delta_start
-                new_m_end = new_m_start + music_dur
-                if new_m_start < start_ms:
-                    new_m_start = start_ms
-                    new_m_end = new_m_start + music_dur
-                if new_m_end > end_ms:
-                    new_m_end = end_ms
-                    new_m_start = max(start_ms, new_m_end - music_dur)
-            if new_m_start != self.music_timeline_start_ms or new_m_end != self.music_timeline_end_ms:
-                self.music_timeline_start_ms = new_m_start
-                self.music_timeline_end_ms = new_m_end
-                self.positionSlider.set_music_times(new_m_start, new_m_end)
-                self.logger.info(f"MUSIC: Robustly shifted to {new_m_start}-{new_m_end}ms following video trim.")
+        
+        # [FIX] Force music handles to jump to video handles if they exist
+        has_music = (hasattr(self, "_wizard_tracks") and self._wizard_tracks) or hasattr(self, "music_timeline_start_ms")
+        
+        if has_music:
+            self.music_timeline_start_ms = start_ms
+            self.music_timeline_end_ms = end_ms
+            if hasattr(self, "positionSlider"):
+                # Visually update the pink handles
+                self.positionSlider.set_music_times(start_ms, end_ms)
+            
+            # If we have exactly one track, update its duration to match the new handles
+            if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
+                path, offset, _old_dur = self._wizard_tracks[0]
+                new_dur = (end_ms - start_ms) / 1000.0
+                self._wizard_tracks[0] = (path, offset, new_dur)
+                
         self._update_trim_widgets_from_trim_times()
 
 

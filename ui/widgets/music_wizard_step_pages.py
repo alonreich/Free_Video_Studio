@@ -303,6 +303,8 @@ class MergerMusicWizardStepPagesMixin:
         self.slider_unified_layout.setContentsMargins(0, 0, 0, 0)
         self.slider_unified_layout.setSpacing(0)
         self.offset_slider = TrimmedSlider()
+        self.offset_slider.is_wizard = True
+        self.offset_slider.setFixedHeight(100)
         self.offset_slider.setProperty("is_wizard_slider", True)
         self.offset_slider.setFixedHeight(100)
         self.offset_slider.valueChanged.connect(self._on_slider_seek)

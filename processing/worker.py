@@ -1,59 +1,63 @@
-﻿import os
+import os
 import tempfile
 import uuid
 import shutil
+import subprocess
+import time
 from typing import Tuple, Dict, Any, Optional, List
-from PyQt5.QtCore import QThread
-from .config_data import VideoConfig
-from .system_utils import create_subprocess, monitor_ffmpeg_progress, kill_process_tree, check_disk_space, check_filter_option
-from .text_ops import TextWrapper, apply_bidi_formatting
-from .media_utils import MediaProber, calculate_video_bitrate
+from PyQt5.QtCore import QThread, pyqtSignal
+from .processing_models import ProcessingJob, ProcessingResult
+from .system_utils import create_subprocess, kill_process_tree, check_disk_space
 from .filter_builder import FilterBuilder
 from .encoders import EncoderManager
-from .step_intro import IntroProcessor
-from .step_concat import ConcatProcessor
+from .media_utils import MediaProber, calculate_video_bitrate
 from .processing_utils import ProgressScaler, generate_text_overlay_png
+from .config_data import VideoConfig
 
 class ProcessThread(QThread):
-    def __init__(self, input_path, start_time_ms, end_time_ms, original_resolution, is_mobile_format, speed_factor,
-                 script_dir, progress_update_signal, status_update_signal, finished_signal, logger,
-                 is_boss_hp=False, show_teammates_overlay=False, quality_level: int = 2,
-                 bg_music_path=None, bg_music_volume=None, bg_music_offset_ms=0, original_total_duration_ms=0,
-                 disable_fades=False, intro_still_sec: float = 0.0, intro_from_midpoint: bool = False, intro_abs_time_ms: int = None,
-                 portrait_text: str = None, music_config=None, speed_segments=None, hardware_strategy: str = "CPU"):
+    progress_update_signal = pyqtSignal(int)
+    status_update_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(bool, str)
+
+    def __init__(self, 
+                 input_path, start_time_ms, end_time_ms, original_resolution,
+                 is_mobile_format, speed_factor, base_dir,
+                 progress_signal, status_signal, finished_signal,
+                 logger=None, is_boss_hp=False, show_teammates_overlay=False,
+                 quality_level=2, bg_music_path=None, bg_music_volume=0.8,
+                 bg_music_offset_ms=0, original_total_duration_ms=0,
+                 disable_fades=False, intro_still_sec=0,
+                 intro_from_midpoint=False, intro_abs_time_ms=None,
+                 portrait_text=None, music_config=None, speed_segments=None,
+                 hardware_strategy='CPU', music_tracks=None):
         super().__init__()
         self.input_path = input_path
-        self.start_time_ms = int(start_time_ms)
-        self.end_time_ms = int(end_time_ms)
+        self.start_time_ms = start_time_ms
+        self.end_time_ms = end_time_ms
         self.original_resolution = original_resolution
         self.is_mobile_format = is_mobile_format
-        self.speed_factor = float(speed_factor)
-        self.logger = logger
-        self.speed_segments = speed_segments or []
-        self.script_dir = script_dir
-        self.base_dir = os.path.abspath(os.path.join(self.script_dir, os.pardir))
-        self.bin_dir = os.path.join(self.base_dir, 'binaries')
-        self.progress_update_signal = progress_update_signal
-        self.status_update_signal = status_update_signal
+        self.speed_factor = speed_factor
+        self.base_dir = base_dir
+        self.progress_update_signal = progress_signal
+        self.status_update_signal = status_signal
         self.finished_signal = finished_signal
-        self.bg_music_path = bg_music_path if (bg_music_path and os.path.isfile(bg_music_path)) else None
-        self.bg_music_volume = float(bg_music_volume) if bg_music_volume is not None else 0.0
-        self.bg_music_offset_ms = int(bg_music_offset_ms or 0)
-        self.portrait_text = portrait_text
+        self.logger = logger
         self.is_boss_hp = is_boss_hp
-        self.show_teammates_overlay = bool(show_teammates_overlay)
-        self.disable_fades = bool(disable_fades)
-        self.intro_still_sec = float(intro_still_sec or 0.0)
-        self.intro_abs_time_ms = intro_abs_time_ms
-        self.intro_from_midpoint = intro_from_midpoint
-        self.original_total_duration_ms = int(original_total_duration_ms or 0)
+        self.show_teammates_overlay = show_teammates_overlay
+        self.portrait_text = portrait_text
+        self.bg_music_path = bg_music_path
+        self.bg_music_volume = bg_music_volume
+        self.bg_music_offset_ms = bg_music_offset_ms
+        self.disable_fades = disable_fades
+        self.speed_segments = speed_segments
         self.hardware_strategy = hardware_strategy
         self.music_config = music_config or {}
+        self.music_tracks = music_tracks or [] # [FIX]
         self.config = VideoConfig(self.base_dir)
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level)
         self.filter_builder = FilterBuilder(self.logger)
         self.encoder_mgr = EncoderManager(self.logger, hardware_strategy=self.hardware_strategy)
-        self.prober = MediaProber(self.bin_dir, self.input_path)
+        self.prober = MediaProber(os.path.join(self.base_dir, 'binaries'), self.input_path)
         self.current_process = None
         self.is_canceled = False
         self.duration_corrected_sec = (self.end_time_ms - self.start_time_ms) / 1000.0 / self.speed_factor
@@ -91,16 +95,17 @@ class ProcessThread(QThread):
                 text_png_path = os.path.join(self.temp_job_dir, "portrait_text.png")
                 tw, th = (1080, 1920) if self.is_mobile_format else (1920, 1080)
                 generate_text_overlay_png(self.portrait_text, tw, th, self.config.base_font_size, self.config.line_spacing, text_png_path, self.config, self.logger)
+            
             music_cfg = self.music_config if hasattr(self, 'music_config') else {}
-            if self.bg_music_path:
-                if not music_cfg.get('path'): music_cfg['path'] = self.bg_music_path
-                if 'volume' not in music_cfg: music_cfg['volume'] = self.bg_music_volume
-                if 'file_offset_sec' not in music_cfg: music_cfg['file_offset_sec'] = self.bg_music_offset_ms / 1000.0
-            audio_chains = self.filter_builder.build_audio_chain(
+            if self.bg_music_path and not self.music_tracks:
+                 self.music_tracks = [(self.bg_music_path, self.bg_music_offset_ms/1000.0, self.duration_corrected_sec)]
+            
+            audio_chains, final_a_label = self.filter_builder.build_audio_chain(
                 music_config=music_cfg,
                 video_start_time=self.start_time_ms/1000.0, video_end_time=self.end_time_ms/1000.0,
                 speed_factor=self.speed_factor, disable_fades=self.disable_fades,
-                vfade_in_d=0.5 if not self.disable_fades else 0, audio_filter_cmd="", sample_rate=48000
+                vfade_in_d=0.5 if not self.disable_fades else 0, audio_filter_cmd="", sample_rate=48000,
+                music_tracks=self.music_tracks # [FIX]
             )
             core_path = os.path.normpath(os.path.join(self.temp_job_dir, "core.mp4"))
 
@@ -109,6 +114,7 @@ class ProcessThread(QThread):
                 v_label = "[0:v]"
                 attempt_core_filters = []
                 working_duration_sec = self.duration_corrected_sec
+                t_map = None
                 if self.speed_segments:
                     g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
                         self.input_path, 
@@ -120,13 +126,9 @@ class ProcessThread(QThread):
                         input_a_label="[0:a]",
                         target_fps=target_fps_expr
                     )
-                    granular_filter_str = g_str
-                    granular_video_label = g_v
-                    granular_audio_label = g_a
-                    time_mapper = t_map
-                    v_stabilized_pad = granular_video_label
-                    a_prepared_pad = granular_audio_label
-                    attempt_core_filters.append(granular_filter_str)
+                    attempt_core_filters.append(g_str)
+                    v_stabilized_pad = g_v
+                    a_prepared_pad = g_a
                     working_duration_sec = g_dur
                 else:
                     sync_chain = f"{v_label}fps={target_fps_expr},setpts=(PTS-STARTPTS)/{self.speed_factor}[v_stabilized]"
@@ -140,103 +142,56 @@ class ProcessThread(QThread):
                     a_sync = f"[0:a]asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1[a_prepared_base]"
                     attempt_core_filters.append(sync_chain)
                     attempt_core_filters.append(a_sync)
+                
                 ffmpeg_inputs = ['-ss', f"{self.start_time_ms/1000.0:.3f}", '-i', self.input_path]
-                if self.bg_music_path: ffmpeg_inputs += ['-i', self.bg_music_path]
+                
+                # [FIX] Multiple background music inputs
+                for track_path, _, _ in self.music_tracks:
+                    ffmpeg_inputs += ['-i', track_path]
+                
                 txt_input_pad = None
                 if text_png_path:
-                    txt_idx = 2 if self.bg_music_path else 1
+                    txt_idx = 1 + len(self.music_tracks)
                     ffmpeg_inputs += ['-i', text_png_path]
                     txt_input_pad = f"[{txt_idx}:v]"
+                
                 if self.is_mobile_format:
-                    v_filter, out_v_pad = self.filter_builder.build_mobile_filter(
-                        self.config.get_mobile_coordinates(self.logger), self.original_resolution, self.is_boss_hp, self.show_teammates_overlay,
-                        use_nvidia=use_cuda, target_fps=target_fps_expr, input_pad=v_stabilized_pad, txt_input_label=txt_input_pad
+                    coords = self.config.get_mobile_coordinates(self.logger)
+                    v_mobile, v_mobile_out = self.filter_builder.build_mobile_filter_chain(
+                        v_stabilized_pad, coords, self.is_boss_hp, self.show_teammates_overlay, txt_input_pad
                     )
-                    v_finalize = v_filter
+                    attempt_core_filters.append(v_mobile)
+                    v_final_pad = v_mobile_out
                 else:
-                    target_w, target_h = 1920, 1080
-                    if txt_input_pad:
-                        v_finalize = f"{v_stabilized_pad}scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2,format=nv12,setsar=1[v_scaled_sw];[v_scaled_sw]{txt_input_pad}overlay=x=0:y=0:eof_action=repeat[v_out_sw]"
-                    else:
-                        v_finalize = f"{v_stabilized_pad}scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2,format=nv12,setsar=1[v_out_sw]"
-                    out_v_pad = "[v_out_sw]"
-                music_cfg = self.music_config if hasattr(self, 'music_config') else {}
-                t_map_func = time_mapper if self.speed_segments else None
-                final_audio_chains = self.filter_builder.build_audio_chain(
-                    music_config=music_cfg,
-                    video_start_time=self.start_time_ms/1000.0, video_end_time=self.end_time_ms/1000.0,
-                    speed_factor=self.speed_factor, disable_fades=self.disable_fades,
-                    vfade_in_d=0.5 if not self.disable_fades else 0, 
-                    audio_filter_cmd="anull",
-                    time_mapper=t_map_func,
-                    sample_rate=48000
-                )
-                final_audio_parts = []
-                for part in final_audio_chains:
-                    if part.startswith("[0:a]"):
-                        part = part.replace("[0:a]", a_prepared_pad).replace("anull,", "")
-                    final_audio_parts.append(part)
-                filter_parts = attempt_core_filters + [v_finalize] + final_audio_parts
-                complex_filter = ";".join([p for p in filter_parts if p.strip()])
-                script_path = os.path.join(self.temp_job_dir, "f.txt")
-                with open(script_path, "w", encoding='utf-8') as f: f.write(complex_filter)
-                self.logger.info(f"FILTER_SCRIPT_CONTENT: {complex_filter}")
-                safe_script_path = script_path.replace("\\", "/")
-                hw_args_pre = []
-                input_args = []
-                if use_cuda:
-                    hw_args_pre = ['-hwaccel', 'd3d11va']
-                cmd = [os.path.join(self.bin_dir, 'ffmpeg.exe'), '-y', '-progress', 'pipe:1'] + hw_args_pre + ffmpeg_inputs[:2] + input_args + ffmpeg_inputs[2:] + [
-                    '-filter_complex_script', safe_script_path, '-map', out_v_pad, '-map', '[acore]',
-                    '-r', str(target_fps_expr),
-                    '-fps_mode', 'cfr',
-                    '-c:a', 'aac', '-b:a', f'{audio_kbps}k', '-t', f"{working_duration_sec:.3f}"
-                ] + vcodec + [core_path]
-                self.logger.info(f"TITAN_CMD_JOINED: {' '.join(cmd)}")
-                self.current_process = create_subprocess(cmd, self.logger)
-                monitor_ffmpeg_progress(self.current_process, self.duration_corrected_sec, scaler_core, self._monitor_disk_space, self.logger)
-                self.current_process.wait()
-                return self.current_process.returncode == 0 and os.path.exists(core_path) and os.path.getsize(core_path) > 0
-            self._emit_status("Rendering Titan-Locked Pipeline...")
-            success = run_ffmpeg(use_cuda=True)
-            if not success and not self.is_canceled:
-                self.logger.warning("Titan GPU failed. Falling back to CPU Safety Mode...")
-                success = run_ffmpeg(use_cuda=False)
-            if success and not self.is_canceled:
-                intro_path = None
-                if self.intro_still_sec > 0.05:
-                    self._emit_status("Generating Intro Sequence...")
-                    scaler_intro = ProgressScaler(self.progress_update_signal, 50, 10)
-                    intro_proc = IntroProcessor(os.path.join(self.bin_dir, 'ffmpeg.exe'), self.logger, self.encoder_mgr, self.temp_job_dir)
-                    intro_abs = self.intro_abs_time_ms / 1000.0 if self.intro_abs_time_ms is not None else (self.start_time_ms / 1000.0)
-                    intro_path = intro_proc.create_intro(
-                        self.input_path, intro_abs, self.intro_still_sec, self.is_mobile_format,
-                        audio_kbps, video_bitrate_kbps, scaler_intro, lambda: self.is_canceled,
-                        fps_expr=target_fps_expr, preferred_encoder='h264_nvenc' if self.hardware_strategy == "NVIDIA" else None,
-                        original_res_str=self.original_resolution
-                    )
-                else:
-                    self.progress_update_signal.emit(60)
-                self._emit_status("Finalizing Video Assembly...")
-                scaler_concat = ProgressScaler(self.progress_update_signal, 60, 40)
-                concat_proc = ConcatProcessor(os.path.join(self.bin_dir, 'ffmpeg.exe'), self.logger, self.base_dir, self.temp_job_dir)
-                output_final = concat_proc.run_concat(
-                    intro_path, core_path, scaler_concat,
-                    video_bitrate_kbps=video_bitrate_kbps,
-                    cancellation_check=lambda: self.is_canceled,
-                    fps_expr=target_fps_expr,
-                    preferred_encoder='h264_nvenc' if self.hardware_strategy == "NVIDIA" else None,
-                    force_reencode=True,
-                    audio_kbps=audio_kbps,
-                    is_mobile=self.is_mobile_format
-                )
-                if output_final and os.path.exists(output_final):
-                    self.progress_update_signal.emit(100)
-                    self.finished_signal.emit(True, output_final)
-                else:
-                    self.finished_signal.emit(False, "Final assembly failed.")
-            else:
-                self.finished_signal.emit(False, "Render failed.")
+                    v_final_pad = v_stabilized_pad
+                
+                attempt_core_filters.extend(audio_chains)
+                
+                full_filter_str = ";".join(attempt_core_filters)
+                ffmpeg_cmd = [os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe'), '-y', '-hide_banner'] + ffmpeg_inputs + [
+                    '-filter_complex', full_filter_str,
+                    '-map', v_final_pad, '-map', final_a_label,
+                    '-c:v', vcodec] + rc_label + [
+                    '-c:a', 'aac', '-b:a', f"{audio_kbps}k",
+                    '-t', f"{working_duration_sec:.3f}",
+                    core_path
+                ]
+                self.logger.info(f"FFMPEG CMD: {' '.join(ffmpeg_cmd)}")
+                self.current_process = create_subprocess(ffmpeg_cmd)
+                while self.current_process.poll() is None:
+                    if self._monitor_disk_space(): return False
+                    time.sleep(0.5)
+                return self.current_process.returncode == 0
+
+            self._emit_status("Encoding core video...")
+            success = run_ffmpeg(use_cuda=(self.hardware_strategy != 'CPU'))
+            if not success:
+                self.finished_signal.emit(False, "FFmpeg core encoding failed.")
+                return
+
+            shutil.move(core_path, self.input_path + ".output.mp4")
+            self.progress_update_signal.emit(100)
+            self.finished_signal.emit(True, self.input_path + ".output.mp4")
         except Exception as e:
             if self.logger: self.logger.exception(f"FATAL: {e}")
             self.finished_signal.emit(False, str(e))

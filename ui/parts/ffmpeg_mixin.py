@@ -159,6 +159,20 @@ class FfmpegMixin:
             cfg['mobile_checked'] = bool(is_mobile_format)
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
+            # [FIX] Calculate music start/end in project time (wall clock)
+            m_start_ms = int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms))
+            m_end_ms = int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms))
+            
+            # Wall clock time of video start
+            v_wall_start = self._calculate_wall_clock_time(start_time_ms, segments, speed_factor)
+            # Wall clock time of music handles
+            m_wall_start = self._calculate_wall_clock_time(m_start_ms, segments, speed_factor)
+            m_wall_end = self._calculate_wall_clock_time(m_end_ms, segments, speed_factor)
+            
+            # Project-relative seconds (where 0.0 is the start of the final video clip)
+            m_proj_start_sec = max(0.0, (m_wall_start - v_wall_start) / 1000.0)
+            m_proj_end_sec = max(0.0, (m_wall_end - v_wall_start) / 1000.0)
+
             music_conf = {
                 'path': music_path,
                 'ducking_threshold': 0.15,
@@ -166,8 +180,8 @@ class FfmpegMixin:
                 'eq_enabled': True,
                 'main_vol': linear_video_vol,
                 'music_vol': music_vol_linear if music_path else 1.0,
-                'timeline_start_sec': int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms)) / 1000.0,
-                'timeline_end_sec': int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms)) / 1000.0,
+                'timeline_start_sec': m_proj_start_sec,
+                'timeline_end_sec': m_proj_end_sec,
                 'file_offset_sec': music_offset_s
             }
             p_text = None
@@ -202,7 +216,8 @@ class FfmpegMixin:
                 portrait_text=p_text,
                 music_config=music_conf,
                 speed_segments=getattr(self, 'speed_segments', None),
-                hardware_strategy=getattr(self, 'hardware_strategy', 'CPU')
+                hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'),
+                music_tracks=getattr(self, "_wizard_tracks", []) # [FIX]
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))

@@ -246,69 +246,47 @@ class MergerMusicWizard(
         if worker not in self._registered_workers:
             self._registered_workers.append(worker)
 
-    def _safe_mpv_shutdown(self, player_attr_name, timeout=2.0):
-        """Safely shutdown an MPV player with thread synchronization."""
-
+    def _safe_mpv_shutdown(self, player_attr_name, timeout=0.5):
+        """[FIX] Faster shutdown for wizard cleanup to prevent UI freeze."""
         import time
         player = getattr(self, player_attr_name, None)
         if not player:
             return True
         try:
-            try:
-                player.pause = True
-            except:
-                pass
-            try:
-                player.stop()
-            except:
-                pass
+            try: player.pause = True
+            except: pass
+            try: player.stop()
+            except: pass
             start_time = time.time()
             while time.time() - start_time < timeout:
-                try:
-                    _ = player.time_pos
-                except:
-                    break
-                time.sleep(0.1)
+                try: _ = player.time_pos
+                except: break
+                time.sleep(0.02)
             setattr(self, player_attr_name, None)
             return True
-        except Exception as e:
-            self.logger.debug(f"WIZARD: Safe shutdown of {player_attr_name} failed: {e}")
+        except Exception:
             setattr(self, player_attr_name, None)
             return False
 
     def _release_player(self):
-        """Safely release MPV player instances with proper synchronization."""
+        """[FIX] Streamlined release sequence without heavy GC."""
         try:
             self._safe_mpv_shutdown("_wizard_music_player")
             if getattr(self, '_owns_video_player', False):
                 self._safe_mpv_shutdown("_wizard_video_player")
             else:
                 if self._wizard_video_player:
-                    try:
-                        self._wizard_video_player.pause = True
-                    except:
-                        pass
+                    try: self._wizard_video_player.pause = True
+                    except: pass
                 self._wizard_video_player = None
-            if hasattr(self, "_mpv_end_file_cb"):
-                try:
-                    if self._wizard_video_player:
-                        self._wizard_video_player.unbind_event_callback(self._mpv_end_file_cb)
-                except:
-                    pass
-                self._mpv_end_file_cb = None
-        except Exception as ex:
-            self.logger.debug(f"WIZARD: release failed: {ex}")
+        except: pass
         finally:
-            if getattr(self, '_owns_video_player', False):
-                self._wizard_video_player = None
+            self._wizard_video_player = None
             self._wizard_music_player = None
             self.player = None
             self._player = None
             self._video_player = None
             self._music_player = None
-
-            import gc
-            gc.collect()
 
     def _disconnect_all_worker_signals(self):
         """Safely disconnect all worker signal connections to prevent memory leaks."""
