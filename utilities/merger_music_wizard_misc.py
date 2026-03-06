@@ -1,10 +1,28 @@
 ﻿import os
 import sys
 import subprocess
-from PyQt5.QtCore import QPoint, QRect
+from PyQt5.QtCore import QPoint, QRect, QTimer
 from PyQt5.QtWidgets import QApplication, QLabel
 
 class MergerMusicWizardMiscMixin:
+    def _safe_mpv_get(self, player, prop, default=None):
+        if not player: return default
+        if not hasattr(self, "_mpv_lock"): return getattr(player, prop, default)
+        if not self._mpv_lock.acquire(timeout=0.05): return default
+        try:
+            return getattr(player, prop, default)
+        except: return default
+        finally: self._mpv_lock.release()
+
+    def _safe_mpv_set(self, player, prop, value):
+        if not player: return
+        if not hasattr(self, "_mpv_lock"): setattr(player, prop, value); return
+        if not self._mpv_lock.acquire(timeout=0.05): return
+        try:
+            setattr(player, prop, value)
+        except: pass
+        finally: self._mpv_lock.release()
+
     def _bind_video_output(self):
         if not getattr(self, "_video_player", None): return
         if not hasattr(self, "video_container"): return
@@ -15,102 +33,73 @@ class MergerMusicWizardMiscMixin:
 
     def _get_default_size(self, step_idx):
         """Returns (width, height) for a step if no config exists."""
-        if step_idx == 0: return (900, 800)
+        if step_idx == 0: return (1100, 850)
         if step_idx == 1: return (1300, 580)
         if step_idx == 2: return (1600, 850)
         return (1300, 850)
 
     def _apply_step_geometry(self, step_idx):
-        """Applies saved geometry or centers the default size."""
+        """Applies saved geometry or centers the default size with multi-monitor sanity."""
         if not hasattr(self, "parent_window") or not hasattr(self.parent_window, "config_manager"): return
-        self._is_applying_geometry = True
-        try:
-            cfg = self.parent_window.config_manager.config
-            geo_map = cfg.get("music_wizard_custom_geo", {})
-            key = f"step_{step_idx}"
-            w_def, h_def = self._get_default_size(step_idx)
-            if step_idx == 1:
-                self.setFixedSize(1300, 580)
-            else:
-                self.setMinimumSize(w_def, h_def)
-                self.setMaximumSize(16777215, 16777215)
-            app = QApplication.instance()
-            target_screen = app.primaryScreen()
-            if hasattr(self, "parent_window") and self.parent_window:
-                try:
-                    target_screen = self.parent_window.screen() or target_screen
-                except: pass
-            if key in geo_map:
-                g = geo_map[key]
-                saved_screen_name = g.get('screen')
-                if saved_screen_name:
-                    for s in app.screens():
-                        if s.name() == saved_screen_name:
-                            target_screen = s
-                            break
-                screen_geo = target_screen.availableGeometry()
-                if screen_geo.intersects(QRect(g['x'], g['y'], g['w'], g['h'])):
-                    self.setGeometry(g['x'], g['y'], g['w'], g['h'])
-                    return
-            self.resize(w_def, h_def)
-            screen_geo = target_screen.availableGeometry()
-            final_w = min(w_def, screen_geo.width())
-            final_h = min(h_def, screen_geo.height() - 40)
-            x = screen_geo.x() + (screen_geo.width() - final_w) // 2
-            y = screen_geo.y() + (screen_geo.height() - final_h) // 2
-            self.resize(final_w, final_h)
-            self.move(x, y)
-        finally:
-            self._is_applying_geometry = False
+        
+        def _do_apply():
+            self._is_applying_geometry = True
+            try:
+                cfg = self.parent_window.config_manager.config
+                geo_map = cfg.get("music_wizard_custom_geo", {})
+                key = f"step_{step_idx}"
+                w_def, h_def = self._get_default_size(step_idx)
+                self.setMinimumSize(600, 400)
+                app = QApplication.instance()
+                screen = app.primaryScreen()
+                if self.parent_window:
+                    try: screen = self.parent_window.screen() or screen
+                    except: pass
+                screen_geo = screen.availableGeometry()
+                if key in geo_map:
+                    g = geo_map[key]
+                    target_x, target_y = g['x'], g['y']
+                    target_w, target_h = g['w'], g['h']
+                    if target_x < screen_geo.left() - target_w // 2 or \
+                       target_x > screen_geo.right() - 50 or \
+                       target_y < screen_geo.top() - 20 or \
+                       target_y > screen_geo.bottom() - 50:
+                        target_x = screen_geo.left() + (screen_geo.width() - target_w) // 2
+                        target_y = screen_geo.top() + (screen_geo.height() - target_h) // 2
+                    self.setGeometry(target_x, target_y, target_w, target_h)
+                else:
+                    self.resize(w_def, h_def)
+                    my_geo = self.frameGeometry()
+                    center = screen_geo.center()
+                    my_geo.moveCenter(center)
+                    self.move(my_geo.topLeft())
+            finally:
+                QTimer.singleShot(200, lambda: setattr(self, "_is_applying_geometry", False))
+        QTimer.singleShot(0, _do_apply)
 
     def _save_step_geometry(self):
         """Saves current geometry for the active step into config."""
         if not getattr(self, "_startup_complete", False): return
         if getattr(self, "_is_applying_geometry", False): return
         if not hasattr(self.parent_window, "config_manager"): return
-        step_idx = self.stack.currentIndex()
-        geom = self.geometry()
-        app = None
+        if hasattr(self, "_save_geo_timer") and self._save_geo_timer.isActive():
+            return
+        if not hasattr(self, "_save_geo_timer"):
+            self._save_geo_timer = QTimer(self)
+            self._save_geo_timer.setSingleShot(True)
+            self._save_geo_timer.setInterval(1000)
+            self._save_geo_timer.timeout.connect(self._do_save_step_geometry)
+        self._save_geo_timer.start()
+
+    def _do_save_step_geometry(self):
         try:
-            instance_getter = getattr(QApplication, "instance", None)
-            if callable(instance_getter):
-                app = instance_getter()
-        except:
-            app = None
-        screen_name = ""
-        if app:
-            center = None
-            try:
-                center_getter = getattr(geom, "center", None)
-                if callable(center_getter):
-                    center = center_getter()
-            except:
-                center = None
-            screen = None
-            try:
-                if center is not None and hasattr(app, "screenAt"):
-                    screen = app.screenAt(center)
-            except:
-                screen = None
-            if not screen:
-                try:
-                    if hasattr(app, "primaryScreen"):
-                        screen = app.primaryScreen()
-                except:
-                    screen = None
-            if screen:
-                try:
-                    if hasattr(screen, "name"):
-                        screen_name = screen.name() or ""
-                except:
-                    screen_name = ""
-        try:
+            step_idx = self.stack.currentIndex()
+            geom = self.geometry()
             cfg = dict(self.parent_window.config_manager.config)
             if "music_wizard_custom_geo" not in cfg:
                 cfg["music_wizard_custom_geo"] = {}
             cfg["music_wizard_custom_geo"][f"step_{step_idx}"] = {
-                'x': geom.x(), 'y': geom.y(), 'w': geom.width(), 'h': geom.height(),
-                'screen': screen_name
+                'x': geom.x(), 'y': geom.y(), 'w': geom.width(), 'h': geom.height()
             }
             self.parent_window.config_manager.save_config(cfg)
         except: pass
@@ -121,49 +110,55 @@ class MergerMusicWizardMiscMixin:
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._save_step_geometry()
+        if hasattr(self, "_save_step_geometry"):
+            self._save_step_geometry()
+        if hasattr(self, "stack") and self.stack.currentIndex() == 1:
+            if hasattr(self, "_refresh_wave_scaled"):
+                self._refresh_wave_scaled()
 
-    def _sync_caret(self):
+    def _sync_caret(self, override_ms=None, override_state=None):
         try:
+            if not hasattr(self, "_wave_caret") or self._wave_caret is None: return
+            if not hasattr(self, "_wave_time_badge") or self._wave_time_badge is None: return
             curr_idx = self.stack.currentIndex()
-            if curr_idx == 1:
+            if curr_idx in (1, 2):
                 show_st2 = getattr(self, "_show_caret_step2", False)
-                if not show_st2 or not self.wave_preview.isVisible(): 
+                if not show_st2 and hasattr(self, "offset_slider") and self.offset_slider.maximum() > 0:
+                    self._show_caret_step2 = True
+                    show_st2 = True
+                if curr_idx == 1:
+                    if not show_st2 or not self.wave_preview.isVisible(): 
+                        self._wave_caret.hide()
+                        self._wave_time_badge.hide()
+                        self._wave_time_badge_bottom.hide()
+                        return
+                    max_ms = self.offset_slider.maximum()
+                    if max_ms <= 0: return
+                    val_ms = override_ms if override_ms is not None else self.offset_slider.value()
+                    frac = val_ms / float(max_ms)
+                    label_pos = self.wave_preview.mapTo(self, QPoint(0, 0))
+                    draw_w = getattr(self, "_draw_w", 0)
+                    if draw_w <= 0:
+                        draw_w = self.wave_preview.width()
+                        draw_x0 = 0
+                    else:
+                        draw_x0 = getattr(self, "_draw_x0", 0)
+                    x = label_pos.x() + draw_x0 + int(frac * draw_w) - 1
+                    y = label_pos.y() + getattr(self, "_draw_y0", 0)
+                    total_h = getattr(self, "_draw_h", 0) or self.wave_preview.height() or 265
+                    self._wave_caret.setGeometry(x, y, 1, total_h)
+                    self._wave_caret.show()
+                    self._wave_caret.raise_()
+                    time_str = self._format_time_long(val_ms)
+                    self._wave_time_badge.setText(time_str); self._wave_time_badge.adjustSize()
+                    self._wave_time_badge_bottom.setText(time_str); self._wave_time_badge_bottom.adjustSize()
+                    bw = self._wave_time_badge.width()
+                    self._wave_time_badge.move(x - bw // 2, y - 25); self._wave_time_badge.show(); self._wave_time_badge.raise_()
+                    self._wave_time_badge_bottom.move(x - bw // 2, y + total_h + 5); self._wave_time_badge_bottom.show(); self._wave_time_badge_bottom.raise_()
+                else:
                     self._wave_caret.hide()
                     self._wave_time_badge.hide()
                     self._wave_time_badge_bottom.hide()
-                    return
-                max_ms = self.offset_slider.maximum()
-                if max_ms <= 0: return
-                val_ms = self.offset_slider.value()
-                frac = val_ms / float(max_ms)
-                label_pos = self.wave_preview.mapTo(self, QPoint(0, 0))
-                x = label_pos.x() + self._draw_x0 + int(frac * self._draw_w) - 1
-                y = label_pos.y() + self._draw_y0
-                total_h = 265
-                self._wave_caret.setGeometry(x, y, 2, total_h)
-                self._wave_caret.show()
-                self._wave_caret.raise_()
-                time_str = self._format_time_long(val_ms)
-                self._wave_time_badge.setText(time_str); self._wave_time_badge.adjustSize()
-                self._wave_time_badge_bottom.setText(time_str); self._wave_time_badge_bottom.adjustSize()
-                bw = self._wave_time_badge.width()
-                self._wave_time_badge.move(x - bw // 2, y - 25); self._wave_time_badge.show(); self._wave_time_badge.raise_()
-                self._wave_time_badge_bottom.move(x - bw // 2, y + total_h + 5); self._wave_time_badge_bottom.show(); self._wave_time_badge_bottom.raise_()
-            elif curr_idx == 2:
-                if not self.timeline.isVisible(): return
-                proj_time = self.timeline.current_time
-                frac = proj_time / self.total_video_sec
-                tl_pos = self.timeline.mapTo(self, QPoint(0, 0))
-                x = tl_pos.x() + int(frac * self.timeline.width()) - 1
-                y = tl_pos.y(); h = self.timeline.height()
-                self._wave_caret.setGeometry(x, y, 2, h); self._wave_caret.show(); self._wave_caret.raise_()
-                time_str = self._format_time_long(int(proj_time * 1000))
-                self._wave_time_badge.setText(time_str); self._wave_time_badge.adjustSize()
-                self._wave_time_badge_bottom.setText(time_str); self._wave_time_badge_bottom.adjustSize()
-                bw = self._wave_time_badge.width()
-                self._wave_time_badge.move(x - bw // 2, y - 25); self._wave_time_badge.show(); self._wave_time_badge.raise_()
-                self._wave_time_badge_bottom.move(x - bw // 2, y + h + 35); self._wave_time_badge_bottom.show(); self._wave_time_badge_bottom.raise_()
             else: 
                 self._wave_caret.hide(); self._wave_time_badge.hide(); self._wave_time_badge_bottom.hide()
         except: pass
@@ -174,7 +169,7 @@ class MergerMusicWizardMiscMixin:
             if hasattr(self.parent_window, "_vol_eff"):
                 master_ratio = self.parent_window._vol_eff() / 100.0
                 final_vol = int(max(0, min(100, mix_val * master_ratio)))
-                self.logger.info(f"DEBUG_SCALED_VOL: Merger Mix={mix_val}% Master={master_ratio*100:.1f}% -> Final={final_vol}%")
+                self.logger.info(f"DEBUG_SCALED_VOL: Mix={mix_val}% Master={master_ratio*100:.1f}% -> Final={final_vol}%")
                 return final_vol
         except: pass
         return int(max(0, min(100, mix_val)))
@@ -195,14 +190,6 @@ class MergerMusicWizardMiscMixin:
             return float(r.stdout.strip()) if r.returncode == 0 else 0.0
         except: return 0.0
 
-    def stop_previews(self):
-        if hasattr(self, '_stop_waveform_worker'):
-            try: self._stop_waveform_worker()
-            except: pass
-        if hasattr(self, '_player') and self._player: self._player.stop()
-        if hasattr(self, '_video_player') and self._video_player: self._video_player.stop()
-        if hasattr(self, '_play_timer'): self._play_timer.stop()
-
     def update_coverage_ui(self):
         covered = sum(t[2] for t in self.selected_tracks)
         pct = int((covered / self.total_video_sec) * 100) if self.total_video_sec > 0 else 0
@@ -220,7 +207,7 @@ class MergerMusicWizardMiscMixin:
     def _calculate_wall_clock_time_raw(self, video_ms, segments, base_speed):
         """Internal raw math without using cache. Returns SECONDS."""
         target = float(video_ms)
-        base_speed = base_speed or 1.0
+        base_speed = base_speed or 1.1
         if not segments: return target / (1000.0 * base_speed)
         if target < segments[0]['start']: return target / (1000.0 * base_speed)
         current_video_time = 0.0

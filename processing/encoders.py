@@ -21,22 +21,51 @@ class EncoderManager:
 
     def __init__(self, logger: Any, hardware_strategy: Optional[str] = None):
         self.logger = logger
+        self.available_encoders = self._detect_available_encoders()
         self.primary_encoder = os.environ.get('VIDEO_HW_ENCODER', 'h264_nvenc')
         self.forced_cpu = (os.environ.get('VIDEO_FORCE_CPU') == '1')
         if hardware_strategy:
-            if hardware_strategy == "NVIDIA":
+            if hardware_strategy == "NVIDIA" and "h264_nvenc" in self.available_encoders:
                 self.primary_encoder = "h264_nvenc"
                 self.forced_cpu = False
-            elif hardware_strategy == "AMD":
+            elif hardware_strategy == "AMD" and "h264_amf" in self.available_encoders:
                 self.primary_encoder = "h264_amf"
                 self.forced_cpu = False
-            elif hardware_strategy == "INTEL":
+            elif hardware_strategy == "INTEL" and "h264_qsv" in self.available_encoders:
                 self.primary_encoder = "h264_qsv"
                 self.forced_cpu = False
             elif hardware_strategy == "CPU":
                 self.primary_encoder = "libx264"
                 self.forced_cpu = True
+            else:
+                if hardware_strategy != "CPU":
+                    self.logger.warning(f"Hardware strategy '{hardware_strategy}' requested but encoder not found. Falling back to libx264.")
+                self.primary_encoder = "libx264"
+                self.forced_cpu = True
         self.attempted_encoders: set[str] = set()
+
+    def _detect_available_encoders(self) -> set[str]:
+        import subprocess
+        try:
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            res = subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], 
+                                capture_output=True, text=True, 
+                                startupinfo=startupinfo,
+                                creationflags=0x08000000 if os.name == 'nt' else 0,
+                                timeout=5)
+            found = set()
+            for line in res.stdout.splitlines():
+                if 'h264_nvenc' in line: found.add('h264_nvenc')
+                if 'h264_amf' in line: found.add('h264_amf')
+                if 'h264_qsv' in line: found.add('h264_qsv')
+            self.logger.info(f"Detected hardware encoders: {found}")
+            return found
+        except Exception as e:
+            self.logger.warning(f"Failed to detect encoders: {e}")
+            return set()
 
     def get_initial_encoder(self):
         if self.forced_cpu:
@@ -57,91 +86,100 @@ class EncoderManager:
         self.logger.info(f"Fallback initiated. Failed: '{failed_encoder}'. Attempted so far: {self.attempted_encoders}. Next options: {fallback_options}")
         return fallback_options
 
-    def get_codec_flags(self, encoder_name: str, video_bitrate_kbps: Optional[int], effective_duration_sec: float, fps_expr: str = "60000/1001") -> tuple[list[str], str]:
+    def get_codec_flags(self, encoder_name: str, video_bitrate_kbps: Optional[int], effective_duration_sec: float, fps_expr: str = "60000/1001", quality_level: int = 2) -> tuple[list[str], str]:
         fps_value = self._fps_to_float(fps_expr, default=60.0)
         if self.forced_cpu:
-            self.logger.info("Encoder: CPU Force Enabled for this job.")
-            return ['-c:v', 'libx264', '-preset', 'medium', '-crf', '17', '-pix_fmt', 'yuv420p'], "CPU (Forced HQ)"
+            cpu_preset = 'fast' if quality_level <= 1 else 'medium'
+            crf = '20' if quality_level <= 1 else '17'
+            self.logger.info(f"Encoder: CPU Force Enabled. Preset={cpu_preset} CRF={crf}")
+            return ['-c:v', 'libx264', '-preset', cpu_preset, '-crf', crf, '-pix_fmt', 'yuv420p'], f"CPU ({cpu_preset}/{crf})"
         vcodec = ['-c:v', encoder_name]
         rc_label = "Unknown"
-        if video_bitrate_kbps is not None:
-            kbps = int(video_bitrate_kbps)
-            bitrate_arg = f'{kbps}k'
-            maxrate_arg = f'{kbps}k' 
-            bufsize_arg = f'{int(kbps * 2.0)}k'
-            vcodec.extend(['-b:v', bitrate_arg, '-maxrate', maxrate_arg, '-bufsize', bufsize_arg])
-        gop = '60'
-        try:
-            if fps_expr and '/' in str(fps_expr):
-                num, den = str(fps_expr).split('/', 1)
-                gop = str(max(1, int(round(float(num) / float(den)) * 1.0)))
-            elif fps_expr:
-                gop = str(max(1, int(round(float(fps_expr)) * 1.0)))
-        except Exception:
-            gop = '60'
-        vcodec.extend(['-g', gop, '-keyint_min', gop])
+        gop = str(int(round(fps_value * 2.0)))
+        vcodec.extend(['-g', gop, '-keyint_min', str(int(round(fps_value)))])
         if encoder_name == 'h264_nvenc':
-            h264_level = '5.1' if (fps_value >= 59.0) else '4.2'
+            if quality_level <= 0: nv_preset, multipass, lookahead = 'p2', 'disabled', '20'
+            else: nv_preset, multipass, lookahead = 'p6', 'fullres', '60'
+            h264_level = '4.2'
             vcodec.extend([
-                '-pix_fmt', 'nv12',
-                '-preset', 'p7',
+                '-pix_fmt', 'yuv420p',
+                '-preset', nv_preset,
                 '-tune', 'hq',
                 '-rc', 'vbr',
-                '-multipass', 'fullres',
+                '-multipass', multipass,
                 '-spatial-aq', '1',
                 '-temporal-aq', '1',
-                '-aq-strength', '12',
-                '-bf', '3',
-                '-b_ref_mode', 'each',
-                '-rc-lookahead', '60',
+                '-aq-strength', '15',
+                '-bf', '4',
+                '-b_ref_mode', 'middle',
+                '-rc-lookahead', lookahead,
                 '-nonref_p', '1',
                 '-profile:v', 'high',
                 '-level:v', h264_level
             ])
-            rc_label = "Titan-Locked CVBR NVENC (High Motion)"
+            if video_bitrate_kbps:
+                kbps = int(video_bitrate_kbps)
+                vcodec.extend([
+                    '-b:v', f'{kbps}k',
+                    '-maxrate', f'{int(kbps * 1.5)}k',
+                    '-bufsize', f'{int(kbps * 3.0)}k'
+                ])
+                rc_label = f"NVENC {nv_preset}/{multipass} (VBR)"
+            else:
+                cq_val = '22' if quality_level <= 1 else '19'
+                vcodec.extend(['-cq', cq_val])
+                rc_label = f"NVENC {nv_preset}/{multipass} (CQ {cq_val})"
         elif encoder_name == 'h264_amf':
+            amf_quality = 'balanced' if quality_level <= 1 else 'quality'
             vcodec.extend([
-                '-pix_fmt', 'nv12',
+                '-pix_fmt', 'yuv420p',
                 '-usage', 'transcoding',
-                '-quality', 'quality',
+                '-quality', amf_quality,
                 '-rc', 'vbr_peak',
                 '-enforce_hrd', '1',
                 '-vbaq', '1',           
                 '-bf', '3',             
                 '-profile:v', 'high',
-                '-level', '5.1',
-                '-header_insertion_mode', 'idr',
-                '-filler_data', '0'
+                '-level', '4.2'
             ])
-            rc_label = "AMD AMF (Motion-Adaptive VBR)"
+            if video_bitrate_kbps:
+                kbps = int(video_bitrate_kbps)
+                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k'])
+            rc_label = f"AMD AMF {amf_quality}"
         elif encoder_name == 'h264_qsv':
+            qsv_preset = 'balanced' if quality_level <= 1 else 'slow'
             vcodec.extend([
-                '-pix_fmt', 'nv12',
-                '-preset', 'slow', 
+                '-pix_fmt', 'yuv420p',
+                '-preset', qsv_preset, 
                 '-bf', '3', 
                 '-look_ahead', '1', 
-                '-look_ahead_depth', '60',
+                '-look_ahead_depth', '40' if quality_level <= 1 else '60',
                 '-profile:v', 'high',
-                '-extbrc', '1',
-                '-adaptive_i', '1',
-                '-adaptive_b', '1'
+                '-level', '4.2'
             ])
-            rc_label = "Intel QSV (Motion-Adaptive VBR)"
+            if video_bitrate_kbps:
+                kbps = int(video_bitrate_kbps)
+                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k'])
+            rc_label = f"Intel QSV {qsv_preset}"
         elif encoder_name == 'libx264':
+            cpu_preset = 'veryfast' if quality_level <= 0 else ('fast' if quality_level <= 1 else 'medium')
             vcodec.append('-pix_fmt')
             vcodec.append('yuv420p')
             if video_bitrate_kbps is None:
-                vcodec.extend(['-preset', 'veryslow', '-crf', '16', '-bf', '3', '-x264-params', 'aq-mode=2:me=umh:subme=10:rc-lookahead=60'])
-                return vcodec, "CPU libx264 (Titan-CRF Ultra)"
+                crf = '23' if quality_level <= 0 else ('20' if quality_level <= 1 else '17')
+                vcodec.extend(['-preset', cpu_preset, '-crf', crf, '-bf', '3'])
+                return vcodec, f"CPU libx264 ({cpu_preset}/CRF{crf})"
             else:
+                kbps = int(video_bitrate_kbps)
                 vcodec.extend([
-                    '-preset', 'veryslow', 
+                    '-preset', cpu_preset, 
                     '-bf', '3',
-                    '-profile:v', 'high',
-                    '-level:v', ('5.1' if fps_value >= 100.0 else '4.2'),
-                    '-x264-params', 'me=umh:subme=10:rc-lookahead=60:ref=4:aq-mode=2:mbtree=1:direct=auto:partitions=all:trellis=2'
+                    '-b:v', f'{kbps}k',
+                    '-maxrate', f'{int(kbps * 1.5)}k',
+                    '-bufsize', f'{int(kbps * 3.0)}k',
+                    '-profile:v', 'high'
                 ])
-                return vcodec, "CPU libx264 (Motion-Optimized VBR)"
+                return vcodec, f"CPU libx264 ({cpu_preset})"
         else:
             vcodec.extend(['-pix_fmt', 'nv12'])
             rc_label = f"{encoder_name} (Generic)"

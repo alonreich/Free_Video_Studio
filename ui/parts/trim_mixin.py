@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QStyle
+﻿from PyQt5.QtWidgets import QStyle
 
 class TrimMixin:
     MIN_TRIM_GAP = 1000
@@ -25,7 +25,10 @@ class TrimMixin:
         self.end_ms_input.setValue(max_ms)
         self.trim_start_ms = 0
         self.trim_end_ms = total_ms
-        self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
+        if hasattr(self, "_on_slider_trim_changed"):
+            self._on_slider_trim_changed(self.trim_start_ms, self.trim_end_ms)
+        else:
+            self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
     
     def set_start_time(self):
         pos_ms = int(self.positionSlider.value())
@@ -37,14 +40,13 @@ class TrimMixin:
         self.trim_start_ms = max(0, pos_ms)
         if hasattr(self, "logger"):
             self.logger.info("TRIM: start set at %d ms from slider", self.trim_start_ms)
-        
-        # [FIX] Notify main window about trim change to trigger music sync
         if hasattr(self, "_on_slider_trim_changed"):
             self._on_slider_trim_changed(self.trim_start_ms, self.trim_end_ms)
+            self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
         else:
             self._update_trim_widgets_from_trim_times()
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-    
+
     def set_end_time(self):
         pos_ms = int(self.positionSlider.value())
         if pos_ms < self.trim_start_ms + self.MIN_TRIM_GAP:
@@ -56,14 +58,12 @@ class TrimMixin:
         self.trim_end_ms = pos_ms
         if hasattr(self, "logger"):
             self.logger.info("TRIM: end set at %d ms from slider", self.trim_end_ms)
-            
-        # [FIX] Notify main window about trim change to trigger music sync
         if hasattr(self, "_on_slider_trim_changed"):
             self._on_slider_trim_changed(self.trim_start_ms, self.trim_end_ms)
+            self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
         else:
             self._update_trim_widgets_from_trim_times()
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-            
         is_playing = self.player and not getattr(self.player, "pause", True)
         if is_playing:
             self.player.pause = True
@@ -73,10 +73,8 @@ class TrimMixin:
     
     def _update_trim_widgets_from_trim_times(self):
         """Updates the time spinboxes from the internal millisecond state."""
-        # Check if attributes exist before proceeding
         if not hasattr(self, "start_minute_input") or self.start_minute_input is None:
             return
-            
         for spinbox in (self.start_minute_input, self.start_second_input, self.start_ms_input, 
                         self.end_minute_input, self.end_second_input, self.end_ms_input):
             spinbox.blockSignals(True)
@@ -104,7 +102,6 @@ class TrimMixin:
         """Recalculates the internal millisecond state from all time spinboxes."""
         if not hasattr(self, "start_minute_input") or self.start_minute_input is None:
             return
-            
         start_ms = (self.start_minute_input.value() * 60 * 1000) + \
                    (self.start_second_input.value() * 1000) + \
                    self.start_ms_input.value()
@@ -120,8 +117,6 @@ class TrimMixin:
                     start_ms = max(0, end_ms - self.MIN_TRIM_GAP)
         self.trim_start_ms = int(start_ms)
         self.trim_end_ms = int(end_ms)
-        
-        # [FIX] Notify main window about trim change to trigger music sync
         if hasattr(self, "_on_slider_trim_changed"):
             self._on_slider_trim_changed(self.trim_start_ms, self.trim_end_ms)
         else:

@@ -38,31 +38,36 @@ class MainWindowCoreCMixin:
         from system.utils import ProcessManager
         ProcessManager.cleanup_temp_files()
         self._save_app_state_and_config()
+        try:
+            from ui.main_window import _QtLiveLogHandler
+            if hasattr(self, "logger"):
+                self.logger.handlers = [h for h in self.logger.handlers if not isinstance(h, _QtLiveLogHandler)]
+        except Exception:
+            pass
         QCoreApplication.instance().quit()
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
         """[FIX #1] Ensure music handles follow video trim handles immediately."""
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
-        
-        # [FIX] Force music handles to jump to video handles if they exist
-        has_music = (hasattr(self, "_wizard_tracks") and self._wizard_tracks) or hasattr(self, "music_timeline_start_ms")
-        
+        has_music = (hasattr(self, "_wizard_tracks") and self._wizard_tracks)
         if has_music:
             self.music_timeline_start_ms = start_ms
             self.music_timeline_end_ms = end_ms
             if hasattr(self, "positionSlider"):
-                # Visually update the pink handles
                 self.positionSlider.set_music_times(start_ms, end_ms)
-            
-            # If we have exactly one track, update its duration to match the new handles
             if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
                 path, offset, _old_dur = self._wizard_tracks[0]
                 new_dur = (end_ms - start_ms) / 1000.0
                 self._wizard_tracks[0] = (path, offset, new_dur)
-                
+        else:
+            self.music_timeline_start_ms = 0
+            self.music_timeline_end_ms = 0
+            if hasattr(self, "positionSlider"):
+                self.positionSlider.reset_music_times()
         self._update_trim_widgets_from_trim_times()
-
+        if hasattr(self, "_update_quality_label"):
+            self._update_quality_label()
 
 
 

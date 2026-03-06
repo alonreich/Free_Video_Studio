@@ -125,11 +125,9 @@ class UnifiedMusicWidget(QWidget):
     def apply_state(self, state: dict):
         if not isinstance(state, dict): return
         try:
-            tracks = state.get("tracks", [])
-            if isinstance(tracks, list):
-                m_vol = state.get("music_volume", 80)
-                v_vol = state.get("video_volume", 100)
-                self.set_wizard_tracks([tuple(t) for t in tracks], music_vol=m_vol, video_vol=v_vol)
+            m_vol = state.get("music_volume", 80)
+            v_vol = state.get("video_volume", 100)
+            self.set_wizard_tracks([], music_vol=m_vol, video_vol=v_vol)
             self._video_total_sec = float(state.get("video_total_sec", 0.0))
         except Exception:
             pass

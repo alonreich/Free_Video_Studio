@@ -26,6 +26,15 @@ class DummySpinBox:
 
     def value(self) -> float:
         return self._value
+        
+    def blockSignals(self, b: bool) -> None:
+        pass
+        
+    def hide(self) -> None:
+        pass
+        
+    def show(self) -> None:
+        pass
 
 class DummyCheckBox:
     def __init__(self, checked: bool):
@@ -257,7 +266,10 @@ def install_qt_mpv_stubs() -> None:
         NoModifier = 0
         LeftButton = 1
         Horizontal = 1
+        Vertical = 2
         PointingHandCursor = 13
+        OpenHandCursor = 17
+        ClosedHandCursor = 18
         ArrowCursor = 0
         AlignLeft = 1
         AlignRight = 2
@@ -268,9 +280,16 @@ def install_qt_mpv_stubs() -> None:
         AlignVCenter = 64
         WA_NativeWindow = 0
         WA_TransparentForMouseEvents = 0
+        WA_TranslucentBackground = 0
+        WA_DontCreateNativeAncestors = 0
+        WA_ShowWithoutActivating = 0
         ActiveWindowFocusReason = 0
+        Tool = 0
+        FramelessWindowHint = 0
         NoFocus = 0
         Key_Backspace = 16777219
+        KeyboardModifiers = int
+        SortOrder = int
         @staticmethod
         def Alignment() -> int:
             return 0
@@ -385,12 +404,20 @@ def install_qt_mpv_stubs() -> None:
         def setMouseTracking(self, v: bool) -> None: return None
 
         def setAttribute(self, *args: Any) -> None: return None
+        
+        def setObjectName(self, name: str) -> None: return None
+        
+        def objectName(self) -> str: return ""
+        
+        def setContentsMargins(self, *args: Any) -> None: return None
 
         def setCursor(self, *args: Any) -> None: return None
 
         def hide(self) -> None: return None
 
         def show(self) -> None: return None
+
+        def setHidden(self, *args: Any) -> None: return None
 
         def setVisible(self, v: bool) -> None: return None
 
@@ -419,6 +446,8 @@ def install_qt_mpv_stubs() -> None:
         def setLayout(self, l: Any) -> None: return None
 
         def setGraphicsEffect(self, e: Any) -> None: return None
+
+        def setWindowFlags(self, *args: Any) -> None: return None
 
         def installEventFilter(self, f: Any) -> None: return None
 
@@ -458,7 +487,16 @@ def install_qt_mpv_stubs() -> None:
         def setSpacing(self, *_args: Any) -> None:
             return None
 
-        def addWidget(self, *_args: Any) -> None:
+        def addWidget(self, *args: Any, **kwargs: Any) -> None:
+            return None
+            
+        def addLayout(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+        def addSpacing(self, *args: Any) -> None:
+            return None
+
+        def addStretch(self, *args: Any) -> None:
             return None
 
     class QLabel:
@@ -482,6 +520,8 @@ def install_qt_mpv_stubs() -> None:
 
         def show(self) -> None: return None
 
+        def setHidden(self, *args: Any) -> None: return None
+
         def setVisible(self, v: bool) -> None: return None
 
         def adjustSize(self) -> None: return None
@@ -495,6 +535,8 @@ def install_qt_mpv_stubs() -> None:
         def setFixedWidth(self, w: int) -> None: return None
 
         def setAttribute(self, a: Any, v: bool = True) -> None: return None
+
+        def setObjectName(self, name: str) -> None: return None
 
         def setGeometry(self, *args: Any) -> None: return None
 
@@ -512,7 +554,10 @@ def install_qt_mpv_stubs() -> None:
     qtcore.QSize = object
     qtcore.QEvent = object
     qtcore.QCoreApplication = type("QCoreApplication", (), {"instance": staticmethod(lambda: None)})
-    qtcore.QPropertyAnimation = type("QPropertyAnimation", (), {})
+    qtcore.QByteArray = object
+    qtcore.QUrl = object
+    qtcore.QMimeData = object
+    qtcore.QPropertyAnimation = type("QPropertyAnimation", (), {"__init__": _generic_init, "setDuration": _generic_void, "setEasingCurve": _generic_void, "start": _generic_void, "stop": _generic_void, "setStartValue": _generic_void, "setEndValue": _generic_void})
     qtcore.QAbstractAnimation = type("QAbstractAnimation", (), {})
     qtcore.QRect = type("QRect", (), {
         "__init__": _generic_init,
@@ -527,6 +572,9 @@ def install_qt_mpv_stubs() -> None:
         "height": lambda self: 100,
         "y": lambda self: 0,
     })
+    qtcore.QRectF = qtcore.QRect
+    qtcore.QEasingCurve = type("QEasingCurve", (), {"InOutQuad": 1, "OutCubic": 2})
+    qtcore.pyqtProperty = lambda *args, **kwargs: lambda f: property(f)
     qtcore.QPoint = type("QPoint", (), {"__init__": _generic_init, "x": lambda self: 0, "y": lambda self: 0})
     qtcore.pyqtSignal = lambda *_a, **_k: DummySignal()
     qtwidgets.QStyle = QStyle
@@ -547,6 +595,25 @@ def install_qt_mpv_stubs() -> None:
 
         def exec_(self): return 0
     qtwidgets.QApplication = QApplication
+
+    class QMessageBox:
+        @staticmethod
+        def warning(*args, **kwargs): pass
+        @staticmethod
+        def critical(*args, **kwargs): pass
+        @staticmethod
+        def information(*args, **kwargs): pass
+        @staticmethod
+        def question(*args, **kwargs): return 1
+    qtwidgets.QMessageBox = QMessageBox
+
+    class QSizePolicy:
+        Expanding = 1
+        Fixed = 2
+        Minimum = 3
+        Maximum = 4
+        MinimumExpanding = 5
+    qtwidgets.QSizePolicy = QSizePolicy
     for n in [
         "QGridLayout",
         "QStyleOptionSlider",
@@ -561,24 +628,90 @@ def install_qt_mpv_stubs() -> None:
         "QCheckBox",
         "QProgressBar",
         "QComboBox",
-        "QSizePolicy",
-        "QMessageBox",
         "QToolTip",
         "QFileDialog",
+        "QLineEdit",
+        "QDesktopWidget",
+        "QHeaderView",
+        "QTreeView",
+        "QListView",
+        "QRubberBand",
+        "QAbstractItemView",
+        "QMenu",
+        "QProxyStyle",
+        "QInputDialog",
+        "QStyledItemDelegate",
+        "QProgressBar",
+        "QMainWindow",
+        "QScrollArea",
+        "QAction",
+        "QPlainTextEdit",
+        "QTextEdit",
+        "QAbstractSpinBox",
+        "QGraphicsOpacityEffect",
+        "QStatusBar",
     ]:
         cls = type(n, (), {
+            "StackAll": 1,
+            "TicksBothSides": 3,
             "__init__": _generic_init,
             "setMouseTracking": _generic_void,
             "setAttribute": _generic_void,
             "setStyleSheet": _generic_void,
             "setFixedSize": _generic_void,
             "setMinimumHeight": _generic_void,
+            "setMinimumWidth": _generic_void,
+            "setMaximumWidth": _generic_void,
+            "setSizePolicy": _generic_void,
+            "setFixedWidth": _generic_void,
+            "setFixedHeight": _generic_void,
             "update": _generic_void,
             "setRange": _generic_void,
+            "setValue": _generic_void,
+            "setChecked": _generic_void,
+            "setVisible": _generic_void,
+            "setEnabled": _generic_void,
+            "setCursor": _generic_void,
+            "setObjectName": _generic_void,
+            "setAlignment": _generic_void,
+            "setText": _generic_void,
+            "clear": _generic_void,
+            "setIcon": _generic_void,
+            "objectName": lambda self: "",
+            "setContentsMargins": _generic_void,
+            "addLayout": _generic_void,
+            "addWidget": _generic_void,
+            "addStretch": _generic_void,
+            "setStretch": _generic_void,
+            "setSpacing": _generic_void,
+            "setAlignment": _generic_void,
+            "setSingleStep": _generic_void,
+            "setPageStep": _generic_void,
+            "setTickInterval": _generic_void,
+            "setTickPosition": _generic_void,
+            "setTracking": _generic_void,
+            "setFocusPolicy": _generic_void,
+            "setStackingMode": _generic_void,
+            "installEventFilter": _generic_void,
+            "blockSignals": _generic_void,
+            "hide": _generic_void,
+            "value": lambda self: 0,
+            "isChecked": lambda self: False,
+            "text": lambda self: "",
             "window": lambda self: QWidget(),
+            "style": lambda self: types.SimpleNamespace(standardIcon=lambda *_: None),
+            "setCentralWidget": _generic_void,
+            "_safe_mpv_get": lambda self, p, d=None: d,
+            "_safe_mpv_set": lambda self, p, v: True,
+            "setStatusBar": _generic_void,
             "sliderPressed": DummySignal(),
             "sliderReleased": DummySignal(),
             "sliderMoved": DummySignal(),
+            "rangeChanged": DummySignal(),
+            "trim_times_changed": DummySignal(),
+            "valueChanged": DummySignal(),
+            "toggled": DummySignal(),
+            "clicked": DummySignal(),
         })
         setattr(qtwidgets, n, cls)
     for n in [
@@ -592,7 +725,11 @@ def install_qt_mpv_stubs() -> None:
         "QCursor",
         "QPainterPath",
         "QLinearGradient",
+        "QRadialGradient",
         "QBrush",
+        "QPalette",
+        "QRegion",
+        "QDesktopServices",
     ]:
         setattr(qtgui, n, type(n, (), {}))
     sys.modules["PyQt5"] = pyqt5

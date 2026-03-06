@@ -10,14 +10,13 @@ class VideoConfig:
         self.mobile_main_width = 1080
         self.mobile_main_height = 1920
         self.fade_duration = 1.0
-        self.epsilon = 0.01
         self.wrap_at_px = 1040
         self.safe_max_px = 1000
         self.base_font_size = 80
         self.min_font_size = 36
         self.line_spacing = -45
-        self.shadow_pad_px = 14
         self.measure_fudge = 1.12
+        self.shadow_pad_px = 5
 
     def get_mobile_coordinates(self, logger=None):
         conf_dir = os.path.join(self.base_dir, 'processing')

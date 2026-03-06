@@ -493,13 +493,11 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
 
     def _get_next_output_path(self):
         r"""
-        Get the output path with forced naming convention (Fix #12).
-        Folder: ..\!!!_Output_Video_Files_!!!\ (Relative to utilities, so Project Root)
+        Get the output path in the user's Downloads folder.
         Name: Merged-Videos-X.mp4
         """
         try:
-            base_path = Path(self.base_dir).resolve() if self.base_dir else Path.cwd().parent
-            output_dir = base_path / "!!!_Output_Video_Files_!!!"
+            output_dir = Path(os.path.expanduser("~")) / "Downloads"
             output_dir.mkdir(parents=True, exist_ok=True)
             i = 1
             while True:
@@ -572,7 +570,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                     "Music Coverage Warning",
                     f"Your selected music ({self._human_time(music_unique_total)}) is shorter than all videos ({self._human_time(total_video)}).\n\n"
                     f"You need about {missing} more music for full coverage.\n\n"
-                    "If you continue, the music will repeat automatically.\n"
+                    "If you continue, the rest of the video will be quiet.\n"
                     "Do you want to proceed?",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No,
@@ -737,14 +735,14 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             wizard_tracks = self.unified_music_widget.get_wizard_tracks()
         music_vol = self.unified_music_widget.get_volume()
         video_vol = self.unified_music_widget.get_video_volume()
-        cmd = [self.ffmpeg, "-y"]
+        cmd = ["-y"]
         filters = []
         if normalize_video:
             tw, th = int(target_resolution[0]), int(target_resolution[1])
             for i, path in enumerate(video_files):
                 cmd.extend(["-i", path])
                 filters.append(
-                    f"[{i}:v]scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+                    f"[{i}:v]scale={tw}:{th}:force_original_aspect_ratio=decrease:flags=lanczos,"
                     f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}]"
                 )
             v_inputs = "".join(f"[v{i}]" for i in range(len(video_files)))
@@ -792,13 +790,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 expanded_tracks.append((path, offset, dur))
                 if len(expanded_tracks) == 1: covered += dur
                 else: covered += max(0.0, dur - crossfade_sec)
-            cycle_guard = 0
-            while covered < max(0.1, float(total_duration)) and cycle_guard < 32 and len(expanded_tracks) < 96:
-                path, _, _ = wizard_tracks[-1]
-                dur = self._probe_media_duration(path)
-                expanded_tracks.append((path, 0.0, dur))
-                covered += max(0.0, dur - crossfade_sec)
-                cycle_guard += 1
             for t, _, _ in expanded_tracks:
                 cmd.extend(["-i", t])
             music_inputs = []

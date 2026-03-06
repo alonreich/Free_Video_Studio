@@ -123,6 +123,7 @@ TRANSLATIONS = {
         "ffmpeg_path_message": "Using FFmpeg: {ffmpeg}",
         "diagnostics_title": "Diagnostics",
         "copy_to_clipboard": "Copy to Clipboard",
+        "report_to_alon": "Report To Alon Reich",
     },
     "he": {
         "app_name": "תוכנת וידאו פורטנייט",
@@ -144,6 +145,7 @@ TRANSLATIONS = {
         "ffmpeg_path_message": "משתמש ב-FFmpeg: {ffmpeg}",
         "diagnostics_title": "אבחון",
         "copy_to_clipboard": "העתק ללוח",
+        "report_to_alon": "דווח לאלון רייך",
     }
 }
 
@@ -387,36 +389,6 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
             HARDWARE_SCAN_DETAILS["errors"][encoder_name] = str(e)
         debug_log(f"DEBUG: Exception testing '{encoder_name}': {e}")
         return False
-
-def determine_hardware_strategy(ffmpeg_path):
-    """
-    Failover logic: NVIDIA -> AMD -> Intel -> Force CPU.
-    """
-    os.environ.pop("VIDEO_HW_ENCODER", None)
-    os.environ.pop("VIDEO_FORCE_CPU", None)
-    
-    if FORCE_GPU == "NVIDIA":
-        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-        return "NVIDIA"
-
-    if check_encoder_capability(ffmpeg_path, "h264_nvenc"):
-        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-        return "NVIDIA"
-    if _has_ffmpeg_encoder(ffmpeg_path, "h264_nvenc") and _has_nvidia_adapter():
-        os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
-        HARDWARE_SCAN_DETAILS["errors"]["h264_nvenc"] = (
-            "Strict NVENC probe failed, but NVIDIA adapter + FFmpeg NVENC encoder were detected. "
-            "Using NVIDIA mode via fallback."
-        )
-        return "NVIDIA"
-    if check_encoder_capability(ffmpeg_path, "h264_amf"):
-        os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
-        return "AMD"
-    if check_encoder_capability(ffmpeg_path, "h264_qsv"):
-        os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
-        return "INTEL"
-    os.environ["VIDEO_FORCE_CPU"] = "1"
-    return "CPU"
 
 def build_diagnostics(ffmpeg_path: str, ffprobe_path: str, error_text: str) -> str:
     return tr("dependency_error_details").format(

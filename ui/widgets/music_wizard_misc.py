@@ -118,6 +118,8 @@ class MergerMusicWizardMiscMixin:
 
     def _sync_caret(self, override_ms=None, override_state=None):
         try:
+            if not hasattr(self, "_wave_caret") or self._wave_caret is None: return
+            if not hasattr(self, "_wave_time_badge") or self._wave_time_badge is None: return
             curr_idx = self.stack.currentIndex()
             if curr_idx in (1, 2):
                 show_st2 = getattr(self, "_show_caret_step2", False)

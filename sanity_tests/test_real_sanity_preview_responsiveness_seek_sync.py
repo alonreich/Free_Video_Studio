@@ -40,6 +40,10 @@ class _SeekOnlyPlayer:
         self.set_time_calls: list[int] = []
         self._time = 0
 
+    def command(self, cmd: str, *args) -> None:
+        if cmd == "seek":
+            self.set_time(int(float(args[0]) * 1000))
+
     def seek(self, seconds: float, reference='absolute', precision='exact') -> None:
         self.set_time(int(seconds * 1000))
         
@@ -60,6 +64,8 @@ class _SeekHost:
         self.music_timeline_start_ms = 0
         self.music_timeline_end_ms = 0
         self._mpv_lock = __import__("threading").Lock()
+        self._scrub_lock = __import__("threading").RLock()
+        self._pending_seek_ms = None
 
     def _safe_mpv_get(self, prop, default=None):
         return default
@@ -70,6 +76,9 @@ class _SeekHost:
             setattr(p, prop, value)
         except Exception:
             return None
+
+    def _execute_throttled_seek(self):
+        PlayerMixin._execute_throttled_seek(self)
 
 def test_main_preview_slider_guard_and_seek_throttle_reduce_stutter(monkeypatch) -> None:
     """
@@ -93,6 +102,8 @@ def test_main_preview_slider_guard_and_seek_throttle_reduce_stutter(monkeypatch)
     monkeypatch.setattr("time.time", lambda: t["v"])
     seek_host = _SeekHost(_SeekOnlyPlayer())
     PlayerMixin.set_player_position(seek_host, 1000, sync_only=False)
+    if hasattr(seek_host, "_seek_timer"):
+        seek_host._execute_throttled_seek()
     t["v"] = 100.01
     PlayerMixin.set_player_position(seek_host, 1200, sync_only=False)
     assert len(seek_host.player.set_time_calls) == 1, (
@@ -240,8 +251,12 @@ def test_merger_wizard_step2_click_to_seek_keeps_player_and_caret_in_sync() -> N
         offset_slider=_OffsetSlider(10_000),
         player=_AudioPlayer(),
         _last_good_mpv_ms=0,
-        _sync_caret=lambda: caret.__setitem__("count", caret["count"] + 1),
+        _sync_caret=lambda override_ms=None: caret.__setitem__("count", caret["count"] + 1),
+        logger=_logger(),
+        _wave_dragging=False,
     )
+    host._request_step2_seek = types.MethodType(MergerWaveformMixin._request_step2_seek, host)
+    host._flush_step2_seek = types.MethodType(MergerWaveformMixin._flush_step2_seek, host)
     MergerWaveformMixin._set_time_from_wave_x(host, 100)
     assert host.offset_slider.value == 2000, (
         f"Expected click-to-seek at x=100/500 to map to 2000ms, got {host.offset_slider.value}ms."
@@ -373,8 +388,16 @@ def test_merger_wizard_step3_timeline_seek_syncs_video_and_caret_without_lag() -
         _project_time_to_source_ms=lambda sec: int(sec * 1000),
         _sync_caret=lambda: caret.__setitem__("count", caret["count"] + 1),
         logger=_logger(),
+        _is_scrubbing_timeline=False,
     )
     host._sync_all_players_to_time = types.MethodType(MergerTimelineMixin._sync_all_players_to_time, host)
+    host._ensure_step3_seek_timer = types.MethodType(MergerTimelineMixin._ensure_step3_seek_timer, host)
+    host._flush_pending_step3_seek = types.MethodType(MergerTimelineMixin._flush_pending_step3_seek, host)
+    host._apply_step3_seek_target = types.MethodType(MergerTimelineMixin._apply_step3_seek_target, host)
+    host._safe_mpv_get = lambda p, prop, default=None: getattr(p, prop, default)
+    host._safe_mpv_set = lambda p, prop, val: setattr(p, prop, val)
+    host._safe_mpv_loadfile = lambda *a, **k: True
+    host._safe_mpv_seek = lambda p, s, **k: p.seek(s)
     MergerTimelineMixin._on_timeline_seek(host, 0.25)
     assert host.timeline.values and abs(host.timeline.values[-1] - 5.0) < 1e-6, (
         f"Expected merger timeline seek target 5.0s, got {host.timeline.values[-1] if host.timeline.values else 'none'}."

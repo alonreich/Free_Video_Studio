@@ -49,21 +49,28 @@ class MergerMusicWizardTimelineMixin:
     def _safe_mpv_loadfile(self, player, path, start_sec=None):
         if not player or not path:
             return False
+
+        import mpv
         if not hasattr(self, "_mpv_lock"):
             try:
+                if getattr(player, '_core_shutdown', False): return False
                 if start_sec is None: player.command("loadfile", path, "replace")
                 else: player.command("loadfile", path, "replace", f"start={float(start_sec or 0.0):.3f}")
                 return True
-            except: return False
+            except (AttributeError, mpv.ShutdownError): return False
+            except Exception: return False
         if not self._mpv_lock.acquire(timeout=0.05):
             return False
         try:
+            if getattr(player, '_core_shutdown', False): return False
             if start_sec is None:
                 player.command("loadfile", path, "replace")
             else:
                 safe_start = max(0.0, float(start_sec or 0.0))
                 player.command("loadfile", path, "replace", f"start={safe_start:.3f}")
             return True
+        except (AttributeError, mpv.ShutdownError):
+            return False
         except Exception as ex:
             self.logger.debug(f"WIZARD_TIMELINE: loadfile failed for {path}: {ex}")
             return False
@@ -73,24 +80,32 @@ class MergerMusicWizardTimelineMixin:
     def _safe_mpv_seek(self, player, target_sec, *, exact_first=True, label="player"):
         if not player:
             return False
+
+        import mpv
         if not hasattr(self, "_mpv_lock"):
             try:
+                if getattr(player, '_core_shutdown', False): return False
                 player.seek(float(target_sec or 0.0), reference='absolute', precision='exact' if exact_first else None)
                 return True
-            except: return False
+            except (AttributeError, mpv.ShutdownError): return False
+            except Exception: return False
         if not self._mpv_lock.acquire(timeout=0.05):
             return False
         try:
+            if getattr(player, '_core_shutdown', False): return False
             safe_target = max(0.0, float(target_sec or 0.0))
             attempts = [True, False] if exact_first else [False, True]
             last_err = None
             for use_exact in attempts:
                 try:
+                    if getattr(player, '_core_shutdown', False): return False
                     if use_exact:
                         player.seek(safe_target, reference='absolute', precision='exact')
                     else:
                         player.seek(safe_target, reference='absolute')
                     return True
+                except (AttributeError, mpv.ShutdownError):
+                    return False
                 except Exception as ex:
                     last_err = ex
             self.logger.debug(f"WIZARD_TIMELINE: seek failed ({label} @ {safe_target:.3f}s): {last_err}")
@@ -362,22 +377,11 @@ class MergerMusicWizardTimelineMixin:
         self.video_segments = videos
         music = []; music_segments_info = []
         if self.selected_tracks:
-            covered = 0.0
             for p, offset, dur in self.selected_tracks:
                 music.append({"path": p, "duration": dur, "offset": offset, "wave": QPixmap()})
                 music_segments_info.append((p, offset, dur))
-                covered += dur
-            cycle_limit = 0
-            while covered < self.total_video_sec - 0.1 and cycle_limit < 20:
-                p, _, _ = self.selected_tracks[-1]
-                full_dur = self._probe_media_duration(p)
-                remaining = self.total_video_sec - covered
-                seg_dur = min(full_dur, remaining)
-                music.append({"path": p, "duration": seg_dur, "offset": 0.0, "wave": QPixmap()})
-                music_segments_info.append((p, 0.0, seg_dur))
-                covered += seg_dur
-                cycle_limit += 1
-        self.music_segments = music; self.timeline.set_data(self.total_video_sec, self.video_segments, self.music_segments)
+        self.music_segments = music
+        self.timeline.set_data(self.total_video_sec, self.video_segments, self.music_segments)
         self._music_worker_targets = {}
         unique_music_segments_info = []
         _key_to_worker_idx = {}

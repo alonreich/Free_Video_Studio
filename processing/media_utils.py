@@ -113,22 +113,41 @@ class MediaProber:
 
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
     """
-    [FIX #11] Calculates video bitrate to hit target MB accurately.
-    'Maximum' quality now matches original source bitrate with a small buffer for assembly.
+    Calculates video bitrate to hit target MB accurately while maintaining visual clarity.
+    Uses 'Bits Per Pixel' (BPP) logic to ensure high-motion gameplay remains crisp.
     """
-    if keep_highest_res and prober:
-        orig_br = prober.get_video_bitrate()
-        return int(orig_br * 1.25)
-    if target_mb is None:
-        target_mb = 45.0
-    mb_for_bits = float(target_mb)
-    mb_in_bits = mb_for_bits * 8 * 1024 * 1024 * 1.0
-    target_size_bits = mb_in_bits * 0.95
-    audio_bits = audio_kbps * 1024 * (duration)
-    video_bits = target_size_bits - audio_bits
-    if video_bits <= 0:
-        return 300
     if duration <= 0:
         return 6000
+    if keep_highest_res and prober:
+        orig_br = prober.get_video_bitrate()
+        return int(orig_br * 1.15)
+    if target_mb is None:
+        target_mb = 45.0
+    total_bits_available = float(target_mb) * 8 * 1024 * 1024
+    audio_bits_total = audio_kbps * 1024 * duration
+    video_bits_available = total_bits_available - audio_bits_total
+    safe_video_bits = video_bits_available * 0.95
+    video_bits = safe_video_bits
+    if video_bits <= 0:
+        return 300
     calculated_kbps = int(video_bits / (1024 * duration))
-    return max(300, calculated_kbps)
+    try:
+        w, h = map(int, res_str.lower().split('x'))
+    except:
+        w, h = 1920, 1080
+
+    from fractions import Fraction
+    try:
+        fps = float(Fraction(fps_expr))
+    except:
+        fps = 60.0
+    bpp_targets = [0.05, 0.08, 0.12, 0.20]
+    target_bpp = bpp_targets[min(quality_level, 3)]
+    min_quality_kbps = int((w * h * fps * target_bpp) / 1024)
+    final_kbps = max(300, min(calculated_kbps, min_quality_kbps * 2))
+    final_kbps = min(final_kbps, 50000)
+    if logger:
+        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Final {final_kbps}k")
+    if final_kbps == calculated_kbps:
+        return max(300, calculated_kbps)
+    return max(300, final_kbps)

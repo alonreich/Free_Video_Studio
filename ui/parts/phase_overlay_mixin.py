@@ -26,21 +26,24 @@ class GpuWorker(QThread):
         while self._running:
             gpu = 0
             try:
-                if _ENABLE_SAFE_GPU_STATS:
+                if _ENABLE_SAFE_GPU_STATS and self._running:
                     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                     r = subprocess.run(
                         ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.encoder", "--format=csv,noheader,nounits", "-i", "0"],
-                        capture_output=True, text=True, timeout=1.0, creationflags=flags
+                        capture_output=True, text=True, timeout=1.5, creationflags=flags
                     )
-                    if r.returncode == 0:
-                        row = (r.stdout or "0,0").strip().splitlines()[0].split(",")
-                        gpu_core = int(row[0].strip() or 0)
-                        gpu_enc  = int(row[1].strip() or 0)
-                        gpu = max(0, min(100, max(gpu_core, gpu_enc)))
-            except Exception:
-                pass
-            self.stats_updated.emit(gpu)
-            for _ in range(10):
+                    if r.returncode == 0 and self._running:
+                        output = (r.stdout or "0,0").strip().splitlines()
+                        if output:
+                            row = output[0].split(",")
+                            gpu_core = int(row[0].strip() or 0)
+                            gpu_enc  = int(row[1].strip() or 0)
+                            gpu = max(0, min(100, max(gpu_core, gpu_enc)))
+            except: pass
+            if self._running:
+                try: self.stats_updated.emit(gpu)
+                except: pass
+            for _ in range(15):
                 if not self._running: break
                 time.sleep(0.1)
 

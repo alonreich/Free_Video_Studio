@@ -43,9 +43,13 @@ class _QtLiveLogHandler(logging.Handler):
         if not QCoreApplication.instance(): return
         if getattr(self.ui, "_switching_app", False) or getattr(self.ui, "_in_transition", False): return
         try:
+            if not getattr(self, "formatter", None):
+                self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
             msg = self.format(record)
-            if msg: self.ui.live_log_signal.emit(msg)
-        except: pass
+            if msg and hasattr(self.ui, "live_log_signal"):
+                self.ui.live_log_signal.emit(msg)
+        except Exception:
+            pass
 
 class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerMixin, VolumeMixin, TrimMixin, MusicMixin, FfmpegMixin, KeyboardMixin, MainWindowEventsMixin, MainWindowFileAMixin, MainWindowFileBMixin, MainWindowToolsMixin, MainWindowUiHelpersAMixin, MainWindowUiHelpersBMixin, MainWindowCoreAMixin, MainWindowCoreBMixin, MainWindowCoreCMixin, PersistentWindowMixin):
     progress_update_signal = pyqtSignal(int)

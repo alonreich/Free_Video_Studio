@@ -296,10 +296,11 @@ class MergerMusicOffsetDialog(QDialog):
         except Exception: pass
 
     def _ensure_player(self):
+        from system.utils import MPVSafetyManager
         if self._player: return
         try:
             if mpv:
-                self._player = mpv.MPV(hr_seek='yes', hwdec='auto', keep_open='yes')
+                self._player = MPVSafetyManager.create_safe_mpv(hr_seek='yes', hwdec='auto', keep_open='yes')
                 self._player.command("loadfile", self._mpath, "replace")
                 self._player.pause = True
         except Exception as e:

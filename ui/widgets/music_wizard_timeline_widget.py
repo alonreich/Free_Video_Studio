@@ -105,9 +105,9 @@ class MergerTimelineWidget(QWidget):
             p.setPen(QPen(QColor(0, 229, 255, 110), 1))
             cl_y = int(m_y + lane_h/2)
             p.drawLine(int(current_x), cl_y, int(current_x + seg_w), cl_y)
-            if i < len(self.music_segments) - 1:
-                p.setPen(QPen(separator_color, 3))
-                sep_x = int(current_x + seg_w)
+            p.setPen(QPen(separator_color, 3))
+            sep_x = int(current_x + seg_w)
+            if sep_x < w:
                 p.drawLine(sep_x, int(m_y), sep_x, int(m_y + lane_h))
             current_x += seg_w
         p.setPen(QPen(QColor("#266b89"), 2))

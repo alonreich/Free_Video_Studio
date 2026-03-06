@@ -24,7 +24,7 @@ class MergerUIWidgetsMixin:
         row.addWidget(self.parent.btn_redo)
         return row
 
-    def create_merge_row(self):
+    def create_quality_column(self):
         from ui.widgets.spinning_wheel_slider import SpinningWheelSlider
         self.parent.quality_slider = SpinningWheelSlider(self.parent)
         self.parent.quality_slider.setRange(0, 4)
@@ -43,16 +43,18 @@ class MergerUIWidgetsMixin:
             self.parent.quality_slider.setToolTip(tooltips.get(val, ""))
         self.parent.quality_slider.valueChanged.connect(update_tooltip)
         update_tooltip(4)
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.addWidget(self.parent.quality_slider, 0, Qt.AlignCenter)
+        return col
+
+    def create_merge_row(self):
         self.parent.btn_back = QPushButton("RETURN TO MAIN APP")
         self.parent.btn_back.setFixedSize(135, 40)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
         self.parent.btn_back.setCursor(Qt.PointingHandCursor)
         self.parent.btn_back.setToolTip("Exit merger and return to main application")
-        right_col = QVBoxLayout()
-        right_col.setSpacing(5)
-        right_col.addWidget(self.parent.quality_slider, 0, Qt.AlignCenter)
-        right_col.addWidget(self.parent.btn_back, 0, Qt.AlignCenter)
         self.parent.merge_row = QHBoxLayout()
         merge_wrap = QWidget()
         merge_wrap.setLayout(self.parent.merge_row)
@@ -66,7 +68,7 @@ class MergerUIWidgetsMixin:
         self.parent.btn_merge.setToolTip("Start merging the video list (Ctrl+Enter)")
         self.parent.merge_row.addWidget(self.parent.btn_merge)
         self.parent.merge_row.addStretch(1)
-        self.parent.merge_row.addLayout(right_col)
+        self.parent.merge_row.addWidget(self.parent.btn_back, 0, Qt.AlignCenter)
         self.parent.merge_row.addSpacing(60)
         return merge_wrap
 

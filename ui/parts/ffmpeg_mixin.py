@@ -59,6 +59,22 @@ class FfmpegMixin:
                 self.logger.info("DURATION: %s", text)
         except Exception:
             pass
+
+    def show_message(self, title: str, message: str):
+        """Unified message helper used by processing flow and tool actions."""
+        try:
+            if str(title).strip().lower() in {"error", "critical"}:
+                QMessageBox.critical(self, title, message)
+            elif str(title).strip().lower() in {"warning", "warn"}:
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+        except Exception:
+            try:
+                if hasattr(self, "logger"):
+                    self.logger.info("MSGBOX[%s]: %s", title, message)
+            except Exception:
+                pass
     
     def cancel_processing(self):
         if not self.is_processing:
@@ -89,7 +105,8 @@ class FfmpegMixin:
                 return
 
             from processing.system_utils import check_disk_space
-            out_dir = os.path.join(self.base_dir, "!!!_Output_Video_Files_!!!")
+            out_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            os.makedirs(out_dir, exist_ok=True)
             if not check_disk_space(out_dir, 2.0):
                 self.show_message("Disk Space Low", "You have less than 2GB free on the output drive. Please free up space before processing.")
                 return
@@ -112,12 +129,30 @@ class FfmpegMixin:
             self.trim_start_ms = start_time_ms
             self.trim_end_ms = end_time_ms
             is_mobile_format = self.mobile_checkbox.isChecked()
-            speed_factor = self.speed_spinbox.value()
+            speed_factor = float(self.speed_spinbox.value())
             if speed_factor < 0.5 or speed_factor > 3.1:
                 self.show_message("Invalid Speed", "Allowed speed range is 0.5x to 3.1x.")
                 self.is_processing = False
                 self.process_button.setEnabled(True)
                 return
+            granular_enabled = bool(
+                getattr(self, "granular_checkbox", None)
+                and self.granular_checkbox.isChecked()
+            )
+            raw_segments = list(getattr(self, "speed_segments", []) or []) if granular_enabled else []
+            segments = []
+            speed_segments_for_worker = []
+            for seg in raw_segments:
+                try:
+                    s_ms = int(seg.get("start_ms", seg.get("start", 0)))
+                    e_ms = int(seg.get("end_ms", seg.get("end", 0)))
+                    spd = float(seg.get("speed", speed_factor))
+                    if e_ms <= s_ms:
+                        continue
+                    segments.append({"start": s_ms, "end": e_ms, "speed": spd})
+                    speed_segments_for_worker.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
+                except Exception:
+                    continue
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
             music_path = None
             music_offset_s = 0.0
@@ -128,12 +163,14 @@ class FfmpegMixin:
             music_vol_linear = self._music_eff() / 100.0 if music_path else 0.0
             q_level = int(self.quality_slider.value())
             self.logger.info(
-                "PROCESS: clicked at %s | start=%dms end=%dms speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | music=%s vol=%.2f video_vol=%.2f",
+                "PROCESS: clicked at %s | start=%dms end=%dms speed=%sx | mobile=%s teammates=%s boss_hp=%s | quality_level=%d | disable_fades=%s | granular=%s segments=%d | music=%s vol=%.2f video_vol=%.2f",
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 start_time_ms, end_time_ms, speed_factor,
                 is_mobile_format, self.teammates_checkbox.isChecked(), self.boss_hp_checkbox.isChecked(),
                 q_level,
                 self.no_fade_checkbox.isChecked(),
+                granular_enabled,
+                len(segments),
                 (music_path or "None"), music_vol_linear, linear_video_vol
             )
             if hasattr(self, 'portrait_mask_overlay'):
@@ -146,7 +183,7 @@ class FfmpegMixin:
             self.cancel_button.setEnabled(True)
             self.progress_bar.setRange(0, 0)
             self.progress_bar.setValue(0)
-            self._pulse_timer.start()
+            self._pulse_timer.start(250)
             self.show_priority_message("🎬 Starting Video Encoding...", 5000, is_critical=True)
             self.process_button.setText("Processing...")
             self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
@@ -159,20 +196,13 @@ class FfmpegMixin:
             cfg['mobile_checked'] = bool(is_mobile_format)
             cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
-            # [FIX] Calculate music start/end in project time (wall clock)
             m_start_ms = int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms))
             m_end_ms = int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms))
-            
-            # Wall clock time of video start
             v_wall_start = self._calculate_wall_clock_time(start_time_ms, segments, speed_factor)
-            # Wall clock time of music handles
             m_wall_start = self._calculate_wall_clock_time(m_start_ms, segments, speed_factor)
             m_wall_end = self._calculate_wall_clock_time(m_end_ms, segments, speed_factor)
-            
-            # Project-relative seconds (where 0.0 is the start of the final video clip)
             m_proj_start_sec = max(0.0, (m_wall_start - v_wall_start) / 1000.0)
             m_proj_end_sec = max(0.0, (m_wall_end - v_wall_start) / 1000.0)
-
             music_conf = {
                 'path': music_path,
                 'ducking_threshold': 0.15,
@@ -198,10 +228,17 @@ class FfmpegMixin:
                 self.logger.info(f"THUMB: No custom thumb. Defaulting to 2/3 point: {intro_abs_time:.3f}s")
             intro_abs_time_ms = int(intro_abs_time * 1000)
             self.process_thread = ProcessThread(
-                self.input_file_path, start_time_ms, end_time_ms, self.original_resolution,
-                is_mobile_format, speed_factor, self.script_dir,
-                self.progress_update_signal, self.status_update_signal, self.process_finished_signal,
-                self.logger,
+                input_path=self.input_file_path,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                original_resolution=self.original_resolution,
+                is_mobile_format=is_mobile_format,
+                speed_factor=speed_factor,
+                base_dir=self.base_dir,
+                progress_signal=self.progress_update_signal,
+                status_signal=self.status_update_signal,
+                finished_signal=self.process_finished_signal,
+                logger=self.logger,
                 is_boss_hp=self.boss_hp_checkbox.isChecked(),
                 show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()),
                 quality_level=q_level,
@@ -210,14 +247,14 @@ class FfmpegMixin:
                 bg_music_offset_ms=int(music_offset_s * 1000),
                 original_total_duration_ms=self.original_duration_ms,
                 disable_fades=self.no_fade_checkbox.isChecked(),
-                intro_still_sec=0.1,
+                intro_still_sec=1,
                 intro_from_midpoint=(intro_abs_time_ms <= 0),
                 intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None,
                 portrait_text=p_text,
                 music_config=music_conf,
-                speed_segments=getattr(self, 'speed_segments', None),
+                speed_segments=speed_segments_for_worker,
                 hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'),
-                music_tracks=getattr(self, "_wizard_tracks", []) # [FIX]
+                music_tracks=getattr(self, "_wizard_tracks", [])
             )
             self.process_thread.started.connect(lambda: self.logger.info("ProcessThread: started"))
             self.process_thread.finished.connect(lambda: self.logger.info("ProcessThread: finished"))

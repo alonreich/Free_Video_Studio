@@ -50,7 +50,9 @@ class MediaProcessor(QObject):
                 if sys.platform == 'win32':
                     mpv_kwargs['gpu-context'] = 'd3d11'
                     os.environ["LC_NUMERIC"] = "C"
-                self.player = mpv.MPV(**mpv_kwargs)
+
+                from system.utils import MPVSafetyManager
+                self.player = MPVSafetyManager.create_safe_mpv(**mpv_kwargs)
                 logger.info("MediaProcessor initialized successfully with MPV.")
             except Exception as e:
                 fallback_args = [

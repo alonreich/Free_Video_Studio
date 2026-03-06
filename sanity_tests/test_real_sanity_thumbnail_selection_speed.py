@@ -9,10 +9,13 @@ from ui.parts.ui_builder_mixin import UiBuilderMixin
 
 class _DummyBtn:
     def __init__(self) -> None:
-        self.text = ""
+        self._text = ""
 
     def setText(self, text: str) -> None:
-        self.text = text
+        self._text = text
+
+    def text(self) -> str:
+        return self._text
 
     def setEnabled(self, enabled: bool) -> None:
         pass
@@ -56,7 +59,7 @@ def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkey
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None)
     UiBuilderMixin._pick_thumbnail_from_current_frame(host)
     assert abs(host.selected_intro_abs_time - 4.321) < 1e-3
-    assert "SET: 00:04.32" in host.thumb_pick_btn.text
+    assert "SET: 00:04.32" in host.thumb_pick_btn.text()
     assert captured, "Expected ffmpeg thumbnail extraction command"
     ss_idx = captured[0].index("-ss")
     assert captured[0][ss_idx + 1] == "4.321"
@@ -78,6 +81,6 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None)
     UiBuilderMixin._pick_thumbnail_from_current_frame(host)
     assert abs(host.selected_intro_abs_time - 10.0) < 1e-6
-    assert "SET: 00:10.00" in host.thumb_pick_btn.text
+    assert "SET: 00:10.00" in host.thumb_pick_btn.text()
     ss_idx = captured[0].index("-ss")
     assert captured[0][ss_idx + 1] == "10.000"

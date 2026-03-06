@@ -28,7 +28,7 @@ class MainWindowEventsMixin:
                     return True
         except Exception as e:
             self.logger.error("Keyboard eventFilter error: %s", e)
-        return QMainWindow.eventFilter(self, obj, event)
+        return False
 
     def resizeEvent(self, event):
         if hasattr(self, 'handle_persistence_event'):
@@ -101,6 +101,7 @@ class MainWindowEventsMixin:
         except: pass
         self.cleanup_and_exit()
         super().closeEvent(event)
+
 
 
 

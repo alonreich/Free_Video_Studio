@@ -45,7 +45,7 @@ try:
     from validation_system import ValidationLevel, ValidationFeedback
     VALIDATION_SYSTEM_AVAILABLE = True
 except ImportError:
-    VALIDATION_SYSTEM_AVAILABLE = True
+    VALIDATION_SYSTEM_AVAILABLE = False
 
 __all__ = [
     'ProcessingJob',

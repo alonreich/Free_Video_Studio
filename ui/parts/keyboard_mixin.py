@@ -17,6 +17,8 @@ class KeyboardMixin(QWidget):
         fw = QApplication.focusWidget()
         if fw is None:
             return False
+        if hasattr(self, "portrait_text_input") and fw == self.portrait_text_input:
+            return False
         if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
             return True
         if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()):
@@ -38,10 +40,17 @@ class KeyboardMixin(QWidget):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
             if QApplication.activeModalWidget() is not None:
-                return super().eventFilter(obj, event)
-            if self._is_editing_widget_focused():
-                return super().eventFilter(obj, event)
+                return False
+            is_typing_overlay = (
+                hasattr(self, "portrait_text_input") and 
+                self.portrait_text_input.isVisible() and 
+                self.portrait_text_input.hasFocus()
+            )
+            if not is_typing_overlay and self._is_editing_widget_focused():
+                return False
             key = event.key()
+            if is_typing_overlay:
+                return False
             if key == Qt.Key_F12:
                 self._launch_dev_tool()
                 return True
@@ -53,8 +62,6 @@ class KeyboardMixin(QWidget):
                 return True
             if getattr(self, "input_file_path", None):
                 if key == Qt.Key_Space:
-                    if hasattr(self, "portrait_text_input") and self.portrait_text_input.isVisible() and self.portrait_text_input.hasFocus():
-                        return False
                     self.toggle_play_pause()
                     return True
                 if key == Qt.Key_BracketLeft:
@@ -63,14 +70,15 @@ class KeyboardMixin(QWidget):
                 if key == Qt.Key_BracketRight:
                     self.set_end_time()
                     return True
-                if event.modifiers() == Qt.ShiftModifier:
-                    if key == Qt.Key_Right:
-                        self.seek_relative_time(3000)
-                        return True
-                    if key == Qt.Key_Left:
-                        self.seek_relative_time(-3000)
-                        return True
-        return super().eventFilter(obj, event)
+                if key == Qt.Key_Right:
+                    ms = 3000 if event.modifiers() == Qt.ShiftModifier else 1000
+                    self.seek_relative_time(ms)
+                    return True
+                if key == Qt.Key_Left:
+                    ms = -3000 if event.modifiers() == Qt.ShiftModifier else -1000
+                    self.seek_relative_time(ms)
+                    return True
+        return False
 
     def _handle_volume_keys(self, key, modifiers) -> bool:
         try:

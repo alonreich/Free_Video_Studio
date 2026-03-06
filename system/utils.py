@@ -173,16 +173,21 @@ class UIManager:
     def style_and_size_msg_box(msg_box: 'QMessageBox', copy_text: str, copy_btn_label: str = "Copy to Clipboard"):
         """
         Standardizes diagnostic popups: 800x500 size, adds 'Copy to Clipboard',
-        and ensures all buttons have a pointing hand cursor.
+        'Report To Alon Reich', and ensures all buttons have a pointing hand cursor.
         """
 
         from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout, QApplication
-        from PyQt5.QtCore import Qt, QTimer
+        from PyQt5.QtCore import Qt, QTimer, QUrl
+        from PyQt5.QtGui import QDesktopServices
         layout = msg_box.layout()
         if isinstance(layout, QGridLayout):
             layout.addItem(QSpacerItem(800, 500, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
         copy_btn = msg_box.addButton(copy_btn_label, msg_box.ActionRole)
-        
+
+        from app import tr
+        report_label = tr("report_to_alon")
+        report_btn = msg_box.addButton(report_label, msg_box.ActionRole)
+
         def on_copy():
             clipboard = QApplication.clipboard()
             clipboard.setText(copy_text)
@@ -194,7 +199,19 @@ class UIManager:
                 except RuntimeError:
                     pass
             QTimer.singleShot(2000, _reset_text)
+        
+        def on_report():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(copy_text)
+            subject = "[Fortnite Video Software] Error Report"
+            body = f"The following error occurred:\n\n{copy_text}"
+
+            import urllib.parse
+            mailto_url = f"mailto:alon.reich@gmail.com?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+            QDesktopServices.openUrl(QUrl(mailto_url))
+            msg_box.close()
         copy_btn.clicked.connect(on_copy)
+        report_btn.clicked.connect(on_report)
         for btn in msg_box.buttons():
             btn.setCursor(Qt.PointingHandCursor)
 
@@ -215,7 +232,20 @@ class ConsoleManager:
         else:
             final_log_filename = log_filename
         logger = LogManager.setup_logger(base_dir, final_log_filename, logger_name)
-        
+        try:
+            log_dir = os.path.join(base_dir, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            source_tag = ConsoleManager._source_tag(logger_name)
+            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+            mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
+            f = open(raw_log_path, 'a', encoding='utf-8')
+            os.dup2(f.fileno(), sys.stdout.fileno())
+            os.dup2(f.fileno(), sys.stderr.fileno())
+            faulthandler.enable(f)
+            logger.info("NATIVE DEBUG LOGGING ACTIVE")
+        except Exception as e:
+            logger.error(f"Failed to setup native logging: {e}")
+            
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
                 sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -231,7 +261,9 @@ class ConsoleManager:
                     msg_box.setText(f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
                     UIManager.style_and_size_msg_box(msg_box, error_msg)
                     msg_box.exec_()
-            except: pass
+                    os._exit(1)
+            except: 
+                os._exit(1)
         sys.excepthook = global_exception_handler
         if sys.platform == "win32":
             try:
@@ -276,25 +308,36 @@ class MPVSafetyManager:
         """
         if not player:
             return True
+
+        import mpv
         try:
+            if getattr(player, '_core_shutdown', False):
+                return True
             try:
                 player.pause = True
-            except:
+            except (AttributeError, mpv.ShutdownError):
                 pass
             try:
-                player.stop()
-            except:
+                if not getattr(player, '_core_shutdown', False):
+                    player.stop()
+            except (AttributeError, mpv.ShutdownError):
                 pass
+            try:
+                if hasattr(player, 'terminate') and not getattr(player, '_core_shutdown', False):
+                    player.terminate()
+            except: pass
             start_time = time.time()
             while time.time() - start_time < timeout:
                 try:
+                    if getattr(player, '_core_shutdown', True):
+                        break
                     _ = player.time_pos
-                except:
+                except (AttributeError, mpv.ShutdownError):
                     break
-                time.sleep(0.1)
+                time.sleep(0.05)
             MPVSafetyManager.cleanup_mpv_event_callbacks(player)
             return True
-        except Exception as e:
+        except Exception:
             return False
     @staticmethod
     def safe_mpv_set(player, property_name, value, max_attempts=3):
@@ -360,10 +403,16 @@ class MPVSafetyManager:
                     'hr_seek': 'yes',
                     'osc': False,
                     'ytdl': False,
+                    'load_scripts': False,
+                    'config': False,
                     'keep_open': kwargs.get('keep_open', 'yes'),
                     'loglevel': 'error',
                 }
                 extra_flags = kwargs.pop('extra_mpv_flags', [])
+                kwargs.pop('load_scripts', None)
+                kwargs.pop('config', None)
+                kwargs.pop('osc', None)
+                kwargs.pop('ytdl', None)
                 safe_kwargs.update(kwargs)
                 player = mpv.MPV(**safe_kwargs)
                 player._safe_shutdown_initiated = False

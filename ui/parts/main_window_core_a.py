@@ -21,6 +21,13 @@ class MainWindowCoreAMixin:
             if self.player:
                 if not getattr(self.player, "pause", True): self.player.pause = True
                 current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))
+            music_player = getattr(self, "_music_preview_player", None)
+            if music_player:
+                try:
+                    music_player.pause = True
+                    music_player.mute = True
+                except:
+                    pass
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
             self.is_playing = False
@@ -30,11 +37,16 @@ class MainWindowCoreAMixin:
             dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=self.speed_spinbox.value(), start_time_ms=current_ms, mpv_instance=self.player, volume=self._vol_eff())
             res = dlg.exec_()
             self._opening_granular_dialog = False
-            self._ignore_mpv_end_until = time.time() + 0.6
+            self._ignore_mpv_end_until = time.time() + 1.0
+            QThread.msleep(150)
+            QCoreApplication.processEvents()
             self._bind_main_player_output()
             self.timer.start()
             if res == QDialog.Accepted:
                 self.speed_segments = sorted(dlg.speed_segments, key=lambda x: x['start'])
+                if hasattr(self, "positionSlider"):
+                    self.positionSlider.speed_segments = self.speed_segments
+                    self.positionSlider.update()
                 self.granular_checkbox.blockSignals(True)
                 self.granular_checkbox.setChecked(bool(self.speed_segments))
                 self.granular_checkbox.blockSignals(False)
@@ -46,6 +58,7 @@ class MainWindowCoreAMixin:
             rt = max(0, dlg.last_position_ms)
             if getattr(self, "player", None): self.player.seek(rt / 1000.0, reference='absolute', precision='exact')
             self.positionSlider.setValue(int(rt))
+            self.positionSlider.update()
         except Exception as e:
             self.logger.critical(f"CRITICAL: Speed Dialog error: {e}")
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
@@ -56,6 +69,9 @@ class MainWindowCoreAMixin:
         if not self.speed_segments: return
         if QMessageBox.question(self, "Clear Speed Segments", "Are you sure you want to clear all speed segments?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.speed_segments = []
+            if hasattr(self, "positionSlider"):
+                self.positionSlider.speed_segments = []
+                self.positionSlider.update()
             self.granular_checkbox.blockSignals(True)
             self.granular_checkbox.setChecked(False)
             self.granular_checkbox.blockSignals(False)

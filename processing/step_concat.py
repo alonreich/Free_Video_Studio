@@ -40,18 +40,7 @@ class ConcatProcessor:
             progress_signal.emit(100)
             return None
         target_w, target_h = (1080, 1920) if is_mobile else (1920, 1080)
-        output_dir = os.path.join(self.base_dir, '!!!_Output_Video_Files_!!!')
-        os.makedirs(output_dir, exist_ok=True)
-        if not os.access(output_dir, os.W_OK):
-            self.logger.error(f"Permission denied: Cannot write to {output_dir}")
-            raise PermissionError(f"Write permission denied for output directory: {output_dir}")
-        i = 1
-        while True:
-            out_name = f"Fortnite-Video-{i}.mp4"
-            output_path = os.path.join(output_dir, out_name)
-            if not os.path.exists(output_path): 
-                break
-            i += 1
+        output_path = os.path.join(self.temp_dir, f"concat_final_{os.getpid()}.mp4")
         concat_list = os.path.join(self.temp_dir, f"concat-{os.getpid()}.txt")
         with open(concat_list, "w", encoding="utf-8") as f:
             for fc in files_to_concat:
@@ -90,7 +79,7 @@ class ConcatProcessor:
                 if len(files_to_concat) > 1:
                     filter_parts = []
                     for i in range(len(files_to_concat)):
-                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setpts=PTS-STARTPTS,format=nv12,setsar=1[v{i}]")
+                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={target_w}:{target_h},setpts=PTS-STARTPTS,format=nv12,setsar=1[v{i}]")
                         filter_parts.append(f"[{i}:a]aresample=48000:async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
                     concat_in = "".join([f"[v{i}][a{i}]" for i in range(len(files_to_concat))])
                     filter_parts.append(f"{concat_in}concat=n={len(files_to_concat)}:v=1:a=1[vout][aout]")

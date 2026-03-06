@@ -16,15 +16,21 @@ class ToolTipManager(QObject):
 
     def eventFilter(self, obj, event):
         """Filter events to show/hide tooltips."""
-        if event.type() == QEvent.Enter:
-            tooltip_text = self._tooltips.get(obj.objectName())
-            if tooltip_text:
-                offset = QPoint(20, -40) 
-                QToolTip.showText(QCursor.pos() + offset, tooltip_text, obj)
-            return False 
-        elif event.type() == QEvent.Leave:
-            QToolTip.hideText()
-            return False
-        elif event.type() == QEvent.MouseButtonPress:
-            QToolTip.hideText()
+        try:
+            if obj is None: return False
+            if event.type() == QEvent.Enter:
+                name = obj.objectName()
+                if not name: return False
+                tooltip_text = self._tooltips.get(name)
+                if tooltip_text:
+                    offset = QPoint(20, -40) 
+                    QToolTip.showText(QCursor.pos() + offset, tooltip_text, obj)
+                return False 
+            elif event.type() == QEvent.Leave:
+                QToolTip.hideText()
+                return False
+            elif event.type() == QEvent.MouseButtonPress:
+                QToolTip.hideText()
+        except (RuntimeError, AttributeError):
+            pass
         return super().eventFilter(obj, event)

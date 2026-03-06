@@ -13,6 +13,7 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # 5. UI Spacing: Exactly 10px vertical gap above/below STEP titles. Navigation buttons are strictly 42px height.
 # 6. Stability: MPV scrubbing is throttled to 20fps (50ms) to prevent native thread deadlocks.
 # 7. Independence: Main App and Merger share widget logic but remain technically decoupled (local method copies).
+# 8. Encoding: MUST use yuv420p for all HW encoders (NVENC, AMF, QSV) and H.264 level 4.2 for mobile compatibility.
 
 # ==============================================================================
 # COORDINATE SYSTEM & SCALING LOGIC (PORTRAIT CANVAS TRICK)
@@ -21,11 +22,12 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # We do NOT compose directly at 1080x1920.
 # We first compose in a larger internal canvas (1280x1920), then "zoom out / fit"
 # that result into the final portrait frame. This preserves detail and keeps the top
-# black strip reserved for clip text.
+# black strip (150px) reserved for clip text.
 #
 # 1) SPACES USED
 #    - Final Portrait Output: 1080x1920.
-#    - Visible Content Lane: 1080x1620.
+#    - Visible Content Lane: 1080x1620 (Content starts at y=150).
+#    - Width Preserved: Center 1280px of original landscape (in internal space).
 #    - Reserved Text/Header Zone: top 150px (final compose places content at y=150).
 #    - Internal Backend Compose Space: 1280x1920 (higher-fidelity working canvas).
 #
@@ -57,8 +59,6 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 ├── app.py: Main entry point. Initializes logging, hardware scan, and launches window.
 ├── project_structure.txt: This file (Architecture Map).
 ├── README.md: Product documentation.
-│
-├── !!!_Output_Video_Files_!!!/: Final rendered videos.
 │
 ├── binaries/: FFmpeg, FFprobe, and MPV native libraries.
 ├── config/: JSON/Conf settings (main_app.conf, crops_coordinations.conf).
@@ -120,7 +120,6 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 #    - ANY failure to lock into the TITAN (NVIDIA) path is a critical failure.
 # 5. CLEANUP:
 #    - Delete .\logs\* again.
-#    - Delete the rendered videos in .\!!!_Output_Video_Files_!!!\.
 # 6. REPEAT:
 #    - Loop steps 1-5 until ALL tests pass perfectly with ZERO warnings or errors in logs.
 #
@@ -141,3 +140,24 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # 8. VOL INDICATORS: Move sliders in Step 3. Verify white percentage labels update at the bottom.
 # 9. BUTTON HEIGHTS: Verify CANCEL/BACK/DONE are all identically tall (42px).
 # 10. FIRST FRAME: Arrive at Step 3. Confirm the video frame 0 is visible immediately.
+
+# ==============================================================================
+# GRANULAR SPEED EDITOR: ARCHITECTURAL RULES (AI MANDATE)
+# ==============================================================================
+# 1. SEGMENT LIFECYCLE: 
+#    - 'SET START' initializes a pending segment (Visual: Marching Ants).
+#    - 'SET END' commits the segment and immediately makes it the ACTIVE selection.
+#    - If 'SET END' is pressed without a 'SET START', auto-create a segment starting 1s after the previous segment's end.
+# 2. SELECTION BEHAVIOR: 
+#    - Only one segment can be "Active/Highlighted" at a time.
+#    - While a segment is being created (after SET START but before SET END), NO existing segments should be highlighted.
+#    - Changing the Speed Spinbox value always affects the currently Active/Pending segment.
+# 3. COLLISION & SOLID OBJECTS:
+#    - Segments are "Solid Objects." Overlapping is strictly prohibited (Collision Protected).
+#    - Manual dragging or 'SET' buttons must be clamped/blocked by the boundaries of neighboring segments.
+#    - Minimum segment duration is 10ms.
+# 4. INTERACTION:
+#    - 'SET START' jumps the marker to the current playhead, even if already set.
+#    - 'DELETE' key must immediately remove the currently highlighted/active segment.
+#    - Default state: Start = Frame 0, End = Last Frame.
+# ==============================================================================

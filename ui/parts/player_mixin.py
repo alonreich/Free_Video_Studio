@@ -1,4 +1,4 @@
-import time
+﻿import time
 import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
@@ -7,30 +7,62 @@ class PlayerMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._scrub_lock = threading.RLock()
-        self._mpv_lock = threading.Lock()
+        self._mpv_lock = threading.RLock()
+        self._is_seeking_active = False
 
     def _safe_mpv_set(self, prop, value, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return
+
+        import mpv
         if not self._mpv_lock.acquire(timeout=0.20):
             return
         try:
+            if getattr(p, '_core_shutdown', False): return
             if prop == "pause": p.pause = value
             elif prop == "speed": p.speed = value
             elif prop == "volume": p.volume = value
             elif prop == "mute": p.mute = value
             else: p.set_property(prop, value)
-        except: pass
+        except (AttributeError, mpv.ShutdownError):
+            pass
+        except Exception:
+            pass
         finally:
             self._mpv_lock.release()
 
     def _safe_mpv_get(self, prop, default=None, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return default
+
+        import mpv
         if not self._mpv_lock.acquire(timeout=0.20):
             return default
-        try: return getattr(p, prop, default)
-        except: return default
+        try:
+            if getattr(p, '_core_shutdown', False): return default
+            return getattr(p, prop, default)
+        except (AttributeError, mpv.ShutdownError):
+            return default
+        except Exception:
+            return default
+        finally:
+            self._mpv_lock.release()
+
+    def _safe_mpv_command(self, *args, target_player=None):
+        p = target_player if target_player is not None else getattr(self, "player", None)
+        if not p: return False
+
+        import mpv
+        if not self._mpv_lock.acquire(timeout=0.20):
+            return False
+        try:
+            if getattr(p, '_core_shutdown', False): return False
+            p.command(*args)
+            return True
+        except (AttributeError, mpv.ShutdownError, SystemError):
+            return False
+        except Exception:
+            return False
         finally:
             self._mpv_lock.release()
 
@@ -70,10 +102,7 @@ class PlayerMixin:
             idle_active = self._safe_mpv_get("idle-active", False)
             if idle_active:
                 restart_ms = int(getattr(self, "trim_start_ms", 0) or 0)
-                try:
-                    self.player.command("seek", restart_ms / 1000.0, "absolute", "exact")
-                except Exception:
-                    self.player.seek(restart_ms / 1000.0, reference='absolute', precision='exact')
+                self._safe_mpv_command("seek", restart_ms / 1000.0, "absolute", "exact")
                 if getattr(self, "positionSlider", None):
                     self.positionSlider.blockSignals(True)
                     self.positionSlider.setValue(restart_ms)
@@ -87,10 +116,8 @@ class PlayerMixin:
                 speed_segments = getattr(self, 'speed_segments', [])
                 wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
                 wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-                # [FIX] wall times are in ms, so project_pos_sec is correct without extra multiplication
+                real_audio_ms = (wall_now - wall_start) * 1000.0
                 project_pos_sec = (wall_now - wall_start) / 1000.0
-                
-                # Check which track is active
                 target_m_sec = 0.0
                 accum = 0.0
                 for path, offset, dur in self._wizard_tracks:
@@ -98,7 +125,6 @@ class PlayerMixin:
                         target_m_sec = offset + (project_pos_sec - accum)
                         break
                     accum += dur
-                
                 self._safe_mpv_set("speed", 1.0, target_player=music_player)
                 curr_m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
                 if abs(curr_m_pos - target_m_sec) > 0.15:
@@ -111,7 +137,7 @@ class PlayerMixin:
             self._safe_mpv_set("speed", self.playback_rate)
             self._safe_mpv_set("pause", False)
             if not self.timer.isActive():
-                self.timer.start(40)
+                self.timer.start(50)
             self.playPauseButton.setText("PAUSE")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
 
@@ -152,12 +178,9 @@ class PlayerMixin:
                     slider.setValue(int(current_time_ms))
                     slider.blockSignals(False)
                     slider.update()
-                
-                # [FIX] Comprehensive Music Sync (Supports Multiple Tracks)
                 if hasattr(self, "_sync_music_preview"):
                     self._sync_music_preview()
                 elif getattr(self, "is_playing", False) and getattr(self, "_wizard_tracks", None):
-                    # Fallback for simple single-track sync if Mixin method is missing
                     try:
                         music_player = getattr(self, "_music_preview_player", None)
                         if music_player:
@@ -167,8 +190,10 @@ class PlayerMixin:
                             speed_segments = getattr(self, 'speed_segments', [])
                             wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
                             wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
+                            music_player.set_rate(1.0)
+                            time_since_music_start_project_ms = (wall_now - wall_start)
+                            real_audio_ms = time_since_music_start_project_ms / speed
                             project_pos_sec = (wall_now - wall_start) / 1000.0
-                            
                             first_track = self._wizard_tracks[0]
                             expected_m_sec = first_track[1] + project_pos_sec
                             if abs(m_pos - expected_m_sec) > 0.15:
@@ -213,56 +238,69 @@ class PlayerMixin:
         """Sets video player position (in ms) with enhanced throttling for stability."""
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
-        if not hasattr(self, "_last_seek_ts"): self._last_seek_ts = 0.0
-        if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0.0
-        with self._scrub_lock:
-            try:
-                now = time.time()
-                self._last_seek_ts = now
-                if not force_pause and (now - self._last_scrub_ts < 0.1):
-                    return
-                self._last_scrub_ts = now
-                target_ms = int(position_ms)
-                p_dur = self._safe_mpv_get("duration", 0) or 0
-                max_ms = int(p_dur * 1000)
-                if max_ms > 0:
-                    target_ms = max(0, min(target_ms, max_ms - 1))
-                if not sync_only and getattr(self, "player", None):
-                    if self._mpv_lock.acquire(timeout=0.20):
-                        try:
-                            time.sleep(0.01)
-                            self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
-                        finally: self._mpv_lock.release()
-                music_player = getattr(self, "_music_preview_player", None)
-                if music_player and getattr(self, "_wizard_tracks", None):
-                    if force_pause:
-                        self._safe_mpv_set("pause", True, target_player=music_player)
-                    self._safe_mpv_set("speed", 1.0, target_player=music_player)
-                    t_start = getattr(self, "trim_start_ms", 0)
-                    speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
-                    speed_segments = getattr(self, 'speed_segments', [])
-                    wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
-                    wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-                    project_pos_sec = (wall_target - wall_start) / 1000.0
-                    
-                    target_m_sec = 0.0
-                    accum = 0.0
-                    for path, offset, dur in self._wizard_tracks:
-                        if accum <= project_pos_sec < accum + dur:
-                            target_m_sec = offset + (project_pos_sec - accum)
-                            break
-                        accum += dur
+        target_ms = int(position_ms)
+        if not hasattr(self, "_pending_seek_ms"): self._pending_seek_ms = None
+        self._pending_seek_ms = target_ms
+        if not hasattr(self, "_seek_timer"):
+            from PyQt5.QtCore import QTimer
+            self._seek_timer = QTimer(self)
+            self._seek_timer.setSingleShot(True)
+            self._seek_timer.timeout.connect(self._execute_throttled_seek)
+        interval = 20 if force_pause else 80
+        if not self._seek_timer.isActive():
+            self._seek_timer.start(interval)
 
-                    try:
-                        if self._mpv_lock.acquire(timeout=0.20):
-                            try:
-                                time.sleep(0.005)
-                                music_player.seek(target_m_sec, reference='absolute', precision='exact')
-                            finally: self._mpv_lock.release()
-                    except: pass
-            except Exception as e:
-                if hasattr(self, "logger"):
-                    self.logger.error(f"CRITICAL: Seek failed in set_player_position: {e}")
+    def _execute_throttled_seek(self):
+        if not hasattr(self, "_pending_seek_ms") or self._pending_seek_ms is None:
+            return
+        if getattr(self, "_is_seeking_active", False):
+            if hasattr(self, "_seek_timer"):
+                self._seek_timer.start(120)
+            return
+        target_ms = self._pending_seek_ms
+        self._pending_seek_ms = None
+        self._is_seeking_active = True
+        if not self._mpv_lock.acquire(timeout=0.30):
+            self._is_seeking_active = False
+            if hasattr(self, "_seek_timer"):
+                self._seek_timer.start(50)
+            return
+        try:
+            p = getattr(self, "player", None)
+            if not p or getattr(p, '_core_shutdown', False):
+                return
+            p_dur = getattr(p, "duration", 0) or 0
+            max_ms = int(p_dur * 1000)
+            if max_ms > 0:
+                target_ms = max(0, min(target_ms, max_ms - 1))
+            is_dragging = False
+            if hasattr(self, "positionSlider"):
+                is_dragging = self.positionSlider.isSliderDown()
+            seek_mode = "absolute-percent" if target_ms < 0 else "absolute"
+            precision = "fast" if is_dragging else "exact"
+            p.command("seek", target_ms / 1000.0, seek_mode, precision)
+            music_player = getattr(self, "_music_preview_player", None)
+            if music_player and not getattr(music_player, '_core_shutdown', False) and getattr(self, "_wizard_tracks", None):
+                t_start = getattr(self, "trim_start_ms", 0)
+                speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+                speed_segments = getattr(self, 'speed_segments', [])
+                wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
+                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                project_pos_sec = (wall_target - wall_start) / 1000.0
+                target_m_sec = 0.0
+                accum = 0.0
+                for path, offset, dur in self._wizard_tracks:
+                    if accum <= project_pos_sec < accum + dur:
+                        target_m_sec = offset + (project_pos_sec - accum)
+                        break
+                    accum += dur
+                music_player.command("seek", target_m_sec, "absolute", precision)
+        except Exception as e:
+            if hasattr(self, "logger"):
+                self.logger.error(f"STABILITY: Throttled seek failed: {e}")
+        finally:
+            self._mpv_lock.release()
+            self._is_seeking_active = False
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         """
@@ -318,7 +356,12 @@ class PlayerMixin:
             return
         if getattr(self, "_binding_player_output", False):
             return
+        now = time.time()
+        last_ts = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)
+        if (now - last_ts) < 0.8:
+            return
         self._binding_player_output = True
+        self._last_player_output_bind_ts = now
         
         def _perform_bind():
             try:
@@ -328,33 +371,30 @@ class PlayerMixin:
                     try:
                         wid = int(surf.winId())
                     except: pass
-                
-                if wid is not None:
+                if wid is not None and wid > 0:
                     self.logger.info(f"HARDWARE_SET: Re-binding MPV to Main Surface WID {wid}")
-                    
-                    self._safe_mpv_set("wid", 0)
-                    time.sleep(0.01)
-                    
                     try:
                         if self._mpv_lock.acquire(timeout=0.20):
                             try:
                                 self.player.wid = wid
-                                if hasattr(self.player, 'command'):
-                                    self.player.command("video-reconfig")
-                                    self.player.command("frame-step")
-                                    self.player.command("frame-back-step")
                             finally: self._mpv_lock.release()
                     except:
                         self._safe_mpv_set("wid", wid)
-                
             except Exception as e:
                 if hasattr(self, 'logger'):
                     self.logger.error(f"Failed to bind MPV output: {e}")
             finally:
                 self._binding_player_output = False
-        
         _perform_bind()
-        QTimer.singleShot(200, _perform_bind)
+
+        def _delayed_bind():
+            now2 = time.time()
+            last2 = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)
+            if (now2 - last2) < 0.25:
+                return
+            self._last_player_output_bind_ts = now2
+            _perform_bind()
+        QTimer.singleShot(300, _delayed_bind)
 
     def _safe_handle_mpv_end(self):
         """Handle end of media safely on the main thread."""

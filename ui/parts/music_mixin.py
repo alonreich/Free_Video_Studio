@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 import tempfile
@@ -63,7 +63,6 @@ class MusicMixin:
         try:
             if not getattr(self, "_music_preview_player", None):
                 from system.utils import MPVSafetyManager
-                # [FIX] Added explicit audio output for Windows stability
                 kwargs = {
                     'vid': 'no',
                     'vo': 'null',
@@ -79,7 +78,6 @@ class MusicMixin:
                 }
                 if sys.platform == 'win32':
                     kwargs['ao'] = 'wasapi'
-                
                 self._music_preview_player = MPVSafetyManager.create_safe_mpv(**kwargs)
                 if self._music_preview_player:
                     self.logger.info("PREVIEW: Music preview player engine initialized.")
@@ -170,7 +168,6 @@ class MusicMixin:
         self._in_transition = True
         if hasattr(wizard, 'stop_previews'):
             wizard.stop_previews()
-        
         QTimer.singleShot(100, lambda: self._complete_wizard_return(res, wizard, t_start, t_end, speed_segments, speed_factor))
 
     def _complete_wizard_return(self, res, wizard, t_start, t_end, speed_segments, speed_factor):
@@ -192,26 +189,20 @@ class MusicMixin:
                 self.music_button.setEnabled(True)
             self.wants_to_play = False
             self._in_transition = False
-            
             self.raise_()
             self.activateWindow()
             if hasattr(self, "video_surface"): self.video_surface.show()
-
             if hasattr(self, "player") and self.player:
                 self._safe_mpv_set("pause", True)
                 self._safe_mpv_set("mute", False) 
-            
             if hasattr(self, "_bind_main_player_output"):
                 self._bind_main_player_output()
-            
             if res == QDialog.Accepted:
                 self._wizard_tracks = list(getattr(wizard, 'selected_tracks', []))
                 self.logger.info(f"WIZARD: Received {len(self._wizard_tracks)} tracks from wizard.")
-                
                 if self._wizard_tracks:
                     self._music_volume_pct = getattr(wizard, 'music_vol_slider', None).value() if hasattr(wizard, 'music_vol_slider') else 80
                     self._video_volume_pct = getattr(wizard, 'video_vol_slider', None).value() if hasattr(wizard, 'video_vol_slider') else 80
-                    
                     if self._ensure_music_player_ready():
                         first_track = self._wizard_tracks[0]
                         self._current_music_path = first_track[0]
@@ -219,30 +210,22 @@ class MusicMixin:
                         self.logger.info(f"PREVIEW: Priming music player with {os.path.basename(self._current_music_path)}")
                         self._music_preview_player.command("loadfile", self._current_music_path, "replace")
                         self._safe_mpv_set("pause", True, target_player=self._music_preview_player)
-                        
                         self._safe_mpv_set("mute", False, target_player=self._music_preview_player)
                         self._safe_mpv_set("volume", self._music_volume_pct, target_player=self._music_preview_player)
-
                         if hasattr(self, "_sync_all_volumes"):
                             self._sync_all_volumes()
-
                     if hasattr(self, "positionSlider"):
                         self.positionSlider.set_music_visible(True)
                         self.positionSlider.set_music_times(t_start, t_end)
-                        # [FIX #1] Initialize music timeline bounds to match video trim on first return
                         self.music_timeline_start_ms = t_start
                         self.music_timeline_end_ms = t_end
-                    
                     QTimer.singleShot(50, self._sync_music_preview)
-                    
                     source_ms = getattr(self, "trim_start_ms", 0)
                     QTimer.singleShot(150, lambda: self._safe_seek_to_start(source_ms))
-                    
                     if hasattr(self, 'timer'):
                         self.timer.start(40)
                 else:
                     self._reset_music_player()
-                
                 QTimer.singleShot(500, self._final_unmute_after_wizard)
             else:
                 self._restore_pre_wizard_state()
@@ -261,7 +244,6 @@ class MusicMixin:
             self._safe_mpv_set("mute", False)
             if hasattr(self, "volume_slider"):
                 self._safe_mpv_set("volume", self.volume_slider.value())
-        
         music_player = getattr(self, "_music_preview_player", None)
         if music_player:
             self._safe_mpv_set("mute", False, target_player=music_player)
@@ -385,7 +367,6 @@ class MusicMixin:
         """[FIX] Restore missing callback for main window music handles."""
         self.music_timeline_start_ms = start_ms
         self.music_timeline_end_ms = end_ms
-        # If we have a single track, sync its duration to the visual handles
         if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
             path, offset, _ = self._wizard_tracks[0]
             new_dur = (end_ms - start_ms) / 1000.0
@@ -394,38 +375,25 @@ class MusicMixin:
     def _sync_music_preview(self):
         """[FIX #2] Sync music playback with video, respecting the pink overlay bounds."""
         if getattr(self, "_in_transition", False): return
+        if getattr(self, "_is_seeking_active", False): return
         if not hasattr(self, "_wizard_tracks") or not self._wizard_tracks: return
         if not getattr(self, "player", None): return
-        
-        # Get current project time (wall clock)
         curr_v_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
-        
-        # [FIX #2] Project zero is now the start of the PINK music handles
         m_start_ms = getattr(self, "music_timeline_start_ms", getattr(self, "trim_start_ms", 0))
         m_end_ms = getattr(self, "music_timeline_end_ms", getattr(self, "trim_end_ms", 0))
-        
         speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
         speed_segments = getattr(self, 'speed_segments', [])
-        
-        # Calculate wall clock position of video vs music start
         wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
         wall_m_start = self._calculate_wall_clock_time(m_start_ms, speed_segments, speed_factor)
-        
-        # Time since music was supposed to start
         project_pos_sec = (wall_now - wall_m_start) / 1000.0
-        
         music_player = getattr(self, "_music_preview_player", None)
         if not music_player: 
             if not self._ensure_music_player_ready(): return
             music_player = self._music_preview_player
-
-        # [FIX #2] Silence if video is before or after pink music overlay
-        if curr_v_ms < m_start_ms - 15 or curr_v_ms > m_end_ms + 15:
+        if curr_v_ms < m_start_ms - 25 or curr_v_ms > m_end_ms + 25:
             self._safe_mpv_set("pause", True, target_player=music_player)
             self._safe_mpv_set("mute", True, target_player=music_player)
             return
-
-        # Find which track belongs at this project time
         target_track = None
         accum_sec = 0.0
         for path, offset, dur in self._wizard_tracks:
@@ -433,48 +401,31 @@ class MusicMixin:
                 target_track = (path, offset, project_pos_sec - accum_sec)
                 break
             accum_sec += dur
-            
         if not target_track:
             self._safe_mpv_set("pause", True, target_player=music_player)
             return
-            
         path, offset, pos_in_track = target_track
-        
-        # Load file if different
         curr_loaded = self._safe_mpv_get("path", "", target_player=music_player)
         if not curr_loaded or os.path.basename(curr_loaded).lower() != os.path.basename(path).lower():
             self.logger.info(f"PREVIEW: Loading music track: {os.path.basename(path)}")
             music_player.command("loadfile", path, "replace")
             self._safe_mpv_set("pause", True, target_player=music_player)
-            # Immediately force unmute on new file load
             self._safe_mpv_set("mute", False, target_player=music_player)
             self._safe_mpv_set("volume", self._music_eff(), target_player=music_player)
             return
-            
-        # Sync position if drifting
         m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
         expected_m_sec = offset + pos_in_track
-        
-        if abs(m_pos - expected_m_sec) > 0.15: 
+        if abs(m_pos - expected_m_sec) > 0.25: 
             self._safe_mpv_set("speed", 1.0, target_player=music_player)
-            if self._mpv_lock.acquire(timeout=0.20):
-                try:
-                    music_player.seek(expected_m_sec, reference='absolute', precision='exact')
-                finally: self._mpv_lock.release()
-                
-        # Sync pause state
+            self._safe_mpv_command("seek", expected_m_sec, "absolute", "exact", target_player=music_player)
         v_paused = self._safe_mpv_get("pause", True)
         self._safe_mpv_set("pause", v_paused, target_player=music_player)
-        
-        # Explicitly ensure music player is unmuted and volume set
         m_vol = self._music_eff()
         self._safe_mpv_set("volume", m_vol, target_player=music_player)
         self._safe_mpv_set("mute", False, target_player=music_player)
 
     def update_player_state(self):
         """[FIX] Overridden by mixin or main window to include music sync."""
-        # This usually lives in player_mixin.py, but we ensure it's called
-        # We'll update player_mixin to call self._sync_music_preview()
         pass
 
     def _probe_audio_duration(self, path: str) -> float:

@@ -1,4 +1,4 @@
-from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
+﻿from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
 from .filter_mobile import MobileFilterMixin
 
 class FilterResult(tuple):
@@ -6,85 +6,85 @@ class FilterResult(tuple):
         return any(item in str(x) for x in self)
 
 class AudioFilterMixin:
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None, music_start_index=1):
         """[FIX #1] Supports multiple background music tracks with precise timing and mixing."""
         chain = []
         target_sample_rate = sample_rate or 48000
-        main_audio_filter_parts = [audio_filter_cmd if audio_filter_cmd else "anull"]
+        raw_parts = []
+        if isinstance(audio_filter_cmd, list):
+            raw_parts.extend(audio_filter_cmd)
+        elif audio_filter_cmd:
+            raw_parts.append(audio_filter_cmd)
         if vfade_in_d > 0:
-            main_audio_filter_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
-        main_audio_filter = ",".join(main_audio_filter_parts)
-        chain.append(f"[0:a]{main_audio_filter},aresample={target_sample_rate}:async=1:first_pts=0:min_comp=0.01:min_hard_comp=0.1[a_main_prepared]")
-        
-        # Use provided music_tracks or fallback to legacy music_config
+            raw_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
+        cleaned_parts = []
+
+        def flatten(item):
+            if isinstance(item, list):
+                for sub in item: flatten(sub)
+            elif item:
+                cleaned_parts.append(str(item))
+        flatten(raw_parts)
+        if not cleaned_parts:
+            cleaned_parts = ["anull"]
+        main_audio_filter = ",".join(cleaned_parts)
+        chain.append(f"[0:a]{main_audio_filter}[a_main_raw]")
         tracks = music_tracks if music_tracks else []
         if not tracks and music_config and music_config.get("path"):
             path = music_config.get("path")
             offset = music_config.get("file_offset_sec", 0.0)
             dur = (video_end_time - video_start_time) / speed_factor
             tracks = [(path, offset, dur)]
-
         if not tracks:
+            chain.append(f"[a_main_raw]aresample={target_sample_rate}:async=1[a_main_prepared]")
             return chain, "[a_main_prepared]"
-
-        # [FIX] Calculate initial delay from pink handles in project time
         initial_delay_sec = 0.0
         if music_config:
-            # These are now project wall-clock seconds relative to video start
             m_start_proj = float(music_config.get('timeline_start_sec', 0.0))
-            v_start_proj = 0.0 # project timeline starts at 0 for the trimmed clip
             initial_delay_sec = max(0.0, m_start_proj)
-
         prepared_music_labels = []
         accum_project_sec = initial_delay_sec
-        
         for i, (path, file_offset, dur_sec) in enumerate(tracks):
-            input_label = f"[{i+1}:a]"
+            input_label = f"[{music_start_index + i}:a]"
             out_label = f"[a_mus_{i}]"
-            
+            pre_label = f"[a_mus_{i}_pre]"
             music_filters = [
                 f"atrim=start={file_offset:.3f}:duration={dur_sec:.3f}",
-                "asetpts=PTS-STARTPTS",
-                f"aresample={target_sample_rate}:async=1:min_comp=0.01:min_hard_comp=0.1"
+                "asetpts=PTS-STARTPTS"
             ]
-            
             if not disable_fades and dur_sec > 0.5:
                 FADE_DUR = min(0.5, dur_sec / 4.0)
                 music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
                 music_filters.append(f"afade=t=out:st={max(0.0, dur_sec - FADE_DUR):.3f}:d={FADE_DUR:.3f}")
-            
             m_vol = float(music_config.get('music_vol', music_config.get('volume', 0.8))) if music_config else 0.8
             music_filters.append(f"volume={m_vol:.4f}")
-            
-            chain.append(f"{input_label}{','.join(music_filters)}{out_label}_pre")
-            
+            chain.append(f"{input_label}{','.join(music_filters)}{pre_label}")
             delay_ms = int(accum_project_sec * 1000)
             if delay_ms > 0:
-                chain.append(f"{out_label}_pre adelay={delay_ms}|{delay_ms}{out_label}")
+                chain.append(f"{pre_label}adelay={delay_ms}|{delay_ms}{out_label}")
             else:
-                chain.append(f"{out_label}_pre anull{out_label}")
-            
+                chain.append(f"{pre_label}anull{out_label}")
             prepared_music_labels.append(out_label)
             accum_project_sec += dur_sec
-
         if len(prepared_music_labels) > 1:
             mix_inputs = "".join(prepared_music_labels)
             chain.append(f"{mix_inputs}amix=inputs={len(prepared_music_labels)}:duration=longest:dropout_transition=0[a_bg_music]")
             bg_music_label = "[a_bg_music]"
         else:
             bg_music_label = prepared_music_labels[0]
-
         v_vol = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
-        chain.append(f"[a_main_prepared]volume={v_vol:.4f},highpass=f=150[game_scaled]")
-        chain.append(f"[game_scaled]{bg_music_label}amix=inputs=2:duration=first:dropout_transition=0[a_final_mixed]")
-        
-        return chain, "[a_final_mixed]"
+        chain.append(f"[a_main_raw]volume={v_vol:.4f},highpass=f=150[game_scaled]")
+        chain.append(f"[game_scaled]{bg_music_label}amix=inputs=2:duration=first:dropout_transition=0,aresample={target_sample_rate}:async=1[a_music_prepared]")
+        return chain, "[a_music_prepared]"
 
 class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
     def __init__(self, logger=None):
         self.logger = logger
 
-    def build_granular_speed_chain(self, input_path, total_duration_ms, segments, base_speed, source_cut_start_ms=0, input_v_label="[0:v]", input_a_label="[0:a]", target_fps="60"):
+    def build_granular_speed_chain(self, input_path=None, total_duration_ms=0, segments=None, base_speed=1.0, source_cut_start_ms=0, input_v_label="[0:v]", input_a_label="[0:a]", target_fps="60", video_path=None, duration_ms=None, speed_segments=None):
+        input_path = input_path or video_path
+        total_duration_ms = total_duration_ms or duration_ms or 0
+        segments = segments or speed_segments or []
         total_duration_sec = float(total_duration_ms) / 1000.0
         current_time = 0.0
         chunks = []
@@ -105,7 +105,6 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
                 if covered > 0: mapped += covered / ch_speed
                 if target <= ch_end: break
             return max(0.0, mapped)
-
         for seg in segments:
             seg_start, seg_end, seg_speed = seg['start_ms'] / 1000.0, seg['end_ms'] / 1000.0, seg['speed']
             rel_start = _to_clip_relative_sec(seg_start)
@@ -116,7 +115,6 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             current_time = rel_end
         if current_time < total_duration_sec - 0.001:
             chunks.append({'start': current_time, 'end': total_duration_sec, 'speed': float(base_speed)})
-        
         chunks = [ch for ch in chunks if (ch['end'] - ch['start']) > 0.001]
         n_chunks = len(chunks)
         if n_chunks == 0:
@@ -127,7 +125,6 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
             a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
             return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec/base_speed), time_mapper
-
         full_chain_parts = []
         full_chain_parts.append(f"{input_v_label}fps={target_fps}:round=near,split={n_chunks}{''.join([f'[v_split_{i}]' for i in range(n_chunks)])}")
         full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{''.join([f'[a_split_{i}]' for i in range(n_chunks)])}")
@@ -135,7 +132,7 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         for i, chunk in enumerate(chunks):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
             dur = end - start; out_dur = dur / speed
-            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,setpts='(PTS-STARTPTS)/{speed:.4f}',fps={target_fps}[v_chunk_{i}]")
+            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,setpts='(PTS-STARTPTS)/{speed:.4f}'[v_chunk_{i}]")
             tmp_s = speed; audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0

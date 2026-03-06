@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import subprocess
 from PyQt5.QtCore import Qt, QTimer, QSize, QEvent
@@ -58,12 +58,12 @@ class UiBuilderMixin:
             self.selected_intro_abs_time = pos_s
             mm = int(self.selected_intro_abs_time // 60)
             ss = self.selected_intro_abs_time % 60.0
-            self.thumb_pick_btn.setText("⏳ EXTRACTING...")
+            self.thumb_pick_btn.setText("⏳ EXTRACTING... ⏳")
             self.thumb_pick_btn.setEnabled(False)
 
             def _safety_reset():
                 if getattr(self, "_current_thumb_request", None) == request_id:
-                    if self.thumb_pick_btn.text() == "⏳ EXTRACTING...":
+                    if self.thumb_pick_btn.text() == "⏳ EXTRACTING... ⏳":
                         self.thumb_pick_btn.setEnabled(True)
                         self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
                         if hasattr(self, "logger"): self.logger.warning("THUMB: Safety reset triggered (thread hang suspected)")
@@ -100,7 +100,7 @@ class UiBuilderMixin:
             Thread(target=lambda: _run_extract(request_id, mm, ss), daemon=True).start()
             if hasattr(self, "logger"):
                 self.logger.info("THUMB: Selected absolute time %.3fs", self.selected_intro_abs_time)
-            self.status_update_signal.emit(f"✅ Thumbnail frame selected: {mm:02d}:{ss:05.2f}")
+            self.status_update_signal.emit(f"✅ Thumbnail frame selected: {mm:02d}:{ss:05.2f} ✅")
         except Exception as e:
             self.thumb_pick_btn.setEnabled(True)
             self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
@@ -112,8 +112,8 @@ class UiBuilderMixin:
         """Update UI after thumbnail extraction."""
         self.thumb_pick_btn.setEnabled(True)
         if is_latest:
-            self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f}")
-            QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f}"))
+            self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f} ✅")
+            QTimer.singleShot(3000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: {mm:02d}:{ss:05.2f} 📸"))
         else:
             self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
 
@@ -211,7 +211,9 @@ class UiBuilderMixin:
                 self.status_update_signal.emit("⌛ Hardware scan in progress... Please wait a few seconds.")
                 return
             try:
-                if getattr(self, "player", None):
+                if hasattr(self, "_safe_stop_playback"):
+                    self._safe_stop_playback()
+                elif getattr(self, "player", None):
                     self.player.stop()
             except Exception:
                 pass
@@ -613,15 +615,15 @@ class UiBuilderMixin:
         self.quality_value_label.setMinimumWidth(fixed_w)
 
         def _on_quality_changed(value: int):
+            self._update_quality_label()
+            idx = int(value)
             titles = [
-                "Bad (15MB - Smallest File)", 
-                "Okay (25MB - Balanced)", 
-                "Standard (45MB)", 
+                "Bad (Smallest File)", 
+                "Okay (Balanced Mobile)", 
+                "Standard (High Quality)", 
                 "Good (90MB - High Quality)", 
-                "Maximum (Original Video Size)"
+                "Maximum (Original Quality)"
             ]
-            idx = max(0, min(4, int(value)))
-            self.quality_value_label.setText(titles[idx])
             self.logger.info(f"OPTION: Video Output Quality -> {titles[idx]}")
         self.quality_slider.valueChanged.connect(_on_quality_changed)
         q_vbox = QVBoxLayout()
@@ -711,7 +713,7 @@ class UiBuilderMixin:
         self.mobile_checkbox.setCursor(Qt.PointingHandCursor)
         self.mobile_checkbox.setEnabled(False)
         self.mobile_checkbox.setChecked(bool(self.config_manager.config.get('mobile_checked', False)))
-        
+
         from PyQt5.QtWidgets import QLineEdit
         self.portrait_text_input = QLineEdit()
         self.portrait_text_input.setPlaceholderText("Overlay Text (Hebrew/English)")
@@ -761,6 +763,36 @@ class UiBuilderMixin:
         process_controls.addLayout(btn_layout, 0, 2, 1, 1, Qt.AlignCenter | Qt.AlignVCenter)
         self._safe_add_to_grid(process_controls, self.right_group_widget, 0, 3, 1, 1, Qt.AlignRight | Qt.AlignVCenter)
         self.center_btn_container = process_controls
+
+    def _update_quality_label(self):
+        """[FIX #4] Dynamically recalculates the quality label based on trim duration and bitrate."""
+        if not hasattr(self, "quality_value_label"): return
+        idx = int(self.quality_slider.value())
+        if idx >= 4:
+            self.quality_value_label.setText("Original Size (Lossless)")
+            return
+        dur_ms = (getattr(self, "trim_end_ms", 0) - getattr(self, "trim_start_ms", 0))
+        if dur_ms <= 0:
+            self.quality_value_label.setText("Standard (45MB)")
+            return
+        dur_sec = dur_ms / 1000.0
+        target_mbs = [15.0, 25.0, 45.0, 90.0]
+        target_mb = target_mbs[idx]
+        total_bits = target_mb * 8 * 1024 * 1024
+        audio_bits = 192 * 1024 * dur_sec
+        video_bits = (total_bits - audio_bits) * 0.95
+        kbps = int(video_bits / (1024 * dur_sec)) if dur_sec > 0 else 6000
+        pixels_per_sec = 1920 * 1080 * 60
+        bpp = (kbps * 1024) / pixels_per_sec
+        if bpp < 0.04:
+            quality_desc = "Low Clarity"
+        elif bpp < 0.07:
+            quality_desc = "Standard"
+        elif bpp < 0.12:
+            quality_desc = "High Quality"
+        else:
+            quality_desc = "Professional (4K-Like)"
+        self.quality_value_label.setText(f"{quality_desc} ({int(target_mb)}MB)")
 
     def _init_status_bar(self):
         self.progress_bar = QProgressBar()

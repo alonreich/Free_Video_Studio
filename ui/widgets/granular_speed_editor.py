@@ -188,9 +188,10 @@ class GranularTimelineSlider(TrimmedSlider):
                 p.drawText(groove_rect.right() - 20, groove_rect.bottom() + 18, self._fmt(max_v))
             try:
                 playhead_rect = self._get_playhead_rect()
-                if playhead_rect.isValid():
+                if playhead_rect and playhead_rect.isValid():
                     knob_w, knob_h = 15, 40
-                    cx, cy = playhead_rect.center().x(), groove_rect.center().y()
+                    cx = playhead_rect.center().x()
+                    cy = groove_rect.center().y()
                     knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
                     g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
                     c1, c2 = QColor("#5a5a5a"), QColor("#9a9a9a")
@@ -235,50 +236,50 @@ class GranularSpeedEditor(QDialog):
     STYLE_DELETE_ACTIVE = STYLE_METALLIC_RED 
 
     def _ensure_mpv_lock(self):
-        lock = getattr(self, "_mpv_lock", None)
-        if lock is None: lock = threading.Lock(); self._mpv_lock = lock
+        if not hasattr(self, "_mpv_lock") or self._mpv_lock is None:
+            self._mpv_lock = threading.RLock()
         if not hasattr(self, "_mpv_lock_timeout"): self._mpv_lock_timeout = 0.20
-        return lock
+        return self._mpv_lock
 
     def _safe_mpv_set(self, prop, value):
         if not getattr(self, "player", None): return False
-        with self._ensure_mpv_lock():
+        lock = self._ensure_mpv_lock()
+        try:
+            if not lock.acquire(timeout=self._mpv_lock_timeout): return False
             try:
-                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return False
-                try:
-                    if prop == "wid": self.player.wid = value
-                    elif prop == "pause": self.player.pause = value
-                    elif prop == "speed": self.player.speed = value
-                    elif prop == "volume": self.player.volume = value
-                    elif prop == "mute": self.player.mute = value
-                    else: self.player.set_property(prop, value)
-                finally: self._mpv_lock.release()
-            except: return False
-        return True
+                if prop == "wid": self.player.wid = value
+                elif prop == "pause": self.player.pause = value
+                elif prop == "speed": self.player.speed = value
+                elif prop == "volume": self.player.volume = value
+                elif prop == "mute": self.player.mute = value
+                else: self.player.set_property(prop, value)
+                return True
+            finally: lock.release()
+        except: return False
 
     def _safe_mpv_get(self, prop, default=None):
         if not getattr(self, "player", None): return default
-        with self._ensure_mpv_lock():
-            try:
-                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return default
-                try: return getattr(self.player, prop, default)
-                finally: self._mpv_lock.release()
-            except: return default
+        lock = self._ensure_mpv_lock()
+        try:
+            if not lock.acquire(timeout=self._mpv_lock_timeout): return default
+            try: return getattr(self.player, prop, default)
+            finally: lock.release()
+        except: return default
 
     def _safe_mpv_command(self, *args):
         if not getattr(self, "player", None): return False
-        with self._ensure_mpv_lock():
-            try:
-                if not self._mpv_lock.acquire(timeout=self._mpv_lock_timeout): return False
-                try: self.player.command(*args); return True
-                finally: self._mpv_lock.release()
-            except: return False
+        lock = self._ensure_mpv_lock()
+        try:
+            if not lock.acquire(timeout=self._mpv_lock_timeout): return False
+            try: self.player.command(*args); return True
+            finally: lock.release()
+        except: return False
 
     def _init_state(self): self.selection_modified = False; self.list_modified = False
 
     def __init__(self, input_file_path, parent=None, initial_segments=None, base_speed=1.1, start_time_ms=0, mpv_instance=None, volume=100):
         super().__init__(parent)
-        self._mpv_lock = threading.Lock()
+        self._mpv_lock = threading.RLock()
         self._init_state()
         self.setWindowTitle("Granular Speed Editor")
         self.input_file_path = input_file_path
@@ -409,9 +410,7 @@ class GranularSpeedEditor(QDialog):
     def _finalize_startup(self):
         if not self.player: return
         self._safe_mpv_set("pause", True)
-        with self._ensure_mpv_lock():
-            try: self.player.seek((self.abs_trim_start + self.start_time_ms) / 1000.0, reference='absolute', precision='exact')
-            except: pass
+        self._safe_mpv_command("seek", (self.abs_trim_start + self.start_time_ms) / 1000.0, "absolute", "exact")
         self.timeline.setValue(int(self.start_time_ms)); self.play_btn.setText("PLAY"); self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.is_playing = False
 
     def keyPressEvent(self, event):
@@ -453,9 +452,7 @@ class GranularSpeedEditor(QDialog):
         now = import_time.time()
         if now - getattr(self, "_last_seek_ts", 0) < 0.1: return
         self._last_seek_ts = now; rel_pos = max(0, min(self.duration, rel_pos)); abs_pos = self.abs_trim_start + rel_pos
-        with self._ensure_mpv_lock():
-            try: import_time.sleep(0.01); self.player.seek(abs_pos / 1000.0, reference='absolute', precision='exact')
-            except: pass
+        self._safe_mpv_command("seek", abs_pos / 1000.0, "absolute", "exact")
         self.update_playback_speed(rel_pos)
 
     def update_ui(self):
@@ -464,8 +461,8 @@ class GranularSpeedEditor(QDialog):
         try:
             if not self.timeline.isSliderDown():
                 curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
-                if curr_rel >= self.duration: self.pause_video(); curr_rel = self.duration; self._safe_mpv_set("time_pos", (self.abs_trim_start + curr_rel) / 1000.0)
-                elif curr_rel < 0: curr_rel = 0; self._safe_mpv_set("time_pos", (self.abs_trim_start + curr_rel) / 1000.0)
+                if curr_rel >= self.duration: self.pause_video(); curr_rel = self.duration; self._safe_mpv_set("time-pos", (self.abs_trim_start + curr_rel) / 1000.0)
+                elif curr_rel < 0: curr_rel = 0; self._safe_mpv_set("time-pos", (self.abs_trim_start + curr_rel) / 1000.0)
                 t_i = int(round(curr_rel)); self.timeline.blockSignals(True); self.timeline.setValue(t_i); self.timeline.blockSignals(False); self.timeline.update(); self.update_playback_speed(t_i); self.last_position_ms = t_i
         finally: self._updating_ui = False
     
@@ -486,41 +483,63 @@ class GranularSpeedEditor(QDialog):
     def set_start(self):
         if not self.player: return
         rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
+        rel_t = max(0, min(self.duration, rel_t))
         for seg in self.speed_segments:
-            if seg['start'] <= rel_t < seg['end']: rel_t = seg['end']; break
+            if seg['start'] < rel_t < seg['end']:
+                rel_t = seg['end']
+                break
         if self.timeline.active_segment_index != -1:
-            idx = self.timeline.active_segment_index; self.speed_segments[idx]['start'] = rel_t; self.timeline.set_trim_times(rel_t, self.speed_segments[idx]['end'])
+            idx = self.timeline.active_segment_index
+            low_limit = 0
+            if idx > 0: low_limit = self.speed_segments[idx-1]['end']
+            rel_t = max(low_limit, min(rel_t, self.speed_segments[idx]['end'] - 10))
+            self.speed_segments[idx]['start'] = rel_t
+            self.timeline.set_trim_times(rel_t, self.speed_segments[idx]['end'])
         else:
             self._start_manually_set = True
             self.timeline.active_segment_index = -1
             self.timeline.set_trim_times(rel_t, rel_t)
-        self.update_pending_visualization(); self.selection_modified = True
+            self.delete_seg_btn.setEnabled(False)
+            self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY)
+        self.update_pending_visualization()
+        self.selection_modified = True
 
     def set_end(self):
         if not self.player: return
         rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
+        rel_t = max(0, min(self.duration, rel_t))
         if self.timeline.active_segment_index != -1:
-            idx = self.timeline.active_segment_index; rel_t = max(rel_t, self.speed_segments[idx]['start'] + 10); self.speed_segments[idx]['end'] = rel_t; self.timeline.set_trim_times(self.speed_segments[idx]['start'], rel_t)
+            idx = self.timeline.active_segment_index
+            high_limit = self.duration
+            if idx < len(self.speed_segments) - 1: high_limit = self.speed_segments[idx+1]['start']
+            rel_t = min(high_limit, max(rel_t, self.speed_segments[idx]['start'] + 10))
+            self.speed_segments[idx]['end'] = rel_t
+            self.timeline.set_trim_times(self.speed_segments[idx]['start'], rel_t)
+            self.edit_segment(idx)
         else:
-            prev_end, found_prev = 0, False
-            for seg in self.speed_segments:
-                if seg['end'] <= rel_t:
-                    if not found_prev or seg['end'] > prev_end:
-                        prev_end = seg['end']
-                        found_prev = True
-            if not getattr(self, "_start_manually_set", False) and found_prev:
+            if not getattr(self, "_start_manually_set", False):
+                prev_end = 0
+                for seg in self.speed_segments:
+                    if seg['end'] <= rel_t:
+                        prev_end = max(prev_end, seg['end'])
                 smart_s = prev_end + 1000
                 if smart_s >= rel_t: smart_s = prev_end
                 self.timeline.set_trim_times(smart_s, rel_t)
             curr_s = self.timeline.trimmed_start_ms
             for seg in self.speed_segments:
-                if seg['start'] < rel_t <= seg['end']: rel_t = seg['start']; break
+                if seg['start'] < rel_t <= seg['end']:
+                    rel_t = seg['start']
+                    break
             rel_t = max(rel_t, curr_s + 10)
             self.timeline.set_trim_times(curr_s, rel_t)
             if rel_t > curr_s:
                 new_idx = self.add_segment()
-                if new_idx is not None: self.edit_segment(new_idx)
-        self.update_pending_visualization(); self.pause_video(); self.selection_modified = True
+                if new_idx is not None:
+                    self.edit_segment(new_idx)
+            self._start_manually_set = False
+        self.update_pending_visualization()
+        self.pause_video()
+        self.selection_modified = True
 
     def on_trim_changed(self, start, end):
         if self.timeline.active_segment_index != -1:
@@ -593,12 +612,19 @@ class GranularSpeedEditor(QDialog):
         return None
 
     def cleanup(self):
-        if self.player:
-            try: self._safe_mpv_set("pause", True); self._safe_mpv_command("stop")
+        if hasattr(self, "player") and self.player:
+            try:
+                self._safe_mpv_set("pause", True)
+                self._safe_mpv_command("stop")
+                self._safe_mpv_set("wid", -1)
             except: pass
             try: MPVSafetyManager.safe_mpv_shutdown(self.player, timeout=1.5)
             except: pass
             self.player = None
+            self.mpv_instance = None
+
+        import gc
+        gc.collect()
 
     def accept(self):
         self.speed_segments = [{'start': int(s['start'] + self.abs_trim_start), 'end': int(s['end'] + self.abs_trim_start), 'speed': s['speed']} for s in self.speed_segments]

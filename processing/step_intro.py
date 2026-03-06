@@ -52,7 +52,7 @@ class IntroProcessor:
                     src_w, src_h = 1920, 1080
             except:
                 src_w, src_h = 1920, 1080
-            intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},{base_intro}"
+            intro_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={target_w}:{target_h},{base_intro}"
             cmd = [
                 self.ffmpeg_path, "-y",
                 "-progress", "pipe:1",

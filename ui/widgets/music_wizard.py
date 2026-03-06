@@ -110,7 +110,8 @@ class MergerMusicWizard(
         self.btn_back.clicked.connect(self._on_nav_back_clicked)
         self.btn_back.hide()
         self.btn_play_video = QPushButton("  PLAY")
-        self.btn_play_video.setFixedWidth(150); self.btn_play_video.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+        self.btn_play_video.setFixedWidth(150); self.btn_play_video.setFixedHeight(42)
+        self.btn_play_video.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
         self.btn_play_video.setCursor(Qt.PointingHandCursor)
         self.btn_play_video.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.btn_play_video.clicked.connect(self.toggle_video_preview)
@@ -131,33 +132,28 @@ class MergerMusicWizard(
         self._borrowed_video_player = mpv_instance
         if mpv:
             try:
-                if mpv_instance and hasattr(mpv_instance, 'command'):
-                    self.logger.info("WIZARD: Using main app's video player instance.")
-                    self._wizard_video_player = mpv_instance
-                    self._owns_video_player = False
+                self.logger.info("WIZARD: Creating dedicated video player engine...")
+                kwargs = {
+                    'osc': False,
+                    'hr_seek': 'yes',
+                    'hwdec': 'no',
+                    'keep_open': 'yes',
+                    'loglevel': "info",
+                    'ytdl': False,
+                    'demuxer_max_bytes': '500M',
+                    'demuxer_max_back_bytes': '100M',
+                }
+                if sys.platform == 'win32':
+                    kwargs['vo'] = 'gpu'
+                    kwargs['gpu-context'] = 'd3d11'
+                self._wizard_video_player = MPVSafetyManager.create_safe_mpv(**kwargs)
+                if self._wizard_video_player:
+                    self.logger.info("WIZARD: Dedicated video player instance created.")
+                    self._owns_video_player = True
                 else:
-                    self.logger.info("WIZARD: Creating new video player engine...")
-                    kwargs = {
-                        'osc': False,
-                        'hr_seek': 'yes',
-                        'hwdec': 'no',
-                        'keep_open': 'yes',
-                        'loglevel': "info",
-                        'ytdl': False,
-                        'demuxer_max_bytes': '500M',
-                        'demuxer_max_back_bytes': '100M',
-                    }
-                    if sys.platform == 'win32':
-                        kwargs['vo'] = 'gpu'
-                        kwargs['gpu-context'] = 'd3d11'
-                    self._wizard_video_player = MPVSafetyManager.create_safe_mpv(**kwargs)
-                    if self._wizard_video_player:
-                        self.logger.info("WIZARD: Video player instance created.")
-                        self._owns_video_player = True
-                    else:
-                        self.logger.error("WIZARD: Failed to create video player")
-                        self._wizard_video_player = None
-                        self._owns_video_player = False
+                    self.logger.error("WIZARD: Failed to create video player")
+                    self._wizard_video_player = None
+                    self._owns_video_player = False
                 time.sleep(0.3) 
                 self.logger.info("WIZARD: Creating music player engine...")
                 self._wizard_music_player = MPVSafetyManager.create_safe_mpv(
@@ -207,7 +203,7 @@ class MergerMusicWizard(
     def _enforce_step_size_constraints(self, index):
         """Enforces specific size constraints for different steps of the wizard."""
         if index == 1:
-            self.setMinimumSize(800, 550)
+            self.setMinimumSize(600, 550)
         else:
             self.setMinimumSize(0, 0)
 
@@ -248,6 +244,7 @@ class MergerMusicWizard(
 
     def _safe_mpv_shutdown(self, player_attr_name, timeout=0.5):
         """[FIX] Faster shutdown for wizard cleanup to prevent UI freeze."""
+
         import time
         player = getattr(self, player_attr_name, None)
         if not player:

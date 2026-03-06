@@ -17,11 +17,13 @@ class MusicDialogHandler:
             return True
         if mpv is None:
             return False
+
+        from system.utils import MPVSafetyManager
         try:
             bin_dir = getattr(self.parent, "bin_dir", "") or ""
             if bin_dir and os.path.isdir(bin_dir):
                 os.environ["PATH"] += os.pathsep + os.path.abspath(bin_dir)
-            self.parent.player = mpv.MPV(hr_seek='yes', hwdec='auto', keep_open='yes')
+            self.parent.player = MPVSafetyManager.create_safe_mpv(hr_seek='yes', hwdec='auto', keep_open='yes')
             return self.parent.player is not None
         except Exception:
             self.parent.player = None
@@ -52,10 +54,17 @@ class MusicDialogHandler:
         mp3_dir = self.parent.config_manager.config.get('custom_mp3_dir')
         if not mp3_dir or not os.path.isdir(mp3_dir):
             mp3_dir = os.path.join(self.parent.base_dir, "mp3")
-        wizard = MergerMusicWizard(self.parent, self.parent.player, self.parent.bin_dir, mp3_dir, total_sec, speed_factor=1.0)
+        wizard = MergerMusicWizard(
+            self.parent, self.parent.player, self.parent.bin_dir, mp3_dir, 
+            total_sec, speed_factor=1.0, initial_project_sec=0.0
+        )
         if hasattr(self.parent, "unified_music_widget"):
+            wizard.video_vol_slider.blockSignals(True)
             wizard.video_vol_slider.setValue(self.parent.unified_music_widget.get_video_volume())
+            wizard.video_vol_slider.blockSignals(False)
+            wizard.music_vol_slider.blockSignals(True)
             wizard.music_vol_slider.setValue(self.parent.unified_music_widget.get_volume())
+            wizard.music_vol_slider.blockSignals(False)
             wizard.selected_tracks = list(self.parent.unified_music_widget.get_wizard_tracks())
         if wizard.exec_() == QDialog.Accepted:
             if hasattr(self.parent, "unified_music_widget"):
@@ -63,7 +72,10 @@ class MusicDialogHandler:
                 v_vol = wizard.video_vol_slider.value()
                 self.parent.unified_music_widget.set_wizard_tracks(wizard.selected_tracks, music_vol=m_vol, video_vol=v_vol)
                 self.parent.set_status_message("✅ Music selection applied!", "color: #43b581; font-weight: bold;", 3000, force=True)
-        wizard.stop_previews()
+        if hasattr(wizard, "stop_previews"):
+            wizard.stop_previews()
+        if hasattr(wizard, "_release_player"):
+            wizard._release_player()
 
     def show_music_offset_dialog(self, path):
         if not self._ensure_mpv_instance():

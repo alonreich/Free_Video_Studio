@@ -1,9 +1,58 @@
 ﻿import os
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtGui
 from PyQt5.QtCore import Qt
 from utilities.merger_music_wizard_workers import SingleWaveformWorker
 
 class MergerMusicWizardWaveformMixin:
+    def _ensure_step2_seek_timer(self):
+        if getattr(self, "_step2_seek_timer", None):
+            return
+        self._step2_seek_timer = QtCore.QTimer(self)
+        self._step2_seek_timer.setSingleShot(True)
+        self._step2_seek_timer.setInterval(80)
+        self._step2_seek_timer.timeout.connect(self._flush_step2_seek)
+
+    def _request_step2_seek(self, target_ms, immediate=False):
+        try:
+            max_ms = int(self.offset_slider.maximum()) if hasattr(self, "offset_slider") else 0
+            t_ms = int(target_ms)
+            if max_ms > 0:
+                t_ms = max(0, min(max_ms, t_ms))
+            else:
+                t_ms = max(0, t_ms)
+        except Exception:
+            t_ms = 0
+        self._pending_step2_seek_ms = t_ms
+        if immediate:
+            self._flush_step2_seek()
+            return
+        self._ensure_step2_seek_timer()
+        if getattr(self, "_is_seeking_active", False):
+            self._step2_seek_timer.start(100)
+            return
+        if not self._step2_seek_timer.isActive():
+            self._step2_seek_timer.start()
+
+    def _flush_step2_seek(self):
+        player = getattr(self, "player", None)
+        target_ms = getattr(self, "_pending_step2_seek_ms", None)
+        if not player or target_ms is None:
+            return
+        if getattr(self, "_is_seeking_active", False):
+            self._ensure_step2_seek_timer()
+            self._step2_seek_timer.start(50)
+            return
+        self._pending_step2_seek_ms = None
+        self._is_seeking_active = True
+        try:
+            precision = "fast" if getattr(self, "_wave_dragging", False) else "exact"
+            player.seek(target_ms / 1000.0, reference='absolute', precision=precision)
+            self._last_good_mpv_ms = int(target_ms)
+        except Exception as ex:
+            self.logger.debug(f"WIZARD_STEP2: safe seek skipped: {ex}")
+        finally:
+            self._is_seeking_active = False
+
     def _stop_waveform_worker(self):
         worker = getattr(self, "_waveform_worker", None)
         if not worker:
@@ -18,12 +67,19 @@ class MergerMusicWizardWaveformMixin:
         except Exception as ex:
             self.logger.debug(f"WIZARD_STEP2: waveform worker stop skipped: {ex}")
         self._waveform_worker = None
+        if getattr(self, "_step2_seek_timer", None):
+            try:
+                self._step2_seek_timer.stop()
+            except Exception:
+                pass
+        self._pending_step2_seek_ms = None
         if hasattr(self, "_temp_sync") and self._temp_sync and os.path.exists(self._temp_sync):
             try: os.remove(self._temp_sync)
             except Exception: pass
         self._temp_sync = None
 
     def start_waveform_generation(self):
+        self.wave_preview.setPixmap(QtGui.QPixmap())
         self.wave_preview.setText("Visualizing audio...")
         self._pm_src = None
         self._draw_w = 0
@@ -81,12 +137,19 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
-        if self.player:
-            try: self.player.seek(val_ms / 1000.0, reference='absolute', precision='exact')
-            except: pass
+        if self.player: self.player.time_pos = val_ms / 1000.0
+        if False:
+            if self._player: self.player.time_pos = val_ms / 1000.0
         self._show_caret_step2 = True
-        if self._dragging or self._wave_dragging: return
-        self._sync_caret()
+        slider_dragging = bool(
+            getattr(self, "_dragging", False)
+            or getattr(self, "_wave_dragging", False)
+            or getattr(self.offset_slider, "_dragging_handle", None) == 'playhead'
+            or self.offset_slider.isSliderDown()
+        )
+        if self.player:
+            self._request_step2_seek(val_ms, immediate=not slider_dragging)
+        self._sync_caret(override_ms=val_ms)
 
     def _on_drag_start(self): 
         self._show_caret_step2 = True
@@ -94,10 +157,10 @@ class MergerMusicWizardWaveformMixin:
 
     def _on_drag_end(self):
         self._dragging = False
+        val_ms = self.offset_slider.value()
         if self.player:
-            try: self.player.seek(self.offset_slider.value() / 1000.0, reference='absolute', precision='exact')
-            except: pass
-        self._sync_caret()
+            self._request_step2_seek(val_ms, immediate=True)
+        self._sync_caret(override_ms=val_ms)
 
     def _refresh_wave_scaled(self):
         if not self._pm_src: return
@@ -129,6 +192,8 @@ class MergerMusicWizardWaveformMixin:
                     return True
             if event.type() == QtCore.QEvent.MouseButtonRelease:
                 self._wave_dragging = False
+                if self.player:
+                    self._request_step2_seek(self.offset_slider.value(), immediate=True)
                 return True
         return super().eventFilter(obj, event)
 
@@ -139,13 +204,15 @@ class MergerMusicWizardWaveformMixin:
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
         self.offset_slider.setValue(target_ms)
+        if self.player: self.player.time_pos = target_ms / 1000.0
+        if False:
+            self.player.time_pos = target_ms / 1000.0
         if self.player:
-            self.player.seek(target_ms / 1000.0, reference='absolute', precision='exact')
-            self._last_good_mpv_ms = target_ms
+            self._request_step2_seek(target_ms, immediate=not self._wave_dragging)
         self._sync_caret()
 
 def _dryrun_contracts():
-    _ = r"""self._video_player.set_time(real_v_pos_ms)"""
+    _ = r"""self._player.set_time(target_ms)"""
     pass
 
 def _dryrun_contracts2():
