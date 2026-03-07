@@ -1,8 +1,3 @@
-"""
-Enhanced Draggable List Widget with professional ghost blocks, smooth animations,
-and industry-standard drag-and-drop UX patterns.
-"""
-
 from PyQt5.QtCore import (
     Qt, QRect, QTimer, QPoint, QPropertyAnimation, 
     QEasingCurve, QParallelAnimationGroup,
@@ -21,7 +16,6 @@ import math
 import time
 
 class GhostItemWidget(QWidget):
-    """Professional ghost item widget with smooth animations."""
     
     def __init__(self, source_widget, parent=None):
         super().__init__(parent)
@@ -35,7 +29,7 @@ class GhostItemWidget(QWidget):
         self.setFixedSize(self.ghost_pixmap.size())
         
     def paintEvent(self, event):
-        """Paint the ghost widget with professional effects."""
+        
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
@@ -65,7 +59,7 @@ class GhostItemWidget(QWidget):
         painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
         
     def animate_pickup(self):
-        """Animate the ghost item when picked up."""
+        
         self.scale_anim = QPropertyAnimation(self, b"scale_factor")
         self.scale_anim.setDuration(150)
         self.scale_anim.setStartValue(1.0)
@@ -74,7 +68,7 @@ class GhostItemWidget(QWidget):
         self.scale_anim.start()
         
     def animate_drop(self):
-        """Animate the ghost item when dropped."""
+        
         self.scale_anim = QPropertyAnimation(self, b"scale_factor")
         self.scale_anim.setDuration(200)
         self.scale_anim.setStartValue(self.scale_factor)
@@ -83,13 +77,7 @@ class GhostItemWidget(QWidget):
         self.scale_anim.start()
 
 class EnhancedDraggableListWidget(QListWidget):
-    """
-    Professional drag-and-drop list widget with:
-    - Ghost blocks that push other items aside
-    - Smooth animations maintaining geometric integrity
-    - Predictive drop zones
-    - Visual feedback for all interactions
-    """
+    
     drag_started = pyqtSignal(int)
     drag_ended = pyqtSignal(int, int)
     items_reordered = pyqtSignal(list)
@@ -121,7 +109,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._redo_stack = []
         
     def mousePressEvent(self, event):
-        """Handle mouse press to start drag operation."""
+        
         if event.button() == Qt.LeftButton:
             self._drag_start_pos = event.pos()
             index = self.indexAt(event.pos())
@@ -136,7 +124,7 @@ class EnhancedDraggableListWidget(QListWidget):
         super().mousePressEvent(event)
     
     def mouseMoveEvent(self, event):
-        """Handle mouse move to initiate drag operation."""
+        
         if not (event.buttons() & Qt.LeftButton):
             return
         if not self._is_dragging:
@@ -151,7 +139,7 @@ class EnhancedDraggableListWidget(QListWidget):
         super().mouseMoveEvent(event)
     
     def mouseReleaseEvent(self, event):
-        """Handle mouse release to complete drag operation."""
+        
         if event.button() == Qt.LeftButton and self._is_dragging:
             self._complete_drag_operation()
         self.setCursor(Qt.OpenHandCursor)
@@ -159,7 +147,7 @@ class EnhancedDraggableListWidget(QListWidget):
         super().mouseReleaseEvent(event)
     
     def _create_ghost_widget(self, source_widget, position):
-        """Create a professional ghost widget for dragging."""
+        
         if self._ghost_widget:
             self._ghost_widget.deleteLater()
         self._ghost_widget = GhostItemWidget(source_widget, self.viewport())
@@ -169,7 +157,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._ghost_widget.animate_pickup()
     
     def _update_ghost_position(self, position):
-        """Update ghost widget position with smooth following."""
+        
         if not self._ghost_widget:
             return
         current_pos = self._ghost_widget.pos()
@@ -188,7 +176,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._ghost_widget.update()
     
     def _start_drag_operation(self, position):
-        """Start the drag operation."""
+        
         self._is_dragging = True
         if self._drag_item_index >= 0:
             item = self.item(self._drag_item_index)
@@ -200,7 +188,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self.drag_started.emit(self._drag_item_index)
     
     def _complete_drag_operation(self):
-        """Complete the drag operation with animation."""
+        
         if not self._is_dragging or self._drag_item_index < 0:
             return
         if self._drop_target_index >= 0 and self._drop_target_index != self._drag_item_index:
@@ -212,7 +200,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._cleanup_drag_state()
     
     def _perform_animated_move(self, from_index, to_index):
-        """Perform animated move of items."""
+        
         if self._animation_group:
             self._animation_group.stop()
             self._animation_group.deleteLater()
@@ -237,7 +225,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._animation_group.start()
     
     def _get_affected_indices(self, from_index, to_index):
-        """Get indices of items affected by the move."""
+        
         affected = []
         if from_index < to_index:
             affected = list(range(from_index, to_index + 1))
@@ -246,7 +234,7 @@ class EnhancedDraggableListWidget(QListWidget):
         return affected
     
     def _calculate_target_position(self, idx, from_index, to_index):
-        """Calculate target position for an item during move animation."""
+        
         item = self.item(idx)
         if not item:
             return QPoint(0, 0)
@@ -274,7 +262,7 @@ class EnhancedDraggableListWidget(QListWidget):
         return visual_rect.topLeft()
     
     def _on_move_animation_finished(self):
-        """Handle completion of move animation."""
+        
         if self._drag_item_index >= 0 and self._drop_target_index >= 0:
             item = self.takeItem(self._drag_item_index)
             if item:
@@ -292,7 +280,7 @@ class EnhancedDraggableListWidget(QListWidget):
             self.setCurrentRow(self._drop_target_index)
     
     def _return_to_original_position(self):
-        """Animate items back to their original positions."""
+        
         if not self._animation_group:
             self._animation_group = QParallelAnimationGroup()
         for idx, original_pos in self._original_positions.items():
@@ -311,7 +299,7 @@ class EnhancedDraggableListWidget(QListWidget):
         self._animation_group.start()
     
     def _save_original_positions(self):
-        """Save original positions of all items."""
+        
         self._original_positions.clear()
         for i in range(self.count()):
             item = self.item(i)
@@ -321,7 +309,7 @@ class EnhancedDraggableListWidget(QListWidget):
                     self._original_positions[i] = widget.pos()
     
     def _update_drop_target(self, position):
-        """Update the drop target based on current mouse position."""
+        
         index = self.indexAt(position)
         if not index.isValid():
             self._drop_target_index = -1
@@ -347,7 +335,7 @@ class EnhancedDraggableListWidget(QListWidget):
             self.viewport().update()
     
     def _handle_auto_scroll_during_drag(self, pos):
-        """Handle auto-scrolling when dragging near edges."""
+        
         viewport = self.viewport()
         if not viewport:
             return

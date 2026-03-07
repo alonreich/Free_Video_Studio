@@ -47,7 +47,7 @@ class MainWindowCoreCMixin:
         QCoreApplication.instance().quit()
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
-        """[FIX #1] Ensure music handles follow video trim handles immediately."""
+        
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
         has_music = (hasattr(self, "_wizard_tracks") and self._wizard_tracks)
@@ -68,35 +68,3 @@ class MainWindowCoreCMixin:
         self._update_trim_widgets_from_trim_times()
         if hasattr(self, "_update_quality_label"):
             self._update_quality_label()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

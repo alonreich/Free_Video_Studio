@@ -32,10 +32,7 @@ def _get_session_for_pid(mgr_ptr, target_pid):
     return None
 
 def set_app_session_volume(level, pid=None):
-    """
-    Fallback implementation: Since comtypes is missing, we use a lighter 
-    MPV-compatible approach until the environment is fixed.
-    """
+    
     return False
 
 def get_app_session_volume(pid=None):

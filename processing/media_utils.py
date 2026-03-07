@@ -10,7 +10,7 @@ class MediaProber:
         self.ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
 
     def _run_command(self, args):
-        """Internal helper to run ffprobe commands safely with correct window flags."""
+        
         try:
             full_cmd = [self.ffprobe_path, "-v", "error", "-of", "default=nw=1:nk=1"] + args + [self.input_path]
             creationflags = 0
@@ -28,7 +28,7 @@ class MediaProber:
             return None
 
     def run_probe(self, args):
-        """Run probe and return a float value (converted to kbps if applicable)."""
+        
         val_str = self._run_command(args)
         if val_str:
             try:
@@ -71,7 +71,7 @@ class MediaProber:
             return 0.0
 
     def get_resolution(self):
-        """Returns resolution as 'WIDTHxHEIGHT' string."""
+        
         w = self._run_command(["-select_streams", "v:0", "-show_entries", "stream=width"])
         h = self._run_command(["-select_streams", "v:0", "-show_entries", "stream=height"])
         if w and h:
@@ -79,10 +79,7 @@ class MediaProber:
         return None
 
     def get_video_fps_expr(self, fallback: str = "60000/1001"):
-        """
-        Returns a stable ffmpeg fps expression string (e.g. "60000/1001").
-        We prefer broadcast-friendly rationals to avoid micro-jitter from 59.94<->60 drift.
-        """
+        
         raw = self._run_command([
             "-select_streams", "v:0",
             "-show_entries", "stream=avg_frame_rate"
@@ -112,10 +109,7 @@ class MediaProber:
             return fallback
 
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
-    """
-    Calculates video bitrate to hit target MB accurately while maintaining visual clarity.
-    Uses 'Bits Per Pixel' (BPP) logic to ensure high-motion gameplay remains crisp.
-    """
+    
     if duration <= 0:
         return 6000
     if keep_highest_res and prober:

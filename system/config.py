@@ -31,7 +31,12 @@ class ConfigManager:
         self.config = dict(config_data)
         try:
             self._ensure_config_dir()
-            with open(self.file_path, 'w', encoding='utf-8') as f:
+            import tempfile
+            fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(self.file_path), suffix=".tmp")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, self.file_path)
         except Exception as e:
             print(f"Error saving config file: {e}")

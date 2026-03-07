@@ -17,10 +17,7 @@ except ImportError:
             TEMP = os.path.join(tempfile.gettempdir(), 'FVS_Temp')
 
 class StateTransfer:
-    """
-    Handles saving and loading session state across different applications in the suite.
-    Persistent until explicitly cleared.
-    """
+    
     @staticmethod
     def get_session_file():
         path = os.path.join(SharedPaths.TEMP, "fvs_session_state.json")
@@ -28,9 +25,7 @@ class StateTransfer:
         return path
     @staticmethod
     def save_state(state_data: dict):
-        """
-        Overwrites the current session state with new data.
-        """
+        
         logger = logging.getLogger("StateTransfer")
         final_path = StateTransfer.get_session_file()
         parent_dir = os.path.dirname(final_path)
@@ -60,18 +55,13 @@ class StateTransfer:
                 pass
     @staticmethod
     def update_state(updates: dict):
-        """
-        Updates the existing session state with new keys/values.
-        """
+        
         current = StateTransfer.load_state()
         current.update(updates)
         StateTransfer.save_state(current)
     @staticmethod
     def load_state() -> dict:
-        """
-        Loads the session state without deleting it.
-        Returns empty dict if no session file is found.
-        """
+        
         path = StateTransfer.get_session_file()
         if not os.path.exists(path):
             return {}
@@ -96,7 +86,7 @@ class StateTransfer:
             return {}
     @staticmethod
     def clear_state():
-        """Explicitly clears the session file."""
+        
         path = StateTransfer.get_session_file()
         if os.path.exists(path):
             try:

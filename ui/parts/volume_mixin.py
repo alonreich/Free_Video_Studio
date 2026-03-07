@@ -4,7 +4,7 @@ import threading
 
 class VolumeMixin:
     def _vol_eff(self, raw: int | None = None) -> int:
-        """Map slider value -> real volume (0..100) respecting invertedAppearance."""
+        
         if not hasattr(self, "volume_slider"):
             return 100
         v = int(self.volume_slider.value() if raw is None else raw)
@@ -13,7 +13,7 @@ class VolumeMixin:
         return max(0, min(100, v))
 
     def _music_eff(self) -> int:
-        """[FIX #8] Consistent music volume source."""
+        
         if not hasattr(self, "_music_volume_pct"):
             try:
                 self._music_volume_pct = int(self.config_manager.config.get('music_mix_volume', 80))
@@ -22,7 +22,7 @@ class VolumeMixin:
         return int(self._music_volume_pct)
 
     def _sync_all_volumes(self):
-        """[FIX #8] One-stop shop for player volume synchronization."""
+        
         if bool(getattr(self, "_suspend_volume_sync", False)) or getattr(self, "_in_transition", False):
             return
         v_eff = self._vol_eff()
@@ -49,7 +49,7 @@ class VolumeMixin:
                 pass
 
     def _schedule_volume_reinforce(self, delay_ms: int = 350):
-        """Use one managed timer instead of many stacked singleShot callbacks."""
+        
         if bool(getattr(self, "_suspend_volume_sync", False)):
             return
         try:
@@ -64,7 +64,7 @@ class VolumeMixin:
             pass
 
     def _update_volume_badge(self):
-        """Update badge text to show effective %."""
+        
         if not hasattr(self, "volume_badge") or not hasattr(self, "volume_slider"):
             return
         try:
@@ -78,15 +78,13 @@ class VolumeMixin:
                 self.logger.error(f"Volume Badge Error: {e}")
 
     def apply_master_volume(self):
-        """Sync UI -> MPV and start reinforcement."""
+        
         self._sync_all_volumes()
         self._update_volume_badge()
         self._schedule_volume_reinforce(350)
 
     def _on_master_volume_changed(self, v: int):
-        """
-        Direction: UI Slider -> MPV Volume
-        """
+        
         self._sync_all_volumes()
         eff_pct = self._vol_eff(v)
         if hasattr(self, "config_manager"):

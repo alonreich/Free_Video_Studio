@@ -32,11 +32,7 @@ class ClickableSpinBox(QDoubleSpinBox):
 
 class UiBuilderMixin:
     def _pick_thumbnail_from_current_frame(self):
-        """
-        Capture the current absolute player time (seconds) as the desired
-        thumbnail frame using FFmpeg for precision.
-        Handles concurrent calls by ignoring old requests.
-        """
+        
         try:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
                 QMessageBox.information(self, "No Video", "Please load a video first.")
@@ -109,7 +105,7 @@ class UiBuilderMixin:
             QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
 
     def _on_thumb_extracted(self, mm, ss, is_latest=True):
-        """Update UI after thumbnail extraction."""
+        
         self.thumb_pick_btn.setEnabled(True)
         if is_latest:
             self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET\n{mm:02d}:{ss:05.2f} ✅")
@@ -122,7 +118,7 @@ class UiBuilderMixin:
             self.logger.info(f"OPTION: Boss HP -> {checked}")
 
     def _update_process_button_text(self) -> None:
-        """Updates the process button text AND spinner icon."""
+        
         try:
             self._pulse_phase = (getattr(self, "_pulse_phase", 0) + 1) % 8
             if getattr(self, "is_processing", False):
@@ -151,12 +147,12 @@ class UiBuilderMixin:
             pass
 
     def _handle_granular_click(self):
-        """Delegates granular checkbox click to main window logic."""
+        
         if hasattr(self, 'open_granular_speed_dialog'):
             self.open_granular_speed_dialog()
 
     def _safe_add_to_grid(self, layout, w, r=None, c=None, rs=1, cs=1, align=Qt.Alignment()):
-        """Add widget whether layout is QGridLayout or QBoxLayout/etc."""
+        
         try:
             from PyQt5.QtWidgets import QGridLayout
             if isinstance(layout, QGridLayout) and r is not None and c is not None:
@@ -173,10 +169,7 @@ class UiBuilderMixin:
                 pass
 
     def _ensure_default_trim(self):
-        """
-        If user didn't set trims, default to full video length based on the current
-        spinbox maxima (updated when media loads).
-        """
+        
         try:
             if self.end_minute_input.maximum() == 0 and self.positionSlider.maximum() == 0:
                 QMessageBox.warning(self, "No video", "Please load a video file first.")
@@ -202,7 +195,7 @@ class UiBuilderMixin:
             return False
 
     def _on_process_clicked(self):
-        """Click-safe entrypoint: log, ensure trims, then call existing processing."""
+        
         try:
             if hasattr(self, "logger"): self.logger.info("CLICK: Process Video")
             if not getattr(self, "scan_complete", False):
@@ -233,9 +226,7 @@ class UiBuilderMixin:
             QMessageBox.critical(self, "Error", "Could not start processing. See log for details.")
 
     def _maybe_enable_process(self):
-        """
-        Turn on the Process button once duration exists AND scan is complete.
-        """
+        
         try:
             has_duration = (self.positionSlider.maximum() > 0) or (self.end_minute_input.maximum() > 0)
             is_ready = has_duration and getattr(self, "scan_complete", False)
@@ -252,7 +243,7 @@ class UiBuilderMixin:
             pass
 
     def launch_video_merger(self):
-        """Launches the Video Merger with sanity checks."""
+        
         merger_path = os.path.join(self.base_dir, 'utilities', 'video_merger.py')
         if not os.path.exists(merger_path):
             self.logger.error(f"Sanity Check Failed: Merger script missing at {merger_path}")
@@ -303,10 +294,7 @@ class UiBuilderMixin:
         return super().eventFilter(obj, event)
 
     def init_ui(self):
-        """
-        Main entry point for UI construction. 
-        Refactored to be modular and cleaner.
-        """
+        
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         left_layout = QVBoxLayout()
@@ -329,7 +317,7 @@ class UiBuilderMixin:
         QTimer.singleShot(0, lambda: self.setFocus(Qt.ActiveWindowFocusReason))
 
     def _build_player_column(self):
-        """Constructs the video player, volume slider, and trim controls."""
+        
         player_col = QVBoxLayout()
         player_col.setContentsMargins(0, 0, 0, 0)
         player_col.setSpacing(6)
@@ -392,7 +380,7 @@ class UiBuilderMixin:
         self.player_col_container.installEventFilter(self)
 
     def _set_video_controls_enabled(self, enabled: bool):
-        """[FIX] Enforces 'Greyed Out' methodology for all video-dependent UI elements."""
+        
         for widget in [
             self.playPauseButton, self.start_trim_button, self.end_trim_button,
             self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider,
@@ -622,7 +610,7 @@ class UiBuilderMixin:
                 "Okay (Balanced Mobile)", 
                 "Standard (High Quality)", 
                 "Good (90MB - High Quality)", 
-                "Maximum (Original Quality)"
+                
             ]
             self.logger.info(f"OPTION: Video Output Quality -> {titles[idx]}")
         self.quality_slider.valueChanged.connect(_on_quality_changed)
@@ -765,7 +753,7 @@ class UiBuilderMixin:
         self.center_btn_container = process_controls
 
     def _update_quality_label(self):
-        """[FIX #4] Dynamically recalculates the quality label based on trim duration and bitrate."""
+        
         if not hasattr(self, "quality_value_label"): return
         idx = int(self.quality_slider.value())
         if idx >= 4:

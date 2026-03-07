@@ -1,4 +1,4 @@
-﻿class UIStyles:
+class UIStyles:
     COLOR_PRIMARY = "#266b89"
     COLOR_HOVER = "#2980b9"
     COLOR_BACKGROUND = "#2c3e50"
@@ -269,9 +269,9 @@
             subcontrol-position: center;
         }
         QSlider::handle:vertical {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 #5a5a5a, 
-                stop:0.35 #9a9a9a, 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #5a5a5a,
+                stop:0.35 #9a9a9a,
                 stop:0.38 #000, stop:0.42 #000,
                 stop:0.45 #9a9a9a,
                 stop:0.48 #000, stop:0.52 #000,
@@ -303,9 +303,9 @@
             subcontrol-position: center;
         }
         QSlider::handle:vertical {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 #5a5a5a, 
-                stop:0.35 #9a9a9a, 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #5a5a5a,
+                stop:0.35 #9a9a9a,
                 stop:0.38 #000, stop:0.42 #000,
                 stop:0.45 #9a9a9a,
                 stop:0.48 #000, stop:0.52 #000,
@@ -335,9 +335,9 @@
             border-radius: 3px;
         }
         QSlider::handle:horizontal {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 #5a5a5a, 
-                stop:0.35 #9a9a9a, 
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.35 #9a9a9a,
                 stop:0.38 #000, stop:0.42 #000,
                 stop:0.45 #9a9a9a,
                 stop:0.48 #000, stop:0.52 #000,

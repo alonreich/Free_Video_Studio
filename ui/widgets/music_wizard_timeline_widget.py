@@ -39,7 +39,7 @@ class MergerTimelineWidget(QWidget):
         super().resizeEvent(event)
 
     def _render_background(self):
-        """Draws the static heavy content (thumbnails, waveforms) to a pixmap."""
+        
         w = self.width()
         h = self.height()
         if w <= 0 or h <= 0: return

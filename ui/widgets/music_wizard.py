@@ -1,9 +1,9 @@
-﻿import time
+import time
 import os
 import sys
 import threading
 import traceback
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QStyle
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QStyle, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from ui.widgets.music_wizard_style import MergerUIStyle
 from ui.widgets.music_wizard_constants import PREVIEW_VISUAL_LEAD_MS
@@ -154,7 +154,7 @@ class MergerMusicWizard(
                     self.logger.error("WIZARD: Failed to create video player")
                     self._wizard_video_player = None
                     self._owns_video_player = False
-                time.sleep(0.3) 
+                time.sleep(0.6) 
                 self.logger.info("WIZARD: Creating music player engine...")
                 self._wizard_music_player = MPVSafetyManager.create_safe_mpv(
                     vid='no',
@@ -201,20 +201,56 @@ class MergerMusicWizard(
             QTimer.singleShot(150, lambda: self.load_tracks(self.mp3_dir))
 
     def _enforce_step_size_constraints(self, index):
-        """Enforces specific size constraints for different steps of the wizard."""
         if index == 1:
             self.setMinimumSize(600, 550)
         else:
             self.setMinimumSize(0, 0)
 
     def _initialize_audio_engines(self):
-        """Finalizes the initialization state."""
         self.btn_nav_next.setEnabled(True)
         self.btn_nav_next.setText(self._prev_next_text)
         self.logger.info("WIZARD: Audio Engines ready.")
 
     def showEvent(self, event):
         super().showEvent(event)
+
+    def _is_editing_widget_focused(self) -> bool:
+        fw = QApplication.focusWidget()
+        if fw is None: return False
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)): return True
+        if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()): return True
+        return False
+
+    def keyPressEvent(self, event):
+        if self._is_editing_widget_focused():
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        mods = event.modifiers()
+        if key == Qt.Key_Space:
+            if hasattr(self, 'toggle_video_preview'):
+                self.toggle_video_preview()
+                event.accept()
+                return
+        elif key in (Qt.Key_Left, Qt.Key_Right):
+            is_right = (key == Qt.Key_Right)
+            if mods == Qt.ControlModifier: ms = 100
+            elif mods == Qt.ShiftModifier: ms = 3000
+            else: ms = 1000
+            if not is_right: ms = -ms
+            idx = self.stack.currentIndex()
+            if idx == 1:
+                if hasattr(self, 'offset_slider'):
+                    curr = self.offset_slider.value()
+                    self.offset_slider.setValue(max(self.offset_slider.minimum(), min(self.offset_slider.maximum(), curr + ms)))
+                    event.accept()
+                    return
+            elif idx == 2:
+                if hasattr(self, 'seek_relative_time'):
+                    self.seek_relative_time(ms)
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
 
     def reject(self):
         try:
@@ -243,8 +279,6 @@ class MergerMusicWizard(
             self._registered_workers.append(worker)
 
     def _safe_mpv_shutdown(self, player_attr_name, timeout=0.5):
-        """[FIX] Faster shutdown for wizard cleanup to prevent UI freeze."""
-
         import time
         player = getattr(self, player_attr_name, None)
         if not player:
@@ -266,7 +300,6 @@ class MergerMusicWizard(
             return False
 
     def _release_player(self):
-        """[FIX] Streamlined release sequence without heavy GC."""
         try:
             self._safe_mpv_shutdown("_wizard_music_player")
             if getattr(self, '_owns_video_player', False):
@@ -286,14 +319,12 @@ class MergerMusicWizard(
             self._music_player = None
 
     def _disconnect_all_worker_signals(self):
-        """Safely disconnect all worker signal connections to prevent memory leaks."""
         workers_to_disconnect = [
             '_track_scanner',
             '_waveform_worker', 
             '_wave_worker',
             '_filmstrip_worker',
             '_video_worker',
-            '_music_worker'
         ]
         for worker_name in workers_to_disconnect:
             worker = getattr(self, worker_name, None)

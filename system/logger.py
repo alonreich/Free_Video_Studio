@@ -5,7 +5,6 @@ import traceback
 from logging.handlers import RotatingFileHandler
 
 class LogFileStream:
-    """A stream-like object that writes to both terminal and logger at INFO level."""
     
     def __init__(self, logger, level=logging.INFO, original_stream=None):
         self.logger = logger
@@ -37,10 +36,7 @@ class LogFileStream:
         return False
 
 def setup_logger(base_dir, log_filename, logger_name):
-    """
-    Configures and returns a logger with a rotating file handler.
-    Also redirects stdout and stderr to the log file.
-    """
+    
     logger = logging.getLogger(logger_name)
     if logger.handlers:
         return logger

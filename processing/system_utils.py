@@ -1,12 +1,52 @@
-﻿import subprocess
+import subprocess
 import sys
 import psutil
 import re
 import os
 import time
 
+_job_handle = None
+if sys.platform == "win32":
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        _job_handle = kernel32.CreateJobObjectW(None, None)
+        if _job_handle:
+            class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD),
+                ]
+            class IO_COUNTERS(ctypes.Structure):
+                _fields_ = [("ReadOperationCount", ctypes.c_ulonglong), ("WriteOperationCount", ctypes.c_ulonglong), ("OtherOperationCount", ctypes.c_ulonglong), ("ReadTransferCount", ctypes.c_ulonglong), ("WriteTransferCount", ctypes.c_ulonglong), ("OtherTransferCount", ctypes.c_ulonglong)]
+            class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                    ("IoInfo", IO_COUNTERS),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t),
+                ]
+            JobObjectExtendedLimitInformation = 9
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+            limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            res = kernel32.QueryInformationJobObject(_job_handle, JobObjectExtendedLimitInformation, ctypes.byref(limits), ctypes.sizeof(limits), None)
+            if res:
+                limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                kernel32.SetInformationJobObject(_job_handle, JobObjectExtendedLimitInformation, ctypes.byref(limits), ctypes.sizeof(limits))
+    except Exception:
+        pass
+
 def parse_time_to_seconds(time_str: str) -> float:
-    """Parses HH:MM:SS.ms or MM:SS.ms string to total seconds."""
     try:
         s = str(time_str or "").strip()
         if not s:
@@ -29,7 +69,6 @@ def parse_time_to_seconds(time_str: str) -> float:
     return 0.0
 
 def create_subprocess(cmd, logger=None):
-    """Creates a subprocess with proper flags to hide the console window on Windows."""
     if logger:
         clean_cmd = [os.path.basename(cmd[0])] + cmd[1:]
         logger.info(f"Starting process: {' '.join(clean_cmd[:5])}...")
@@ -50,10 +89,16 @@ def create_subprocess(cmd, logger=None):
         encoding="utf-8",
         errors="replace"
     )
+    if _job_handle and sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.AssignProcessToJobObject(_job_handle, int(proc._handle))
+        except Exception:
+            pass
     return proc
 
 def kill_process_tree(pid, logger=None):
-    """Terminates a process and all its children/descendants."""
     if not pid:
         return
     if sys.platform == "win32":
@@ -83,7 +128,6 @@ def kill_process_tree(pid, logger=None):
             logger.error(f"psutil failed to kill process tree: {e}.")
 
 def check_disk_space(path: str, required_gb: float) -> bool:
-    """Checks if the drive containing 'path' has at least 'required_gb' free."""
     try:
         target = path
         if not os.path.exists(target):
@@ -95,7 +139,6 @@ def check_disk_space(path: str, required_gb: float) -> bool:
         return True
 
 def check_filter_option(ffmpeg_path: str, filter_name: str, option_name: str) -> bool:
-    """Checks if a specific FFmpeg filter supports a given option."""
     try:
         startupinfo = None
         if sys.platform == "win32":
@@ -116,9 +159,6 @@ def check_filter_option(ffmpeg_path: str, filter_name: str, option_name: str) ->
         return False
 
 def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger, on_error_line=None):
-    """
-    Monitors FFmpeg stdout for progress stats and handles cancellation/disk checks.
-    """
     last_poll_time = time.time()
     critical_signatures = (
         "error",
@@ -137,7 +177,7 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
     )
     while True:
         current_time = time.time()
-        if current_time - last_poll_time > 0.5:
+        if current_time - last_poll_time > 0.05:
             if check_disk_space_callback and check_disk_space_callback():
                 logger.warning("MONITOR: Disk full or Cancellation detected. Terminating FFmpeg.")
                 kill_process_tree(proc.pid, logger)

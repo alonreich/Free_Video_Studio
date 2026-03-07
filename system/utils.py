@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import psutil
 import logging
@@ -8,30 +8,22 @@ import subprocess
 import shutil
 import time
 import threading
-import faulthandler
+import weakref
 from PyQt5.QtCore import QTimer
 try:
     import mpv
 except (ImportError, OSError):
     class MockMPV: pass
     mpv = MockMPV()
-
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
 class DependencyDoctor:
-    """
-    Centralized health check for external dependencies (FFmpeg).
-    """
     @staticmethod
     def get_bin_dir(base_dir: str) -> str:
         return os.path.join(base_dir, 'binaries')
     @staticmethod
     def check_ffmpeg(base_dir: str) -> Tuple[bool, str, str]:
-        """
-        Validates FFmpeg/FFprobe presence.
-        Returns (is_valid, ffmpeg_path, error_message).
-        """
         bin_dir = DependencyDoctor.get_bin_dir(base_dir)
         ffmpeg_exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
         ffprobe_exe = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
@@ -46,15 +38,8 @@ class DependencyDoctor:
         return False, "", "FFmpeg or FFprobe binaries are missing."
 
 class ProcessManager:
-    """
-    Manages application lifecycle, PID locking, and zombie cleanup.
-    """
     @staticmethod
     def kill_orphans(process_names: list = ["ffmpeg.exe", "ffprobe.exe", "mpv.exe", "ffplay.exe"]):
-        """
-        [FIX #1 & #3] Aggressively kills stray processes associated with this project.
-        Enhanced to be more precise and avoid killing unrelated system processes.
-        """
         my_pid = os.getpid()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         bin_dir = os.path.join(base_dir, 'binaries')
@@ -77,17 +62,12 @@ class ProcessManager:
                             pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+
     @staticmethod
     def start_parent_watchdog():
-        """
-        [FIX #1] Starts a background thread that monitors the parent process.
-        If the parent dies, this process will immediately kill itself.
-        Used by sub-tools like Crop Tool to avoid becoming zombies.
-        """
         parent_pid = os.getppid()
         if parent_pid <= 1:
             return
-            
         def watchdog():
             while True:
                 try:
@@ -100,19 +80,18 @@ class ProcessManager:
                     break
                 time.sleep(2.0)
             ProcessManager.kill_orphans()
-            os._exit(1)
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.instance():
+                QApplication.instance().quit()
+            else:
+                sys.exit(1)
         t = threading.Thread(target=watchdog, daemon=True)
         t.start()
+
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
-        """
-        [FIX #3] Aggressively cleans up temporary files from previous or failed sessions.
-        """
         temp_dir = tempfile.gettempdir()
-        patterns = [
-            prefix, "core-", "intro-", "ffmpeg2pass-", "drawtext-", 
-            "filter_complex-", "concat-", "thumb-", "snapshot-", "fvs_job_", "thumb_preview_"
-        ]
+        patterns = [prefix, "fvs_job_"]
         try:
             for filename in os.listdir(temp_dir):
                 if any(filename.startswith(p) for p in patterns):
@@ -137,12 +116,9 @@ class ProcessManager:
                         pass
         except:
             pass
+
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
-        """
-        [FIX #5] Acquires a named lock file with a small retry logic to handle OS lag.
-        Returns (success, file_handle).
-        """
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")
         for attempt in range(3):
             try:
@@ -166,16 +142,8 @@ class ProcessManager:
         return False, None
 
 class UIManager:
-    """
-    Shared UI helper for standardizing diagnostic dialogs.
-    """
     @staticmethod
     def style_and_size_msg_box(msg_box: 'QMessageBox', copy_text: str, copy_btn_label: str = "Copy to Clipboard"):
-        """
-        Standardizes diagnostic popups: 800x500 size, adds 'Copy to Clipboard',
-        'Report To Alon Reich', and ensures all buttons have a pointing hand cursor.
-        """
-
         from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QGridLayout, QApplication
         from PyQt5.QtCore import Qt, QTimer, QUrl
         from PyQt5.QtGui import QDesktopServices
@@ -183,29 +151,24 @@ class UIManager:
         if isinstance(layout, QGridLayout):
             layout.addItem(QSpacerItem(800, 500, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
         copy_btn = msg_box.addButton(copy_btn_label, msg_box.ActionRole)
-
         from app import tr
         report_label = tr("report_to_alon")
         report_btn = msg_box.addButton(report_label, msg_box.ActionRole)
-
         def on_copy():
             clipboard = QApplication.clipboard()
             clipboard.setText(copy_text)
             copy_btn.setText("✓ Copied!")
-            
             def _reset_text():
                 try:
                     copy_btn.setText(copy_btn_label)
                 except RuntimeError:
                     pass
             QTimer.singleShot(2000, _reset_text)
-        
         def on_report():
             clipboard = QApplication.clipboard()
             clipboard.setText(copy_text)
             subject = "[Fortnite Video Software] Error Report"
             body = f"The following error occurred:\n\n{copy_text}"
-
             import urllib.parse
             mailto_url = f"mailto:alon.reich@gmail.com?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
             QDesktopServices.openUrl(QUrl(mailto_url))
@@ -216,6 +179,7 @@ class UIManager:
             btn.setCursor(Qt.PointingHandCursor)
 
 class ConsoleManager:
+    _log_files = []
     @staticmethod
     def _source_tag(logger_name: str) -> str:
         mapping = {
@@ -224,6 +188,7 @@ class ConsoleManager:
             "Advanced_Editor": "advanced_editor",
         }
         return mapping.get(str(logger_name), str(logger_name).strip().lower())
+
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
         app_prefix = logger_name.lower().replace(" ", "_")
@@ -239,13 +204,11 @@ class ConsoleManager:
             raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
             mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
             f = open(raw_log_path, 'a', encoding='utf-8')
-            os.dup2(f.fileno(), sys.stdout.fileno())
-            os.dup2(f.fileno(), sys.stderr.fileno())
-            faulthandler.enable(f)
-            logger.info("NATIVE DEBUG LOGGING ACTIVE")
+            ConsoleManager._log_files.append(f)
+            logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")
         except Exception as e:
             logger.error(f"Failed to setup native logging: {e}")
-            
+
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
                 sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -261,9 +224,11 @@ class ConsoleManager:
                     msg_box.setText(f"An unexpected error occurred.\n\n{exc_value}\n\nDetails saved to log.")
                     UIManager.style_and_size_msg_box(msg_box, error_msg)
                     msg_box.exec_()
-                    os._exit(1)
+                    QApplication.instance().quit()
+                else:
+                    sys.exit(1)
             except: 
-                os._exit(1)
+                sys.exit(1)
         sys.excepthook = global_exception_handler
         if sys.platform == "win32":
             try:
@@ -272,14 +237,18 @@ class ConsoleManager:
                 if hwnd != 0:
                     ctypes.windll.user32.ShowWindow(hwnd, 0)
             except: pass
+        import atexit
+        def close_logs():
+            for f in ConsoleManager._log_files:
+                try:
+                    f.close()
+                except: pass
+        atexit.register(close_logs)
         return logger
 
 class LogManager:
     @staticmethod
     def setup_logger(base_dir: str, log_filename: str, logger_name: str) -> logging.Logger:
-        """
-        Configures a rotating logger.
-        """
         logger = logging.getLogger(logger_name)
         if logger.handlers:
             return logger
@@ -297,18 +266,30 @@ class LogManager:
         return logger
 
 class MPVSafetyManager:
-    """
-    Comprehensive MPV thread safety and lifecycle management utilities.
-    """
     _mpv_creation_lock = threading.Lock()
+    _instances = weakref.WeakSet()
+    
+    @staticmethod
+    def log_mpv_diagnostics(player, logger, context_tag="GENERAL"):
+        if not player or not logger: return
+        try:
+            p_id = id(player)
+            handle = getattr(player, 'handle', 'UNKNOWN')
+            is_shutdown = getattr(player, '_core_shutdown', False)
+            try:
+                path = getattr(player, 'path', 'NONE')
+                paused = getattr(player, 'pause', 'UNKNOWN')
+                time_pos = getattr(player, 'time_pos', 'UNKNOWN')
+            except:
+                path, paused, time_pos = "UNREADABLE", "UNREADABLE", "UNREADABLE"
+            logger.info(f"DIAGNOSTICS [{context_tag}]: MPV Object ID={p_id} | Handle={handle} | CoreShutdown={is_shutdown} | Path={path} | Paused={paused} | Time={time_pos}")
+        except Exception as e:
+            logger.error(f"DIAGNOSTICS [{context_tag}]: Failed to extract MPV state: {e}")
+
     @staticmethod
     def safe_mpv_shutdown(player, timeout=2.0):
-        """
-        Safely shutdown an MPV player with thread synchronization.
-        """
         if not player:
             return True
-
         import mpv
         try:
             if getattr(player, '_core_shutdown', False):
@@ -339,6 +320,7 @@ class MPVSafetyManager:
             return True
         except Exception:
             return False
+
     @staticmethod
     def safe_mpv_set(player, property_name, value, max_attempts=3):
         if not player: return False
@@ -349,6 +331,7 @@ class MPVSafetyManager:
             except:
                 time.sleep(0.1)
         return False
+
     @staticmethod
     def safe_mpv_command(player, command, *args, max_attempts=3):
         if not player: return False
@@ -359,6 +342,7 @@ class MPVSafetyManager:
             except:
                 time.sleep(0.1)
         return False
+
     @staticmethod
     def cleanup_mpv_event_callbacks(player):
         if not player: return
@@ -371,13 +355,9 @@ class MPVSafetyManager:
                 player.event_callback = None
         except:
             pass
+
     @staticmethod
     def create_safe_mpv(**kwargs):
-        """
-        Create an MPV instance with safety features enabled.
-        [FIX] Restores native thread loop for playback stability.
-        [FIX] Enforces basic logging and validates WID.
-        """
         with MPVSafetyManager._mpv_creation_lock:
             try:
                 import mpv
@@ -415,7 +395,9 @@ class MPVSafetyManager:
                 kwargs.pop('ytdl', None)
                 safe_kwargs.update(kwargs)
                 player = mpv.MPV(**safe_kwargs)
+                time.sleep(0.1)
                 player._safe_shutdown_initiated = False
+                MPVSafetyManager._instances.add(player)
                 for prop, val in extra_flags:
                     try:
                         player.set_property(prop, val)
@@ -425,19 +407,12 @@ class MPVSafetyManager:
             except Exception as e:
                 print(f"Failed to create safe MPV instance: {e}")
                 return None
+
     @staticmethod
     def register_global_shutdown_handler():
         import atexit
-
         def global_shutdown():
-            import gc
-            mpv_instances = []
-            for obj in gc.get_objects():
-                try:
-                    if hasattr(obj, '__class__') and obj.__class__.__name__ == 'MPV':
-                        mpv_instances.append(obj)
-                except: pass
-            for player in mpv_instances:
+            for player in list(MPVSafetyManager._instances):
                 try:
                     if hasattr(player, '_safe_shutdown_initiated') and not player._safe_shutdown_initiated:
                         player._safe_shutdown_initiated = True

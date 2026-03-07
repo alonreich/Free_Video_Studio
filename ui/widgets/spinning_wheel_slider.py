@@ -156,4 +156,3 @@ class SpinningWheelSlider(QWidget):
             p.setBrush(center_glow)
             p.setPen(Qt.NoPen)
             p.drawEllipse(QRectF(cx-50, cy-50, 100, 100))
-

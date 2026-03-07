@@ -47,9 +47,9 @@ class MainWindowUiHelpersBMixin:
             font_size = max(12, int(round(float(getattr(self, 'REF_FONT_SIZE', 29)) * scale)))
             self.upload_hint_container.setFixedSize(box_w, box_h)
             self.upload_hint_container.setStyleSheet(
-                f"#uploadHintContainer{{background-color:#000;"
+                f"#uploadHintContainer {{ background-color:#000;"
                 f"border:{max(2, int(round(3 * scale)))}px solid #7DD3FC;"
-                f"border-radius:{max(8, int(round(12 * scale)))}px;}}"
+                f"border-radius:{max(8, int(round(12 * scale)))}px;}} "
             )
             self.upload_hint_label.setStyleSheet(f"color:#7DD3FC;font-family:Arial;font-size:{font_size}px;font-weight:bold;background:transparent;border:none;")
             gap = max(6, int(round(float(getattr(self, 'REF_GAP', 18)) * scale)))
@@ -136,39 +136,3 @@ class MainWindowUiHelpersBMixin:
             b.move(pos.x() - b.width() // 2, pos.y() + slider.height() + 8)
             t.show(); b.show(); t.raise_(); b.raise_()
         except Exception: pass
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -144,7 +144,7 @@ class MusicOffsetDialog(QDialog):
         return float(self.slider.value()) / 1000.0
 
     def keyPressEvent(self, event):
-        """Handle dialog-level key shortcuts."""
+        
         if event.key() == Qt.Key_Space:
             self._toggle_play_pause()
             event.accept()
@@ -155,7 +155,7 @@ class MusicOffsetDialog(QDialog):
             super().keyPressEvent(event)
 
     def _seek_relative(self, delta_ms):
-        """Seeks relative to current slider position safely."""
+        
         current = self.slider.value()
         target = max(0, min(self._total_ms, current + delta_ms))
         self.slider.setValue(target)

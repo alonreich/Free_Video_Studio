@@ -67,36 +67,3 @@ class MainWindowToolsMixin:
         except Exception as e:
             self.logger.critical(f"ERROR: Failed to launch Advanced Editor. Error: {e}")
             QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor. Error: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

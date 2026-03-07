@@ -248,7 +248,7 @@ class DummyListItem:
         return self._hidden
 
 def install_qt_mpv_stubs() -> None:
-    """Install lightweight stubs for PyQt5/mpv so logic modules can be imported in tests."""
+    
     if "PyQt5" in sys.modules and "mpv" in sys.modules:
         return
     pyqt5 = types.ModuleType("PyQt5")
@@ -762,12 +762,3 @@ def install_qt_mpv_stubs() -> None:
         def terminate(self): pass
     mpv_mod.MPV = MockMPV
     sys.modules["mpv"] = mpv_mod
-
-
-
-
-
-
-
-
-

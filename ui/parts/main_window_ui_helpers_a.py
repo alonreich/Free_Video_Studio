@@ -1,4 +1,4 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
+import os, sys, time, threading, logging, subprocess, traceback
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -83,7 +83,6 @@ class MainWindowUiHelpersAMixin:
     def _init_upload_hint_blink(self):
         if not hasattr(self, 'hint_group_container'):
             return
-
         from PyQt5.QtWidgets import QGraphicsOpacityEffect
         from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QEasingCurve
         self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
@@ -102,36 +101,3 @@ class MainWindowUiHelpersAMixin:
         self._hint_group.addAnimation(anim_in)
         self._hint_group.addAnimation(anim_out)
         self._hint_group.setLoopCount(-1)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

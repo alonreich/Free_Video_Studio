@@ -1,4 +1,4 @@
-﻿import os
+import os
 import tempfile
 import uuid
 import shutil
@@ -91,6 +91,7 @@ class ProcessThread(QThread):
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
         return normalized
+
     @staticmethod
     def _emit_signal_or_callback(target, *args):
         try:
@@ -112,8 +113,13 @@ class ProcessThread(QThread):
             os.makedirs(self._output_dir, exist_ok=True)
         except Exception:
             pass
-        if not check_disk_space(self._output_dir, 0.2):
-            self.cancel(); return True
+        dynamic_threshold_gb = 0.5
+        if hasattr(self, 'target_mb') and self.target_mb:
+            dynamic_threshold_gb = max(0.5, (self.target_mb * 3.0) / 1024.0)
+        if not check_disk_space(self._output_dir, dynamic_threshold_gb):
+            if self.logger: self.logger.error(f"Insufficient disk space. Required: {dynamic_threshold_gb:.2f}GB")
+            self.cancel()
+            return True
         return self.is_canceled
 
     def _emit_status(self, msg):
@@ -179,7 +185,6 @@ class ProcessThread(QThread):
             ffmpeg_path = os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe')
             if not os.path.exists(ffmpeg_path):
                 ffmpeg_path = 'ffmpeg'
-
             def run_ffmpeg(use_cuda):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(
                     'h264_nvenc' if use_cuda and self.hardware_strategy == 'NVIDIA' else 
@@ -230,18 +235,29 @@ class ProcessThread(QThread):
                         txt_input_label=txt_input_label,
                         use_cuda=(use_cuda and self.hardware_strategy == 'NVIDIA')
                     )
-
-                    from developer_tools.coordinate_math import inverse_transform_from_content_area_int
                     crops_data = coords.get("crops_1080p", {})
                     hp_key = "boss_hp" if self.is_boss_hp else "normal_hp"
                     mapping = {
                         "hp": hp_key, "loot": "loot", "stats": "stats", "spec": "spectating", "team": "team"
                     }
+                    def local_inverse_transform(rect, orig_res):
+                        x, y, w, h = rect
+                        scale_factor = 1280.0 / 1080.0
+                        cx, cy = int(x * scale_factor), int(y * scale_factor)
+                        cw, ch = int(w * scale_factor), int(h * scale_factor)
+                        try:
+                            orig_w, orig_h = map(int, orig_res.lower().split('x'))
+                            if orig_w == 2560 and orig_h == 1440:
+                                sf2 = 1440.0 / 1080.0
+                                cx, cy = int(cx * sf2), int(cy * sf2)
+                                cw, ch = int(cw * sf2), int(ch * sf2)
+                        except: pass
+                        return (cx, cy, cw, ch)
                     for placeholder_key, conf_key in mapping.items():
                         rect_1080 = crops_data.get(conf_key)
                         if rect_1080 and len(rect_1080) == 4 and rect_1080[0] >= 1:
                             w_ui, h_ui, x_ui, y_ui = rect_1080
-                            transformed = inverse_transform_from_content_area_int((x_ui, y_ui, w_ui, h_ui), self.original_resolution)
+                            transformed = local_inverse_transform((x_ui, y_ui, w_ui, h_ui), self.original_resolution)
                             crop_str = f"crop={transformed[2]}:{transformed[3]}:{transformed[0]}:{transformed[1]}"
                             v_mobile_chain = v_mobile_chain.replace(f"REPLACE_ME_CROP_{placeholder_key}", crop_str)
                     attempt_core_filters.append(v_mobile_chain)
@@ -253,6 +269,9 @@ class ProcessThread(QThread):
                         part = part.replace("[0:a]", a_prepared_pad).replace("anull,", "")
                     attempt_core_filters.append(part)
                 full_filter_str = ";".join(attempt_core_filters)
+                filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
+                with open(filter_script_path, 'w', encoding='utf-8') as f:
+                    f.write(full_filter_str)
                 ffmpeg_inputs = ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
                 ffmpeg_inputs += ['-i', self.input_path]
                 for track_path, _, _ in self.music_tracks:
@@ -260,7 +279,7 @@ class ProcessThread(QThread):
                 if txt_input_label:
                     ffmpeg_inputs += ['-i', text_png_path]
                 ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + [
-                    '-filter_complex', full_filter_str,
+                    '-filter_complex_script', filter_script_path,
                     '-map', v_final_pad, '-map', final_a_label,
                     '-fps_mode', 'cfr',
                     '-c:v', vcodec[1]] + vcodec[2:] + [
@@ -271,7 +290,6 @@ class ProcessThread(QThread):
                 self.logger.info(f"FFMPEG CMD: {' '.join(ffmpeg_cmd)}")
                 self.current_process = create_subprocess(ffmpeg_cmd)
                 error_lines = []
-
                 def on_err(line): error_lines.append(line)
                 monitor_ffmpeg_progress(
                     self.current_process,

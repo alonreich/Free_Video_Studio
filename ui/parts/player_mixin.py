@@ -1,4 +1,4 @@
-﻿import time
+import time
 import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
@@ -13,7 +13,6 @@ class PlayerMixin:
     def _safe_mpv_set(self, prop, value, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return
-
         import mpv
         if not self._mpv_lock.acquire(timeout=0.20):
             return
@@ -34,7 +33,6 @@ class PlayerMixin:
     def _safe_mpv_get(self, prop, default=None, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return default
-
         import mpv
         if not self._mpv_lock.acquire(timeout=0.20):
             return default
@@ -51,7 +49,6 @@ class PlayerMixin:
     def _safe_mpv_command(self, *args, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return False
-
         import mpv
         if not self._mpv_lock.acquire(timeout=0.20):
             return False
@@ -78,7 +75,6 @@ class PlayerMixin:
             pass
     
     def toggle_play_pause(self):
-        """Toggles play/pause for video and triggers music sync."""
         if getattr(self, "_in_transition", False):
             return
         if not getattr(self, "input_file_path", None):
@@ -116,7 +112,6 @@ class PlayerMixin:
                 speed_segments = getattr(self, 'speed_segments', [])
                 wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
                 wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-                real_audio_ms = (wall_now - wall_start) * 1000.0
                 project_pos_sec = (wall_now - wall_start) / 1000.0
                 target_m_sec = 0.0
                 accum = 0.0
@@ -142,7 +137,6 @@ class PlayerMixin:
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
 
     def update_player_state(self):
-        """On a timer, updates UI slider and keeps music in sync."""
         if getattr(self, "_in_transition", False):
             return
         try:
@@ -190,9 +184,6 @@ class PlayerMixin:
                             speed_segments = getattr(self, 'speed_segments', [])
                             wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
                             wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
-                            music_player.set_rate(1.0)
-                            time_since_music_start_project_ms = (wall_now - wall_start)
-                            real_audio_ms = time_since_music_start_project_ms / speed
                             project_pos_sec = (wall_now - wall_start) / 1000.0
                             first_track = self._wizard_tracks[0]
                             expected_m_sec = first_track[1] + project_pos_sec
@@ -207,7 +198,7 @@ class PlayerMixin:
                     try:
                         target_speed = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
                         segments = getattr(self, 'speed_segments', [])
-                        if segments:
+                        if isinstance(segments, list):
                             for seg in segments:
                                 if seg['start'] <= current_time_ms < seg['end']:
                                     target_speed = seg['speed']
@@ -235,7 +226,6 @@ class PlayerMixin:
             pass
 
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
-        """Sets video player position (in ms) with enhanced throttling for stability."""
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
         target_ms = int(position_ms)
@@ -284,17 +274,21 @@ class PlayerMixin:
                 t_start = getattr(self, "trim_start_ms", 0)
                 speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
                 speed_segments = getattr(self, 'speed_segments', [])
-                wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
-                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-                project_pos_sec = (wall_target - wall_start) / 1000.0
-                target_m_sec = 0.0
-                accum = 0.0
-                for path, offset, dur in self._wizard_tracks:
-                    if accum <= project_pos_sec < accum + dur:
-                        target_m_sec = offset + (project_pos_sec - accum)
-                        break
-                    accum += dur
-                music_player.command("seek", target_m_sec, "absolute", precision)
+                try:
+                    wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
+                    wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                    project_pos_sec = (wall_target - wall_start) / 1000.0
+                    target_m_sec = 0.0
+                    accum = 0.0
+                    for path, offset, dur in self._wizard_tracks:
+                        if accum <= project_pos_sec < accum + dur:
+                            target_m_sec = offset + (project_pos_sec - accum)
+                            break
+                        accum += dur
+                    music_player.command("seek", target_m_sec, "absolute", precision)
+                except Exception as wall_err:
+                    if hasattr(self, "logger"):
+                        self.logger.debug(f"Seek wallclock error: {wall_err}")
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.error(f"STABILITY: Throttled seek failed: {e}")
@@ -303,22 +297,18 @@ class PlayerMixin:
             self._is_seeking_active = False
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
-        """
-        [FIX #10] Calculates the real wall-clock time required to reach 'video_ms'.
-        Optimized to avoid stuttering during preview.
-        Returns milliseconds.
-        """
-        if not segments:
+        base_speed = max(0.01, float(base_speed))
+        if not segments or not isinstance(segments, list):
             return float(video_ms) / base_speed
-        if not segments or video_ms < segments[0]['start']:
+        if video_ms < segments[0].get('start', 0):
              return float(video_ms) / base_speed
         current_video_time = 0.0
         accumulated_wall_time = 0.0
         target = float(video_ms)
         for seg in segments:
-            start = seg['start']
-            end = seg['end']
-            speed = seg['speed']
+            start = float(seg.get('start', 0))
+            end = float(seg.get('end', 0))
+            speed = max(0.01, float(seg.get('speed', base_speed)))
             if start >= target:
                 break
             if start > current_video_time:
@@ -340,10 +330,6 @@ class PlayerMixin:
         return accumulated_wall_time
     
     def _on_mpv_end_reached(self, event=None):
-        """
-        MPV reached end. (Native MPV thread)
-        [FIX #23] Use QTimer to safely hop back to UI thread.
-        """
         try:
             QTimer.singleShot(0, self._safe_handle_mpv_end)
         except Exception as e:
@@ -351,7 +337,6 @@ class PlayerMixin:
                 self.logger.error(f"MPV End Event failed to defer: {e}")
 
     def _bind_main_player_output(self):
-        """[FIX] Forcefully re-binds MPV output and triggers a redraw to resolve black frames."""
         if not getattr(self, "player", None):
             return
         if getattr(self, "_binding_player_output", False):
@@ -362,7 +347,6 @@ class PlayerMixin:
             return
         self._binding_player_output = True
         self._last_player_output_bind_ts = now
-        
         def _perform_bind():
             try:
                 wid = None
@@ -372,6 +356,12 @@ class PlayerMixin:
                         wid = int(surf.winId())
                     except: pass
                 if wid is not None and wid > 0:
+                    try:
+                        current_wid = self._safe_mpv_get("wid")
+                        if current_wid == wid:
+                            return
+                    except:
+                        pass
                     self.logger.info(f"HARDWARE_SET: Re-binding MPV to Main Surface WID {wid}")
                     try:
                         if self._mpv_lock.acquire(timeout=0.20):
@@ -386,7 +376,6 @@ class PlayerMixin:
             finally:
                 self._binding_player_output = False
         _perform_bind()
-
         def _delayed_bind():
             now2 = time.time()
             last2 = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)
@@ -397,7 +386,6 @@ class PlayerMixin:
         QTimer.singleShot(300, _delayed_bind)
 
     def _safe_handle_mpv_end(self):
-        """Handle end of media safely on the main thread."""
         try:
             if not self.signalsBlocked():
                 self.video_ended_signal.emit()

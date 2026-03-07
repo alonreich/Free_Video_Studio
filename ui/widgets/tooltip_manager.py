@@ -8,14 +8,14 @@ class ToolTipManager(QObject):
         self._tooltips = {}
 
     def add_tooltip(self, widget, text):
-        """Register a widget to show a custom tooltip."""
+        
         if widget is None:
             return
         widget.installEventFilter(self)
         self._tooltips[widget.objectName()] = text
 
     def eventFilter(self, obj, event):
-        """Filter events to show/hide tooltips."""
+        
         try:
             if obj is None: return False
             if event.type() == QEvent.Enter:

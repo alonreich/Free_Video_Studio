@@ -59,5 +59,5 @@ __all__ = [
     'TextWrapper',
     'ProcessThread',
     'IntroProcessor',
-    'ConcatProcessor'
+    
 ]

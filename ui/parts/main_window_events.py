@@ -1,4 +1,4 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
+import os, sys, time, threading, logging, subprocess, traceback
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -17,7 +17,8 @@ class MainWindowEventsMixin:
             if event.button() == Qt.LeftButton:
                 self.setFocus(Qt.MouseFocusReason)
         except Exception as e:
-            self.logger.error("MousePress error: %s", e)
+            if hasattr(self, 'logger'):
+                self.logger.error("MousePress error: %s", e)
         QMainWindow.mousePressEvent(self, event)
 
     def eventFilter(self, obj, event):
@@ -27,27 +28,31 @@ class MainWindowEventsMixin:
                 if KeyboardMixin.eventFilter(self, obj, event):
                     return True
         except Exception as e:
-            self.logger.error("Keyboard eventFilter error: %s", e)
+            if hasattr(self, 'logger'):
+                self.logger.error("Keyboard eventFilter error: %s", e)
         return False
 
     def resizeEvent(self, event):
         if hasattr(self, 'handle_persistence_event'):
             self.handle_persistence_event()
         try:
-            self._update_volume_badge()
+            if hasattr(self, '_update_volume_badge'):
+                self._update_volume_badge()
             if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
                 r = self.video_surface.rect()
                 top_left = self.video_surface.mapToGlobal(r.topLeft())
-                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
-                self._update_portrait_mask_overlay_state()
+                local_tl = self.mapFromGlobal(top_left)
+                self.portrait_mask_overlay.setGeometry(QRect(local_tl, r.size()))
+                if hasattr(self, '_update_portrait_mask_overlay_state'):
+                    self._update_portrait_mask_overlay_state()
         except Exception as e:
             if hasattr(self, "logger"):
                 self.logger.error("Resize child update error: %s", e)
         if hasattr(self, '_resize_timer'):
             self._resize_timer.start()
         else:
-            self._delayed_resize_event()
-        super().resizeEvent(event)
+            if hasattr(self, '_delayed_resize_event'):
+                self._delayed_resize_event()
 
     def moveEvent(self, event):
         if hasattr(self, 'handle_persistence_event'):
@@ -56,9 +61,9 @@ class MainWindowEventsMixin:
             if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
                 r = self.video_surface.rect()
                 top_left = self.video_surface.mapToGlobal(r.topLeft())
-                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
+                local_tl = self.mapFromGlobal(top_left)
+                self.portrait_mask_overlay.setGeometry(QRect(local_tl, r.size()))
         except Exception: pass
-        super().moveEvent(event)
 
     def _delayed_resize_event(self):
         try:
@@ -86,8 +91,9 @@ class MainWindowEventsMixin:
                 event.ignore()
                 return
         if getattr(self, "_switching_app", False):
-            self.cleanup_and_exit()
-            super().closeEvent(event)
+            if hasattr(self, 'cleanup_and_exit'):
+                self.cleanup_and_exit()
+            QMainWindow.closeEvent(self, event)
             return
         try:
             import psutil
@@ -95,44 +101,11 @@ class MainWindowEventsMixin:
             children = current_process.children(recursive=True)
             for child in children:
                 try:
-                    self.logger.info(f"EXIT: Killing child process {child.pid} ({child.name()})")
+                    if hasattr(self, 'logger'):
+                        self.logger.info(f"EXIT: Killing child process {child.pid} ({child.name()})")
                     child.kill()
                 except: pass
         except: pass
-        self.cleanup_and_exit()
-        super().closeEvent(event)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        if hasattr(self, 'cleanup_and_exit'):
+            self.cleanup_and_exit()
+        QMainWindow.closeEvent(self, event)

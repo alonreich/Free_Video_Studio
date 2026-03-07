@@ -22,7 +22,6 @@ from PyQt5.QtWidgets import (
 import math
 
 class ProfessionalGhostWidget(QWidget):
-    """Professional ghost widget with full shape and smooth animations."""
     
     def __init__(self, source_widget, parent=None):
         super().__init__(parent)
@@ -38,7 +37,7 @@ class ProfessionalGhostWidget(QWidget):
         self.is_animating = False
         
     def paintEvent(self, event):
-        """Paint professional ghost with shadow and highlight."""
+        
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -78,7 +77,7 @@ class ProfessionalGhostWidget(QWidget):
         painter.drawRoundedRect(2, 2, self.width() - 5, self.height() - 5, 4, 4)
         
     def animate_pickup(self):
-        """Animate ghost when picked up - scale up with bounce."""
+        
         self.scale_anim = QPropertyAnimation(self, b"scale_factor")
         self.scale_anim.setDuration(200)
         self.scale_anim.setStartValue(1.0)
@@ -94,7 +93,7 @@ class ProfessionalGhostWidget(QWidget):
         self.anim_group.start()
         
     def animate_drop(self):
-        """Animate ghost when dropped - scale down smoothly."""
+        
         self.scale_anim = QPropertyAnimation(self, b"scale_factor")
         self.scale_anim.setDuration(250)
         self.scale_anim.setStartValue(self.scale_factor)
@@ -111,13 +110,7 @@ class ProfessionalGhostWidget(QWidget):
         self.anim_group.start()
 
 class ProfessionalDraggableList(QListWidget):
-    """
-    Professional draggable list with:
-    - Full shape ghost blocks
-    - Smooth animations that preserve geometry
-    - No crashes or visual distortion
-    - Industry-standard drag behavior
-    """
+    
     drag_started = pyqtSignal(int)
     drag_ended = pyqtSignal(int, int)
     items_reordered = pyqtSignal(list)
@@ -149,7 +142,7 @@ class ProfessionalDraggableList(QListWidget):
         self._original_positions = {}
         
     def mousePressEvent(self, event):
-        """Start drag operation on mouse press."""
+        
         if event.button() == Qt.LeftButton:
             self._drag_start_pos = event.pos()
             index = self.indexAt(event.pos())
@@ -160,7 +153,7 @@ class ProfessionalDraggableList(QListWidget):
         super().mousePressEvent(event)
     
     def mouseMoveEvent(self, event):
-        """Handle mouse movement for drag operation."""
+        
         if not (event.buttons() & Qt.LeftButton):
             return
         if not self._is_dragging:
@@ -176,7 +169,7 @@ class ProfessionalDraggableList(QListWidget):
         super().mouseMoveEvent(event)
     
     def mouseReleaseEvent(self, event):
-        """Complete drag operation on mouse release."""
+        
         if event.button() == Qt.LeftButton and self._is_dragging:
             self._complete_drag_operation()
         self.setCursor(Qt.OpenHandCursor)
@@ -184,7 +177,7 @@ class ProfessionalDraggableList(QListWidget):
         super().mouseReleaseEvent(event)
     
     def _start_drag_operation(self, position):
-        """Start the drag operation with ghost widget."""
+        
         self._is_dragging = True
         item = self.item(self._drag_item_index)
         if item:
@@ -195,7 +188,7 @@ class ProfessionalDraggableList(QListWidget):
         self.drag_started.emit(self._drag_item_index)
     
     def _create_ghost_widget(self, source_widget, position):
-        """Create a professional ghost widget."""
+        
         if self._ghost_widget:
             self._ghost_widget.deleteLater()
         self._ghost_widget = ProfessionalGhostWidget(source_widget, self.viewport())
@@ -206,7 +199,7 @@ class ProfessionalDraggableList(QListWidget):
         self._ghost_widget.animate_pickup()
     
     def _update_ghost_position(self, position):
-        """Update ghost position with smooth following."""
+        
         if not self._ghost_widget:
             return
         current_pos = self._ghost_widget.pos()
@@ -227,7 +220,7 @@ class ProfessionalDraggableList(QListWidget):
             self._ghost_widget.update()
     
     def _update_drop_target(self, position):
-        """Update the drop target based on mouse position."""
+        
         index = self.indexAt(position)
         if not index.isValid():
             self._drop_target_index = -1
@@ -246,7 +239,7 @@ class ProfessionalDraggableList(QListWidget):
         self.viewport().update()
     
     def _animate_items_for_space(self, position):
-        """Animate items to make space for the dragged item."""
+        
         if self._drop_target_index < 0 or self._drag_item_index < 0:
             return
         if self._drag_item_index < self._drop_target_index:
@@ -257,7 +250,7 @@ class ProfessionalDraggableList(QListWidget):
                 self._animate_item_push(idx, 1)
     
     def _animate_item_push(self, idx, direction):
-        """Animate an item to push it aside."""
+        
         item = self.item(idx)
         if not item:
             return
@@ -281,7 +274,7 @@ class ProfessionalDraggableList(QListWidget):
             anim.start()
     
     def _complete_drag_operation(self):
-        """Complete the drag operation with animation."""
+        
         if not self._is_dragging or self._drag_item_index < 0:
             return
         if self._drop_target_index >= 0 and self._drop_target_index != self._drag_item_index:
@@ -291,7 +284,7 @@ class ProfessionalDraggableList(QListWidget):
         self._cleanup_drag_state()
     
     def _perform_animated_move(self):
-        """Perform animated move of items."""
+        
         if self._animation_group:
             self._animation_group.stop()
             self._animation_group.deleteLater()
@@ -331,7 +324,7 @@ class ProfessionalDraggableList(QListWidget):
         self._animation_group.start()
     
     def _on_move_complete(self):
-        """Handle completion of move animation."""
+        
         if self._drag_item_index >= 0 and self._drop_target_index >= 0:
             item = self.takeItem(self._drag_item_index)
             if item:

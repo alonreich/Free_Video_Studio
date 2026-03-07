@@ -59,7 +59,7 @@ class DraggableListWidget(QListWidget):
                 self.viewport().update()
 
     def _handle_auto_scroll_during_drag(self, pos):
-        """Handle auto-scrolling when dragging near top or bottom edges with predictive scrolling."""
+        
         viewport = self.viewport()
         viewport_rect = viewport.rect()
         viewport_height = viewport_rect.height()
@@ -83,7 +83,7 @@ class DraggableListWidget(QListWidget):
             self.auto_scroll_timer.stop()
 
     def _auto_scroll(self):
-        """Perform auto-scrolling based on direction."""
+        
         if self.auto_scroll_direction == -1:
             self.verticalScrollBar().setValue(
                 self.verticalScrollBar().value() - self.scroll_speed

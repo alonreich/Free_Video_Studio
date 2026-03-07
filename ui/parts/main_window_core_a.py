@@ -1,7 +1,8 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
+import os, sys, time, threading, logging, subprocess, traceback
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from system.utils import MPVSafetyManager
 
 class MainWindowCoreAMixin:
     def open_granular_speed_dialog(self):
@@ -18,6 +19,7 @@ class MainWindowCoreAMixin:
             self._opening_granular_dialog = True
             self._ignore_mpv_end_until = time.time() + 2.0
             current_ms = 0
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_OPEN_START")
             if self.player:
                 if not getattr(self.player, "pause", True): self.player.pause = True
                 current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))
@@ -35,7 +37,9 @@ class MainWindowCoreAMixin:
 
             from ui.widgets.granular_speed_editor import GranularSpeedEditor
             dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=self.speed_spinbox.value(), start_time_ms=current_ms, mpv_instance=self.player, volume=self._vol_eff())
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_EXEC_BEFORE")
             res = dlg.exec_()
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_EXEC_AFTER")
             self._opening_granular_dialog = False
             self._ignore_mpv_end_until = time.time() + 1.0
             QThread.msleep(150)
@@ -59,6 +63,7 @@ class MainWindowCoreAMixin:
             if getattr(self, "player", None): self.player.seek(rt / 1000.0, reference='absolute', precision='exact')
             self.positionSlider.setValue(int(rt))
             self.positionSlider.update()
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_OPEN_END")
         except Exception as e:
             self.logger.critical(f"CRITICAL: Speed Dialog error: {e}")
             QMessageBox.critical(self, "Error", f"An error occurred: {e}")
@@ -116,37 +121,3 @@ class MainWindowCoreAMixin:
             self.status_bar_warning_label.show()
             QTimer.singleShot(10000, self.status_bar_warning_label.hide)
         except Exception: pass
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

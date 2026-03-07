@@ -2,9 +2,7 @@
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 class SearchableListWidget(QListWidget):
-    """
-    [FIX #8 & #3] A QListWidget with forgiving multi-char type-ahead and VISUAL FEEDBACK.
-    """
+    
     buffer_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -81,8 +79,7 @@ class SearchableListWidget(QListWidget):
                         return
 
 class MusicItemWidget(QWidget):
-    """Custom widget for song list items with specific font requirements."""
-
+    
     def __init__(self, filename, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_NoSystemBackground)

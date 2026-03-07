@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import subprocess
 import tempfile
@@ -13,7 +13,6 @@ from system.utils import MPVSafetyManager
 
 class MusicMixin:
     def _mp3_dir(self):
-        """Return the absolute path to the project's central MP3 folder or custom path from config."""
         try:
             custom = self.config_manager.config.get('custom_mp3_dir')
             if custom and os.path.isdir(custom):
@@ -59,7 +58,6 @@ class MusicMixin:
             self._custom_mp3_dir = folder
 
     def _ensure_music_player_ready(self):
-        """[FIX] Initializes a dedicated MPV instance for music preview with correct flags."""
         try:
             if not getattr(self, "_music_preview_player", None):
                 from system.utils import MPVSafetyManager
@@ -91,6 +89,7 @@ class MusicMixin:
 
     def open_music_wizard(self):
         self._in_transition = True
+        MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_OPEN_START")
         if hasattr(self, 'music_button'):
             self.music_button.setEnabled(False)
         self._pre_wizard_state = {}
@@ -99,8 +98,6 @@ class MusicMixin:
                 self._pre_wizard_state['player_playing'] = not getattr(self.player, "pause", True)
                 self._pre_wizard_state['player_mute'] = getattr(self.player, "mute", False)
                 self.player.pause = True
-                if hasattr(self.player, 'pause') and callable(self.player.pause):
-                    self.player.pause()
                 self.player.mute = True
                 if getattr(self, "_music_preview_player", None):
                     self._music_preview_player.pause = True
@@ -122,18 +119,21 @@ class MusicMixin:
         t_end = getattr(self, "trim_end_ms", 0)
         if t_end <= t_start:
             t_start = 0
-            t_end = self.original_duration_ms
+            t_end = getattr(self, "original_duration_ms", 0)
         speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
         speed_segments = []
         if getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked():
             speed_segments = list(getattr(self, 'speed_segments', []))
-        if speed_segments:
-            wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-            wall_end = self._calculate_wall_clock_time(t_end, speed_segments, speed_factor)
-            total_project_sec = (wall_end - wall_start) / 1000.0
-        else:
-            trimmed_dur_ms = t_end - t_start
-            total_project_sec = (trimmed_dur_ms / 1000.0) / speed_factor
+        try:
+            if speed_segments:
+                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                wall_end = self._calculate_wall_clock_time(t_end, speed_segments, speed_factor)
+                total_project_sec = (wall_end - wall_start) / 1000.0
+            else:
+                trimmed_dur_ms = t_end - t_start
+                total_project_sec = (trimmed_dur_ms / 1000.0) / speed_factor
+        except Exception:
+            total_project_sec = 0.0
         if total_project_sec <= 0:
             QMessageBox.warning(self, "No Video", "Please load a video file first!")
             if hasattr(self, 'music_button'): self.music_button.setEnabled(True)
@@ -141,12 +141,15 @@ class MusicMixin:
             return
         mp3_dir = self._mp3_dir()
         current_source_ms = self.positionSlider.value()
-        if speed_segments:
-            wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-            wall_current = self._calculate_wall_clock_time(current_source_ms, speed_segments, speed_factor)
-            current_project_sec = max(0.0, (wall_current - wall_start) / 1000.0)
-        else:
-            current_project_sec = max(0.0, ((current_source_ms - t_start) / 1000.0) / speed_factor)
+        try:
+            if speed_segments:
+                wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                wall_current = self._calculate_wall_clock_time(current_source_ms, speed_segments, speed_factor)
+                current_project_sec = max(0.0, (wall_current - wall_start) / 1000.0)
+            else:
+                current_project_sec = max(0.0, ((current_source_ms - t_start) / 1000.0) / speed_factor)
+        except Exception:
+            current_project_sec = 0.0
         wizard = MergerMusicWizard(
             self, self.player, self.bin_dir, mp3_dir, 
             total_project_sec, speed_factor,
@@ -164,7 +167,11 @@ class MusicMixin:
             wizard.music_vol_slider.blockSignals(False)
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
             wizard.selected_tracks = list(self._wizard_tracks)
+        
+        MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_EXEC_BEFORE")
         res = wizard.exec_()
+        MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_EXEC_AFTER")
+        
         self._in_transition = True
         if hasattr(wizard, 'stop_previews'):
             wizard.stop_previews()
@@ -183,8 +190,8 @@ class MusicMixin:
             QTimer.singleShot(200, self._set_transition_false)
 
     def _continue_wizard_return(self, res, t_start, t_end, speed_segments, speed_factor, wizard):
-        """Safely handle wizard return with comprehensive error handling."""
         try:
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_RETURN_START")
             if hasattr(self, 'music_button'): 
                 self.music_button.setEnabled(True)
             self.wants_to_play = False
@@ -208,7 +215,7 @@ class MusicMixin:
                         self._current_music_path = first_track[0]
                         self._current_music_offset = first_track[1]
                         self.logger.info(f"PREVIEW: Priming music player with {os.path.basename(self._current_music_path)}")
-                        self._music_preview_player.command("loadfile", self._current_music_path, "replace")
+                        self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)
                         self._safe_mpv_set("pause", True, target_player=self._music_preview_player)
                         self._safe_mpv_set("mute", False, target_player=self._music_preview_player)
                         self._safe_mpv_set("volume", self._music_volume_pct, target_player=self._music_preview_player)
@@ -229,6 +236,7 @@ class MusicMixin:
                 QTimer.singleShot(500, self._final_unmute_after_wizard)
             else:
                 self._restore_pre_wizard_state()
+            MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_RETURN_END")
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.error(f"WIZARD: Return completion failed: {e}")
@@ -236,7 +244,6 @@ class MusicMixin:
             self._in_transition = False
 
     def _final_unmute_after_wizard(self):
-        """[FIX] Resolves the silence issue by ensuring player is unmuted after all transitions are clear."""
         self.logger.info("WIZARD: Performing final unmute and volume sync.")
         if hasattr(self, "_sync_all_volumes"):
             self._sync_all_volumes()
@@ -250,21 +257,18 @@ class MusicMixin:
             self._safe_mpv_set("volume", self._music_eff(), target_player=music_player)
 
     def _safe_mpv_set(self, property_name, value, target_player=None):
-        """Safely set an MPV property using MPVSafetyManager."""
         player = target_player if target_player is not None else getattr(self, "player", None)
         if player:
             return MPVSafetyManager.safe_mpv_set(player, property_name, value)
         return False
 
     def _safe_mpv_command(self, command, *args, target_player=None):
-        """Safely execute an MPV command using MPVSafetyManager."""
         player = target_player if target_player is not None else getattr(self, "player", None)
         if player:
             return MPVSafetyManager.safe_mpv_command(player, command, *args)
         return False
 
     def _safe_seek_to_start(self, source_ms):
-        """Safely seek to start position with error handling."""
         try:
             if getattr(self, "player", None):
                 self.set_player_position(int(source_ms), sync_only=False, force_pause=True)
@@ -276,7 +280,6 @@ class MusicMixin:
         self._in_transition = False
 
     def _restore_pre_wizard_state(self):
-        """Restores playback and mute state after music wizard is canceled."""
         if not hasattr(self, '_pre_wizard_state'):
             return
         try:
@@ -301,7 +304,6 @@ class MusicMixin:
                 del self._pre_wizard_state
 
     def _attempt_player_recovery(self):
-        """Attempt to recover the main MPV player if it's corrupted."""
         try:
             self.logger.info("WIZARD: Attempting player recovery...")
             if hasattr(self, "player") and self.player:
@@ -317,7 +319,6 @@ class MusicMixin:
             self.logger.error(f"WIZARD: Player recovery setup failed: {e}")
 
     def _actually_reinit_player(self):
-        """Actually reinitialize the player after cleanup."""
         try:
             if hasattr(self, "_setup_mpv"):
                 self._setup_mpv()
@@ -328,11 +329,10 @@ class MusicMixin:
             self.logger.error(f"WIZARD: Player reinitialization failed: {e}")
 
     def _restore_video_after_recovery(self):
-        """Restore video playback after player recovery."""
         try:
             if hasattr(self, "current_video_path") and self.current_video_path and self.player:
-                self.player.command("loadfile", self.current_video_path, "replace")
-                self.player.pause = True
+                self._safe_mpv_command("loadfile", self.current_video_path, "replace")
+                self._safe_mpv_set("pause", True)
                 if hasattr(self, "trim_start_ms"):
                     self.set_player_position(self.trim_start_ms, sync_only=False, force_pause=True)
         except Exception as e:
@@ -341,91 +341,84 @@ class MusicMixin:
     def _reset_music_player(self):
         self.music_timeline_start_ms = 0
         self.music_timeline_end_ms = 0
-        self.music_timeline_start_sec = None
-        self.music_timeline_end_sec = None
         self._wizard_tracks = []
         if getattr(self, "_music_preview_player", None):
-            try:
-                self._music_preview_player.pause = True
-            except:
-                pass
+            self._safe_mpv_set("pause", True, target_player=self._music_preview_player)
         if hasattr(self, 'positionSlider'):
             self.positionSlider.reset_music_times()
 
     def _get_master_eff(self):
-        val = self.volume_slider.value()
-        if self.volume_slider.invertedAppearance():
-            return self.volume_slider.maximum() + self.volume_slider.minimum() - val
-        return val
-
-    def _get_music_offset_ms(self):
-        if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-            return int(self._wizard_tracks[0][1] * 1000)
-        return 0
+        try:
+            val = self.volume_slider.value()
+            if self.volume_slider.invertedAppearance():
+                return self.volume_slider.maximum() + self.volume_slider.minimum() - val
+            return val
+        except Exception: return 100
 
     def _on_slider_music_trim_changed(self, start_ms, end_ms):
-        """[FIX] Restore missing callback for main window music handles."""
-        self.music_timeline_start_ms = start_ms
-        self.music_timeline_end_ms = end_ms
-        if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
-            path, offset, _ = self._wizard_tracks[0]
-            new_dur = (end_ms - start_ms) / 1000.0
-            self._wizard_tracks[0] = (path, offset, new_dur)
+        try:
+            self.music_timeline_start_ms = start_ms
+            self.music_timeline_end_ms = end_ms
+            if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
+                path, offset, _ = self._wizard_tracks[0]
+                new_dur = (end_ms - start_ms) / 1000.0
+                self._wizard_tracks[0] = (path, offset, new_dur)
+        except Exception: pass
 
     def _sync_music_preview(self):
-        """[FIX #2] Sync music playback with video, respecting the pink overlay bounds."""
         if getattr(self, "_in_transition", False): return
         if getattr(self, "_is_seeking_active", False): return
         if not hasattr(self, "_wizard_tracks") or not self._wizard_tracks: return
         if not getattr(self, "player", None): return
-        curr_v_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
-        m_start_ms = getattr(self, "music_timeline_start_ms", getattr(self, "trim_start_ms", 0))
-        m_end_ms = getattr(self, "music_timeline_end_ms", getattr(self, "trim_end_ms", 0))
-        speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
-        speed_segments = getattr(self, 'speed_segments', [])
-        wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
-        wall_m_start = self._calculate_wall_clock_time(m_start_ms, speed_segments, speed_factor)
-        project_pos_sec = (wall_now - wall_m_start) / 1000.0
-        music_player = getattr(self, "_music_preview_player", None)
-        if not music_player: 
-            if not self._ensure_music_player_ready(): return
-            music_player = self._music_preview_player
-        if curr_v_ms < m_start_ms - 25 or curr_v_ms > m_end_ms + 25:
-            self._safe_mpv_set("pause", True, target_player=music_player)
-            self._safe_mpv_set("mute", True, target_player=music_player)
-            return
-        target_track = None
-        accum_sec = 0.0
-        for path, offset, dur in self._wizard_tracks:
-            if accum_sec <= project_pos_sec < accum_sec + dur:
-                target_track = (path, offset, project_pos_sec - accum_sec)
-                break
-            accum_sec += dur
-        if not target_track:
-            self._safe_mpv_set("pause", True, target_player=music_player)
-            return
-        path, offset, pos_in_track = target_track
-        curr_loaded = self._safe_mpv_get("path", "", target_player=music_player)
-        if not curr_loaded or os.path.basename(curr_loaded).lower() != os.path.basename(path).lower():
-            self.logger.info(f"PREVIEW: Loading music track: {os.path.basename(path)}")
-            music_player.command("loadfile", path, "replace")
-            self._safe_mpv_set("pause", True, target_player=music_player)
+        try:
+            curr_v_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
+            m_start_ms = getattr(self, "music_timeline_start_ms", getattr(self, "trim_start_ms", 0))
+            m_end_ms = getattr(self, "music_timeline_end_ms", getattr(self, "trim_end_ms", 0))
+            speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
+            speed_segments = getattr(self, 'speed_segments', [])
+            wall_now = self._calculate_wall_clock_time(curr_v_ms, speed_segments, speed_factor)
+            wall_m_start = self._calculate_wall_clock_time(m_start_ms, speed_segments, speed_factor)
+            project_pos_sec = (wall_now - wall_m_start) / 1000.0
+            music_player = getattr(self, "_music_preview_player", None)
+            if not music_player: 
+                if not self._ensure_music_player_ready(): return
+                music_player = self._music_preview_player
+            if curr_v_ms < m_start_ms - 25 or curr_v_ms > m_end_ms + 25:
+                self._safe_mpv_set("pause", True, target_player=music_player)
+                self._safe_mpv_set("mute", True, target_player=music_player)
+                return
+            target_track = None
+            accum_sec = 0.0
+            for path, offset, dur in self._wizard_tracks:
+                if accum_sec <= project_pos_sec < accum_sec + dur:
+                    target_track = (path, offset, project_pos_sec - accum_sec)
+                    break
+                accum_sec += dur
+            if not target_track:
+                self._safe_mpv_set("pause", True, target_player=music_player)
+                return
+            path, offset, pos_in_track = target_track
+            curr_loaded = self._safe_mpv_get("path", "", target_player=music_player)
+            if not curr_loaded or os.path.basename(curr_loaded).lower() != os.path.basename(path).lower():
+                self.logger.info(f"PREVIEW: Loading music track: {os.path.basename(path)}")
+                self._safe_mpv_command("loadfile", path, "replace", target_player=music_player)
+                self._safe_mpv_set("pause", True, target_player=music_player)
+                self._safe_mpv_set("mute", False, target_player=music_player)
+                self._safe_mpv_set("volume", self._music_eff(), target_player=music_player)
+                return
+            m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
+            expected_m_sec = offset + pos_in_track
+            if abs(m_pos - expected_m_sec) > 0.25: 
+                self._safe_mpv_set("speed", 1.0, target_player=music_player)
+                self._safe_mpv_command("seek", expected_m_sec, "absolute", "exact", target_player=music_player)
+            v_paused = self._safe_mpv_get("pause", True)
+            self._safe_mpv_set("pause", v_paused, target_player=music_player)
+            m_vol = self._music_eff()
+            self._safe_mpv_set("volume", m_vol, target_player=music_player)
             self._safe_mpv_set("mute", False, target_player=music_player)
-            self._safe_mpv_set("volume", self._music_eff(), target_player=music_player)
-            return
-        m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
-        expected_m_sec = offset + pos_in_track
-        if abs(m_pos - expected_m_sec) > 0.25: 
-            self._safe_mpv_set("speed", 1.0, target_player=music_player)
-            self._safe_mpv_command("seek", expected_m_sec, "absolute", "exact", target_player=music_player)
-        v_paused = self._safe_mpv_get("pause", True)
-        self._safe_mpv_set("pause", v_paused, target_player=music_player)
-        m_vol = self._music_eff()
-        self._safe_mpv_set("volume", m_vol, target_player=music_player)
-        self._safe_mpv_set("mute", False, target_player=music_player)
+        except Exception: pass
 
     def update_player_state(self):
-        """[FIX] Overridden by mixin or main window to include music sync."""
         pass
 
     def _probe_audio_duration(self, path: str) -> float:

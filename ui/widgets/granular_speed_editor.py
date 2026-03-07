@@ -1,4 +1,4 @@
-﻿try:
+try:
     import mpv
 except Exception:
     mpv = None
@@ -8,7 +8,7 @@ import os
 import threading
 import time as import_time
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QLabel, QDoubleSpinBox, QWidget, QMessageBox, QStyle, QStyleOptionSlider, QApplication, QSizePolicy)
+                             QLabel, QDoubleSpinBox, QWidget, QMessageBox, QStyle, QStyleOptionSlider, QApplication, QSizePolicy, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox)
 
 from PyQt5.QtCore import Qt, QTimer, QRect, QSize, pyqtSignal, QPoint
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QFontMetrics, QPen, QBrush, QLinearGradient, QCursor, QPainterPath, QIcon, QColor
@@ -125,7 +125,7 @@ class GranularTimelineSlider(TrimmedSlider):
                 if i != self.active_segment_index and seg['start'] >= self.trimmed_end_ms:
                     high = min(high, seg['start'])
             val = min(high, max(val, self.trimmed_start_ms + 10))
-            if val != self.trimmed_end_ms:
+            if val != self.trimmed_start_ms:
                 self.trimmed_end_ms = val
                 self.trim_times_changed.emit(self.trimmed_start_ms, self.trimmed_end_ms)
                 self.update()
@@ -413,17 +413,43 @@ class GranularSpeedEditor(QDialog):
         self._safe_mpv_command("seek", (self.abs_trim_start + self.start_time_ms) / 1000.0, "absolute", "exact")
         self.timeline.setValue(int(self.start_time_ms)); self.play_btn.setText("PLAY"); self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.is_playing = False
 
+    def _is_editing_widget_focused(self) -> bool:
+        fw = QApplication.focusWidget()
+        if fw is None: return False
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)): return True
+        if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()): return True
+        return False
+
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Space: self.toggle_play()
-        elif event.key() == Qt.Key_Left: self.seek_relative(-500)
-        elif event.key() == Qt.Key_Right: self.seek_relative(500)
-        elif event.key() == Qt.Key_BracketLeft: self.set_start()
-        elif event.key() == Qt.Key_BracketRight: self.set_end()
-        elif event.key() == Qt.Key_Delete and self.player:
+        if self._is_editing_widget_focused():
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        mods = event.modifiers()
+        if key == Qt.Key_Space:
+            self.toggle_play()
+            event.accept()
+        elif key == Qt.Key_Left:
+            ms = -100 if mods == Qt.ControlModifier else (-3000 if mods == Qt.ShiftModifier else -500)
+            self.seek_relative(ms)
+            event.accept()
+        elif key == Qt.Key_Right:
+            ms = 100 if mods == Qt.ControlModifier else (3000 if mods == Qt.ShiftModifier else 500)
+            self.seek_relative(ms)
+            event.accept()
+        elif key == Qt.Key_BracketLeft:
+            self.set_start()
+            event.accept()
+        elif key == Qt.Key_BracketRight:
+            self.set_end()
+            event.accept()
+        elif key == Qt.Key_Delete and self.player:
             rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
             for i, seg in enumerate(self.speed_segments):
                 if seg['start'] <= rel_t <= seg['end']: self.delete_segment(i); break
-        else: super().keyPressEvent(event)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def seek_relative(self, ms):
         if not self.player: return

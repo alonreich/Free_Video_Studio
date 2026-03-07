@@ -2,10 +2,7 @@
 import sys
 
 def get_project_root():
-    """
-    Returns the absolute path to the project root directory.
-    Assumes this file is located in <project_root>/system/shared_paths.py
-    """
+    
     return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 PROJECT_ROOT = get_project_root()
 

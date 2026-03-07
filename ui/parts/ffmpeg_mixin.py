@@ -15,7 +15,7 @@ from system.utils import UIManager
 
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
-        """Accepts the dialog first, then quits the application, ensuring state is saved."""
+        
         if dialog_to_close:
             dialog_to_close.accept()
         if hasattr(self, "cleanup_and_exit"):
@@ -24,7 +24,7 @@ class FfmpegMixin:
             QCoreApplication.instance().quit()
     
     def _safe_status(self, text: str, color: str = "white"):
-        """Use set_status_text_with_color if available; otherwise just log."""
+        
         try:
             self.set_status_text_with_color(text, color)
         except Exception:
@@ -35,7 +35,7 @@ class FfmpegMixin:
                 pass
     
     def _safe_set_phase(self, name: str, ok: bool | None = None):
-        """Try to update the phase overlay/label; never crash if label is missing."""
+        
         try:
             self.on_phase_update(name)
             return
@@ -48,7 +48,7 @@ class FfmpegMixin:
             pass
     
     def _safe_set_duration_text(self, text: str):
-        """Set duration/resolution text if a label exists; otherwise log."""
+        
         try:
             self.duration_label.setText(text)
             return
@@ -61,7 +61,7 @@ class FfmpegMixin:
             pass
 
     def show_message(self, title: str, message: str):
-        """Unified message helper used by processing flow and tool actions."""
+        
         try:
             if str(title).strip().lower() in {"error", "critical"}:
                 QMessageBox.critical(self, title, message)
@@ -92,10 +92,7 @@ class FfmpegMixin:
         self._save_app_state_and_config()
     
     def start_processing(self):
-        """
-        Starts the video processing sequence in a separate thread;
-        never let exceptions kill the app.
-        """
+        
         try:
             if self.is_processing:
                 self.show_message("Info", "A video is already being processed. Please wait.")
@@ -276,7 +273,7 @@ class FfmpegMixin:
                 pass
     
     def _show_error_with_log(self, message):
-        """[FIX #22] Error dialog with log viewer."""
+        
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Processing Error")
@@ -340,7 +337,7 @@ class FfmpegMixin:
 
     def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
         return f"""
-            QPushButton {{
+            QPushButton {{ 
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed});
                 color: white;
                 font-weight: bold;
@@ -354,11 +351,11 @@ class FfmpegMixin:
                 max-width: 180px;
                 min-height: 45px;
                 max-height: 45px;
-            }}
-            QPushButton:hover {{ border: 1px solid #7DD3FC; }}
-            QPushButton:pressed {{
+            }} 
+            QPushButton:hover {{  border: 1px solid #7DD3FC; }} 
+            QPushButton:pressed {{ 
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {pressed}, stop:1 {color});
-            }}
+            }} 
         """
 
     def on_process_finished(self, success, message):
@@ -591,7 +588,7 @@ class FfmpegMixin:
         self.progress_bar.setValue(v)
     
     def _probe_audio_duration(self, path: str) -> float:
-        """Return audio duration in seconds (float) or 0.0 on failure."""
+        
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
             cmd = [ffprobe_path, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0", path]
@@ -606,7 +603,7 @@ class FfmpegMixin:
             return 0.0
     
     def _probe_video_metadata(self, path: str) -> tuple[float, str]:
-        """Return (duration_s, resolution_str) or (0.0, '')."""
+        
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
             cmd = [

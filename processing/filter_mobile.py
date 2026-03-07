@@ -18,7 +18,7 @@ except ImportError:
 
 class MobileFilterMixin:
     def build_mobile_filter(self, *args, **kwargs):
-        """[ALIAS] For test contracts and legacy compatibility."""
+        
         if len(args) >= 2 and isinstance(args[0], dict) and isinstance(args[1], str):
             coords = args[0]
             is_boss_hp = kwargs.get('is_boss_hp', False)
@@ -27,10 +27,7 @@ class MobileFilterMixin:
         return self.build_mobile_filter_chain(*args, **kwargs)
 
     def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, txt_input_label=None, use_cuda=False):
-        """
-        [FIX #1 & #5] Builds a high-performance, linear filter chain using optimized software filters.
-        This ensures maximum stability across all hardware while keeping GPU encoding active.
-        """
+        
         coords_data = mobile_coords
         FINAL_W, FINAL_H = 1080, 1920
         CONTENT_AREA_W, CONTENT_AREA_H = 1080, 1620
@@ -81,10 +78,10 @@ class MobileFilterMixin:
         parts.append(f"{curr_v}scale={CONTENT_AREA_W}:{CONTENT_AREA_H}:flags=lanczos,pad={FINAL_W}:{FINAL_H}:0:{CONTENT_OFFSET_Y}:black[v_padded]")
         curr_v = "[v_padded]"
         if txt_input_label:
-            parts.append(f"{curr_v}{txt_input_label}overlay=x=0:y=0:eof_action=repeat,setsar=1,format=nv12[v_final]")
+            parts.append(f"{curr_v}{txt_input_label}overlay=x=0:y=0:eof_action=repeat,setsar=1,format=yuv420p[v_final]")
             curr_v = "[v_final]"
         else:
-            parts.append(f"{curr_v}setsar=1,format=nv12[v_final]")
+            parts.append(f"{curr_v}setsar=1,format=yuv420p[v_final]")
             curr_v = "[v_final]"
 
         from .filter_builder import FilterResult

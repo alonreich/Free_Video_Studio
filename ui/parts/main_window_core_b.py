@@ -97,36 +97,3 @@ class MainWindowCoreBMixin:
             def _evs():
                 if getattr(self, "player", None): self._suspend_volume_sync = False
             QTimer.singleShot(600, _evs)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
