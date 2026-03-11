@@ -42,7 +42,7 @@ class MergerPhaseOverlayLogic:
             pass
 
     def _update_overlay_mask(self):
-        """Positions graph/log full-screen and keeps controls visible above overlay."""
+        """Positions graph/log full-screen and keeps controls visible above overlay using a punch-hole mask."""
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
@@ -50,21 +50,25 @@ class MergerPhaseOverlayLogic:
             main_rect = parent.rect() if parent else self.rect()
             self._overlay.setGeometry(main_rect)
             self._overlay.raise_()
-            self._overlay.clearMask()
+            full_region = QRegion(self._overlay.rect())
+            button_holes = QRegion()
             for w_name in ["btn_merge", "btn_cancel_merge"]:
                 w = getattr(self, w_name, None)
-                if w and w.isVisible():
-                    w.raise_()
+                if w and not w.isHidden():
+                    try:
+                        g_pos = w.mapToGlobal(QPoint(0, 0))
+                        o_pos = self._overlay.mapFromGlobal(g_pos)
+                        mapped_rect = QRect(o_pos, w.size())
+                        button_holes |= QRegion(mapped_rect)
+                        w.raise_()
+                    except: pass
+            self._overlay.setMask(full_region - button_holes)
             self._layout_overlay_panels(main_rect)
         except Exception:
             try:
-                parent = self._overlay.parentWidget() if getattr(self, "_overlay", None) else None
-                main_rect = parent.rect() if parent else self.rect()
                 if getattr(self, "_overlay", None):
-                    self._overlay.setGeometry(main_rect)
-                    self._layout_overlay_panels(main_rect)
-            except Exception:
-                pass
+                    self._overlay.clearMask()
+            except: pass
 
     def _show_processing_overlay(self) -> None:
         """Shows the overlay and starts stats/pulse timers."""
@@ -137,7 +141,6 @@ class MergerPhaseOverlayLogic:
                     font-weight: bold;
                     font-size: 14px;
                     border-radius: 15px;
-                    margin-bottom: 6px;
                 }}
                 QPushButton:hover {{ background-color: #c8f7c5; }}
             """)

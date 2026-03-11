@@ -120,62 +120,52 @@ def generate_text_overlay_png(text, width, height, font_size, line_spacing, outp
     import sys
     import os
     import tempfile
-    
     try:
         if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules:
             if logger: logger.info("TEXT_GEN: Bypassing Qt image generation during pytest to avoid segfaults.")
             with open(output_path, 'wb') as f:
                 f.write(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82')
             return True
-
         if logger: logger.info(f"TEXT_GEN: Starting subprocess for path {output_path}")
-        
         script_content = f"""
+
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QImage, QPainter, QFont, QColor
 import os
-
 app = QApplication(sys.argv)
 width = {width}
 height = {height}
 output_path = r"{output_path}"
 text = {repr(text)}
 line_spacing = {line_spacing}
-
 img = QImage(width, height, QImage.Format_ARGB32)
 img.fill(Qt.transparent)
 painter = QPainter(img)
 painter.setRenderHint(QPainter.Antialiasing)
 painter.setRenderHint(QPainter.TextAntialiasing)
-
 is_portrait = (width < height)
 if is_portrait:
     painter.fillRect(0, 0, width, 150, Qt.black)
-
 font = QFont("Arial")
 font.setPixelSize({font_size})
 font.setBold(True)
 painter.setFont(font)
 fm = painter.fontMetrics()
 line_h = fm.height()
-
 # Basic wrap
 lines = text.split('/')
 if not lines: lines = [text]
-
 pure_rtl = False # Simplified for subprocess
 layout_dir = Qt.RightToLeft if pure_rtl else Qt.LeftToRight
 align_flag = Qt.AlignCenter
 painter.setLayoutDirection(layout_dir)
-
 block_h = (len(lines) * line_h) + ((len(lines) - 1) * line_spacing)
 start_y = (150 - block_h) // 2 if is_portrait else 50
 current_y = max(2, start_y)
 if is_portrait and current_y + block_h > 148:
     current_y = max(2, 148 - block_h)
-
 for line in lines:
     text_rect = QRect(60, current_y, width - 120, line_h)
     painter.setPen(QColor(0, 0, 0, 180))
@@ -183,7 +173,6 @@ for line in lines:
     painter.setPen(Qt.white)
     painter.drawText(text_rect, align_flag | Qt.AlignVCenter, line)
     current_y += (line_h + line_spacing)
-
 painter.end()
 success = img.save(output_path, "PNG")
 sys.exit(0 if success else 1)
@@ -191,13 +180,10 @@ sys.exit(0 if success else 1)
         fd, temp_script = tempfile.mkstemp(suffix=".py")
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(script_content)
-        
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         res = subprocess.run([sys.executable, temp_script], capture_output=True, text=True, creationflags=flags)
-        
         try: os.remove(temp_script)
         except: pass
-        
         success = (res.returncode == 0)
         if logger: logger.info(f"TEXT_GEN: Subprocess Finished. Success={success} Path={output_path}")
         return success

@@ -26,7 +26,6 @@ class ProcessRegistry:
             cls._processes.discard(proc)
     @classmethod
     def kill_all(cls):
-        
         for p in list(cls._processes):
             _kill_process_tree(p)
         cls._processes.clear()

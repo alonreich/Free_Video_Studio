@@ -95,7 +95,6 @@ def _disable_pytest_cacheprovider(config) -> None:
         pm.unregister(plugin, name="cacheprovider")
 
 def _install_legacy_import_alias() -> None:
-    
     try:
         pkg = importlib.import_module("sanity_test")
         sys.modules.setdefault("sanity_tests", pkg)
@@ -130,7 +129,6 @@ def pytest_sessionfinish(session, exitstatus) -> None:
     tempfile.tempdir = None
 @pytest.fixture(autouse=True)
 def _enforce_per_test_tmp_and_pycache_hygiene():
-    
     tmp_dir = Path(tempfile.gettempdir())
     before_tmp_entries = _snapshot_tmp_entries(tmp_dir)
     yield
@@ -409,13 +407,11 @@ def _expected_behavior_for_case(test_file: str, test_name: str, scenario: str) -
     if needles:
         shown = "; ".join(_shorten(n, 140) for n in needles[:4])
         return (
-            
             f"Key expected snippets include: {shown}."
         )
     if asserts:
         shown = "; ".join(_shorten(a, 140) for a in asserts[:4])
         return (
-            
             f"Key expected checks: {shown}."
         )
     return f"The tested scenario should complete successfully: {scenario}."
@@ -424,18 +420,14 @@ def _why_expected_for_case(test_file: str, scenario: str) -> str:
     name = Path(test_file).name.lower()
     if "_dryrun" in name:
         return (
-            
         )
     if "challenge" in name:
         return (
-            
         )
     if "core" in name:
         return (
-            
         )
     return (
-        
     )
 
 def _actual_behavior_for_case(case: CaseOutcome) -> str:
@@ -443,12 +435,10 @@ def _actual_behavior_for_case(case: CaseOutcome) -> str:
         return "Observed result: all assertions/conditions in this test passed exactly as expected."
     if case.status == "skipped":
         return (
-            
         )
     raw = _RAW_LONGREPR.get(case.nodeid, "")
     if "Missing expected snippets:" in case.detail:
         return (
-            
             f"Failure detail: {case.detail}"
         )
     if raw:
@@ -474,26 +464,21 @@ def _expected_vs_actual_gap(expected: str, actual: str, status: str) -> str:
     if status == "skipped":
         return "Execution gap: expected behavior was not validated because the test did not run."
     return (
-        
     )
 
 def _file_purpose_summary(test_file: str) -> str:
     name = Path(test_file).name.lower()
     if "_dryrun" in name:
         return (
-            
         )
     if "challenge" in name:
         return (
-            
         )
     if "real_sanity" in name:
         return (
-            
         )
     if "core" in name:
         return (
-            
         )
     return "Purpose: sanity verification for this feature area."
 

@@ -15,7 +15,6 @@ class ConcatProcessor:
         atexit.register(self._cleanup_temp_files)
 
     def _cleanup_temp_files(self):
-        
         for path in self._temp_files:
             try:
                 if os.path.exists(path):
@@ -26,7 +25,6 @@ class ConcatProcessor:
         self._temp_files.clear()
 
     def _register_temp_file(self, path):
-        
         self._temp_files.append(path)
 
     def run_concat(self, intro_path, core_path, progress_signal, video_bitrate_kbps=None, cancellation_check=None, fps_expr="60000/1001", preferred_encoder=None, force_reencode=False, audio_kbps=320, audio_sample_rate=48000, is_mobile=True):

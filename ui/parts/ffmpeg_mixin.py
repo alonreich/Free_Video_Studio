@@ -15,7 +15,6 @@ from system.utils import UIManager
 
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
-        
         if dialog_to_close:
             dialog_to_close.accept()
         if hasattr(self, "cleanup_and_exit"):
@@ -24,7 +23,6 @@ class FfmpegMixin:
             QCoreApplication.instance().quit()
     
     def _safe_status(self, text: str, color: str = "white"):
-        
         try:
             self.set_status_text_with_color(text, color)
         except Exception:
@@ -35,7 +33,6 @@ class FfmpegMixin:
                 pass
     
     def _safe_set_phase(self, name: str, ok: bool | None = None):
-        
         try:
             self.on_phase_update(name)
             return
@@ -48,7 +45,6 @@ class FfmpegMixin:
             pass
     
     def _safe_set_duration_text(self, text: str):
-        
         try:
             self.duration_label.setText(text)
             return
@@ -61,7 +57,6 @@ class FfmpegMixin:
             pass
 
     def show_message(self, title: str, message: str):
-        
         try:
             if str(title).strip().lower() in {"error", "critical"}:
                 QMessageBox.critical(self, title, message)
@@ -92,7 +87,6 @@ class FfmpegMixin:
         self._save_app_state_and_config()
     
     def start_processing(self):
-        
         try:
             if self.is_processing:
                 self.show_message("Info", "A video is already being processed. Please wait.")
@@ -273,7 +267,6 @@ class FfmpegMixin:
                 pass
     
     def _show_error_with_log(self, message):
-        
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Processing Error")
@@ -318,22 +311,22 @@ class FfmpegMixin:
         except Exception as e:
             self.show_message("Error", f"Failed to open WhatsApp. Please visit {url} manually. Error: {e}")
 
-    def open_folder(self, path: str):
-        folder_path = os.path.abspath(path)
-        if not folder_path or not os.path.isdir(folder_path):
-            self.logger.warning("OPEN_FOLDER: Path is not a directory or does not exist: %s", folder_path)
+    def open_output_in_explorer(self, file_path: str):
+        full_path = os.path.abspath(file_path)
+        if not os.path.exists(full_path):
+            self.logger.warning("OPEN_EXPLORER: File does not exist: %s", full_path)
             return
         try:
             if os.name == "nt":
-                os.startfile(folder_path, "explore")
+                subprocess.run(['explorer', '/select,', os.path.normpath(full_path)], check=False)
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", folder_path])
+                subprocess.Popen(["open", "-R", full_path])
             else:
-                subprocess.Popen(["xdg-open", folder_path])
-            self.logger.info("OPEN_FOLDER: Opened %s", folder_path)
+                subprocess.Popen(["xdg-open", os.path.dirname(full_path)])
+            self.logger.info("OPEN_EXPLORER: Opened and selected %s", full_path)
         except Exception as e:
-            self.logger.error("OPEN_FOLDER: Failed to open folder %s | Error: %s", folder_path, e)
-            self.show_message("Error", f"Failed to open folder. Please navigate to {folder_path} manually. Error: {e}")
+            self.logger.error("OPEN_EXPLORER: Failed to open explorer for %s | Error: %s", full_path, e)
+            self.show_message("Error", f"Failed to open explorer. Please navigate to {os.path.dirname(full_path)} manually. Error: {e}")
 
     def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
         return f"""
@@ -452,7 +445,7 @@ class FfmpegMixin:
             open_folder_button.setStyleSheet(self._dialog_button_style("#6c5f9e", "#4E4476", font_size=12))
             open_folder_button.clicked.connect(lambda: (
                 dialog.accept(),
-                self.open_folder(os.path.dirname(output_path)),
+                self.open_output_in_explorer(output_path),
                 self.cleanup_and_exit()
             ))
             new_file_button = QPushButton("📂  UPLOAD NEW  📂")
@@ -588,7 +581,6 @@ class FfmpegMixin:
         self.progress_bar.setValue(v)
     
     def _probe_audio_duration(self, path: str) -> float:
-        
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
             cmd = [ffprobe_path, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration", "-of", "csv=p=0", path]
@@ -603,7 +595,6 @@ class FfmpegMixin:
             return 0.0
     
     def _probe_video_metadata(self, path: str) -> tuple[float, str]:
-        
         try:
             ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
             cmd = [

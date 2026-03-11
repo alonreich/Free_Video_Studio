@@ -70,6 +70,7 @@ class MergerMusicWizard(
         self.current_track_path = None
         self.current_track_dur = 0.0
         self.selected_tracks = []
+        self.music_segments = []
         self._editing_track_index = -1
         self._pending_offset_ms = 0
         self._show_caret_step2 = False

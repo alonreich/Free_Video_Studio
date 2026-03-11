@@ -134,6 +134,8 @@ class MergerMusicWizardNavigationMixin:
             pass
         self._sync_caret()
         self.stack.setCurrentIndex(1)
+        self._safe_mpv_loadfile(self.player, self.current_track_path, start_sec=initial_offset_ms / 1000.0)
+        self._safe_mpv_set(self.player, "pause", True)
         self.start_waveform_generation()
         self.btn_back.show()
 

@@ -47,7 +47,6 @@ class MainWindowCoreCMixin:
         QCoreApplication.instance().quit()
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
-        
         self.trim_start_ms = start_ms
         self.trim_end_ms = end_ms
         has_music = (hasattr(self, "_wizard_tracks") and self._wizard_tracks)

@@ -39,7 +39,6 @@ class MergerTimelineWidget(QWidget):
         super().resizeEvent(event)
 
     def _render_background(self):
-        
         w = self.width()
         h = self.height()
         if w <= 0 or h <= 0: return

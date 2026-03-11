@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 import tempfile
@@ -38,7 +38,7 @@ class MusicMixin:
                     except: mt = 0
                     files.append((mt, name, p))
             files.sort(key=lambda x: x[0], reverse=True)
-            files = files[:50]
+            files = files[:1000]
             self._music_files = [ (n, p) for _, n, p in files ]
         except: self._music_files = []
 
@@ -167,11 +167,9 @@ class MusicMixin:
             wizard.music_vol_slider.blockSignals(False)
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
             wizard.selected_tracks = list(self._wizard_tracks)
-        
         MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_EXEC_BEFORE")
         res = wizard.exec_()
         MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "WIZARD_EXEC_AFTER")
-        
         self._in_transition = True
         if hasattr(wizard, 'stop_previews'):
             wizard.stop_previews()
@@ -408,7 +406,7 @@ class MusicMixin:
                 return
             m_pos = self._safe_mpv_get("time-pos", 0, target_player=music_player) or 0
             expected_m_sec = offset + pos_in_track
-            if abs(m_pos - expected_m_sec) > 0.25: 
+            if abs(m_pos - expected_m_sec) > 0.05: 
                 self._safe_mpv_set("speed", 1.0, target_player=music_player)
                 self._safe_mpv_command("seek", expected_m_sec, "absolute", "exact", target_player=music_player)
             v_paused = self._safe_mpv_get("pause", True)

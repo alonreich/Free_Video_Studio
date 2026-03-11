@@ -3,7 +3,6 @@ from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor, QP
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle
 
 class TrimmedSlider(QSlider):
-    
     trim_times_changed = pyqtSignal(int, int)
     music_trim_changed = pyqtSignal(int, int)
 
@@ -42,7 +41,6 @@ class TrimmedSlider(QSlider):
             pass
 
     def enable_trim_overlays(self, enabled):
-        
         self._show_trim_overlays = bool(enabled)
         self.update()
 
@@ -58,23 +56,19 @@ class TrimmedSlider(QSlider):
         self.update()
 
     def set_music_range(self, start_ms, end_ms, visible=True):
-        
         self.music_start_ms = int(start_ms)
         self.music_end_ms = int(end_ms)
         self._show_music = visible
         self.update()
 
     def set_music_times(self, start_ms, end_ms):
-        
         self.set_music_range(start_ms, end_ms, visible=True)
 
     def set_music_visible(self, visible):
-        
         self._show_music = visible
         self.update()
 
     def reset_music_times(self):
-        
         self.music_start_ms = -1
         self.music_end_ms = -1
         self._show_music = False
@@ -89,7 +83,6 @@ class TrimmedSlider(QSlider):
         return f"{m}:{s:02d}"
 
     def _get_groove_rect(self):
-        
         fallback_rect = QRect(8, self.height() // 2 - 2, max(1, self.width() - 16), 4)
         try:
             if self._is_destroying:
@@ -110,7 +103,6 @@ class TrimmedSlider(QSlider):
             return fallback_rect
 
     def _get_handle_rect(self, handle_type):
-        
         try:
             groove = self._get_groove_rect()
             val = self.trimmed_start_ms if handle_type == 'start' else self.trimmed_end_ms
@@ -121,7 +113,6 @@ class TrimmedSlider(QSlider):
             return QRect()
 
     def _get_music_handle_rect(self, handle_type):
-        
         try:
             time_ms = self.music_start_ms if handle_type == 'start' else self.music_end_ms
             if time_ms < 0 or not self._show_music: return QRect()
@@ -134,7 +125,6 @@ class TrimmedSlider(QSlider):
             return QRect()
 
     def _get_playhead_rect(self):
-        
         try:
             groove = self._get_groove_rect()
             x = self._map_value_to_pos(self.value())
@@ -144,7 +134,6 @@ class TrimmedSlider(QSlider):
             return QRect()
 
     def _get_music_line_rect(self):
-        
         try:
             if self.music_end_ms < 0 or not self._show_music:
                 return QRect()
@@ -158,7 +147,6 @@ class TrimmedSlider(QSlider):
             return QRect()
 
     def _map_pos_to_value(self, px):
-        
         try:
             groove = self._get_groove_rect()
             if groove.width() <= 1: return self._cached_min
@@ -170,7 +158,6 @@ class TrimmedSlider(QSlider):
             return self._cached_min
 
     def _map_value_to_pos(self, value):
-        
         try:
             if self._is_destroying:
                 return 8
@@ -306,7 +293,6 @@ class TrimmedSlider(QSlider):
         self.update()
 
     def paintEvent(self, event):
-        
         if getattr(self, '_is_destroying', False):
             return
         p = QPainter(self)

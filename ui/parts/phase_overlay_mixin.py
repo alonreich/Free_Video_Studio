@@ -11,7 +11,6 @@ from PyQt5.QtWidgets import QWidget, QPlainTextEdit
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
 class GpuWorker(QThread):
-    
     stats_updated = pyqtSignal(int)
 
     def __init__(self):
@@ -49,7 +48,6 @@ class GpuWorker(QThread):
 
 class PhaseOverlayMixin:
     def _append_live_log(self, line: str) -> None:
-        
         if not getattr(self, "live_log", None):
             return
         if " | " in line:
@@ -60,7 +58,6 @@ class PhaseOverlayMixin:
         self._log_buffer.append(line)
 
     def _flush_logs(self):
-        
         if hasattr(self, "_log_buffer") and self._log_buffer and getattr(self, "live_log", None):
             chunk = "\n".join(self._log_buffer)
             self._log_buffer.clear()
@@ -70,7 +67,6 @@ class PhaseOverlayMixin:
             )
 
     def _ensure_overlay_widgets(self) -> None:
-        
         if getattr(self, "_overlay", None):
             return
         self._overlay = QWidget(self)
@@ -116,7 +112,6 @@ class PhaseOverlayMixin:
         self._last_gpu_val = val
 
     def _resize_overlay(self) -> None:
-        
         try:
             if getattr(self, "_overlay", None):
                 self._overlay.setGeometry(self.rect())
@@ -126,7 +121,6 @@ class PhaseOverlayMixin:
             pass
 
     def _update_overlay_mask(self):
-        
         try:
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 return
@@ -156,7 +150,6 @@ class PhaseOverlayMixin:
             pass
 
     def _show_processing_overlay(self) -> None:
-        
         self._ensure_overlay_widgets()
         try:
             if hasattr(self, "process_button") and not hasattr(self, "_original_process_btn_style"):
@@ -185,7 +178,6 @@ class PhaseOverlayMixin:
             pass
 
     def _hide_processing_overlay(self) -> None:
-        
         try:
             if getattr(self, "_stats_timer", None):
                 self._stats_timer.stop()
@@ -247,7 +239,6 @@ class PhaseOverlayMixin:
             pass
 
     def _sample_perf_counters_safe(self):
-        
         try:
             cpu = int(psutil.cpu_percent(interval=None))
         except Exception:
@@ -285,7 +276,6 @@ class PhaseOverlayMixin:
             self._overlay.update()
 
     def _set_overlay_phase(self, phase: str) -> None:
-        
         p = (phase or "").lower()
         if any(x in p for x in ("processing", "step", "encode", "intro", "core", "concat")):
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
@@ -295,7 +285,6 @@ class PhaseOverlayMixin:
                 self._hide_processing_overlay()
 
     def _draw_performance_graphs(self, event):
-        
         painter = QPainter(self._graph)
         painter.setRenderHint(QPainter.Antialiasing)
         w = self._graph.width()

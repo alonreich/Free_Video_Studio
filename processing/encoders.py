@@ -1,7 +1,9 @@
 ﻿import os
 from typing import Any, Optional
+
 class EncoderManager:
     ENCODER_PREFERENCE = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
+
     def _fps_to_float(self, fps_expr: str, default: float = 60.0) -> float:
         try:
             if fps_expr and '/' in str(fps_expr):
@@ -13,6 +15,7 @@ class EncoderManager:
             return float(fps_expr)
         except Exception:
             return float(default)
+
     def __init__(self, logger: Any, hardware_strategy: Optional[str] = None):
         self.logger = logger
         self.available_encoders = self._detect_available_encoders()
@@ -37,6 +40,7 @@ class EncoderManager:
                 self.primary_encoder = "libx264"
                 self.forced_cpu = True
         self.attempted_encoders: set[str] = set()
+
     def _detect_available_encoders(self) -> set[str]:
         import subprocess
         try:
@@ -59,10 +63,12 @@ class EncoderManager:
         except Exception as e:
             self.logger.warning(f"Failed to detect encoders: {e}")
             return set()
+
     def get_initial_encoder(self):
         if self.forced_cpu:
             return "libx264"
         return self.primary_encoder
+
     def get_fallback_list(self, failed_encoder: str) -> list[str]:
         self.attempted_encoders.add(failed_encoder)
         try:
@@ -76,6 +82,7 @@ class EncoderManager:
                 fallback_options.append(encoder)
         self.logger.info(f"Fallback initiated. Failed: '{failed_encoder}'. Attempted so far: {self.attempted_encoders}. Next options: {fallback_options}")
         return fallback_options
+
     def get_codec_flags(self, encoder_name: str, video_bitrate_kbps: Optional[int], effective_duration_sec: float, fps_expr: str = "60000/1001", quality_level: int = 2) -> tuple[list[str], str]:
         fps_value = self._fps_to_float(fps_expr, default=60.0)
         if self.forced_cpu:
@@ -181,6 +188,7 @@ class EncoderManager:
             vcodec.extend(['-pix_fmt', 'nv12'])
             rc_label = f"{encoder_name} (Generic)"
         return vcodec, rc_label
+
     def get_intro_codec_flags(self, video_bitrate_kbps: int) -> list[str]:
         encoder = self.primary_encoder if not self.forced_cpu else 'libx264'
         vcodec, _ = self.get_codec_flags(encoder, video_bitrate_kbps, effective_duration_sec=5.0)

@@ -85,86 +85,89 @@ class MergerEngine(QThread):
         return base
 
     def run(self):
-        self._is_cancelled = False
-        cmd = [self.ffmpeg_path, "-y", "-hide_banner", "-progress", "pipe:1"] + list(self.cmd_base)
-        a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
-        a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
-        cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
-        cmd.extend(self._detect_gpu_encoder())
-        cmd.append(str(self.output_path))
-        self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")
-        startupinfo = None
-        if os.name == 'nt':
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        try:
-            self._process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                universal_newlines=True,
-                encoding='utf-8',
-                errors='replace',
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-        except Exception as e:
-            self.finished.emit(False, f"Failed to start FFmpeg: {e}")
-            return
-        log_queue = queue.Queue()
-
-        def _reader_thread(proc, q):
-            for line in iter(proc.stdout.readline, ''):
-                q.put(line)
-            proc.stdout.close()
-        t = threading.Thread(target=_reader_thread, args=(self._process, log_queue))
-        t.daemon = True
-        t.start()
-        log_buffer = []
         while True:
-            if self._is_cancelled:
-                break
+            self._is_cancelled = False
+            cmd = [self.ffmpeg_path, "-y", "-hide_banner", "-progress", "pipe:1"] + list(self.cmd_base)
+            a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
+            a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
+            cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
+            cmd.extend(self._detect_gpu_encoder())
+            cmd.append(str(self.output_path))
+            self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             try:
-                line = log_queue.get(timeout=0.1)
-                line = line.strip()
-                self.log_line.emit(line)
-                if '=' in line:
-                    self._parse_progress_v2(line)
-                else:
-                    self._parse_progress(line)
-                log_buffer.append(line)
-                if len(log_buffer) > 100:
-                    log_buffer.pop(0)
-            except queue.Empty:
-                if not t.is_alive():
+                self._process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                    universal_newlines=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+            except Exception as e:
+                self.finished.emit(False, f"Failed to start FFmpeg: {e}")
+                return
+            log_queue = queue.Queue()
+
+            def _reader_thread(proc, q):
+                try:
+                    for line in iter(proc.stdout.readline, ''):
+                        q.put(line)
+                    proc.stdout.close()
+                except: pass
+            t = threading.Thread(target=_reader_thread, args=(self._process, log_queue))
+            t.daemon = True
+            t.start()
+            log_buffer = []
+            while True:
+                if self._is_cancelled:
                     break
-        if self._is_cancelled:
-            self._kill_process()
-            self.finished.emit(False, "Cancelled by user.")
-            return
-        self._process.wait()
-        rc = self._process.returncode
-        if rc != 0:
-            if self.use_gpu:
+                try:
+                    line = log_queue.get(timeout=0.1)
+                    line = line.strip()
+                    if not line: continue
+                    self.log_line.emit(line)
+                    if '=' in line:
+                        self._parse_progress_v2(line)
+                    else:
+                        self._parse_progress(line)
+                    log_buffer.append(line)
+                    if len(log_buffer) > 100:
+                        log_buffer.pop(0)
+                except queue.Empty:
+                    if not t.is_alive():
+                        break
+            if self._is_cancelled:
+                self._kill_process()
+                self.finished.emit(False, "Cancelled by user.")
+                return
+            self._process.wait()
+            rc = self._process.returncode
+            if rc != 0 and self.use_gpu:
                 self.logger.warning("GPU Encoding failed, falling back to CPU...")
                 self.use_gpu = False
-                self.run()
-                return
-        self.logger.info(f"FFMPEG LOG DUMP:\n" + "\n".join(log_buffer))
-        if rc == 0:
-            if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:
-                self.finished.emit(True, str(self.output_path))
+                continue
+            self.logger.info(f"FFMPEG LOG DUMP:\n" + "\n".join(log_buffer))
+            if rc == 0:
+                if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:
+                    self.finished.emit(True, str(self.output_path))
+                else:
+                    self.finished.emit(False, "Render complete but output file is empty.")
             else:
-                self.finished.emit(False, "Render complete but output file is empty.")
-        else:
-            important = [
-                l for l in log_buffer
-                if re.search(r"error|failed|invalid|unable|cannot|no such", l, re.IGNORECASE)
-            ]
-            err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
-            self.logger.error(f"FFMPEG ERROR OUTPUT:\n" + err_msg)
-            self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
+                important = [
+                    l for l in log_buffer
+                    if re.search(r"error|failed|invalid|unable|cannot|no such", l, re.IGNORECASE)
+                ]
+                err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
+                self.logger.error(f"FFMPEG ERROR OUTPUT:\n" + err_msg)
+                self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
+            break
 
     def _parse_progress_v2(self, line):
         """Precision tracking using out_time_us."""

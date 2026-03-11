@@ -1,8 +1,10 @@
 ﻿from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
 from .filter_mobile import MobileFilterMixin
+
 class FilterResult(tuple):
     def __contains__(self, item):
         return any(item in str(x) for x in self)
+
 class AudioFilterMixin:
     def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None, music_start_index=1):
         chain = []
@@ -15,6 +17,7 @@ class AudioFilterMixin:
         if vfade_in_d > 0:
             raw_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         cleaned_parts = []
+
         def flatten(item):
             if isinstance(item, list):
                 for sub in item: flatten(sub)
@@ -46,7 +49,6 @@ class AudioFilterMixin:
             pre_label = f"[a_mus_{i}_pre]"
             music_filters = [
                 f"atrim=start={file_offset:.3f}:duration={dur_sec:.3f}",
-                
             ]
             if not disable_fades and dur_sec > 0.5:
                 FADE_DUR = min(0.5, dur_sec / 4.0)
@@ -69,12 +71,25 @@ class AudioFilterMixin:
         else:
             bg_music_label = prepared_music_labels[0]
         v_vol = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
-        chain.append(f"[a_main_raw]volume={v_vol:.4f},highpass=f=150[game_scaled]")
-        chain.append(f"[game_scaled]{bg_music_label}amix=inputs=2:duration=first:dropout_transition=0,dynaudnorm=f=150:g=15,aresample={target_sample_rate}:async=1[a_music_prepared]")
+        chain.append(f"[a_main_raw]volume={v_vol:.4f}[game_scaled]")
+        chain.append(f"[game_scaled]asplit=2[game_out_pre][game_trig]")
+        chain.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")
+        chain.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
+        chain.append(f"{bg_music_label}asplit=2[mus_base][mus_to_filter]")
+        chain.append("[mus_base]lowpass=f=150[mus_low]")
+        chain.append("[mus_to_filter]highpass=f=150[mus_high]")
+        d_thresh = music_config.get('ducking_threshold', 0.15)
+        d_ratio = music_config.get('ducking_ratio', 2.5)
+        duck_params = f"threshold={d_thresh}:ratio={d_ratio}:attack=1:release=400:detection=rms"
+        chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
+        chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
+        chain.append(f"[game_out_pre][a_music_reconstructed]amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,dynaudnorm=f=150:g=15,alimiter=limit=0.95:attack=5:release=50,aresample={target_sample_rate}:async=1[a_music_prepared]")
         return chain, "[a_music_prepared]"
+
 class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
     def __init__(self, logger=None):
         self.logger = logger
+
     def build_granular_speed_chain(self, input_path=None, total_duration_ms=0, segments=None, base_speed=1.0, source_cut_start_ms=0, input_v_label="[0:v]", input_a_label="[0:a]", target_fps="60", video_path=None, duration_ms=None, speed_segments=None):
         input_path = input_path or video_path
         total_duration_ms = total_duration_ms or duration_ms or 0
@@ -83,10 +98,12 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         current_time = 0.0
         chunks = []
         timeline_origin_sec = float(source_cut_start_ms or 0.0) / 1000.0
+
         def _to_clip_relative_sec(t_abs_sec):
             try: rel = float(t_abs_sec) - timeline_origin_sec
             except: rel = 0.0
             return max(0.0, min(rel, total_duration_sec))
+
         def time_mapper(timeline_sec):
             target = _to_clip_relative_sec(timeline_sec)
             mapped = 0.0

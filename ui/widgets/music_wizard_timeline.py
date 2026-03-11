@@ -8,7 +8,6 @@ from ui.widgets.music_wizard_workers import VideoFilmstripWorker, MusicWaveformW
 
 class MergerMusicWizardTimelineMixin:
     def _payload_to_pixmap(self, payload):
-        
         try:
             if isinstance(payload, QtGui.QPixmap):
                 return payload if not payload.isNull() else None
@@ -23,7 +22,6 @@ class MergerMusicWizardTimelineMixin:
         return None
 
     def _schedule_timeline_repaint(self):
-        
         if not hasattr(self, "timeline") or self.timeline is None:
             return
         if not hasattr(self, "_timeline_repaint_timer"):

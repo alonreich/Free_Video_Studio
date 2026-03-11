@@ -138,7 +138,6 @@ class MergerMusicWizardNavigationMixin:
         self.btn_back.show()
 
     def confirm_current_track(self):
-        
         if self._player: self._player.stop()
         if hasattr(self, '_play_timer') and self._play_timer:
             try:

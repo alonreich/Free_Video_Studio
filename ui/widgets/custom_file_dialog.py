@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import shutil
 import os
 import sys
@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QStyledItemDelegate,
 )
+
 from PyQt5.QtCore import (
     QByteArray,
     Qt,
@@ -32,6 +33,7 @@ from PyQt5.QtCore import (
     QMimeData,
     QSize,
 )
+
 from PyQt5.QtGui import (
     QColor,
     QPalette
@@ -60,6 +62,7 @@ class _CenteredTextDelegate(QStyledItemDelegate):
             file_path = model.filePath(idx)
             if file_path in dialog._cut_file_paths:
                 option.palette.setColor(QPalette.Text, QColor("#808080"))
+
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)
         return QSize(s.width(), s.height())
@@ -74,6 +77,7 @@ class RubberBandHelper(QObject):
         self._dragging = False
         self._configure_tree_view()
         self._configure_viewport()
+
     def _configure_tree_view(self):
         self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -81,9 +85,11 @@ class RubberBandHelper(QObject):
         self._tree.setAcceptDrops(True)
         self._tree.setDragDropMode(QAbstractItemView.DragDrop)
         self._tree.setDropIndicatorShown(True)
+
     def _configure_viewport(self):
         self._vp.setMouseTracking(True)
         self._vp.installEventFilter(self)
+
     def eventFilter(self, obj, event):
         if obj is not self._vp:
             return False
@@ -95,6 +101,7 @@ class RubberBandHelper(QObject):
         if et == QEvent.MouseButtonRelease:
             return self._handle_release(event)
         return False
+
     def _handle_press(self, event):
         if event.button() != Qt.LeftButton:
             return False
@@ -110,6 +117,7 @@ class RubberBandHelper(QObject):
             if sm is not None:
                 sm.clearSelection()
         return True
+
     def _handle_move(self, event):
         if not self._dragging:
             return False
@@ -118,6 +126,7 @@ class RubberBandHelper(QObject):
         mods = event.modifiers()
         self._select_rows_in_rect(rect, mods)
         return True
+
     def _handle_release(self, event):
         if not self._dragging:
             return False
@@ -126,6 +135,7 @@ class RubberBandHelper(QObject):
         self._dragging = False
         self._rb.hide()
         return True
+
     def _select_rows_in_rect(self, rect: QRect, modifiers: Qt.KeyboardModifiers):
         sm = self._tree.selectionModel()
         model = self._tree.model()
@@ -147,6 +157,7 @@ class RubberBandHelper(QObject):
             else:
                 if not additive:
                     sm.select(idx, sm.Deselect | sm.Rows)
+
     def set_enabled(self, enabled: bool):
         if enabled:
             self._vp.installEventFilter(self)
@@ -154,19 +165,26 @@ class RubberBandHelper(QObject):
             self._vp.removeEventFilter(self)
             self._rb.hide()
             self._dragging = False
+
     def is_dragging(self) -> bool:
         return self._dragging
+
     def hide_rubberband(self):
         self._rb.hide()
         self._dragging = False
+
     def show_rubberband(self):
         self._rb.show()
+
     def rubberband_geometry(self) -> QRect:
         return self._rb.geometry()
+
     def set_rubberband_geometry(self, rect: QRect):
         self._rb.setGeometry(rect)
+
     def reset_origin(self, pos: QPoint):
         self._origin = pos
+
     def origin(self) -> QPoint:
         return self._origin
 
@@ -175,6 +193,7 @@ class CenterHeaderProxyStyle(QProxyStyle):
         if element == QStyle.PE_IndicatorHeaderArrow:
             return
         super().drawPrimitive(element, option, painter, widget)
+
     def drawControl(self, element, option, painter, widget=None):
         if element == QStyle.CE_HeaderLabel:
             original_indicator = 0
@@ -200,6 +219,7 @@ class CenterHeaderProxyStyle(QProxyStyle):
                 right_x = int(cx + (text_width / 2) + padding)
                 s = 4
                 is_down = (option.sortIndicator == 1)
+
                 def draw_arrow(x, y, down):
                     if down:
                         painter.drawConvexPolygon(QPoint(x - s, y - s), QPoint(x + s, y - s), QPoint(x, y + s))
@@ -215,12 +235,15 @@ class CenterAlignedTreeView(QTreeView):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._align_timer = None
+
     def showEvent(self, event):
         super().showEvent(event)
         self._apply_center_alignment()
+
     def setModel(self, model):
         super().setModel(model)
         self._apply_center_alignment()
+
     def _apply_center_alignment(self):
         model = self.model()
         if model is None:
@@ -250,12 +273,16 @@ class CustomFileDialog(QFileDialog):
         self._setup_lookin_width()
         self._setup_sidebar()
         self._tune_buttons()
+
     def _init_dialog_flags(self):
         self.setOption(QFileDialog.DontUseNativeDialog, True)
+
     def _init_modes(self):
         self.setFileMode(QFileDialog.ExistingFiles)
+
     def _init_title(self):
         self.setWindowTitle("Select Video File(s)")
+
     def _apply_styles(self):
         self.setStyleSheet(
             """
@@ -371,6 +398,7 @@ class CustomFileDialog(QFileDialog):
             }
             """
         )
+
     def _bind_tree_view(self):
         self.tree_view = self.findChild(QTreeView)
         if self.tree_view:
@@ -406,11 +434,13 @@ class CustomFileDialog(QFileDialog):
         self.list_view = self.findChild(QListView, "listView")
         self._install_silent_delete(self.tree_view)
         self._install_silent_delete(self.list_view)
+
     def _install_silent_delete(self, view):
         if view is None:
             return
         view.installEventFilter(self)
         view.viewport().installEventFilter(self)
+
     def eventFilter(self, obj, event):
         if event.type() == QEvent.ContextMenu:
             view = obj
@@ -426,6 +456,7 @@ class CustomFileDialog(QFileDialog):
                 self._delete_selected_files_silent()
                 return True
         return super().eventFilter(obj, event)
+
     def _show_context_menu(self, view, global_pos):
         paths = self._selected_paths_from_view(view)
         menu = QMenu(view)
@@ -467,10 +498,12 @@ class CustomFileDialog(QFileDialog):
             self._delete_selected_files_silent()
         elif paths and len(paths) == 1 and chosen == act_rename:
             self._rename_file(paths[0])
+
     def _cut_files(self, paths):
         if not paths:
             return
         self._copy_files(paths, is_cut=True)
+
     def _copy_files(self, paths, is_cut=False):
         if not paths:
             return
@@ -486,6 +519,7 @@ class CustomFileDialog(QFileDialog):
             self.tree_view.viewport().update()
         clipboard = QApplication.clipboard()
         clipboard.setMimeData(mime_data)
+
     def _paste_files(self):
         clipboard = QApplication.clipboard()
         mime_data = clipboard.mimeData()
@@ -527,6 +561,7 @@ class CustomFileDialog(QFileDialog):
             self._cut_file_paths.clear()
         self.setDirectory(self.directory())
         self.tree_view.viewport().update()
+
     def _handle_overwrite(self, file_name):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Confirm Overwrite")
@@ -543,6 +578,7 @@ class CustomFileDialog(QFileDialog):
             return "rename"
         else:
             return "overwrite"
+
     def _create_new_folder(self):
         current_dir = self.directory().absolutePath()
         name, ok = QInputDialog.getText(self, "New Folder", "Folder Name:")
@@ -553,6 +589,7 @@ class CustomFileDialog(QFileDialog):
                 self.setDirectory(current_dir)
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not create folder: {e}")
+
     def _rename_file(self, old_path):
         dirname = os.path.dirname(old_path)
         basename = os.path.basename(old_path)
@@ -564,6 +601,7 @@ class CustomFileDialog(QFileDialog):
                 self.setDirectory(dirname)
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Could not rename file: {e}")
+
     def _play_video(self, paths):
         if not paths:
             return
@@ -576,6 +614,7 @@ class CustomFileDialog(QFileDialog):
                 subprocess.Popen([opener, target])
         except Exception:
             pass
+
     def _delete_selected_files_silent(self):
         view = None
         if getattr(self, "tree_view", None) is not None and self.tree_view.hasFocus():
@@ -587,9 +626,11 @@ class CustomFileDialog(QFileDialog):
         paths = self._selected_paths_from_view(view)
         if not paths:
             return
+
         def _send_to_bin_windows(path):
             import ctypes
             from ctypes import wintypes
+
             class SHFILEOPSTRUCTW(ctypes.Structure):
                 _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
                             ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_uint), ("fAnyOperationsAborted", wintypes.BOOL),
@@ -621,6 +662,7 @@ class CustomFileDialog(QFileDialog):
             if len(failed) > 8:
                 msg += f"\n\n(and {len(failed) - 8} more...)"
             QMessageBox.warning(self, "Delete failed", msg)
+
     def _selected_paths_from_view(self, view):
         if view is None:
             return []
@@ -646,10 +688,12 @@ class CustomFileDialog(QFileDialog):
                 seen.add(p)
                 out.append(p)
         return out
+
     def _setup_lookin_width(self):
         look_in_combobox = self.findChild(QComboBox, "lookInCombo")
         if look_in_combobox:
             look_in_combobox.setMinimumWidth(450)
+
     def _setup_sidebar(self):
         sidebar = self.findChild(QListView, "sidebar")
         if not sidebar:
@@ -662,8 +706,10 @@ class CustomFileDialog(QFileDialog):
         if "C:/" not in quick_access_paths and "C:\\" not in quick_access_paths:
             urls.append(QUrl.fromLocalFile("C:/"))
         self.setSidebarUrls(urls)
+
     def _tune_buttons(self):
         QTimer.singleShot(0, self._apply_button_ids_and_restyle)
+
     def _apply_button_ids_and_restyle(self):
         buttons = self.findChildren(QPushButton)
         for b in buttons:
@@ -674,11 +720,13 @@ class CustomFileDialog(QFileDialog):
             elif txt == "cancel":
                 b.setObjectName("cancelButton")
         self.update()
+
     def _save_sort_state(self, logicalIndex: int, order: Qt.SortOrder):
         if self.config:
             self.config.config["file_dialog_sort_column"] = logicalIndex
             self.config.config["file_dialog_sort_order"] = int(order)
             self.config.save_config(self.config.config)
+
     def get_windows_quick_access(self):
         try:
             ps_script = (
@@ -692,6 +740,7 @@ class CustomFileDialog(QFileDialog):
             return [p for p in paths if os.path.exists(p)]
         except Exception:
             return []
+
     def save_state(self):
         if not self.config:
             return
@@ -702,6 +751,7 @@ class CustomFileDialog(QFileDialog):
             self.config.config["file_dialog_sort_column"] = header.sortIndicatorSection()
             self.config.config["file_dialog_sort_order"] = int(header.sortIndicatorOrder())
         self.config.save_config(self.config.config)
+
     def restore_state(self, header):
         if not self.config:
             self.set_default_state(header)
@@ -724,14 +774,17 @@ class CustomFileDialog(QFileDialog):
             except Exception:
                 order = Qt.AscendingOrder
             header.setSortIndicator(sort_column, order)
+
     def set_default_state(self, header):
         self.set_default_position()
         self.set_default_column_widths(header)
+
     def set_default_position(self):
         desktop = QDesktopWidget()
         screen_rect = desktop.screenGeometry()
         self.resize(1400, 800)
         self.move(screen_rect.center() - self.rect().center())
+
     def set_default_column_widths(self, header):
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setStretchLastSection(False)
@@ -739,20 +792,25 @@ class CustomFileDialog(QFileDialog):
         header.resizeSection(1, 200)
         header.resizeSection(3, 240)
         header.setSectionHidden(2, True)
+
     def selectedFiles(self):
         return super().selectedFiles()
+
     def done(self, result):
         self.save_state()
         self.hide()
         QApplication.processEvents()
         super().done(result)
+
     def closeEvent(self, event):
         super().closeEvent(event)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
     class MockConfig:
         def __init__(self):
             self.config = {}
+
         def save_config(self, cfg):
             pass
     dialog = CustomFileDialog(config=MockConfig())

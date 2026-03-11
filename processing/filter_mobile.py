@@ -18,7 +18,6 @@ except ImportError:
 
 class MobileFilterMixin:
     def build_mobile_filter(self, *args, **kwargs):
-        
         if len(args) >= 2 and isinstance(args[0], dict) and isinstance(args[1], str):
             coords = args[0]
             is_boss_hp = kwargs.get('is_boss_hp', False)
@@ -27,7 +26,6 @@ class MobileFilterMixin:
         return self.build_mobile_filter_chain(*args, **kwargs)
 
     def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, txt_input_label=None, use_cuda=False):
-        
         coords_data = mobile_coords
         FINAL_W, FINAL_H = 1080, 1920
         CONTENT_AREA_W, CONTENT_AREA_H = 1080, 1620

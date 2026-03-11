@@ -68,7 +68,6 @@ class MergerPhaseOverlayMixin:
         self._overlay = QWidget(ov_parent)
         self._overlay.setWindowFlags(Qt.Widget)
         self._overlay.setAttribute(Qt.WA_NoSystemBackground, True)
-        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._overlay.hide()
         self._graph = QWidget(self._overlay)
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)

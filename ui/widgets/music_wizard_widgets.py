@@ -2,7 +2,6 @@
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 class SearchableListWidget(QListWidget):
-    
     buffer_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -73,13 +72,12 @@ class SearchableListWidget(QListWidget):
                 w = self.itemWidget(item)
                 if w and hasattr(w, 'name_lbl'):
                     clean_text = w.name_lbl.text().lower()
-                    if clean_text.startswith(self._search_buffer):
+                    if self._search_buffer in clean_text:
                         self.setCurrentItem(item)
                         self.scrollToItem(item)
                         return
 
 class MusicItemWidget(QWidget):
-    
     def __init__(self, filename, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_NoSystemBackground)

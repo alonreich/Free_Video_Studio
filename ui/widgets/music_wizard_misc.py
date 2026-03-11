@@ -32,14 +32,12 @@ class MergerMusicWizardMiscMixin:
         except: pass
 
     def _get_default_size(self, step_idx):
-        
         if step_idx == 0: return (1100, 850)
         if step_idx == 1: return (1300, 580)
         if step_idx == 2: return (1600, 850)
         return (1300, 850)
 
     def _apply_step_geometry(self, step_idx):
-        
         if not hasattr(self, "parent_window") or not hasattr(self.parent_window, "config_manager"): return
         
         def _do_apply():
@@ -75,7 +73,6 @@ class MergerMusicWizardMiscMixin:
         QTimer.singleShot(0, _do_apply)
 
     def _save_step_geometry(self):
-        
         if not getattr(self, "_startup_complete", False): return
         if getattr(self, "_is_applying_geometry", False): return
         if not hasattr(self.parent_window, "config_manager"): return
@@ -161,7 +158,6 @@ class MergerMusicWizardMiscMixin:
         except: pass
 
     def _scaled_vol(self, mix_val):
-        
         try:
             if hasattr(self.parent_window, "_vol_eff"):
                 master_ratio = self.parent_window._vol_eff() / 100.0
@@ -194,7 +190,6 @@ class MergerMusicWizardMiscMixin:
         self.coverage_progress.setFormat(f"Music Coverage: {covered:.1f}s / {self.total_video_sec:.1f}s (%p%)")
 
     def _cache_wall_times(self):
-        
         self._cached_wall_durations = []
         for seg in self.speed_segments:
             dur_source = seg['end'] - seg['start']
@@ -202,7 +197,6 @@ class MergerMusicWizardMiscMixin:
         self._wall_trim_start = self._calculate_wall_clock_time_raw(self.trim_start_ms, self.speed_segments, self.speed_factor)
 
     def _calculate_wall_clock_time_raw(self, video_ms, segments, base_speed):
-        
         target = float(video_ms)
         base_speed = base_speed or 1.1
         if not segments: return target / (1000.0 * base_speed)

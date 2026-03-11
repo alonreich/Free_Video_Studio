@@ -17,7 +17,6 @@ except ImportError:
             TEMP = os.path.join(tempfile.gettempdir(), 'FVS_Temp')
 
 class StateTransfer:
-    
     @staticmethod
     def get_session_file():
         path = os.path.join(SharedPaths.TEMP, "fvs_session_state.json")
@@ -25,7 +24,6 @@ class StateTransfer:
         return path
     @staticmethod
     def save_state(state_data: dict):
-        
         logger = logging.getLogger("StateTransfer")
         final_path = StateTransfer.get_session_file()
         parent_dir = os.path.dirname(final_path)
@@ -55,13 +53,11 @@ class StateTransfer:
                 pass
     @staticmethod
     def update_state(updates: dict):
-        
         current = StateTransfer.load_state()
         current.update(updates)
         StateTransfer.save_state(current)
     @staticmethod
     def load_state() -> dict:
-        
         path = StateTransfer.get_session_file()
         if not os.path.exists(path):
             return {}
@@ -86,7 +82,6 @@ class StateTransfer:
             return {}
     @staticmethod
     def clear_state():
-        
         path = StateTransfer.get_session_file()
         if os.path.exists(path):
             try:

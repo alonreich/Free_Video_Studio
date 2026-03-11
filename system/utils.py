@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import psutil
 import logging
@@ -15,6 +15,7 @@ try:
 except (ImportError, OSError):
     class MockMPV: pass
     mpv = MockMPV()
+
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Tuple
 
@@ -62,12 +63,12 @@ class ProcessManager:
                             pass
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-
     @staticmethod
     def start_parent_watchdog():
         parent_pid = os.getppid()
         if parent_pid <= 1:
             return
+
         def watchdog():
             while True:
                 try:
@@ -80,6 +81,7 @@ class ProcessManager:
                     break
                 time.sleep(2.0)
             ProcessManager.kill_orphans()
+
             from PyQt5.QtWidgets import QApplication
             if QApplication.instance():
                 QApplication.instance().quit()
@@ -87,7 +89,6 @@ class ProcessManager:
                 sys.exit(1)
         t = threading.Thread(target=watchdog, daemon=True)
         t.start()
-
     @staticmethod
     def cleanup_temp_files(prefix: str = "fvs_"):
         temp_dir = tempfile.gettempdir()
@@ -116,7 +117,6 @@ class ProcessManager:
                         pass
         except:
             pass
-
     @staticmethod
     def acquire_pid_lock(app_name: str) -> Tuple[bool, Optional[object]]:
         pid_file = os.path.join(tempfile.gettempdir(), f"{app_name}.pid")
@@ -151,24 +151,29 @@ class UIManager:
         if isinstance(layout, QGridLayout):
             layout.addItem(QSpacerItem(800, 500, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
         copy_btn = msg_box.addButton(copy_btn_label, msg_box.ActionRole)
+
         from app import tr
         report_label = tr("report_to_alon")
         report_btn = msg_box.addButton(report_label, msg_box.ActionRole)
+
         def on_copy():
             clipboard = QApplication.clipboard()
             clipboard.setText(copy_text)
             copy_btn.setText("✓ Copied!")
+
             def _reset_text():
                 try:
                     copy_btn.setText(copy_btn_label)
                 except RuntimeError:
                     pass
             QTimer.singleShot(2000, _reset_text)
+
         def on_report():
             clipboard = QApplication.clipboard()
             clipboard.setText(copy_text)
             subject = "[Fortnite Video Software] Error Report"
             body = f"The following error occurred:\n\n{copy_text}"
+
             import urllib.parse
             mailto_url = f"mailto:alon.reich@gmail.com?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
             QDesktopServices.openUrl(QUrl(mailto_url))
@@ -188,7 +193,6 @@ class ConsoleManager:
             "Advanced_Editor": "advanced_editor",
         }
         return mapping.get(str(logger_name), str(logger_name).strip().lower())
-
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
         app_prefix = logger_name.lower().replace(" ", "_")
@@ -237,7 +241,9 @@ class ConsoleManager:
                 if hwnd != 0:
                     ctypes.windll.user32.ShowWindow(hwnd, 0)
             except: pass
+
         import atexit
+
         def close_logs():
             for f in ConsoleManager._log_files:
                 try:
@@ -268,7 +274,6 @@ class LogManager:
 class MPVSafetyManager:
     _mpv_creation_lock = threading.Lock()
     _instances = weakref.WeakSet()
-    
     @staticmethod
     def log_mpv_diagnostics(player, logger, context_tag="GENERAL"):
         if not player or not logger: return
@@ -285,11 +290,11 @@ class MPVSafetyManager:
             logger.info(f"DIAGNOSTICS [{context_tag}]: MPV Object ID={p_id} | Handle={handle} | CoreShutdown={is_shutdown} | Path={path} | Paused={paused} | Time={time_pos}")
         except Exception as e:
             logger.error(f"DIAGNOSTICS [{context_tag}]: Failed to extract MPV state: {e}")
-
     @staticmethod
     def safe_mpv_shutdown(player, timeout=2.0):
         if not player:
             return True
+
         import mpv
         try:
             if getattr(player, '_core_shutdown', False):
@@ -320,7 +325,6 @@ class MPVSafetyManager:
             return True
         except Exception:
             return False
-
     @staticmethod
     def safe_mpv_set(player, property_name, value, max_attempts=3):
         if not player: return False
@@ -331,7 +335,6 @@ class MPVSafetyManager:
             except:
                 time.sleep(0.1)
         return False
-
     @staticmethod
     def safe_mpv_command(player, command, *args, max_attempts=3):
         if not player: return False
@@ -342,7 +345,6 @@ class MPVSafetyManager:
             except:
                 time.sleep(0.1)
         return False
-
     @staticmethod
     def cleanup_mpv_event_callbacks(player):
         if not player: return
@@ -355,7 +357,6 @@ class MPVSafetyManager:
                 player.event_callback = None
         except:
             pass
-
     @staticmethod
     def create_safe_mpv(**kwargs):
         with MPVSafetyManager._mpv_creation_lock:
@@ -407,10 +408,10 @@ class MPVSafetyManager:
             except Exception as e:
                 print(f"Failed to create safe MPV instance: {e}")
                 return None
-
     @staticmethod
     def register_global_shutdown_handler():
         import atexit
+
         def global_shutdown():
             for player in list(MPVSafetyManager._instances):
                 try:

@@ -1,10 +1,9 @@
-import subprocess
+﻿import subprocess
 import sys
 import psutil
 import re
 import os
 import time
-
 _job_handle = None
 if sys.platform == "win32":
     try:
@@ -25,8 +24,10 @@ if sys.platform == "win32":
                     ("PriorityClass", wintypes.DWORD),
                     ("SchedulingClass", wintypes.DWORD),
                 ]
+
             class IO_COUNTERS(ctypes.Structure):
                 _fields_ = [("ReadOperationCount", ctypes.c_ulonglong), ("WriteOperationCount", ctypes.c_ulonglong), ("OtherOperationCount", ctypes.c_ulonglong), ("ReadTransferCount", ctypes.c_ulonglong), ("WriteTransferCount", ctypes.c_ulonglong), ("OtherTransferCount", ctypes.c_ulonglong)]
+
             class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
                 _fields_ = [
                     ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),

@@ -32,7 +32,6 @@ def _get_session_for_pid(mgr_ptr, target_pid):
     return None
 
 def set_app_session_volume(level, pid=None):
-    
     return False
 
 def get_app_session_volume(pid=None):

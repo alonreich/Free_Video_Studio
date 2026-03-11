@@ -11,6 +11,7 @@ class MergerDraggableList(QListWidget):
     drag_started = pyqtSignal(int, str)
     drag_completed = pyqtSignal(int, int, str, str)
     drag_cancelled = pyqtSignal(int, str)
+    files_dropped = pyqtSignal(list)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,8 +59,9 @@ class MergerDraggableList(QListWidget):
             if event.mimeData().hasUrls():
                 event.setDropAction(Qt.CopyAction)
                 event.accept()
-                if self.parent() and hasattr(self.parent(), '_handle_dropped_files'):
-                     self.parent()._handle_dropped_files([url.toLocalFile() for url in event.mimeData().urls()])
+                files = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+                if files:
+                    self.files_dropped.emit(files)
             else:
                 event.ignore()
 

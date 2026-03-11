@@ -5,7 +5,6 @@ import traceback
 from logging.handlers import RotatingFileHandler
 
 class LogFileStream:
-    
     def __init__(self, logger, level=logging.INFO, original_stream=None):
         self.logger = logger
         self.level = level
@@ -36,7 +35,6 @@ class LogFileStream:
         return False
 
 def setup_logger(base_dir, log_filename, logger_name):
-    
     logger = logging.getLogger(logger_name)
     if logger.handlers:
         return logger

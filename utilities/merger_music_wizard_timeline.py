@@ -391,6 +391,7 @@ class MergerMusicWizardTimelineMixin:
             for p, offset, dur in self.selected_tracks:
                 music.append({"path": p, "duration": dur, "offset": offset, "wave": QPixmap()})
                 music_segments_info.append((p, offset, dur))
+        self.music_segments = music
         self.timeline.set_data(self.total_video_sec, self.video_segments, self.music_segments)
         self._music_worker_targets = {}
         unique_music_segments_info = []

@@ -75,7 +75,7 @@ class SearchableListWidget(QListWidget):
                 w = self.itemWidget(item)
                 if w and hasattr(w, 'name_lbl'):
                     clean_text = w.name_lbl.text().lower()
-                    if clean_text.startswith(self._search_buffer):
+                    if self._search_buffer in clean_text:
                         self.setCurrentItem(item)
                         self.scrollToItem(item)
                         return

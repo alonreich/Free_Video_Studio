@@ -1,4 +1,4 @@
-import os
+﻿import os
 import tempfile
 import uuid
 import shutil
@@ -91,7 +91,6 @@ class ProcessThread(QThread):
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
         return normalized
-
     @staticmethod
     def _emit_signal_or_callback(target, *args):
         try:
@@ -185,6 +184,7 @@ class ProcessThread(QThread):
             ffmpeg_path = os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe')
             if not os.path.exists(ffmpeg_path):
                 ffmpeg_path = 'ffmpeg'
+
             def run_ffmpeg(use_cuda):
                 vcodec, rc_label = self.encoder_mgr.get_codec_flags(
                     'h264_nvenc' if use_cuda and self.hardware_strategy == 'NVIDIA' else 
@@ -240,6 +240,7 @@ class ProcessThread(QThread):
                     mapping = {
                         "hp": hp_key, "loot": "loot", "stats": "stats", "spec": "spectating", "team": "team"
                     }
+
                     def local_inverse_transform(rect, orig_res):
                         x, y, w, h = rect
                         scale_factor = 1280.0 / 1080.0
@@ -290,6 +291,7 @@ class ProcessThread(QThread):
                 self.logger.info(f"FFMPEG CMD: {' '.join(ffmpeg_cmd)}")
                 self.current_process = create_subprocess(ffmpeg_cmd)
                 error_lines = []
+
                 def on_err(line): error_lines.append(line)
                 monitor_ffmpeg_progress(
                     self.current_process,

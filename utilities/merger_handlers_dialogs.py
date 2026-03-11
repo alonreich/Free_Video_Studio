@@ -31,30 +31,21 @@ class MergerHandlersDialogsMixin:
             }}
         """
 
-    def open_folder(self, path: str):
-        folder_path = os.path.abspath(path)
-        if not folder_path or not os.path.isdir(folder_path):
-            self.logger.warning("OPEN_FOLDER: Path is not a directory or does not exist: %s", folder_path)
+    def open_output_in_explorer(self, file_path: str):
+        full_path = os.path.abspath(file_path)
+        if not os.path.exists(full_path):
+            self.logger.warning("OPEN_EXPLORER: File does not exist: %s", full_path)
             return
         try:
             if os.name == "nt":
-                os.startfile(folder_path, "explore")
+                subprocess.run(['explorer', '/select,', os.path.normpath(full_path)], check=False)
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", folder_path])
+                subprocess.Popen(["open", "-R", full_path])
             else:
-                subprocess.Popen(["xdg-open", folder_path])
-            self.logger.info("OPEN_FOLDER: Opened %s", folder_path)
+                subprocess.Popen(["xdg-open", os.path.dirname(full_path)])
+            self.logger.info("OPEN_EXPLORER: Opened and selected %s", full_path)
         except Exception as e:
-            self.logger.error("OPEN_FOLDER: Failed to open folder %s | Error: %s", folder_path, e)
-            try:
-                from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(
-                    self.parent,
-                    "Error",
-                    f"Failed to open folder. Please navigate to {folder_path} manually. Error: {e}",
-                )
-            except Exception:
-                pass
+            self.logger.error("OPEN_EXPLORER: Failed to open explorer for %s | Error: %s", full_path, e)
 
     def open_music_wizard(self):
         from utilities.merger_music_wizard import MergerMusicWizard
@@ -116,10 +107,18 @@ class MergerHandlersDialogsMixin:
         grid.setContentsMargins(20, 20, 20, 20)
         whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆")
         whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40", font_size=12))
-        whatsapp_button.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://web.whatsapp.com")), dialog.accept()))
+        
+        def _on_wa():
+            QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
+            _hard_exit()
+        whatsapp_button.clicked.connect(_on_wa)
         open_folder_button = QPushButton("OPEN FOLDER")
         open_folder_button.setStyleSheet(self._dialog_button_style("#6c5f9e", "#4E4476", font_size=12))
-        open_folder_button.clicked.connect(lambda: (dialog.accept(), self.open_folder(os.path.dirname(output_path))))
+        
+        def _on_folder():
+            self.open_output_in_explorer(output_path)
+            _hard_exit()
+        open_folder_button.clicked.connect(_on_folder)
         new_file_button = QPushButton("📂  UPLOAD NEW  📂")
         new_file_button.setStyleSheet(self._dialog_button_style("#4a90e2", "#2D6DB8", font_size=12))
         new_file_button.clicked.connect(dialog.reject)

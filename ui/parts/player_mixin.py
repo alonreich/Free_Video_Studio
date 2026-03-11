@@ -1,4 +1,4 @@
-import time
+﻿import time
 import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
@@ -13,8 +13,9 @@ class PlayerMixin:
     def _safe_mpv_set(self, prop, value, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return
+
         import mpv
-        if not self._mpv_lock.acquire(timeout=0.20):
+        if not self._mpv_lock.acquire(timeout=0.05):
             return
         try:
             if getattr(p, '_core_shutdown', False): return
@@ -33,8 +34,9 @@ class PlayerMixin:
     def _safe_mpv_get(self, prop, default=None, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return default
+
         import mpv
-        if not self._mpv_lock.acquire(timeout=0.20):
+        if not self._mpv_lock.acquire(timeout=0.02):
             return default
         try:
             if getattr(p, '_core_shutdown', False): return default
@@ -49,8 +51,9 @@ class PlayerMixin:
     def _safe_mpv_command(self, *args, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return False
+
         import mpv
-        if not self._mpv_lock.acquire(timeout=0.20):
+        if not self._mpv_lock.acquire(timeout=0.05):
             return False
         try:
             if getattr(p, '_core_shutdown', False): return False
@@ -250,7 +253,7 @@ class PlayerMixin:
         target_ms = self._pending_seek_ms
         self._pending_seek_ms = None
         self._is_seeking_active = True
-        if not self._mpv_lock.acquire(timeout=0.30):
+        if not self._mpv_lock.acquire(timeout=0.02):
             self._is_seeking_active = False
             if hasattr(self, "_seek_timer"):
                 self._seek_timer.start(50)
@@ -347,6 +350,7 @@ class PlayerMixin:
             return
         self._binding_player_output = True
         self._last_player_output_bind_ts = now
+
         def _perform_bind():
             try:
                 wid = None
@@ -376,6 +380,7 @@ class PlayerMixin:
             finally:
                 self._binding_player_output = False
         _perform_bind()
+
         def _delayed_bind():
             now2 = time.time()
             last2 = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)

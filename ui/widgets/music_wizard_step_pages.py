@@ -5,7 +5,6 @@ from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.music_wizard_widgets import SearchableListWidget, MusicItemWidget
 
 class TrackScannerWorker(QThread):
-    
     scanning_started = pyqtSignal()
     scanning_finished = pyqtSignal(list)
     scanning_error = pyqtSignal(str)
@@ -43,7 +42,6 @@ class TrackScannerWorker(QThread):
 
 class MergerMusicWizardStepPagesMixin:
     def load_tracks(self, folder_path):
-        
         if not os.path.isdir(folder_path):
             self.logger.warning(f"WIZARD: MP3 folder not found: {folder_path}")
             return
@@ -58,7 +56,6 @@ class MergerMusicWizardStepPagesMixin:
         self._track_scanner.start()
 
     def _stop_track_scanner(self):
-        
         if not hasattr(self, '_track_scanner') or not self._track_scanner:
             return
         try:
@@ -79,7 +76,6 @@ class MergerMusicWizardStepPagesMixin:
         self.logger.info("WIZARD: Scanning MP3 folder in background...")
 
     def _on_scanning_finished(self, files):
-        
         self.coverage_progress.setRange(0, 100)
         self.coverage_progress.setFormat("%p%")
         self.track_list.clear()
@@ -99,7 +95,6 @@ class MergerMusicWizardStepPagesMixin:
         self.logger.error(f"WIZARD: Scanning error: {error_msg}")
 
     def _report_non_mp3_files(self):
-        
         if not hasattr(self, '_track_scanner') or not self._track_scanner:
             return
         folder = self._track_scanner.folder_path
@@ -117,7 +112,6 @@ class MergerMusicWizardStepPagesMixin:
             pass
 
     def _on_search_buffer_changed(self, buffer_text):
-        
         if not hasattr(self, 'search_hint_lbl'):
             return
         if buffer_text:

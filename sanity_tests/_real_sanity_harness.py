@@ -248,7 +248,6 @@ class DummyListItem:
         return self._hidden
 
 def install_qt_mpv_stubs() -> None:
-    
     if "PyQt5" in sys.modules and "mpv" in sys.modules:
         return
     pyqt5 = types.ModuleType("PyQt5")

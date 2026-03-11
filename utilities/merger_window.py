@@ -89,6 +89,8 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             listw.drag_started.connect(self.event_handler.on_drag_started)
         if hasattr(listw, "drag_completed"):
             listw.drag_completed.connect(self.event_handler.on_drag_completed)
+        if hasattr(listw, "files_dropped"):
+            listw.files_dropped.connect(self._handle_dropped_files)
         return listw
 
     def add_videos(self):
@@ -279,14 +281,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._original_merge_btn_style = self.btn_merge.styleSheet()
         self.set_icon()
         self._ensure_overlay_widgets()
-        if hasattr(self, 'btn_cancel_merge'):
-             self.btn_cancel_merge.clicked.connect(self.cancel_processing)
-        else:
-             self.btn_cancel_merge = QPushButton("Cancel Merge")
-             self.btn_cancel_merge.setObjectName("danger-btn")
-             self.btn_cancel_merge.clicked.connect(self.cancel_processing)
-             self.btn_cancel_merge.hide()
-             self.merge_row.addWidget(self.btn_cancel_merge)
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._update_process_button_text)
         self.setup_progress_visualization()
@@ -630,7 +624,11 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._probe_worker.start()
 
     def _on_probe_finished(self, results, total_duration):
-        self._validate_and_finalize(results, total_duration)
+        try:
+            self._validate_and_finalize(results, total_duration)
+        except Exception as e:
+            self.logger.exception(f"CRASH: Failed during _validate_and_finalize: {e}")
+            self._merge_finished_cleanup(False, f"Crash in validation: {e}")
 
     def _on_probe_error(self, error_msg):
         msg = str(error_msg or "Probe failed")
@@ -797,13 +795,14 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 in_idx = music_start_idx + idx
                 out_label = f"m_{idx}"
                 fade_start = max(0.0, dur - fadeout_lead)
+                fadeout_str = f",afade=t=out:st={fade_start}:d={fadeout_lead}" if dur > fadeout_lead else ""
                 if idx == 0:
                     filters.append(
-                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},afade=t=in:d=3,{f'afade=t=out:st={fade_start}:d={fadeout_lead}' if dur > fadeout_lead else ''}[{out_label}]"
+                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},afade=t=in:d=3{fadeout_str}[{out_label}]"
                     )
                 else:
                     filters.append(
-                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0},{f'afade=t=out:st={fade_start}:d={fadeout_lead}' if dur > fadeout_lead else ''}[{out_label}]"
+                        f"[{in_idx}:a]atrim=start={start_sec},asetpts=PTS-STARTPTS,volume={music_vol/100.0}{fadeout_str}[{out_label}]"
                     )
                 music_inputs.append(out_label)
             music_out = music_inputs[0]

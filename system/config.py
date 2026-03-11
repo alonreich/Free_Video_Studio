@@ -31,6 +31,7 @@ class ConfigManager:
         self.config = dict(config_data)
         try:
             self._ensure_config_dir()
+
             import tempfile
             fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(self.file_path), suffix=".tmp")
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
