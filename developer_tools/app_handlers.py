@@ -115,27 +115,21 @@ class CropAppHandlers:
 
     def _set_upload_hint_active(self, active):
         """Centralized hint management for the pulsing 'UPLOAD VIDEO' guidance."""
-        # Prioritize the new top-level UploadOverlay
         overlay = getattr(self, 'upload_overlay', None)
         if not overlay and hasattr(self, '__class__'):
              overlay = getattr(self.__class__, 'upload_overlay', None)
-        
         if overlay:
             if active:
                 overlay.show()
                 overlay.raise_()
             else:
                 overlay.hide()
-            
-            # If we have the new overlay, ensure the legacy one is hidden to avoid "two parts" look
             legacy = getattr(self, 'hint_overlay_widget', None)
             if legacy:
                 legacy.hide()
                 if hasattr(self, '_hint_group'):
                     self._hint_group.stop()
             return
-
-        # Fallback to legacy support if new overlay is missing
         target = getattr(self, 'hint_overlay_widget', None)
         if target:
             if active:
@@ -391,25 +385,19 @@ class CropAppHandlers:
                                 "Please ensure this folder exists with the necessary reference images.")
              return
         if hasattr(self, '_magic_wand_candidates') and self._magic_wand_candidates:
-            # [FIX] If DrawWidget is not showing candidates (e.g. after selection), restore 'Show All' mode
             if not self.draw_widget._candidates_img:
                 self.draw_widget.set_candidates(self._magic_wand_candidates)
                 self.draw_widget.clear_selection()
                 self.update_wizard_step(3, f"Detected {len(self._magic_wand_candidates)} elements! Click one to tag.")
                 self._magic_wand_index = -1
                 return
-            
-            # [FIX] Cycle logic with a 'Show All' step at the end of the loop for consistency
             self._magic_wand_index = (self._magic_wand_index + 1) % (len(self._magic_wand_candidates) + 1)
-            
             if self._magic_wand_index == len(self._magic_wand_candidates):
-                # Restore 'Show All' mode
                 self.draw_widget.set_candidates(self._magic_wand_candidates)
                 self.draw_widget.clear_selection()
                 self.update_wizard_step(3, f"Detected {len(self._magic_wand_candidates)} elements! Click one to tag.")
                 self._magic_wand_index = -1
             else:
-                # Preview single candidate; hide all pink boxes for clarity
                 self.draw_widget.set_candidates([])
                 self._apply_magic_wand_region(self._magic_wand_candidates[self._magic_wand_index])
                 self.update_wizard_step(3, f"Preview {self._magic_wand_index+1}/{len(self._magic_wand_candidates)}: Pick role to confirm.")
@@ -555,24 +543,17 @@ class CropAppHandlers:
                 btn.setCursor(Qt.PointingHandCursor)
             if msg.exec_() == QMessageBox.No:
                 return
-
         self.logger.info("Performing surgical state reset...")
-        
-        # 1. Force the UI back to the video player view
         if hasattr(self, 'view_stack') and hasattr(self, 'video_frame'):
             self.view_stack.setCurrentWidget(self.video_frame)
-            
         if hasattr(self, 'draw_scroll_area'): self.draw_scroll_area.hide()
         if hasattr(self, 'video_container'): self.video_container.show()
-
-        # 2. Perform file and thread cleanup
         try:
             self._delete_managed_snapshot()
             cleanup_temp_snapshots()
             ProcessManager.cleanup_temp_files()
         except Exception as e:
             self.logger.error(f"Error during state reset: {e}")
-
         for attr in ['_magic_wand_preview_timer', '_magic_wand_timeout_timer', '_analyzing_timer', '_scrubbing_safety_timer']:
             timer = getattr(self, attr, None)
             if timer: 
@@ -580,11 +561,9 @@ class CropAppHandlers:
                     timer.stop()
                 except RuntimeError:
                     pass
-
         self._cleanup_snapshot_runtime()
         if hasattr(self, '_set_cropping_hint_active'):
             self._set_cropping_hint_active(False)
-
         if self._is_wand_thread_running():
             try:
                 worker = getattr(self, 'wand_worker', None)
@@ -597,39 +576,31 @@ class CropAppHandlers:
                     self.wand_thread.wait(500)
             except RuntimeError:
                 self.wand_thread = None
-
         self._cleanup_magic_wand_runtime()
-
-        # 3. Clear application state and UI elements
         if hasattr(self, 'state_manager'):
             self.state_manager.clear_undo_stack()
-
-        # Handle background item safety BEFORE clearing the scene
         if hasattr(self, 'background_item') and self.background_item:
             try:
-                # Use a safe check to see if the C++ object still exists
                 from PyQt5 import sip
                 if not sip.isdeleted(self.background_item) and self.background_item.scene():
                     self.background_item.scene().removeItem(self.background_item)
             except: pass
             self.background_item = None
-
         if hasattr(self, 'portrait_scene'):
             self.portrait_scene.clear()
             self.portrait_scene.setBackgroundBrush(QColor("black"))
             self.placeholders_group = []
             if hasattr(self, 'modified_roles'):
                 self.modified_roles.clear()
-
         if hasattr(self, 'media_processor') and self.media_processor:
             self.media_processor.stop()
             self.media_processor.set_media_to_null()
-
+        if hasattr(self, 'video_viewport_container'):
+            self.video_viewport_container.hide()
         if hasattr(self, 'draw_widget') and self.draw_widget:
             self.draw_widget.clear_selection()
             self.draw_widget.setImage(None)
             self.draw_widget.set_candidates([])
-
         self.snapshot_path = None
         self._dirty = False
         self.show_video_view()

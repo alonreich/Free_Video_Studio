@@ -85,7 +85,6 @@ class Ui_CropApp:
         CropAppWindow.mpv_error_label.setAlignment(Qt.AlignCenter)
         CropAppWindow.mpv_error_label.setVisible(False)
         CropAppWindow.video_stack.addWidget(CropAppWindow.mpv_error_label)
-        
         CropAppWindow.shortcuts_label = QLabel("Hotkeys: [Del] Delete  |  [Arrows] Nudge/Seek  |  [Space] Play/Pause  |  [Ctrl+Z] Undo")
         CropAppWindow.shortcuts_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 10px; padding: 2px;")
         CropAppWindow.shortcuts_label.setAlignment(Qt.AlignRight)
@@ -138,7 +137,6 @@ class Ui_CropApp:
         controls_layout.setSpacing(30)
         CropAppWindow.open_button = QPushButton("UPLOAD VIDEO")
         CropAppWindow.open_button.setToolTip("Upload Video (O): Select a Fortnite gameplay video file to analyze.")
-        
         CropAppWindow.upload_overlay = UploadOverlay(CropAppWindow.open_button, CropAppWindow.video_frame, CropAppWindow)
         CropAppWindow.upload_overlay.show()
         CropAppWindow.open_image_button = QPushButton("📷 UPLOAD IMAGE")

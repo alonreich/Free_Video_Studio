@@ -55,26 +55,25 @@ class AnimatedCheckmark(QWidget):
         self.scale_val = 0.0
         self.opacity_val = 0.0
         self._anim_group = QParallelAnimationGroup(self)
-        
         scale_anim = QPropertyAnimation(self, b"scale_prop")
         scale_anim.setDuration(600)
         scale_anim.setStartValue(0.0)
         scale_anim.setEndValue(1.0)
         scale_anim.setEasingCurve(QEasingCurve.OutBack)
-        
         opacity_anim = QPropertyAnimation(self, b"opacity_prop")
         opacity_anim.setDuration(400)
         opacity_anim.setStartValue(0.0)
         opacity_anim.setEndValue(1.0)
-        
         self._anim_group.addAnimation(scale_anim)
         self._anim_group.addAnimation(opacity_anim)
 
     def get_scale(self): return self.scale_val
+
     def set_scale(self, s): self.scale_val = s; self.update()
     scale_prop = property(get_scale, set_scale)
 
     def get_opacity(self): return self.opacity_val
+
     def set_opacity(self, o): self.opacity_val = o; self.update()
     opacity_prop = property(get_opacity, set_opacity)
 
@@ -88,14 +87,11 @@ class AnimatedCheckmark(QWidget):
         p.translate(self.width()/2, self.height()/2)
         p.scale(self.scale_val, self.scale_val)
         p.translate(-self.width()/2, -self.height()/2)
-        
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(UI_COLORS.SUCCESS))
         p.drawEllipse(2, 2, self.width()-4, self.height()-4)
-        
         pen = QPen(QColor("white"), 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         p.setPen(pen)
-        
         w, h = self.width(), self.height()
         path = QPolygon([
             QPoint(int(w * 0.25), int(h * 0.5)),
@@ -110,7 +106,6 @@ class SummaryToast(QDialog):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(420)
-        
         container = QFrame(self)
         container.setObjectName("container")
         container.setStyleSheet(f"""
@@ -126,19 +121,15 @@ class SummaryToast(QDialog):
                 color: {UI_COLORS.TEXT_PRIMARY};
             }}
         """)
-        
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
-        
         content_layout = QVBoxLayout(container)
         content_layout.setContentsMargins(25, 25, 25, 25)
         content_layout.setSpacing(15)
-        
         header_layout = QHBoxLayout()
         self.checkmark = AnimatedCheckmark(54)
         header_layout.addWidget(self.checkmark)
-        
         title_vbox = QVBoxLayout()
         title_label = QLabel("SUCCESS")
         title_label.setObjectName("mainTitle")
@@ -149,7 +140,6 @@ class SummaryToast(QDialog):
         header_layout.addLayout(title_vbox)
         header_layout.addStretch()
         content_layout.addLayout(header_layout)
-        
         if preview_pixmap and not preview_pixmap.isNull():
             preview_frame = QFrame()
             preview_frame.setFixedSize(370, 208)
@@ -161,7 +151,6 @@ class SummaryToast(QDialog):
             img_label.setAlignment(Qt.AlignCenter)
             p_layout.addWidget(img_label)
             content_layout.addWidget(preview_frame)
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -171,7 +160,6 @@ class SummaryToast(QDialog):
         list_layout = QVBoxLayout(scroll_content)
         list_layout.setContentsMargins(0, 5, 0, 5)
         list_layout.setSpacing(8)
-        
         if configured:
             conf_header = QLabel("  MODIFIED ELEMENTS")
             conf_header.setStyleSheet(f"color: {UI_COLORS.SUCCESS}; font-weight: bold; font-size: 11px; background: rgba(16, 185, 129, 30); padding: 4px; border-radius: 4px;")
@@ -180,7 +168,6 @@ class SummaryToast(QDialog):
                 lbl = QLabel(f"  ✓  {item}")
                 lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 13px;")
                 list_layout.addWidget(lbl)
-        
         if unchanged:
             list_layout.addSpacing(10)
             un_header = QLabel("  UNTOUCHED (DEFAULTS)")
@@ -190,15 +177,12 @@ class SummaryToast(QDialog):
                 lbl = QLabel(f"  •  {item}")
                 lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 12px;")
                 list_layout.addWidget(lbl)
-                
         scroll.setWidget(scroll_content)
         content_layout.addWidget(scroll)
-        
         footer = QLabel("Automatically returning to main app...")
         footer.setAlignment(Qt.AlignCenter)
         footer.setStyleSheet(f"color: {UI_COLORS.PRIMARY}; font-size: 11px; font-weight: bold;")
         content_layout.addWidget(footer)
-        
         QTimer.singleShot(200, self.checkmark.start)
         self.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()
@@ -446,10 +430,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if hasattr(self, 'reset_state_button') and self.reset_state_button:
             self.reset_state_button.hide()
         self._init_refine_selection_hint()
-        
-        # Ensure upload overlay is correctly positioned after initialization
         QTimer.singleShot(100, self._update_upload_overlay_geometry)
-        
         try:
             session_data = StateTransfer.load_state()
             if session_data:
@@ -540,19 +521,13 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        
-        # Update window title with dynamic size
         self.setWindowTitle(f"Portrait 1080x1920 (Crop Tool) - {self.width()}x{self.height()}")
-        
         self.portrait_view.fit_to_scene()
         self._position_refine_selection_hint()
         if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
             self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
             self.hint_overlay_widget.raise_()
-        
-        # Ensure guidance overlay follows video frame resizing
         self._update_upload_overlay_geometry()
-        
         if hasattr(self, '_update_upload_hint_responsive'):
             self._update_upload_hint_responsive()
 
@@ -867,10 +842,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         overlay.setStyleSheet("background-color: white; border-radius: 10px;")
         overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
         overlay.show()
-        
         eff = QGraphicsOpacityEffect(overlay)
         overlay.setGraphicsEffect(eff)
-        
         anim = QPropertyAnimation(eff, b"opacity")
         anim.setDuration(400)
         anim.setStartValue(0.4)
@@ -948,14 +921,11 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                     os.unlink(self._autosave_file)
                 except OSError:
                     pass
-            
-            # Capture final preview snapshot for the toast
             preview_pixmap = QPixmap(PORTRAIT_W, PORTRAIT_H)
             preview_pixmap.fill(Qt.black)
             painter = QPainter(preview_pixmap)
             self.portrait_scene.render(painter)
             painter.end()
-            
             summary = SummaryToast(configured, unchanged, preview_pixmap, self)
             summary.show()
             self._start_exit_sequence(summary)
@@ -1140,7 +1110,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def _update_upload_overlay_geometry(self):
         """Sync overlay geometry with the main app window in global space."""
         if hasattr(self, 'upload_overlay') and self.upload_overlay:
-            # Use geometry() to get global screen coordinates, ensuring overlay matches app position
             self.upload_overlay.setGeometry(self.geometry())
             self.upload_overlay.raise_()
 
@@ -1179,10 +1148,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self._update_upload_hint_responsive()
         if hasattr(self, 'hint_overlay_widget'):
             self.hint_overlay_widget.show()
-        
-        # Position guidance overlay after window is shown
         self._update_upload_overlay_geometry()
-        
         QTimer.singleShot(200, self._check_restore)
         if not self._autosave_timer.isActive():
             self._autosave_timer.start()
@@ -1279,8 +1245,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         except Exception as e:
             self.logger.critical(f"Failed to launch main app: {e}")
             pass
-        # Add a tiny delay to ensure the OS has registered the new process as detached
-        # This helps prevent the current process from being marked as 'waiting' for children
         QTimer.singleShot(100, QApplication.instance().quit)
 
     def _get_persistence_extras(self): return {}

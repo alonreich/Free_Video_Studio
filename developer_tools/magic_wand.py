@@ -1,4 +1,4 @@
-import cv2
+﻿import cv2
 import numpy as np
 import os
 import logging
@@ -28,15 +28,12 @@ class HUDExtractor:
             x2, y2 = min(img_w, x + w), min(img_h, y + h)
             roi = frame_gray[y1:y2, x1:x2]
             if roi.size == 0: return rect
-            
-            # Otsu thresholding for precision wrapping
             blur = cv2.GaussianBlur(roi, (3,3), 0)
             _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             coords = np.column_stack(np.where(thresh > 0))
             if coords.size == 0: return rect
             y_min, x_min = coords.min(axis=0)
             y_max, x_max = coords.max(axis=0)
-            
             new_x = x1 + x_min - padding
             new_y = y1 + y_min - padding
             new_w = (x_max - x_min) + (padding * 2)
@@ -55,31 +52,22 @@ class HUDExtractor:
     def _detect_map_stats_module(self, frame_gray, frame_color):
         """Top-tier detection for Minimap using Otsu thresholding and adaptive contours."""
         h, w = frame_gray.shape[:2]
-        # Restrict to top right quadrant
         x0 = int(0.65 * w)
         y0 = 0
         rw = int(0.35 * w)
         rh = int(0.40 * h)
         roi = frame_gray[y0:y0+rh, x0:x0+rw]
         if roi.size == 0: return None
-        
-        # Adaptive thresholding to find map border structures
         blur = cv2.GaussianBlur(roi, (5, 5), 0)
         thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-        
-        # Morphological operations to merge map components
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
         closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-        
         cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not cnts:
             return None
-            
-        # Find the most massive contour which usually represents the map in the corner
         c = max(cnts, key=cv2.contourArea)
         if cv2.contourArea(c) > (roi.size * 0.02):
             x, y, ww, hh = cv2.boundingRect(c)
-            # Add liberal padding around the minimap as stats hang below it
             px = int(0.05 * rw)
             py = int(0.15 * rh)
             raw = self._clamp_rect(x0 + x - px, y0 + y - py, ww + 2*px, hh + 2*py + int(100 * self._get_res_scale(h)), w, h)
@@ -95,41 +83,29 @@ class HUDExtractor:
         rh = int(0.30 * h)
         roi = frame_color[y0:y0+rh, x0:x0+rw]
         if roi.size == 0: return None
-        
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        
-        # Fortnite health (green) and shield (blue)
         green = cv2.inRange(hsv, (30, 40, 40), (90, 255, 255))
         blue = cv2.inRange(hsv, (90, 40, 40), (145, 255, 255))
-        white = cv2.inRange(hsv, (0, 0, 200), (180, 30, 255)) # HP text
-        
+        white = cv2.inRange(hsv, (0, 0, 200), (180, 30, 255))
         mask = cv2.bitwise_or(green, blue)
         mask = cv2.bitwise_or(mask, white)
-        
-        # Further refine with Otsu on the intensity channel in the masked regions
         v_channel = hsv[:,:,2]
         _, otsu_thresh = cv2.threshold(v_channel, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         combined = cv2.bitwise_and(mask, otsu_thresh)
-        
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 5))
         closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=3)
-        
         cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         rects = []
         for c in cnts:
             x, y, ww, hh = cv2.boundingRect(c)
-            # HP bars are distinctively wide
             if ww > 3 * hh and ww > int(0.10 * w):
                 rects.append((x, y, ww, hh))
-                
         if not rects:
             return None
-            
         x1 = min(r[0] for r in rects)
         y1 = min(r[1] for r in rects)
         x2 = max(r[0] + r[2] for r in rects)
         y2 = max(r[1] + r[3] for r in rects)
-        
         px, py = int(0.02 * rw), int(0.10 * rh)
         raw = self._clamp_rect(x0 + x1 - px, y0 + y1 - py, (x2 - x1) + 2*px, (y2 - y1) + 2*py, w, h)
         return self._tighten_rect(frame_gray, raw)
@@ -143,50 +119,35 @@ class HUDExtractor:
         rh = int(0.30 * h)
         roi = frame_gray[y0:y0+rh, x0:x0+rw]
         if roi.size == 0: return None
-        
-        # Enhance borders
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(roi)
-        
-        # Otsu thresholding
         _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         edges = cv2.Canny(thresh, 50, 150)
-        
-        # Connect adjacent loot box slots vertically and horizontally
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
         closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
-        
         cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         slots = []
         for c in cnts:
             x, y, ww, hh = cv2.boundingRect(c)
-            # Filter for roughly square or slightly rectangular weapon slots
             if ww > 20 and hh > 20 and 0.5 < ww/float(hh) < 2.0:
                 slots.append((x, y, ww, hh))
-                
         if len(slots) < 2:
             return None
-            
         slots.sort(key=lambda r: r[0])
-        # Find horizontal groupings representing the inventory
         best_group = []
         for i in range(len(slots)):
             group = [slots[i]]
             for j in range(i+1, len(slots)):
-                # If centers are roughly aligned on Y axis
                 if abs((slots[j][1] + slots[j][3]//2) - (slots[i][1] + slots[i][3]//2)) < int(0.10 * rh):
                     group.append(slots[j])
             if len(group) > len(best_group):
                 best_group = group
-                
         if len(best_group) < 2:
             return None
-            
         x1 = min(r[0] for r in best_group)
         y1 = min(r[1] for r in best_group)
         x2 = max(r[0] + r[2] for r in best_group)
         y2 = max(r[1] + r[3] for r in best_group)
-        
         px, py = int(0.02 * rw), int(0.05 * rh)
         raw = self._clamp_rect(x0 + x1 - px, y0 + y1 - py, (x2 - x1) + 2*px, (y2 - y1) + 2*py, w, h)
         return self._tighten_rect(frame_gray, raw)
@@ -271,7 +232,6 @@ class HUDExtractor:
         except Exception as e:
             self.logger.error(f"Error during extraction: {e}")
             pass
-            
         rois = [r for r in rois if r is not None]
         if not rois:
             rois.extend([self._heuristic_loot_rect(frame_gray), self._heuristic_map_rect(frame_gray),

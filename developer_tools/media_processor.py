@@ -212,8 +212,6 @@ class MediaProcessor(QObject):
         self._kill_ffprobe_procs()
         if self.player:
             try:
-                # Force-clear the video surface by loading a null source
-                # and then stopping, which flushes the GPU buffer to black.
                 self.player.loadfile("null://", "replace")
                 self.player.command("stop")
             except: pass

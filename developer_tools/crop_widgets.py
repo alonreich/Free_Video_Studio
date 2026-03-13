@@ -86,24 +86,15 @@ class RoleToolbar(QFrame):
         self.ensurePolished()
         self.layout().activate()
         self.adjustSize()
-        
-        # 1. ALWAYS use the screen where the main window is located
-        # This prevents the menu from "jumping" to other monitors if pos is near an edge
         main_win = self.window()
         current_screen = QApplication.screenAt(main_win.geometry().center()) or QApplication.primaryScreen()
         screen_geo = current_screen.availableGeometry()
-        
         w, h = self.width(), self.height()
-        
-        # 2. Force coordinates to stay within the bounds of THIS monitor only
         target_x = max(screen_geo.left() + 20, min(pos.x(), screen_geo.right() - w - 20))
         target_y = max(screen_geo.top() + 20, min(pos.y(), screen_geo.bottom() - h - 20))
-        
-        # 3. Final safety check: if still outside geo, snap to center-top of current screen
         if not screen_geo.contains(target_x, target_y):
             target_x = screen_geo.center().x() - (w // 2)
             target_y = screen_geo.top() + 100
-
         self.move(target_x, target_y)
         self.show()
         self.raise_()
@@ -240,7 +231,6 @@ class DrawWidget(QWidget):
             self.pixmap = QPixmap()
             self._cache_pix = None
             self.setCursor(Qt.ArrowCursor)
-            # [FIX] Force a hard resize to zero to ensure OS flushes the backing store
             self.setFixedSize(1, 1)
         self.clear_selection()
         self.update()
@@ -293,19 +283,13 @@ class DrawWidget(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        # [FIX] Explicitly clear background if no pixmap is loaded
         if self.pixmap.isNull():
             painter.fillRect(self.rect(), Qt.black)
             return
-
         if self._cache_pix:
             painter.drawPixmap(self._img_rect.topLeft(), self._cache_pix)
-        
-        # [FIX] Hide guidance lines and standard crosshair if Magic Wand is active
         if self._crosshair_pos and (self.mode == 'drawing' or self._crop_rect_img.isNull()) and not self._candidates_img:
             self._draw_crosshair(painter, self._crosshair_pos)
-            
         if self._candidates_img:
             ant_pen = QPen(QColor("#E91E63"), 2, Qt.CustomDashLine)
             ant_pen.setDashPattern([4, 4])
@@ -392,7 +376,7 @@ class DrawWidget(QWidget):
             return
         if event.button() == Qt.LeftButton:
             self._role_popup_timer.stop()
-            self.role_toolbar.hide() # [FIX] Hide immediately on any interaction
+            self.role_toolbar.hide()
             if self.role_toolbar.isVisible() and self.role_toolbar.geometry().contains(self.mapToGlobal(event.pos())):
                 return
             if self._candidates_img:
@@ -434,11 +418,8 @@ class DrawWidget(QWidget):
                 )
                 self.setCursor(Qt.ClosedHandCursor)
                 return
-            
-            # [FIX] Disable standard cropping if Magic Wand is active
             if self._candidates_img:
                 return
-
             self.clear_selection()
             self.mode = 'drawing'
             self.grabMouse()
@@ -798,12 +779,10 @@ class UploadOverlay(QWidget):
     """Truly top-level pulsing overlay that floats at the absolute top of the Z-order."""
     
     def __init__(self, target_button=None, video_widget=None, parent=None):
-        # Use Qt.ToolTip to ensure it stays above EVERYTHING else, including buttons
         super().__init__(parent)
         self.target_button = target_button
         self.video_widget = video_widget
         self.app_window = parent
-        
         self.setWindowFlags(
             Qt.ToolTip | 
             Qt.FramelessWindowHint | 
@@ -813,7 +792,6 @@ class UploadOverlay(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        
         self.opacity = 1.0
         self.fade_direction = -1
         self.timer = QTimer(self)
@@ -822,7 +800,6 @@ class UploadOverlay(QWidget):
         self.hide()
 
     def _update_pulse(self):
-        # Increased speed by 20% (0.03 -> 0.036) and deeper fade (min 0.1)
         self.opacity += self.fade_direction * 0.036
         if self.opacity <= 0.1:
             self.opacity = 0.1
@@ -830,39 +807,27 @@ class UploadOverlay(QWidget):
         elif self.opacity >= 1.0:
             self.opacity = 1.0
             self.fade_direction = -1
-        
-        # Ensure absolute top level every pulse
         self.raise_()
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Reference resolution for "perfect" layout
         ref_w, ref_h = 1780.0, 898.0
         scale = min(self.width() / ref_w, self.height() / ref_h)
-        
-        # Helper for scaling values
+
         def s(val): return val * scale
-        
-        # Everything pulses together as one cohesive high-tier piece
         painter.setOpacity(self.opacity)
-        
         text = "Please Upload Video to Begin!"
         font = QFont("Sans Serif", int(s(32)), QFont.Bold)
         painter.setFont(font)
-        
         fm = painter.fontMetrics()
         max_text_width = s(500)
         text_rect = fm.boundingRect(QRect(0, 0, int(max_text_width), 1000), Qt.AlignCenter | Qt.TextWordWrap, text)
-        
         padding_h = s(80)
         padding_v = s(30)
         box_w = text_rect.width() + padding_h * 2
         box_h = text_rect.height() + padding_v * 2
-        
-        # Center relative to video_widget area and shift
         if self.video_widget:
             video_global = self.video_widget.mapToGlobal(QPoint(0, 0))
             video_local = self.mapFromGlobal(video_global)
@@ -871,60 +836,38 @@ class UploadOverlay(QWidget):
         else:
             center_x = (self.width() // 2) + s(40)
             center_y = self.height() // 2
-        
         rect = QRectF(center_x - box_w / 2, center_y - box_h / 2, box_w, box_h)
-        
-        # Draw Rounded Box with sleek thick border
         painter.setBrush(QBrush(Qt.black))
         pen = QPen(QColor("#7DD3FC"), max(1, s(3)))
         painter.setPen(pen)
         painter.drawRoundedRect(rect, s(20), s(20))
-        
-        # Draw professional bold text
         painter.setPen(QColor(Qt.white))
         painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, text)
-        
         if self.target_button:
-            # Map button to overlay coordinates
             btn_global = self.target_button.mapToGlobal(QPoint(0, 0))
             btn_local = self.mapFromGlobal(btn_global)
-            
-            # Start and target points
             arrow_start_x = (rect.left() + (2 * rect.width() / 3)) - s(330)
             arrow_start_y = rect.bottom() + s(10)
             target_x = btn_local.x() + (2 * self.target_button.width() / 3) + s(20)
             target_y = btn_local.y() - s(15)
-            
             p1 = QPointF(arrow_start_x, arrow_start_y)
             p2 = QPointF(target_x, target_y)
-            
             angle = math.atan2(p2.y() - p1.y(), p2.x() - p1.x())
             perp_angle = angle + math.pi / 2
-            
-            # Constants for professional proportions
             head_size = s(42)
             shaft_width = s(10.8)
             half_width = shaft_width / 2.0
-            
-            # Base of head is shifted back from tip
             junction_dist = head_size * 0.85
             p_base = QPointF(
                 p2.x() - junction_dist * math.cos(angle),
                 p2.y() - junction_dist * math.sin(angle)
             )
-            
-            # Create a SINGLE path for the entire arrow to avoid transparency overlaps
             arrow_path = QPainterPath()
-            
-            # 1. Rounded start cap at p1
             arrow_path.addEllipse(p1, half_width, half_width)
-            
-            # 2. Shaft rectangle corners
             s1 = QPointF(p1.x() + half_width * math.cos(perp_angle), p1.y() + half_width * math.sin(perp_angle))
             s2 = QPointF(p_base.x() + half_width * math.cos(perp_angle), p_base.y() + half_width * math.sin(perp_angle))
             s3 = QPointF(p_base.x() - half_width * math.cos(perp_angle), p_base.y() - half_width * math.sin(perp_angle))
             s4 = QPointF(p1.x() - half_width * math.cos(perp_angle), p1.y() - half_width * math.sin(perp_angle))
-            
             shaft_path = QPainterPath()
             shaft_path.moveTo(s1)
             shaft_path.lineTo(s2)
@@ -932,8 +875,6 @@ class UploadOverlay(QWidget):
             shaft_path.lineTo(s4)
             shaft_path.closeSubpath()
             arrow_path = arrow_path.united(shaft_path)
-            
-            # 3. Solid professional arrow head (Narrowed width by ~5%: pi/6 -> pi/6.3)
             head_p1 = QPointF(
                 p2.x() - head_size * math.cos(angle - math.pi / 6.3),
                 p2.y() - head_size * math.sin(angle - math.pi / 6.3)
@@ -942,15 +883,12 @@ class UploadOverlay(QWidget):
                 p2.x() - head_size * math.cos(angle + math.pi / 6.3),
                 p2.y() - head_size * math.sin(angle + math.pi / 6.3)
             )
-            
             head_path = QPainterPath()
             head_path.moveTo(p2)
             head_path.lineTo(head_p1)
             head_path.lineTo(head_p2)
             head_path.closeSubpath()
             arrow_path = arrow_path.united(head_path)
-            
-            # 4. Draw the unified arrow as one single piece
             arrow_color = QColor("#7DD3FC")
             painter.setBrush(QBrush(arrow_color))
             painter.setPen(Qt.NoPen)
