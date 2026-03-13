@@ -591,10 +591,16 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
     border: 1px solid {UI_COLORS.BORDER_MEDIUM};
     border-radius: {UI_LAYOUT.PORTRAIT_TOOLBAR_BORDER_RADIUS};
 }}
-#uploadHintContainer, #croppingHintContainer {{
+#uploadHintContainer {{
     background-color: rgba(0, 0, 0, 180);
     border: 3px solid #7DD3FC;
     border-radius: 14px;
+}}
+#croppingHintContainer {{
+    background-color: rgba(0, 0, 0, 180);
+    border: 3px solid #7DD3FC;
+    border-radius: 14px;
+    padding: 40px 30px;
 }}
 #uploadHintLabel, #croppingHintLabel {{
     color: #7DD3FC;

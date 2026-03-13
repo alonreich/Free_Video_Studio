@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from pathlib import Path
 import tempfile
 import types
@@ -46,6 +46,7 @@ def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
     host._music_eff = lambda: 80
     host._get_music_offset_ms = lambda: 0
     host._scrub_lock = threading.RLock()
+    host._mpv_lock = threading.RLock()
     return host
 
 def test_core_01_constant_tempo_music_rate_locked_to_1x() -> None:
@@ -149,8 +150,8 @@ def test_core_09_native_logs_faulthandler_pipeline(monkeypatch, tmp_path: Path) 
     assert log_dir_path.exists()
     logs = list(log_dir_path.glob("*.log"))
     assert len(logs) >= 1, f"No log files found in {log_dir_path}"
-    assert len(dup_calls) >= 2
-    assert len(fh_calls) == 1
+    assert len(dup_calls) == 0
+    assert len(fh_calls) == 0
 
 def test_core_10_folder_persistence_prioritizes_custom_path(tmp_path: Path) -> None:
     custom = tmp_path / "custom_music"

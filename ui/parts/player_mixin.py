@@ -231,6 +231,11 @@ class PlayerMixin:
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
+        now = time.time()
+        if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
+        if not force_pause and (now - self._last_scrub_ts < 0.05):
+            return
+        self._last_scrub_ts = now
         target_ms = int(position_ms)
         if not hasattr(self, "_pending_seek_ms"): self._pending_seek_ms = None
         self._pending_seek_ms = target_ms
@@ -238,9 +243,11 @@ class PlayerMixin:
             from PyQt5.QtCore import QTimer
             self._seek_timer = QTimer(self)
             self._seek_timer.setSingleShot(True)
-            self._seek_timer.timeout.connect(self._execute_throttled_seek)
+            self._seek_timer.timeout.connect(lambda: getattr(self, "_execute_throttled_seek", lambda: None)())
         interval = 20 if force_pause else 80
-        if not self._seek_timer.isActive():
+        if sync_only:
+            PlayerMixin._execute_throttled_seek(self)
+        elif not self._seek_timer.isActive():
             self._seek_timer.start(interval)
 
     def _execute_throttled_seek(self):
@@ -278,8 +285,8 @@ class PlayerMixin:
                 speed_factor = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
                 speed_segments = getattr(self, 'speed_segments', [])
                 try:
-                    wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
-                    wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                    wall_target = PlayerMixin._calculate_wall_clock_time(self, target_ms, speed_segments, speed_factor)
+                    wall_start = PlayerMixin._calculate_wall_clock_time(self, t_start, speed_segments, speed_factor)
                     project_pos_sec = (wall_target - wall_start) / 1000.0
                     target_m_sec = 0.0
                     accum = 0.0
@@ -289,6 +296,7 @@ class PlayerMixin:
                             break
                         accum += dur
                     music_player.command("seek", target_m_sec, "absolute", precision)
+                    PlayerMixin._safe_mpv_set(self, "speed", 1.0, target_player=music_player)
                 except Exception as wall_err:
                     if hasattr(self, "logger"):
                         self.logger.debug(f"Seek wallclock error: {wall_err}")

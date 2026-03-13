@@ -3,7 +3,7 @@ from .processing_utils import make_even
 try:
     from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        PADDING_TOP, scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, inverse_transform_from_content_area_int
     )
 except ImportError:
     import sys
@@ -13,7 +13,7 @@ except ImportError:
 
     from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        PADDING_TOP, scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, inverse_transform_from_content_area_int
     )
 
 class MobileFilterMixin:
@@ -25,7 +25,7 @@ class MobileFilterMixin:
             return self.build_mobile_filter_chain("[0:v]", coords, is_boss_hp, show_teammates, None, False)
         return self.build_mobile_filter_chain(*args, **kwargs)
 
-    def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, txt_input_label=None, use_cuda=False):
+    def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, txt_input_label=None, use_cuda=False, original_resolution="1920x1080"):
         coords_data = mobile_coords
         FINAL_W, FINAL_H = 1080, 1920
         CONTENT_AREA_W, CONTENT_AREA_H = 1080, 1620
@@ -46,7 +46,7 @@ class MobileFilterMixin:
             sc = float(scales.get(conf_key, 1.0))
             if rect_1080 and rect_1080[0] >= 1:
                 active_layers.append({
-                    "name": name, "ui_rect": rect_1080,
+                    "name": name, "conf_key": conf_key, "ui_rect": rect_1080,
                     "scale": sc, "pos": (overlays.get(ov_key, {"x": 0, "y": 0})),
                     "z": z_orders.get(ov_key, 50)
                 })
@@ -55,18 +55,28 @@ class MobileFilterMixin:
         register_layer("stats", "stats", "stats", "stats")
         register_layer("spec", "spectating", "spectating", "spectating")
         if show_teammates: register_layer("team", "team", "team", "team")
-        active_layers.sort(key=lambda x: x["z"])
+        active_layers.sort(key=lambda x: x["z"], reverse=True)
         if active_layers:
             split_count = 1 + len(active_layers)
             parts.append(f"{input_pad}split={split_count}[v_base_in]" + "".join([f"[v_layer_in_{i}]" for i in range(len(active_layers))]))
-            parts.append(f"[v_base_in]scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:(iw-{INTERNAL_W})/2:(ih-{INTERNAL_H})/2[main_base]")
+            parts.append(f"[v_base_in]scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:trunc((iw-{INTERNAL_W})/2/2)*2:trunc((ih-{INTERNAL_H})/2/2)*2[main_base]")
             curr_v = "[main_base]"
             for i, layer in enumerate(active_layers):
-                rw = max(2, make_even(layer['ui_rect'][0] * layer['scale'] * BACKEND_SCALE))
-                rh = max(2, make_even(layer['ui_rect'][1] * layer['scale'] * BACKEND_SCALE))
-                lx = make_even(float(layer['pos']['x']) * BACKEND_SCALE)
-                ly = make_even(float(layer['pos']['y']) * BACKEND_SCALE)
-                parts.append(f"[v_layer_in_{i}]REPLACE_ME_CROP_{layer['name']},scale={rw}:{rh}:flags=lanczos[v_layer_out_{i}]")
+                drift_type = None
+                ck = layer['conf_key']
+                if ck in ["stats", "normal_hp", "boss_hp", "team", "spectating"]:
+                    drift_type = "left"
+                elif ck == "loot":
+                    drift_type = "right"
+                r = layer['ui_rect']
+                source_rect = inverse_transform_from_content_area_int((r[2], r[3], r[0], r[1]), original_resolution, drift_type)
+                sx, sy, sw, sh = source_rect
+                rw = max(2, make_even(layer['ui_rect'][0] * layer['scale'] * UI_TO_INTERNAL_SCALE))
+                rh = max(2, make_even(layer['ui_rect'][1] * layer['scale'] * UI_TO_INTERNAL_SCALE))
+                ui_y_absolute = float(layer['pos']['y'])
+                lx = make_even(float(layer['pos']['x']) * UI_TO_INTERNAL_SCALE)
+                ly = make_even((ui_y_absolute - 150) * UI_TO_INTERNAL_SCALE)
+                parts.append(f"[v_layer_in_{i}]crop={sw}:{sh}:{sx}:{sy},scale={rw}:{rh}:flags=lanczos[v_layer_out_{i}]")
                 next_v = f"[v_comp_{i}]"
                 parts.append(f"{curr_v}[v_layer_out_{i}]overlay=x={lx}:y={ly}:eof_action=pass{next_v}")
                 curr_v = next_v

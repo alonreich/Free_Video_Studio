@@ -117,22 +117,11 @@ class MergerConsoleManager:
         try:
             import mpv
         except ImportError:
-            class MockMPV: pass
+            class MockMPV: 
+                log_path = None
             mpv = MockMPV()
-        source_tag = "video_merger"
         if str(logger_name) == "Video_Merger":
-            mpv.log_path = os.path.join(log_dir, "mpv.log")
-            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
-            try:
-                MergerConsoleManager._f_keepalive = open(raw_log_path, 'w', buffering=1, encoding='utf-8')
-                f = MergerConsoleManager._f_keepalive
-                os.dup2(f.fileno(), sys.stdout.fileno())
-                os.dup2(f.fileno(), sys.stderr.fileno())
-
-                import faulthandler
-                faulthandler.enable(f)
-                source_tag = "video_merger"
-            except: pass
+            logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")
             
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):

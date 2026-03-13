@@ -10,10 +10,28 @@ import time
 import threading
 import weakref
 from PyQt5.QtCore import QTimer
+if sys.platform == 'win32':
+    _base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    _bin_dir = os.path.join(_base_dir, 'binaries')
+    if os.path.exists(_bin_dir):
+        os.environ["MPV_HOME"] = _bin_dir
+        os.environ["MPV_DYLIB_PATH"] = os.path.join(_bin_dir, "libmpv-2.dll")
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(_bin_dir)
+            except Exception:
+                pass
+        os.environ['PATH'] = _bin_dir + os.pathsep + os.environ.get('PATH','')
 try:
     import mpv
 except (ImportError, OSError):
-    class MockMPV: pass
+    class MockMPV: 
+        log_path = None
+
+        class MPV:
+            def __init__(self, *args, **kwargs): pass
+
+            def terminate(self): pass
     mpv = MockMPV()
 
 from logging.handlers import RotatingFileHandler

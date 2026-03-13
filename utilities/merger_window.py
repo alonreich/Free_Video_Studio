@@ -5,11 +5,6 @@ import sys
 import os
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-try:
-    from PyQt5.QtWinExtras import QWinTaskbarButton, QWinTaskbarProgress
-    _HAS_WIN_EXTRAS = True
-except ImportError:
-    _HAS_WIN_EXTRAS = False
 
 import tempfile
 import subprocess
@@ -58,8 +53,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._status_lock_until = 0.0
         self._temp_dir = None
         self._probe_worker = None
-        self.taskbar_button = None
-        self.taskbar_progress = None
         self._last_gpu_val = 0
         self._iops_prev = None
         self._iops_dyn_max = 1.0
@@ -82,6 +75,11 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         """
         self.event_handler.update_button_states()
         self.logger.info("OPEN: Video Merger window created")
+
+    def showEvent(self, event):
+        if not getattr(self, "_loaded", False):
+            self._loaded = True
+        super().showEvent(event)
 
     def create_draggable_list_widget(self):
         listw = MergerDraggableList(self)
@@ -239,18 +237,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             event.acceptProposedAction()
         else:
             event.ignore()
-
-    def showEvent(self, event: QEvent):
-        if not self._loaded:
-            self._loaded = True
-            if _HAS_WIN_EXTRAS and not self.taskbar_button:
-                try:
-                    self.taskbar_button = QWinTaskbarButton(self)
-                    self.taskbar_button.setWindow(self.windowHandle())
-                    self.taskbar_progress = self.taskbar_button.progress()
-                except Exception as ex:
-                    self.logger.debug(f"Taskbar progress unavailable: {ex}")
-        super().showEvent(event)
 
     def resizeEvent(self, event: QEvent):
         super().resizeEvent(event)
@@ -839,8 +825,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.engine.progress.connect(self._update_progress)
         self.engine.log_line.connect(self._append_log)
         self.engine.finished.connect(self._merge_finished_cleanup)
-        if self.taskbar_progress:
-            self.taskbar_progress.setValue(0); self.taskbar_progress.setVisible(True)
         self.engine.start()
 
     def _update_progress(self, percent, time_str):
@@ -855,8 +839,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             except Exception:
                 pass
         self.setWindowTitle(f"Video Merger - {percent}%")
-        if self.taskbar_progress:
-            self.taskbar_progress.setValue(percent)
 
     def _append_log(self, line):
         self._append_live_log(str(line))
@@ -870,8 +852,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             if self._probe_worker and self._probe_worker.isRunning():
                 self._probe_worker.cancel()
                 self._probe_worker.wait(1200)
-            if self.taskbar_progress:
-                self.taskbar_progress.setPaused(True)
             QTimer.singleShot(2200, self._ensure_cancel_cleanup)
 
     def _ensure_cancel_cleanup(self):
@@ -889,9 +869,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._pulse_timer.stop()
         self._hide_processing_overlay()
         self.setWindowTitle("Video Merger")
-        if self.taskbar_progress:
-            self.taskbar_progress.setVisible(False)
-            self.taskbar_progress.setValue(0)
         if self._temp_dir:
             try:
                 self._temp_dir.cleanup()

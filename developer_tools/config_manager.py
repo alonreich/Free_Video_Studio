@@ -101,7 +101,7 @@ class ConfigManager:
             "spectating": Z_ORDER_MAP.get("spectating", 100)
         }
     }
-    
+
     def __init__(self, config_path: str, logger: Optional[logging.Logger] = None):
         """
         Initialize configuration manager.

@@ -47,7 +47,8 @@ UI_TO_INTERNAL_SCALE = float(INTERNAL_W) / float(PORTRAIT_W)
 def transform_to_content_area(rect: Tuple[float, float, float, float],
                             original_resolution: str) -> Tuple[float, float, float, float]:
     """
-    Transforms coordinates from original video pixels to the 1080x1620 UI content area.
+    Transforms coordinates from original video pixels to the 1080x1920 Portrait UI area.
+    The content area starts at UI_PADDING_TOP (150).
     """
     in_w, in_h = get_resolution_ints(original_resolution)
     x, y, w, h = rect
@@ -60,22 +61,24 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
     internal_h = h * scale
     ui_scale = 1.0 / UI_TO_INTERNAL_SCALE
     ui_x = internal_x * ui_scale
-    ui_y = (internal_y * ui_scale) - UI_PADDING_TOP 
+    ui_y = (internal_y * ui_scale) + UI_PADDING_TOP 
     ui_w = internal_w * ui_scale
     ui_h = internal_h * ui_scale
     return (ui_x, ui_y, ui_w, ui_h)
 
 def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
-                                        original_resolution: str) -> Tuple[float, float, float, float]:
+                                        original_resolution: str,
+                                        drift_type: str = None) -> Tuple[float, float, float, float]:
     """
-    Transforms logical UI coordinates (1080x1620) back to original video pixels.
+    Transforms absolute UI coordinates (0-1920) back to original video pixels.
     Inverts the centering and scaling logic.
+    Applies mandated drift protection (+1px bias).
     """
     in_w, in_h = get_resolution_ints(original_resolution)
     ui_x, ui_y, ui_w, ui_h = rect
-    full_ui_y = ui_y + UI_PADDING_TOP
+    rel_ui_y = ui_y - UI_PADDING_TOP
     internal_x = ui_x * UI_TO_INTERNAL_SCALE
-    internal_y = full_ui_y * UI_TO_INTERNAL_SCALE
+    internal_y = rel_ui_y * UI_TO_INTERNAL_SCALE
     internal_w = ui_w * UI_TO_INTERNAL_SCALE
     internal_h = ui_h * UI_TO_INTERNAL_SCALE
     scale = float(INTERNAL_H) / float(in_h)
@@ -85,6 +88,11 @@ def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
     orig_y = internal_y / scale
     orig_w = internal_w / scale
     orig_h = internal_h / scale
+    if drift_type == "left":
+        orig_x -= 1.0
+        orig_w += 1.0
+    elif drift_type == "right":
+        orig_w += 1.0
     final_x = max(0.0, min(orig_x, float(in_w) - 1.0))
     final_y = max(0.0, min(orig_y, float(in_h) - 1.0))
     final_w = max(1.0, min(orig_w, float(in_w) - final_x))
@@ -92,9 +100,10 @@ def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
     return (final_x, final_y, final_w, final_h)
 
 def inverse_transform_from_content_area_int(rect: Tuple[int, int, int, int],
-                                            original_resolution: str) -> Tuple[int, int, int, int]:
+                                            original_resolution: str,
+                                            drift_type: str = None) -> Tuple[int, int, int, int]:
     fx, fy, fw, fh = inverse_transform_from_content_area(
-        (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3])), original_resolution
+        (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3])), original_resolution, drift_type
     )
     return outward_round_rect(fx, fy, fw, fh)
 

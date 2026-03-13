@@ -7,7 +7,7 @@ os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, 
     QGraphicsSimpleTextItem, QDialog, QFrame, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
-    QProgressDialog, QShortcut, QPushButton, QScrollArea, QGraphicsOpacityEffect
+    QProgressDialog, QShortcut, QPushButton, QScrollArea, QGraphicsOpacityEffect, QStyle
 )
 
 from PyQt5.QtCore import (
@@ -48,77 +48,159 @@ from coordinate_math import (
 from resource_manager import get_resource_manager
 from system.state_transfer import StateTransfer
 
+class AnimatedCheckmark(QWidget):
+    def __init__(self, size=64, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.scale_val = 0.0
+        self.opacity_val = 0.0
+        self._anim_group = QParallelAnimationGroup(self)
+        
+        scale_anim = QPropertyAnimation(self, b"scale_prop")
+        scale_anim.setDuration(600)
+        scale_anim.setStartValue(0.0)
+        scale_anim.setEndValue(1.0)
+        scale_anim.setEasingCurve(QEasingCurve.OutBack)
+        
+        opacity_anim = QPropertyAnimation(self, b"opacity_prop")
+        opacity_anim.setDuration(400)
+        opacity_anim.setStartValue(0.0)
+        opacity_anim.setEndValue(1.0)
+        
+        self._anim_group.addAnimation(scale_anim)
+        self._anim_group.addAnimation(opacity_anim)
+
+    def get_scale(self): return self.scale_val
+    def set_scale(self, s): self.scale_val = s; self.update()
+    scale_prop = property(get_scale, set_scale)
+
+    def get_opacity(self): return self.opacity_val
+    def set_opacity(self, o): self.opacity_val = o; self.update()
+    opacity_prop = property(get_opacity, set_opacity)
+
+    def start(self):
+        self._anim_group.start()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setOpacity(self.opacity_val)
+        p.translate(self.width()/2, self.height()/2)
+        p.scale(self.scale_val, self.scale_val)
+        p.translate(-self.width()/2, -self.height()/2)
+        
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(UI_COLORS.SUCCESS))
+        p.drawEllipse(2, 2, self.width()-4, self.height()-4)
+        
+        pen = QPen(QColor("white"), 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen)
+        
+        w, h = self.width(), self.height()
+        path = QPolygon([
+            QPoint(int(w * 0.25), int(h * 0.5)),
+            QPoint(int(w * 0.45), int(h * 0.73)),
+            QPoint(int(w * 0.75), int(h * 0.35))
+        ])
+        p.drawPolyline(path)
+
 class SummaryToast(QDialog):
-    def __init__(self, configured, unchanged, parent=None):
+    def __init__(self, configured, unchanged, preview_pixmap=None, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedWidth(420)
+        
         container = QFrame(self)
         container.setObjectName("container")
-        self.setStyleSheet(f"""
+        container.setStyleSheet(f"""
             #container {{
-                background-color: {UI_COLORS.BACKGROUND_MEDIUM};
-                border: 2px solid {UI_COLORS.BORDER_MEDIUM};
-                border-radius: 15px;
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 2px solid {UI_COLORS.PRIMARY};
+                border-radius: 20px;
             }}
-            QLabel {{
-                color: {UI_COLORS.TEXT_SECONDARY};
-                font-size: 13px;
-                padding: 1px;
-                background-color: transparent;
+            QLabel {{ background: transparent; color: {UI_COLORS.TEXT_PRIMARY}; }}
+            #mainTitle {{
+                font-size: 20px;
+                font-weight: 800;
+                color: {UI_COLORS.TEXT_PRIMARY};
             }}
-            #title {{
-                font-size: 16px;
-                font-weight: bold;
-                color: {UI_COLORS.PRIMARY};
-                padding-bottom: 8px;
-            }}
-            #sectionTitle {{
-                font-weight: bold;
-                font-size: 14px;
-                margin-top: 5px;
-            }}
-            #changed {{ color: {UI_COLORS.SUCCESS}; }}
-            #unchanged {{ color: {UI_COLORS.DANGER}; }}
         """)
+        
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
+        
+        content_layout = QVBoxLayout(container)
+        content_layout.setContentsMargins(25, 25, 25, 25)
+        content_layout.setSpacing(15)
+        
+        header_layout = QHBoxLayout()
+        self.checkmark = AnimatedCheckmark(54)
+        header_layout.addWidget(self.checkmark)
+        
+        title_vbox = QVBoxLayout()
+        title_label = QLabel("SUCCESS")
+        title_label.setObjectName("mainTitle")
+        subtitle = QLabel("Configuration deployed safely.")
+        subtitle.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 12px;")
+        title_vbox.addWidget(title_label)
+        title_vbox.addWidget(subtitle)
+        header_layout.addLayout(title_vbox)
+        header_layout.addStretch()
+        content_layout.addLayout(header_layout)
+        
+        if preview_pixmap and not preview_pixmap.isNull():
+            preview_frame = QFrame()
+            preview_frame.setFixedSize(370, 208)
+            preview_frame.setStyleSheet(f"background: #000; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 10px;")
+            p_layout = QVBoxLayout(preview_frame)
+            p_layout.setContentsMargins(4,4,4,4)
+            img_label = QLabel()
+            img_label.setPixmap(preview_pixmap.scaled(362, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            img_label.setAlignment(Qt.AlignCenter)
+            p_layout.addWidget(img_label)
+            content_layout.addWidget(preview_frame)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet("background: transparent;")
+        scroll.setMaximumHeight(200)
         scroll_content = QWidget()
-        scroll_content.setStyleSheet("background: transparent;")
-        content_layout = QVBoxLayout(scroll_content)
-        content_layout.setContentsMargins(15, 15, 15, 15)
-        content_layout.setSpacing(2)
-        title_label = QLabel("Configuration Saved")
-        title_label.setObjectName("title")
-        title_label.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(title_label)
+        list_layout = QVBoxLayout(scroll_content)
+        list_layout.setContentsMargins(0, 5, 0, 5)
+        list_layout.setSpacing(8)
+        
         if configured:
-            changed_title = QLabel("Updated Elements:")
-            changed_title.setObjectName("sectionTitle")
-            changed_title.setStyleSheet(f"color: {UI_COLORS.SUCCESS};")
-            content_layout.addWidget(changed_title)
-            for item in configured:
-                item_label = QLabel(f"  • {item}")
-                content_layout.addWidget(item_label)
+            conf_header = QLabel("  MODIFIED ELEMENTS")
+            conf_header.setStyleSheet(f"color: {UI_COLORS.SUCCESS}; font-weight: bold; font-size: 11px; background: rgba(16, 185, 129, 30); padding: 4px; border-radius: 4px;")
+            list_layout.addWidget(conf_header)
+            for item in sorted(configured):
+                lbl = QLabel(f"  ✓  {item}")
+                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 13px;")
+                list_layout.addWidget(lbl)
+        
         if unchanged:
-            if configured:
-                content_layout.addSpacing(10)
-            safe_note = QLabel(f"({len(unchanged)} other elements remain unchanged/safe)")
-            safe_note.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-style: italic; font-size: 11px;")
-            safe_note.setAlignment(Qt.AlignCenter)
-            content_layout.addWidget(safe_note)
+            list_layout.addSpacing(10)
+            un_header = QLabel("  UNTOUCHED (DEFAULTS)")
+            un_header.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-weight: bold; font-size: 11px; background: rgba(156, 163, 175, 20); padding: 4px; border-radius: 4px;")
+            list_layout.addWidget(un_header)
+            for item in sorted(unchanged):
+                lbl = QLabel(f"  •  {item}")
+                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 12px;")
+                list_layout.addWidget(lbl)
+                
         scroll.setWidget(scroll_content)
-        vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(0,0,0,0)
-        vbox.addWidget(scroll)
-        self.setFixedWidth(350)
+        content_layout.addWidget(scroll)
+        
+        footer = QLabel("Automatically returning to main app...")
+        footer.setAlignment(Qt.AlignCenter)
+        footer.setStyleSheet(f"color: {UI_COLORS.PRIMARY}; font-size: 11px; font-weight: bold;")
+        content_layout.addWidget(footer)
+        
+        QTimer.singleShot(200, self.checkmark.start)
         self.adjustSize()
-        self.setFixedHeight(min(self.sizeHint().height(), 500))
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.center() - self.rect().center())
 
@@ -174,11 +256,6 @@ class SaveConfigWorker(QObject):
                 config["z_orders"][tech_key] = payload["z"]
                 configured.append(payload["display"])
                 saved_keys.add(tech_key)
-            for key in list(config.get("crops_1080p", {}).keys()):
-                if key not in saved_keys:
-                    for section in ["crops_1080p", "scales", "overlays", "z_orders"]:
-                        if key in config.get(section, {}):
-                            del config[section][key]
             unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
             if manager.save_config(config):
                 try:
@@ -225,7 +302,36 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.last_dir = None
         self.bin_dir = os.path.abspath(os.path.join(self.base_dir, 'binaries'))
         self.snapshot_path = None
-        self.media_processor = MediaProcessor(self.bin_dir)
+        self.ui = Ui_CropApp()
+        try:
+            self.ui.setupUi(self)
+            self.view_stack = getattr(self, 'view_stack', None)
+            self.draw_scroll_area = getattr(self, 'draw_scroll_area', None)
+            self.draw_widget = getattr(self, 'draw_widget', None)
+            self.position_slider = getattr(self, 'position_slider', None)
+            self.play_pause_button = getattr(self, 'play_pause_button', None)
+            self.open_button = getattr(self, 'open_button', None)
+            self.snapshot_button = getattr(self, 'snapshot_button', None)
+            self.magic_wand_button = getattr(self, 'magic_wand_button', None)
+            self.reset_state_button = getattr(self, 'reset_state_button', None)
+            self.return_button = getattr(self, 'return_button', None)
+            self.current_time_label = getattr(self, 'current_time_label', None)
+            self.total_time_label = getattr(self, 'total_time_label', None)
+            self.goal_label = getattr(self, 'goal_label', None)
+            self.status_label = getattr(self, 'status_label', None)
+            self.snap_toggle_button = getattr(self, 'snap_toggle_button', None)
+            self.show_placeholders_checkbox = getattr(self, 'show_placeholders_checkbox', None)
+            self.done_button = getattr(self, 'done_button', None)
+            self.delete_button = getattr(self, 'delete_button', None)
+            self.undo_button = getattr(self, 'undo_button', None)
+            self.redo_button = getattr(self, 'redo_button', None)
+            self.transparency_slider = getattr(self, 'transparency_slider', None)
+            self.portrait_scene = getattr(self, 'portrait_scene', None)
+            self.portrait_view = getattr(self, 'portrait_view', None)
+            self.media_processor = MediaProcessor(self.bin_dir, wid=int(self.video_surface.winId()) if self.video_surface else None)
+        except Exception as e:
+            logger_initial.critical(f"SetupUI Failed: {e}", exc_info=True)
+            raise e
         self.background_crop_width = 0
         self.modified_roles = set()
         self.placeholders_group = []
@@ -252,44 +358,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.REF_ARROW_L, self.REF_ARROW_S = 550, 40
         self.REF_OFFSET_X = 190
         self.REF_GAP = 20
-        self.ui = Ui_CropApp()
-        try:
-            self.ui.setupUi(self)
-            self.video_stack = getattr(self, 'video_stack', None)
-            self.video_surface = getattr(self, 'video_surface', None)
-            self.video_frame = getattr(self, 'video_frame', None)
-            self.hint_overlay_widget = getattr(self, 'hint_overlay_widget', None)
-            self.hint_group_container = getattr(self, 'hint_group_container', None)
-            self.hint_group_layout = getattr(self, 'hint_group_layout', None)
-            self.upload_hint_container = getattr(self, 'upload_hint_container', None)
-            self.upload_hint_label = getattr(self, 'upload_hint_label', None)
-            self.upload_hint_arrow = getattr(self, 'upload_hint_arrow', None)
-            self.view_stack = getattr(self, 'view_stack', None)
-            self.draw_scroll_area = getattr(self, 'draw_scroll_area', None)
-            self.draw_widget = getattr(self, 'draw_widget', None)
-            self.position_slider = getattr(self, 'position_slider', None)
-            self.play_pause_button = getattr(self, 'play_pause_button', None)
-            self.open_button = getattr(self, 'open_button', None)
-            self.snapshot_button = getattr(self, 'snapshot_button', None)
-            self.magic_wand_button = getattr(self, 'magic_wand_button', None)
-            self.reset_state_button = getattr(self, 'reset_state_button', None)
-            self.return_button = getattr(self, 'return_button', None)
-            self.current_time_label = getattr(self, 'current_time_label', None)
-            self.total_time_label = getattr(self, 'total_time_label', None)
-            self.goal_label = getattr(self, 'goal_label', None)
-            self.status_label = getattr(self, 'status_label', None)
-            self.snap_toggle_button = getattr(self, 'snap_toggle_button', None)
-            self.show_placeholders_checkbox = getattr(self, 'show_placeholders_checkbox', None)
-            self.done_button = getattr(self, 'done_button', None)
-            self.delete_button = getattr(self, 'delete_button', None)
-            self.undo_button = getattr(self, 'undo_button', None)
-            self.redo_button = getattr(self, 'redo_button', None)
-            self.transparency_slider = getattr(self, 'transparency_slider', None)
-            self.portrait_scene = getattr(self, 'portrait_scene', None)
-            self.portrait_view = getattr(self, 'portrait_view', None)
-        except Exception as e:
-            logger_initial.critical(f"SetupUI Failed: {e}", exc_info=True)
-            raise e
         try:
             self.connect_signals()
         except Exception as e:
@@ -377,8 +445,11 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.snapshot_button.hide()
         if hasattr(self, 'reset_state_button') and self.reset_state_button:
             self.reset_state_button.hide()
-        self._init_upload_hint_blink()
         self._init_refine_selection_hint()
+        
+        # Ensure upload overlay is correctly positioned after initialization
+        QTimer.singleShot(100, self._update_upload_overlay_geometry)
+        
         try:
             session_data = StateTransfer.load_state()
             if session_data:
@@ -391,13 +462,10 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         except Exception as e:
             logger_initial.error(f"Session Load Failed: {e}")
         if file_path and os.path.exists(file_path):
-            self._set_upload_hint_active(False)
             try:
                 self.load_file(file_path)
             except Exception as e:
                 logger_initial.error(f"Initial Load File Failed: {e}")
-        else:
-            self._set_upload_hint_active(True)
 
     def connect_signals(self):
         super().connect_signals()
@@ -470,261 +538,21 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._refresh_done_button()
         self.portrait_view.setToolTip("Mouse wheel to zoom, middle drag to pan, Shift+Arrows to reorder")
 
-    def _init_upload_hint_blink(self):
-        """Initializes the robust smooth fading logic for the hint groups."""
-        if not hasattr(self, 'hint_group_container'):
-            return
-        self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
-        self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
-        anim_in = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_in.setDuration(1200) 
-        anim_in.setStartValue(0.3)
-        anim_in.setEndValue(1.0)
-        anim_in.setEasingCurve(QEasingCurve.InOutSine)
-        anim_out = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_out.setDuration(1200)
-        anim_out.setStartValue(1.0)
-        anim_out.setEndValue(0.3)
-        anim_out.setEasingCurve(QEasingCurve.InOutSine)
-        self._hint_group = QSequentialAnimationGroup(self)
-        self._hint_group.addAnimation(anim_in)
-        self._hint_group.addAnimation(anim_out)
-        self._hint_group.setLoopCount(-1)
-
-    def _set_cropping_hint_active(self, active):
-        """Manages the 'Hit START CROPPING' hint on top of the video."""
-        target = getattr(self, 'hint_overlay_widget', None)
-        container = getattr(self, 'cropping_hint_container', None)
-        if not target or not container or not hasattr(self, '_hint_group'):
-            return
-        if active:
-            if hasattr(self, 'upload_hint_container') and self.upload_hint_container:
-                self.upload_hint_container.setVisible(False)
-            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
-                self.upload_hint_arrow.setVisible(False)
-            container.setVisible(True)
-            target.show()
-            target.raise_()
-            if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container:
-                self.cropping_hint_container.raise_()
-            if hasattr(self, '_apply_hint_position'):
-                self._apply_hint_position()
-            self._hint_group.start()
-        else:
-            container.setVisible(False)
-            if not (hasattr(self, 'upload_hint_container') and self.upload_hint_container.isVisible()):
-                self._hint_group.stop()
-                target.hide()
-
-    def _set_upload_hint_active(self, active):
-        target = getattr(self, 'hint_overlay_widget', None)
-        container = getattr(self, 'upload_hint_container', None)
-        if not target or not container or not hasattr(self, '_hint_group'):
-            return
-        if active:
-            if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container:
-                self.cropping_hint_container.setVisible(False)
-            container.setVisible(True)
-            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
-                self.upload_hint_arrow.setVisible(True)
-            self._update_upload_hint_responsive()
-            target.show()
-            target.raise_()
-            if hasattr(self, 'upload_hint_container') and self.upload_hint_container:
-                self.upload_hint_container.raise_()
-            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
-                self.upload_hint_arrow.raise_()
-            if hasattr(self, '_apply_hint_position'):
-                self._apply_hint_position()
-            QTimer.singleShot(0, self._update_upload_hint_responsive)
-            QTimer.singleShot(120, self._update_upload_hint_responsive)
-            self._hint_group.start()
-        else:
-            container.setVisible(False)
-            if hasattr(self, 'upload_hint_arrow') and self.upload_hint_arrow:
-                self.upload_hint_arrow.setVisible(False)
-            if not (hasattr(self, 'cropping_hint_container') and self.cropping_hint_container.isVisible()):
-                self._hint_group.stop()
-                target.hide()
-
-    def _update_upload_hint_responsive(self):
-        if (
-            not hasattr(self, 'upload_hint_container')
-            or not self.upload_hint_container
-            or not hasattr(self, 'upload_hint_label')
-            or not self.upload_hint_label
-            or not hasattr(self, 'upload_hint_arrow')
-            or not self.upload_hint_arrow
-        ):
-            return
-
-        from PyQt5.QtGui import QPolygon
-        try:
-            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
-                self.hint_overlay_widget.raise_()
-            if hasattr(self, 'hint_group_container') and self.hint_group_container:
-                self.hint_group_container.raise_()
-            self.upload_hint_container.raise_()
-            self.upload_hint_label.raise_()
-            self.upload_hint_arrow.raise_()
-        except Exception:
-            pass
-        host = getattr(self, 'video_frame', None)
-        if host is None:
-            host = getattr(self, 'hint_overlay_widget', None)
-        if host is None:
-            return
-        host_w = max(1, int(host.width()))
-        host_h = max(1, int(host.height()))
-        if host_w < 120 or host_h < 80:
-            return
-        scale = max(0.95, min(1.35, (host_w / self.REF_WIDTH) * 0.98))
-        max_box_w = max(280, host_w - 12)
-        min_box_w = min(max_box_w, int(self.REF_BOX_W * scale))
-        box_h = int(self.REF_BOX_H * scale) + 100
-        font_size = max(18, int(self.REF_FONT_SIZE * scale * float(getattr(self, 'REF_FONT_BOOST', 1.30))))
-        margin_lr = max(14, int(20 * scale))
-        margin_tb = max(8, int(10 * scale))
-        target_text = self.upload_hint_label.text()
-        chosen_font = font_size
-        probe_font = QFont("Arial")
-        probe_font.setPixelSize(chosen_font)
-        probe_font.setBold(True)
-        self.upload_hint_label.setFont(probe_font)
-        self.upload_hint_label.setText(target_text)
-        self.upload_hint_label.adjustSize()
-        extra_box_w = 170
-        box_w = min(max_box_w, min_box_w + extra_box_w)
-        self.upload_hint_container.setFixedSize(box_w, box_h)
-        border_px = max(2, int(3 * scale))
-        self.upload_hint_container.setStyleSheet(
-            f"background-color: rgba(0, 0, 0, 180); border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
-        )
-        if hasattr(self, 'cropping_hint_container'):
-            self.cropping_hint_container.setStyleSheet(
-                f"background-color: rgba(0, 0, 0, 180); border: {border_px}px solid #7DD3FC; border-radius: {int(14*scale)}px;"
-            )
-        self.upload_hint_label.setStyleSheet(
-            f"color: #7DD3FC; font-family: Arial; font-size: {chosen_font}px; font-weight: 700; "
-            f"background: transparent;"
-        )
-        self.upload_hint_label.setMargin(0)
-        self.upload_hint_label.setAlignment(Qt.AlignCenter)
-        self.upload_hint_label.setWordWrap(False)
-        self.upload_hint_label.setFixedWidth(max(220, box_w - (margin_lr * 2)))
-        if hasattr(self, 'cropping_hint_label'):
-            self.cropping_hint_label.setStyleSheet(
-                f"color: #7DD3FC; font-family: Arial; font-size: {chosen_font}px; font-weight: 700; "
-                f"background: transparent;"
-            )
-            self.cropping_hint_label.setFixedWidth(max(220, box_w - (margin_lr * 2)))
-        if self.upload_hint_container.layout() is not None:
-            self.upload_hint_container.layout().setContentsMargins(margin_lr, margin_tb, margin_lr, margin_tb)
-        if hasattr(self, 'cropping_hint_container') and self.cropping_hint_container.layout() is not None:
-            self.cropping_hint_container.layout().setContentsMargins(margin_lr, margin_tb, margin_lr, margin_tb)
-            self.cropping_hint_container.setFixedSize(box_w, int(self.REF_BOX_H * scale) + 40)
-        if self.hint_group_layout.direction() != QHBoxLayout.TopToBottom:
-            self.hint_group_layout.setDirection(QHBoxLayout.TopToBottom)
-        self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        stable_top_margin = max(40, int(host_h * 0.35))
-        self.hint_group_layout.setContentsMargins(0, stable_top_margin, 0, 0)
-        gap = max(24, int(40 * scale))
-        self.hint_group_layout.setSpacing(gap)
-        arrow_boost = 1.4
-        arrow_shift_x = int(getattr(self, 'REF_ARROW_SHIFT_X', -425)) - 160
-        arrow_shift_y = int(getattr(self, 'REF_ARROW_SHIFT_Y', 50))
-        c_w = min(max(int((box_w + 40) * arrow_boost), int(host_w * 0.9)), max(450, host_w - 20))
-        c_h = min(max(int(120 * arrow_boost), int(host_h * 0.28 * arrow_boost)), int(300 * arrow_boost))
-        self.upload_hint_arrow.setFixedSize(c_w, c_h)
-        self.upload_hint_arrow.setContentsMargins(0, 0, 0, 0)
-        pix = QPixmap(c_w, c_h)
-        pix.fill(Qt.transparent)
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.HighQualityAntialiasing)
-        p.setBrush(QColor("#7DD3FC"))
-        shaft_thickness = max(4, int(10 * scale * arrow_boost))
-        start_x = max(8, min(c_w - 8, int(c_w * 0.85) + arrow_shift_x))
-        end_x = max(8, min(c_w - 8, int(c_w * 0.05) + arrow_shift_x))
-        start_y = max(8, min(c_h - 8, int(8 * arrow_boost) + arrow_shift_y))
-        end_y = max(8, min(c_h - 8, c_h - max(18, int(20 * scale * arrow_boost)) + arrow_shift_y))
-        start_pt = QPoint(start_x, start_y)
-        raw_end = QPoint(end_x, end_y)
-        tilt_deg = float(getattr(self, 'REF_ARROW_TILT_DEG', 8.0))
-        theta = math.radians(tilt_deg)
-        vx = raw_end.x() - start_pt.x()
-        vy = raw_end.y() - start_pt.y()
-        rotated_vx = (vx * math.cos(theta)) + (vy * math.sin(theta))
-        rotated_vy = (-vx * math.sin(theta)) + (vy * math.cos(theta))
-        end_pt = QPoint(
-            max(8, min(c_w - 8, start_pt.x() + int(rotated_vx))),
-            max(int(8 * arrow_boost) + 8, min(c_h - 8, start_pt.y() + int(rotated_vy))),
-        )
-        dx = end_pt.x() - start_pt.x()
-        dy = end_pt.y() - start_pt.y()
-        vec_len = max(1.0, math.hypot(dx, dy))
-        ux, uy = dx / vec_len, dy / vec_len
-        px, py = -uy, ux
-        head_len = max(24, int(44 * scale * arrow_boost))
-        head_half_w = max(8, int(head_len * 0.28))
-        shaft_half_w = max(3, int(shaft_thickness * 0.5))
-        shaft_end = QPoint(
-            end_pt.x() - int(ux * head_len),
-            end_pt.y() - int(uy * head_len),
-        )
-        shaft_poly = QPolygon([
-            QPoint(start_pt.x() + int(px * shaft_half_w), start_pt.y() + int(py * shaft_half_w)),
-            QPoint(shaft_end.x() + int(px * shaft_half_w), shaft_end.y() + int(py * shaft_half_w)),
-            QPoint(shaft_end.x() - int(px * shaft_half_w), shaft_end.y() - int(py * shaft_half_w)),
-            QPoint(start_pt.x() - int(px * shaft_half_w), start_pt.y() - int(py * shaft_half_w)),
-        ])
-        head = QPolygon([
-            end_pt,
-            QPoint(shaft_end.x() + int(px * head_half_w), shaft_end.y() + int(py * head_half_w)),
-            QPoint(shaft_end.x() - int(px * head_half_w), shaft_end.y() - int(py * head_half_w)),
-        ])
-        p.setPen(Qt.NoPen)
-        p.drawPolygon(shaft_poly)
-        p.drawPolygon(head)
-        p.end()
-        self.upload_hint_arrow.setPixmap(pix)
-        self._apply_hint_position()
-
-    def _apply_hint_position(self):
-        if not hasattr(self, 'hint_group_container'): return
-        try:
-            is_cropping_hint = self.cropping_hint_container.isVisible() if hasattr(self, 'cropping_hint_container') else False
-            host = getattr(self, 'video_viewport_container', None) or getattr(self, 'video_frame', None)
-            if host is None:
-                return
-            global_pos = host.mapToGlobal(QPoint(0, 0))
-            self.hint_overlay_widget.setGeometry(global_pos.x(), global_pos.y(), host.width(), host.height())
-            win_w, win_h = host.width(), host.height()
-            if win_w < 50 or win_h < 50:
-                return
-            if is_cropping_hint:
-                self.hint_group_container.setGeometry(0, 0, win_w, win_h)
-                if self.hint_group_layout is not None:
-                    self.hint_group_layout.setAlignment(Qt.AlignCenter)
-                    self.hint_group_layout.setContentsMargins(0, 0, 0, 0)
-            else:
-                self.hint_group_container.setGeometry(0, 0, win_w, win_h)
-                if self.hint_group_layout is not None:
-                    self.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-                    stable_top_margin = max(40, int(win_h * 0.35))
-                    self.hint_group_layout.setContentsMargins(0, stable_top_margin, 0, 0)
-            self.hint_overlay_widget.raise_()
-            self.hint_group_container.raise_()
-        except Exception:
-            pass
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        
+        # Update window title with dynamic size
+        self.setWindowTitle(f"Portrait 1080x1920 (Crop Tool) - {self.width()}x{self.height()}")
+        
         self.portrait_view.fit_to_scene()
         self._position_refine_selection_hint()
         if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
             self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
             self.hint_overlay_widget.raise_()
+        
+        # Ensure guidance overlay follows video frame resizing
+        self._update_upload_overlay_geometry()
+        
         if hasattr(self, '_update_upload_hint_responsive'):
             self._update_upload_hint_responsive()
 
@@ -1032,7 +860,27 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.portrait_scene.removeItem(item)
         self._mark_dirty(); self.on_selection_changed()
 
+    def _trigger_save_pulse(self):
+        """Creates a professional high-response 'flash' pulse across the entire window."""
+        overlay = QWidget(self)
+        overlay.setGeometry(self.rect())
+        overlay.setStyleSheet("background-color: white; border-radius: 10px;")
+        overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+        overlay.show()
+        
+        eff = QGraphicsOpacityEffect(overlay)
+        overlay.setGraphicsEffect(eff)
+        
+        anim = QPropertyAnimation(eff, b"opacity")
+        anim.setDuration(400)
+        anim.setStartValue(0.4)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.OutQuad)
+        anim.finished.connect(overlay.deleteLater)
+        anim.start()
+
     def on_done_clicked(self):
+        self._trigger_save_pulse()
         pd = QProgressDialog("Saving Configuration...", None, 0, 0, self)
         pd.setWindowTitle("Saving")
         pd.show()
@@ -1058,7 +906,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 fx, fy, fw, fh = transform_to_content_area((float(r.x()), float(r.y()), float(r.width()), float(r.height())), res_str)
                 ix, iy, iw, ih = outward_round_rect(fx, fy, fw, fh)
                 normalized_rect = [iw, ih, ix, iy]
-                scale = max(0.001, round(float(item.current_width) / max(1.0, fw), 4))
+                scale = max(0.001, round(float(item.current_width) / max(1.0, float(iw)), 4))
                 ox, oy, zv = int(scale_round(item.scenePos().x())), int(scale_round(item.scenePos().y())), int(item.zValue())
                 item_payload[tk] = {
                     "crop": normalized_rect,
@@ -1100,7 +948,15 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                     os.unlink(self._autosave_file)
                 except OSError:
                     pass
-            summary = SummaryToast(configured, unchanged, self)
+            
+            # Capture final preview snapshot for the toast
+            preview_pixmap = QPixmap(PORTRAIT_W, PORTRAIT_H)
+            preview_pixmap.fill(Qt.black)
+            painter = QPainter(preview_pixmap)
+            self.portrait_scene.render(painter)
+            painter.end()
+            
+            summary = SummaryToast(configured, unchanged, preview_pixmap, self)
             summary.show()
             self._start_exit_sequence(summary)
         else:
@@ -1124,7 +980,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         def finalize():
             for w in widgets: w.setWindowOpacity(1.0)
             if summary_dialog: summary_dialog.close()
-            self.close(); self._deferred_launch_main_app()
+            self.hide(); self._deferred_launch_main_app()
         seq.finished.connect(finalize); seq.start()
 
     def set_background_image(self, pix):
@@ -1281,11 +1137,20 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.register_undo_action(desc, lambda d=data: self._apply_z_order(d, False), lambda d=data: self._apply_z_order(d, True))
         self._apply_z_order(data, True)
 
+    def _update_upload_overlay_geometry(self):
+        """Sync overlay geometry with the main app window in global space."""
+        if hasattr(self, 'upload_overlay') and self.upload_overlay:
+            # Use geometry() to get global screen coordinates, ensuring overlay matches app position
+            self.upload_overlay.setGeometry(self.geometry())
+            self.upload_overlay.raise_()
+
     def raise_selected_item(self):
-        self._change_z_order(1)
+        """Bring item closer to the front (Layer 1) by decreasing Z."""
+        self._change_z_order(-1)
 
     def lower_selected_item(self):
-        self._change_z_order(-1)
+        """Send item further to the back (Layer 6) by increasing Z."""
+        self._change_z_order(1)
 
     def _apply_z_order(self, dl, use_new):
         """[FIX Duplication] Consolidated Z-order application logic."""
@@ -1314,6 +1179,10 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self._update_upload_hint_responsive()
         if hasattr(self, 'hint_overlay_widget'):
             self.hint_overlay_widget.show()
+        
+        # Position guidance overlay after window is shown
+        self._update_upload_overlay_geometry()
+        
         QTimer.singleShot(200, self._check_restore)
         if not self._autosave_timer.isActive():
             self._autosave_timer.start()
@@ -1363,8 +1232,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 self._autosave_timer.stop()
             if hasattr(self, 'media_processor') and self.media_processor:
                 try:
-                    self.media_processor.stop()
-                    self.media_processor.set_media_to_null()
+                    self.media_processor.shutdown()
                 except Exception as media_cleanup_err:
                     self.logger.debug(f"Media cleanup during close skipped: {media_cleanup_err}")
             if hasattr(self, 'resource_manager') and self.resource_manager:
@@ -1411,7 +1279,9 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         except Exception as e:
             self.logger.critical(f"Failed to launch main app: {e}")
             pass
-        QApplication.instance().quit()
+        # Add a tiny delay to ensure the OS has registered the new process as detached
+        # This helps prevent the current process from being marked as 'waiting' for children
+        QTimer.singleShot(100, QApplication.instance().quit)
 
     def _get_persistence_extras(self): return {}
 
@@ -1422,7 +1292,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def _refresh_done_button(self):
         has_items = any(isinstance(i, ResizablePixmapItem) for i in self.portrait_scene.items())
-        self.done_button.setEnabled(has_items); self.done_button.setText("FINISH & SAVE *" if self._dirty else "FINISH & SAVE")
+        self.done_button.setEnabled(has_items); self.done_button.setText("FINISH && SAVE *" if self._dirty else "FINISH && SAVE")
 
     def _confirm_discard_changes(self):
         if not self._dirty:
@@ -1484,8 +1354,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
 def main():
     try:
-        from system.utils import ProcessManager
-        ProcessManager.start_parent_watchdog()
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
         enhanced_logger_instance = setup_logger()

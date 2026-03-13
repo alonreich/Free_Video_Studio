@@ -9,7 +9,7 @@ import atexit
 import threading
 import shutil
 import json
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG
 try:
     import mpv
 except Exception:
@@ -20,7 +20,7 @@ class MediaProcessor(QObject):
     info_retrieved = pyqtSignal(str)
     fallback_resolution_requested = pyqtSignal()
 
-    def __init__(self, bin_dir):
+    def __init__(self, bin_dir, wid=None):
         super().__init__()
         self.bin_dir = bin_dir
         self._ffprobe_procs = []
@@ -47,6 +47,8 @@ class MediaProcessor(QObject):
                     'demuxer_max_bytes': '500M',
                     'demuxer_max_back_bytes': '100M',
                 }
+                if wid:
+                    mpv_kwargs['wid'] = int(wid)
                 if sys.platform == 'win32':
                     mpv_kwargs['gpu-context'] = 'd3d11'
                     os.environ["LC_NUMERIC"] = "C"
@@ -55,9 +57,6 @@ class MediaProcessor(QObject):
                 self.player = MPVSafetyManager.create_safe_mpv(**mpv_kwargs)
                 logger.info("MediaProcessor initialized successfully with MPV.")
             except Exception as e:
-                fallback_args = [
-                '--vout=dummy'
-                ]
                 logger.error(f"Failed to initialize MPV in MediaProcessor: {e}")
                 self.player = None
         else:
@@ -85,6 +84,10 @@ class MediaProcessor(QObject):
         with self._state_lock:
             self._input_file_path = value
 
+    def info_retrieved_emit_wrapper(self, resolution):
+        """Thread-safe signal emission wrapper."""
+        self.info_retrieved.emit(resolution)
+
     def _get_binary_path(self, name):
         """Returns the path to a binary, favoring local binaries folder then system PATH."""
         ext = ".exe" if sys.platform == "win32" else ""
@@ -105,7 +108,9 @@ class MediaProcessor(QObject):
             self._kill_ffprobe_procs()
             self.input_file_path = file_path
             if video_frame_winId:
-                self.player.wid = int(video_frame_winId)
+                new_wid = int(video_frame_winId)
+                if getattr(self.player, 'wid', None) != new_wid:
+                    self.player.wid = new_wid
             self.player.command("loadfile", file_path, "replace")
             self.player.pause = False
             thread = threading.Thread(target=self.get_video_info, args=(file_path,), daemon=True)
@@ -183,6 +188,19 @@ class MediaProcessor(QObject):
         except Exception as e:
             logger.error(f"Failed to seek: {e}")
 
+    def shutdown(self):
+        """[FIX #12] Formal shutdown of media engine and all child processes."""
+        self._kill_ffprobe_procs()
+        if self.player:
+            logger.info("Shutting down media player core...")
+            try:
+                from system.utils import MPVSafetyManager
+                MPVSafetyManager.safe_mpv_shutdown(self.player, timeout=1.0)
+            except Exception as e:
+                logger.error(f"Error during MPV safe shutdown: {e}")
+            self.player = None
+            self.media_player = None
+
     def stop(self):
         self._kill_ffprobe_procs()
         if self.player:
@@ -193,7 +211,12 @@ class MediaProcessor(QObject):
         logger.info("Unloading media.")
         self._kill_ffprobe_procs()
         if self.player:
-            self.player.stop()
+            try:
+                # Force-clear the video surface by loading a null source
+                # and then stopping, which flushes the GPU buffer to black.
+                self.player.loadfile("null://", "replace")
+                self.player.command("stop")
+            except: pass
         self.original_resolution = None
         self.input_file_path = None
 
@@ -203,7 +226,7 @@ class MediaProcessor(QObject):
             return None
         self._kill_ffprobe_procs()
         ffprobe_path = self._get_binary_path('ffprobe')
-        creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        creation_flags = 0x08000000 if sys.platform == "win32" else 0
         cmd_json = [
             ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
             '-show_entries', 'stream=width,height', '-of', 'json',
@@ -225,19 +248,17 @@ class MediaProcessor(QObject):
             except subprocess.TimeoutExpired:
                 proc_json.kill()
                 out, _ = proc_json.communicate()
+            res_to_emit = None
             if proc_json.returncode == 0 and out:
                 try:
                     data = json.loads(out)
                     w = data['streams'][0]['width']
                     h = data['streams'][0]['height']
-                    self.original_resolution = f"{w}x{h}"
-                    logger.info(f"ffprobe (JSON) resolution: {self.original_resolution}")
-                    self.info_retrieved.emit(self.original_resolution)
-                    self._kill_ffprobe_procs()
-                    return self.original_resolution
+                    res_to_emit = f"{w}x{h}"
+                    logger.info(f"ffprobe (JSON) resolution: {res_to_emit}")
                 except Exception as e:
                     logger.warning(f"Failed to parse ffprobe JSON: {e}")
-            if not self.original_resolution:
+            if not res_to_emit:
                 cmd_csv = [
                     ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
                     '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x',
@@ -251,12 +272,15 @@ class MediaProcessor(QObject):
                     timeout=3.0
                 )
                 if proc_csv.returncode == 0:
-                    res = proc_csv.stdout.strip()
-                    if res:
-                        self.original_resolution = res
-                        logger.info(f"ffprobe (CSV) fallback resolution: {self.original_resolution}")
-                        self.info_retrieved.emit(self.original_resolution)
-                        return self.original_resolution
+                    res_to_emit = proc_csv.stdout.strip()
+                    if res_to_emit:
+                        logger.info(f"ffprobe (CSV) fallback resolution: {res_to_emit}")
+            if res_to_emit:
+                self.original_resolution = res_to_emit
+                QMetaObject.invokeMethod(self, "info_retrieved_emit_wrapper", 
+                                       Qt.QueuedConnection, Q_ARG(str, res_to_emit))
+                self._kill_ffprobe_procs()
+                return res_to_emit
         except Exception as e:
             logger.error(f"ffprobe error: {e}")
             self._kill_ffprobe_procs()
@@ -265,24 +289,27 @@ class MediaProcessor(QObject):
 
     def _fetch_mpv_resolution(self):
         """[FIX #2] Explicit resolution detection with no silent 1080p fallback."""
-        if not self.original_resolution and self.player:
+        if self.player:
             logger.info("Attempting to fetch resolution fallback from MPV.")
-            w = getattr(self.player, 'width', 0)
-            h = getattr(self.player, 'height', 0)
-            if w and h and w > 0 and h > 0:
-                self.original_resolution = f"{w}x{h}"
-                logger.info(f"MPV fallback got resolution: {self.original_resolution}")
-                self.info_retrieved.emit(self.original_resolution)
-                return
+            try:
+                w = getattr(self.player, 'width', 0)
+                h = getattr(self.player, 'height', 0)
+                if w and h and w > 0 and h > 0:
+                    res = f"{w}x{h}"
+                    self.original_resolution = res
+                    logger.info(f"MPV fallback got resolution: {res}")
+                    self.info_retrieved.emit(res)
+                    return
+            except Exception as e:
+                logger.error(f"Error reading MPV properties: {e}")
         if not self.original_resolution:
             logger.warning("All automated resolution detection failed.")
-            self.original_resolution = None
             self.info_retrieved.emit("UNKNOWN")
 
     def take_snapshot(self, snapshot_path, preferred_time=None):
         """[FIX #8, #11] Reliable snapshot with atomic overwrite."""
         if self.is_playing():
-            self.media_player.pause()
+            self.player.pause = True
         if not self.media or not self.input_file_path:
             return False, "No media loaded."
         temp_path = None

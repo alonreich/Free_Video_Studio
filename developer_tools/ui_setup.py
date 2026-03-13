@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 )
 
 from PyQt5.QtCore import Qt
-from crop_widgets import DrawWidget, SeekSlider
+from crop_widgets import DrawWidget, SeekSlider, UploadOverlay
 from config import HUD_ELEMENT_MAPPINGS, UNIFIED_STYLESHEET, UI_LAYOUT, UI_COLORS
 from portrait_view import PortraitView
 
@@ -79,59 +79,13 @@ class Ui_CropApp:
         video_ratio_container = AspectRatioWidget(CropAppWindow.video_surface, 16/9)
         _center_row.addWidget(video_ratio_container)
         CropAppWindow.video_stack.addWidget(CropAppWindow.video_viewport_container)
-        CropAppWindow.hint_overlay_widget = QWidget(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus | Qt.WindowStaysOnTopHint)
-        CropAppWindow.hint_overlay_widget.setAttribute(Qt.WA_TranslucentBackground, True)
-        CropAppWindow.hint_overlay_widget.setStyleSheet("background: transparent; border: none;")
-        CropAppWindow.hint_overlay_widget.setGeometry(CropAppWindow.video_frame.geometry())
-        CropAppWindow.hint_group_container = QWidget(CropAppWindow.hint_overlay_widget)
-        CropAppWindow.hint_group_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.hint_group_layout = QVBoxLayout(CropAppWindow.hint_group_container)
-        CropAppWindow.hint_group_layout.setContentsMargins(0, 0, 0, 0)
-        CropAppWindow.hint_group_layout.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-        CropAppWindow.upload_hint_container = QFrame()
-        CropAppWindow.upload_hint_container.setObjectName("uploadHintContainer")
-        CropAppWindow.upload_hint_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.upload_hint_container.setFixedSize(620, 115)
-        CropAppWindow.upload_hint_container.setStyleSheet("""
-            #uploadHintContainer {
-                background-color: #000000;
-                border: 3px solid #7DD3FC;
-                border-radius: 14px;
-            }
-        """)
-        hint_inner_layout = QVBoxLayout(CropAppWindow.upload_hint_container)
-        CropAppWindow.upload_hint_label = QLabel("Please Upload Video to Begin!")
-        CropAppWindow.upload_hint_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.upload_hint_label.setAlignment(Qt.AlignCenter)
-        CropAppWindow.upload_hint_label.setStyleSheet("""
-            color: #7DD3FC;
-            font-family: Arial;
-            font-size: 28px;
-            font-weight: bold;
-            background: transparent;
-            border: none;
-        """)
-        hint_inner_layout.addWidget(CropAppWindow.upload_hint_label)
-        CropAppWindow.upload_hint_arrow = QLabel()
-        CropAppWindow.upload_hint_arrow.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.hint_group_layout.addWidget(CropAppWindow.upload_hint_container)
-        CropAppWindow.hint_group_layout.addWidget(CropAppWindow.upload_hint_arrow)
-        CropAppWindow.cropping_hint_container = QFrame()
-        CropAppWindow.cropping_hint_container.setObjectName("croppingHintContainer")
-        CropAppWindow.cropping_hint_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        CropAppWindow.cropping_hint_container.setVisible(False)
-        cropping_hint_layout = QVBoxLayout(CropAppWindow.cropping_hint_container)
-        CropAppWindow.cropping_hint_label = QLabel('Hit "START CROPPING" button to begin!')
-        CropAppWindow.cropping_hint_label.setObjectName("croppingHintLabel")
-        CropAppWindow.cropping_hint_label.setAlignment(Qt.AlignCenter)
-        cropping_hint_layout.addWidget(CropAppWindow.cropping_hint_label)
-        CropAppWindow.hint_group_layout.addWidget(CropAppWindow.cropping_hint_container)
         CropAppWindow.view_stack.addWidget(CropAppWindow.video_frame)
         CropAppWindow.mpv_error_label = QLabel("⚠️ MPV ENGINE NOT FOUND\nPlayback disabled. Please ensure 64-bit libmpv-2.dll is in 'binaries' folder.")
         CropAppWindow.mpv_error_label.setStyleSheet("color: #ff4d4d; font-weight: bold; font-size: 16px; background: rgba(0,0,0,180); padding: 20px; border-radius: 10px;")
         CropAppWindow.mpv_error_label.setAlignment(Qt.AlignCenter)
         CropAppWindow.mpv_error_label.setVisible(False)
         CropAppWindow.video_stack.addWidget(CropAppWindow.mpv_error_label)
+        
         CropAppWindow.shortcuts_label = QLabel("Hotkeys: [Del] Delete  |  [Arrows] Nudge/Seek  |  [Space] Play/Pause  |  [Ctrl+Z] Undo")
         CropAppWindow.shortcuts_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 10px; padding: 2px;")
         CropAppWindow.shortcuts_label.setAlignment(Qt.AlignRight)
@@ -184,6 +138,9 @@ class Ui_CropApp:
         controls_layout.setSpacing(30)
         CropAppWindow.open_button = QPushButton("UPLOAD VIDEO")
         CropAppWindow.open_button.setToolTip("Upload Video (O): Select a Fortnite gameplay video file to analyze.")
+        
+        CropAppWindow.upload_overlay = UploadOverlay(CropAppWindow.open_button, CropAppWindow.video_frame, CropAppWindow)
+        CropAppWindow.upload_overlay.show()
         CropAppWindow.open_image_button = QPushButton("📷 UPLOAD IMAGE")
         CropAppWindow.open_image_button.setToolTip("Upload Image (I): Load a static screenshot if video playback is unavailable.")
         CropAppWindow.open_image_button.setVisible(False) 
@@ -254,8 +211,8 @@ class Ui_CropApp:
         CropAppWindow.show_placeholders_checkbox.setCursor(Qt.PointingHandCursor)
         CropAppWindow.show_placeholders_checkbox.setChecked(False)
         CropAppWindow.show_placeholders_checkbox.setToolTip("Show Existing (E): Display previously saved HUD locations on screen.")
-        CropAppWindow.done_button = QPushButton("FINISH & SAVE")
-        CropAppWindow.done_button.setToolTip("Finish & Save (F or Ctrl+Enter): Permanently save and update the config file.")
+        CropAppWindow.done_button = QPushButton("FINISH && SAVE")
+        CropAppWindow.done_button.setToolTip("Finish && Save (F or Ctrl+Enter): Permanently save and update the config file.")
         portrait_header_layout.addWidget(CropAppWindow.show_placeholders_checkbox)
         portrait_header_layout.addWidget(CropAppWindow.transparency_slider)
         portrait_header_layout.addStretch()

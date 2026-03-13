@@ -154,7 +154,7 @@ class FastFileLoaderWorker(QThread):
             if f in self.existing_files:
                 duplicates += 1
                 continue
-            f_hash = self._calculate_partial_hash(f)
+            f_hash = self._calculate_partial_hash(f) or ""
             if f_hash and f_hash in self.existing_hashes:
                 duplicates += 1
                 continue
@@ -168,11 +168,11 @@ class FastFileLoaderWorker(QThread):
                        "format=duration:stream=width,height,codec_name,sample_rate,channels", 
                        "-of", "json", f]
                 flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                r = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, timeout=5)
-                if r.returncode == 0:
+                r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=flags, timeout=5)
+                if r.returncode == 0 and r.stdout.strip():
                     probe_data = json.loads(r.stdout)
-            except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError) as e:
-                pass
+            except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError):
+                probe_data = {}
             self.file_loaded.emit(f, sz, probe_data, f_hash)
             self.existing_files.add(f)
             if f_hash:

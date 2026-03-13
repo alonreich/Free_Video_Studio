@@ -119,6 +119,10 @@ class DummyMediaPlayer:
         self.set_rate_calls: list[float] = []
         self.paused = 0
 
+    def command(self, *args, **kwargs):
+        if args and args[0] == "seek":
+            self.seek(args[1])
+
     def is_playing(self) -> bool:
         return self._playing
 
@@ -740,6 +744,7 @@ def install_qt_mpv_stubs() -> None:
     pyqt5.QtGui = qtgui
     qtwidgets.QLabel = QLabel
     mpv_mod = types.ModuleType("mpv")
+    mpv_mod.ShutdownError = Exception
 
     class MockMPV:
         def __init__(self, *args, **kwargs):

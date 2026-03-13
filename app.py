@@ -6,17 +6,11 @@ sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
-PLUGINS   = os.path.join(BIN_DIR, 'plugins')
-os.environ["MPV_HOME"] = BIN_DIR
-os.environ["MPV_DYLIB_PATH"] = os.path.join(BIN_DIR, "libmpv-2.dll")
-if sys.platform == 'win32' and hasattr(os, 'add_dll_directory'):
-    try:
-        os.add_dll_directory(BIN_DIR)
-    except Exception:
-        pass
-os.environ['PATH'] = BIN_DIR + os.pathsep + PLUGINS + os.pathsep + os.environ.get('PATH','')
+
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+from system.utils import ConsoleManager, ProcessManager, MPVSafetyManager, DependencyDoctor
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
@@ -379,7 +373,7 @@ if __name__ == "__main__":
         import json
         conf_dir = os.path.join(BASE_DIR, 'processing')
         conf_path = os.path.join(conf_dir, 'crops_coordinations.conf')
-        default_conf_data = {"crops_1080p": {"loot": [400, 400, 680, 1220], "stats": [350, 350, 730, 0], "normal_hp": [450, 150, 30, 1470], "boss_hp": [450, 150, 30, 1470], "team": [300, 400, 30, 100]}, "scales": {"loot": 1.0, "stats": 1.0, "team": 1.0, "normal_hp": 1.0, "boss_hp": 1.0}, "overlays": {"loot": {"x": 680, "y": 1370}, "stats": {"x": 730, "y": 150}, "team": {"x": 30, "y": 250}, "normal_hp": {"x": 30, "y": 1620}, "boss_hp": {"x": 30, "y": 1620}}}
+        default_conf_data = {"crops_1080p": {"loot": [400, 400, 680, 1220], "stats": [350, 350, 730, 0], "normal_hp": [450, 150, 30, 1470], "boss_hp": [450, 150, 30, 1470], "team": [300, 400, 30, 100], "spectating": [0, 0, 0, 0]}, "scales": {"loot": 1.0, "stats": 1.0, "team": 1.0, "normal_hp": 1.0, "boss_hp": 1.0, "spectating": 1.0}, "overlays": {"loot": {"x": 680, "y": 1370}, "stats": {"x": 730, "y": 150}, "team": {"x": 30, "y": 250}, "normal_hp": {"x": 30, "y": 1620}, "boss_hp": {"x": 30, "y": 1620}, "spectating": {"x": 30, "y": 1300}}, "z_orders": {"loot": 10, "normal_hp": 20, "boss_hp": 20, "stats": 30, "team": 40, "spectating": 100}}
         def write_defaults():
             try:
                 os.makedirs(conf_dir, exist_ok=True)
@@ -394,8 +388,12 @@ if __name__ == "__main__":
             with open(conf_path, 'r', encoding='utf-8') as f: data = json.load(f)
             is_valid = True
             if not isinstance(data, dict): is_valid = False
-            elif "crops_1080p" not in data or not isinstance(data["crops_1080p"], dict): is_valid = False
-            elif "loot" not in data["crops_1080p"]: is_valid = False
+            else:
+                required = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
+                for r in required:
+                    if r not in data.get("crops_1080p", {}) or r not in data.get("overlays", {}):
+                        is_valid = False
+                        break
             if not is_valid:
                 logger.warning(f"Config validation failed at {conf_path}, overwriting with internal defaults.")
                 write_defaults()

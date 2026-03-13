@@ -53,6 +53,43 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 #    Original -> 1280x1920 internal compose -> 1080x1620 content -> 1080x1920 final frame.
 
 # ==============================================================================
+# APP INTEGRATION & HANDOFF (MAIN APP <-> CROP TOOL)
+# ==============================================================================
+# 1. SHARED SOURCE OF TRUTH:
+#    - Both apps read '.\processing\crops_coordinations.conf'.
+#    - Crop Tool is the WRITER; Main App (and Rendering Engine) is the READER.
+# 2. STATE TRANSFER:
+#    - 'system.state_transfer.StateTransfer' passes session data (video path, resolution).
+#    - This ensures the user doesn't have to re-select the video when switching apps.
+# 3. LIFECYCLE HANDOFF (SUBPROCESS):
+#    - Main App -> Crop Tool: Launched via subprocess when 'START CROPPING' is clicked.
+#    - Crop Tool -> Main App: Re-launches 'app.py' and exits itself upon 'SAVE' or 'RETURN'.
+# 4. SHARED BACKEND LOGIC:
+#    - Both apps use 'processing\config_data.py' for coordinate validation and default values.
+#    - Scaling math (1280p internal vs 1080p UI) is identical in both codebases.
+# ==============================================================================
+
+# ==============================================================================
+# HUD ELEMENT ARCHITECTURE FLOW (AI AGENT CONTEXT)
+# ==============================================================================
+# 1. DETECTION & TAGGING:
+#    - Crop Tool captures snapshot; elements defined via manual draw or MAGIC WAND.
+#    - Roles (6): Loot, Stats, HP, Boss HP, Team, Spectating Eye.
+# 2. COORDINATE MAPPING (SCALE-OUT TRICK):
+#    - UI Space: 1080x1920 canvas; HUDs restricted to 1080x1620 "Content Area" (y=150..1770).
+#    - Backend Space: Coordinates scaled to 1280x1920 fidelity canvas for processing.
+# 3. VALIDATION & SAVING:
+#    - Deep Check: Verifies crops, scales, overlays, and z_orders sections before saving.
+#    - Surgical Save: Only modified elements updated; atomic replace + 5-file rotation backup.
+# 4. APPLICATION STARTUP (SANITY CHECK):
+#    - App.py verifies valid JSON and presence of "crops_1080p" + "loot" element.
+#    - Self-Heal: Corrupted/missing files are instantly replaced with hardcoded defaults.
+# 5. FFmpeg RENDERING PIPELINE:
+#    - Backend applies +1px drift protection (Left for Map, Right for Loot).
+#    - Complex filtergraph crops source elements and overlays them onto 9:16 vertical frame.
+# ==============================================================================
+
+# ==============================================================================
 # PROJECT ARCHITECTURE & FILE ROLE STRUCTURE
 # ==============================================================================
 .

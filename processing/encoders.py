@@ -5,14 +5,11 @@ class EncoderManager:
     ENCODER_PREFERENCE = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
 
     def _fps_to_float(self, fps_expr: str, default: float = 60.0) -> float:
+        from fractions import Fraction
         try:
-            if fps_expr and '/' in str(fps_expr):
-                n, d = str(fps_expr).split('/', 1)
-                d_f = float(d)
-                if d_f <= 0.0:
-                    return float(default)
-                return float(n) / d_f
-            return float(fps_expr)
+            if not fps_expr:
+                return float(default)
+            return float(Fraction(str(fps_expr)))
         except Exception:
             return float(default)
 
@@ -102,7 +99,7 @@ class EncoderManager:
                 nv_preset, multipass, lookahead = 'p4', 'disabled', '30'
                 aq_flags = ['-spatial-aq', '1', '-temporal-aq', '1']
             else: 
-                nv_preset, multipass, lookahead = 'p6', 'fullres', '60'
+                nv_preset, multipass, lookahead = 'p6', 'fullres', '40'
                 aq_flags = ['-spatial-aq', '1', '-temporal-aq', '1']
             h264_level = '4.2'
             vcodec.extend([
@@ -122,11 +119,12 @@ class EncoderManager:
                 '-level:v', h264_level
             ])
             if video_bitrate_kbps:
-                kbps = int(video_bitrate_kbps)
+                kbps = min(40000, int(video_bitrate_kbps))
+                max_rate = min(50000, int(kbps * 1.5))
                 vcodec.extend([
                     '-b:v', f'{kbps}k',
-                    '-maxrate', f'{int(kbps * 1.5)}k',
-                    '-bufsize', f'{int(kbps * 3.0)}k'
+                    '-maxrate', f'{max_rate}k',
+                    '-bufsize', f'{int(kbps * 2.0)}k'
                 ])
                 rc_label = f"NVENC {nv_preset}/{multipass} (VBR)"
             else:
@@ -185,7 +183,7 @@ class EncoderManager:
                 ])
                 return vcodec, f"CPU libx264 ({cpu_preset})"
         else:
-            vcodec.extend(['-pix_fmt', 'nv12'])
+            vcodec.extend(['-pix_fmt', 'yuv420p'])
             rc_label = f"{encoder_name} (Generic)"
         return vcodec, rc_label
 

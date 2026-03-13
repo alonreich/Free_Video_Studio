@@ -15,6 +15,15 @@ from .encoders import EncoderManager
 from .media_utils import MediaProber, calculate_video_bitrate
 from .processing_utils import ProgressScaler, generate_text_overlay_png
 from .config_data import VideoConfig
+try:
+    from developer_tools.coordinate_math import inverse_transform_from_content_area_int
+except ImportError:
+    import sys
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if root_dir not in sys.path:
+        sys.path.append(root_dir)
+
+    from developer_tools.coordinate_math import inverse_transform_from_content_area_int
 
 class ProcessThread(QThread):
     progress_update_signal = pyqtSignal(int)
@@ -186,125 +195,110 @@ class ProcessThread(QThread):
                 ffmpeg_path = 'ffmpeg'
 
             def run_ffmpeg(use_cuda):
-                vcodec, rc_label = self.encoder_mgr.get_codec_flags(
-                    'h264_nvenc' if use_cuda and self.hardware_strategy == 'NVIDIA' else 
-                    ('h264_amf' if use_cuda and self.hardware_strategy == 'AMD' else 
-                     ('h264_qsv' if use_cuda and self.hardware_strategy == 'INTEL' else 'libx264')), 
-                    video_bitrate_kbps, self.duration_corrected_sec, target_fps_expr,
-                    quality_level=self.quality_level
-                )
-                attempt_core_filters = []
-                v_label = "[0:v]"
-                a_label = "[0:a]"
-                working_duration_sec = self.duration_corrected_sec
-                cfr_filter = f"fps={target_fps_expr}:round=near"
-                txt_input_label = None
-                if text_png_path and os.path.exists(text_png_path):
-                    txt_input_label = f"[{music_start_index + len(self.music_tracks)}:v]"
-                if self.speed_segments:
-                    g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
-                        self.input_path, 
-                        (self.end_time_ms - self.start_time_ms),
-                        self.speed_segments,
-                        self.speed_factor,
-                        source_cut_start_ms=self.start_time_ms,
-                        input_v_label=v_label,
-                        input_a_label=a_label,
-                        target_fps=target_fps_expr
+                current_encoder = self.encoder_mgr.get_initial_encoder() if use_cuda else 'libx264'
+                while True:
+                    vcodec, rc_label = self.encoder_mgr.get_codec_flags(
+                        current_encoder, 
+                        video_bitrate_kbps, self.duration_corrected_sec, target_fps_expr,
+                        quality_level=self.quality_level
                     )
-                    attempt_core_filters.append(g_str)
-                    v_stabilized_pad = g_v
-                    a_prepared_pad = g_a
-                    working_duration_sec = g_dur
-                else:
-                    v_sync = f"{v_label}{cfr_filter},setpts=(PTS-STARTPTS)/{self.speed_factor}[v_stabilized]"
-                    v_stabilized_pad = "[v_stabilized]"
-                    a_prepared_pad = "[a_prepared_base]"
-                    audio_speed_filters = []
-                    tmp_s = self.speed_factor
-                    while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
-                    while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
-                    audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-                    a_sync = f"{a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1[a_prepared_base]"
-                    attempt_core_filters.append(v_sync)
-                    attempt_core_filters.append(a_sync)
-                if self.is_mobile_format:
-                    coords = self.config.get_mobile_coordinates(self.logger)
-                    v_mobile_chain, v_mobile_out = self.filter_builder.build_mobile_filter_chain(
-                        v_stabilized_pad, coords, self.is_boss_hp, self.show_teammates_overlay, 
-                        txt_input_label=txt_input_label,
-                        use_cuda=(use_cuda and self.hardware_strategy == 'NVIDIA')
+                    attempt_core_filters = []
+                    v_label = "[0:v]"
+                    a_label = "[0:a]"
+                    working_duration_sec = self.duration_corrected_sec
+                    cfr_filter = f"fps={target_fps_expr}:round=near"
+                    txt_input_label = None
+                    if text_png_path and os.path.exists(text_png_path):
+                        txt_input_label = f"[{music_start_index + len(self.music_tracks)}:v]"
+                    if self.speed_segments:
+                        g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
+                            self.input_path, 
+                            (self.end_time_ms - self.start_time_ms),
+                            self.speed_segments,
+                            self.speed_factor,
+                            source_cut_start_ms=self.start_time_ms,
+                            input_v_label=v_label,
+                            input_a_label=a_label,
+                            target_fps=target_fps_expr
+                        )
+                        attempt_core_filters.append(g_str)
+                        v_stabilized_pad = g_v
+                        a_prepared_pad = g_a
+                        working_duration_sec = g_dur
+                    else:
+                        v_sync = f"{v_label}{cfr_filter},setpts=(PTS-STARTPTS)/{self.speed_factor}[v_stabilized]"
+                        v_stabilized_pad = "[v_stabilized]"
+                        a_prepared_pad = "[a_prepared_base]"
+                        audio_speed_filters = []
+                        tmp_s = self.speed_factor
+                        while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
+                        while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
+                        audio_speed_filters.append(f"atempo={tmp_s:.4f}")
+                        a_sync = f"{a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1[a_prepared_base]"
+                        attempt_core_filters.append(v_sync)
+                        attempt_core_filters.append(a_sync)
+                    if self.is_mobile_format:
+                        coords = self.config.get_mobile_coordinates(self.logger)
+                        v_mobile_chain, v_mobile_out = self.filter_builder.build_mobile_filter_chain(
+                            v_stabilized_pad, coords, self.is_boss_hp, self.show_teammates_overlay, 
+                            txt_input_label=txt_input_label,
+                            use_cuda=(use_cuda and self.hardware_strategy == 'NVIDIA'),
+                            original_resolution=self.original_resolution
+                        )
+                        attempt_core_filters.append(v_mobile_chain)
+                        v_final_pad = v_mobile_out
+                    else:
+                        v_final_pad = v_stabilized_pad
+                    for part in audio_chains:
+                        if part.startswith("[0:a]"):
+                            part = part.replace("[0:a]", a_prepared_pad).replace("anull,", "")
+                        attempt_core_filters.append(part)
+                    full_filter_str = ";".join(attempt_core_filters)
+                    filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
+                    with open(filter_script_path, 'w', encoding='utf-8') as f:
+                        f.write(full_filter_str)
+                    ffmpeg_inputs = ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
+                    ffmpeg_inputs += ['-i', self.input_path]
+                    for track_path, _, _ in self.music_tracks:
+                        ffmpeg_inputs += ['-i', track_path]
+                    if txt_input_label:
+                        ffmpeg_inputs += ['-i', text_png_path]
+                    ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + [
+                        '-filter_complex_script', filter_script_path,
+                        '-map', v_final_pad, '-map', final_a_label,
+                        '-fps_mode', 'cfr',
+                        '-c:v', vcodec[1]] + vcodec[2:] + [
+                        '-c:a', 'aac', '-b:a', f"{audio_kbps}k",
+                        '-t', f"{working_duration_sec:.3f}",
+                        core_path
+                    ]
+                    self.logger.info(f"FFMPEG CMD (Encoder: {current_encoder}): {' '.join(ffmpeg_cmd)}")
+                    self.current_process = create_subprocess(ffmpeg_cmd)
+                    error_lines = []
+
+                    def on_err(line): error_lines.append(line)
+                    monitor_ffmpeg_progress(
+                        self.current_process,
+                        working_duration_sec,
+                        scaler_core,
+                        self._monitor_disk_space,
+                        self.logger,
+                        on_error_line=on_err
                     )
-                    crops_data = coords.get("crops_1080p", {})
-                    hp_key = "boss_hp" if self.is_boss_hp else "normal_hp"
-                    mapping = {
-                        "hp": hp_key, "loot": "loot", "stats": "stats", "spec": "spectating", "team": "team"
-                    }
-
-                    def local_inverse_transform(rect, orig_res):
-                        x, y, w, h = rect
-                        scale_factor = 1280.0 / 1080.0
-                        cx, cy = int(x * scale_factor), int(y * scale_factor)
-                        cw, ch = int(w * scale_factor), int(h * scale_factor)
-                        try:
-                            orig_w, orig_h = map(int, orig_res.lower().split('x'))
-                            if orig_w == 2560 and orig_h == 1440:
-                                sf2 = 1440.0 / 1080.0
-                                cx, cy = int(cx * sf2), int(cy * sf2)
-                                cw, ch = int(cw * sf2), int(ch * sf2)
-                        except: pass
-                        return (cx, cy, cw, ch)
-                    for placeholder_key, conf_key in mapping.items():
-                        rect_1080 = crops_data.get(conf_key)
-                        if rect_1080 and len(rect_1080) == 4 and rect_1080[0] >= 1:
-                            w_ui, h_ui, x_ui, y_ui = rect_1080
-                            transformed = local_inverse_transform((x_ui, y_ui, w_ui, h_ui), self.original_resolution)
-                            crop_str = f"crop={transformed[2]}:{transformed[3]}:{transformed[0]}:{transformed[1]}"
-                            v_mobile_chain = v_mobile_chain.replace(f"REPLACE_ME_CROP_{placeholder_key}", crop_str)
-                    attempt_core_filters.append(v_mobile_chain)
-                    v_final_pad = v_mobile_out
-                else:
-                    v_final_pad = v_stabilized_pad
-                for part in audio_chains:
-                    if part.startswith("[0:a]"):
-                        part = part.replace("[0:a]", a_prepared_pad).replace("anull,", "")
-                    attempt_core_filters.append(part)
-                full_filter_str = ";".join(attempt_core_filters)
-                filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
-                with open(filter_script_path, 'w', encoding='utf-8') as f:
-                    f.write(full_filter_str)
-                ffmpeg_inputs = ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
-                ffmpeg_inputs += ['-i', self.input_path]
-                for track_path, _, _ in self.music_tracks:
-                    ffmpeg_inputs += ['-i', track_path]
-                if txt_input_label:
-                    ffmpeg_inputs += ['-i', text_png_path]
-                ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + [
-                    '-filter_complex_script', filter_script_path,
-                    '-map', v_final_pad, '-map', final_a_label,
-                    '-fps_mode', 'cfr',
-                    '-c:v', vcodec[1]] + vcodec[2:] + [
-                    '-c:a', 'aac', '-b:a', f"{audio_kbps}k",
-                    '-t', f"{working_duration_sec:.3f}",
-                    core_path
-                ]
-                self.logger.info(f"FFMPEG CMD: {' '.join(ffmpeg_cmd)}")
-                self.current_process = create_subprocess(ffmpeg_cmd)
-                error_lines = []
-
-                def on_err(line): error_lines.append(line)
-                monitor_ffmpeg_progress(
-                    self.current_process,
-                    working_duration_sec,
-                    scaler_core,
-                    self._monitor_disk_space,
-                    self.logger,
-                    on_error_line=on_err
-                )
-                success = (self.current_process.wait() == 0)
-                if not success and error_lines:
-                    self.logger.error(f"FFmpeg failed with errors: {' | '.join(error_lines[-5:])}")
-                return success
+                    exit_code = self.current_process.wait()
+                    if exit_code == 0:
+                        return True
+                    if use_cuda and not self.is_canceled:
+                        fallbacks = self.encoder_mgr.get_fallback_list(current_encoder)
+                        if fallbacks:
+                            next_enc = fallbacks[0]
+                            self.logger.warning(f"Hardware encoder '{current_encoder}' failed (exit {exit_code}). Falling back to '{next_enc}'...")
+                            current_encoder = next_enc
+                            scaler_core.current_base = 0 
+                            continue
+                    if error_lines:
+                        self.logger.error(f"FFmpeg failed with errors: {' | '.join(error_lines[-5:])}")
+                    return False
             self._emit_status("Encoding core video...")
             success = run_ffmpeg(use_cuda=(self.hardware_strategy != 'CPU'))
             if not success:

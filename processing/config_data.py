@@ -23,25 +23,36 @@ class VideoConfig:
         conf_path = os.path.join(conf_dir, 'crops_coordinations.conf')
         default_conf_data = {
             "crops_1080p": {
-                "loot": [400, 400, 680, 1220],
-                "stats": [350, 350, 730, 0],
-                "normal_hp": [450, 150, 30, 1470],
+                "loot": [511, 103, 1420, 1612],
+                "stats": [326, 233, 1620, 180],
+                "normal_hp": [465, 71, -839, 1620],
                 "boss_hp": [450, 150, 30, 1470],
-                "team": [300, 400, 30, 100]
+                "team": [270, 181, -881, 1406],
+                "spectating": [54, 22, -842, 1705]
             },
             "scales": {
-                "loot": 1.0,
-                "stats": 1.0,
-                "team": 1.0,
-                "normal_hp": 1.0,
-                "boss_hp": 1.0
+                "loot": 1.0227,
+                "stats": 1.2694,
+                "team": 1.1253,
+                "normal_hp": 1.1107,
+                "boss_hp": 1.0,
+                "spectating": 1.2059
             },
             "overlays": {
-                "loot": {"x": 680, "y": 1370},
-                "stats": {"x": 730, "y": 150},
-                "team": {"x": 30, "y": 250},
-                "normal_hp": {"x": 30, "y": 1620},
-                "boss_hp": {"x": 30, "y": 1620}
+                "loot": {"x": 539, "y": 1406},
+                "stats": {"x": 666, "y": 150},
+                "team": {"x": 0, "y": 150},
+                "normal_hp": {"x": 9, "y": 1419},
+                "boss_hp": {"x": 30, "y": 1620},
+                "spectating": {"x": 18, "y": 1524}
+            },
+            "z_orders": {
+                "loot": 10,
+                "normal_hp": 20,
+                "boss_hp": 20,
+                "stats": 30,
+                "team": 40,
+                "spectating": 100
             },
             "window_geometry": {
                 "x": 71, "y": 43, "w": 1600, "h": 880
@@ -64,7 +75,18 @@ class VideoConfig:
             try:
                 with open(conf_path, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
-                if logger: logger.info(f"Loaded crop config from {conf_path}")
+                is_valid = True
+                required_elements = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
+                for req in required_elements:
+                    if req not in loaded_data.get("crops_1080p", {}) or req not in loaded_data.get("overlays", {}):
+                        is_valid = False
+                        break
+                if not is_valid:
+                    if logger: logger.warning(f"Config validation failed at {conf_path}. Overwriting with defaults.")
+                    with open(conf_path, 'w', encoding='utf-8') as f:
+                        json.dump(default_conf_data, f, indent=4)
+                    return default_conf_data
+                if logger: logger.info(f"Loaded valid crop config from {conf_path}")
                 return loaded_data
             except (json.JSONDecodeError, OSError):
                 import time

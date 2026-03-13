@@ -8,12 +8,6 @@ from PyQt5.QtGui import QIcon
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-bin_dir = os.path.join(project_root, 'binaries')
-if os.path.exists(bin_dir):
-    os.environ['PATH'] = bin_dir + os.pathsep + os.environ.get('PATH', '')
-    if hasattr(os, 'add_dll_directory'):
-        try: os.add_dll_directory(bin_dir)
-        except: pass
 
 from system.utils import UIManager
 from utilities.merger_system import MergerConsoleManager, MergerProcessManager as ProcessManager, MergerDependencyDoctor as DependencyDoctor
@@ -27,6 +21,7 @@ import ctypes
 import shutil
 
 def main():
+    faulthandler.enable()
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
     ProcessManager.kill_orphans()

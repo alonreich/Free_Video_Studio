@@ -135,16 +135,20 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
             return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec/base_speed), time_mapper
         full_chain_parts = []
+        v_splits = "".join([f"[v_split_{i}]" for i in range(n_chunks)])
+        a_splits = "".join([f"[a_split_{i}]" for i in range(n_chunks)])
+        full_chain_parts.append(f"{input_v_label}split={n_chunks}{v_splits}")
+        full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{a_splits}")
         v_a_pads, final_duration = [], 0.0
         for i, chunk in enumerate(chunks):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
             dur = end - start; out_dur = dur / speed
-            full_chain_parts.append(f"{input_v_label}trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{speed:.4f}'[v_chunk_{i}]")
+            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{speed:.4f}'[v_chunk_{i}]")
             tmp_s = speed; audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-            full_chain_parts.append(f"{input_a_label}atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS[a_chunk_{i}]")
+            full_chain_parts.append(f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS[a_chunk_{i}]")
             v_a_pads.append(f"[v_chunk_{i}][a_chunk_{i}]")
             final_duration += out_dur
         full_chain_parts.append(f"{''.join(v_a_pads)}concat=n={n_chunks}:v=1:a=1[v_speed_out][a_speed_out]")

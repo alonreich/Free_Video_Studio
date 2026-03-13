@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 import tempfile
 import types
+import threading
 from pathlib import Path
 from sanity_tests._real_sanity_harness import (
     DummyCheckBox,
@@ -30,7 +31,7 @@ def test_challenge_01_granular_speed_wall_clock_math() -> None:
 
 def test_challenge_02_impossible_fade_tiny_clip_safe_chain() -> None:
     fb = FilterBuilder(logger=types.SimpleNamespace(info=lambda *a, **k: None))
-    chain = fb.build_audio_chain(
+    chain, _ = fb.build_audio_chain(
         music_config={"path": "song.mp3", "timeline_start_sec": 0.0, "timeline_end_sec": 0.1, "file_offset_sec": 0.0, "volume": 1.0, "main_vol": 1.0},
         video_start_time=0.0,
         video_end_time=0.1,
@@ -57,6 +58,7 @@ def test_challenge_03_dj_scrubbing_stress_keeps_throttle(monkeypatch) -> None:
     host._wizard_tracks = [("song.mp3", 0.0, 10.0)]
     host._get_music_offset_ms = lambda: 0
     host.logger = types.SimpleNamespace(error=lambda *a, **k: None)
+    host._mpv_lock = threading.RLock()
     now = {"v": 0.0}
     monkeypatch.setattr("time.time", lambda: now["v"])
     for i in range(15):
@@ -128,6 +130,7 @@ def test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x() -> None:
     host._music_preview_player = host.mpv_music_player
     host._last_scrub_ts = 0.0
     host._scrub_lock = threading.RLock()
+    host._mpv_lock = threading.RLock()
     PlayerMixin.set_player_position(host, 2000, sync_only=True)
     assert 1.0 in host.mpv_music_player.set_rate_calls
 

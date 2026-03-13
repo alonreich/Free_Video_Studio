@@ -89,8 +89,7 @@ class MediaProber:
             fps = float(frac)
             if fps <= 1.0:
                 return fallback
-            if fps > 60.0:
-                fps = 60.0
+            if fps > 60.01:
                 return "60"
             if abs(fps - 60.0) < 0.001: return "60"
             if abs(fps - 59.94) < 0.01: return "60000/1001"
@@ -113,30 +112,26 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     if target_mb is None:
         target_mb = 45.0
     total_bits_available = float(target_mb) * 8 * 1024 * 1024
-    audio_bits_total = audio_kbps * 1024 * duration
+    audio_bits_total = audio_kbps * 1000 * duration
     video_bits_available = total_bits_available - audio_bits_total
     safe_video_bits = video_bits_available * 0.95
     video_bits = safe_video_bits
     if video_bits <= 0:
         return 300
-    calculated_kbps = int(video_bits / (1024 * duration))
+    calculated_kbps = int(video_bits / (1000 * duration))
     try:
         w, h = map(int, res_str.lower().split('x'))
     except:
         w, h = 1920, 1080
-
-    from fractions import Fraction
     try:
         fps = float(Fraction(fps_expr))
     except:
         fps = 60.0
-    bpp_targets = [0.05, 0.08, 0.12, 0.20]
+    bpp_targets = [0.06, 0.09, 0.13, 0.18]
     target_bpp = bpp_targets[min(quality_level, 3)]
-    min_quality_kbps = int((w * h * fps * target_bpp) / 1024)
+    min_quality_kbps = int((w * h * fps * target_bpp) / 1000)
     final_kbps = max(300, min(calculated_kbps, min_quality_kbps * 2))
     final_kbps = min(final_kbps, 50000)
     if logger:
         logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Final {final_kbps}k")
-    if final_kbps == calculated_kbps:
-        return max(300, calculated_kbps)
-    return max(300, final_kbps)
+    return final_kbps
