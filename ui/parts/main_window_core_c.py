@@ -26,6 +26,8 @@ class MainWindowCoreCMixin:
         self.logger.info("=== Application shutting down ===")
         self.blockSignals(True)
         if hasattr(self, "timer") and self.timer.isActive(): self.timer.stop()
+        if hasattr(self, "_cleanup_live_logging"):
+            self._cleanup_live_logging()
         if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
             self.process_thread.cancel()
             if self.process_thread.isRunning(): self.process_thread.wait(3000)

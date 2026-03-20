@@ -798,11 +798,12 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 music_out = next_label
             filters.append(f"[{music_out}]atrim=duration={max(0.1, float(total_duration))}[mus]")
             ducking_filters = build_audio_ducking_filters(
-                video_audio_stream=map_audio or "anullsrc=channel_layout=stereo:sample_rate=48000",
+                video_audio_stream=map_audio or f"anullsrc=channel_layout=stereo:sample_rate={target_a_rate}:d={total_duration}",
                 music_stream="[mus]",
                 music_volume=1.0, 
                 sample_rate=target_a_rate,
-                video_has_audio=has_audio_input
+                video_has_audio=has_audio_input,
+                duration=total_duration
             )
             filters.extend(ducking_filters)
             map_audio = "[a_out]"

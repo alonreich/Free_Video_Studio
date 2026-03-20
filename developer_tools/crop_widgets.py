@@ -54,12 +54,12 @@ class RoleToolbar(QFrame):
             display_text = role.upper()
             btn = QPushButton(display_text)
             tips = {
-                "Loot Area": "Bottom-right popup showing items and ammo.",
-                "Mini Map + Stats": "Top-right radar and game statistics.",
-                "Own Health Bar (HP)": "Bottom-left health and shield bars.",
-                "Boss HP (For When You Are The Boss Character)": "Center health bar for special modes.",
-                "Teammates health Bars (HP)": "Left-side health indicators for your squad.",
-                "Spectating Eye": "The spectating count eye, which represent how many players are currently watching you."
+                "Loot Area": "Label this as the Loot and Ammo area.",
+                "Mini Map + Stats": "Label this as the Map and Game Stats.",
+                "Own Health Bar (HP)": "Label this as your own Health Bar.",
+                "Boss HP (For When You Are The Boss Character)": "Label this as the Boss Health Bar.",
+                "Teammates health Bars (HP)": "Label this as your Teammates' health.",
+                "Spectating Eye": "Label this as the Eye that shows who is watching."
             }
             btn.setToolTip(tips.get(role, ""))
             btn.setFixedHeight(34)
@@ -158,8 +158,6 @@ class DrawWidget(QWidget):
         self._ant_timer = QTimer(self)
         self._ant_timer.timeout.connect(self._update_ant_dash)
         self._ant_dash_offset = 0
-        self._role_menu = QMenu(self)
-        self._role_menu.triggered.connect(self._handle_role_menu_action)
         self._role_popup_timer = QTimer(self)
         self._role_popup_timer.setSingleShot(True)
         self._role_popup_timer.timeout.connect(self._show_role_toolbar)
@@ -236,13 +234,13 @@ class DrawWidget(QWidget):
         self.update()
 
     def _update_scaled_pixmap(self):
-        if self.pixmap.isNull() or not self.scroll_area: 
+        if self.pixmap.isNull() or not self.scroll_area:
             return
         viewport_size = self.scroll_area.viewport().size()
         if viewport_size.width() < 10 or viewport_size.height() < 10:
             return
         ref_w = self.pixmap.width()
-        ref_h = int(ref_w * (9/16))
+        ref_h = self.pixmap.height()
         if self.zoom == 1.0:
             scale_x = (viewport_size.width() - 10) / float(ref_w)
             scale_y = (viewport_size.height() - 10) / float(ref_h)
@@ -253,7 +251,7 @@ class DrawWidget(QWidget):
         if self.size() != scaled_size:
             self.setFixedSize(scaled_size)
         self._img_rect = QRect(QPoint(0, 0), scaled_size)
-        self._cache_pix = self.pixmap.scaled(scaled_size, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        self._cache_pix = self.pixmap.scaled(scaled_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         if not self._crop_rect_img.isNull():
             self._selection_display_rect = self._map_rect_to_display(self._crop_rect_img)
         self.update()
@@ -503,7 +501,6 @@ class DrawWidget(QWidget):
                     self._selection_display_rect = self._map_rect_to_display(self._crop_rect_img)
                     self._last_mouse_release_pos = event.pos()
                     self._role_popup_timer.start(50)
-                    QTimer.singleShot(220, self._force_role_menu_after_release)
                 self.update()
                 return
             if self._resizing_selection:
@@ -514,7 +511,6 @@ class DrawWidget(QWidget):
                     self._last_mouse_release_pos = event.pos()
                     self._auto_zoom_to_selection()
                     self._role_popup_timer.start(100)
-                    QTimer.singleShot(260, self._force_role_menu_after_release)
                 self.update()
                 return
             if self.mode == 'drawing':
@@ -532,7 +528,6 @@ class DrawWidget(QWidget):
                     self._selection_display_rect = self._map_rect_to_display(self._crop_rect_img)
                     self._auto_zoom_to_selection()
                     self._role_popup_timer.start(150)
-                    QTimer.singleShot(300, self._force_role_menu_after_release)
             self.update()
         except Exception as e:
             top_level = self.window()
@@ -718,25 +713,17 @@ class DrawWidget(QWidget):
 
     def _map_to_image(self, widget_pos):
         if self.zoom == 0 or self.pixmap.isNull(): return QPointF()
-        ref_w = self.pixmap.width()
-        ref_h = ref_w * (9/16)
-        ref_x = (widget_pos.x() - self._img_rect.x()) / self.zoom
-        ref_y = (widget_pos.y() - self._img_rect.y()) / self.zoom
-        orig_x = ref_x
-        orig_y = ref_y * (self.pixmap.height() / float(ref_h))
+        orig_x = (widget_pos.x() - self._img_rect.x()) / self.zoom
+        orig_y = (widget_pos.y() - self._img_rect.y()) / self.zoom
         return QPointF(orig_x, orig_y)
 
     def _map_rect_to_display(self, img_rect):
         if self.pixmap.isNull(): return QRectF()
-        ref_w = self.pixmap.width()
-        ref_h = ref_w * (9/16)
-        ref_y = img_rect.y() * (ref_h / float(self.pixmap.height()))
-        ref_h_rect = img_rect.height() * (ref_h / float(self.pixmap.height()))
         return QRectF(
             self._img_rect.x() + img_rect.x() * self.zoom,
-            self._img_rect.y() + ref_y * self.zoom,
+            self._img_rect.y() + img_rect.y() * self.zoom,
             img_rect.width() * self.zoom,
-            ref_h_rect * self.zoom
+            img_rect.height() * self.zoom
         )
         
     def _clamp_rect_to_image(self, rect_f):
@@ -778,17 +765,19 @@ class DrawWidget(QWidget):
 class UploadOverlay(QWidget):
     """Truly top-level pulsing overlay that floats at the absolute top of the Z-order."""
     
-    def __init__(self, target_button=None, video_widget=None, parent=None):
+    def __init__(self, target_button=None, video_widget=None, parent=None, text="Please Upload Video to Begin!"):
         super().__init__(parent)
         self.target_button = target_button
         self.video_widget = video_widget
         self.app_window = parent
+        self.text = text
         self.setWindowFlags(
-            Qt.ToolTip | 
+            Qt.Window | 
             Qt.FramelessWindowHint | 
             Qt.WindowStaysOnTopHint | 
             Qt.WindowTransparentForInput |
-            Qt.WindowDoesNotAcceptFocus
+            Qt.WindowDoesNotAcceptFocus |
+            Qt.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -799,6 +788,11 @@ class UploadOverlay(QWidget):
         self.timer.start(50) 
         self.hide()
 
+    def sync_with_window(self):
+        """Force the overlay window to match the main application geometry exactly."""
+        if self.app_window:
+            self.setGeometry(self.app_window.geometry())
+
     def _update_pulse(self):
         self.opacity += self.fade_direction * 0.036
         if self.opacity <= 0.1:
@@ -807,6 +801,7 @@ class UploadOverlay(QWidget):
         elif self.opacity >= 1.0:
             self.opacity = 1.0
             self.fade_direction = -1
+        self.sync_with_window()
         self.raise_()
         self.update()
 
@@ -818,7 +813,7 @@ class UploadOverlay(QWidget):
 
         def s(val): return val * scale
         painter.setOpacity(self.opacity)
-        text = "Please Upload Video to Begin!"
+        text = self.text
         font = QFont("Sans Serif", int(s(32)), QFont.Bold)
         painter.setFont(font)
         fm = painter.fontMetrics()

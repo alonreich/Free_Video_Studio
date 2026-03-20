@@ -73,14 +73,19 @@ def _cleanup_new_tmp_entries(tmp_dir: Path, before_entries: set[str]) -> None:
 
 def _setup_tmp_sandbox(config) -> None:
     global _SANITY_TMP_ROOT
-    parent_dir = Path(__file__).parent
-    for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
+    temp_root = Path(tempfile.gettempdir())
+    for stale_dir in temp_root.glob("tmp_fvs_sanity_pytest_*"):
         if stale_dir.is_dir():
             try:
                 shutil.rmtree(stale_dir, ignore_errors=True)
             except: pass
-    root = parent_dir / f"tmp_fvs_sanity_pytest_{os.getpid()}_{int(time.time() * 1000)}"
-    root.mkdir(parents=True, exist_ok=True)
+    root = temp_root / f"tmp_fvs_sanity_pytest_{os.getpid()}_{int(time.time() * 1000)}"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        import uuid
+        root = temp_root / f"tmp_fvs_sanity_{uuid.uuid4().hex[:8]}"
+        root.mkdir(parents=True, exist_ok=True)
     _SANITY_TMP_ROOT = root
     config.option.basetemp = str(root)
     for k in _ORIG_TEMP_ENV:
@@ -95,6 +100,10 @@ def _disable_pytest_cacheprovider(config) -> None:
         pm.unregister(plugin, name="cacheprovider")
 
 def _install_legacy_import_alias() -> None:
+    """
+    Backward compatibility: many sanity files import `sanity_tests.*`
+    while the package on disk is `sanity_test`.
+    """
     try:
         pkg = importlib.import_module("sanity_test")
         sys.modules.setdefault("sanity_tests", pkg)
@@ -111,6 +120,14 @@ def pytest_configure(config) -> None:
     _RUN_STARTED_AT = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
     _disable_pytest_cacheprovider(config)
     _cleanup_pytest_cache()
+    
+    parent_dir = Path(__file__).parent
+    for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
+        if stale_dir.is_dir():
+            try:
+                shutil.rmtree(stale_dir, ignore_errors=True)
+            except: pass
+
     _setup_tmp_sandbox(config)
     _install_legacy_import_alias()
 
@@ -129,6 +146,11 @@ def pytest_sessionfinish(session, exitstatus) -> None:
     tempfile.tempdir = None
 @pytest.fixture(autouse=True)
 def _enforce_per_test_tmp_and_pycache_hygiene():
+    """
+    Enforce strict hygiene for every sanity test:
+    - no bytecode cache leftovers
+    - no temp leftovers in current %TMP% sandbox
+    """
     tmp_dir = Path(tempfile.gettempdir())
     before_tmp_entries = _snapshot_tmp_entries(tmp_dir)
     yield
@@ -407,11 +429,13 @@ def _expected_behavior_for_case(test_file: str, test_name: str, scenario: str) -
     if needles:
         shown = "; ".join(_shorten(n, 140) for n in needles[:4])
         return (
+            "This dryrun contract expects specific source-level logic/snippets to exist. "
             f"Key expected snippets include: {shown}."
         )
     if asserts:
         shown = "; ".join(_shorten(a, 140) for a in asserts[:4])
         return (
+            "This runtime/behavior test expects all assertion conditions to hold under the scenario. "
             f"Key expected checks: {shown}."
         )
     return f"The tested scenario should complete successfully: {scenario}."
@@ -420,14 +444,19 @@ def _why_expected_for_case(test_file: str, scenario: str) -> str:
     name = Path(test_file).name.lower()
     if "_dryrun" in name:
         return (
+            "Dryrun tests protect code contracts against silent refactors. "
+            "If the expected snippets disappear/rename, runtime behavior can drift without immediate visibility."
         )
     if "challenge" in name:
         return (
+            "Challenge tests validate extreme accidental scenarios, where race/timing/edge math issues are most likely to break user workflows."
         )
     if "core" in name:
         return (
+            "Core tests enforce non-negotiable product behavior (sync, stability, persistence, safety) that must stay deterministic between releases."
         )
     return (
+        "This sanity check guards user-facing behavior and ensures implementation changes do not break expected app flow."
     )
 
 def _actual_behavior_for_case(case: CaseOutcome) -> str:
@@ -435,10 +464,13 @@ def _actual_behavior_for_case(case: CaseOutcome) -> str:
         return "Observed result: all assertions/conditions in this test passed exactly as expected."
     if case.status == "skipped":
         return (
+            "Observed result: test was skipped/pending, so behavior was not executed. "
+            "No runtime validation occurred for this scenario in this run."
         )
     raw = _RAW_LONGREPR.get(case.nodeid, "")
     if "Missing expected snippets:" in case.detail:
         return (
+            "Observed result: contract snippets were not found in target source files. "
             f"Failure detail: {case.detail}"
         )
     if raw:
@@ -464,21 +496,27 @@ def _expected_vs_actual_gap(expected: str, actual: str, status: str) -> str:
     if status == "skipped":
         return "Execution gap: expected behavior was not validated because the test did not run."
     return (
+        "Behavior gap detected: expected contract/runtime outcome did not match observed output. "
+        "Use the AI instructions below to trace where implementation diverges from expectation."
     )
 
 def _file_purpose_summary(test_file: str) -> str:
     name = Path(test_file).name.lower()
     if "_dryrun" in name:
         return (
+            "Purpose: source-contract dryrun. This file validates that critical logic snippets/API wiring still exist in code after refactors."
         )
     if "challenge" in name:
         return (
+            "Purpose: extreme challenge scenarios. This file stress-tests edge conditions and accidental-user behavior where robustness can break."
         )
     if "real_sanity" in name:
         return (
+            "Purpose: real behavioral sanity checks. This file validates integration-level behavior and user-facing logic outcomes."
         )
     if "core" in name:
         return (
+            "Purpose: core product contracts. This file protects foundational guarantees that should never regress."
         )
     return "Purpose: sanity verification for this feature area."
 

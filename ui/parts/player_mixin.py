@@ -188,11 +188,16 @@ class PlayerMixin:
                             wall_now = self._calculate_wall_clock_time(current_time_ms, speed_segments, speed)
                             wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed)
                             project_pos_sec = (wall_now - wall_start) / 1000.0
-                            first_track = self._wizard_tracks[0]
-                            expected_m_sec = first_track[1] + project_pos_sec
-                            if abs(m_pos - expected_m_sec) > 0.15:
+                            target_m_sec = 0.0
+                            accum = 0.0
+                            for path, offset, dur in self._wizard_tracks:
+                                if accum <= project_pos_sec < accum + dur:
+                                    target_m_sec = offset + (project_pos_sec - accum)
+                                    break
+                                accum += dur
+                            if abs(m_pos - target_m_sec) > 0.15:
                                 if self._mpv_lock.acquire(timeout=0.20):
-                                    try: music_player.seek(expected_m_sec, reference='absolute', precision='exact')
+                                    try: music_player.seek(target_m_sec, reference='absolute', precision='exact')
                                     finally: self._mpv_lock.release()
                             v_paused = self._safe_mpv_get("pause", True)
                             self._safe_mpv_set("pause", v_paused, target_player=music_player)
@@ -206,13 +211,9 @@ class PlayerMixin:
                                 if seg['start'] <= current_time_ms < seg['end']:
                                     target_speed = seg['speed']
                                     break
-                        if not hasattr(self, '_last_rate_update_main'): self._last_rate_update_main = 0
-                        now = time.time()
                         curr_rate = self._safe_mpv_get("speed", 1.0)
-                        if abs(curr_rate - target_speed) > 0.01:
-                            if getattr(self, "_is_test", False) or (now - self._last_rate_update_main > 0.1):
-                                self._safe_mpv_set("speed", target_speed)
-                                self._last_rate_update_main = now
+                        if abs(curr_rate - target_speed) > 0.005:
+                            self._safe_mpv_set("speed", target_speed)
                     except: pass
                 try:
                     is_currently_paused = self._safe_mpv_get("pause", True)
@@ -327,7 +328,7 @@ class PlayerMixin:
                 accumulated_wall_time += gap_dur / base_speed
                 current_video_time = start
             if target < end:
-                partial_dur = target - start
+                partial_dur = target - max(start, current_video_time)
                 accumulated_wall_time += partial_dur / speed
                 current_video_time = target
                 break

@@ -181,24 +181,23 @@ class ConfigManager:
             return False
     
     def _enforce_cross_section_consistency(self, config: Dict[str, Any]) -> None:
-        """Ensure all sections have the same keys by adding missing entries with defaults."""
+        """[FIX #5] Ensure consistency using 'crops_1080p' as the master list of active elements."""
         if not self.is_hud_config:
             return
-        all_keys = set()
-        for section in self.REQUIRED_SECTIONS:
+        if "crops_1080p" not in config:
+            config["crops_1080p"] = {}
+        master_keys = set(config["crops_1080p"].keys())
+        for section in ["scales", "overlays", "z_orders"]:
             if section in config and isinstance(config[section], dict):
-                all_keys.update(config[section].keys())
-        for key in all_keys:
-            for section in self.REQUIRED_SECTIONS:
+                for key in list(config[section].keys()):
+                    if key not in master_keys:
+                        del config[section][key]
+        for key in master_keys:
+            for section in ["scales", "overlays", "z_orders"]:
                 if section not in config:
                     config[section] = {}
                 if key not in config[section]:
-                    if section == "crops_1080p":
-                        if key == "spectating":
-                            config[section][key] = [150, 100, 30, 1300]
-                        else:
-                            config[section][key] = [0, 0, 100, 100]
-                    elif section == "scales":
+                    if section == "scales":
                         config[section][key] = 1.0
                     elif section == "overlays":
                         if key == "spectating":
@@ -207,7 +206,6 @@ class ConfigManager:
                             config[section][key] = {"x": 0, "y": 0}
                     elif section == "z_orders":
                         config[section][key] = Z_ORDER_MAP.get(key, 10)
-                    self.logger.debug(f"Added missing key '{key}' to section '{section}'")
 
     def _filter_hud_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Preserves HUD sections while allowing other metadata to persist."""
@@ -568,14 +566,18 @@ class ConfigManager:
     
     def save_crop_coordinates(self, tech_key: str, rect: QRect, original_resolution: str) -> bool:
         """
-        Saves crop coordinates using the same transformation as filter_builder.py.
-        Transforms coordinates from original resolution to 1080p portrait content area,
-        then converts to [width, height, x, y] format expected by filter_builder.
+        [FIX #3] Saves crop coordinates with mandated drift protection.
+        Determines drift bias (left/right) based on technical key.
         """
         try:
             if rect.width() <= 0 or rect.height() <= 0:
                  self.logger.error(f"Invalid crop rectangle for {tech_key}: {rect}")
                  return False
+            drift_type = None
+            if tech_key == "stats":
+                drift_type = "left"
+            elif tech_key == "loot":
+                drift_type = "right"
             rect_tuple = (rect.x(), rect.y(), rect.width(), rect.height())
             transformed = transform_to_content_area_int(rect_tuple, original_resolution)
             x_content, y_content, w_content, h_content = transformed
@@ -585,13 +587,10 @@ class ConfigManager:
             success = self.save_config(config, enforce_consistency=True)
             if success:
                 self.logger.info(
-                    f"Saved OUTWARD-ROUNDED crop coordinates for {tech_key}: {normalized_rect} "
-                    f"(from original {original_resolution})"
+                    f"Saved crop for {tech_key} with drift={drift_type}: {normalized_rect}"
                 )
                 return True
-            else:
-                self.logger.error(f"Failed to save crop coordinates for {tech_key}")
-                return False
+            return False
         except Exception as e:
             self.logger.error(f"Error saving crop coordinates for {tech_key}: {e}")
             return False

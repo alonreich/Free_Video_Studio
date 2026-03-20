@@ -188,6 +188,35 @@ class SummaryToast(QDialog):
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.center() - self.rect().center())
 
+class GuidanceToast(QDialog):
+    def __init__(self, message, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedWidth(600)
+        container = QFrame(self)
+        container.setObjectName("container")
+        container.setStyleSheet(f"""
+            #container {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 3px solid {UI_COLORS.PRIMARY};
+                border-radius: 25px;
+            }}
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(container)
+        content = QVBoxLayout(container)
+        content.setContentsMargins(40, 40, 40, 40)
+        lbl = QLabel(message)
+        lbl.setWordWrap(True)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; line-height: 140%;")
+        content.addWidget(lbl)
+        self.adjustSize()
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(screen.center() - self.rect().center())
+
 class SaveConfigWorker(QObject):
     finished = pyqtSignal(bool, list, list, str)
 
@@ -353,9 +382,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")
             if hasattr(self, 'upload_hint_label'):
                 self.upload_hint_label.setVisible(False)
-            if hasattr(self, 'open_image_button'):
-                self.open_image_button.setVisible(True)
-                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("MPV Player Required")
@@ -414,6 +440,9 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 title_info_provider=self.get_title_info,
                 extra_data_provider=self._get_persistence_extras
             )
+            settings = get_config_manager(self.app_config_path, self.logger).load_config()
+            if hasattr(self, 'transparency_slider') and 'ghost_transparency' in settings:
+                self.transparency_slider.setValue(settings['ghost_transparency'])
         except Exception as e:
             logger_initial.error(f"Persistence Setup Failed: {e}")
         try:
@@ -748,11 +777,27 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def add_scissored_item(self, pixmap, crop_rect, background_crop_width, role=None):
         for item in self.portrait_scene.items():
-            if isinstance(item, ResizablePixmapItem) and item.assigned_role == role: self.portrait_scene.removeItem(item)
+            try:
+                if isinstance(item, ResizablePixmapItem) and item.assigned_role == role:
+                    self.portrait_scene.removeItem(item)
+            except RuntimeError:
+                pass
         for ph in list(self.placeholders_group):
-            for ch in ph.childItems():
-                if isinstance(ch, QGraphicsSimpleTextItem) and ch.text() == (role or "").upper():
-                    self.portrait_scene.removeItem(ph); self.placeholders_group.remove(ph); break
+            try:
+                if ph and hasattr(ph, 'childItems'):
+                    match_found = False
+                    for ch in ph.childItems():
+                        if isinstance(ch, QGraphicsSimpleTextItem) and ch.text().startswith((role or "").upper()):
+                            match_found = True
+                            break
+                    if match_found:
+                        if ph.scene():
+                            self.portrait_scene.removeItem(ph)
+                        if ph in self.placeholders_group:
+                            self.placeholders_group.remove(ph)
+            except RuntimeError:
+                if ph in self.placeholders_group:
+                    self.placeholders_group.remove(ph)
         item = ResizablePixmapItem(pixmap, crop_rect)
         res_str = self.media_processor.original_resolution or self.snapshot_resolution or "1920x1080"
         fx, fy, fw, fh = transform_to_content_area((crop_rect.x(), crop_rect.y(), crop_rect.width(), crop_rect.height()), res_str)
@@ -938,18 +983,30 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._save_worker = None
 
     def _start_exit_sequence(self, summary_dialog):
-        widgets = [w for w in (self, summary_dialog) if w]
+        """Phase 1: Show Summary for 3 seconds."""
+        QTimer.singleShot(3000, lambda: self._show_guidance_and_exit(summary_dialog))
+
+    def _show_guidance_and_exit(self, summary_dialog):
+        """Phase 2: Hide summary, show guidance for 2 seconds."""
+        if summary_dialog:
+            summary_dialog.hide()
+        guidance = GuidanceToast("Now, please verify all crops are good. Run and Process a single video to make sure all appears good.", self)
+        guidance.show()
+        QTimer.singleShot(2000, lambda: self._execute_fade_out(guidance))
+
+    def _execute_fade_out(self, active_dialog):
+        widgets = [w for w in (self, active_dialog) if w]
         seq = QSequentialAnimationGroup(self)
         par = QParallelAnimationGroup(seq)
         for w in widgets:
             a = QPropertyAnimation(w, b"windowOpacity")
-            a.setStartValue(1.0); a.setEndValue(0.0); a.setDuration(150); a.setEasingCurve(QEasingCurve.InOutQuad)
+            a.setStartValue(1.0); a.setEndValue(0.0); a.setDuration(400); a.setEasingCurve(QEasingCurve.InOutQuad)
             par.addAnimation(a)
         seq.addAnimation(par)
 
         def finalize():
             for w in widgets: w.setWindowOpacity(1.0)
-            if summary_dialog: summary_dialog.close()
+            if active_dialog: active_dialog.close()
             self.hide(); self._deferred_launch_main_app()
         seq.finished.connect(finalize); seq.start()
 
@@ -980,7 +1037,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         has_items = any(isinstance(i, ResizablePixmapItem) for i in self.portrait_scene.items())
         can_undo, can_redo = self.state_manager.can_undo(), self.state_manager.can_redo()
         active = has_items or can_undo or can_redo
-        self.done_button.setEnabled(has_items)
+        self.done_button.setEnabled(self._dirty)
         self.snap_toggle_button.setEnabled(active)
         self.show_placeholders_checkbox.setEnabled(True)
         if hasattr(self, 'transparency_slider'):
@@ -1095,9 +1152,13 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 if delta > 0:
                     if idx < len(all_items) - 1:
                         new_z = all_items[idx + 1].zValue() + 1
+                    else:
+                        new_z = current_z + 1
                 else:
                     if idx > 0:
                         new_z = all_items[idx - 1].zValue() - 1
+                    else:
+                        new_z = current_z - 1
             except ValueError:
                 new_z = current_z + delta
             if new_z != current_z:
@@ -1114,12 +1175,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.upload_overlay.raise_()
 
     def raise_selected_item(self):
-        """Bring item closer to the front (Layer 1) by decreasing Z."""
-        self._change_z_order(-1)
+        """Bring item closer to the front (Layer 1) by increasing Z."""
+        self._change_z_order(1)
 
     def lower_selected_item(self):
-        """Send item further to the back (Layer 6) by increasing Z."""
-        self._change_z_order(1)
+        """Send item further to the back (Layer 6) by decreasing Z."""
+        self._change_z_order(-1)
 
     def _apply_z_order(self, dl, use_new):
         """[FIX Duplication] Consolidated Z-order application logic."""
@@ -1149,9 +1210,43 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if hasattr(self, 'hint_overlay_widget'):
             self.hint_overlay_widget.show()
         self._update_upload_overlay_geometry()
-        QTimer.singleShot(200, self._check_restore)
+        QTimer.singleShot(200, self._check_restore_with_prompt)
         if not self._autosave_timer.isActive():
             self._autosave_timer.start()
+
+    def _check_restore_with_prompt(self):
+        try:
+            session_data = StateTransfer.load_state()
+            if not session_data or not session_data.get('input_file'):
+                self._check_restore()
+                return
+            path = session_data['input_file']
+            if not os.path.exists(path):
+                self._check_restore()
+                return
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Resume Session?")
+            msg.setText(f"Continue working on your last video?\n\nFile: {os.path.basename(path)}")
+            msg.setInformativeText("Select 'Yes' to resume, or 'No' to start fresh.")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.Yes)
+            for btn in msg.findChildren(QPushButton):
+                btn.setCursor(Qt.PointingHandCursor)
+            if msg.exec_() == QMessageBox.Yes:
+                self.load_file(path, start_paused=True)
+                if session_data.get('resolution'):
+                    self.media_processor.original_resolution = session_data['resolution']
+                self._check_restore()
+            else:
+                StateTransfer.update_state({"input_file": None, "resolution": None})
+                if os.path.exists(self._autosave_file):
+                    try: os.unlink(self._autosave_file)
+                    except: pass
+                self.reset_state(force=True)
+        except Exception as e:
+            self.logger.error(f"Error in _check_restore_with_prompt: {e}")
+            self._check_restore()
 
     def dragEnterEvent(self, event):
         try:
@@ -1247,7 +1342,11 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             pass
         QTimer.singleShot(100, QApplication.instance().quit)
 
-    def _get_persistence_extras(self): return {}
+    def _get_persistence_extras(self):
+        extras = {}
+        if hasattr(self, 'transparency_slider'):
+            extras['ghost_transparency'] = self.transparency_slider.value()
+        return extras
 
     def _mark_dirty(self, is_dirty=True):
         self._dirty = is_dirty
@@ -1255,8 +1354,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._refresh_done_button()
 
     def _refresh_done_button(self):
-        has_items = any(isinstance(i, ResizablePixmapItem) for i in self.portrait_scene.items())
-        self.done_button.setEnabled(has_items); self.done_button.setText("FINISH && SAVE *" if self._dirty else "FINISH && SAVE")
+        self.done_button.setEnabled(self._dirty); self.done_button.setText("FINISH && SAVE *" if self._dirty else "FINISH && SAVE")
 
     def _confirm_discard_changes(self):
         if not self._dirty:

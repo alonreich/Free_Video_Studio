@@ -1,5 +1,5 @@
 ﻿from PyQt5.QtWidgets import QGraphicsView, QGraphicsItem
-from PyQt5.QtCore import Qt, QRectF
+from PyQt5.QtCore import Qt, QRectF, QTimer
 from PyQt5.QtGui import QPainter
 from graphics_items import ResizablePixmapItem
 from config import UI_BEHAVIOR
@@ -16,7 +16,10 @@ class PortraitView(QGraphicsView):
         self.snap_enabled = True
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheBackground)
+        self.setOptimizationFlag(QGraphicsView.DontSavePainterState)
+        self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -152,47 +155,47 @@ class PortraitView(QGraphicsView):
         menu.exec_(event.globalPos())
 
     def _autospace_items(self, items):
-        """Simple algorithm to push overlapping items apart with coalesced undo."""
+        """Advanced boundary-aware algorithm to push overlapping items apart safely."""
         if len(items) < 2: return
         app = self.window()
         if not hasattr(app, '_get_item_state'): return
         states_before = {item: app._get_item_state(item) for item in items}
-        modified_items = []
+        modified_items = set()
         items.sort(key=lambda i: i.scenePos().y())
-        was_in_undo = getattr(app, '_in_undo_redo', False)
-        app._in_undo_redo = True
-        try:
-            for i in range(len(items)):
-                for j in range(i + 1, len(items)):
-                    item_a = items[i]
-                    item_b = items[j]
-                    rect_a = item_a.sceneBoundingRect()
-                    rect_b = item_b.sceneBoundingRect()
-                    if rect_a.intersects(rect_b):
-                        overlap_h = rect_a.bottom() - rect_b.top()
-                        item_b.moveBy(0, overlap_h + 10)
-                        if item_b not in modified_items:
-                            modified_items.append(item_b)
-        finally:
-            app._in_undo_redo = was_in_undo
+        TOP_LIMIT = 150.0
+        BOTTOM_LIMIT = 1920.0 - 20.0
+        GAP = 15.0
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                item_a = items[i]
+                item_b = items[j]
+                rect_a = item_a.sceneBoundingRect()
+                rect_b = item_b.sceneBoundingRect()
+                if rect_a.intersects(rect_b):
+                    overlap_v = rect_a.bottom() - rect_b.top()
+                    new_y_b = item_b.pos().y() + overlap_v + GAP
+                    if (new_y_b + item_b.current_height) <= BOTTOM_LIMIT:
+                        item_b.setY(new_y_b)
+                        modified_items.add(item_b)
+                    else:
+                        overlap_v_up = rect_a.bottom() - rect_b.top()
+                        new_y_a = item_a.pos().y() - (overlap_v_up + GAP)
+                        if new_y_a >= TOP_LIMIT:
+                            item_a.setY(new_y_a)
+                            modified_items.add(item_a)
         if modified_items and hasattr(app, 'register_undo_action'):
             states_after = {item: app._get_item_state(item) for item in items}
-            
+
             def undo_autospace(states=states_before):
-                 for item, state in states.items():
-                     app._apply_item_state(item, state)
-                 app._mark_dirty()
-                 return True
-            
+                 for item, state in states.items(): app._apply_item_state(item, state)
+                 app._mark_dirty(); return True
+
             def redo_autospace(states=states_after):
-                 for item, state in states.items():
-                     app._apply_item_state(item, state)
-                 app._mark_dirty()
-                 return True
+                 for item, state in states.items(): app._apply_item_state(item, state)
+                 app._mark_dirty(); return True
             app.register_undo_action("Autospace Overlaps", undo_autospace, redo_autospace)
             for item in modified_items:
-                if item.assigned_role:
-                    app.modified_roles.add(item.assigned_role)
+                if item.assigned_role: app.modified_roles.add(item.assigned_role)
             app._mark_dirty()
             self.scene().update()
 
@@ -242,24 +245,26 @@ class PortraitView(QGraphicsView):
                     event.accept()
                     return
             key = event.key()
+            for item in items_to_move:
+                if hasattr(item, '_is_nudging'): item._is_nudging = True
             if key == Qt.Key_Up:
-                for item in items_to_move:
-                    item.moveBy(0, -delta)
+                for item in items_to_move: item.moveBy(0, -delta)
             elif key == Qt.Key_Down:
-                for item in items_to_move:
-                    item.moveBy(0, delta)
+                for item in items_to_move: item.moveBy(0, delta)
             elif key == Qt.Key_Left:
-                for item in items_to_move:
-                    item.moveBy(-delta, 0)
+                for item in items_to_move: item.moveBy(-delta, 0)
             elif key == Qt.Key_Right:
-                for item in items_to_move:
-                    item.moveBy(delta, 0)
+                for item in items_to_move: item.moveBy(delta, 0)
             else:
+                for item in items_to_move:
+                    if hasattr(item, '_is_nudging'): item._is_nudging = False
                 super().keyPressEvent(event)
                 return
             for item in items_to_move:
-                if hasattr(item, 'trigger_nudge_feedback'):
-                    item.trigger_nudge_feedback()
+                if hasattr(item, 'trigger_nudge_feedback'): item.trigger_nudge_feedback()
+                if hasattr(item, '_is_nudging'): item._is_nudging = False
+                if hasattr(item, 'clear_guides'):
+                    QTimer.singleShot(500, item.clear_guides)
             if hasattr(self.window(), 'on_item_modified'):
                 for item in items_to_move:
                     self.window().on_item_modified(item)

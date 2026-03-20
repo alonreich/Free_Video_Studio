@@ -227,7 +227,13 @@ class ConsoleManager:
             mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")
             f = open(raw_log_path, 'a', encoding='utf-8')
             ConsoleManager._log_files.append(f)
-            logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")
+            try:
+                import faulthandler
+                os.dup2(f.fileno(), sys.stdout.fileno())
+                os.dup2(f.fileno(), sys.stderr.fileno())
+                faulthandler.enable(f)
+            except Exception: pass
+            logger.info("NATIVE DEBUG LOGGING ACTIVE")
         except Exception as e:
             logger.error(f"Failed to setup native logging: {e}")
 

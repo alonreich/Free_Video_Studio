@@ -10,12 +10,11 @@ BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from system.utils import ConsoleManager, ProcessManager, MPVSafetyManager, DependencyDoctor
+from system.utils import ConsoleManager, ProcessManager, MPVSafetyManager, DependencyDoctor, LogManager
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
 from ui.styles import UIStyles
-from system.utils import ConsoleManager, DependencyDoctor, ProcessManager, LogManager
 logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
 import tempfile, psutil, traceback
 import threading

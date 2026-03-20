@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import types
 from typing import Any
 import sys
+import threading
+import weakref
 
 class DummyLogger:
     def info(self, *args: Any, **kwargs: Any) -> None:
@@ -118,10 +120,6 @@ class DummyMediaPlayer:
         self.set_time_calls: list[int] = []
         self.set_rate_calls: list[float] = []
         self.paused = 0
-
-    def command(self, *args, **kwargs):
-        if args and args[0] == "seek":
-            self.seek(args[1])
 
     def is_playing(self) -> bool:
         return self._playing
@@ -252,6 +250,7 @@ class DummyListItem:
         return self._hidden
 
 def install_qt_mpv_stubs() -> None:
+    """Install lightweight stubs for PyQt5/mpv so logic modules can be imported in tests."""
     if "PyQt5" in sys.modules and "mpv" in sys.modules:
         return
     pyqt5 = types.ModuleType("PyQt5")
@@ -378,7 +377,12 @@ def install_qt_mpv_stubs() -> None:
     class QWidget:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.logger = DummyLogger()
+            self._mpv_lock = threading.RLock()
+            self._scrub_lock = threading.RLock()
             return None
+            
+        def _safe_mpv_get(self, prop, default=None, target_player=None): return default
+        def _safe_mpv_set(self, prop, value, target_player=None): return True
             
         def _delayed_wizard_launch(self) -> None: return None
 
@@ -453,6 +457,14 @@ def install_qt_mpv_stubs() -> None:
         def setWindowFlags(self, *args: Any) -> None: return None
 
         def installEventFilter(self, f: Any) -> None: return None
+        
+        def setSizePolicy(self, *args: Any) -> None: return None
+        
+        def update(self, *args: Any) -> None: return None
+        
+        def setRange(self, *args: Any) -> None: return None
+        
+        def setMinimumHeight(self, h: int) -> None: return None
 
     class DummyPoint:
         def __init__(self, x: int, y: int): self._x, self._y = x, y
@@ -501,11 +513,17 @@ def install_qt_mpv_stubs() -> None:
 
         def addStretch(self, *args: Any) -> None:
             return None
+            
+        def setAlignment(self, *args: Any) -> None:
+            return None
 
     class QLabel:
         def __init__(self, text: str = "", *args: Any, **kwargs: Any) -> None:
             self._text = text
             self.logger = DummyLogger()
+
+        def font(self) -> Any:
+            return types.SimpleNamespace(setPointSize=lambda *_: None)
 
         def setStyleSheet(self, *_args: Any) -> None:
             return None
@@ -535,7 +553,13 @@ def install_qt_mpv_stubs() -> None:
 
         def move(self, x: int, y: int) -> None: return None
 
+        def setMinimumWidth(self, w: int) -> None: return None
+        
+        def setMinimumHeight(self, h: int) -> None: return None
+
         def setFixedWidth(self, w: int) -> None: return None
+
+        def setFixedHeight(self, h: int) -> None: return None
 
         def setAttribute(self, a: Any, v: bool = True) -> None: return None
 
@@ -687,6 +711,11 @@ def install_qt_mpv_stubs() -> None:
             "addStretch": _generic_void,
             "setStretch": _generic_void,
             "setSpacing": _generic_void,
+            "addSpacing": _generic_void,
+            "setHorizontalSpacing": _generic_void,
+            "setVerticalSpacing": _generic_void,
+            "setColumnStretch": _generic_void,
+            "setRowStretch": _generic_void,
             "setAlignment": _generic_void,
             "setSingleStep": _generic_void,
             "setPageStep": _generic_void,
@@ -695,9 +724,15 @@ def install_qt_mpv_stubs() -> None:
             "setTracking": _generic_void,
             "setFocusPolicy": _generic_void,
             "setStackingMode": _generic_void,
+            "setAcceptDrops": _generic_void,
             "installEventFilter": _generic_void,
             "blockSignals": _generic_void,
             "hide": _generic_void,
+            "setDecimals": _generic_void,
+            "setPlaceholderText": _generic_void,
+            "clear": _generic_void,
+            "setReadOnly": _generic_void,
+            "setToolTip": _generic_void,
             "value": lambda self: 0,
             "isChecked": lambda self: False,
             "text": lambda self: "",
@@ -707,6 +742,8 @@ def install_qt_mpv_stubs() -> None:
             "_safe_mpv_get": lambda self, p, d=None: d,
             "_safe_mpv_set": lambda self, p, v: True,
             "setStatusBar": _generic_void,
+            "addPermanentWidget": _generic_void,
+            "showMessage": _generic_void,
             "sliderPressed": DummySignal(),
             "sliderReleased": DummySignal(),
             "sliderMoved": DummySignal(),
@@ -717,13 +754,22 @@ def install_qt_mpv_stubs() -> None:
             "clicked": DummySignal(),
         })
         setattr(qtwidgets, n, cls)
+    class QFontMetrics:
+        def __init__(self, *args: Any) -> None: pass
+        def horizontalAdvance(self, *args: Any) -> int: return 50
+        def width(self, *args: Any) -> int: return 50
+        def height(self) -> int: return 15
+
+    class QFont:
+        def __init__(self, *args: Any) -> None: pass
+        def setPointSize(self, *args: Any) -> None: pass
+        def pointSize(self) -> int: return 10
+    
     for n in [
         "QPixmap",
         "QPainter",
         "QColor",
         "QIcon",
-        "QFont",
-        "QFontMetrics",
         "QPen",
         "QCursor",
         "QPainterPath",
@@ -733,8 +779,13 @@ def install_qt_mpv_stubs() -> None:
         "QPalette",
         "QRegion",
         "QDesktopServices",
+        "QFont",
+        "QFontMetrics",
     ]:
-        setattr(qtgui, n, type(n, (), {}))
+        setattr(qtgui, n, type(n, (), {"__init__": lambda *a, **k: None}))
+    
+    qtgui.QFont = QFont
+    qtgui.QFontMetrics = QFontMetrics
     sys.modules["PyQt5"] = pyqt5
     sys.modules["PyQt5.QtCore"] = qtcore
     sys.modules["PyQt5.QtWidgets"] = qtwidgets
@@ -744,7 +795,6 @@ def install_qt_mpv_stubs() -> None:
     pyqt5.QtGui = qtgui
     qtwidgets.QLabel = QLabel
     mpv_mod = types.ModuleType("mpv")
-    mpv_mod.ShutdownError = Exception
 
     class MockMPV:
         def __init__(self, *args, **kwargs):
@@ -766,3 +816,12 @@ def install_qt_mpv_stubs() -> None:
         def terminate(self): pass
     mpv_mod.MPV = MockMPV
     sys.modules["mpv"] = mpv_mod
+
+
+
+
+
+
+
+
+

@@ -116,9 +116,10 @@ class MergerConsoleManager:
         log_dir = os.path.join(base_dir, "logs")
         try:
             import mpv
+            mpv.log_path = os.path.join(log_dir, "mpv.log")
         except ImportError:
             class MockMPV: 
-                log_path = None
+                log_path = os.path.join(log_dir, "mpv.log")
             mpv = MockMPV()
         if str(logger_name) == "Video_Merger":
             logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")

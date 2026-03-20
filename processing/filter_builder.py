@@ -6,7 +6,7 @@ class FilterResult(tuple):
         return any(item in str(x) for x in self)
 
 class AudioFilterMixin:
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None, music_start_index=1):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, time_mapper=None, sample_rate=48000, music_tracks=None, music_start_index=1, total_project_duration=None):
         chain = []
         target_sample_rate = sample_rate or 48000
         raw_parts = []
@@ -22,7 +22,10 @@ class AudioFilterMixin:
             if isinstance(item, list):
                 for sub in item: flatten(sub)
             elif item:
-                cleaned_parts.append(str(item))
+                if isinstance(item, str):
+                    cleaned_parts.append(item)
+                else:
+                    cleaned_parts.append(str(item))
         flatten(raw_parts)
         if not cleaned_parts:
             cleaned_parts = ["anull"]
@@ -32,7 +35,10 @@ class AudioFilterMixin:
         if not tracks and music_config and music_config.get("path"):
             path = music_config.get("path")
             offset = music_config.get("file_offset_sec", 0.0)
-            dur = (video_end_time - video_start_time) / speed_factor
+            if total_project_duration is not None:
+                dur = total_project_duration
+            else:
+                dur = (video_end_time - video_start_time) / speed_factor
             tracks = [(path, offset, dur)]
         if not tracks:
             chain.append(f"[a_main_raw]aresample={target_sample_rate}:async=1[a_main_prepared]")
@@ -107,15 +113,22 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         def time_mapper(timeline_sec):
             target = _to_clip_relative_sec(timeline_sec)
             mapped = 0.0
+            accum_src = 0.0
             for ch in chunks:
                 ch_start, ch_end, ch_speed = ch['start'], ch['end'], ch['speed']
-                if target <= ch_start: break
-                covered = min(target, ch_end) - ch_start
-                if covered > 0: mapped += covered / ch_speed
-                if target <= ch_end: break
+                dur = ch_end - ch_start
+                if target <= ch_start:
+                    break
+                if target >= ch_end:
+                    mapped += dur / ch_speed
+                else:
+                    mapped += (target - ch_start) / ch_speed
+                    break
             return max(0.0, mapped)
         for seg in segments:
-            seg_start, seg_end, seg_speed = seg['start_ms'] / 1000.0, seg['end_ms'] / 1000.0, seg['speed']
+            seg_start = float(seg.get('start', seg.get('start_ms', 0))) / 1000.0
+            seg_end = float(seg.get('end', seg.get('end_ms', 0))) / 1000.0
+            seg_speed = float(seg['speed'])
             rel_start = _to_clip_relative_sec(seg_start)
             rel_end = _to_clip_relative_sec(seg_end)
             if rel_start > current_time + 0.001:

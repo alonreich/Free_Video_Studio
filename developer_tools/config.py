@@ -8,18 +8,18 @@ class WizardState(Enum):
     READY = "CONFIG READY"
 
 class CV_HEURISTICS:
-    MINIMAP_X_RATIO_W = 0.70
+    MINIMAP_X_RATIO_W = 0.65
     MINIMAP_Y_RATIO_H = 0.0
-    MINIMAP_W_RATIO_W = 0.30
+    MINIMAP_W_RATIO_W = 0.35
     MINIMAP_H_RATIO_H = 0.40
     HP_COLOR_X_RATIO_W = 0.0
-    HP_COLOR_Y_RATIO_H = 0.60
-    HP_COLOR_W_RATIO_W = 0.55
-    HP_COLOR_H_RATIO_H = 0.40
-    LOOT_BOX_X_RATIO_W = 0.40
-    LOOT_BOX_Y_RATIO_H = 0.60
-    LOOT_BOX_W_RATIO_W = 0.60
-    LOOT_BOX_H_RATIO_H = 0.40
+    HP_COLOR_Y_RATIO_H = 0.70
+    HP_COLOR_W_RATIO_W = 0.50
+    HP_COLOR_H_RATIO_H = 0.30
+    LOOT_BOX_X_RATIO_W = 0.50
+    LOOT_BOX_Y_RATIO_H = 0.70
+    LOOT_BOX_W_RATIO_W = 0.50
+    LOOT_BOX_H_RATIO_H = 0.30
     MATCH_THRESHOLD = 0.50
     SHRINK_WRAP_PADDING = 8
 HUD_ELEMENT_MAPPINGS = {
@@ -475,14 +475,14 @@ QScrollBar::sub-line:vertical {{
     border-top-right-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
 }}
 QScrollBar::up-arrow:vertical {{
-    image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M7 14l5-5 5 5z'/></svg>");
-    width: 12px;
-    height: 12px;
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M5 2L0 8h10z' fill='white'/%3E%3C/svg%3E");
+    width: 10px;
+    height: 10px;
 }}
 QScrollBar::down-arrow:vertical {{
-    image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
-    width: 12px;
-    height: 12px;
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 2l5 6 5-6z' fill='white'/%3E%3C/svg%3E");
+    width: 10px;
+    height: 10px;
 }}
 QScrollBar:horizontal {{
     background: {UI_COLORS.BACKGROUND_DARK};
@@ -518,14 +518,14 @@ QScrollBar::sub-line:horizontal {{
     border-bottom-left-radius: {UI_LAYOUT.SCROLLBAR_BORDER_RADIUS};
 }}
 QScrollBar::left-arrow:horizontal {{
-    image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M14 7l-5 5 5 5z'/></svg>");
-    width: 12px;
-    height: 12px;
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M8 0L2 5l6 5z' fill='white'/%3E%3C/svg%3E");
+    width: 10px;
+    height: 10px;
 }}
 QScrollBar::right-arrow:horizontal {{
-    image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M10 17l5-5-5-5z'/></svg>");
-    width: 12px;
-    height: 12px;
+    image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M2 0l6 5-6 5z' fill='white'/%3E%3C/svg%3E");
+    width: 10px;
+    height: 10px;
 }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{

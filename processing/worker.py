@@ -138,6 +138,7 @@ class ProcessThread(QThread):
 
     def _emit_finished(self, success, message):
         if self.is_canceled and not success:
+            self._emit_signal_or_callback(self.finished_signal, False, "Canceled by user.")
             return
         self._emit_signal_or_callback(self.finished_signal, bool(success), str(message))
 
@@ -178,8 +179,25 @@ class ProcessThread(QThread):
                     if self.logger: self.logger.warning(f"Skipping text overlay: {e}")
                     text_png_path = None
             music_cfg = self.music_config if hasattr(self, 'music_config') else {}
+            
+            g_v, g_a, g_dur = None, None, self.duration_corrected_sec
+            granular_v_a_filters = ""
+            if self.speed_segments:
+                g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
+                    self.input_path, 
+                    (self.end_time_ms - self.start_time_ms),
+                    self.speed_segments,
+                    self.speed_factor,
+                    source_cut_start_ms=self.start_time_ms,
+                    input_v_label="[0:v]",
+                    input_a_label="[0:a]",
+                    target_fps=target_fps_expr
+                )
+                granular_v_a_filters = g_str
+            
             if self.bg_music_path and not self.music_tracks:
-                 self.music_tracks = [(self.bg_music_path, self.bg_music_offset_ms/1000.0, self.duration_corrected_sec)]
+                 self.music_tracks = [(self.bg_music_path, self.bg_music_offset_ms/1000.0, g_dur)]
+            
             music_start_index = 1
             audio_chains, final_a_label = self.filter_builder.build_audio_chain(
                 music_config=music_cfg,
@@ -187,7 +205,8 @@ class ProcessThread(QThread):
                 speed_factor=self.speed_factor, disable_fades=self.disable_fades,
                 vfade_in_d=0.5 if not self.disable_fades else 0, audio_filter_cmd="", sample_rate=48000,
                 music_tracks=self.music_tracks,
-                music_start_index=music_start_index
+                music_start_index=music_start_index,
+                total_project_duration=g_dur
             )
             core_path = os.path.normpath(os.path.join(self.temp_job_dir, "core.mp4"))
             ffmpeg_path = os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe')
@@ -199,34 +218,24 @@ class ProcessThread(QThread):
                 while True:
                     vcodec, rc_label = self.encoder_mgr.get_codec_flags(
                         current_encoder, 
-                        video_bitrate_kbps, self.duration_corrected_sec, target_fps_expr,
+                        video_bitrate_kbps, g_dur, target_fps_expr,
                         quality_level=self.quality_level
                     )
                     attempt_core_filters = []
                     v_label = "[0:v]"
                     a_label = "[0:a]"
-                    working_duration_sec = self.duration_corrected_sec
+                    working_duration_sec = g_dur
                     cfr_filter = f"fps={target_fps_expr}:round=near"
                     txt_input_label = None
                     if text_png_path and os.path.exists(text_png_path):
                         txt_input_label = f"[{music_start_index + len(self.music_tracks)}:v]"
-                    if self.speed_segments:
-                        g_str, g_v, g_a, g_dur, t_map = self.filter_builder.build_granular_speed_chain(
-                            self.input_path, 
-                            (self.end_time_ms - self.start_time_ms),
-                            self.speed_segments,
-                            self.speed_factor,
-                            source_cut_start_ms=self.start_time_ms,
-                            input_v_label=v_label,
-                            input_a_label=a_label,
-                            target_fps=target_fps_expr
-                        )
-                        attempt_core_filters.append(g_str)
+                    
+                    if granular_v_a_filters:
+                        attempt_core_filters.append(granular_v_a_filters)
                         v_stabilized_pad = g_v
                         a_prepared_pad = g_a
-                        working_duration_sec = g_dur
                     else:
-                        v_sync = f"{v_label}{cfr_filter},setpts=(PTS-STARTPTS)/{self.speed_factor}[v_stabilized]"
+                        v_sync = f"{v_label}{cfr_filter},setpts='(PTS-STARTPTS)/{self.speed_factor:.4f}'[v_stabilized]"
                         v_stabilized_pad = "[v_stabilized]"
                         a_prepared_pad = "[a_prepared_base]"
                         audio_speed_filters = []
@@ -234,7 +243,7 @@ class ProcessThread(QThread):
                         while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
                         while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
                         audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-                        a_sync = f"{a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1[a_prepared_base]"
+                        a_sync = f"{a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_prepared_base]"
                         attempt_core_filters.append(v_sync)
                         attempt_core_filters.append(a_sync)
                     if self.is_mobile_format:

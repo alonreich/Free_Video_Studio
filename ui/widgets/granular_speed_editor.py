@@ -86,19 +86,20 @@ class GranularTimelineSlider(TrimmedSlider):
                              self._get_handle_rect('end').contains(e.pos()) or \
                              self._get_playhead_rect().contains(e.pos())
             if not is_over_handle:
-                groove_center_y = self.height() // 2
-                is_vertical_hit = abs(e.pos().y() - groove_center_y) <= 12
+                click_x = e.pos().x()
                 found_seg = -1
-                if is_vertical_hit:
-                    for i, seg in enumerate(self.segments):
-                        if seg['start'] <= val <= seg['end']:
-                            found_seg = i
-                            break
+                for i, seg in enumerate(self.segments):
+                    s_pos = self._map_value_to_pos(seg['start'])
+                    e_pos = self._map_value_to_pos(seg['end'])
+                    if s_pos > e_pos: s_pos, e_pos = e_pos, s_pos
+                    if s_pos - 4 <= click_x <= e_pos + 4:
+                        found_seg = i
+                        break
                 if found_seg != -1:
                     self.active_segment_index = found_seg
                     if hasattr(self.parent(), 'edit_segment'):
                         self.parent().edit_segment(found_seg)
-                        return
+                        self.parent().seek_video(self.segments[found_seg]['start'])
                 else:
                     self.active_segment_index = -1
                     if hasattr(self.parent(), 'on_selection_cleared'):
@@ -235,15 +236,9 @@ class GranularSpeedEditor(QDialog):
     STYLE_METALLIC_BLUE = """QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2e82a0, stop:0.5 #1e648c, stop:1 #123d50); color: #eeeeee; font-weight: bold; font-size: 11px; border-radius: 8px; border-top: 1px solid rgba(255, 255, 255, 0.2); border-left: 1px solid rgba(255, 255, 255, 0.2); border-bottom: 2px solid rgba(0, 0, 0, 0.9); border-right: 2px solid rgba(0, 0, 0, 0.9); padding: 10px 2px; } QPushButton:hover { border: 2px solid #7DD3FC; } QPushButton:pressed { background: #061a26; border-top: 2px solid rgba(0, 0, 0, 1.0); border-left: 2px solid rgba(0, 0, 0, 1.0); padding-top: 11px; padding-left: 3px; }"""
     STYLE_DELETE_ACTIVE = STYLE_METALLIC_RED 
 
-    def _ensure_mpv_lock(self):
-        if not hasattr(self, "_mpv_lock") or self._mpv_lock is None:
-            self._mpv_lock = threading.RLock()
-        if not hasattr(self, "_mpv_lock_timeout"): self._mpv_lock_timeout = 0.20
-        return self._mpv_lock
-
     def _safe_mpv_set(self, prop, value):
         if not getattr(self, "player", None): return False
-        lock = self._ensure_mpv_lock()
+        lock = self._mpv_lock
         try:
             if not lock.acquire(timeout=self._mpv_lock_timeout): return False
             try:
@@ -259,7 +254,7 @@ class GranularSpeedEditor(QDialog):
 
     def _safe_mpv_get(self, prop, default=None):
         if not getattr(self, "player", None): return default
-        lock = self._ensure_mpv_lock()
+        lock = self._mpv_lock
         try:
             if not lock.acquire(timeout=self._mpv_lock_timeout): return default
             try: return getattr(self.player, prop, default)
@@ -268,7 +263,7 @@ class GranularSpeedEditor(QDialog):
 
     def _safe_mpv_command(self, *args):
         if not getattr(self, "player", None): return False
-        lock = self._ensure_mpv_lock()
+        lock = self._mpv_lock
         try:
             if not lock.acquire(timeout=self._mpv_lock_timeout): return False
             try: self.player.command(*args); return True
@@ -347,8 +342,6 @@ class GranularSpeedEditor(QDialog):
             try: self.parent_app.config_manager.save_config(cfg)
             except Exception: pass
 
-    def _restore_parent_video_output(self): pass
-
     def _update_clear_all_btn_state(self):
         has_segments = len(self.speed_segments) > 0; self.clear_all_btn.setEnabled(has_segments); self.clear_all_btn.setStyleSheet(self.STYLE_METALLIC_RED if has_segments else self.STYLE_METALLIC_GREY); self._update_segment_counter()
 
@@ -402,7 +395,7 @@ class GranularSpeedEditor(QDialog):
             if not getattr(self, "player", None): return
             try:
                 dur = self._safe_mpv_get('duration', 0)
-                if dur and dur > 0: self.timeline.setRange(0, int(self.duration)); self.timeline.set_duration_ms(int(self.duration)); self.timeline.set_segments(self.speed_segments); self.timeline.set_trim_times(0, 0); self.selection_modified = False; self.update_pending_visualization(); QTimer.singleShot(250, self._finalize_startup)
+                if dur and dur > 0: self.timeline.setRange(0, int(self.duration)); self.timeline.set_duration_ms(int(self.duration)); self.timeline.set_segments(self.speed_segments); self.timeline.set_trim_times(0, int(self.duration)); self.selection_modified = False; self.update_pending_visualization(); QTimer.singleShot(250, self._finalize_startup)
                 else: QTimer.singleShot(100, _get_dur)
             except Exception: QTimer.singleShot(100, _get_dur)
         QTimer.singleShot(100, _get_dur)
@@ -444,9 +437,10 @@ class GranularSpeedEditor(QDialog):
             self.set_end()
             event.accept()
         elif key == Qt.Key_Delete and self.player:
-            rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
-            for i, seg in enumerate(self.speed_segments):
-                if seg['start'] <= rel_t <= seg['end']: self.delete_segment(i); break
+            if self.timeline.active_segment_index != -1:
+                self.delete_segment(self.timeline.active_segment_index)
+            else:
+                self.delete_current_selected_segment()
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -552,11 +546,11 @@ class GranularSpeedEditor(QDialog):
                 if smart_s >= rel_t: smart_s = prev_end
                 self.timeline.set_trim_times(smart_s, rel_t)
             curr_s = self.timeline.trimmed_start_ms
+            clamp_limit = rel_t
             for seg in self.speed_segments:
-                if seg['start'] < rel_t <= seg['end']:
-                    rel_t = seg['start']
-                    break
-            rel_t = max(rel_t, curr_s + 10)
+                if curr_s < seg['start'] <= clamp_limit:
+                    clamp_limit = seg['start']
+            rel_t = max(curr_s + 10, min(rel_t, clamp_limit))
             self.timeline.set_trim_times(curr_s, rel_t)
             if rel_t > curr_s:
                 new_idx = self.add_segment()
@@ -594,11 +588,11 @@ class GranularSpeedEditor(QDialog):
         msg = QMessageBox(self); msg.setIcon(QMessageBox.Question); msg.setWindowTitle("Clear All"); msg.setText("Remove all speed segments?"); msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         for b in msg.findChildren(QPushButton): b.setCursor(Qt.PointingHandCursor)
         if msg.exec_() == QMessageBox.Yes:
-            self.speed_segments = []; self.timeline.set_segments([]); self.timeline.active_segment_index = -1; self.timeline.set_trim_times(0, 0); self._start_manually_set = False; self.update_pending_visualization(); rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start; self.update_playback_speed(rel_t); self.list_modified = True; self.selection_modified = False; self._update_clear_all_btn_state()
+            self.speed_segments = []; self.timeline.set_segments([]); self.timeline.active_segment_index = -1; self.timeline.set_trim_times(0, int(self.duration)); self._start_manually_set = False; self.update_pending_visualization(); rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start; self.update_playback_speed(rel_t); self.list_modified = True; self.selection_modified = False; self._update_clear_all_btn_state()
 
     def delete_segment(self, index):
         if 0 <= index < len(self.speed_segments):
-            self.speed_segments.pop(index); self.timeline.set_segments(self.speed_segments); self.timeline.active_segment_index = -1; self.timeline.set_trim_times(0, 0); self._start_manually_set = False; self.update_pending_visualization(); rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start; self.update_playback_speed(rel_t); self.list_modified = True; self.delete_seg_btn.setEnabled(False); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY); self.timeline.stop_ants(); self._update_clear_all_btn_state()
+            self.speed_segments.pop(index); self.timeline.set_segments(self.speed_segments); self.timeline.active_segment_index = -1; self.timeline.set_trim_times(0, int(self.duration)); self._start_manually_set = False; self.update_pending_visualization(); rel_t = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start; self.update_playback_speed(rel_t); self.list_modified = True; self.delete_seg_btn.setEnabled(False); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY); self.timeline.stop_ants(); self._update_clear_all_btn_state()
 
     def delete_current_selected_segment(self):
         if self.timeline.active_segment_index != -1: self.delete_segment(self.timeline.active_segment_index)
@@ -613,31 +607,46 @@ class GranularSpeedEditor(QDialog):
 
     def add_segment(self):
         s, e, sp = self.timeline.trimmed_start_ms, self.timeline.trimmed_end_ms, float(self.speed_spin.value())
-        if abs(sp - self.base_speed) > 0.01 and sum(1 for seg in self.speed_segments if abs(seg['speed'] - self.base_speed) > 0.01) >= 10:
-            QMessageBox.warning(self, "Limit Reached", "Maximum of 10 unique speed segments reached."); return None
         if e <= s: return None
-        new_seg, updated = {'start': s, 'end': e, 'speed': sp}, []
-        for i, seg in enumerate(self.speed_segments):
-            if i == self.timeline.active_segment_index: continue
-            if abs(seg['start'] - s) < 2 and abs(seg['end'] - e) < 2: continue
-            o_s, o_e = max(seg['start'], s), min(seg['end'], e)
-            if o_s < o_e:
-                if seg['start'] < o_s: updated.append({'start': seg['start'], 'end': o_s, 'speed': seg['speed']})
-                if seg['end'] > o_e: updated.append({'start': o_e, 'end': seg['end'], 'speed': seg['speed']})
-            else: updated.append(seg)
-        updated.append(new_seg); updated.sort(key=lambda x: x['start']); merged = []
+        new_seg = {'start': s, 'end': e, 'speed': sp}
+        updated = []
+        for seg in self.speed_segments:
+            if seg['end'] <= s or seg['start'] >= e:
+                updated.append(seg)
+            else:
+                if seg['start'] < s:
+                    updated.append({'start': seg['start'], 'end': s, 'speed': seg['speed']})
+                if seg['end'] > e:
+                    updated.append({'start': e, 'end': seg['end'], 'speed': seg['speed']})
+        updated.append(new_seg)
+        updated.sort(key=lambda x: x['start'])
+        merged = []
         if updated:
             curr = updated[0]
             for nxt in updated[1:]:
-                if nxt['start'] <= curr['end'] + 5 and abs(curr['speed'] - nxt['speed']) < 0.01: curr['end'] = max(curr['end'], nxt['end'])
-                else: merged.append(curr); curr = nxt
+                if nxt['start'] <= curr['end'] + 5 and abs(curr['speed'] - nxt['speed']) < 0.01:
+                    curr['end'] = max(curr['end'], nxt['end'])
+                else:
+                    merged.append(curr)
+                    curr = nxt
             merged.append(curr)
-        self.speed_segments = merged; self.timeline.set_segments(self.speed_segments); self.timeline.active_segment_index = -1; self.timeline.set_trim_times(0, 0); self._start_manually_set = False; self.list_modified = True; self.delete_seg_btn.setEnabled(False); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY); self.timeline.stop_ants(); self._update_clear_all_btn_state()
+        self.speed_segments = merged
+        self.timeline.set_segments(self.speed_segments)
+        self.timeline.active_segment_index = -1
+        self.timeline.set_trim_times(0, int(self.duration))
+        self._start_manually_set = False
+        self.list_modified = True
+        self.delete_seg_btn.setEnabled(False)
+        self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY)
+        self.timeline.stop_ants()
+        self._update_clear_all_btn_state()
         for i, seg in enumerate(self.speed_segments):
-            if abs(seg['start'] - s) < 5 or abs(seg['end'] - e) < 5: return i
+            if seg['start'] <= s <= seg['end']: return i
         return None
 
     def cleanup(self):
+        if hasattr(self, "timer") and self.timer and self.timer.isActive(): self.timer.stop()
+        if hasattr(self, "timeline") and hasattr(self.timeline, "m_ants_timer") and self.timeline.m_ants_timer.isActive(): self.timeline.m_ants_timer.stop()
         if hasattr(self, "player") and self.player:
             try:
                 self._safe_mpv_set("pause", True)

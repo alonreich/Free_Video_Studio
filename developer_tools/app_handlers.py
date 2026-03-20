@@ -1,5 +1,6 @@
 ﻿import os
 import time
+import logging
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton, QStyle
 from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtCore import QTimer, QThread, Qt, QObject, pyqtSignal
@@ -88,8 +89,6 @@ class CropAppHandlers:
             self.return_button.clicked.connect(self._deferred_launch_main_app)
         self.play_pause_button.clicked.connect(self.play_pause)
         self.open_button.clicked.connect(self.open_file)
-        if hasattr(self, 'open_image_button'):
-            self.open_image_button.clicked.connect(self.open_image_fallback)
         if hasattr(self, 'back_to_video_button'):
             self.back_to_video_button.clicked.connect(self.back_to_video)
         self.snapshot_button.clicked.connect(self.take_snapshot)
@@ -114,35 +113,30 @@ class CropAppHandlers:
         self.setStyleSheet(style)
 
     def _set_upload_hint_active(self, active):
-        """Centralized hint management for the pulsing 'UPLOAD VIDEO' guidance."""
-        overlay = getattr(self, 'upload_overlay', None)
-        if not overlay and hasattr(self, '__class__'):
-             overlay = getattr(self.__class__, 'upload_overlay', None)
+        """Directly toggle the pulsing 'UPLOAD VIDEO' guidance."""
+        win = self if hasattr(self, 'upload_overlay') else getattr(self, 'window', lambda: None)()
+        overlay = getattr(win, 'upload_overlay', None)
+        crop_overlay = getattr(win, 'cropping_hint_overlay', None)
         if overlay:
             if active:
+                if crop_overlay: crop_overlay.hide()
                 overlay.show()
                 overlay.raise_()
             else:
                 overlay.hide()
-            legacy = getattr(self, 'hint_overlay_widget', None)
-            if legacy:
-                legacy.hide()
-                if hasattr(self, '_hint_group'):
-                    self._hint_group.stop()
-            return
-        target = getattr(self, 'hint_overlay_widget', None)
-        if target:
+
+    def _set_cropping_hint_active(self, active):
+        """Directly toggle the pulsing 'START CROPPING' guidance."""
+        win = self if hasattr(self, 'cropping_hint_overlay') else getattr(self, 'window', lambda: None)()
+        overlay = getattr(win, 'cropping_hint_overlay', None)
+        upload_overlay = getattr(win, 'upload_overlay', None)
+        if overlay:
             if active:
-                if hasattr(self, '_update_upload_hint_responsive'):
-                    self._update_upload_hint_responsive()
-                target.show()
-                target.raise_()
-                if hasattr(self, '_hint_group'):
-                    self._hint_group.start()
+                if upload_overlay: upload_overlay.hide()
+                overlay.show()
+                overlay.raise_()
             else:
-                if hasattr(self, '_hint_group'):
-                    self._hint_group.stop()
-                target.hide()
+                overlay.hide()
 
     def back_to_video(self):
         """[FIX #8] Return to video seeker from drawing view."""
@@ -316,14 +310,6 @@ class CropAppHandlers:
         """
         if not pix or not rect: return
         process_rect = rect.toRect() if hasattr(rect, 'toRect') else rect
-
-        from config import HUD_SAFE_PADDING
-        tk = get_tech_key_from_role(role)
-        padding = HUD_SAFE_PADDING.get(tk, {})
-        if "left" in padding:
-            process_rect.setLeft(process_rect.left() + padding["left"])
-        if "right" in padding:
-            process_rect.setRight(process_rect.right() + padding["right"])
         if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
             pix = self.draw_widget.pixmap.copy(process_rect.intersected(self.draw_widget.pixmap.rect()))
         rect = process_rect
@@ -374,16 +360,6 @@ class CropAppHandlers:
             return
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("MAGIC WAND", "Activated automated HUD detection")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        anchor_dir = os.path.join(script_dir, 'anchors')
-        if not os.path.isdir(anchor_dir):
-             self.magic_wand_button.setEnabled(False)
-             self.magic_wand_button.setToolTip("Feature disabled: Reference templates ('anchors' folder) are missing.")
-             QMessageBox.warning(self, "Magic Wand Unavailable", 
-                                f"Magic Wand cannot function because the 'anchors' directory is missing.\n\n"
-                                f"Required path: {anchor_dir}\n\n"
-                                "Please ensure this folder exists with the necessary reference images.")
-             return
         if hasattr(self, '_magic_wand_candidates') and self._magic_wand_candidates:
             if not self.draw_widget._candidates_img:
                 self.draw_widget.set_candidates(self._magic_wand_candidates)
@@ -418,7 +394,11 @@ class CropAppHandlers:
         self._analyzing_timer.start(500)
         self.wand_thread = QThread()
         res = self.media_processor.original_resolution or "1920x1080"
-        params = {"resolution": res}
+        params = {
+            "resolution": res,
+            "input_file": self.media_processor.input_file_path,
+            "total_ms": self.media_processor.get_length()
+        }
         self.wand_worker = MagicWandWorker(MagicWand(self.logger, params), self.snapshot_path, params)
         self.wand_worker.moveToThread(self.wand_thread)
         self.wand_thread.started.connect(self.wand_worker.run)
@@ -491,20 +471,20 @@ class CropAppHandlers:
             self.logger.info(f"Magic Wand found {len(regions)} regions.")
             self.draw_widget.set_candidates(regions)
             self.update_wizard_step(3, f"Detected {len(regions)} elements! Click one to tag.")
+            try:
+                from crop_tools import GuidanceToast
+                toast = GuidanceToast(f"MAGIC WAND COMPLETE\n\nDetected {len(regions)} HUD Elements!", self)
+                toast.show()
+                QTimer.singleShot(3000, toast.close)
+            except Exception as e:
+                self.logger.error(f"Failed to show toast: {e}")
         else:
             self.logger.warning("Magic Wand found no elements.")
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Magic Wand Result")
-            msg.setText("No HUD elements detected automatically.\n\n"
-                       "Tips:\n"
-                       "- Try a frame with higher contrast\n"
-                       "- Ensure HUD is fully visible\n\n"
-                       "You can now draw boxes manually.")
-            for btn in msg.findChildren(QPushButton):
-                btn.setCursor(Qt.PointingHandCursor)
-            msg.exec_()
             self._magic_wand_candidates = None
+            if hasattr(self, 'draw_refine_hint_label'):
+                self.draw_refine_hint_label.setText("Oops! No elements detected automatically.\nPlease draw boxes manually.")
+                if hasattr(self, 'show_refine_selection_overlay'):
+                    self.show_refine_selection_overlay()
             self.update_wizard_step(3, "Please draw boxes manually around HUD elements.")
             self.draw_widget.setFocus()
 
@@ -530,83 +510,31 @@ class CropAppHandlers:
         self.draw_widget.set_crop_rect(rect_f, auto_zoom=False)
         self.draw_widget.update()
 
+    def __init__(self):
+        super().__init__()
+        self.logger = logging.getLogger(__name__)
+
     def reset_state(self, force=False):
-        """[FIX] Comprehensive system reset with UI view state restoration and scene cleanup."""
-        if not force and getattr(self, '_dirty', False):
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Question)
-            msg.setWindowTitle("Reset Confirmation")
-            msg.setText("Are you sure you want to reset all current progress?\nUnsaved changes will be lost.")
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.No)
-            for btn in msg.findChildren(QPushButton):
-                btn.setCursor(Qt.PointingHandCursor)
-            if msg.exec_() == QMessageBox.No:
-                return
-        self.logger.info("Performing surgical state reset...")
-        if hasattr(self, 'view_stack') and hasattr(self, 'video_frame'):
-            self.view_stack.setCurrentWidget(self.video_frame)
-        if hasattr(self, 'draw_scroll_area'): self.draw_scroll_area.hide()
-        if hasattr(self, 'video_container'): self.video_container.show()
-        try:
-            self._delete_managed_snapshot()
-            cleanup_temp_snapshots()
-            ProcessManager.cleanup_temp_files()
-        except Exception as e:
-            self.logger.error(f"Error during state reset: {e}")
-        for attr in ['_magic_wand_preview_timer', '_magic_wand_timeout_timer', '_analyzing_timer', '_scrubbing_safety_timer']:
-            timer = getattr(self, attr, None)
-            if timer: 
-                try:
-                    timer.stop()
-                except RuntimeError:
-                    pass
-        self._cleanup_snapshot_runtime()
-        if hasattr(self, '_set_cropping_hint_active'):
-            self._set_cropping_hint_active(False)
-        if self._is_wand_thread_running():
-            try:
-                worker = getattr(self, 'wand_worker', None)
-                if worker and hasattr(worker, 'cancel'):
-                    worker.cancel()
-                self.wand_thread.requestInterruption()
-                self.wand_thread.quit()
-                if not self.wand_thread.wait(1500):
-                    self.wand_thread.terminate()
-                    self.wand_thread.wait(500)
-            except RuntimeError:
-                self.wand_thread = None
-        self._cleanup_magic_wand_runtime()
-        if hasattr(self, 'state_manager'):
-            self.state_manager.clear_undo_stack()
-        if hasattr(self, 'background_item') and self.background_item:
-            try:
-                from PyQt5 import sip
-                if not sip.isdeleted(self.background_item) and self.background_item.scene():
-                    self.background_item.scene().removeItem(self.background_item)
-            except: pass
-            self.background_item = None
-        if hasattr(self, 'portrait_scene'):
-            self.portrait_scene.clear()
-            self.portrait_scene.setBackgroundBrush(QColor("black"))
-            self.placeholders_group = []
-            if hasattr(self, 'modified_roles'):
-                self.modified_roles.clear()
+        """[FIX] Resets the UI and current session, but PRESERVES the saved config file."""
+        self.logger.info("Resetting current session (UI only)...")
         if hasattr(self, 'media_processor') and self.media_processor:
             self.media_processor.stop()
             self.media_processor.set_media_to_null()
-        if hasattr(self, 'video_viewport_container'):
-            self.video_viewport_container.hide()
+            self.media_processor.original_resolution = None
+            self.media_processor.input_file_path = None
+        self._delete_managed_snapshot()
+        if hasattr(self, 'portrait_scene'):
+            self.portrait_scene.clear()
+            self.portrait_scene.setBackgroundBrush(QColor("#203b4b"))
+            if hasattr(self, 'modified_roles'):
+                self.modified_roles.clear()
         if hasattr(self, 'draw_widget') and self.draw_widget:
             self.draw_widget.clear_selection()
             self.draw_widget.setImage(None)
-            self.draw_widget.set_candidates([])
-        self.snapshot_path = None
-        self._dirty = False
         self.show_video_view()
-        self.update_wizard_step(1, "Open a video file to begin the configuration wizard.")
-        self._set_upload_hint_active(True)
-        self.update_progress_tracker()
+        self.update_wizard_step(1, "Open a video file to begin.")
+        if hasattr(self, 'video_surface'):
+             self.video_surface.update()
         
     def _sync_play_pause_button(self, is_playing=None):
         if is_playing is None:
@@ -685,7 +613,7 @@ class CropAppHandlers:
         self.snapshot_path = None
         self._snapshot_owned_by_app = False
 
-    def load_file(self, file_path):
+    def load_file(self, file_path, start_paused=False):
         """[FIX #12] Defer slider and status updates until media length is confirmed."""
         if not file_path or not os.path.isfile(file_path):
             QMessageBox.warning(self, "Invalid File", "Selected file does not exist or is not a regular file.")
@@ -702,7 +630,7 @@ class CropAppHandlers:
         self.last_dir = os.path.dirname(file_path)
         if hasattr(self, 'save_geometry'):
             self.save_geometry()
-        loaded_ok = self.media_processor.load_media(file_path, self.video_surface.winId() if hasattr(self, 'video_surface') else self.video_frame.winId())
+        loaded_ok = self.media_processor.load_media(file_path, self.video_surface.winId() if hasattr(self, 'video_surface') else self.video_frame.winId(), start_paused=start_paused)
         if not loaded_ok:
             QMessageBox.critical(self, "Video Load Error", "Failed to load this video. Please choose another file.")
             self.play_pause_button.setEnabled(False)
@@ -738,8 +666,9 @@ class CropAppHandlers:
         self.timer.start()
 
     def take_snapshot(self):
-        if not self.media_processor.original_resolution and self.media_processor.media_player:
-             w, h = self.media_processor.media_player.video_get_size(0)
+        if not self.media_processor.original_resolution and self.media_processor.player:
+             w = getattr(self.media_processor.player, 'width', 0)
+             h = getattr(self.media_processor.player, 'height', 0)
              if w > 0 and h > 0:
                  self.media_processor.original_resolution = f"{w}x{h}"
         max_resolution_wait_attempts = 12
@@ -863,6 +792,8 @@ class CropAppHandlers:
             self.update_wizard_step(3, f"Draw a box around the {next_element}" if next_element else "Refine your selection")
             self._snapshot_processing = False
             self.snapshot_button.setVisible(False)
+            if hasattr(self, 'play_pause_button'):
+                self.play_pause_button.setVisible(False)
             if hasattr(self, 'back_to_video_button'):
                 self.back_to_video_button.setVisible(True)
             if hasattr(self, 'magic_wand_button'):
@@ -890,12 +821,14 @@ class CropAppHandlers:
         if hasattr(self, 'magic_wand_button'):
             self.magic_wand_button.setVisible(False)
         if hasattr(self, '_set_cropping_hint_active'):
-            self._set_cropping_hint_active(True)
+            self._set_cropping_hint_active(has_video)
+        if not has_video and hasattr(self, '_set_upload_hint_active'):
+            self._set_upload_hint_active(True)
 
     def set_position(self, position_ms):
-        if not hasattr(self, 'media_processor') or not self.media_processor or not self.media_processor.media_player:
+        if not hasattr(self, 'media_processor') or not self.media_processor:
             return
-        total = self.media_processor.media_player.get_length()
+        total = self.media_processor.get_length()
         if total > 0:
             clamped_ms = max(0, min(int(position_ms), int(total)))
             normalized = max(0.0, min(1.0, clamped_ms / float(total)))
@@ -906,7 +839,8 @@ class CropAppHandlers:
         self.is_scrubbing = True
         self._was_playing_before_scrub = self.media_processor.is_playing()
         if self._was_playing_before_scrub:
-            self.media_processor.media_player.pause()
+            if self.media_processor.player:
+                self.media_processor.player.pause = True
             self._sync_play_pause_button(False)
         if not hasattr(self, '_scrubbing_safety_timer'):
             self._scrubbing_safety_timer = QTimer(self)
@@ -966,11 +900,13 @@ class CropAppHandlers:
                     self.position_slider.setValue(current_time)
                     self.position_slider.blockSignals(False)
             self.update_time_labels()
-            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
-                try:
-                    if self.hint_overlay_widget.isVisible():
-                        self.hint_overlay_widget.raise_()
-                except RuntimeError: pass
+            for attr in ['upload_overlay', 'cropping_hint_overlay', 'hint_overlay_widget']:
+                overlay = getattr(self, attr, None)
+                if overlay:
+                    try:
+                        if overlay.isVisible():
+                            overlay.raise_()
+                    except RuntimeError: pass
         except Exception as e:
             if "deleted" not in str(e).lower():
                 self.logger.error(f"Error in update_ui: {e}")

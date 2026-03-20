@@ -99,8 +99,8 @@ class MediaProcessor(QObject):
             return system_path
         return local_path
 
-    def load_media(self, file_path, video_frame_winId):
-        logger.info(f"Loading media from: {file_path}")
+    def load_media(self, file_path, video_frame_winId, start_paused=True):
+        logger.info(f"Loading media from: {file_path} (start_paused={start_paused})")
         if not self.player:
             logger.error("MPV not initialized; load_media aborted.")
             return False
@@ -111,8 +111,9 @@ class MediaProcessor(QObject):
                 new_wid = int(video_frame_winId)
                 if getattr(self.player, 'wid', None) != new_wid:
                     self.player.wid = new_wid
+            self.player.vid = "auto"
             self.player.command("loadfile", file_path, "replace")
-            self.player.pause = False
+            self.player.pause = start_paused
             thread = threading.Thread(target=self.get_video_info, args=(file_path,), daemon=True)
             thread.start()
             return True
@@ -208,13 +209,15 @@ class MediaProcessor(QObject):
             self.player.stop()
 
     def set_media_to_null(self):
-        logger.info("Unloading media.")
+        """[FIX] Unloads media and clears the screen to a black void without breaking WID link."""
+        logger.info("Unloading media and clearing video output.")
         self._kill_ffprobe_procs()
         if self.player:
             try:
-                self.player.loadfile("null://", "replace")
                 self.player.command("stop")
-            except: pass
+                self.player.vid = "no"
+            except Exception as e:
+                logger.warning(f"Error while clearing media: {e}")
         self.original_resolution = None
         self.input_file_path = None
 

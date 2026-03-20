@@ -81,7 +81,7 @@ class MobileFilterMixin:
                 parts.append(f"{curr_v}[v_layer_out_{i}]overlay=x={lx}:y={ly}:eof_action=pass{next_v}")
                 curr_v = next_v
         else:
-            parts.append(f"{input_pad}scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:(iw-{INTERNAL_W})/2:(ih-{INTERNAL_H})/2[main_base]")
+            parts.append(f"{input_pad}scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:trunc((iw-{INTERNAL_W})/2/2)*2:trunc((ih-{INTERNAL_H})/2/2)*2[main_base]")
             curr_v = "[main_base]"
         parts.append(f"{curr_v}scale={CONTENT_AREA_W}:{CONTENT_AREA_H}:flags=lanczos,pad={FINAL_W}:{FINAL_H}:0:{CONTENT_OFFSET_Y}:black[v_padded]")
         curr_v = "[v_padded]"

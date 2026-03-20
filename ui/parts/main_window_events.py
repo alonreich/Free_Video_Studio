@@ -41,8 +41,7 @@ class MainWindowEventsMixin:
             if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
                 r = self.video_surface.rect()
                 top_left = self.video_surface.mapToGlobal(r.topLeft())
-                local_tl = self.mapFromGlobal(top_left)
-                self.portrait_mask_overlay.setGeometry(QRect(local_tl, r.size()))
+                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
                 if hasattr(self, '_update_portrait_mask_overlay_state'):
                     self._update_portrait_mask_overlay_state()
         except Exception as e:
@@ -61,8 +60,7 @@ class MainWindowEventsMixin:
             if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
                 r = self.video_surface.rect()
                 top_left = self.video_surface.mapToGlobal(r.topLeft())
-                local_tl = self.mapFromGlobal(top_left)
-                self.portrait_mask_overlay.setGeometry(QRect(local_tl, r.size()))
+                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
         except Exception: pass
 
     def _delayed_resize_event(self):

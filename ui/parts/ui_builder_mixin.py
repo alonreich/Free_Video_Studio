@@ -598,6 +598,7 @@ class UiBuilderMixin:
                 "Okay (Balanced Mobile)", 
                 "Standard (High Quality)", 
                 "Good (90MB - High Quality)", 
+                "Maximum (Original Video Size)"
             ]
             self.logger.info(f"OPTION: Video Output Quality -> {titles[idx]}")
         self.quality_slider.valueChanged.connect(_on_quality_changed)

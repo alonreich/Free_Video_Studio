@@ -113,7 +113,7 @@ def kill_process_tree(pid: int) -> None:
         parent.kill()
     except: pass
 
-def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, music_volume: float = 1.0, sample_rate: int = 48000, video_has_audio: bool = True) -> list[str]:
+def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, music_volume: float = 1.0, sample_rate: int = 48000, video_has_audio: bool = True, duration: float = 0.0) -> list[str]:
     """
     Returns FFmpeg filter strings for ducking music based on video audio.
     Protects video dialogue by ducking music when video audio is present.
@@ -123,6 +123,7 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
         music_volume: Music volume multiplier (0.0 to 1.0)
         sample_rate: Output sample rate
         video_has_audio: Whether the video stream actually contains audio.
+        duration: Total duration of the clip to prevent infinite streams (Fix #1).
     Returns:
         List of filter strings to be joined with ';'
     """
@@ -132,7 +133,8 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
     filters.append("[mus_to_filter]highpass=f=150[mus_high]")
     trigger_source = video_audio_stream
     if not video_has_audio:
-        filters.append(f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}[video_silence]")
+        dur_str = f":d={duration}" if duration > 0 else ""
+        filters.append(f"anullsrc=channel_layout=stereo:sample_rate={sample_rate}{dur_str}[video_silence]")
         trigger_source = "[video_silence]"
     filters.append(f"{trigger_source}asplit=2[game_out_pre][game_trig]")
     filters.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")

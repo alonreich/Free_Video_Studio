@@ -90,6 +90,8 @@ class MediaProber:
             if fps <= 1.0:
                 return fallback
             if fps > 60.01:
+                if abs(fps - 119.88) < 0.1 or abs(fps - 239.76) < 0.1:
+                    return "60000/1001"
                 return "60"
             if abs(fps - 60.0) < 0.001: return "60"
             if abs(fps - 59.94) < 0.01: return "60000/1001"

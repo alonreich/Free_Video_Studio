@@ -152,6 +152,11 @@ class VideoCompressorApp(QMainWindow, UiBuilderMixin, PhaseOverlayMixin, PlayerM
         logging.getLogger().addHandler(self._live_handler)
         self.live_log_signal.connect(self._on_live_log)
 
+    def _cleanup_live_logging(self):
+        if hasattr(self, "_live_handler"):
+            logging.getLogger().removeHandler(self._live_handler)
+            self._live_handler = None
+
     def _on_live_log(self, msg):
         if hasattr(self, "log_viewer"):
             self.log_viewer.append(msg)
