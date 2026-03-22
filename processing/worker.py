@@ -170,16 +170,25 @@ class ProcessThread(QThread):
             text_png_path = None
             if self.portrait_text:
                 text_png_path = os.path.join(self.temp_job_dir, "portrait_text.png")
-                tw, th = (1080, 1920) if self.is_mobile_format else (1920, 1080)
                 try:
-                    generate_text_overlay_png(self.portrait_text, tw, th, self.config.base_font_size, self.config.line_spacing, text_png_path, self.config, self.logger)
-                    if not os.path.exists(text_png_path):
+                    tw = 1080
+                except Exception:
+                    tw = 1080
+                try:
+                    from .text_ops import TextWrapper
+                    wrapper = TextWrapper(self.config)
+                    final_size, wrapped_lines = wrapper.fit_and_wrap(self.portrait_text, target_width=1000, logger=self.logger)
+                    text_to_render = "\n".join(wrapped_lines)
+                    gen_ok = generate_text_overlay_png(text_to_render, tw, 150, final_size, self.config.line_spacing, text_png_path, self.config, self.logger)
+                    if not gen_ok or not os.path.exists(text_png_path) or os.path.getsize(text_png_path) == 0:
+                        if self.logger: self.logger.error(f"TEXT_GEN_FAILED_OR_EMPTY: ok={gen_ok} exists={os.path.exists(text_png_path)}")
                         text_png_path = None
+                    else:
+                        if self.logger: self.logger.info(f"TEXT_GEN_VERIFIED: size={os.path.getsize(text_png_path)}")
                 except Exception as e:
                     if self.logger: self.logger.warning(f"Skipping text overlay: {e}")
                     text_png_path = None
             music_cfg = self.music_config if hasattr(self, 'music_config') else {}
-            
             g_v, g_a, g_dur = None, None, self.duration_corrected_sec
             granular_v_a_filters = ""
             if self.speed_segments:
@@ -194,10 +203,8 @@ class ProcessThread(QThread):
                     target_fps=target_fps_expr
                 )
                 granular_v_a_filters = g_str
-            
             if self.bg_music_path and not self.music_tracks:
                  self.music_tracks = [(self.bg_music_path, self.bg_music_offset_ms/1000.0, g_dur)]
-            
             music_start_index = 1
             audio_chains, final_a_label = self.filter_builder.build_audio_chain(
                 music_config=music_cfg,
@@ -227,9 +234,12 @@ class ProcessThread(QThread):
                     working_duration_sec = g_dur
                     cfr_filter = f"fps={target_fps_expr}:round=near"
                     txt_input_label = None
-                    if text_png_path and os.path.exists(text_png_path):
+                    if text_png_path and os.path.exists(text_png_path) and os.path.getsize(text_png_path) > 0:
                         txt_input_label = f"[{music_start_index + len(self.music_tracks)}:v]"
-                    
+                        self.logger.info(f"TEXT_OVERLAY: path={text_png_path} label={txt_input_label} size={os.path.getsize(text_png_path)}")
+                    else:
+                        if self.portrait_text:
+                            self.logger.warning(f"TEXT_OVERLAY_MISSING: path={text_png_path}")
                     if granular_v_a_filters:
                         attempt_core_filters.append(granular_v_a_filters)
                         v_stabilized_pad = g_v
@@ -266,12 +276,12 @@ class ProcessThread(QThread):
                     filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
                     with open(filter_script_path, 'w', encoding='utf-8') as f:
                         f.write(full_filter_str)
-                    ffmpeg_inputs = ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
+                    ffmpeg_inputs = ['-err_detect', 'ignore_err', '-flags', 'output_corrupt', '-ss', f"{self.start_time_ms/1000.0:.3f}"]
                     ffmpeg_inputs += ['-i', self.input_path]
                     for track_path, _, _ in self.music_tracks:
                         ffmpeg_inputs += ['-i', track_path]
                     if txt_input_label:
-                        ffmpeg_inputs += ['-i', text_png_path]
+                        ffmpeg_inputs += ['-loop', '1', '-i', text_png_path]
                     ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + [
                         '-filter_complex_script', filter_script_path,
                         '-map', v_final_pad, '-map', final_a_label,

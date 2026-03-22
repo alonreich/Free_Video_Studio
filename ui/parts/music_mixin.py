@@ -67,7 +67,7 @@ class MusicMixin:
                     'osc': False,
                     'input_default_bindings': False,
                     'hr_seek': 'yes',
-                    'hwdec': 'no',
+                    'hwdec': 'auto',
                     'keep_open': 'yes',
                     'loglevel': "info",
                     'ytdl': False,
@@ -97,10 +97,10 @@ class MusicMixin:
             try:
                 self._pre_wizard_state['player_playing'] = not getattr(self.player, "pause", True)
                 self._pre_wizard_state['player_mute'] = getattr(self.player, "mute", False)
-                self.player.pause = True
+                self.player.pause()
                 self.player.mute = True
                 if getattr(self, "_music_preview_player", None):
-                    self._music_preview_player.pause = True
+                    self._music_preview_player.pause()
             except Exception as ex:
                 self.logger.debug(f"WIZARD: Failed to capture/prepare main player state: {ex}")
         self.wants_to_play = False
@@ -368,6 +368,7 @@ class MusicMixin:
         if getattr(self, "_is_seeking_active", False): return
         if not hasattr(self, "_wizard_tracks") or not self._wizard_tracks: return
         if not getattr(self, "player", None): return
+        if not self._mpv_lock.acquire(timeout=0.02): return
         try:
             curr_v_ms = (self._safe_mpv_get("time-pos", 0) or 0) * 1000
             m_start_ms = getattr(self, "music_timeline_start_ms", getattr(self, "trim_start_ms", 0))
@@ -411,10 +412,12 @@ class MusicMixin:
                 self._safe_mpv_command("seek", expected_m_sec, "absolute", "exact", target_player=music_player)
             v_paused = self._safe_mpv_get("pause", True)
             self._safe_mpv_set("pause", v_paused, target_player=music_player)
-            m_vol = self._music_eff()
-            self._safe_mpv_set("volume", m_vol, target_player=music_player)
+            self._safe_mpv_set("volume", self._music_eff(), target_player=music_player)
             self._safe_mpv_set("mute", False, target_player=music_player)
-        except Exception: pass
+        except Exception:
+            pass
+        finally:
+            self._mpv_lock.release()
 
     def update_player_state(self):
         pass

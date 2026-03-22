@@ -34,8 +34,16 @@ HUD_ELEMENT_KEYS_BY_NAME = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
 CROPPING_HINT_TEXT = 'Hit "START CROPPING" button to begin!'
 HUD_SAFE_PADDING = {
     "stats": {"left": -1},
-    "loot": {"right": 1}
+    "loot": {"right": 1},
+    "1920x1080": {"top": 12, "bottom": 12, "left": 15, "right": 15}
 }
+
+def get_hud_padding(resolution):
+    tk = resolution
+    padding = HUD_SAFE_PADDING.get(tk, {})
+    if not padding:
+        padding = HUD_SAFE_PADDING.get(resolution, {"top": 10, "bottom": 10, "left": 10, "right": 10})
+    return padding
 
 def get_tech_key_from_role(role: str) -> str:
     if not role:

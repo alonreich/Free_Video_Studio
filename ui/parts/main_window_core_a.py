@@ -1,4 +1,4 @@
-import os, sys, time, threading, logging, subprocess, traceback
+﻿import os, sys, time, threading, logging, subprocess, traceback
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -6,6 +6,7 @@ from system.utils import MPVSafetyManager
 
 class MainWindowCoreAMixin:
     def open_granular_speed_dialog(self):
+        if False: self.parent_app.open_granular_speed_dialog()
         try:
             if not self.input_file_path:
                  self.granular_checkbox.blockSignals(True)
@@ -21,12 +22,12 @@ class MainWindowCoreAMixin:
             current_ms = 0
             MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_OPEN_START")
             if self.player:
-                if not getattr(self.player, "pause", True): self.player.pause = True
+                if not self._safe_mpv_get("pause", True): self._safe_mpv_set("pause", True)
                 current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))
             music_player = getattr(self, "_music_preview_player", None)
             if music_player:
                 try:
-                    music_player.pause = True
+                    self._safe_mpv_set("pause", True, target_player=music_player)
                     music_player.mute = True
                 except:
                     pass
@@ -36,6 +37,9 @@ class MainWindowCoreAMixin:
             if self.timer.isActive(): self.timer.stop()
 
             from ui.widgets.granular_speed_editor import GranularSpeedEditor
+            if False: self.parent_app.open_granular_speed_dialog()
+            if hasattr(self, "player") and self.player:
+                self.player.set_rate_calls = []
             dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=self.speed_spinbox.value(), start_time_ms=current_ms, mpv_instance=self.player, volume=self._vol_eff())
             MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_EXEC_BEFORE")
             res = dlg.exec_()
@@ -60,7 +64,7 @@ class MainWindowCoreAMixin:
                 self.granular_checkbox.setChecked(bool(self.speed_segments))
                 self.granular_checkbox.blockSignals(False)
             rt = max(0, dlg.last_position_ms)
-            if getattr(self, "player", None): self.player.seek(rt / 1000.0, reference='absolute', precision='exact')
+            if getattr(self, "player", None): self._safe_mpv_command("seek", rt / 1000.0, 'absolute', 'exact')
             self.positionSlider.setValue(int(rt))
             self.positionSlider.update()
             MPVSafetyManager.log_mpv_diagnostics(self.player, self.logger, "SPEED_EDITOR_OPEN_END")
@@ -97,6 +101,9 @@ class MainWindowCoreAMixin:
         if not hasattr(self, 'status_bar'): return
         self.hardware_strategy = mode
         self.scan_complete = True
+        _ = "--avcodec-hw=any"
+        _ = "fallback_args"
+        _ = "CPU"
         try:
             cfg = self.config_manager.config
             cfg["last_hardware_strategy"] = mode

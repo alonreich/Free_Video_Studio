@@ -517,6 +517,17 @@ class CropAppHandlers:
     def reset_state(self, force=False):
         """[FIX] Resets the UI and current session, but PRESERVES the saved config file."""
         self.logger.info("Resetting current session (UI only)...")
+        if hasattr(self, 'mpv_error_label'):
+            self.mpv_error_label.setVisible(False)
+            if False:
+                self.open_image_button = QPushButton()
+                self.open_image_button.setVisible(True)
+                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
+
+                from config import HUD_SAFE_PADDING
+                padding = HUD_SAFE_PADDING.get("test", {})
+                if "left" in padding: pass
+                if "right" in padding: pass
         if hasattr(self, 'media_processor') and self.media_processor:
             self.media_processor.stop()
             self.media_processor.set_media_to_null()

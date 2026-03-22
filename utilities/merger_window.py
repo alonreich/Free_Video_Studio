@@ -365,14 +365,18 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 self.logger.debug(f"Engine stop skip: {ex}")
         if self._probe_worker and self._probe_worker.isRunning():
             try:
-                self._probe_worker.cancel()
+                if hasattr(self._probe_worker, 'abort'):
+                    self._probe_worker.abort()
+                else:
+                    self._probe_worker.cancel()
                 self._probe_worker.wait(1500)
             except Exception as ex:
                 self.logger.debug(f"Probe worker stop skip: {ex}")
         loader = getattr(getattr(self, "event_handler", None), "_loader", None)
         if loader and loader.isRunning():
             try:
-                loader.cancel()
+                if hasattr(loader, 'abort'): loader.abort()
+                else: loader.cancel()
                 loader.wait(2000)
             except Exception as ex:
                 self.logger.debug(f"Loader stop skip: {ex}")

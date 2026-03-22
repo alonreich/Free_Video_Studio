@@ -140,7 +140,7 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         chunks = [ch for ch in chunks if (ch['end'] - ch['start']) > 0.001]
         n_chunks = len(chunks)
         if n_chunks == 0:
-            v_chain = f"{input_v_label}fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{base_speed:.4f}'[v_speed_out]"
+            v_chain = f"{input_v_label}setpts='(PTS-STARTPTS)/{base_speed:.4f}',fps={target_fps}:round=near[v_speed_out]"
             tmp_s = float(base_speed); audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
@@ -148,21 +148,26 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
             return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec/base_speed), time_mapper
         full_chain_parts = []
-        v_splits = "".join([f"[v_split_{i}]" for i in range(n_chunks)])
-        a_splits = "".join([f"[a_split_{i}]" for i in range(n_chunks)])
-        full_chain_parts.append(f"{input_v_label}split={n_chunks}{v_splits}")
-        full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{a_splits}")
+        is_direct_input = input_v_label.startswith("[") and ":" in input_v_label and "]" in input_v_label and len(input_v_label) < 10
         v_a_pads, final_duration = [], 0.0
+        if not is_direct_input:
+            v_splits = "".join([f"[v_src_shared_{i}]" for i in range(n_chunks)])
+            a_splits = "".join([f"[a_src_shared_{i}]" for i in range(n_chunks)])
+            full_chain_parts.append(f"{input_v_label}split={n_chunks}{v_splits}")
+            full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{a_splits}")
         for i, chunk in enumerate(chunks):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']
             dur = end - start; out_dur = dur / speed
-            full_chain_parts.append(f"[v_split_{i}]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{speed:.4f}'[v_chunk_{i}]")
+            v_src = input_v_label if is_direct_input else f"[v_src_shared_{i}]"
+            a_src = input_a_label if is_direct_input else f"[a_src_shared_{i}]"
+            v_chunk_label = f"[v_chunk_{i}]"; a_chunk_label = f"[a_chunk_{i}]"
+            full_chain_parts.append(f"{v_src}trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS,fps={target_fps}:round=near,setpts='(PTS-STARTPTS)/{speed:.4f}'{v_chunk_label}")
             tmp_s = speed; audio_speed_filters = []
             while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
             while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
             audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-            full_chain_parts.append(f"[a_split_{i}]atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS[a_chunk_{i}]")
-            v_a_pads.append(f"[v_chunk_{i}][a_chunk_{i}]")
+            full_chain_parts.append(f"{a_src}atrim=start={start:.4f}:end={end:.4f},asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},asetpts=PTS-STARTPTS,aresample=48000:async=1:min_comp=0.001:max_comp=0.1{a_chunk_label}")
+            v_a_pads.append(f"{v_chunk_label}{a_chunk_label}")
             final_duration += out_dur
         full_chain_parts.append(f"{''.join(v_a_pads)}concat=n={n_chunks}:v=1:a=1[v_speed_out][a_speed_out]")
         return ";".join(full_chain_parts), "[v_speed_out]", "[a_speed_out]", final_duration, time_mapper

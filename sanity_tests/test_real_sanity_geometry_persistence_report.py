@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from dataclasses import dataclass
 import types
 import sys
@@ -57,6 +57,11 @@ def _main_app_case(tmp_path) -> GeometryCaseResult:
     conf = tmp_path / "main_app.conf"
     cm = ConfigManager(str(conf))
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.width = lambda: 1234
     host.height = lambda: 777
     host.pos = lambda: _Point(111, 222)
@@ -133,6 +138,11 @@ def _crop_tool_case(tmp_path) -> GeometryCaseResult:
     conf = tmp_path / "crop_tools.conf"
     cm = ConfigManager(str(conf))
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.width = lambda: 1800
     host.height = lambda: 930
     host.pos = lambda: _Point(45, 55)

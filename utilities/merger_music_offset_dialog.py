@@ -29,6 +29,9 @@ class MergerMusicOffsetDialog(QDialog):
         self._bin = bin_dir
         self.hardware_strategy = hardware_strategy
         self._player = None
+
+        import threading
+        self._mpv_lock = threading.RLock()
         self._timer = QTimer(self)
         self._timer.setInterval(25)
         self._timer.timeout.connect(self._tick)
@@ -318,29 +321,33 @@ class MergerMusicOffsetDialog(QDialog):
     def _toggle_play_pause(self):
         self._ensure_player()
         if not self._player: return
+        if not self._mpv_lock.acquire(timeout=0.05): return
         try:
             is_paused = getattr(self._player, "pause", True)
             if not is_paused:
                 self._player.pause = True
-                self.play_btn.setText("▶ Play")
+                self._update_play_btn(False)
                 self._timer.stop()
-            else:
-                want_ms = int(self.slider.value())
-                self._player.pause = False
+                return
+            want_ms = int(self.slider.value())
+            self._player.pause = False
 
-                def _after_start():
-                    self._seek_player(want_ms)
-                    self._timer.start()
-                    self.play_btn.setText("⏸ Pause")
-                QTimer.singleShot(90, _after_start)
+            def _after_start():
+                self._seek_player(want_ms)
+                self._timer.start()
+                self._update_play_btn(True)
+            QTimer.singleShot(90, _after_start)
         except Exception: pass
+        finally: self._mpv_lock.release()
 
     def _seek_player(self, ms: int):
+        if not self._mpv_lock.acquire(timeout=0.05): return
         try:
             if self._player:
                 self._player.seek(ms / 1000.0, reference='absolute', precision='exact')
                 self._last_good_mpv_ms = ms
         except Exception: pass
+        finally: self._mpv_lock.release()
 
     def _on_drag_start(self): self._dragging = True
 

@@ -543,7 +543,13 @@ class ResizablePixmapItem(QGraphicsObject):
             corrected_pos = QPointF(final_x, final_y)
             if self.pos() != corrected_pos:
                 self.item_changed.emit()
+            if self.scene():
+                self.scene().update()
             return corrected_pos
+        elif change == QGraphicsItem.ItemPositionHasChanged:
+            if self.scene():
+                self.scene().update()
+            self.item_changed.emit()
         elif change == QGraphicsItem.ItemSelectedHasChanged:
             if value and self.isVisible():
                 self.ant_timer.start(100)

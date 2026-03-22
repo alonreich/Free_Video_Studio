@@ -42,11 +42,27 @@ class UiBuilderMixin:
             self._current_thumb_request = request_id
             pos_ms = 0
             try:
-                pos_ms = int(self.positionSlider.value())
+                if hasattr(self, "positionSlider"):
+                    if callable(self.positionSlider.value):
+                        pos_ms = int(self.positionSlider.value())
+                    else:
+                        pos_ms = int(self.positionSlider.value())
             except Exception:
                 pass
             if (not pos_ms) and getattr(self, 'player', None):
-                pos_ms = int((getattr(self.player, 'time-pos', 0) or 0) * 1000)
+                if hasattr(self.player, 'time-pos'):
+                    pos_ms = int((getattr(self.player, 'time-pos', 0) or 0) * 1000)
+                elif hasattr(self.player, 'get_time') and callable(self.player.get_time):
+                    pos_ms = int(self.player.get_time())
+            if hasattr(self, "logger"):
+                self.logger.info(f"DEBUG: ffmpeg -ss {pos_ms/1000.0} -i ... thumbnail.jpg")
+            if True: self.logger.info(f"DEBUG: ffmpeg -ss {pos_ms/1000.0} -i ... thumbnail.jpg")
+            if pos_ms >= 0:
+                m, s = divmod(int(pos_ms/1000.0), 60)
+                h, m = divmod(m, 60)
+                time_str = f"{m:02d}:{s:02d}.00"
+                if hasattr(self, "thumb_pick_btn"):
+                    self.thumb_pick_btn.setText(f"SET: {time_str}")
             pos_s = float(pos_ms) / 1000.0
             if self.original_duration_ms > 0 and pos_ms > self.original_duration_ms:
                 pos_s = self.original_duration_ms / 1000.0
@@ -196,6 +212,8 @@ class UiBuilderMixin:
                 self.process_button.setText("WAITING FOR SCAN...")
                 self.status_update_signal.emit("⌛ Hardware scan in progress... Please wait a few seconds.")
                 return
+            if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
+                self.portrait_mask_overlay.hide()
             try:
                 if hasattr(self, "_safe_stop_playback"):
                     self._safe_stop_playback()
@@ -280,6 +298,7 @@ class UiBuilderMixin:
                 getattr(self, "right_panel", None),
                 getattr(self, "upload_button", None),
             ):
+                self._update_upload_hint_responsive()
                 if hasattr(self, '_update_upload_hint_responsive'):
                     QTimer.singleShot(0, self._update_upload_hint_responsive)
         return super().eventFilter(obj, event)
@@ -298,6 +317,7 @@ class UiBuilderMixin:
         self._top_row.addWidget(self.right_panel, stretch=1)
         self._top_row.addSpacing(10)
         left_layout.addLayout(self._top_row)
+        left_layout.addWidget(self.progress_bar)
         main_layout.addLayout(left_layout, stretch=1)
         self.central_widget.setLayout(main_layout)
         self._ensure_overlay_widgets()
@@ -359,11 +379,6 @@ class UiBuilderMixin:
         self.mobile_checkbox.toggled.connect(self._on_mobile_toggled)
         player_col.addSpacing(10)
         self._init_status_bar()
-        progress_layout = QHBoxLayout()
-        progress_layout.setContentsMargins(0, 0, 0, 0)
-        progress_layout.setSpacing(10)
-        progress_layout.addWidget(self.progress_bar, stretch=1)
-        player_col.addLayout(progress_layout)
         self.player_col_container = QWidget()
         self.player_col_container.setLayout(player_col)
         self.player_col_container.installEventFilter(self)
@@ -769,44 +784,6 @@ class UiBuilderMixin:
             quality_desc = "Professional (4K-Like)"
         self.quality_value_label.setText(f"{quality_desc} ({int(target_mb)}MB)")
 
-    def _init_status_bar(self):
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setObjectName("mainProgressBar")
-        self.progress_bar.setStyleSheet(UIStyles.PROGRESS_BAR)
-        self.progress_bar.setValue(0)
-        self.status_container = QWidget()
-        self.status_container.setFixedHeight(23)
-        status_layout = QHBoxLayout(self.status_container)
-        status_layout.setContentsMargins(10, 0, 10, 0)
-        status_layout.setSpacing(0)
-        self.hardware_status_label = QLabel("")
-        self.hardware_status_label.setObjectName("hardwareStatusLabel")
-        self.hardware_status_label.setStyleSheet(UIStyles.LABEL_STATUS)
-        self.hardware_status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.left_separator = QLabel("|")
-        self.left_separator.setStyleSheet(UIStyles.LABEL_SEPARATOR)
-        self.left_separator.setAlignment(Qt.AlignCenter)
-        self.resolution_label = QLabel("")
-        self.resolution_label.setObjectName("resolutionLabel")
-        self.resolution_label.setStyleSheet(UIStyles.LABEL_STATUS)
-        self.resolution_label.setAlignment(Qt.AlignCenter)
-        self.right_separator = QLabel("|")
-        self.right_separator.setStyleSheet(UIStyles.LABEL_SEPARATOR)
-        self.right_separator.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        status_layout.addWidget(self.hardware_status_label, 0)
-        status_layout.addWidget(self.left_separator, 0)
-        status_layout.addStretch(1)
-        status_layout.addWidget(self.resolution_label, 0)
-        status_layout.addStretch(1)
-        status_layout.addWidget(self.right_separator, 0)
-        if hasattr(self, 'status_bar') and self.status_bar:
-            self.status_bar.setFixedHeight(25)
-            self.status_bar.setStyleSheet(UIStyles.STATUS_BAR)
-            self.status_bar.addPermanentWidget(self.status_container, 1)
-        self.progress_update_signal.connect(self.on_progress)
-        self.status_update_signal.connect(self.on_phase_update)
-        self.process_finished_signal.connect(self.on_process_finished)
-
     def _build_right_panel(self):
         self.right_panel = QWidget()
         self.right_panel.installEventFilter(self)
@@ -925,6 +902,9 @@ class UiBuilderMixin:
     def _update_portrait_mask_overlay_state(self):
         if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay:
             return
+        if getattr(self, "is_processing", False) or getattr(self, "_block_portrait_overlay", False):
+            self.portrait_mask_overlay.setVisible(False)
+            return
         res = getattr(self, 'original_resolution', "1920x1080")
         if not res:
             res = "1920x1080"
@@ -948,3 +928,52 @@ class UiBuilderMixin:
                 self.resolution_label.setText(f"Video Resolution: {res_str}")
             else:
                 self.resolution_label.setText("")
+
+    def _init_status_bar(self):
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("mainProgressBar")
+        self.progress_bar.setStyleSheet(UIStyles.PROGRESS_BAR)
+        self.progress_bar.setValue(0)
+        self.progress_bar.hide()
+        self.status_container = QWidget()
+        self.status_container.setFixedHeight(23)
+        status_layout = QHBoxLayout(self.status_container)
+        status_layout.setContentsMargins(10, 0, 10, 0)
+        status_layout.setSpacing(0)
+        self.hardware_status_label = QLabel("")
+        self.hardware_status_label.setObjectName("hardwareStatusLabel")
+        self.hardware_status_label.setStyleSheet(UIStyles.LABEL_STATUS)
+        self.hardware_status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.left_separator = QLabel("|")
+        self.left_separator.setStyleSheet(UIStyles.LABEL_SEPARATOR)
+        self.left_separator.setAlignment(Qt.AlignCenter)
+        self.resolution_label = QLabel("")
+        self.resolution_label.setObjectName("resolutionLabel")
+        self.resolution_label.setStyleSheet(UIStyles.LABEL_STATUS)
+        self.resolution_label.setAlignment(Qt.AlignCenter)
+        self.right_separator = QLabel("|")
+        self.right_separator.setStyleSheet(UIStyles.LABEL_SEPARATOR)
+        self.right_separator.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        status_layout.addWidget(self.hardware_status_label, 0)
+        status_layout.addWidget(self.left_separator, 0)
+        status_layout.addStretch(1)
+        status_layout.addWidget(self.resolution_label, 0)
+        status_layout.addStretch(1)
+        status_layout.addWidget(self.right_separator, 0)
+        if hasattr(self, 'status_bar') and self.status_bar:
+            self.status_bar.setFixedHeight(25)
+            self.status_bar.setStyleSheet(UIStyles.STATUS_BAR)
+            self.status_bar.addPermanentWidget(self.status_container, 1)
+        self.progress_update_signal.connect(self.on_progress)
+        self.status_update_signal.connect(self.on_phase_update)
+        self.process_finished_signal.connect(self.on_process_finished)
+        try:
+            from ui.main_window import _QtLiveLogHandler
+            import logging
+            handler = _QtLiveLogHandler(self)
+            formatter = logging.Formatter('%(asctime)s | %(message)s', datefmt='%H:%M:%S')
+            handler.setFormatter(formatter)
+            if hasattr(self, "logger"):
+                self.logger.addHandler(handler)
+        except Exception:
+            pass

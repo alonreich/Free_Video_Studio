@@ -130,51 +130,89 @@ def generate_text_overlay_png(text, width, height, font_size, line_spacing, outp
         script_content = f"""
 
 import sys
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QRect
-from PyQt5.QtGui import QImage, QPainter, QFont, QColor
 import os
-app = QApplication(sys.argv)
-width = {width}
-height = {height}
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+from PyQt5.QtGui import QGuiApplication, QImage, QPainter, QFont, QColor
+from PyQt5.QtCore import Qt, QRect
+from PyQt5.QtGui import QGuiApplication, QImage, QPainter, QFont, QColor, QFontDatabase
+from PyQt5.QtCore import Qt, QRect
+app = QGuiApplication(sys.argv)
+
+# Explicitly load system fonts to avoid offscreen rendering empty results
+font_loaded = False
+font_family = "Arial"
+possible_fonts = [
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/tahoma.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf"
+]
+for fpath in possible_fonts:
+    if os.path.exists(fpath):
+        fid = QFontDatabase.addApplicationFont(fpath)
+        if fid != -1:
+            families = QFontDatabase.applicationFontFamilies(fid)
+            if families:
+                font_family = families[0]
+                font_loaded = True
+                break
+
+width = 1080
+height = 150
 output_path = r"{output_path}"
 text = {repr(text)}
 line_spacing = {line_spacing}
+font_size = {font_size}
 img = QImage(width, height, QImage.Format_ARGB32)
-img.fill(Qt.transparent)
+img.fill(QColor(0, 0, 0, 0))
 painter = QPainter(img)
+if not painter.isActive():
+    print("PAINTER_INACTIVE")
+    sys.exit(2)
 painter.setRenderHint(QPainter.Antialiasing)
 painter.setRenderHint(QPainter.TextAntialiasing)
-is_portrait = (width < height)
-if is_portrait:
-    painter.fillRect(0, 0, width, 150, Qt.black)
-font = QFont("Arial")
+font = QFont(font_family)
 font.setPixelSize({font_size})
 font.setBold(True)
 painter.setFont(font)
+# Log font info to stdout for debugging
+print(f"FONT_USED: {{font_family}} SIZE: {{font.pixelSize()}}")
 fm = painter.fontMetrics()
 line_h = fm.height()
-# Basic wrap
-lines = text.split('/')
+lines = text.splitlines()
 if not lines: lines = [text]
-pure_rtl = False # Simplified for subprocess
-layout_dir = Qt.RightToLeft if pure_rtl else Qt.LeftToRight
-align_flag = Qt.AlignCenter
-painter.setLayoutDirection(layout_dir)
 block_h = (len(lines) * line_h) + ((len(lines) - 1) * line_spacing)
-start_y = (150 - block_h) // 2 if is_portrait else 50
-current_y = max(2, start_y)
-if is_portrait and current_y + block_h > 148:
-    current_y = max(2, 148 - block_h)
+if len(lines) > 1:
+    # Shift up more (from -10 to -25) to utilize the top void area better for multi-line text
+    start_y = max(5, (150 - block_h) // 2 - 25)
+else:
+    start_y = (150 - block_h) // 2
+current_y = start_y
+align_flag = Qt.AlignCenter
+# Debug logging to file because stdout might be captured/lost
+with open(os.path.join(os.path.dirname(output_path), "text_gen_debug.log"), "a", encoding="utf-8") as df:
+    df.write(f"START_DRAW: text={{repr(text)}} y={{current_y}} font_size={{font_size}}\\n")
 for line in lines:
-    text_rect = QRect(60, current_y, width - 120, line_h)
-    painter.setPen(QColor(0, 0, 0, 180))
-    painter.drawText(text_rect.adjusted(3, 3, 3, 3), align_flag | Qt.AlignVCenter, line)
-    painter.setPen(Qt.white)
-    painter.drawText(text_rect, align_flag | Qt.AlignVCenter, line)
+    # Use full width for text rect to avoid clipping
+    text_rect = QRect(0, current_y, width, line_h)
+    # Extra thick Shadow/Stroke for visibility
+    painter.setPen(QColor(0, 0, 0, 255))
+    for dx in range(-3, 4):
+        for dy in range(-3, 4):
+            if dx == 0 and dy == 0: continue
+            painter.drawText(text_rect.adjusted(dx, dy, dx, dy), align_flag, line)
+    # Main text
+    painter.setPen(QColor(255, 255, 255, 255))
+    painter.drawText(text_rect, align_flag, line)
     current_y += (line_h + line_spacing)
 painter.end()
 success = img.save(output_path, "PNG")
+if success:
+    print(f"SAVE_SUCCESS: {{output_path}}")
+else:
+    print(f"SAVE_FAILED: {{output_path}}")
 sys.exit(0 if success else 1)
 """
         fd, temp_script = tempfile.mkstemp(suffix=".py")
@@ -184,6 +222,12 @@ sys.exit(0 if success else 1)
         res = subprocess.run([sys.executable, temp_script], capture_output=True, text=True, creationflags=flags)
         try: os.remove(temp_script)
         except: pass
+        if res.stdout and logger:
+            for line in res.stdout.splitlines():
+                if line.strip(): logger.info(f"TEXT_GEN_STDOUT: {line.strip()}")
+        if res.stderr and logger:
+            for line in res.stderr.splitlines():
+                if line.strip(): logger.error(f"TEXT_GEN_STDERR: {line.strip()}")
         success = (res.returncode == 0)
         if logger: logger.info(f"TEXT_GEN: Subprocess Finished. Success={success} Path={output_path}")
         return success

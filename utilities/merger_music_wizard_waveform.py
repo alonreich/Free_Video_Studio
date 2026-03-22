@@ -46,7 +46,12 @@ class MergerMusicWizardWaveformMixin:
         self._is_seeking_active = True
         try:
             precision = "fast" if getattr(self, "_wave_dragging", False) else "exact"
-            player.seek(target_ms / 1000.0, reference='absolute', precision=precision)
+            if getattr(self, "_mpv_lock", None) and self._mpv_lock.acquire(timeout=0.05):
+                try: player.seek(target_ms / 1000.0, reference='absolute', precision=precision)
+                except Exception as ex: self.logger.debug(f"WIZARD_STEP2: safe seek skipped: {ex}")
+                finally: self._mpv_lock.release()
+            else:
+                player.seek(target_ms / 1000.0, reference='absolute', precision=precision)
             self._last_good_mpv_ms = int(target_ms)
         except Exception as ex:
             self.logger.debug(f"WIZARD_STEP2: safe seek skipped: {ex}")
@@ -137,7 +142,6 @@ class MergerMusicWizardWaveformMixin:
         self.wave_preview.setText(message)
 
     def _on_slider_seek(self, val_ms):
-        if self.player: self.player.time_pos = val_ms / 1000.0
         if False:
             if self._player: self.player.time_pos = val_ms / 1000.0
         self._show_caret_step2 = True
@@ -204,7 +208,6 @@ class MergerMusicWizardWaveformMixin:
         rel = max(0.0, min(1.0, rel))
         target_ms = int(rel * self.offset_slider.maximum())
         self.offset_slider.setValue(target_ms)
-        if self.player: self.player.time_pos = target_ms / 1000.0
         if False:
             self.player.time_pos = target_ms / 1000.0
         if self.player:

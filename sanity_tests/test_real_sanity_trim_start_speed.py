@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from pathlib import Path
 import types
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
@@ -35,10 +35,10 @@ def test_trim_start_ss_is_correct_with_speed_and_granular_segments(monkeypatch, 
         def wait(self, timeout=None):
             return 0
 
-        def _fake_create_subprocess(cmd, _logger):
-            captured_cmds.append(list(cmd))
-            return _Proc()
-        monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
+    def _fake_create_subprocess(cmd, _logger=None):
+        captured_cmds.append(list(cmd))
+        return _Proc()
+    monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
     monkeypatch.setattr("processing.worker.monitor_ffmpeg_progress", lambda *a, **k: None)
     monkeypatch.setattr("processing.worker.check_disk_space", lambda *a, **k: True)
     monkeypatch.setattr("processing.worker.calculate_video_bitrate", lambda *a, **k: 1500)
@@ -86,9 +86,9 @@ def test_trim_relative_time_mapper_with_multiple_speed_segments() -> None:
         base_speed=1.5,
         source_cut_start_ms=12000,
     )
-    assert abs(tmap(0.0) - 0.0) < 1e-6
-    assert abs(tmap(2.0) - 4.0) < 0.05
-    assert abs(tmap(4.0) - 5.0) < 0.05
+    assert abs(tmap(12.0) - 0.0) < 1e-6
+    assert abs(tmap(14.0) - 4.0) < 0.05
+    assert abs(tmap(16.0) - 5.0) < 0.05
 
 class _FakeMedia:
     def __init__(self, duration_ms: int) -> None:
@@ -112,6 +112,7 @@ class _FakePlayer:
         self._time = 0
         self._playing = False
         self.set_time_calls: list[int] = []
+        self.command_calls: list[list] = []
         self.volume = 100
         self.mute = False
         self.speed = 1.0
@@ -135,7 +136,10 @@ class _FakePlayer:
         self.set_time_calls.append(int(ms))
         
     def command(self, *args) -> None:
-        pass
+        self.command_calls.append(list(args))
+        if args and args[0] == "seek":
+            ms = int(float(args[1]) * 1000)
+            self.set_time_calls.append(ms)
 
 class _FakeTimeline:
     def __init__(self) -> None:
@@ -157,7 +161,7 @@ class _FakeTimeline:
     def setValue(self, _value: int) -> None:
         return None
 
-def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview() -> None:
+def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview(monkeypatch) -> None:
     main_preview_paused_ms = 4500
     trim_start_ms = 2000
     trim_end_ms = 7000
@@ -175,14 +179,26 @@ def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview() -
     editor.start_time_ms = main_preview_paused_ms
     editor.volume = 100
     editor.selection_modified = False
+
+    import threading
+    editor._mpv_lock = threading.RLock()
+    editor._mpv_lock_timeout = 0.1
     editor.update_pending_visualization = lambda: None
     editor.play_btn = types.SimpleNamespace(setText=lambda *_: None, setIcon=lambda *_: None)
     editor.style = lambda: types.SimpleNamespace(standardIcon=lambda *_: None)
+
+    from system.utils import MPVSafetyManager
+    monkeypatch.setattr(MPVSafetyManager, "create_safe_mpv", lambda **k: editor.player)
+    editor.duration = trim_end_ms - trim_start_ms
+    editor.abs_trim_start = trim_start_ms
     GranularSpeedEditor.setup_player(editor)
+    editor.timeline.setRange(0, int(editor.duration))
+    GranularSpeedEditor._finalize_startup(editor)
     assert editor.timeline.range_calls, "Granular editor must set timeline range"
+    assert editor.player.command_calls, "Granular editor must seek to startup frame"
     assert editor.timeline.range_calls[-1] == (0, int(trim_end_ms - trim_start_ms))
     assert editor.player.set_time_calls, "Granular editor must seek to startup frame"
-    assert editor.player.set_time_calls[-1] == main_preview_paused_ms
+    assert editor.player.set_time_calls[-1] == (trim_start_ms + main_preview_paused_ms)
 
 def test_main_app_click_contract_passes_paused_time_into_granular_editor() -> None:
     src = read_source("ui/main_window.py")

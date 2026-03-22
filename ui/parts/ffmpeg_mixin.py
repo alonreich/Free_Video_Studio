@@ -401,6 +401,7 @@ class FfmpegMixin:
             pass
         if success:
             output_path = message
+            self._block_portrait_overlay = True
 
             class FinishedDialog(QDialog):
                 def closeEvent(self, e):
@@ -483,6 +484,7 @@ class FfmpegMixin:
             dialog._fade_anim = fade_anim
             result = dialog.exec_()
             fade_anim.stop()
+            self._block_portrait_overlay = False
             if hasattr(self, '_update_portrait_mask_overlay_state'):
                 self._update_portrait_mask_overlay_state()
             if result == QDialog.Rejected:

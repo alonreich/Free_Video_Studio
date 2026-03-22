@@ -10,8 +10,8 @@ class MainWindowFileAMixin:
         was_playing_before_dialog = False
         try:
             if getattr(self, "player", None):
-                was_playing_before_dialog = not bool(getattr(self.player, "pause", True))
-                self.player.pause = True
+                was_playing_before_dialog = not bool(self._safe_mpv_get("pause", True))
+                self._safe_mpv_set("pause", True)
             if getattr(self, "timer", None) and self.timer.isActive():
                 self.timer.stop()
         except Exception as e:
@@ -50,7 +50,7 @@ class MainWindowFileAMixin:
             if had_existing_media:
                 try:
                     if getattr(self, "player", None):
-                        self.player.pause = not was_playing_before_dialog
+                        self._safe_mpv_set("pause", not was_playing_before_dialog)
                     if was_playing_before_dialog:
                         self.is_playing = True
                         self.wants_to_play = True
@@ -107,7 +107,7 @@ class MainWindowFileAMixin:
                     self.player.speed = current_rate
                 except Exception as rate_err:
                     self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
-                self.player.pause = False
+                self._safe_mpv_set("pause", False)
 
                 def _poll_dur():
                     if not self.player: return

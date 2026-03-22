@@ -71,7 +71,7 @@ class TextWrapper:
         
     def _measure_px(self, s: str, px_size: int) -> int:
         if not s: return 0
-        fudge = 1.10 
+        fudge = getattr(self.cfg, "measure_fudge", 1.12)
         if self.use_qt:
             f = QFont("Arial")
             f.setBold(True) 
@@ -90,7 +90,7 @@ class TextWrapper:
                 return int(font.getsize(s)[0] * (fudge * 1.1)) + self.cfg.shadow_pad_px
             except Exception:
                 pass
-        return int(len(s) * (px_size * 0.8)) + self.cfg.shadow_pad_px
+        return int(len(s) * (px_size * (fudge * 0.7))) + self.cfg.shadow_pad_px
 
     def _split_long_token(self, tok: str, px_size: int, max_w: int):
         if self._measure_px(tok, px_size) <= max_w:
@@ -136,16 +136,31 @@ class TextWrapper:
         is_portrait = (base_max_w < 1100)
         max_w = base_max_w
         base_size = self.cfg.base_font_size
+        
+        # 1-2 words boost: if it fits easily, increase size by 2
+        words = (s or "").strip().split()
+        if is_portrait and len(words) >= 1 and len(words) <= 2:
+            boost_size = base_size + 2
+            lines = self._wrap_text(s, boost_size, max_w)
+            if len(lines) == 1:
+                widest = self._measure_px(lines[0], boost_size)
+                if widest <= max_w:
+                    if logger: logger.info(f"WRAP_PORTRAIT_BOOST: size={boost_size}")
+                    return boost_size, lines
+
         MAX_TOTAL_H = 148 
         if logger: logger.info(f"WRAP_START: text='{s}' target_w={max_w} base_size={base_size} portrait={is_portrait}")
         if is_portrait:
-            for size in range(base_size, base_size - 7, -1):
+            # Try to fit in 1 line, decreasing size if it doesn't fit
+            for size in range(base_size, base_size - 15, -1):
                 lines = self._wrap_text(s, size, max_w)
                 if len(lines) == 1:
                     widest = self._measure_px(lines[0], size)
                     if widest <= max_w:
                         if logger: logger.info(f"WRAP_PORTRAIT_1_LINE: size={size}")
                         return size, lines
+            
+            # Try 2 lines (user preferred) then 3
             for num_lines in [2, 3]:
                 gap_factor = 0.2 if num_lines == 2 else 0.3
                 for size in range(base_size, self.cfg.min_font_size - 1, -1):

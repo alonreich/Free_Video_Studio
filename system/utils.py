@@ -315,33 +315,43 @@ class MPVSafetyManager:
         except Exception as e:
             logger.error(f"DIAGNOSTICS [{context_tag}]: Failed to extract MPV state: {e}")
     @staticmethod
-    def safe_mpv_shutdown(player, timeout=2.0):
+    def safe_mpv_shutdown(player, timeout=2.0, lock=None):
         if not player:
             return True
 
         import mpv
         try:
-            if getattr(player, '_core_shutdown', False):
+            if getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False):
                 return True
-            try:
-                player.pause = True
-            except (AttributeError, mpv.ShutdownError):
-                pass
-            try:
-                if not getattr(player, '_core_shutdown', False):
-                    player.stop()
-            except (AttributeError, mpv.ShutdownError):
-                pass
-            try:
-                if hasattr(player, 'terminate') and not getattr(player, '_core_shutdown', False):
-                    player.terminate()
-            except: pass
+            player._safe_shutdown_initiated = True
+            
+            def _do_shutdown():
+                try:
+                    if lock:
+                        if lock.acquire(timeout=0.2):
+                            try:
+                                player.pause = True
+                                player.stop()
+                                player.terminate()
+                            finally:
+                                lock.release()
+                        else:
+                            player.pause = True
+                            player.terminate()
+                    else:
+                        player.pause = True
+                        player.stop()
+                        player.terminate()
+                except (AttributeError, mpv.ShutdownError, SystemError):
+                    pass
+            t = threading.Thread(target=_do_shutdown, daemon=True)
+            t.start()
+            confirm_timeout = min(0.5, timeout)
             start_time = time.time()
-            while time.time() - start_time < timeout:
+            while time.time() - start_time < confirm_timeout:
                 try:
                     if getattr(player, '_core_shutdown', True):
                         break
-                    _ = player.time_pos
                 except (AttributeError, mpv.ShutdownError):
                     break
                 time.sleep(0.05)
@@ -350,24 +360,51 @@ class MPVSafetyManager:
         except Exception:
             return False
     @staticmethod
-    def safe_mpv_set(player, property_name, value, max_attempts=3):
-        if not player: return False
+    def safe_mpv_set(player, property_name, value, max_attempts=3, lock=None):
+        if not player or getattr(player, '_core_shutdown', False): return False
         for attempt in range(max_attempts):
             try:
-                setattr(player, property_name, value)
-                return True
-            except:
-                time.sleep(0.1)
+                if lock:
+                    if not lock.acquire(timeout=0.1):
+                        continue
+                try:
+                    setattr(player, property_name, value)
+                    return True
+                finally:
+                    if lock: lock.release()
+            except Exception:
+                time.sleep(0.02)
         return False
     @staticmethod
-    def safe_mpv_command(player, command, *args, max_attempts=3):
-        if not player: return False
+    def safe_mpv_get(player, property_name, default=None, max_attempts=3, lock=None):
+        if not player or getattr(player, '_core_shutdown', False): return default
         for attempt in range(max_attempts):
             try:
-                player.command(command, *args)
-                return True
-            except:
-                time.sleep(0.1)
+                if lock:
+                    if not lock.acquire(timeout=0.1):
+                        continue
+                try:
+                    return getattr(player, property_name, default)
+                finally:
+                    if lock: lock.release()
+            except Exception:
+                time.sleep(0.02)
+        return default
+    @staticmethod
+    def safe_mpv_command(player, command, *args, max_attempts=3, lock=None):
+        if not player or getattr(player, '_core_shutdown', False): return False
+        for attempt in range(max_attempts):
+            try:
+                if lock:
+                    if not lock.acquire(timeout=0.1):
+                        continue
+                try:
+                    player.command(command, *args)
+                    return True
+                finally:
+                    if lock: lock.release()
+            except Exception:
+                time.sleep(0.02)
         return False
     @staticmethod
     def cleanup_mpv_event_callbacks(player):

@@ -48,54 +48,52 @@ class DummyCheckBox:
 class DummyTimer:
     def __init__(self, active: bool = False):
         self._active = active
-        self.started_with: list[int] = []
 
     def isActive(self) -> bool:
         return self._active
 
+    def start(self, *args: Any) -> None:
+        self._active = True
+
     def stop(self) -> None:
         self._active = False
 
-    def start(self, interval: int = 0) -> None:
-        self._active = True
-        self.started_with.append(interval)
-
 class DummyButton:
-    def __init__(self):
-        self.text = ""
+    def __init__(self, text: str = ""):
+        self._text = text
+        self._enabled = True
 
     def setText(self, text: str) -> None:
-        self.text = text
+        self._text = text
 
-    def setIcon(self, _icon: Any) -> None:
-        return None
+    def setIcon(self, *args: Any) -> None:
+        pass
+
+    def setEnabled(self, b: bool) -> None:
+        self._enabled = b
+
+    def isEnabled(self) -> bool:
+        return self._enabled
 
 class DummySlider:
     def __init__(self, value: int = 0):
-        self._val = value
-        self.visible_calls: list[bool] = []
+        self._value = value
         self.time_calls: list[tuple[int, int]] = []
 
     def value(self) -> int:
-        return self._val
+        return self._value
 
     def setValue(self, v: int) -> None:
-        self._val = v
+        self._value = v
 
-    def show(self) -> None:
-        self.visible_calls.append(True)
+    def maximum(self) -> int:
+        return 10000
 
-    def hide(self) -> None:
-        self.visible_calls.append(False)
+    def setRange(self, *args: Any) -> None:
+        pass
 
-    def setVisible(self, v: bool) -> None:
-        self.visible_calls.append(bool(v))
-
-    def set_music_visible(self, visible: bool) -> None:
-        self.visible_calls.append(bool(visible))
-
-    def set_music_times(self, start_ms: int, end_ms: int) -> None:
-        self.time_calls.append((int(start_ms), int(end_ms)))
+    def set_duration_ms(self, *args: Any) -> None:
+        pass
 
     def reset_music_times(self) -> None:
         self.time_calls.append((0, 0))
@@ -150,650 +148,509 @@ class DummyMediaPlayer:
         return self._rate
     @speed.setter
     def speed(self, value: float) -> None:
-        self._rate = float(value)
-        if not hasattr(self, 'set_rate_calls'): self.set_rate_calls = []
-        self.set_rate_calls.append(float(value))
+        self._rate = value
+        self.set_rate_calls.append(value)
     @property
-    def mute(self) -> bool:
-        return self._mute
-    @mute.setter
-    def mute(self, value: bool) -> None:
-        self._mute = value
+    def time_pos(self) -> float:
+        return self._time / 1000.0
+
+    def set_time(self, ms: int) -> None:
+        self._time = int(ms)
+        self.set_time_calls.append(int(ms))
 
     def get_time(self) -> int:
         return self._time
 
-    def set_time(self, value: int) -> None:
-        self._time = int(value)
-        if not hasattr(self, 'set_time_calls'): self.set_time_calls = []
-        self.set_time_calls.append(int(value))
+    def observe_property(self, *args, **kwargs): pass
 
-    def seek(self, seconds: float, reference='absolute', precision='exact') -> None:
-        self.set_time(int(seconds * 1000))
+    def event_callback(self, *args, **kwargs):
+        return lambda f: f
 
-    def get_rate(self) -> float:
-        return self._rate
+    def command(self, *args): pass
 
-    def set_rate(self, value: float) -> None:
-        self._rate = float(value)
-        if not hasattr(self, 'set_rate_calls'): self.set_rate_calls = []
-        self.set_rate_calls.append(float(value))
-
-    def get_full_state(self) -> dict[str, Any]:
-        return {
-            'state': 3 if self._playing else 0,
-            'time': self._time,
-            'length': 100000
-        }
-
-    def stop(self) -> None:
-        self._playing = False
-
-    def terminate(self) -> None:
-        self.stop()
-
-    def set_media(self, _media: Any) -> None:
-        return None
-
-    def audio_set_volume(self, _vol: int) -> None:
-        self.volume = _vol
-
-    def audio_set_mute(self, _mute: bool) -> None:
-        self.mute = _mute
-    
-    def audio_get_track_description(self) -> list:
-        return [[1, "Track 1"]]
-    
-    def audio_set_track(self, _id: int) -> None:
-        pass
-    
-    def audio_add(self, _path: str) -> None:
-        pass
-@dataclass
-class DummyConfigManager:
-    config: dict[str, Any]
-
-    def save_config(self, cfg: dict[str, Any]) -> None:
-        self.config = dict(cfg)
+    def terminate(self): pass
 
 class DummySignal:
-    def __init__(self) -> None:
-        self._callbacks: list[Any] = []
+    def __init__(self):
+        self._slots = []
 
-    def connect(self, cb: Any) -> None:
-        self._callbacks.append(cb)
+    def connect(self, slot):
+        self._slots.append(slot)
 
-    def emit(self, *args: Any, **kwargs: Any) -> None:
-        for cb in list(self._callbacks):
-            cb(*args, **kwargs)
+    def disconnect(self, slot=None):
+        pass
 
-class DummyKeyEvent:
-    def __init__(self, txt: str, modifiers: int = 0) -> None:
-        self._txt = txt
-        self._mods = modifiers
+    def emit(self, *args, **kwargs):
+        for slot in self._slots:
+            try:
+                slot(*args, **kwargs)
+            except:
+                pass
 
-    def text(self) -> str:
-        return self._txt
+class DummyConfigManager:
+    def __init__(self, config: dict[str, Any] | None = None):
+        self.config = config or {}
 
-    def modifiers(self) -> int:
-        return self._mods
-    
-    def key(self) -> int:
-        return 0
+    def save_config(self, config: dict[str, Any]) -> None:
+        self.config.update(config)
 
-class DummyListItem:
-    def __init__(self, label: str) -> None:
-        self._hidden = False
-        self._widget = types.SimpleNamespace(name_lbl=types.SimpleNamespace(text=lambda: label))
+    def load_config(self) -> dict[str, Any]:
+        return self.config
 
-    def isHidden(self) -> bool:
-        return self._hidden
-
-def install_qt_mpv_stubs() -> None:
-    """Install lightweight stubs for PyQt5/mpv so logic modules can be imported in tests."""
-    if "PyQt5" in sys.modules and "mpv" in sys.modules:
-        return
+def install_qt_mpv_stubs():
     pyqt5 = types.ModuleType("PyQt5")
     qtcore = types.ModuleType("PyQt5.QtCore")
     qtwidgets = types.ModuleType("PyQt5.QtWidgets")
     qtgui = types.ModuleType("PyQt5.QtGui")
+    for n in ["Qt", "QEvent", "QThread", "QTimer", "QRect", "QPoint", "QSize", "QLocale", "QCoreApplication", "QByteArray"]:
+        setattr(qtcore, n, types.SimpleNamespace())
+    qtcore.Qt.LeftButton = 1
+    qtcore.Qt.RightButton = 2
+    qtcore.Qt.NoPen = 0
+    qtcore.Qt.transparent = 0
+    qtcore.Qt.ApplicationModal = 1
+    qtcore.Qt.WA_NativeWindow = 1
+    qtcore.Qt.PointingHandCursor = 1
+    qtcore.Qt.WaitCursor = 2
+    qtcore.Qt.SizeAllCursor = 3
+    qtcore.Qt.NoCursor = 4
+    qtcore.Qt.ArrowCursor = 5
+    qtcore.Qt.IBeamCursor = 6
+    qtcore.Qt.SizeHorCursor = 7
+    qtcore.Qt.SizeVerCursor = 8
+    qtcore.Qt.SplitHCursor = 9
+    qtcore.Qt.SplitVCursor = 10
+    qtcore.Qt.OpenHandCursor = 11
+    qtcore.Qt.ClosedHandCursor = 12
+    qtcore.Qt.ControlModifier = 0x04000000
+    qtcore.Qt.ShiftModifier = 0x02000000
+    qtcore.Qt.Key_Space = 0x20
+    qtcore.Qt.Key_Left = 0x01000012
+    qtcore.Qt.Key_Right = 0x01000014
+    qtcore.Qt.Key_Up = 0x01000013
+    qtcore.Qt.Key_Down = 0x01000015
+    qtcore.Qt.Key_V = 0x56
+    qtcore.Qt.Key_Delete = 0x01000007
+    qtcore.Qt.Key_BracketLeft = 0x5b
+    qtcore.Qt.Key_BracketRight = 0x5d
+    qtcore.Qt.Key_F11 = 0x0100003a
+    qtcore.Qt.Key_F12 = 0x0100003b
+    qtcore.Qt.UserRole = 0x0100
+    qtcore.Qt.BottomDockWidgetArea = 0x8
+    qtcore.Qt.RightDockWidgetArea = 0x2
+    qtcore.Qt.LeftDockWidgetArea = 0x1
+    qtcore.Qt.Horizontal = 0x1
+    qtcore.Qt.Vertical = 0x2
+    qtcore.Qt.Alignment = lambda *a: MockObject()
+    qtcore.Qt.AlignCenter = 0x84
+    qtcore.Qt.AlignLeft = 0x01
+    qtcore.Qt.AlignRight = 0x02
+    qtcore.Qt.AlignTop = 0x20
+    qtcore.Qt.AlignBottom = 0x40
+    qtcore.Qt.AlignHCenter = 0x04
+    qtcore.Qt.AlignVCenter = 0x80
+    qtcore.Qt.KeepAspectRatio = 1
+    qtcore.Qt.KeepAspectRatioByExpanding = 2
+    qtcore.Qt.SmoothTransformation = 1
+    qtcore.Qt.FastTransformation = 0
+    qtcore.Qt.IgnoreAspectRatio = 0
+    qtcore.Qt.NoFocus = 0
+    qtcore.Qt.WA_DontCreateNativeAncestors = 101
+    qtcore.Qt.WA_TranslucentBackground = 120
+    qtcore.Qt.WA_TransparentForMouseEvents = 121
+    qtcore.Qt.WA_StaticContents = 122
+    qtcore.Qt.WA_NoSystemBackground = 123
+    qtcore.Qt.Tool = 0x00000005
+    qtcore.Qt.FramelessWindowHint = 0x00000800
+    qtcore.Qt.WA_ShowWithoutActivating = 124
+    qtcore.Qt.KeyboardModifiers = lambda *a: 0
+    qtcore.Qt.SortOrder = lambda *a: 0
+    qtcore.Qt.AscendingOrder = 0
+    qtcore.Qt.DescendingOrder = 1
+    qtcore.QEvent.KeyPress = 6
+    qtcore.QEvent.MouseMove = 5
+    qtcore.QEvent.MouseButtonPress = 2
+    qtcore.QEvent.MouseButtonRelease = 3
+    qtcore.QEvent.Enter = 10
+    qtcore.QEvent.Leave = 11
+    qtcore.QEvent.ShortcutOverride = 51
+    qtcore.QEvent.ContextMenu = 8
+    
+    def pyqtSignal(*args, **kwargs):
+        return DummySignal()
+    qtcore.pyqtSignal = pyqtSignal
+    
+    def _generic_void(*args, **kwargs): return MockObject()
 
-    def _generic_init(self, *args, **kwargs):
-        pass
-
-    def _generic_void(self, *args, **kwargs):
-        return None
-
-    class Qt:
-        NoModifier = 0
-        LeftButton = 1
-        Horizontal = 1
-        Vertical = 2
-        PointingHandCursor = 13
-        OpenHandCursor = 17
-        ClosedHandCursor = 18
-        ArrowCursor = 0
-        AlignLeft = 1
-        AlignRight = 2
-        AlignCenter = 4
-        AlignTop = 8
-        AlignBottom = 16
-        AlignHCenter = 32
-        AlignVCenter = 64
-        WA_NativeWindow = 0
-        WA_TransparentForMouseEvents = 0
-        WA_TranslucentBackground = 0
-        WA_DontCreateNativeAncestors = 0
-        WA_ShowWithoutActivating = 0
-        ActiveWindowFocusReason = 0
-        Tool = 0
-        FramelessWindowHint = 0
-        NoFocus = 0
-        Key_Backspace = 16777219
-        KeyboardModifiers = int
-        SortOrder = int
-        @staticmethod
-        def Alignment() -> int:
-            return 0
-
-    class QTimer:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self._interval = 0
-            self._active = False
-            self.timeout = DummySignal()
-
-        def setSingleShot(self, _value: bool) -> None:
-            return None
-
-        def setInterval(self, value: int) -> None:
-            self._interval = int(value)
-
-        def start(self, _value: int | None = None) -> None:
-            self._active = True
-
-        def stop(self) -> None:
-            self._active = False
-
-        def isActive(self) -> bool:
-            return self._active
-        @staticmethod
-        def singleShot(_ms: int, cb: Any) -> None:
-            cb()
-
-    class QThread:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
-
-        def start(self, *args: Any, **kwargs: Any) -> None: return None
-
-        def wait(self, *args: Any, **kwargs: Any) -> None: return None
-
-        def isRunning(self) -> bool: return False
-
-        def terminate(self) -> None: return None
-        @staticmethod
-        def msleep(_ms: int) -> None:
-            return None
-
-    class QObject:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
-
-    class QStyle:
-        SP_MediaPlay = 1
-        SP_MediaPause = 2
-
-    class QDialog:
+    class MockObject:
+        TicksBothSides = 3
         Accepted = 1
-
-    class QListWidget:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            self._items: list[Any] = []
-            self._widgets: dict[int, Any] = {}
-            self._current = None
-
-        def count(self) -> int:
-            return len(self._items)
-
-        def item(self, idx: int) -> Any:
-            return self._items[idx]
-
-        def itemWidget(self, item: Any) -> Any:
-            return getattr(item, "_widget", None)
-
-        def setCurrentItem(self, item: Any) -> None:
-            self._current = item
-
-        def scrollToItem(self, _item: Any) -> None:
-            return None
-
-        def keyPressEvent(self, _event: Any) -> None:
-            return None
-        
-        def width(self) -> int: return 100
-        
-        def height(self) -> int: return 100
-
-    class QWidget:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            self.logger = DummyLogger()
-            self._mpv_lock = threading.RLock()
-            self._scrub_lock = threading.RLock()
-            return None
-            
-        def _safe_mpv_get(self, prop, default=None, target_player=None): return default
-        def _safe_mpv_set(self, prop, value, target_player=None): return True
-            
-        def _delayed_wizard_launch(self) -> None: return None
-
-        def _do_search(self) -> None: return None
-
-        def _do_save_step_geometry(self) -> None: return None
-
-        def _on_mpv_ended(self) -> None: return None
-
-        def _sync_caret(self) -> None: return None
-
-        def _on_play_tick(self) -> None: return None
-
-        def setStyleSheet(self, s: str) -> None: return None
-
-        def setFixedSize(self, *args: Any) -> None: return None
-
-        def setMaximumWidth(self, w: int) -> None: return None
-
-        def setMinimumWidth(self, w: int) -> None: return None
-
-        def setFixedWidth(self, w: int) -> None: return None
-
-        def setFixedHeight(self, h: int) -> None: return None
-
-        def setMouseTracking(self, v: bool) -> None: return None
-
-        def setAttribute(self, *args: Any) -> None: return None
-        
-        def setObjectName(self, name: str) -> None: return None
-        
-        def objectName(self) -> str: return ""
-        
-        def setContentsMargins(self, *args: Any) -> None: return None
-
-        def setCursor(self, *args: Any) -> None: return None
-
-        def hide(self) -> None: return None
-
-        def show(self) -> None: return None
-
-        def setHidden(self, *args: Any) -> None: return None
-
-        def setVisible(self, v: bool) -> None: return None
-
-        def setEnabled(self, e: bool) -> None: return None
-
-        def isVisible(self) -> bool: return True
-
-        def width(self) -> int: return 100
-
-        def height(self) -> int: return 100
-
-        def mapTo(self, *args: Any) -> Any: return DummyPoint(0, 0)
-
-        def mapFromGlobal(self, *args: Any) -> Any: return DummyPoint(0, 0)
-
-        def mapToGlobal(self, *args: Any) -> Any: return DummyPoint(0, 0)
-
-        def rect(self) -> Any: return DummyRect(0, 0, 100, 100)
-
-        def geometry(self) -> Any: return DummyRect(0, 0, 100, 100)
-
-        def move(self, *args: Any) -> None: return None
-
-        def raise_(self) -> None: return None
-
-        def setLayout(self, l: Any) -> None: return None
-
-        def setGraphicsEffect(self, e: Any) -> None: return None
-
-        def setWindowFlags(self, *args: Any) -> None: return None
-
-        def installEventFilter(self, f: Any) -> None: return None
-        
-        def setSizePolicy(self, *args: Any) -> None: return None
-        
-        def update(self, *args: Any) -> None: return None
-        
-        def setRange(self, *args: Any) -> None: return None
-        
-        def setMinimumHeight(self, h: int) -> None: return None
-
-    class DummyPoint:
-        def __init__(self, x: int, y: int): self._x, self._y = x, y
-
-        def x(self) -> int: return self._x
-
-        def y(self) -> int: return self._y
-
-    class DummyRect:
-        def __init__(self, x: int, y: int, w: int, h: int): self._x, self._y, self._w, self._h = x, y, w, h
-
-        def x(self) -> int: return self._x
-
-        def y(self) -> int: return self._y
-
-        def width(self) -> int: return self._w
-
-        def height(self) -> int: return self._h
-
-        def center(self) -> Any: return DummyPoint(self._x + self._w // 2, self._y + self._h // 2)
-
-        def topLeft(self) -> Any: return DummyPoint(self._x, self._y)
-
-        def isValid(self) -> bool: return True
-
-        def contains(self, p: Any) -> bool: return True
-
-    class QHBoxLayout:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-        def setContentsMargins(self, *_args: Any) -> None:
-            return None
-
-        def setSpacing(self, *_args: Any) -> None:
-            return None
-
-        def addWidget(self, *args: Any, **kwargs: Any) -> None:
-            return None
-            
-        def addLayout(self, *args: Any, **kwargs: Any) -> None:
-            return None
-
-        def addSpacing(self, *args: Any) -> None:
-            return None
-
-        def addStretch(self, *args: Any) -> None:
-            return None
-            
-        def setAlignment(self, *args: Any) -> None:
-            return None
-
-    class QLabel:
-        def __init__(self, text: str = "", *args: Any, **kwargs: Any) -> None:
-            self._text = text
-            self.logger = DummyLogger()
-
-        def font(self) -> Any:
-            return types.SimpleNamespace(setPointSize=lambda *_: None)
-
-        def setStyleSheet(self, *_args: Any) -> None:
-            return None
-
-        def text(self) -> str:
-            return self._text
-            
-        def setText(self, t: str) -> None:
-            self._text = t
-
-        def sizeHint(self) -> Any:
-            return DummyRect(0, 0, 100, 30)
-
-        def hide(self) -> None: return None
-
-        def show(self) -> None: return None
-
-        def setHidden(self, *args: Any) -> None: return None
-
-        def setVisible(self, v: bool) -> None: return None
-
-        def adjustSize(self) -> None: return None
-
-        def setPixmap(self, p: Any) -> None: return None
-
-        def setAlignment(self, a: Any) -> None: return None
-
-        def move(self, x: int, y: int) -> None: return None
-
-        def setMinimumWidth(self, w: int) -> None: return None
-        
-        def setMinimumHeight(self, h: int) -> None: return None
-
-        def setFixedWidth(self, w: int) -> None: return None
-
-        def setFixedHeight(self, h: int) -> None: return None
-
-        def setAttribute(self, a: Any, v: bool = True) -> None: return None
-
-        def setObjectName(self, name: str) -> None: return None
-
-        def setGeometry(self, *args: Any) -> None: return None
-
-        def width(self) -> int: return 10
-
-        def height(self) -> int: return 10
-
-        def y(self) -> int: return 0
-
-        def raise_(self) -> None: return None
-    qtcore.Qt = Qt
-    qtcore.QTimer = QTimer
-    qtcore.QThread = QThread
-    qtcore.QObject = QObject
-    qtcore.QSize = object
-    qtcore.QEvent = object
-    qtcore.QCoreApplication = type("QCoreApplication", (), {"instance": staticmethod(lambda: None)})
-    qtcore.QByteArray = object
-    qtcore.QUrl = object
-    qtcore.QMimeData = object
-    qtcore.QPropertyAnimation = type("QPropertyAnimation", (), {"__init__": _generic_init, "setDuration": _generic_void, "setEasingCurve": _generic_void, "start": _generic_void, "stop": _generic_void, "setStartValue": _generic_void, "setEndValue": _generic_void})
-    qtcore.QAbstractAnimation = type("QAbstractAnimation", (), {})
-    qtcore.QRect = type("QRect", (), {
-        "__init__": _generic_init,
-        "isValid": lambda self: True,
-        "contains": lambda self, p: True,
-        "center": lambda self: QPoint(0, 0),
-        "left": lambda self: 0,
-        "right": lambda self: 100,
-        "top": lambda self: 0,
-        "bottom": lambda self: 100,
-        "width": lambda self: 100,
-        "height": lambda self: 100,
-        "y": lambda self: 0,
-    })
-    qtcore.QRectF = qtcore.QRect
-    qtcore.QEasingCurve = type("QEasingCurve", (), {"InOutQuad": 1, "OutCubic": 2})
-    qtcore.pyqtProperty = lambda *args, **kwargs: lambda f: property(f)
-    qtcore.QPoint = type("QPoint", (), {"__init__": _generic_init, "x": lambda self: 0, "y": lambda self: 0})
-    qtcore.pyqtSignal = lambda *_a, **_k: DummySignal()
-    qtwidgets.QStyle = QStyle
-    qtwidgets.QDialog = QDialog
-    qtwidgets.QListWidget = QListWidget
-    qtwidgets.QWidget = QWidget
-    qtwidgets.QHBoxLayout = QHBoxLayout
-    qtwidgets.QLabel = QLabel
-
-    class QApplication:
-        def __init__(self, *args, **kwargs): pass
-        @staticmethod
-        def instance(): return QApplication([])
-        @staticmethod
-        def processEvents(): pass
-
-        def setStyle(self, *args): pass
-
-        def exec_(self): return 0
-    qtwidgets.QApplication = QApplication
-
-    class QMessageBox:
-        @staticmethod
-        def warning(*args, **kwargs): pass
-        @staticmethod
-        def critical(*args, **kwargs): pass
-        @staticmethod
-        def information(*args, **kwargs): pass
-        @staticmethod
-        def question(*args, **kwargs): return 1
-    qtwidgets.QMessageBox = QMessageBox
-
-    class QSizePolicy:
+        StackAll = 1
         Expanding = 1
         Fixed = 2
-        Minimum = 3
-        Maximum = 4
-        MinimumExpanding = 5
-    qtwidgets.QSizePolicy = QSizePolicy
-    for n in [
-        "QGridLayout",
-        "QStyleOptionSlider",
-        "QStyleOptionSpinBox",
-        "QVBoxLayout",
-        "QStackedLayout",
-        "QFrame",
-        "QPushButton",
-        "QSlider",
-        "QSpinBox",
-        "QDoubleSpinBox",
-        "QCheckBox",
-        "QProgressBar",
-        "QComboBox",
-        "QToolTip",
-        "QFileDialog",
-        "QLineEdit",
-        "QDesktopWidget",
-        "QHeaderView",
-        "QTreeView",
-        "QListView",
-        "QRubberBand",
-        "QAbstractItemView",
-        "QMenu",
-        "QProxyStyle",
-        "QInputDialog",
-        "QStyledItemDelegate",
-        "QProgressBar",
-        "QMainWindow",
-        "QScrollArea",
-        "QAction",
-        "QPlainTextEdit",
-        "QTextEdit",
-        "QAbstractSpinBox",
-        "QGraphicsOpacityEffect",
-        "QStatusBar",
-    ]:
-        cls = type(n, (), {
-            "StackAll": 1,
-            "TicksBothSides": 3,
-            "__init__": _generic_init,
-            "setMouseTracking": _generic_void,
-            "setAttribute": _generic_void,
-            "setStyleSheet": _generic_void,
-            "setFixedSize": _generic_void,
-            "setMinimumHeight": _generic_void,
-            "setMinimumWidth": _generic_void,
-            "setMaximumWidth": _generic_void,
-            "setSizePolicy": _generic_void,
-            "setFixedWidth": _generic_void,
-            "setFixedHeight": _generic_void,
-            "update": _generic_void,
-            "setRange": _generic_void,
-            "setValue": _generic_void,
-            "setChecked": _generic_void,
-            "setVisible": _generic_void,
-            "setEnabled": _generic_void,
-            "setCursor": _generic_void,
-            "setObjectName": _generic_void,
-            "setAlignment": _generic_void,
-            "setText": _generic_void,
-            "clear": _generic_void,
-            "setIcon": _generic_void,
-            "objectName": lambda self: "",
-            "setContentsMargins": _generic_void,
-            "addLayout": _generic_void,
-            "addWidget": _generic_void,
-            "addStretch": _generic_void,
-            "setStretch": _generic_void,
-            "setSpacing": _generic_void,
-            "addSpacing": _generic_void,
-            "setHorizontalSpacing": _generic_void,
-            "setVerticalSpacing": _generic_void,
-            "setColumnStretch": _generic_void,
-            "setRowStretch": _generic_void,
-            "setAlignment": _generic_void,
-            "setSingleStep": _generic_void,
-            "setPageStep": _generic_void,
-            "setTickInterval": _generic_void,
-            "setTickPosition": _generic_void,
-            "setTracking": _generic_void,
-            "setFocusPolicy": _generic_void,
-            "setStackingMode": _generic_void,
-            "setAcceptDrops": _generic_void,
-            "installEventFilter": _generic_void,
-            "blockSignals": _generic_void,
-            "hide": _generic_void,
-            "setDecimals": _generic_void,
-            "setPlaceholderText": _generic_void,
-            "clear": _generic_void,
-            "setReadOnly": _generic_void,
-            "setToolTip": _generic_void,
-            "value": lambda self: 0,
-            "isChecked": lambda self: False,
-            "text": lambda self: "",
-            "window": lambda self: QWidget(),
-            "style": lambda self: types.SimpleNamespace(standardIcon=lambda *_: None),
-            "setCentralWidget": _generic_void,
-            "_safe_mpv_get": lambda self, p, d=None: d,
-            "_safe_mpv_set": lambda self, p, v: True,
-            "setStatusBar": _generic_void,
-            "addPermanentWidget": _generic_void,
-            "showMessage": _generic_void,
-            "sliderPressed": DummySignal(),
-            "sliderReleased": DummySignal(),
-            "sliderMoved": DummySignal(),
-            "rangeChanged": DummySignal(),
-            "trim_times_changed": DummySignal(),
-            "valueChanged": DummySignal(),
-            "toggled": DummySignal(),
-            "clicked": DummySignal(),
-        })
-        setattr(qtwidgets, n, cls)
+        Preferred = 3
+        Minimum = 4
+        Maximum = 5
+        MinimumExpanding = 6
+        Ignored = 7
+        SP_MediaPlay = 1
+        SP_MediaPause = 2
+        SP_MediaStop = 3
+        SP_MediaSkipForward = 4
+        SP_MediaSkipBackward = 5
+        SP_MediaVolume = 6
+        SP_MediaVolumeMuted = 7
+        SP_MessageBoxInformation = 8
+        SP_MessageBoxWarning = 9
+        SP_MessageBoxCritical = 10
+        SP_MessageBoxQuestion = 11
+        OutCubic = 1
+        Rectangle = 1
+        ExtendedSelection = 1
+        SelectRows = 1
+        DragDrop = 1
+        DontUseNativeDialog = 1
+        ExistingFiles = 1
+        AcceptRole = 1
+        RejectRole = 2
+        ActionRole = 3
+
+        def __init__(self, *args, **kwargs):
+            self._signals = {}
+
+        def __getattr__(self, name):
+            if name.endswith("_signal") or name in ["valueChanged", "toggled", "clicked", "sliderPressed", "sliderReleased", "sliderMoved", "rangeChanged", "trim_times_changed", "currentTextChanged", "progress", "finished", "error", "level_signal", "recording_started", "recording_finished", "playhead_updated", "time_updated", "state_updated", "data_changed", "file_dropped", "clip_selected", "seek_request", "clip_split_requested", "param_changed", "play_requested", "interaction_started", "interaction_ended", "audio_analysis_finished", "progress_started", "progress_updated", "progress_finished", "waveform_ready", "thumbnail_ready", "timeout", "triggered", "sortIndicatorChanged"]:
+                if name not in self._signals: self._signals[name] = DummySignal()
+                return self._signals[name]
+            return _generic_void
+
+        def __call__(self, *args, **kwargs): return MockObject()
+
+        def setWindowTitle(self, *args): pass
+
+        def setGeometry(self, *args): pass
+
+        def setMinimumSize(self, *args): pass
+
+        def setMaximumSize(self, *args): pass
+
+        def setFixedSize(self, *args): pass
+
+        def setLayout(self, *args): pass
+
+        def show(self, *args): pass
+
+        def hide(self, *args): pass
+
+        def update(self, *args): pass
+
+        def repaint(self, *args): pass
+
+        def setEnabled(self, *args): pass
+
+        def setDisabled(self, *args): pass
+
+        def setVisible(self, *args): pass
+
+        def setStyleSheet(self, *args): pass
+
+        def setObjectName(self, *args): pass
+
+        def setParent(self, *args): pass
+
+        def installEventFilter(self, *args): pass
+
+        def removeEventFilter(self, *args): pass
+
+        def setAcceptDrops(self, *args): pass
+
+        def setFocus(self, *args): pass
+
+        def blockSignals(self, *args): return False
+
+        def property(self, *args): return None
+
+        def setProperty(self, *args): return True
+
+        def rect(self, *args): return qtcore.QRect
+
+        def size(self, *args): return qtcore.QSize
+
+        def width(self): return 100
+
+        def height(self): return 100
+
+        def mapToGlobal(self, p): return p
+
+        def mapFromGlobal(self, p): return p
+
+        def statusBar(self): 
+            return MockObject()
+
+        def showMessage(self, *args): pass
+
+        def addPermanentWidget(self, *args, **kwargs): pass
+
+        def addWidget(self, *args, **kwargs): pass
+
+        def addLayout(self, *args, **kwargs): pass
+
+        def setContentsMargins(self, *args): pass
+
+        def setSpacing(self, *args): pass
+
+        def clear(self): pass
+
+        def raise_(self): pass
+
+        def isChecked(self): return False
+
+        def value(self): return 0
+
+        def text(self): return ""
+
+        def style(self): 
+            return types.SimpleNamespace(standardIcon=lambda *_: MockObject())
+
+        def addItems(self, *args): pass
+
+        def setCurrentIndex(self, *args): pass
+
+        def setFixedWidth(self, *args): pass
+
+        def setFixedHeight(self, *args): pass
+
+        def addAction(self, *args): return MockObject()
+
+        def addSeparator(self): pass
+
+        def setPopupMode(self, *args): pass
+
+        def setAutoRaise(self, *args): pass
+
+        def setMenu(self, *args): pass
+
+        def setSizePolicy(self, *args, **kwargs): pass
+
+        def setRange(self, *args): pass
+
+        def setValue(self, *args): pass
+
+        def setCursor(self, *args): pass
+
+        def setToolTip(self, *args): pass
+
+        def setCheckable(self, *args): pass
+
+        def setChecked(self, *args): pass
+
+        def setShortcut(self, *args): pass
+
+        def count(self): return 0
+
+        def item(self, i): return MockObject()
+
+        def data(self, *args): return None
+
+        def horizontalScrollBar(self): return MockObject()
+
+        def verticalScrollBar(self): return MockObject()
+
+        def set_duration_ms(self, *args): pass
+
+        def set_trim_times(self, start_ms, end_ms): pass
+
+        def reset_music_times(self): pass
+
+        def set_music_times(self, *args): pass
+
+        def winId(self): return 12345
+
+        def setDockOptions(self, *args): pass
+
+        def addDockWidget(self, *args, **kwargs): pass
+
+        def resizeDocks(self, *args): pass
+
+        def restoreGeometry(self, *args): pass
+
+        def restoreState(self, *args): pass
+
+        def saveGeometry(self): return qtcore.QByteArray
+
+        def saveState(self): return qtcore.QByteArray
+
+        def screenGeometry(self): return MockObject()
+
+        def left(self): return 0
+
+        def top(self): return 0
+
+        def name(self): return "mock"
+
+        def lighter(self, *args): return MockObject()
+
+        def darker(self, *args): return MockObject()
+
+        def setTickPosition(self, *args): pass
+
+        def setTickInterval(self, *args): pass
+
+        def setPageStep(self, *args): pass
+
+        def setSingleStep(self, *args): pass
+
+        def exec_(self, *args): return 1
+
+        def setFocusPolicy(self, *args): pass
+
+        def setStackingMode(self, *args): pass
+
+        def setAttribute(self, *args, **kwargs): pass
+
+        def setWindowFlags(self, *args): pass
+        @staticmethod
+        def system(): return MockObject()
+
+        def viewport(self): return MockObject()
+
+        def setSelectionMode(self, *args): pass
+
+        def setSelectionBehavior(self, *args): pass
+
+        def setDragEnabled(self, *args): pass
+
+        def setDragDropMode(self, *args): pass
+
+        def setDropIndicatorShown(self, *args): pass
+
+        def indexAt(self, *args): return MockObject()
+
+        def isValid(self): return False
+
+        def normalized(self): return MockObject()
+
+        def modifiers(self): return 0
+
+        def button(self): return 1
+
+        def pos(self): return qtcore.QPoint()
+
+        def header(self): return MockObject()
+
+        def setSortingEnabled(self, *args): pass
+
+        def setSortIndicatorShown(self, *args): pass
+
+        def setSectionsClickable(self, *args): pass
+
+        def setStretchLastSection(self, *args): pass
+
+        def setDefaultAlignment(self, *args): pass
+
+        def setSortIndicator(self, *args): pass
+
+        def setUniformRowHeights(self, *args): pass
+
+        def setItemDelegate(self, *args): pass
+
+        def model(self): return MockObject()
+
+        def findChild(self, *args, **kwargs): return MockObject()
+
+        def findChildren(self, *args, **kwargs): return [MockObject()]
+
+        def globalPos(self): return qtcore.QPoint()
+        @staticmethod
+        def clipboard(): return MockObject()
+
+        def mimeData(self): return MockObject()
+
+        def hasUrls(self): return False
+
+        def hasFormat(self, *args): return False
+
+        def directory(self): return MockObject()
+
+        def absolutePath(self): return ""
+
+        def addButton(self, *args, **kwargs): return MockObject()
+
+        def setDefaultButton(self, *args): pass
+
+        def clickedButton(self): return MockObject()
+
+        def setFileMode(self, *args): pass
+
+        def setOption(self, *args, **kwargs): pass
+
+        def setDirectory(self, *args): pass
+
+        def setSidebarUrls(self, *args): pass
+    qtcore.QObject = MockObject
+    qtcore.QThread = MockObject
+    qtcore.QTimer = MockObject
+    qtcore.QThreadPool = MockObject
+    core_list = ["QObject", "QThread", "QTimer", "QThreadPool", "QPropertyAnimation", "QUrl", "QRunnable", "QPointF", "QRectF", "QLineF", "QProcess", "QBuffer", "QIODevice", "QMimeData", "QModelIndex", "QAbstractListModel", "QAbstractItemModel", "QVariant", "QTranslator", "QLibraryInfo", "QEasingCurve", "QParallelAnimationGroup", "QSequentialAnimationGroup", "QVariantAnimation", "QWaitCondition", "QMutex", "QMutexLocker", "QSemaphore", "QReadWriteLock", "QReadLocker", "QMetaObject", "QSizeF", "QLocale", "QRegularExpression", "QRegularExpressionValidator", "QStandardPaths", "QStorageInfo", "QFileSystemWatcher", "QMimeDatabase", "QMimeType", "QCommandLineParser"]
+    for n in core_list:
+        setattr(qtcore, n, type(n, (MockObject,), {"system": MockObject.system}))
+    qtcore.Q_ARG = lambda *a: None
+    
+    class MockProperty:
+        def __init__(self, *args, **kwargs): pass
+
+        def __call__(self, func):
+            return property(func)
+    qtcore.pyqtProperty = MockProperty
+    widgets_list = [
+        "QWidget", "QMainWindow", "QFrame", "QDialog", "QPushButton", "QCheckBox", 
+        "QSpinBox", "QDoubleSpinBox", "QProgressBar", "QSlider", "QComboBox", 
+        "QScrollArea", "QGroupBox", "QLineEdit", "QTextEdit", "QPlainTextEdit", 
+        "QSplitter", "QStackedWidget", "QTabWidget", "QToolButton", "QAction", 
+        "QMenu", "QMenuBar", "QStatusBar", "QToolBar", "QDockWidget", "QLabel",
+        "QApplication", "QMessageBox", "QVBoxLayout", "QHBoxLayout", "QGridLayout", "QStackedLayout", 
+        "QStyle", "QSizePolicy", "QStyleOptionSpinBox", "QStyleOptionSlider", "QFileDialog", 
+        "QListWidgetItem", "QDesktopWidget", "QActionGroup", "QAbstractButton", "QRadioButton", 
+        "QTabBar", "QScrollBar", "QHeaderView", "QAbstractSpinBox", "QToolTip", "QGraphicsRectItem",
+        "QGraphicsItem", "QGraphicsDropShadowEffect", "QGraphicsView", "QGraphicsScene", "QGraphicsPixmapItem",
+        "QGraphicsTextItem", "QGraphicsEllipseItem", "QGraphicsPolygonItem", "QGraphicsLineItem", "QListWidget", "QSystemTrayIcon", "QInputDialog", "QUndoStack", "QUndoCommand", "QKeySequenceEdit", "QGraphicsObject", "QGraphicsSimpleTextItem", "QProgressDialog", "QGraphicsOpacityEffect", "QUndoGroup", "QUndoView", "QErrorMessage", "QShortcut", "QTreeView", "QListView", "QRubberBand", "QAbstractItemView", "QProxyStyle", "QStyledItemDelegate", "QStyleOption"
+    ]
+    for n in widgets_list:
+        setattr(qtwidgets, n, type(n, (MockObject,), {"clipboard": MockObject.clipboard}))
+    qtwidgets.QSizePolicy = MockObject
+    qtwidgets.QStyle = MockObject
+    qtwidgets.QRubberBand = MockObject
+    qtwidgets.QFileDialog = MockObject
+    qtwidgets.QMessageBox = MockObject
+    gui_list = [
+        "QPixmap", "QPainter", "QColor", "QIcon", "QPen", "QCursor", "QPainterPath", 
+        "QLinearGradient", "QRadialGradient", "QBrush", "QPalette", "QRegion", 
+        "QDesktopServices", "QKeySequence", "QPolygon", "QBrush", "QPalette", "QShortcut", "QPolygonF", "QTransform", "QDrag", "QMovie"
+    ]
+    for n in gui_list:
+        setattr(qtgui, n, type(n, (MockObject,), {}))
+
     class QFontMetrics:
         def __init__(self, *args: Any) -> None: pass
+
         def horizontalAdvance(self, *args: Any) -> int: return 50
+
         def width(self, *args: Any) -> int: return 50
-        def height(self) -> int: return 15
+
+        def height(self, *args: Any) -> int: return 15
 
     class QFont:
         def __init__(self, *args: Any) -> None: pass
+
         def setPointSize(self, *args: Any) -> None: pass
+
         def pointSize(self) -> int: return 10
-    
-    for n in [
-        "QPixmap",
-        "QPainter",
-        "QColor",
-        "QIcon",
-        "QPen",
-        "QCursor",
-        "QPainterPath",
-        "QLinearGradient",
-        "QRadialGradient",
-        "QBrush",
-        "QPalette",
-        "QRegion",
-        "QDesktopServices",
-        "QFont",
-        "QFontMetrics",
-    ]:
-        setattr(qtgui, n, type(n, (), {"__init__": lambda *a, **k: None}))
-    
     qtgui.QFont = QFont
     qtgui.QFontMetrics = QFontMetrics
     sys.modules["PyQt5"] = pyqt5
     sys.modules["PyQt5.QtCore"] = qtcore
     sys.modules["PyQt5.QtWidgets"] = qtwidgets
     sys.modules["PyQt5.QtGui"] = qtgui
-    pyqt5.QtCore = qtcore
-    pyqt5.QtWidgets = qtwidgets
-    pyqt5.QtGui = qtgui
-    qtwidgets.QLabel = QLabel
     mpv_mod = types.ModuleType("mpv")
 
     class MockMPV:
@@ -814,14 +671,11 @@ def install_qt_mpv_stubs() -> None:
         def audio_add(self, path): pass
 
         def terminate(self): pass
+
+        def event_callback(self, *args, **kwargs): return lambda f: f
+
+        def observe_property(self, *args, **kwargs): pass
+
+        def command(self, *args): pass
     mpv_mod.MPV = MockMPV
     sys.modules["mpv"] = mpv_mod
-
-
-
-
-
-
-
-
-

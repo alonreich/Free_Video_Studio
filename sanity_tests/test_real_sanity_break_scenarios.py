@@ -51,7 +51,7 @@ def test_break_scenario_trim_near_zero_never_generates_negative_seek(monkeypatch
         def wait(self, timeout=None):
             return 0
 
-    def _fake_create_subprocess(cmd, _logger):
+    def _fake_create_subprocess(cmd, _logger=None):
         captured_cmds.append(list(cmd))
         return _Proc()
     monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)

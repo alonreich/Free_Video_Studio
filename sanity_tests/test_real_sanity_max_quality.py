@@ -10,7 +10,26 @@ from processing.config_data import VideoConfig
 from system.logger import setup_logger
 import logging
 
-def find_test_video():
+def generate_synthetic_video(base_dir):
+    import subprocess
+    import tempfile
+    import uuid
+    tmp = os.path.join(tempfile.gettempdir(), f"synthetic_{uuid.uuid4().hex}.mp4")
+    bin_dir = os.path.join(base_dir, 'binaries')
+    ffmpeg = os.path.join(bin_dir, 'ffmpeg.exe')
+    if not os.path.exists(ffmpeg):
+        return None
+    cmd = [
+        ffmpeg, "-y", "-f", "lavfi", "-i", "testsrc=duration=5:size=1920x1080:rate=60",
+        "-f", "lavfi", "-i", "sine=frequency=1000:duration=5",
+        "-c:v", "libx264", "-c:a", "aac", tmp
+    ]
+    subprocess.run(cmd, capture_output=True)
+    if os.path.exists(tmp):
+        return tmp
+    return None
+
+def find_test_video(base_dir=None):
     paths = [
         os.path.expandvars(r"%LOCALAPPDATA%\Temp\Highlights\Fortnite"),
         os.path.expandvars(r"%USERPROFILE%\Videos\Fortnite")
@@ -20,6 +39,8 @@ def find_test_video():
             for f in os.listdir(p):
                 if f.endswith(".mp4"):
                     return os.path.join(p, f)
+    if base_dir:
+        return generate_synthetic_video(base_dir)
     return None
 
 def verify_video_movement(video_path, start_ss=2):
@@ -53,10 +74,10 @@ class DummySignal:
         pass
 @pytest.mark.timeout(300)
 def test_real_video_max_quality():
-    vid = find_test_video()
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    vid = find_test_video(base_dir)
     if not vid:
         pytest.skip("No real video found in user directories to test.")
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     bin_dir = os.path.join(base_dir, 'binaries')
     logger = setup_logger(base_dir, "sanity_max.log", "SanityMAX")
     prober = MediaProber(bin_dir, vid)

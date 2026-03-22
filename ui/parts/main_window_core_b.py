@@ -12,9 +12,11 @@ class MainWindowCoreBMixin:
             p = (phase or "").lower()
             if any(x in p for x in ("processing", "step", "encode", "intro", "core", "concat")):
                 self.is_processing = True
+                if hasattr(self, "progress_bar"): self.progress_bar.show()
                 if hasattr(self, "_pulse_timer"): self._pulse_timer.start(250)
             elif any(x in p for x in ("done", "idle", "error", "failed")):
                 self.is_processing = False
+                if hasattr(self, "progress_bar"): self.progress_bar.hide()
                 if hasattr(self, "_pulse_timer"): self._pulse_timer.start(750)
             if hasattr(self, "_update_process_button_text"): self._update_process_button_text()
         except Exception: pass
@@ -26,7 +28,7 @@ class MainWindowCoreBMixin:
             if time.time() < float(getattr(self, "_ignore_mpv_end_until", 0.0)): return
             if bool(getattr(self, "_handling_video_end", False)): return
             self._handling_video_end = True
-            if getattr(self, "player", None): self.player.pause = True
+            if getattr(self, "player", None): self._safe_mpv_set("pause", True)
             self.positionSlider.blockSignals(True)
             self.positionSlider.setValue(self.positionSlider.maximum())
             self.positionSlider.blockSignals(False)
@@ -46,8 +48,8 @@ class MainWindowCoreBMixin:
     def _on_speed_changed(self, value):
         self.playback_rate = value
         if self.player:
-            if not getattr(self.player, "pause", True):
-                self.player.pause = True
+            if not self._safe_mpv_get("pause", True):
+                self._safe_mpv_set("pause", True)
                 self.playPauseButton.setText("PLAY")
                 self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
                 self.is_playing = False

@@ -1,10 +1,12 @@
-import os, sys, time, threading, logging, subprocess, traceback
+﻿import os, sys, time, threading, logging, subprocess, traceback
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 class MainWindowEventsMixin:
     def keyPressEvent(self, event):
+        if hasattr(self, "handle_global_key_press") and self.handle_global_key_press(event):
+            return
         if event.key() == Qt.Key_F11:
             self.launch_advanced_editor()
         elif event.key() == Qt.Key_F12:
@@ -24,8 +26,7 @@ class MainWindowEventsMixin:
     def eventFilter(self, obj, event):
         try:
             if event.type() == QEvent.KeyPress:
-                from ui.parts.keyboard_mixin import KeyboardMixin
-                if KeyboardMixin.eventFilter(self, obj, event):
+                if hasattr(self, "handle_global_key_press") and self.handle_global_key_press(event):
                     return True
         except Exception as e:
             if hasattr(self, 'logger'):
@@ -33,8 +34,9 @@ class MainWindowEventsMixin:
         return False
 
     def resizeEvent(self, event):
-        if hasattr(self, 'handle_persistence_event'):
-            self.handle_persistence_event()
+        if hasattr(self, "_update_upload_hint_responsive"):
+            self._update_upload_hint_responsive()
+            QTimer.singleShot(0, self._update_upload_hint_responsive)
         try:
             if hasattr(self, '_update_volume_badge'):
                 self._update_volume_badge()
@@ -79,6 +81,7 @@ class MainWindowEventsMixin:
             pass
 
     def closeEvent(self, event):
+        self._shutting_down = True
         if hasattr(self, 'save_geometry'):
             self.save_geometry()
         if getattr(self, "is_processing", False):

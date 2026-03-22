@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import types
 from typing import Any
 from sanity_tests._ai_sanity_helpers import read_source
@@ -80,6 +80,11 @@ class _PreviewPlayer:
 
 def test_main_preview_player_reflects_granular_segment_speeds(monkeypatch) -> None:
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.player = _PreviewPlayer(initial_rate=1.1)
     host.positionSlider = _PreviewSlider()
     host.granular_checkbox = DummyCheckBox(True)
@@ -134,6 +139,11 @@ def test_wizard_step3_accounts_for_granular_segments_and_music_timeline() -> Non
     assert "wall_now = self._calculate_wall_clock_time(v_time_ms, self.speed_segments, self.speed_factor)" in playback_src
     assert "speed_segments=speed_segments" in music_mixin_src
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.trim_start_ms = 1000
     host.speed_factor = 1.5
     host.speed_segments = [

@@ -691,7 +691,11 @@ class DrawWidget(QWidget):
 
     def get_selection(self):
         if self.pixmap.isNull() or self._crop_rect_img.isNull() or not self._crop_rect_img.isValid(): return None, None
-        final_rect = self._crop_rect_img.toAlignedRect().intersected(self.pixmap.rect())
+        ix = int(math.floor(self._crop_rect_img.left()))
+        iy = int(math.floor(self._crop_rect_img.top()))
+        iw = int(math.ceil(self._crop_rect_img.right())) - ix
+        ih = int(math.ceil(self._crop_rect_img.bottom())) - iy
+        final_rect = QRect(ix, iy, iw, ih).intersected(self.pixmap.rect())
         if final_rect.width() < UI_BEHAVIOR.SELECTION_MIN_SIZE or final_rect.height() < UI_BEHAVIOR.SELECTION_MIN_SIZE: return None, None
         return self.pixmap.copy(final_rect), final_rect
 

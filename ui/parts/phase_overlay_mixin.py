@@ -126,15 +126,14 @@ class PhaseOverlayMixin:
                 return
             main_rect = self.rect()
             self._overlay.setGeometry(main_rect)
-            full_region = QRegion(main_rect)
             mask_region = QRegion(main_rect)
             widgets_to_show = ["process_button", "cancel_button", "progress_bar"]
             for w_name in widgets_to_show:
                 w = getattr(self, w_name, None)
                 if w and w.isVisible():
-                    tl = w.mapToGlobal(w.rect().topLeft())
-                    local_tl = self._overlay.mapFromGlobal(tl)
-                    w_rect = QRect(local_tl, w.size())
+                    global_pos = w.mapToGlobal(QPoint(0,0))
+                    local_pos = self._overlay.mapFromGlobal(global_pos)
+                    w_rect = QRect(local_pos, w.size())
                     mask_region = mask_region.subtracted(QRegion(w_rect))
             self._overlay.setMask(mask_region)
             self._overlay.raise_()
@@ -144,8 +143,12 @@ class PhaseOverlayMixin:
             avail_h = main_rect.height() - (2 * margin_y)
             if avail_w < 100 or avail_h < 100: return
             graph_h = 240 
-            self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
-            self.live_log.setGeometry(margin_x, margin_y + graph_h + 20, avail_w, avail_h - graph_h - 20)
+            if hasattr(self, "_graph"):
+                self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
+            if hasattr(self, "live_log"):
+                self.live_log.setGeometry(margin_x, margin_y + graph_h + 20, avail_w, avail_h - graph_h - 80)
+                self.live_log.show()
+                self.live_log.raise_()
         except Exception:
             pass
 

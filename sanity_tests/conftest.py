@@ -120,14 +120,12 @@ def pytest_configure(config) -> None:
     _RUN_STARTED_AT = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
     _disable_pytest_cacheprovider(config)
     _cleanup_pytest_cache()
-    
     parent_dir = Path(__file__).parent
     for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
         if stale_dir.is_dir():
             try:
                 shutil.rmtree(stale_dir, ignore_errors=True)
             except: pass
-
     _setup_tmp_sandbox(config)
     _install_legacy_import_alias()
 

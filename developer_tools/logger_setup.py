@@ -1,7 +1,6 @@
 ﻿import sys
 import os
 import logging
-from enhanced_logger import EnhancedCropLogger
 current_dir = os.path.abspath(os.path.dirname(__file__))
 project_root = current_dir
 if project_root not in sys.path:
@@ -9,6 +8,8 @@ if project_root not in sys.path:
 parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
+
+from enhanced_logger import EnhancedCropLogger
 
 class StreamToLogger(object):
     """

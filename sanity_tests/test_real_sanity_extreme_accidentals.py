@@ -215,6 +215,7 @@ class _MusicPlayer:
 def test_extreme_10_set_player_position_force_pause_beats_autoplay_inside_music_window() -> None:
     music = _MusicPlayer()
     host = types.SimpleNamespace(
+        _mpv_lock=threading.RLock(),
         _scrub_lock=threading.RLock(),
         mpv_music_player=music,
         _music_preview_player=music,
@@ -227,7 +228,7 @@ def test_extreme_10_set_player_position_force_pause_beats_autoplay_inside_music_
         _get_music_offset_ms=lambda: 0,
         _music_eff=lambda: 80,
         logger=_logger(),
-        player=types.SimpleNamespace(set_time=lambda *_: None),
+        player=types.SimpleNamespace(set_time=lambda *_: None, command=lambda *a: None),
     )
     PlayerMixin.set_player_position(host, 2500, sync_only=True, force_pause=True)
     assert music.pause_calls >= 1

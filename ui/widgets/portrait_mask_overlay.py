@@ -67,7 +67,7 @@ class PortraitMaskOverlay(QWidget):
                 painter.fillRect(0, 0, clear_rect.left(), frame_h, dim_color)
             if clear_rect.right() < frame_w - 1:
                 painter.fillRect(clear_rect.right() + 1, 0, frame_w - (clear_rect.right() + 1), frame_h, dim_color)
-            pen = QPen(QColor(255, 255, 255, 180))
+            pen = QPen(QColor("#2D7F41"))
             pen.setStyle(Qt.DashLine)
             pen.setWidth(2)
             painter.setPen(pen)

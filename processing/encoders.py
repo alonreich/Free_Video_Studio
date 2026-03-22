@@ -96,12 +96,12 @@ class EncoderManager:
                 nv_preset, multipass, lookahead = 'p2', 'disabled', '20'
                 aq_flags = []
             elif quality_level <= 1:
-                nv_preset, multipass, lookahead = 'p4', 'disabled', '30'
+                nv_preset, multipass, lookahead = 'p4', 'disabled', '40'
                 aq_flags = ['-spatial-aq', '1', '-temporal-aq', '1']
             else: 
                 nv_preset, multipass, lookahead = 'p6', 'fullres', '40'
                 aq_flags = ['-spatial-aq', '1', '-temporal-aq', '1']
-            h264_level = '4.2'
+            h264_level = 'auto'
             vcodec.extend([
                 '-pix_fmt', 'yuv420p',
                 '-preset', nv_preset,
@@ -111,7 +111,7 @@ class EncoderManager:
             ])
             vcodec.extend(aq_flags)
             if quality_level > 1:
-                vcodec.extend(['-aq-strength', '15', '-b_ref_mode', 'middle', '-nonref_p', '1'])
+                vcodec.extend(['-aq-strength', '15', '-b_ref_mode', 'middle', '-nonref_p', '1', '-spatial-aq', '1', '-temporal-aq', '1'])
             vcodec.extend([
                 '-bf', '3',
                 '-rc-lookahead', lookahead,
@@ -124,7 +124,7 @@ class EncoderManager:
                 vcodec.extend([
                     '-b:v', f'{kbps}k',
                     '-maxrate', f'{max_rate}k',
-                    '-bufsize', f'{int(kbps * 2.0)}k'
+                    '-bufsize', f'{int(kbps * 3.0)}k'
                 ])
                 rc_label = f"NVENC {nv_preset}/{multipass} (VBR)"
             else:
@@ -146,7 +146,7 @@ class EncoderManager:
             ])
             if video_bitrate_kbps:
                 kbps = int(video_bitrate_kbps)
-                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k'])
+                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k', '-bufsize', f'{int(kbps * 2.0)}k'])
             rc_label = f"AMD AMF {amf_quality}"
         elif encoder_name == 'h264_qsv':
             qsv_preset = 'balanced' if quality_level <= 1 else 'slow'
@@ -155,13 +155,13 @@ class EncoderManager:
                 '-preset', qsv_preset, 
                 '-bf', '3', 
                 '-look_ahead', '1', 
-                '-look_ahead_depth', '40' if quality_level <= 1 else '60',
+                '-look_ahead_depth', '60' if quality_level <= 1 else '100',
                 '-profile:v', 'high',
                 '-level', '4.2'
             ])
             if video_bitrate_kbps:
                 kbps = int(video_bitrate_kbps)
-                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k'])
+                vcodec.extend(['-b:v', f'{kbps}k', '-maxrate', f'{int(kbps * 1.5)}k', '-bufsize', f'{int(kbps * 2.0)}k'])
             rc_label = f"Intel QSV {qsv_preset}"
         elif encoder_name == 'libx264':
             cpu_preset = 'veryfast' if quality_level <= 0 else ('fast' if quality_level <= 1 else 'medium')

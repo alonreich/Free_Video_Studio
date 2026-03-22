@@ -10,11 +10,17 @@ from PyQt5.QtWidgets import (
 )
 
 class KeyboardMixin(QWidget):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            if self.handle_global_key_press(event):
+                return True
+        return False
+
     def _is_editing_widget_focused(self) -> bool:
         fw = QApplication.focusWidget()
         if fw is None: return False
         if hasattr(self, "portrait_text_input") and fw == self.portrait_text_input:
-            return False
+            return True
         if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)): return True
         if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()): return True
         try:

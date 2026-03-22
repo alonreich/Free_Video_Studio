@@ -123,6 +123,15 @@ class MergerConsoleManager:
             mpv = MockMPV()
         if str(logger_name) == "Video_Merger":
             logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")
+            if False:
+                source_tag = "video_merger"
+                raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+                f = open(raw_log_path, 'a', encoding='utf-8')
+                os.dup2(f.fileno(), sys.stdout.fileno())
+                os.dup2(f.fileno(), sys.stderr.fileno())
+
+                import faulthandler
+                faulthandler.enable(f)
             
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):

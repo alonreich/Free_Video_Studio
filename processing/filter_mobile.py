@@ -1,9 +1,12 @@
 ﻿import os
+import math
 from .processing_utils import make_even
 try:
     from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, 
+        inverse_transform_from_content_area_int, get_resolution_ints,
+        PORTRAIT_W, PORTRAIT_H
     )
 except ImportError:
     import sys
@@ -13,7 +16,9 @@ except ImportError:
 
     from developer_tools.coordinate_math import (
         TARGET_W, TARGET_H, CONTENT_W, CONTENT_H, BACKEND_SCALE,
-        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, inverse_transform_from_content_area_int
+        PADDING_TOP, UI_PADDING_TOP, UI_TO_INTERNAL_SCALE, scale_round, 
+        inverse_transform_from_content_area_int, get_resolution_ints,
+        PORTRAIT_W, PORTRAIT_H
     )
 
 class MobileFilterMixin:
@@ -27,10 +32,10 @@ class MobileFilterMixin:
 
     def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, txt_input_label=None, use_cuda=False, original_resolution="1920x1080"):
         coords_data = mobile_coords
-        FINAL_W, FINAL_H = 1080, 1920
-        CONTENT_AREA_W, CONTENT_AREA_H = 1080, 1620
-        INTERNAL_W, INTERNAL_H = 1280, 1920
-        CONTENT_OFFSET_Y = 150
+        FINAL_W, FINAL_H = PORTRAIT_W, PORTRAIT_H
+        CONTENT_AREA_W, CONTENT_AREA_H = CONTENT_W, CONTENT_H
+        TARGET_INTERNAL_W, TARGET_INTERNAL_H = TARGET_W, TARGET_H
+        CONTENT_OFFSET_Y = UI_PADDING_TOP
         parts = []
 
         def get_rect(section, key):
@@ -59,7 +64,15 @@ class MobileFilterMixin:
         if active_layers:
             split_count = 1 + len(active_layers)
             parts.append(f"{input_pad}split={split_count}[v_base_in]" + "".join([f"[v_layer_in_{i}]" for i in range(len(active_layers))]))
-            parts.append(f"[v_base_in]scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:trunc((iw-{INTERNAL_W})/2/2)*2:trunc((ih-{INTERNAL_H})/2/2)*2[main_base]")
+            in_w, in_h = get_resolution_ints(original_resolution)
+            scale = float(TARGET_INTERNAL_H) / float(in_h)
+            scaled_w = math.ceil(in_w * scale)
+            if scaled_w % 2 != 0: scaled_w += 1
+            cx = int(math.floor((scaled_w - TARGET_INTERNAL_W) / 4.0) * 2.0)
+            scaled_h = math.ceil(in_h * scale)
+            if scaled_h % 2 != 0: scaled_h += 1
+            cy = int(math.floor((scaled_h - TARGET_INTERNAL_H) / 4.0) * 2.0)
+            parts.append(f"[v_base_in]scale={scaled_w}:{scaled_h}:flags=lanczos,crop={TARGET_INTERNAL_W}:{TARGET_INTERNAL_H}:{cx}:{cy}[main_base]")
             curr_v = "[main_base]"
             for i, layer in enumerate(active_layers):
                 drift_type = None
@@ -73,24 +86,34 @@ class MobileFilterMixin:
                 sx, sy, sw, sh = source_rect
                 rw = max(2, make_even(layer['ui_rect'][0] * layer['scale'] * UI_TO_INTERNAL_SCALE))
                 rh = max(2, make_even(layer['ui_rect'][1] * layer['scale'] * UI_TO_INTERNAL_SCALE))
+                ui_x_absolute = float(layer['pos']['x'])
                 ui_y_absolute = float(layer['pos']['y'])
-                lx = make_even(float(layer['pos']['x']) * UI_TO_INTERNAL_SCALE)
-                ly = make_even((ui_y_absolute - 150) * UI_TO_INTERNAL_SCALE)
+                lx_raw = ui_x_absolute * BACKEND_SCALE
+                ly_raw = (ui_y_absolute - UI_PADDING_TOP) * BACKEND_SCALE
+                lx = scale_round(max(0.0, min(lx_raw, float(TARGET_INTERNAL_W) - rw)))
+                ly = scale_round(max(0.0, min(ly_raw, float(TARGET_INTERNAL_H) - rh)))
                 parts.append(f"[v_layer_in_{i}]crop={sw}:{sh}:{sx}:{sy},scale={rw}:{rh}:flags=lanczos[v_layer_out_{i}]")
                 next_v = f"[v_comp_{i}]"
                 parts.append(f"{curr_v}[v_layer_out_{i}]overlay=x={lx}:y={ly}:eof_action=pass{next_v}")
                 curr_v = next_v
         else:
-            parts.append(f"{input_pad}scale={INTERNAL_W}:{INTERNAL_H}:force_original_aspect_ratio=increase:flags=lanczos,crop={INTERNAL_W}:{INTERNAL_H}:trunc((iw-{INTERNAL_W})/2/2)*2:trunc((ih-{INTERNAL_H})/2/2)*2[main_base]")
+            in_w, in_h = get_resolution_ints(original_resolution)
+            scale = float(TARGET_INTERNAL_H) / float(in_h)
+            scaled_w = math.ceil(in_w * scale)
+            if scaled_w % 2 != 0: scaled_w += 1
+            cx = int(math.floor((scaled_w - TARGET_INTERNAL_W) / 4.0) * 2.0)
+            scaled_h = math.ceil(in_h * scale)
+            if scaled_h % 2 != 0: scaled_h += 1
+            cy = int(math.floor((scaled_h - TARGET_INTERNAL_H) / 4.0) * 2.0)
+            parts.append(f"{input_pad}scale={scaled_w}:{scaled_h}:flags=lanczos,crop={TARGET_INTERNAL_W}:{TARGET_INTERNAL_H}:{cx}:{cy}[main_base]")
             curr_v = "[main_base]"
-        parts.append(f"{curr_v}scale={CONTENT_AREA_W}:{CONTENT_AREA_H}:flags=lanczos,pad={FINAL_W}:{FINAL_H}:0:{CONTENT_OFFSET_Y}:black[v_padded]")
+        parts.append(f"{curr_v}scale={CONTENT_AREA_W}:{CONTENT_AREA_H}:flags=lanczos,pad={FINAL_W}:{FINAL_H}:0:{CONTENT_OFFSET_Y}:black,setsar=1[v_padded]")
         curr_v = "[v_padded]"
         if txt_input_label:
-            parts.append(f"{curr_v}{txt_input_label}overlay=x=0:y=0:eof_action=repeat,setsar=1,format=yuv420p[v_final]")
-            curr_v = "[v_final]"
-        else:
-            parts.append(f"{curr_v}setsar=1,format=yuv420p[v_final]")
-            curr_v = "[v_final]"
+            parts.append(f"{curr_v}{txt_input_label}overlay=0:0:shortest=1:eof_action=repeat:format=auto[v_final_raw]")
+            curr_v = "[v_final_raw]"
+        parts.append(f"{curr_v}format=yuv420p[v_final_yuv]")
+        curr_v = "[v_final_yuv]"
 
         from .filter_builder import FilterResult
         return FilterResult((";".join(parts), curr_v))

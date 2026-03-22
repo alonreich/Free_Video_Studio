@@ -10,13 +10,32 @@ class VideoConfig:
         self.mobile_main_width = 1080
         self.mobile_main_height = 1920
         self.fade_duration = 1.0
-        self.wrap_at_px = 1040
-        self.safe_max_px = 1000
-        self.base_font_size = 80
+        self.wrap_at_px = 1100
+        self.safe_max_px = 1200
+        self.base_font_size = 110
         self.min_font_size = 36
-        self.line_spacing = -45
+        self.line_spacing = -10
         self.measure_fudge = 1.12
         self.shadow_pad_px = 5
+
+    def _rotate_backups(self, conf_path):
+        try:
+            for i in range(4, 0, -1):
+                old_b = f"{conf_path}.bak{i}"
+                new_b = f"{conf_path}.bak{i+1}"
+                if os.path.exists(old_b):
+                    try:
+                        if os.path.exists(new_b): os.remove(new_b)
+                        os.rename(old_b, new_b)
+                    except: pass
+            if os.path.exists(conf_path):
+                try:
+                    target = f"{conf_path}.bak1"
+                    if os.path.exists(target): os.remove(target)
+                    os.rename(conf_path, target)
+                except: pass
+        except Exception:
+            pass
 
     def get_mobile_coordinates(self, logger=None):
         conf_dir = os.path.join(self.base_dir, 'processing')
@@ -62,7 +81,28 @@ class VideoConfig:
                 "x": 595, "y": 90, "w": 700, "h": 880
             }
         }
+        
+        def _try_load(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    loaded_data = json.load(f)
+                required = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
+                for req in required:
+                    if req not in loaded_data.get("crops_1080p", {}) or req not in loaded_data.get("overlays", {}):
+                        return None
+                return loaded_data
+            except:
+                return None
         if not os.path.exists(conf_path):
+            for i in range(1, 6):
+                bak = f"{conf_path}.bak{i}"
+                if os.path.exists(bak):
+                    data = _try_load(bak)
+                    if data:
+                        if logger: logger.info(f"Recovered config from backup {bak}")
+                        with open(conf_path, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=4)
+                        return data
             if logger: logger.info(f"Config missing at {conf_path}, creating with defaults.")
             try:
                 os.makedirs(conf_dir, exist_ok=True)
@@ -72,26 +112,16 @@ class VideoConfig:
                 if logger: logger.error(f"Failed to create default config: {e}")
                 return default_conf_data
         for _ in range(3):
-            try:
-                with open(conf_path, 'r', encoding='utf-8') as f:
-                    loaded_data = json.load(f)
-                is_valid = True
-                required_elements = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
-                for req in required_elements:
-                    if req not in loaded_data.get("crops_1080p", {}) or req not in loaded_data.get("overlays", {}):
-                        is_valid = False
-                        break
-                if not is_valid:
-                    if logger: logger.warning(f"Config validation failed at {conf_path}. Overwriting with defaults.")
-                    with open(conf_path, 'w', encoding='utf-8') as f:
-                        json.dump(default_conf_data, f, indent=4)
-                    return default_conf_data
-                if logger: logger.info(f"Loaded valid crop config from {conf_path}")
+            loaded_data = _try_load(conf_path)
+            if loaded_data:
                 return loaded_data
-            except (json.JSONDecodeError, OSError):
-                import time
-                time.sleep(0.1)
-        if logger: logger.error(f"Failed to load crop config after retries. Returning defaults.")
+
+            import time
+            time.sleep(0.1)
+        if logger: logger.warning(f"Config validation failed at {conf_path}. Overwriting with defaults.")
+        self._rotate_backups(conf_path)
+        with open(conf_path, 'w', encoding='utf-8') as f:
+            json.dump(default_conf_data, f, indent=4)
         return default_conf_data
 
     def get_quality_settings(self, quality_level, target_mb_override=None):

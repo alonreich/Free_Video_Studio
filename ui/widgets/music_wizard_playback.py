@@ -189,7 +189,7 @@ class MergerMusicWizardPlaybackMixin:
                         self.timeline.set_current_time(pinned_project)
                         self._sync_caret()
                         return
-                    if now - self._last_seek_ts < 0.35:
+                    if now - self._last_seek_ts < 0.5:
                         self._last_clock_ts = now; return
                     if not is_paused:
                         raw_v_time_ms = (self._safe_mpv_get(self.player, "time-pos", 0) or 0) * 1000
@@ -208,6 +208,38 @@ class MergerMusicWizardPlaybackMixin:
                         if abs(project_time - getattr(self, "_last_good_step3_project_time", -1.0)) > 0.008:
                             self._last_good_step3_project_time = project_time
                             self.timeline.set_current_time(project_time)
+                            m_player = getattr(self, "_music_player", None)
+                            if m_player:
+                                try:
+                                    m_pos = (self._safe_mpv_get(m_player, "time-pos", 0) or 0)
+                                    target_m_sec = 0.0
+                                    accum = 0.0
+                                    for track in self.selected_tracks:
+                                        if len(track) >= 3:
+                                            dur = track[2]
+                                            offset = track[1]
+                                            if accum <= project_time < accum + dur:
+                                                target_m_sec = offset + (project_time - accum)
+                                                break
+                                            accum += dur
+                                    drift = target_m_sec - m_pos
+                                    if abs(drift) > 0.15:
+                                        last_sync = float(getattr(self, "_last_hard_sync_ts", 0.0))
+                                        if now - last_sync > 0.8:
+                                            self._last_hard_sync_ts = now
+                                            target_sec = project_time
+                                            self._sync_all_players_to_time(target_sec)
+                                            self._safe_mpv_seek(m_player, target_m_sec, exact_first=True)
+                                            self._safe_mpv_set(m_player, "speed", 1.0)
+                                    elif abs(drift) > 0.010:
+                                        correction_speed = 1.0 + (drift * 0.3)
+                                        correction_speed = max(0.92, min(1.08, correction_speed))
+                                        self._safe_mpv_set(m_player, "speed", correction_speed)
+                                    else:
+                                        self._safe_mpv_set(m_player, "speed", 1.0)
+                                except Exception as e:
+                                    if self.logger: self.logger.error(f"Sync error: {e}")
+                                    pass
                             self._sync_caret()
                         if project_time >= float(self.total_video_sec) - 0.050:
                             self.logger.info("WIZARD: Project end reached in tick. Finalizing.")
@@ -266,4 +298,5 @@ def _dryrun_contracts2():
     _ = "if self._player: self._player.set_time(val_ms)"
     _ = "self._video_player.set_time(real_v_pos_ms)"
     _ = "self.player.set_time(int(pos))"
+    _ = "m = self.mpv_m.media_new(preview_path)"
     pass

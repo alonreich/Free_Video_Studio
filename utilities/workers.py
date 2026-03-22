@@ -202,6 +202,12 @@ class ProbeWorker(QThread):
         self._cancelled = False
         self._mutex = QMutex()
         self._cancel_msg = "Cancelled by user."
+        self._is_aborted = False
+
+    def abort(self):
+        with QMutexLocker(self._mutex):
+            self._is_aborted = True
+            self._cancelled = True
 
     def run(self):
         results = []
@@ -210,8 +216,9 @@ class ProbeWorker(QThread):
         try:
             for path in self.video_files:
                 with QMutexLocker(self._mutex):
-                    if self._cancelled:
-                        self.error.emit(self._cancel_msg)
+                    if self._cancelled or self._is_aborted:
+                        if not self._is_aborted:
+                            self.error.emit(self._cancel_msg)
                         return
                 duration = 0.0
                 resolution = None
@@ -315,12 +322,14 @@ class ProbeWorker(QThread):
                 })
                 total += duration
             with QMutexLocker(self._mutex):
-                if self._cancelled:
-                    self.error.emit(self._cancel_msg)
+                if self._cancelled or self._is_aborted:
+                    if not self._is_aborted:
+                        self.error.emit(self._cancel_msg)
                     return
             self.finished.emit(results, total)
         except Exception as e:
-            self.error.emit(str(e))
+            if not self._is_aborted:
+                self.error.emit(str(e))
 
     def cancel(self):
         with QMutexLocker(self._mutex):

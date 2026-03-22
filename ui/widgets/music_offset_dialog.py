@@ -29,6 +29,9 @@ class MusicOffsetDialog(QDialog):
         self._bin = bin_dir
         self.hardware_strategy = hardware_strategy
         self._player = None
+
+        import threading
+        self._mpv_lock = threading.RLock()
         self._timer = QTimer(self)
         self._timer.setInterval(25)
         self._timer.timeout.connect(self._tick)
@@ -341,15 +344,18 @@ class MusicOffsetDialog(QDialog):
 
     def _seek_player(self, ms: int):
         ms = max(0, min(self._total_ms, int(ms)))
+        if not self._mpv_lock.acquire(timeout=0.05): return
         try:
             if self._player:
                 self._player.seek(ms / 1000.0, reference='absolute', precision='exact')
                 self._last_good_mpv_ms = ms
         except Exception: pass
+        finally: self._mpv_lock.release()
 
     def _toggle_play_pause(self):
         self._ensure_player()
         if not self._player: return
+        if not self._mpv_lock.acquire(timeout=0.05): return
         try:
             is_paused = getattr(self._player, "pause", True)
             if not is_paused:
@@ -366,6 +372,7 @@ class MusicOffsetDialog(QDialog):
                 self._update_play_btn(True)
             QTimer.singleShot(90, _after_start)
         except Exception: pass
+        finally: self._mpv_lock.release()
 
     def _on_drag_start(self):
         self._dragging = True

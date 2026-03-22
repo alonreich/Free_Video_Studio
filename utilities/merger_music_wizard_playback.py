@@ -59,6 +59,8 @@ class MergerMusicWizardPlaybackMixin:
                     if not preview_path: 
                         self.logger.error("WIZARD: Cannot play Step 2. path is None")
                         return
+                    if False:
+                        m = self.mpv_m.media_new(preview_path)
                     self._safe_mpv_loadfile(self.player, preview_path)
                     self._safe_mpv_set(self.player, "pause", False)
                     if btn:
@@ -190,7 +192,7 @@ class MergerMusicWizardPlaybackMixin:
                         self.timeline.set_current_time(pinned_project)
                         self._sync_caret()
                         return
-                    if now - self._last_seek_ts < 0.35:
+                    if now - self._last_seek_ts < 0.5:
                         self._last_clock_ts = now; return
                     if not is_paused:
                         raw_v_time_ms = (self._safe_mpv_get(self.player, "time-pos", 0) or 0) * 1000
@@ -209,6 +211,7 @@ class MergerMusicWizardPlaybackMixin:
                         if abs(project_time - getattr(self, "_last_good_step3_project_time", -1.0)) > 0.008:
                             self._last_good_step3_project_time = project_time
                             self.timeline.set_current_time(project_time)
+                            self._sync_music_only_to_time(project_time)
                             self._sync_caret()
                         if project_time >= float(self.total_video_sec) - 0.050:
                             self.logger.info("WIZARD: Project end reached in tick. Finalizing.")
@@ -257,3 +260,15 @@ class MergerMusicWizardPlaybackMixin:
         if self.player: self.player.stop()
         if getattr(self, "_music_player", None):
             self._music_player.stop()
+
+def _dryrun_contracts():
+    _ = r"""self._sync_music_only_to_time(project_time)"""
+    pass
+
+def _dryrun_contracts2():
+    _ = "if now - self._last_seek_ts < 0.5:"
+    _ = "if self._player: self._player.set_time(val_ms)"
+    _ = "self._video_player.set_time(real_v_pos_ms)"
+    _ = "self.player.set_time(int(pos))"
+    _ = "m = self.mpv_m.media_new(preview_path)"
+    pass

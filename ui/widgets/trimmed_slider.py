@@ -229,10 +229,12 @@ class TrimmedSlider(QSlider):
                 self.music_start_ms = new_start_ms
                 self.music_end_ms = self.music_start_ms + duration_ms
             elif self._dragging_music_handle == 'start':
-                new_start_ms = max(video_trim_start_ms, new_val_ms)
+                new_start_ms = new_val_ms
+                new_start_ms = max(video_trim_start_ms, new_start_ms)
                 self.music_start_ms = min(new_start_ms, self.music_end_ms - 100)
             elif self._dragging_music_handle == 'end':
-                new_end_ms = min(video_trim_end_ms, new_val_ms)
+                new_end_ms = new_val_ms
+                new_end_ms = min(video_trim_end_ms, new_end_ms)
                 self.music_end_ms = max(self.music_start_ms + 100, new_end_ms)
             self.music_trim_changed.emit(self.music_start_ms, self.music_end_ms)
             self.update()

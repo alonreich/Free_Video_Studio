@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from pathlib import Path
 import types
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
@@ -20,6 +20,11 @@ def test_music_wizard_folder_change_persists_to_config_file(monkeypatch, tmp_pat
             return str(custom_music)
     monkeypatch.setattr(qtw, "QFileDialog", _FD, raising=False)
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.base_dir = str(tmp_path)
     host.config_manager = ConfigManager(str(cfg_path))
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None)

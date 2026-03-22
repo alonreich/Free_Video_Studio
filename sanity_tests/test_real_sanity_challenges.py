@@ -20,6 +20,11 @@ from ui.widgets import music_wizard_workers as workers
 
 def test_challenge_01_granular_speed_wall_clock_math() -> None:
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     segments = [
         {"start": 0, "end": 1000, "speed": 0.5},
         {"start": 1000, "end": 2000, "speed": 2.0},
@@ -40,12 +45,17 @@ def test_challenge_02_impossible_fade_tiny_clip_safe_chain() -> None:
         audio_filter_cmd="anull",
         sample_rate=48000,
     )
-    joined = "\n".join(chain)
+    joined = "\n".join(str(c) for c in chain)
     assert "duration=0.100" in joined or "duration=0.1" in joined
     assert "afade=t=in" not in joined
 
 def test_challenge_03_dj_scrubbing_stress_keeps_throttle(monkeypatch) -> None:
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=2.0)
     host.mpv_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=1.0)
     host.music_timeline_start_ms = 0
@@ -110,6 +120,11 @@ def test_challenge_08_ultra_wide_scaling_mobile_filter_has_center_crop_pad() -> 
 def test_challenge_09_constant_pitch_music_rate_stays_1x_even_at_3_1x() -> None:
     import threading
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=3.1)
     host.mpv_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.5)
     host._music_preview_player = host.mpv_music_player

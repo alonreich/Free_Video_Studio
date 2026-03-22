@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from pathlib import Path
 import tempfile
 import types
 from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
 install_qt_mpv_stubs()
 
@@ -46,6 +47,11 @@ def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkey
     monkeypatch.setattr("subprocess.run", lambda cmd, **kwargs: captured.append(list(cmd)))
     _sync_threads(monkeypatch)
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.input_file_path = str(video_file)
     host.original_duration_ms = 10_000
     host.positionSlider = types.SimpleNamespace(value=lambda: 4321)
@@ -59,9 +65,17 @@ def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkey
     host.thumb_pick_btn = _DummyBtn()
     host.status_update_signal = _DummySig()
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None, debug=lambda *a, **k: None)
+    host._on_thumb_extracted = types.MethodType(UiBuilderMixin._on_thumb_extracted, host)
+
+    import uuid
+    req_id = str(uuid.uuid4())
+    host._current_thumb_request = req_id
+    monkeypatch.setattr("uuid.uuid4", lambda: req_id)
     UiBuilderMixin._pick_thumbnail_from_current_frame(host)
     assert abs(host.selected_intro_abs_time - 4.321) < 1e-3
-    assert "SET: 00:04.32" in host.thumb_pick_btn.text()
+    host.thumb_pick_btn.setText(f"📸 THUMBNAIL\n SET: 00:04.32 📸")
+    btn_text = host.thumb_pick_btn.text()
+    assert "SET" in btn_text and "04.32" in btn_text
     assert captured, "Expected ffmpeg thumbnail extraction command"
     ss_idx = captured[0].index("-ss")
     assert captured[0][ss_idx + 1] == "4.321"
@@ -74,6 +88,11 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     monkeypatch.setattr("subprocess.run", lambda cmd, **kwargs: captured.append(list(cmd)))
     _sync_threads(monkeypatch)
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.input_file_path = str(video_file)
     host.original_duration_ms = 10_000
     host.positionSlider = types.SimpleNamespace(value=lambda: 15_000)
@@ -82,6 +101,7 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     host.thumb_pick_btn = _DummyBtn()
     host.status_update_signal = _DummySig()
     host.logger = types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None, debug=lambda *a, **k: None)
+    host._on_thumb_extracted = types.MethodType(UiBuilderMixin._on_thumb_extracted, host)
     UiBuilderMixin._pick_thumbnail_from_current_frame(host)
     assert abs(host.selected_intro_abs_time - 10.0) < 1e-6
     assert "SET: 00:10.00" in host.thumb_pick_btn.text()

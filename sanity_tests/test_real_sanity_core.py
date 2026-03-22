@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from pathlib import Path
 import tempfile
 import types
@@ -28,6 +28,11 @@ import threading
 
 def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.player = DummyMediaPlayer(playing=True, current_ms=0, rate=speed)
     host.music_timeline_start_ms = 1000
     host.music_timeline_end_ms = 9000
@@ -50,8 +55,11 @@ def _player_host(*, speed: float = 2.0, granular: bool = False) -> object:
 
 def test_core_01_constant_tempo_music_rate_locked_to_1x() -> None:
     host = _player_host(speed=3.1, granular=False)
+    host.mpv_music_player = DummyMediaPlayer(playing=True, current_ms=0, rate=0.5)
+    host._music_preview_player = host.mpv_music_player
+    host._last_scrub_ts = 0.0
     PlayerMixin.set_player_position(host, 3000, sync_only=True)
-    pass
+    assert 1.0 in host.mpv_music_player.set_rate_calls, "Music rate must be locked to 1.0x"
 
 def test_core_03_scrub_protection_throttles_under_50ms(monkeypatch) -> None:
     host = _player_host(speed=2.0)
@@ -108,6 +116,11 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     import sys
     sys.modules["ui.widgets.music_wizard"] = types.SimpleNamespace(MergerMusicWizard=DummyWizard)
     host = types.SimpleNamespace()
+
+    import threading
+    host._mpv_lock = threading.RLock()
+    host._safe_mpv_get = lambda p, d=None, **k: d
+    host._safe_mpv_set = lambda p, v, target_player=None, **k: setattr(target_player or host.player, p, v) if hasattr(target_player or host.player, p) else True
     host.player = DummyMediaPlayer(playing=True)
     host.wants_to_play = True
     host.playPauseButton = DummyButton()

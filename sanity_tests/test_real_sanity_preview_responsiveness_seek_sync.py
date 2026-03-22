@@ -136,6 +136,8 @@ def test_granular_preview_rate_updates_are_debounced_to_avoid_sluggy_playback(mo
         timeline=types.SimpleNamespace(isSliderDown=lambda: False),
         player=_RatePlayer(1.1),
         _last_rate_update=0.0,
+        _safe_mpv_get=lambda prop, default=None: getattr(host.player, prop, default),
+        _safe_mpv_set=lambda prop, val: setattr(host.player, prop, val),
     )
     GranularSpeedEditor.update_playback_speed(host, 1000)
     host.player._rate = 1.1
@@ -182,13 +184,21 @@ def test_granular_update_ui_writes_int_only_to_timeline_slider_contract() -> Non
     player = _FloatPosPlayer()
     setattr(player, "time-pos", 1.23456)
     speed_calls: list[int] = []
+
+    import threading
     host = types.SimpleNamespace(
         player=player,
         timeline=_StrictIntTimeline(),
+        duration=5000,
         _current_play_window_ms=lambda: (0, 5000),
         pause_video=lambda: None,
         update_playback_speed=lambda t: speed_calls.append(t),
         last_position_ms=0,
+        abs_trim_start=0,
+        _mpv_lock=threading.RLock(),
+        _mpv_lock_timeout=0.1,
+        _safe_mpv_get=lambda prop, default=None: getattr(player, prop, default),
+        _safe_mpv_set=lambda prop, val: setattr(player, prop, val),
     )
     GranularSpeedEditor.update_ui(host)
     assert host.timeline.values, "Expected update_ui to push current time into slider."
@@ -230,6 +240,8 @@ def test_main_wizard_step2_click_to_seek_keeps_player_and_caret_in_sync() -> Non
         _sync_caret=lambda override_ms=None: caret.__setitem__("count", caret["count"] + 1),
         logger=_logger(),
         _wave_dragging=False,
+        _safe_mpv_get=lambda p, prop, default=None: getattr(p, prop, default),
+        _safe_mpv_set=lambda p, prop, val: setattr(p, prop, val),
     )
     host._request_step2_seek = types.MethodType(MainWaveformMixin._request_step2_seek, host)
     host._flush_step2_seek = types.MethodType(MainWaveformMixin._flush_step2_seek, host)
@@ -254,6 +266,8 @@ def test_merger_wizard_step2_click_to_seek_keeps_player_and_caret_in_sync() -> N
         _sync_caret=lambda override_ms=None: caret.__setitem__("count", caret["count"] + 1),
         logger=_logger(),
         _wave_dragging=False,
+        _safe_mpv_get=lambda p, prop, default=None: getattr(p, prop, default),
+        _safe_mpv_set=lambda p, prop, val: setattr(p, prop, val),
     )
     host._request_step2_seek = types.MethodType(MergerWaveformMixin._request_step2_seek, host)
     host._flush_step2_seek = types.MethodType(MergerWaveformMixin._flush_step2_seek, host)

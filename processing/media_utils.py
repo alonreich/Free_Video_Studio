@@ -105,6 +105,55 @@ class MediaProber:
         except Exception:
             return fallback
 
+def check_encoder_capability(ffmpeg_path: str, encoder_name: str, logger=None, hardware_scan_details=None) -> bool:
+    try:
+        cmd = [
+            ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=black:s=1920x1080",
+            "-vframes", "1", "-c:v", encoder_name, "-f", "null", "-"
+        ]
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                timeout=10.0
+            )
+            if result.returncode == 0:
+                return True
+            else:
+                if hardware_scan_details is not None:
+                    hardware_scan_details["errors"][encoder_name] = result.stderr.decode(errors="ignore")[:500]
+                return False
+        except subprocess.TimeoutExpired:
+            result2 = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                timeout=5.0
+            )
+            if result2.returncode == 0:
+                return True
+            if hardware_scan_details is not None:
+                hardware_scan_details["timed_out"].append(encoder_name)
+            return False
+    except Exception as e:
+        if hardware_scan_details is not None:
+            hardware_scan_details["errors"][encoder_name] = str(e)
+        return False
+
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
     if duration <= 0:
         return 6000
@@ -121,6 +170,8 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     if video_bits <= 0:
         return 300
     calculated_kbps = int(video_bits / (1000 * duration))
+    if False:
+        return max(300, calculated_kbps)
     try:
         w, h = map(int, res_str.lower().split('x'))
     except:

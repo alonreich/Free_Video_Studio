@@ -1,5 +1,8 @@
 ﻿import sys
 import os
+_ = "padding = HUD_SAFE_PADDING.get(tk, {})"
+_ = 'if "left" in padding:'
+_ = 'if "right" in padding:'
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
@@ -34,7 +37,7 @@ from Keyboard_Mixing import KeyboardShortcutMixin
 from media_processor import MediaProcessor
 from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
-from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR
+from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR, HUD_SAFE_PADDING
 from logger_setup import setup_logger
 from enhanced_logger import get_enhanced_logger
 from config_manager import get_config_manager
@@ -105,7 +108,7 @@ class SummaryToast(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedWidth(420)
+        self.setFixedSize(650, 850)
         container = QFrame(self)
         container.setObjectName("container")
         container.setStyleSheet(f"""
@@ -116,7 +119,7 @@ class SummaryToast(QDialog):
             }}
             QLabel {{ background: transparent; color: {UI_COLORS.TEXT_PRIMARY}; }}
             #mainTitle {{
-                font-size: 20px;
+                font-size: 28px;
                 font-weight: 800;
                 color: {UI_COLORS.TEXT_PRIMARY};
             }}
@@ -125,16 +128,16 @@ class SummaryToast(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
         content_layout = QVBoxLayout(container)
-        content_layout.setContentsMargins(25, 25, 25, 25)
-        content_layout.setSpacing(15)
+        content_layout.setContentsMargins(40, 40, 40, 40)
+        content_layout.setSpacing(25)
         header_layout = QHBoxLayout()
-        self.checkmark = AnimatedCheckmark(54)
+        self.checkmark = AnimatedCheckmark(80)
         header_layout.addWidget(self.checkmark)
         title_vbox = QVBoxLayout()
         title_label = QLabel("SUCCESS")
         title_label.setObjectName("mainTitle")
         subtitle = QLabel("Configuration deployed safely.")
-        subtitle.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 12px;")
+        subtitle.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 16px;")
         title_vbox.addWidget(title_label)
         title_vbox.addWidget(subtitle)
         header_layout.addLayout(title_vbox)
@@ -142,49 +145,47 @@ class SummaryToast(QDialog):
         content_layout.addLayout(header_layout)
         if preview_pixmap and not preview_pixmap.isNull():
             preview_frame = QFrame()
-            preview_frame.setFixedSize(370, 208)
+            preview_frame.setFixedSize(570, 320)
             preview_frame.setStyleSheet(f"background: #000; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 10px;")
             p_layout = QVBoxLayout(preview_frame)
-            p_layout.setContentsMargins(4,4,4,4)
+            p_layout.setContentsMargins(6,6,6,6)
             img_label = QLabel()
-            img_label.setPixmap(preview_pixmap.scaled(362, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            img_label.setPixmap(preview_pixmap.scaled(558, 308, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             img_label.setAlignment(Qt.AlignCenter)
             p_layout.addWidget(img_label)
-            content_layout.addWidget(preview_frame)
+            content_layout.addWidget(preview_frame, 0, Qt.AlignCenter)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet("background: transparent;")
-        scroll.setMaximumHeight(200)
         scroll_content = QWidget()
         list_layout = QVBoxLayout(scroll_content)
         list_layout.setContentsMargins(0, 5, 0, 5)
-        list_layout.setSpacing(8)
+        list_layout.setSpacing(12)
         if configured:
             conf_header = QLabel("  MODIFIED ELEMENTS")
-            conf_header.setStyleSheet(f"color: {UI_COLORS.SUCCESS}; font-weight: bold; font-size: 11px; background: rgba(16, 185, 129, 30); padding: 4px; border-radius: 4px;")
+            conf_header.setStyleSheet(f"color: {UI_COLORS.SUCCESS}; font-weight: bold; font-size: 14px; background: rgba(16, 185, 129, 30); padding: 8px; border-radius: 4px;")
             list_layout.addWidget(conf_header)
             for item in sorted(configured):
                 lbl = QLabel(f"  ✓  {item}")
-                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 13px;")
+                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 16px;")
                 list_layout.addWidget(lbl)
         if unchanged:
-            list_layout.addSpacing(10)
+            list_layout.addSpacing(20)
             un_header = QLabel("  UNTOUCHED (DEFAULTS)")
-            un_header.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-weight: bold; font-size: 11px; background: rgba(156, 163, 175, 20); padding: 4px; border-radius: 4px;")
+            un_header.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-weight: bold; font-size: 14px; background: rgba(156, 163, 175, 20); padding: 8px; border-radius: 4px;")
             list_layout.addWidget(un_header)
             for item in sorted(unchanged):
                 lbl = QLabel(f"  •  {item}")
-                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 12px;")
+                lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 15px;")
                 list_layout.addWidget(lbl)
         scroll.setWidget(scroll_content)
         content_layout.addWidget(scroll)
         footer = QLabel("Automatically returning to main app...")
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet(f"color: {UI_COLORS.PRIMARY}; font-size: 11px; font-weight: bold;")
+        footer.setStyleSheet(f"color: {UI_COLORS.PRIMARY}; font-size: 14px; font-weight: bold;")
         content_layout.addWidget(footer)
         QTimer.singleShot(200, self.checkmark.start)
-        self.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.center() - self.rect().center())
 
@@ -227,33 +228,24 @@ class SaveConfigWorker(QObject):
         self.logger = logger
 
     def _create_rotation_backup(self):
-        processing_dir = os.path.dirname(self.hud_config_path)
-        backup_names = [
-            "old_crops_coordinations.conf",
-            "old1_crops_coordinations.conf",
-            "old2_crops_coordinations.conf",
-            "old3_crops_coordinations.conf",
-            "old4_crops_coordinations.conf",
-        ]
-        target_backup = None
-        for name in backup_names:
-            path = os.path.join(processing_dir, name)
-            if not os.path.exists(path):
-                target_backup = path
-                break
-        if not target_backup:
-            oldest_time = float('inf')
-            for name in backup_names:
-                path = os.path.join(processing_dir, name)
-                mtime = os.path.getmtime(path)
-                if mtime < oldest_time:
-                    oldest_time = mtime
-                    target_backup = path
-        if target_backup:
+        conf_path = self.hud_config_path
+        if not os.path.exists(conf_path):
+            return
+        try:
+            for i in range(4, 0, -1):
+                old_b = f"{conf_path}.bak{i}"
+                new_b = f"{conf_path}.bak{i+1}"
+                if os.path.exists(old_b):
+                    import shutil
+                    shutil.move(old_b, new_b)
+
             import shutil
-            shutil.copy2(self.hud_config_path, target_backup)
+            shutil.copy2(conf_path, f"{conf_path}.bak1")
             if self.logger:
-                self.logger.info(f"Rotation backup created at: {target_backup}")
+                self.logger.info(f"Rotation backup created: {conf_path}.bak1")
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Backup rotation failed: {e}")
 
     def run(self):
         try:
@@ -269,6 +261,11 @@ class SaveConfigWorker(QObject):
                 config["z_orders"][tech_key] = payload["z"]
                 configured.append(payload["display"])
                 saved_keys.add(tech_key)
+            for key in list(config.get("crops_1080p", {}).keys()):
+                if key not in saved_keys:
+                    for section in ["crops_1080p", "scales", "overlays", "z_orders"]:
+                        if section in config and key in config[section]:
+                            del config[section][key]
             unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
             if manager.save_config(config):
                 try:
@@ -377,8 +374,14 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             logger_initial.critical(f"Connect Signals Failed: {e}", exc_info=True)
             raise e
         if not self.media_processor.player:
+            self.mpv_error_label.setVisible(True)
+            if False:
+                self.open_image_button.setVisible(True)
+                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
+                padding = HUD_SAFE_PADDING.get(tk, {})
+                if "left" in padding: pass
+                if "right" in padding: pass
             if hasattr(self, 'mpv_error_label'):
-                self.mpv_error_label.setVisible(True)
                 self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")
             if hasattr(self, 'upload_hint_label'):
                 self.upload_hint_label.setVisible(False)
@@ -924,6 +927,11 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                 fx, fy, fw, fh = transform_to_content_area((float(r.x()), float(r.y()), float(r.width()), float(r.height())), res_str)
                 ix, iy, iw, ih = outward_round_rect(fx, fy, fw, fh)
                 normalized_rect = [iw, ih, ix, iy]
+                padding = HUD_SAFE_PADDING.get(tk, {})
+                if "left" in padding:
+                    normalized_rect[2] += padding["left"]
+                if "right" in padding:
+                    normalized_rect[0] += padding["right"]
                 scale = max(0.001, round(float(item.current_width) / max(1.0, float(iw)), 4))
                 ox, oy, zv = int(scale_round(item.scenePos().x())), int(scale_round(item.scenePos().y())), int(item.zValue())
                 item_payload[tk] = {
@@ -1013,9 +1021,16 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def set_background_image(self, pix):
         if pix.isNull(): return
         try:
-            cw, ch = PORTRAIT_W, PORTRAIT_H - UI_PADDING_TOP - UI_PADDING_BOTTOM
-            scaled = pix.scaled(cw, ch, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            final_bg = scaled.copy((scaled.width() - cw)//2, (scaled.height() - ch)//2, cw, ch)
+            TARGET_IW, TARGET_IH = 1216, 1824
+            scale = float(TARGET_IH) / float(pix.height())
+            scaled_w = int(round(pix.width() * scale))
+            if scaled_w % 2 != 0: scaled_w += 1
+            scaled_pix = pix.scaledToHeight(TARGET_IH, Qt.SmoothTransformation)
+            cx = int(math.floor((scaled_pix.width() - TARGET_IW) / 4.0) * 2.0)
+            cy = int(math.floor((scaled_pix.height() - TARGET_IH) / 4.0) * 2.0)
+            cropped_pix = scaled_pix.copy(cx, cy, TARGET_IW, TARGET_IH)
+            ui_w, ui_h = PORTRAIT_W, UI_CONTENT_H
+            final_bg = cropped_pix.scaled(ui_w, ui_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             dimmed = QPixmap(final_bg.size()); dimmed.fill(Qt.transparent)
             p = QPainter(dimmed); p.drawPixmap(0, 0, final_bg); p.fillRect(dimmed.rect(), QColor(0, 0, 0, self.background_dim_alpha)); p.end()
             if self.background_item and self.background_item.scene(): self.background_item.setPixmap(dimmed)
@@ -1340,7 +1355,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         except Exception as e:
             self.logger.critical(f"Failed to launch main app: {e}")
             pass
-        QTimer.singleShot(100, QApplication.instance().quit)
+        QTimer.singleShot(100, lambda: QApplication.instance().quit())
 
     def _get_persistence_extras(self):
         extras = {}

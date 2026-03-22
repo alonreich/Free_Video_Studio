@@ -100,7 +100,10 @@ def tr(key: str) -> str:
 
 def debug_log(message: str):
     if DEBUG_ENABLED:
-        print(message)
+        try:
+            print(message)
+        except OSError:
+            pass
 
 PID_FILE_HANDLE = None
 
@@ -201,6 +204,17 @@ def get_ffmpeg_hwaccels(ffmpeg_path: str) -> list:
     except Exception:
         return []
 
+from processing.media_utils import check_encoder_capability as _check_encoder_capability
+
+def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
+    debug_log(f"DEBUG: Testing encoder '{encoder_name}' with dummy frame...")
+    res = _check_encoder_capability(ffmpeg_path, encoder_name, hardware_scan_details=HARDWARE_SCAN_DETAILS)
+    if res:
+        debug_log(f"DEBUG: Encoder '{encoder_name}' is WORKING.")
+    else:
+        debug_log(f"DEBUG: Encoder '{encoder_name}' failed test.")
+    return res
+
 class HardwareWorker(QObject):
     finished = pyqtSignal(str)
     def __init__(self, ffmpeg_path):
@@ -208,99 +222,63 @@ class HardwareWorker(QObject):
         self.ffmpeg_path = ffmpeg_path
         self.stop_requested = False
         self.watchdog_timer = None
+        self._is_aborted = False
+
+    def abort(self):
+        self._is_aborted = True
+        self.stop_requested = True
+
     def stop(self):
         self.stop_requested = True
+
     def run(self):
         import threading
         def watchdog():
             self.stop_requested = True
-        self.watchdog_timer = threading.Timer(25.0, watchdog)
+        self.watchdog_timer = threading.Timer(15.0, watchdog)
         self.watchdog_timer.daemon = True
         self.watchdog_timer.start()
+        ffmpeg_path = self.ffmpeg_path
         try:
-            available = get_ffmpeg_hwaccels(self.ffmpeg_path)
+            available = get_ffmpeg_hwaccels(ffmpeg_path)
             debug_log(f"DEBUG: Available FFmpeg hwaccels: {available}")
-            detected_mode = self._determine_hardware_strategy_with_stop(available)
-            self.finished.emit(detected_mode)
+            detected_mode = self._determine_hardware_strategy_with_stop(available, ffmpeg_path)
+            if not self._is_aborted:
+                self.finished.emit(detected_mode)
         except Exception as e:
             debug_log(f"Hardware scan error: {e}")
-            self.finished.emit("CPU")
+            if not self._is_aborted:
+                self.finished.emit("CPU")
         finally:
             if self.watchdog_timer:
                 self.watchdog_timer.cancel()
-    def _determine_hardware_strategy_with_stop(self, available_accels):
+
+    def _determine_hardware_strategy_with_stop(self, available_accels, ffmpeg_path):
         os.environ.pop("VIDEO_HW_ENCODER", None)
         os.environ.pop("VIDEO_FORCE_CPU", None)
         if FORCE_GPU:
             if FORCE_GPU == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"; return "NVIDIA"
             if FORCE_GPU == "AMD":    os.environ["VIDEO_HW_ENCODER"] = "h264_amf";   return "AMD"
             if FORCE_GPU == "INTEL":  os.environ["VIDEO_HW_ENCODER"] = "h264_qsv";   return "INTEL"
-        if not self.stop_requested and "cuda" in available_accels:
+        if not self.stop_requested and not self._is_aborted and "cuda" in available_accels:
             if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"):
                 os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
                 return "NVIDIA"
-        if not self.stop_requested and "d3d11va" in available_accels:
+        if not self.stop_requested and not self._is_aborted and "d3d11va" in available_accels:
             if check_encoder_capability(self.ffmpeg_path, "h264_amf"):
                 os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
                 return "AMD"
-        if not self.stop_requested and ("qsv" in available_accels or "d3d11va" in available_accels):
+        if not self.stop_requested and not self._is_aborted and ("qsv" in available_accels or "d3d11va" in available_accels):
             if check_encoder_capability(self.ffmpeg_path, "h264_qsv"):
                 os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
                 return "INTEL"
-        if not self.stop_requested:
+        if not self.stop_requested and not self._is_aborted:
             if _has_nvidia_adapter(): return "NVIDIA"
             if _has_amd_adapter():    return "AMD"
             if _has_intel_adapter():  return "INTEL"
         os.environ["VIDEO_FORCE_CPU"] = "1"
         return "CPU"
 
-def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
-    debug_log(f"DEBUG: Testing encoder '{encoder_name}' with dummy frame...")
-    try:
-        cmd = [
-            ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=1920x1080",
-            "-vframes", "1", "-c:v", encoder_name, "-f", "null", "-"
-        ]
-        startupinfo = None
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                startupinfo=startupinfo,
-                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                timeout=10.0
-            )
-            if result.returncode == 0:
-                debug_log(f"DEBUG: Encoder '{encoder_name}' is WORKING.")
-                return True
-            else:
-                HARDWARE_SCAN_DETAILS["errors"][encoder_name] = result.stderr.decode(errors="ignore")[:500]
-                debug_log(f"DEBUG: Encoder '{encoder_name}' failed test.")
-                return False
-        except subprocess.TimeoutExpired:
-            debug_log(f"DEBUG: Encoder '{encoder_name}' timed out. Trying second chance...")
-            result2 = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                startupinfo=startupinfo,
-                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-                timeout=5.0
-            )
-            if result2.returncode == 0:
-                return True
-            HARDWARE_SCAN_DETAILS["timed_out"].append(encoder_name)
-            return False
-    except Exception as e:
-        HARDWARE_SCAN_DETAILS["errors"][encoder_name] = str(e)
-        debug_log(f"DEBUG: Exception testing '{encoder_name}': {e}")
-        return False
 
 def build_diagnostics(ffmpeg_path: str, ffprobe_path: str, error_text: str) -> str:
     return tr("dependency_error_details").format(
@@ -372,7 +350,7 @@ if __name__ == "__main__":
         import json
         conf_dir = os.path.join(BASE_DIR, 'processing')
         conf_path = os.path.join(conf_dir, 'crops_coordinations.conf')
-        default_conf_data = {"crops_1080p": {"loot": [400, 400, 680, 1220], "stats": [350, 350, 730, 0], "normal_hp": [450, 150, 30, 1470], "boss_hp": [450, 150, 30, 1470], "team": [300, 400, 30, 100], "spectating": [0, 0, 0, 0]}, "scales": {"loot": 1.0, "stats": 1.0, "team": 1.0, "normal_hp": 1.0, "boss_hp": 1.0, "spectating": 1.0}, "overlays": {"loot": {"x": 680, "y": 1370}, "stats": {"x": 730, "y": 150}, "team": {"x": 30, "y": 250}, "normal_hp": {"x": 30, "y": 1620}, "boss_hp": {"x": 30, "y": 1620}, "spectating": {"x": 30, "y": 1300}}, "z_orders": {"loot": 10, "normal_hp": 20, "boss_hp": 20, "stats": 30, "team": 40, "spectating": 100}}
+        default_conf_data = {"crops_1080p": {"loot": [400, 400, 680, 1220], "stats": [350, 350, 730, 0], "normal_hp": [450, 150, 30, 1470], "boss_hp": [450, 150, 30, 1470], "team": [300, 400, 30, 100], "spectating": [0, 0, 0, 0]}, "scales": {"loot": 1.0, "stats": 1.0, "team": 1.0, "normal_hp": 1.0, "boss_hp": 1.0, "spectating": 1.0}, "overlays": {"loot": {"x": 680, "y": 1470}, "stats": {"x": 730, "y": 150}, "team": {"x": 30, "y": 250}, "normal_hp": {"x": 30, "y": 1770}, "boss_hp": {"x": 30, "y": 1770}, "spectating": {"x": 30, "y": 1300}}, "z_orders": {"loot": 10, "normal_hp": 20, "boss_hp": 20, "stats": 30, "team": 40, "spectating": 100}}
         def write_defaults():
             try:
                 os.makedirs(conf_dir, exist_ok=True)
@@ -387,12 +365,8 @@ if __name__ == "__main__":
             with open(conf_path, 'r', encoding='utf-8') as f: data = json.load(f)
             is_valid = True
             if not isinstance(data, dict): is_valid = False
-            else:
-                required = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
-                for r in required:
-                    if r not in data.get("crops_1080p", {}) or r not in data.get("overlays", {}):
-                        is_valid = False
-                        break
+            elif "crops_1080p" not in data or "overlays" not in data: is_valid = False
+            
             if not is_valid:
                 logger.warning(f"Config validation failed at {conf_path}, overwriting with internal defaults.")
                 write_defaults()
@@ -465,20 +439,23 @@ if __name__ == "__main__":
     except Exception:
         pass
     from system.config import ConfigManager
+    from ui.widgets.tooltip_manager import ToolTipManager
     config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf')
     cm = ConfigManager(config_path)
+    tm = ToolTipManager()
     cached_hw = cm.config.get("last_hardware_strategy")
     if str(cached_hw or "").upper() == "CPU":
         cached_hw = None
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None
     initial_strategy = cached_hw if cached_hw else "Scanning..."
+    
     if cached_hw == "NVIDIA":
         os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
     elif cached_hw == "AMD":
         os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
     elif cached_hw == "INTEL":
         os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
-    ex = VideoCompressorApp(file_arg, initial_strategy)
+    ex = VideoCompressorApp(file_arg, initial_strategy, bin_dir=BIN_DIR, config_manager=cm, tooltip_manager=tm)
     try:
         if icon_path and os.path.exists(icon_path):
             ex.setWindowIcon(QIcon(icon_path))
@@ -519,4 +496,15 @@ if __name__ == "__main__":
     debug_log("DEBUG: Main window shown. Entering app.exec_().")
     ret = app.exec_()
     debug_log(f"DEBUG: app.exec_() returned with code: {ret}. App is exiting.")
+    
+    # Forcefully abort the hardware scan if it is still running to prevent ghost processes
+    try:
+        if hasattr(ex, "_hw_worker") and ex._hw_worker:
+            ex._hw_worker.abort()
+        if hasattr(ex, "_hw_thread") and ex._hw_thread.isRunning():
+            ex._hw_thread.quit()
+            ex._hw_thread.wait(2000)
+    except Exception:
+        pass
+        
     sys.exit(ret)
