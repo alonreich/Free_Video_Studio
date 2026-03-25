@@ -1,4 +1,10 @@
-﻿import os
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+import os
 import time
 import logging
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton, QStyle
@@ -49,6 +55,9 @@ class CropAppHandlers:
 
     def _cleanup_magic_wand_runtime(self):
         """Cooperative Magic Wand cleanup without force-killing threads."""
+        if hasattr(self, '_thinking_toast') and self._thinking_toast:
+            self._thinking_toast.hide()
+            self._thinking_toast = None
         if hasattr(self, '_magic_wand_timeout_timer') and self._magic_wand_timeout_timer:
             self._magic_wand_timeout_timer.stop()
         if hasattr(self, '_analyzing_timer') and self._analyzing_timer:
@@ -225,8 +234,10 @@ class CropAppHandlers:
             "All elements configured! You can still add more if needed.": "CONFIG READY"
         }
         self.goal_label.setText(f"Goal: {goal_map.get(step_num, 'Configure HUD')}")
+        self.goal_label.setVisible(True)
         short_instr = punchy_map.get(instruction, instruction)
         self.status_label.setText(short_instr)
+        self.status_label.setVisible(True)
         self.update_progress_tracker()
         
     def _on_video_info_ready(self, resolution):
@@ -404,6 +415,13 @@ class CropAppHandlers:
         self.wand_thread.started.connect(self.wand_worker.run)
         self.wand_worker.finished.connect(lambda regions: self._on_magic_wand_finished(regions, self._magic_wand_active_id))
         self.wand_worker.error.connect(self._on_magic_wand_error)
+        try:
+            from crop_tools import ThinkingToast
+            target = getattr(self, 'video_frame', self)
+            self._thinking_toast = ThinkingToast(self, target_widget=target)
+            self._thinking_toast.show()
+        except Exception as e:
+            self.logger.error(f"Failed to show thinking toast: {e}")
         self.wand_worker.finished.connect(self.wand_thread.quit)
         self.wand_worker.error.connect(self.wand_thread.quit)
         self.wand_thread.finished.connect(self.wand_thread.deleteLater)
@@ -510,42 +528,78 @@ class CropAppHandlers:
         self.draw_widget.set_crop_rect(rect_f, auto_zoom=False)
         self.draw_widget.update()
 
-    def __init__(self):
-        super().__init__()
-        self.logger = logging.getLogger(__name__)
-
     def reset_state(self, force=False):
-        """[FIX] Resets the UI and current session, but PRESERVES the saved config file."""
-        self.logger.info("Resetting current session (UI only)...")
-        if hasattr(self, 'mpv_error_label'):
-            self.mpv_error_label.setVisible(False)
-            if False:
-                self.open_image_button = QPushButton()
-                self.open_image_button.setVisible(True)
-                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
-
-                from config import HUD_SAFE_PADDING
-                padding = HUD_SAFE_PADDING.get("test", {})
-                if "left" in padding: pass
-                if "right" in padding: pass
+        """[FIX] Comprehensive system reset with UI view state restoration and scene cleanup."""
+        if not force and getattr(self, '_dirty', False):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Reset Confirmation")
+            msg.setText("Are you sure you want to reset all current progress?\nUnsaved changes will be lost.")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            for btn in msg.findChildren(QPushButton):
+                btn.setCursor(Qt.PointingHandCursor)
+            if msg.exec_() == QMessageBox.No:
+                return
+        self.logger.info("Performing surgical state reset...")
+        if hasattr(self, 'view_stack') and hasattr(self, 'video_frame'):
+            self.view_stack.setCurrentWidget(self.video_frame)
+        if hasattr(self, 'draw_scroll_area'): self.draw_scroll_area.hide()
+        if hasattr(self, 'video_container'): self.video_container.show()
+        try:
+            self._delete_managed_snapshot()
+            cleanup_temp_snapshots()
+            ProcessManager.cleanup_temp_files()
+        except Exception as e:
+            self.logger.error(f"Error during state reset: {e}")
+        for attr in ['_magic_wand_preview_timer', '_magic_wand_timeout_timer', '_analyzing_timer', '_scrubbing_safety_timer']:
+            timer = getattr(self, attr, None)
+            if timer: 
+                try:
+                    timer.stop()
+                except RuntimeError:
+                    pass
+        self._cleanup_snapshot_runtime()
+        if hasattr(self, '_set_cropping_hint_active'):
+            self._set_cropping_hint_active(False)
+        if self._is_wand_thread_running():
+            try:
+                worker = getattr(self, 'wand_worker', None)
+                if worker and hasattr(worker, 'cancel'):
+                    worker.cancel()
+                self.wand_thread.requestInterruption()
+                self.wand_thread.quit()
+                if not self.wand_thread.wait(1500):
+                    self.wand_thread.terminate()
+                    self.wand_thread.wait(500)
+            except RuntimeError:
+                self.wand_thread = None
+        self._cleanup_magic_wand_runtime()
+        if hasattr(self, 'state_manager'):
+            self.state_manager.clear_undo_stack()
+        if hasattr(self, 'portrait_scene'):
+            self.portrait_scene.clear()
+            self.portrait_scene.setBackgroundBrush(QColor("black"))
+            self.placeholders_group = []
+            if hasattr(self, 'modified_roles'):
+                self.modified_roles.clear()
+        if hasattr(self, 'background_item') and self.background_item:
+            if self.background_item.scene():
+                self.background_item.scene().removeItem(self.background_item)
+            self.background_item = None
         if hasattr(self, 'media_processor') and self.media_processor:
             self.media_processor.stop()
             self.media_processor.set_media_to_null()
-            self.media_processor.original_resolution = None
-            self.media_processor.input_file_path = None
-        self._delete_managed_snapshot()
-        if hasattr(self, 'portrait_scene'):
-            self.portrait_scene.clear()
-            self.portrait_scene.setBackgroundBrush(QColor("#203b4b"))
-            if hasattr(self, 'modified_roles'):
-                self.modified_roles.clear()
         if hasattr(self, 'draw_widget') and self.draw_widget:
             self.draw_widget.clear_selection()
             self.draw_widget.setImage(None)
+            self.draw_widget.set_candidates([])
+        self.snapshot_path = None
+        self._dirty = False
         self.show_video_view()
-        self.update_wizard_step(1, "Open a video file to begin.")
-        if hasattr(self, 'video_surface'):
-             self.video_surface.update()
+        self.update_wizard_step(1, "Open a video file to begin the configuration wizard.")
+        self._set_upload_hint_active(True)
+        self.update_progress_tracker()
         
     def _sync_play_pause_button(self, is_playing=None):
         if is_playing is None:

@@ -1,0 +1,14 @@
+# PROJECT STRUCTURE: Fortnite Video Crop Coordinate Configurator
+
+## HUD DETECTION RULES (MAGIC WAND)
+- **Minimum Element Size:** Any piece of detected HUD element by MAGIC WAND must be IGNORED if:
+    - Height < 10 pixels
+    - Width < 10 pixels
+- **Search Zones:** Detection is strictly confined to HUD-likely corners and top-center zones.
+- **Static Filtering:** Only static (non-moving) elements are considered valid candidates.
+- **Overlap:** Overlapping or closely adjacent regions must be merged into a single clean box.
+
+## CORE CONSTRAINTS
+- **Aspect Ratio:** Fixed at 9:16 (Portrait).
+- **Coordinate Space:** Stored in 1080x1620 content area.
+- **Safety:** Atomic JSON updates with 5-file rolling backup.

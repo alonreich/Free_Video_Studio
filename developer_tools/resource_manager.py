@@ -1,3 +1,8 @@
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 """
 Resource management system for memory cleanup and leak prevention.
 Manages QPixmap caching, temporary files, and graphics item lifecycle.

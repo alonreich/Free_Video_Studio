@@ -1,4 +1,10 @@
-﻿from enum import Enum
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+from enum import Enum
 
 class WizardState(Enum):
     UPLOAD = "UPLOAD VIDEO"

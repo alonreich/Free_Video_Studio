@@ -1,4 +1,10 @@
-﻿from PyQt5.QtWidgets import QWidget, QFrame, QPushButton, QVBoxLayout, QHBoxLayout, QMenu, QAction, QApplication, QSlider, QStyle, QStyleOptionSlider
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+from PyQt5.QtWidgets import QWidget, QFrame, QPushButton, QVBoxLayout, QHBoxLayout, QMenu, QAction, QApplication, QSlider, QStyle, QStyleOptionSlider
 from PyQt5.QtCore import Qt, QPoint, QRect, pyqtSignal, QRectF, QPointF, QSize, QSizeF, QTimer
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap, QPainterPath, QCursor, QFont
 import math
@@ -776,9 +782,9 @@ class UploadOverlay(QWidget):
         self.app_window = parent
         self.text = text
         self.setWindowFlags(
-            Qt.Window | 
             Qt.FramelessWindowHint | 
-            Qt.WindowStaysOnTopHint | 
+            Qt.WindowStaysOnTopHint |
+            Qt.Tool |
             Qt.WindowTransparentForInput |
             Qt.WindowDoesNotAcceptFocus |
             Qt.NoDropShadowWindowHint

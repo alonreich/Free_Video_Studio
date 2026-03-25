@@ -136,8 +136,6 @@ class TextWrapper:
         is_portrait = (base_max_w < 1100)
         max_w = base_max_w
         base_size = self.cfg.base_font_size
-        
-        # 1-2 words boost: if it fits easily, increase size by 2
         words = (s or "").strip().split()
         if is_portrait and len(words) >= 1 and len(words) <= 2:
             boost_size = base_size + 2
@@ -147,11 +145,9 @@ class TextWrapper:
                 if widest <= max_w:
                     if logger: logger.info(f"WRAP_PORTRAIT_BOOST: size={boost_size}")
                     return boost_size, lines
-
         MAX_TOTAL_H = 148 
         if logger: logger.info(f"WRAP_START: text='{s}' target_w={max_w} base_size={base_size} portrait={is_portrait}")
         if is_portrait:
-            # Try to fit in 1 line, decreasing size if it doesn't fit
             for size in range(base_size, base_size - 15, -1):
                 lines = self._wrap_text(s, size, max_w)
                 if len(lines) == 1:
@@ -159,8 +155,6 @@ class TextWrapper:
                     if widest <= max_w:
                         if logger: logger.info(f"WRAP_PORTRAIT_1_LINE: size={size}")
                         return size, lines
-            
-            # Try 2 lines (user preferred) then 3
             for num_lines in [2, 3]:
                 gap_factor = 0.2 if num_lines == 2 else 0.3
                 for size in range(base_size, self.cfg.min_font_size - 1, -1):

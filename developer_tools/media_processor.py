@@ -1,4 +1,10 @@
-﻿import os
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+import os
 import subprocess
 import sys
 import logging
@@ -9,7 +15,7 @@ import atexit
 import threading
 import shutil
 import json
-from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG
+from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG, pyqtSlot
 try:
     import mpv
 except Exception:
@@ -38,24 +44,22 @@ class MediaProcessor(QObject):
                     'input_default_bindings': False,
                     'input_vo_keyboard': False,
                     'hr_seek': 'yes',
-                    'hwdec': 'auto',
+                    'hwdec': 'no',
                     'keep_open': 'yes',
-                    'log_handler': logger.debug,
                     'loglevel': "info",
-                    'vo': 'gpu',
+                    'vo': 'null' if wid is None else 'gpu,direct3d,d3d11,null',
                     'ytdl': False,
-                    'demuxer_max_bytes': '500M',
-                    'demuxer_max_back_bytes': '100M',
+                    'demuxer_max_bytes': '50M',
+                    'demuxer_max_back_bytes': '10M',
                 }
                 if wid:
                     mpv_kwargs['wid'] = int(wid)
                 if sys.platform == 'win32':
-                    mpv_kwargs['gpu-context'] = 'd3d11'
                     os.environ["LC_NUMERIC"] = "C"
 
                 from system.utils import MPVSafetyManager
                 self.player = MPVSafetyManager.create_safe_mpv(**mpv_kwargs)
-                logger.info("MediaProcessor initialized successfully with MPV.")
+                logger.info(f"MediaProcessor initialized with MPV (wid={'None' if wid is None else wid}).")
             except Exception as e:
                 logger.error(f"Failed to initialize MPV in MediaProcessor: {e}")
                 self.player = None
@@ -67,6 +71,17 @@ class MediaProcessor(QObject):
         self.input_file_path = None
         self._ffprobe_procs = []
         self._last_seek_time = 0
+
+    def attach_wid(self, wid):
+        """Safely attaches a Window ID to the existing MPV player and enables GPU rendering."""
+        if not self.player: return
+        try:
+            logger.info(f"Attaching MPV to wid: {wid}")
+            self.player.wid = int(wid)
+            self.player.vo = 'gpu,direct3d,d3d11,null'
+            self.player.hwdec = 'auto'
+        except Exception as e:
+            logger.error(f"Failed to attach WID to MPV: {e}")
     @property
     def original_resolution(self):
         with self._state_lock:
@@ -83,7 +98,7 @@ class MediaProcessor(QObject):
     def input_file_path(self, value):
         with self._state_lock:
             self._input_file_path = value
-
+    @pyqtSlot(str)
     def info_retrieved_emit_wrapper(self, resolution):
         """Thread-safe signal emission wrapper."""
         self.info_retrieved.emit(resolution)

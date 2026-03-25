@@ -1,7 +1,23 @@
 # Project Vision: Fortnite Video Crop Coordinate Configurator
 
 ## 1. Core Purpose
-This desktop application, built specifically for Windows, works alongside a separate video-processing tool. Its primary function is to help creators define the precise coordinates and final placement of Heads‑Up Display (HUD) elements from a Fortnite gameplay video. These coordinates and placements are stored in a fixed JSON configuration file located in `..\processing\`, which the processing tool reads to produce perfectly cropped 9:16 portrait‑mode videos for mobile platforms. The aspect ratio is fixed at 9:16 and cannot be changed.
+This desktop application, built specifically for Windows, works alongside a separate video-processing tool. Its primary function is to help creators d
+
+## MANDATORY: NO CACHE POLICY (CRITICAL)
+- **Zero Tolerance:** Generation of `__pycache__` folders or `.pyc` files is a ROOKIE MISTAKE and is strictly prohibited.
+- **Enforcement:** Every Python file MUST include the following block at the ABSOLUTE TOP, before ANY other imports (including `import sys` if not already there):
+  ```python
+  import sys
+  import os
+  sys.dont_write_bytecode = True
+  os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+  os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+  ```
+- **Execution:** All python commands MUST be executed with the `-B` flag (e.g., `python -B script.py`) or with `PYTHONDONTWRITEBYTECODE=1` set in the environment.
+- **Subprocesses:** The environment variable `PYTHONDONTWRITEBYTECODE=1` MUST be explicitly passed to all subprocess calls.
+- **Cleanup:** Any agent MUST verify and delete any `__pycache__` folders or `.pyc` files before finishing their task.
+- **Responsibility:** It is the absolute responsibility of the developer/AI to ensure the workspace remains clean of all bytecode artifacts.
+efine the precise coordinates and final placement of Heads‑Up Display (HUD) elements from a Fortnite gameplay video. These coordinates and placements are stored in a fixed JSON configuration file located in `..\processing\`, which the processing tool reads to produce perfectly cropped 9:16 portrait‑mode videos for mobile platforms. The aspect ratio is fixed at 9:16 and cannot be changed.
 
 ## 2. Core Workflow
 1. **Load Sample Video:** The user loads a single video file (`.mp4`, `.avi`, `.mkv`). The tool is intended for one video at a time and supports only video file types.
@@ -9,8 +25,8 @@ This desktop application, built specifically for Windows, works alongside a sepa
 3. **Take a Snapshot:** Clicking "START CROPPING" freezes the current frame and opens the cropping interface.
 4. **Define Crop Regions:** The user can mark a HUD element in two ways:
    * **Manual Drawing:** Click and drag to draw a rectangle around the HUD component.
-   * **Magic Wand Precision:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers top-tier professional computer vision algorithms, using Otsu thresholding, HSV color masking, and adaptive contour detection to directly find and shrink-wrap HUD elements (Loot Area, Mini Map + Stats, Health Bar, Teammates Health, Spectating Eye) without relying on basic template matching. Suggested regions are overlaid on the snapshot; the user can cycle through detected regions.
-5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", "Teammates health Bars (HP)", or "Spectating Eye". Note: Health Bar includes both health and shield components as they are combined in Fortnite. The "Spectating Eye" represents the viewer count.
+   * **Magic Wand Precision:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers top-tier professional computer vision algorithms, using Otsu thresholding, HSV color masking, and adaptive temporal stability detection to directly find and shrink-wrap HUD elements. The logic uses ultra-tight expansion fractions (1-2%) and minimal padding (2px) to ensure boxes perfectly fit the HUD content while including vital nearby info like game stats (via a specific 8% bottom expansion for the Mini Map). Suggested regions are overlaid on the snapshot.
+5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", "Teammates health Bars (HP)", or "Spectating Eye". Note: Health Bar includes both health and shield components as they are combined in Fortnite. The "Spectating Eye" represents the viewer count. Detection supports up to 6 distinct roles simultaneously.
 6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, focus shifts to the integrated Portrait Composer pane. The element is auto‑placed based on its role. The user can drag it to reposition and use responsive handles to resize it. Visual indicators show element roles and dynamic Layer ranks (Layer 1 = Top-most).
 7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component. When saving, the application surgically updates the JSON configuration, preserving unselected elements while maintaining atomic safety with file locking and a persistent 5-file rolling backup system.
 

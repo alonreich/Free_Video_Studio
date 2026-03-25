@@ -1,4 +1,10 @@
-﻿import os
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+import os
 import tempfile
 from PyQt5.QtCore import QTimer, QRect, QPoint
 from PyQt5.QtWidgets import QApplication

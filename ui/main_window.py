@@ -75,7 +75,6 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.setCentralWidget(self.central_widget)
         self._init_core_logic(file_path, hardware_strategy)
         self.init_ui()
-        # setup MPV after UI is ready and video_surface exists
         self._setup_mpv()
         self._set_video_controls_enabled(False)
         self.setAcceptDrops(True)

@@ -138,7 +138,6 @@ from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QGuiApplication, QImage, QPainter, QFont, QColor, QFontDatabase
 from PyQt5.QtCore import Qt, QRect
 app = QGuiApplication(sys.argv)
-
 # Explicitly load system fonts to avoid offscreen rendering empty results
 font_loaded = False
 font_family = "Arial"
@@ -158,7 +157,6 @@ for fpath in possible_fonts:
                 font_family = families[0]
                 font_loaded = True
                 break
-
 width = 1080
 height = 150
 output_path = r"{output_path}"

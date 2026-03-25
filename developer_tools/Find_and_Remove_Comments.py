@@ -1,9 +1,9 @@
-﻿WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
-
+﻿import sys
 import os
-import sys
-os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+WORKING_DIRECTORY = r"C:\Fortnite_Video_Software"
 
 import tokenize
 import re

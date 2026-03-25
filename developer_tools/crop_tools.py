@@ -45,7 +45,7 @@ from state_manager import get_state_manager
 from graphics_items import ResizablePixmapItem
 from coordinate_math import (
     transform_to_content_area, inverse_transform_from_content_area_int, get_resolution_ints, outward_round_rect, scale_round,
-    PORTRAIT_W, PORTRAIT_H, UI_PADDING_TOP, UI_PADDING_BOTTOM
+    PORTRAIT_W, PORTRAIT_H, UI_PADDING_TOP, UI_PADDING_BOTTOM, UI_CONTENT_H
 )
 
 from resource_manager import get_resource_manager
@@ -218,6 +218,65 @@ class GuidanceToast(QDialog):
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.center() - self.rect().center())
 
+class ThinkingToast(QDialog):
+    def __init__(self, parent=None, target_widget=None):
+        super().__init__(parent)
+        self.target_widget = target_widget or parent
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(400, 450)
+        self.angle = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.timer.start(50)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.addSpacing(300)
+        self.msg_label = QLabel("Please wait while processing")
+        self.msg_label.setAlignment(Qt.AlignCenter)
+        self.msg_label.setStyleSheet(f"""
+            color: {UI_COLORS.TEXT_PRIMARY};
+            font-size: 20px;
+            font-weight: bold;
+            background-color: rgba(15, 23, 42, 180);
+            padding: 15px;
+            border-radius: 10px;
+        """)
+        layout.addWidget(self.msg_label)
+
+    def rotate(self):
+        self.angle = (self.angle + 30) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(15, 23, 42, 200))
+        painter.drawRoundedRect(50, 20, 300, 300, 30, 30)
+        painter.translate(200, 170)
+        painter.rotate(self.angle)
+        pen = QPen(QColor(56, 189, 248), 12)
+        pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(pen)
+        for i in range(8):
+            painter.rotate(45)
+            painter.setOpacity(0.2 + (i * 0.1))
+            painter.drawLine(0, -50, 0, -90)
+
+    def showEvent(self, event):
+        self.center_on_target()
+        super().showEvent(event)
+
+    def center_on_target(self):
+        if not self.target_widget:
+            return
+        geo = self.target_widget.geometry()
+        global_pos = self.target_widget.mapToGlobal(QPoint(0, 0))
+        center_x = global_pos.x() + (geo.width() // 2)
+        center_y = global_pos.y() + (geo.height() // 2)
+        self.move(center_x - (self.width() // 2), center_y - (self.height() // 2))
+
 class SaveConfigWorker(QObject):
     finished = pyqtSignal(bool, list, list, str)
 
@@ -338,7 +397,9 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.transparency_slider = getattr(self, 'transparency_slider', None)
             self.portrait_scene = getattr(self, 'portrait_scene', None)
             self.portrait_view = getattr(self, 'portrait_view', None)
-            self.media_processor = MediaProcessor(self.bin_dir, wid=int(self.video_surface.winId()) if self.video_surface else None)
+            self.media_processor = MediaProcessor(self.bin_dir, wid=None)
+            if hasattr(self, 'video_surface') and self.video_surface:
+                self.video_surface.paintEvent = lambda event: None
         except Exception as e:
             logger_initial.critical(f"SetupUI Failed: {e}", exc_info=True)
             raise e
@@ -474,6 +535,8 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
                      self.media_processor.original_resolution = session_data['resolution']
         except Exception as e:
             logger_initial.error(f"Session Load Failed: {e}")
+        if hasattr(self, 'video_surface') and self.video_surface:
+            QTimer.singleShot(50, lambda: self.media_processor.attach_wid(self.video_surface.winId()))
         if file_path and os.path.exists(file_path):
             try:
                 self.load_file(file_path)

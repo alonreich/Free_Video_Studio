@@ -1,4 +1,10 @@
-﻿from PyQt5.QtGui import QColor, QCursor, QBrush
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+from PyQt5.QtGui import QColor, QCursor, QBrush
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QSlider, QStackedWidget, QFrame, QProgressBar, QScrollArea, QSplitter, QCheckBox, QGraphicsScene
@@ -62,6 +68,14 @@ class Ui_CropApp:
         CropAppWindow.progress_bar.setFixedHeight(UI_LAYOUT.PROGRESS_BAR_HEIGHT)
         CropAppWindow.progress_bar.setVisible(False)
         wizard_layout.addWidget(CropAppWindow.progress_bar)
+        CropAppWindow.goal_label = QLabel("")
+        CropAppWindow.goal_label.setVisible(True)
+        CropAppWindow.goal_label.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 12px; font-weight: 700;")
+        wizard_layout.addWidget(CropAppWindow.goal_label)
+        CropAppWindow.status_label = QLabel("")
+        CropAppWindow.status_label.setVisible(True)
+        CropAppWindow.status_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 11px;")
+        wizard_layout.addWidget(CropAppWindow.status_label)
         wizard_layout.addStretch(1)
         CropAppWindow.hud_elements = list(HUD_ELEMENT_MAPPINGS.values())
         CropAppWindow.view_stack = QStackedWidget()
@@ -194,12 +208,6 @@ class Ui_CropApp:
         portrait_header_layout = QHBoxLayout(portrait_header)
         portrait_header_layout.setContentsMargins(10, 4, 10, 4)
         portrait_header_layout.setSpacing(12)
-        CropAppWindow.goal_label = QLabel("")
-        CropAppWindow.goal_label.setVisible(False)
-        CropAppWindow.goal_label.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 12px; font-weight: 700;")
-        CropAppWindow.status_label = QLabel("")
-        CropAppWindow.status_label.setVisible(False)
-        CropAppWindow.status_label.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-size: 11px;")
         CropAppWindow.snap_toggle_button = QPushButton("🧲 SNAP")
         CropAppWindow.snap_toggle_button.setCheckable(True)
         CropAppWindow.snap_toggle_button.setChecked(True)
@@ -228,11 +236,11 @@ class Ui_CropApp:
         portrait_header_layout.addSpacing(75)
         CropAppWindow.portrait_scene = QGraphicsScene(CropAppWindow)
         CropAppWindow.portrait_scene.setSceneRect(0, 0, UI_LAYOUT.PORTRAIT_BASE_WIDTH, UI_LAYOUT.PORTRAIT_BASE_HEIGHT)
-        CropAppWindow.portrait_scene.setBackgroundBrush(QColor("#203b4b"))
+        CropAppWindow.portrait_scene.setBackgroundBrush(QBrush(QColor("#111827")))
         CropAppWindow.portrait_view = PortraitView(CropAppWindow.portrait_scene)
         CropAppWindow.portrait_view.setFrameShape(QFrame.NoFrame)
-        CropAppWindow.portrait_view.setBackgroundBrush(QBrush(Qt.transparent))
-        CropAppWindow.portrait_view.setStyleSheet("background: transparent; border: none;")
+        CropAppWindow.portrait_view.setBackgroundBrush(QBrush(QColor("#111827")))
+        CropAppWindow.portrait_view.setStyleSheet("background: #111827; border: none;")
         middle_row_widget = QWidget()
         middle_row_layout = QHBoxLayout(middle_row_widget)
         middle_row_layout.setContentsMargins(0, 0, 0, 0)

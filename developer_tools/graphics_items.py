@@ -1,4 +1,10 @@
-﻿from PyQt5.QtWidgets import QGraphicsObject, QGraphicsRectItem, QGraphicsItem, QGraphicsLineItem, QGraphicsSimpleTextItem
+﻿import sys
+import os
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+
+from PyQt5.QtWidgets import QGraphicsObject, QGraphicsRectItem, QGraphicsItem, QGraphicsLineItem, QGraphicsSimpleTextItem
 from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QBrush, QColor, QPen, QFont
 from config import UI_LAYOUT, UI_BEHAVIOR, UI_COLORS
@@ -271,6 +277,19 @@ class ResizablePixmapItem(QGraphicsObject):
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(QRectF(-2, -2, self.current_width + 4, self.current_height + 4))
+        if self.is_resizing_br or self.is_resizing_tl:
+            size_text = f"{int(self.current_width)} x {int(self.current_height)}"
+            font = QFont("Segoe UI", 10, QFont.Bold)
+            painter.setFont(font)
+            fm = painter.fontMetrics()
+            tw = fm.horizontalAdvance(size_text)
+            th = fm.height()
+            label_rect = QRectF((self.current_width - tw)/2 - 5, -th - 25, tw + 10, th + 5)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 180))
+            painter.drawRoundedRect(label_rect, 4, 4)
+            painter.setPen(QColor("#7DD3FC"))
+            painter.drawText(label_rect, Qt.AlignCenter, size_text)
 
     def set_role(self, role):
         if role == "-- Select Role --":
