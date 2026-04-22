@@ -160,6 +160,8 @@ class FfmpegMixin:
             else: self._safe_set_phase("Error", ok=False)
         self.status_update_signal.emit("Ready to process another video.")
         if success:
+            if hasattr(self, "set_overlays_force_hidden"):
+                self.set_overlays_force_hidden(True)
             output_path = message; self._block_portrait_overlay = True
             class FinishedDialog(QDialog):
                 def closeEvent(self, e): self.accept()
@@ -181,6 +183,8 @@ class FfmpegMixin:
             for b in [whatsapp_button, open_folder_button, new_file_button, done_button, exit_btn]: b.setFixedSize(180, 45); b.setCursor(Qt.PointingHandCursor)
             grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter); grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter); grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter); grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter); grid.addWidget(exit_btn, 2, 0, 1, 3, alignment=Qt.AlignCenter); layout.addLayout(grid)
             result = dialog.exec_(); self._block_portrait_overlay = False
+            if hasattr(self, "set_overlays_force_hidden"):
+                self.set_overlays_force_hidden(False)
             if result == QDialog.Rejected: self.handle_new_file()
         else:
             if "canceled by user" not in message.lower(): self._show_error_with_log(message)

@@ -273,6 +273,7 @@ class LogManager:
 
 class MPVSafetyManager:
     _mpv_creation_lock = threading.Lock()
+    _last_creation_time = 0
     _instances = weakref.WeakSet()
     @staticmethod
     def log_mpv_diagnostics(player, logger, context_tag="GENERAL"):
@@ -360,7 +361,10 @@ class MPVSafetyManager:
     @staticmethod
     def create_safe_mpv(**kwargs):
         with MPVSafetyManager._mpv_creation_lock:
-            QThread.msleep(200)
+            elapsed = (time.time() * 1000) - MPVSafetyManager._last_creation_time
+            if elapsed < 400:
+                QThread.msleep(int(400 - elapsed))
+            MPVSafetyManager._last_creation_time = time.time() * 1000
             try:
                 import mpv
                 l_h = kwargs.pop('log_handler', None)

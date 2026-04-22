@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -21,6 +21,8 @@ class MainWindowFileAMixin:
                 pass
 
         from ui.widgets.custom_file_dialog import CustomFileDialog
+        if hasattr(self, "set_overlays_force_hidden"):
+            self.set_overlays_force_hidden(True)
         dialog = CustomFileDialog(
             None, 
             "Select Video File(s)",
@@ -30,10 +32,10 @@ class MainWindowFileAMixin:
         )
         dialog.setWindowModality(Qt.ApplicationModal)
         file_paths = []
-        if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
-            self.portrait_mask_overlay.hide()
         if dialog.exec_():
             file_paths = dialog.selectedFiles()
+        if hasattr(self, "set_overlays_force_hidden"):
+            self.set_overlays_force_hidden(False)
         if hasattr(self, "_update_portrait_mask_overlay_state"):
             self._update_portrait_mask_overlay_state()
         self.refresh_ui_styles()
@@ -131,4 +133,10 @@ class MainWindowFileAMixin:
             self.logger.warning("MPV not available. Skipping playback. (CPU Mode)")
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
+        if hasattr(self, "set_overlays_force_hidden"):
+            self.set_overlays_force_hidden(False)
+        if hasattr(self, "_update_overlay_positions"):
+            self._update_overlay_positions()
+            QTimer.singleShot(100, self._update_overlay_positions)
+            QTimer.singleShot(500, self._update_overlay_positions)
         self._set_video_controls_enabled(True)

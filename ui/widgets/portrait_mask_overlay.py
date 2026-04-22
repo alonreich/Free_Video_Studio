@@ -6,6 +6,7 @@ import logging
 class PortraitMaskOverlay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._force_hidden = False
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -14,6 +15,10 @@ class PortraitMaskOverlay(QWidget):
         self.current_video_frame_size = None
         self.setHidden(True)
 
+    def set_force_hidden(self, hidden):
+        self._force_hidden = bool(hidden)
+        if self._force_hidden: self.hide()
+
     def set_video_info(self, resolution_str: str, frame_size):
         if self.original_video_resolution != resolution_str or self.current_video_frame_size != frame_size:
             self.original_video_resolution = resolution_str
@@ -21,7 +26,7 @@ class PortraitMaskOverlay(QWidget):
             self.update()
 
     def paintEvent(self, event):
-        if not self.isVisible() or not self.current_video_frame_size:
+        if self._force_hidden or not self.isVisible() or not self.current_video_frame_size:
             return
         painter = QPainter(self)
         try:

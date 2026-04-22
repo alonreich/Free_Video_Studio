@@ -6,12 +6,7 @@ import tempfile
 from threading import Thread
 from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QCoreApplication
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QIcon
-from PyQt5.QtWidgets import (QGridLayout, QMessageBox, QHBoxLayout,
-                             QVBoxLayout, QFrame, QSlider, QLabel, QStyle,
-                             QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox,
-                             QProgressBar, QWidget, QStyleOptionSpinBox, 
-                             QStackedLayout, QLineEdit)
-
+from PyQt5.QtWidgets import QGridLayout, QMessageBox, QHBoxLayout, QVBoxLayout, QFrame, QSlider, QLabel, QStyle, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar, QWidget, QStyleOptionSpinBox, QStackedLayout, QLineEdit
 from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
@@ -20,8 +15,13 @@ try:
     from ui.widgets.portrait_mask_overlay import PortraitMaskOverlay
 except ImportError:
     PortraitMaskOverlay = None
+try:
+    from ui.widgets.timeline_overlay import TimelineOverlay
+except ImportError:
+    TimelineOverlay = None
 
 class ClickableSpinBox(QDoubleSpinBox):
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             opt = QStyleOptionSpinBox()
@@ -34,20 +34,21 @@ class ClickableSpinBox(QDoubleSpinBox):
         super().mousePressEvent(event)
 
 class UiBuilderMixin:
+
     def _pick_thumbnail_from_current_frame(self):
         try:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
-                QMessageBox.information(self, "No Video", "Please load a video first.")
+                QMessageBox.information(self, 'No Video', 'Please load a video first.')
                 return
             request_id = str(uuid.uuid4())
             self._current_thumb_request = request_id
             pos_ms = 0
             try:
-                if hasattr(self, "positionSlider"):
+                if hasattr(self, 'positionSlider'):
                     pos_ms = int(self.positionSlider.value())
             except:
                 pass
-            if (not pos_ms) and getattr(self, 'player', None):
+            if not pos_ms and getattr(self, 'player', None):
                 pos_ms = int((getattr(self.player, 'time-pos', 0) or 0) * 1000)
             pos_s = float(pos_ms) / 1000.0
             if self.original_duration_ms > 0 and pos_ms > self.original_duration_ms:
@@ -55,32 +56,32 @@ class UiBuilderMixin:
             self.selected_intro_abs_time = pos_s
             mm = int(self.selected_intro_abs_time // 60)
             ss = self.selected_intro_abs_time % 60.0
-            self.thumb_pick_btn.setText("⏳ EXTRACTING... ⏳")
+            self.thumb_pick_btn.setText('⏳ EXTRACTING... ⏳')
             self.thumb_pick_btn.setEnabled(False)
-            self.status_update_signal.emit("📸 Extracting thumbnail... please wait.")
+            self.status_update_signal.emit('📸 Extracting thumbnail... please wait.')
 
             def _safety_reset():
-                if getattr(self, "_current_thumb_request", None) == request_id:
-                    if self.thumb_pick_btn.text() == "⏳ EXTRACTING... ⏳":
+                if getattr(self, '_current_thumb_request', None) == request_id:
+                    if self.thumb_pick_btn.text() == '⏳ EXTRACTING... ⏳':
                         self.thumb_pick_btn.setEnabled(True)
-                        self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
-                        self.status_update_signal.emit("❌ Extraction timed out.")
+                        self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+                        self.status_update_signal.emit('❌ Extraction timed out.')
             QTimer.singleShot(15000, _safety_reset)
-            temp_thumb = os.path.normpath(os.path.join(tempfile.gettempdir(), f"fvs_thumb_{os.getpid()}_{request_id[:8]}.jpg"))
+            temp_thumb = os.path.normpath(os.path.join(tempfile.gettempdir(), f'fvs_thumb_{os.getpid()}_{request_id[:8]}.jpg'))
             ffmpeg_path = os.path.normpath(os.path.join(getattr(self, 'bin_dir', ''), 'ffmpeg.exe'))
             if not os.path.exists(ffmpeg_path):
-                ffmpeg_path = "ffmpeg.exe"
-            cmd = [ffmpeg_path, "-y", "-ss", f"{pos_s:.3f}", "-i", os.path.normpath(self.input_file_path), "-frames:v", "1", "-an", "-f", "image2", "-q:v", "2", temp_thumb]
+                ffmpeg_path = 'ffmpeg.exe'
+            cmd = [ffmpeg_path, '-y', '-ss', f'{pos_s:.3f}', '-i', os.path.normpath(self.input_file_path), '-frames:v', '1', '-an', '-f', 'image2', '-q:v', '2', temp_thumb]
 
             def _run_extract(rid, m, s, p_ms):
                 try:
-                    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=(0x08000000 if sys.platform == 'win32' else 0), timeout=12)
+                    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=134217728 if sys.platform == 'win32' else 0, timeout=12)
                 except:
                     pass
                 finally:
                     try:
-                        is_latest = (getattr(self, "_current_thumb_request", None) == rid)
-                        if hasattr(self, "thumbnail_extracted_signal"):
+                        is_latest = getattr(self, '_current_thumb_request', None) == rid
+                        if hasattr(self, 'thumbnail_extracted_signal'):
                             self.thumbnail_extracted_signal.emit(m, s, is_latest)
                         else:
                             QTimer.singleShot(0, lambda: self._on_thumb_extracted(m, s, is_latest, p_ms))
@@ -89,29 +90,35 @@ class UiBuilderMixin:
             Thread(target=lambda: _run_extract(request_id, mm, ss, pos_ms), daemon=True).start()
         except Exception as e:
             self.thumb_pick_btn.setEnabled(True)
-            self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
-            QMessageBox.warning(self, "Error", f"Failed to pick thumbnail: {e}")
+            self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+            QMessageBox.warning(self, 'Error', f'Failed to pick thumbnail: {e}')
 
     def _on_thumb_extracted(self, mm, ss, is_latest=True, pos_ms=0):
         self.thumb_pick_btn.setEnabled(True)
         if is_latest:
-            self.thumb_pick_btn.setText(f"✅ THUMBNAIL SET ✅")
-            self.status_update_signal.emit(f"✅ SUCCESS: Thumbnail set at {mm:02d}:{ss:05.2f} ✅")
-            if hasattr(self, "positionSlider"):
+            self.thumb_pick_btn.setText(f'✅ THUMBNAIL SET ✅')
+            self.status_update_signal.emit(f'✅ SUCCESS: Thumbnail set at {mm:02d}:{ss:05.2f} ✅')
+            if hasattr(self, 'positionSlider'):
                 self.positionSlider.set_thumbnail_pos_ms(pos_ms)
-            QTimer.singleShot(4000, lambda: self.thumb_pick_btn.setText(f"📸 THUMBNAIL SET 📸"))
+            QTimer.singleShot(4000, lambda: self.thumb_pick_btn.setText(f'📸 THUMBNAIL SET 📸'))
         else:
-            self.thumb_pick_btn.setText("📸 SET THUMBNAIL 📸")
+            self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+
+    def set_overlays_force_hidden(self, hidden):
+        if hasattr(self, 'timeline_overlay') and self.timeline_overlay:
+            self.timeline_overlay.set_force_hidden(hidden)
+        if hasattr(self, 'portrait_mask_overlay') and self.portrait_mask_overlay:
+            self.portrait_mask_overlay.set_force_hidden(hidden)
 
     def _on_boss_hp_toggled(self, checked):
-        self.logger.info(f"OPTION: Boss HP -> {checked}")
+        self.logger.info(f'OPTION: Boss HP -> {checked}')
 
     def _update_process_button_text(self) -> None:
         try:
-            self._pulse_phase = (getattr(self, "_pulse_phase", 0) + 1) % 8
-            if getattr(self, "is_processing", False):
-                dots = "." * (1 + (self._pulse_phase // 2))
-                spinner = "⣾⣽⣻⢿⡿⣟⣯ⷿ"
+            self._pulse_phase = (getattr(self, '_pulse_phase', 0) + 1) % 8
+            if getattr(self, 'is_processing', False):
+                dots = '.' * (1 + self._pulse_phase // 2)
+                spinner = '⣾⣽⣻⢿⡿⣟⣯ⷿ'
                 glyph = spinner[self._pulse_phase % len(spinner)]
                 pm = QPixmap(24, 24)
                 pm.fill(Qt.transparent)
@@ -123,11 +130,11 @@ class UiBuilderMixin:
                 p.setPen(Qt.black)
                 p.drawText(pm.rect(), Qt.AlignCenter, glyph)
                 p.end()
-                self.process_button.setText(f"PROCESSING{dots}")
+                self.process_button.setText(f'PROCESSING{dots}')
                 self.process_button.setIcon(QIcon(pm))
                 self.process_button.setIconSize(QSize(24, 24))
             else:
-                self.process_button.setText("PROCESS VIDEO")
+                self.process_button.setText('PROCESS VIDEO')
                 self.process_button.setIcon(QIcon())
         except:
             pass
@@ -139,7 +146,7 @@ class UiBuilderMixin:
     def _ensure_default_trim(self):
         try:
             if self.end_minute_input.maximum() == 0 and self.positionSlider.maximum() == 0:
-                QMessageBox.warning(self, "No video", "Please load a video file first.")
+                QMessageBox.warning(self, 'No video', 'Please load a video file first.')
                 return False
             if (self.start_minute_input.value() == 0 and self.start_second_input.value() == 0) and (self.end_minute_input.value() == 0 and self.end_second_input.value() == 0):
                 self.end_minute_input.setValue(self.end_minute_input.maximum())
@@ -150,17 +157,17 @@ class UiBuilderMixin:
 
     def _on_process_clicked(self):
         try:
-            if not getattr(self, "scan_complete", False):
+            if not getattr(self, 'scan_complete', False):
                 self.process_button.setEnabled(False)
-                self.process_button.setText("WAITING FOR SCAN...")
-                self.status_update_signal.emit("⌛ Hardware scan in progress...")
+                self.process_button.setText('WAITING FOR SCAN...')
+                self.status_update_signal.emit('⌛ Hardware scan in progress...')
                 return
-            if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay:
+            if hasattr(self, 'portrait_mask_overlay') and self.portrait_mask_overlay:
                 self.portrait_mask_overlay.hide()
             try:
-                if hasattr(self, "_safe_stop_playback"):
+                if hasattr(self, '_safe_stop_playback'):
                     self._safe_stop_playback()
-                elif getattr(self, "player", None):
+                elif getattr(self, 'player', None):
                     self.player.stop()
             except:
                 pass
@@ -168,48 +175,44 @@ class UiBuilderMixin:
                 return
             self.start_processing()
         except:
-            QMessageBox.critical(self, "Error", "Could not start processing.")
+            QMessageBox.critical(self, 'Error', 'Could not start processing.')
 
     def _maybe_enable_process(self):
         try:
-            is_ready = (self.positionSlider.maximum() > 0) and getattr(self, "scan_complete", False)
+            is_ready = self.positionSlider.maximum() > 0 and getattr(self, 'scan_complete', False)
             if is_ready:
                 if not self.process_button.isEnabled():
                     self.process_button.setEnabled(True)
-                    self.process_button.setText("PROCESS VIDEO")
+                    self.process_button.setText('PROCESS VIDEO')
                     self._ensure_default_trim()
-            elif (self.positionSlider.maximum() > 0) and not getattr(self, "scan_complete", False):
+            elif self.positionSlider.maximum() > 0 and (not getattr(self, 'scan_complete', False)):
                 self.process_button.setEnabled(False)
-                self.process_button.setText("SCANNING HW...")
+                self.process_button.setText('SCANNING HW...')
         except:
             pass
 
     def launch_video_merger(self):
         p = os.path.join(self.base_dir, 'utilities', 'video_merger.py')
         if not os.path.exists(p):
-            QMessageBox.critical(self, "Missing Component", f"Missing: {p}")
+            QMessageBox.critical(self, 'Missing Component', f'Missing: {p}')
             return
         try:
             from system.state_transfer import StateTransfer
-            StateTransfer.save_state({
-                'input_file': getattr(self, 'input_file_path', None),
-                'trim_start': getattr(self, 'trim_start_ms', 0),
-                'trim_end': getattr(self, 'trim_end_ms', 0),
-                'mobile_checked': self.mobile_checkbox.isChecked()
-            })
-            flags = 0x00000010 if sys.platform == "win32" else 0
+            StateTransfer.save_state({'input_file': getattr(self, 'input_file_path', None), 'trim_start': getattr(self, 'trim_start_ms', 0), 'trim_end': getattr(self, 'trim_end_ms', 0), 'mobile_checked': self.mobile_checkbox.isChecked()})
+            flags = 16 if sys.platform == 'win32' else 0
             subprocess.Popen([sys.executable, p], cwd=self.base_dir, creationflags=flags, close_fds=True, start_new_session=True)
             QCoreApplication.quit()
         except Exception as e:
-            QMessageBox.critical(self, "Launch Error", f"Failed: {e}")
+            QMessageBox.critical(self, 'Launch Error', f'Failed: {e}')
 
     def eventFilter(self, obj, event):
         if event.type() in (QEvent.Resize, QEvent.Move):
-            if event.type() == QEvent.Resize and obj is getattr(self, "video_surface", None):
-                if hasattr(self, 'portrait_mask_overlay'):
-                    self._update_portrait_mask_overlay_state()
-            if obj in (self, getattr(self, "video_frame", None), getattr(self, "video_surface", None), getattr(self, "right_panel", None), getattr(self, "upload_button", None)):
-                if hasattr(self, "_update_upload_hint_responsive"):
+            vs = getattr(self, 'video_surface', None)
+            if obj is self or obj is vs:
+                if event.type() == QEvent.Resize and obj is vs:
+                    if hasattr(self, 'portrait_mask_overlay'):
+                        self._update_portrait_mask_overlay_state()
+                if hasattr(self, '_update_upload_hint_responsive'):
                     self._update_upload_hint_responsive()
         return super().eventFilter(obj, event)
 
@@ -249,16 +252,7 @@ class UiBuilderMixin:
         video_and_volume.addWidget(self.video_frame, stretch=1)
         player_col.addLayout(video_and_volume)
         player_col.setStretch(0, 1)
-        self.positionSlider = TrimmedSlider(self)
-        self.positionSlider.setRange(0, 0)
-        self.positionSlider.setFixedHeight(50)
-        self.positionSlider.setStyleSheet(UIStyles.SLIDER_TIMELINE_METALLIC)
-        self.positionSlider.setEnabled(False)
-        self.positionSlider.sliderMoved.connect(self.set_player_position)
-        self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
-        self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
-        self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
-        badge_style = "background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;"
+        badge_style = 'background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;'
         self._main_time_badge_top = QLabel(self)
         self._main_time_badge_top.setStyleSheet(badge_style)
         self._main_time_badge_top.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -267,12 +261,6 @@ class UiBuilderMixin:
         self._main_time_badge_bottom.setStyleSheet(badge_style)
         self._main_time_badge_bottom.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._main_time_badge_bottom.hide()
-        self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
-        slider_h_wrap = QHBoxLayout()
-        slider_h_wrap.setContentsMargins(42, 0, 15, 0)
-        slider_h_wrap.addWidget(self.positionSlider)
-        player_col.addLayout(slider_h_wrap)
-        player_col.setStretch(1, 0)
         self._init_trim_controls()
         trim_c = QHBoxLayout()
         trim_c.setContentsMargins(10, 0, 10, 0)
@@ -293,15 +281,7 @@ class UiBuilderMixin:
         self.player_col_container.installEventFilter(self)
 
     def _set_video_controls_enabled(self, enabled: bool):
-        widgets = [
-            self.playPauseButton, self.start_trim_button, self.end_trim_button,
-            self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider,
-            self.speed_spinbox, self.granular_checkbox, self.mobile_checkbox,
-            self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input,
-            self.music_button, self.positionSlider, self.start_minute_input,
-            self.start_second_input, self.start_ms_input, self.end_minute_input,
-            self.end_second_input, self.end_ms_input, self.crop_tool_btn
-        ]
+        widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider, self.speed_spinbox, self.granular_checkbox, self.mobile_checkbox, self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input, self.music_button, self.positionSlider, self.start_minute_input, self.start_second_input, self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input, self.crop_tool_btn]
         for w in widgets:
             if w is not None:
                 w.setEnabled(enabled)
@@ -325,8 +305,8 @@ class UiBuilderMixin:
         self.volume_slider.setValue(eff)
         self.volume_slider.valueChanged.connect(self._on_master_volume_changed)
         self.volume_slider.sliderMoved.connect(lambda _: self._update_volume_badge())
-        self.volume_badge = QLabel("0%", self.volume_slider)
-        self.volume_badge.setStyleSheet("color: white; background: rgba(0,0,0,160); padding: 2px 6px; border-radius: 6px; font-weight: bold;")
+        self.volume_badge = QLabel('0%', self.volume_slider)
+        self.volume_badge.setStyleSheet('color: white; background: rgba(0,0,0,160); padding: 2px 6px; border-radius: 6px; font-weight: bold;')
         self.volume_badge.hide()
         v_l.addWidget(self.volume_badge, 0, Qt.AlignHCenter)
         v_l.addWidget(self.volume_slider, 1, Qt.AlignHCenter)
@@ -344,7 +324,7 @@ class UiBuilderMixin:
         v_l = QHBoxLayout(self.video_viewport)
         v_l.setContentsMargins(0, 0, 0, 0)
         self.video_surface = QWidget()
-        self.video_surface.setStyleSheet("background-color: black;")
+        self.video_surface.setStyleSheet('background-color: black;')
         self.video_surface.setAttribute(Qt.WA_NativeWindow)
         v_l.addWidget(self.video_surface)
         self.video_stack.addWidget(self.video_viewport)
@@ -359,9 +339,9 @@ class UiBuilderMixin:
         self.hint_group_layout = QHBoxLayout(self.hint_group_container)
         self.hint_group_layout.setContentsMargins(0, 0, 0, 0)
         self.upload_hint_container = QFrame()
-        self.upload_hint_container.setObjectName("uploadHintContainer")
+        self.upload_hint_container.setObjectName('uploadHintContainer')
         hi_l = QVBoxLayout(self.upload_hint_container)
-        self.upload_hint_label = QLabel("Please Upload Video to Begin!")
+        self.upload_hint_label = QLabel('Please Upload Video to Begin!')
         self.upload_hint_label.setAlignment(Qt.AlignCenter)
         hi_l.addWidget(self.upload_hint_label)
         self.upload_hint_arrow = QLabel()
@@ -379,12 +359,12 @@ class UiBuilderMixin:
         self.video_frame.installEventFilter(self)
 
     def _init_trim_controls(self):
-        self.playPauseButton = QPushButton("PLAY")
+        self.playPauseButton = QPushButton('PLAY')
         self.playPauseButton.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
         self.playPauseButton.setFixedSize(150, 42)
         self.playPauseButton.clicked.connect(self.toggle_play_pause)
         self.playPauseButton.setEnabled(False)
-        self.thumb_pick_btn = QPushButton("📸 SET THUMBNAIL 📸")
+        self.thumb_pick_btn = QPushButton('📸 SET THUMBNAIL 📸')
         self.thumb_pick_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.thumb_pick_btn.setFixedSize(150, 42)
         self.thumb_pick_btn.clicked.connect(self._pick_thumbnail_from_current_frame)
@@ -400,12 +380,12 @@ class UiBuilderMixin:
             s.setMaximumWidth(48)
             s.setEnabled(False)
             s.valueChanged.connect(self._on_trim_spin_changed)
-        self.start_trim_button = QPushButton("SET START")
+        self.start_trim_button = QPushButton('SET START')
         self.start_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.start_trim_button.setFixedSize(150, 42)
         self.start_trim_button.clicked.connect(self.set_start_time)
         self.start_trim_button.setEnabled(False)
-        self.end_trim_button = QPushButton("SET END")
+        self.end_trim_button = QPushButton('SET END')
         self.end_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.end_trim_button.setFixedSize(150, 42)
         self.end_trim_button.clicked.connect(self.set_end_time)
@@ -413,59 +393,58 @@ class UiBuilderMixin:
 
         def _ml(t, s):
             l = QHBoxLayout()
-            l.setContentsMargins(0,0,0,0)
+            l.setContentsMargins(0, 0, 0, 0)
             lbl = QLabel(t)
-            lbl.setStyleSheet("font-size: 10px;")
+            lbl.setStyleSheet('font-size: 10px;')
             l.addWidget(lbl)
             l.addWidget(s)
             return l
         self.start_ms_input.hide()
         self.end_ms_input.hide()
-        self.boss_hp_checkbox = QCheckBox("Boss HP")
-        self.boss_hp_checkbox.setStyleSheet("font-size: 10px;")
+        self.boss_hp_checkbox = QCheckBox('Boss HP')
+        self.boss_hp_checkbox.setStyleSheet('font-size: 10px;')
         self.boss_hp_checkbox.toggled.connect(self._on_boss_hp_toggled)
         self.boss_hp_checkbox.setEnabled(False)
         self.trim_layout = QHBoxLayout()
         self.trim_layout.setSpacing(14)
-        self.trim_layout.addLayout(_ml("Min:", self.start_minute_input))
-        self.trim_layout.addLayout(_ml("Sec:", self.start_second_input))
+        self.trim_layout.addLayout(_ml('Min:', self.start_minute_input))
+        self.trim_layout.addLayout(_ml('Sec:', self.start_second_input))
         self.trim_layout.addWidget(self.start_trim_button)
         self.trim_layout.addWidget(self.playPauseButton)
         self.trim_layout.addWidget(self.end_trim_button)
-        self.trim_layout.addLayout(_ml("Min:", self.end_minute_input))
-        self.trim_layout.addLayout(_ml("Sec:", self.end_second_input))
+        self.trim_layout.addLayout(_ml('Min:', self.end_minute_input))
+        self.trim_layout.addLayout(_ml('Sec:', self.end_second_input))
 
     def _init_process_controls(self):
-        self.quality_label = QLabel("OUTPUT FILE SIZE")
-        self.quality_label.setStyleSheet("font-size: 11px; font-weight: bold;")
-
+        self.quality_label = QLabel('OUTPUT FILE SIZE')
+        self.quality_label.setStyleSheet('font-size: 11px; font-weight: bold;')
         from ui.widgets.spinning_wheel_slider import SpinningWheelSlider
         self.quality_slider = SpinningWheelSlider()
         self.quality_slider.setRange(0, 20)
-        mb_labels = [f"{5+i*5}MB" for i in range(20)] + ["ORIGINAL QUALITY"]
+        mb_labels = [f'{5 + i * 5}MB' for i in range(20)] + ['ORIGINAL QUALITY']
         self.quality_slider.setLabels(mb_labels)
         self.quality_slider.setValue(7)
         self.quality_slider.setFixedSize(180, 35)
         self.quality_slider.setEnabled(False)
         self.quality_slider.valueChanged.connect(lambda _: self._update_quality_label())
-        self.quality_value_label = QLabel("Standard")
-        self.quality_value_label.setStyleSheet("font-size: 10px; font-weight: bold;")
+        self.quality_value_label = QLabel('Standard')
+        self.quality_value_label.setStyleSheet('font-size: 10px; font-weight: bold;')
         self.quality_value_label.setMinimumWidth(100)
         self.quality_value_label.setAlignment(Qt.AlignCenter)
         q_v = QVBoxLayout()
-        q_v.setContentsMargins(0,0,0,0)
+        q_v.setContentsMargins(0, 0, 0, 0)
         q_v.setSpacing(2)
         q_v.addWidget(self.quality_label, 0, Qt.AlignHCenter)
         q_v.addWidget(self.quality_slider, 0, Qt.AlignHCenter)
         q_v.addWidget(self.quality_value_label, 0, Qt.AlignHCenter)
         self.quality_container = QWidget()
         self.quality_container.setLayout(q_v)
-        self.process_button = QPushButton("PROCESS VIDEO")
+        self.process_button = QPushButton('PROCESS VIDEO')
         self.process_button.setFixedSize(140, 50)
         self.process_button.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
         self.process_button.clicked.connect(self._on_process_clicked)
         self.process_button.setEnabled(False)
-        self.cancel_button = ClickableButton("CANCEL")
+        self.cancel_button = ClickableButton('CANCEL')
         self.cancel_button.setFixedSize(140, 50)
         self.cancel_button.setStyleSheet(UIStyles.BUTTON_CANCEL)
         self.cancel_button.setVisible(False)
@@ -487,17 +466,17 @@ class UiBuilderMixin:
         self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
         s_l = QVBoxLayout()
         s_l.setSpacing(2)
-        speed_title = QLabel("Speed Multiplier")
-        speed_title.setStyleSheet("font-size: 11px; font-weight: bold;")
+        speed_title = QLabel('Speed Multiplier')
+        speed_title.setStyleSheet('font-size: 11px; font-weight: bold;')
         s_l.addWidget(speed_title, 0, Qt.AlignHCenter)
         s_l.addWidget(self.speed_spinbox, 0, Qt.AlignHCenter)
         speed_w = QWidget()
         speed_w.setLayout(s_l)
-        self.granular_checkbox = QCheckBox("Granular Speed")
+        self.granular_checkbox = QCheckBox('Granular Speed')
         self.granular_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         self.granular_checkbox.clicked.connect(self._handle_granular_click)
         self.granular_checkbox.setEnabled(False)
-        self.clear_segments_btn = QPushButton("Clear")
+        self.clear_segments_btn = QPushButton('Clear')
         self.clear_segments_btn.setFixedSize(50, 24)
         self.clear_segments_btn.setStyleSheet(UIStyles.BUTTON_DANGER)
         self.clear_segments_btn.clicked.connect(self._clear_speed_segments)
@@ -507,7 +486,7 @@ class UiBuilderMixin:
         g_l.addWidget(self.clear_segments_btn)
         granular_w = QWidget()
         granular_w.setLayout(g_l)
-        self.mobile_checkbox = QCheckBox("Mobile Format (Portrait)")
+        self.mobile_checkbox = QCheckBox('Mobile Format (Portrait)')
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         try:
             val = bool(self.config_manager.config.get('mobile_checked', False))
@@ -516,15 +495,15 @@ class UiBuilderMixin:
         self.mobile_checkbox.setChecked(val)
         self.mobile_checkbox.setEnabled(False)
         self.mobile_checkbox.toggled.connect(self._on_mobile_toggled)
-        self.teammates_checkbox = QCheckBox("Show Teammates Healthbar")
-        self.teammates_checkbox.setStyleSheet("font-size: 11px;")
+        self.teammates_checkbox = QCheckBox('Show Teammates Healthbar')
+        self.teammates_checkbox.setStyleSheet('font-size: 11px;')
         self.teammates_checkbox.setEnabled(False)
         self.teammates_checkbox.setVisible(self.mobile_checkbox.isChecked())
         self.portrait_text_input = QLineEdit()
-        self.portrait_text_input.setPlaceholderText("Overlay Text")
+        self.portrait_text_input.setPlaceholderText('Overlay Text')
         self.portrait_text_input.setEnabled(False)
         self.portrait_text_input.setVisible(self.mobile_checkbox.isChecked())
-        self.portrait_text_input.setStyleSheet("background-color: #4a667a; color: white; border: 1px solid #266b89; border-radius: 4px; padding: 4px;")
+        self.portrait_text_input.setStyleSheet('background-color: #4a667a; color: white; border: 1px solid #266b89; border-radius: 4px; padding: 4px;')
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
@@ -557,30 +536,30 @@ class UiBuilderMixin:
         self.drop_area.file_dropped.connect(self.handle_file_selection)
         self.drop_area.setFixedSize(140, 180)
         d_l = QVBoxLayout(self.drop_area)
-        self.drop_label = QLabel("Drag & Drop\r\na Video File Here:")
+        self.drop_label = QLabel('Drag & Drop\r\na Video File Here:')
         self.drop_label.setAlignment(Qt.AlignCenter)
-        self.drop_label.setStyleSheet("font-size: 11px; font-weight: bold;")
+        self.drop_label.setStyleSheet('font-size: 11px; font-weight: bold;')
         d_l.addWidget(self.drop_label)
         r_l.addWidget(self.drop_area, 0, Qt.AlignHCenter)
-        self.upload_button = QPushButton("📂 UPLOAD VIDEO FILE 📂")
+        self.upload_button = QPushButton('📂 UPLOAD VIDEO FILE 📂')
         self.upload_button.setFixedSize(150, 65)
-        self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { margin-top: 15px; }")
+        self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { margin-top: 15px; }')
         self.upload_button.clicked.connect(self.select_file)
         r_l.addWidget(self.upload_button, 0, Qt.AlignHCenter)
-        self.music_button = QPushButton("♪ ADD MUSIC ♪")
+        self.music_button = QPushButton('♪ ADD MUSIC ♪')
         self.music_button.setFixedSize(150, 75)
-        self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { margin-top: 15px; margin-bottom: 15px; }")
+        self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { margin-top: 15px; margin-bottom: 15px; }')
         self.music_button.clicked.connect(self.open_music_wizard)
         self.music_button.setEnabled(False)
         r_l.addWidget(self.music_button, 0, Qt.AlignHCenter)
         r_l.addStretch(1)
-        self.no_fade_checkbox = QCheckBox("Disable Fade-In/Out")
+        self.no_fade_checkbox = QCheckBox('Disable Fade-In/Out')
         self.no_fade_checkbox.setEnabled(False)
         r_l.addWidget(self.no_fade_checkbox, 0, Qt.AlignRight)
         bb = QVBoxLayout()
-        self.merge_btn = QPushButton("VIDEO MERGER")
-        self.crop_tool_btn = QPushButton("CROP SETTINGS")
-        self.adv_editor_btn = QPushButton("ADVANCED\n VIDEO EDITOR")
+        self.merge_btn = QPushButton('VIDEO MERGER')
+        self.crop_tool_btn = QPushButton('CROP SETTINGS')
+        self.adv_editor_btn = QPushButton('ADVANCED\n VIDEO EDITOR')
         for b in (self.merge_btn, self.crop_tool_btn, self.adv_editor_btn):
             b.setStyleSheet(UIStyles.BUTTON_TOOL)
             b.setFixedSize(140, 45)
@@ -592,48 +571,41 @@ class UiBuilderMixin:
         r_l.addLayout(bb)
 
     def _update_quality_label(self):
-        if not hasattr(self, "quality_value_label"): return
+        if not hasattr(self, 'quality_value_label'):
+            return
         idx = int(self.quality_slider.value())
-        dur_ms = (getattr(self, "trim_end_ms", 0) - getattr(self, "trim_start_ms", 0))
+        dur_ms = getattr(self, 'trim_end_ms', 0) - getattr(self, 'trim_start_ms', 0)
         if dur_ms <= 0:
-            self.quality_value_label.setText("Standard")
-            self.quality_value_label.setStyleSheet("color: white;")
+            self.quality_value_label.setText('Standard')
+            self.quality_value_label.setStyleSheet('color: white;')
             return
         try:
             if idx >= 20:
-                target_mb = (os.path.getsize(self.input_file_path) / (1024*1024))
+                target_mb = os.path.getsize(self.input_file_path) / (1024 * 1024)
             else:
-                target_mb = (5 + idx * 5)
+                target_mb = 5 + idx * 5
         except:
-            target_mb = (5 + idx * 5)
+            target_mb = 5 + idx * 5
         dur_sec = dur_ms / 1000.0
-        kbps = (target_mb * 8 * 1024) / dur_sec
-        bpp = (kbps * 1024) / (1920 * 1080 * 60)
+        kbps = target_mb * 8 * 1024 / dur_sec
+        bpp = kbps * 1024 / (1920 * 1080 * 60)
         if not self.mobile_checkbox.isChecked():
             bpp /= 1.5
-        spectrum = [
-            (0.02, "Unwatchable", "#e74c3c"),
-            (0.04, "Pixelated", "#e74c3c"),
-            (0.06, "Blurry", "#e74c3c"),
-            (0.10, "Clear", "white"),
-            (0.15, "Sharp", "#2ecc71"),
-            (0.25, "Crisp-Clear", "#2ecc71"),
-            (99.0, "Lifelike", "#2ecc71")
-        ]
-        desc, color = "Standard", "white"
+        spectrum = [(0.02, 'Unwatchable', '#e74c3c'), (0.04, 'Pixelated', '#e74c3c'), (0.06, 'Blurry', '#e74c3c'), (0.1, 'Clear', 'white'), (0.15, 'Sharp', '#2ecc71'), (0.25, 'Crisp-Clear', '#2ecc71'), (99.0, 'Lifelike', '#2ecc71')]
+        desc, color = ('Standard', 'white')
         for i, (thresh, d, c) in enumerate(spectrum):
             if bpp < thresh:
-                desc, color = d, c
-                prev = spectrum[i-1][0] if i > 0 else 0.0
+                desc, color = (d, c)
+                prev = spectrum[i - 1][0] if i > 0 else 0.0
                 mid = (thresh + prev) / 2.0
                 if thresh < 90.0:
-                    desc += " -" if bpp < mid else " +"
+                    desc += ' -' if bpp < mid else ' +'
                 break
         self.quality_value_label.setText(desc)
-        self.quality_value_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self.quality_value_label.setStyleSheet(f'color: {color}; font-weight: bold;')
 
     def _on_mobile_toggled(self, checked: bool):
-        self.logger.info(f"OPTION: Mobile Format -> {checked}")
+        self.logger.info(f'OPTION: Mobile Format -> {checked}')
         self.teammates_checkbox.setVisible(checked)
         self.teammates_checkbox.setEnabled(checked)
         self.portrait_text_input.setVisible(checked)
@@ -644,9 +616,9 @@ class UiBuilderMixin:
         self._update_quality_label()
 
     def _update_portrait_mask_overlay_state(self):
-        if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay or getattr(self, "is_processing", False):
+        if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay or getattr(self, 'is_processing', False):
             return
-        res = getattr(self, 'original_resolution', "1920x1080")
+        res = getattr(self, 'original_resolution', '1920x1080')
         if self.mobile_checkbox.isChecked() and self.input_file_path:
             try:
                 tl = self.video_surface.mapToGlobal(self.video_surface.rect().topLeft())
@@ -667,9 +639,9 @@ class UiBuilderMixin:
         self.status_container.setFixedHeight(23)
         status_l = QHBoxLayout(self.status_container)
         status_l.setContentsMargins(10, 0, 10, 0)
-        self.hardware_status_label = QLabel("")
+        self.hardware_status_label = QLabel('')
         self.hardware_status_label.setStyleSheet(UIStyles.LABEL_STATUS)
-        self.resolution_label = QLabel("")
+        self.resolution_label = QLabel('')
         self.resolution_label.setStyleSheet(UIStyles.LABEL_STATUS)
         status_l.addWidget(self.hardware_status_label)
         status_l.addStretch(1)
@@ -685,7 +657,7 @@ class UiBuilderMixin:
             import logging
             h = _QtLiveLogHandler(self)
             h.setFormatter(logging.Formatter('%(asctime)s | %(message)s', '%H:%M:%S'))
-            if hasattr(self, "logger"):
+            if hasattr(self, 'logger'):
                 self.logger.addHandler(h)
         except:
             pass

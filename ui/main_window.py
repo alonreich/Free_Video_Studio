@@ -24,6 +24,7 @@ from ui.styles import UIStyles
 from system.config import ConfigManager
 from system.state_transfer import StateTransfer
 from ui.widgets.tooltip_manager import ToolTipManager
+from ui.widgets.timeline_overlay import TimelineOverlay
 
 class _QtLiveLogHandler(logging.Handler):
     def __init__(self, target):
@@ -56,6 +57,8 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.bin_dir = bin_dir if bin_dir else os.path.join(self.base_dir, 'binaries')
         self.config_manager = config_manager if config_manager else ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
         self.tooltip_manager = tooltip_manager if tooltip_manager else ToolTipManager(self)
+        self.timeline_overlay = TimelineOverlay(self)
+        self.positionSlider = self.timeline_overlay.positionSlider
         PlayerMixin.__init__(self)
         self.logger = logging.getLogger("Main_App"); self._mpv_lock = threading.RLock(); self._is_seeking_active = False; self._last_player_output_bind_ts = 0; self._binding_player_output = False
         self.duration_changed_signal.connect(self._safe_handle_duration_changed)
@@ -67,7 +70,15 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self._init_core_logic(file_path, hardware_strategy)
         self.set_style(); self.init_ui(); self._setup_mpv(); self._set_video_controls_enabled(False)
         self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.restore_geometry()
+        self.positionSlider.sliderMoved.connect(self.set_player_position)
+        self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
+        self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
+        self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
+        self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
         QApplication.instance().installEventFilter(self); self.show()
+        QTimer.singleShot(100, self._update_overlay_positions)
+        QTimer.singleShot(500, self._update_overlay_positions)
+        QTimer.singleShot(1500, self._update_overlay_positions)
 
     def _init_core_logic(self, file_path, hardware_strategy):
         self.input_file_path = None; self.original_duration_ms = 0; self.original_resolution = ""; self.trim_start_ms = 0; self.trim_end_ms = 0
@@ -84,6 +95,10 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         if hasattr(self, "_update_upload_hint_responsive"): self._update_upload_hint_responsive()
         try:
             if hasattr(self, "_resize_overlay"): self._resize_overlay()
+            if hasattr(self, "timeline_overlay"):
+                res = getattr(self, "original_resolution", "1920x1080")
+                self.timeline_overlay.update_geometry(self.video_surface, res)
+            if hasattr(self, "portrait_mask_overlay"): self._update_portrait_mask_overlay_state()
         except: pass
 
     def dragEnterEvent(self, event):

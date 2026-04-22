@@ -153,8 +153,13 @@ class PlayerMixin:
                 music_player = getattr(self, "_music_preview_player", None)
                 if music_player: self._safe_mpv_set("pause", True, target_player=music_player)
             return
+        now = time.time()
+        if not hasattr(self, "_last_speed_update"): self._last_speed_update = 0
+        if now - self._last_speed_update < 0.20: return
         current_rate = self._safe_mpv_get("speed", 1.0)
-        if abs(current_rate - target_speed) > 0.005: self._safe_mpv_set("speed", target_speed)
+        if abs(current_rate - target_speed) > 0.005:
+            if self._safe_mpv_set("speed", target_speed):
+                self._last_speed_update = now
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()

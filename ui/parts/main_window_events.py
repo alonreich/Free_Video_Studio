@@ -1,4 +1,4 @@
-﻿from PyQt5.QtCore import *
+from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
@@ -32,37 +32,25 @@ class MainWindowEventsMixin:
                 self.logger.error("Keyboard eventFilter error: %s", e)
         return False
 
+    def moveEvent(self, event):
+        if hasattr(self, 'handle_persistence_event'):
+            self.handle_persistence_event()
+        if hasattr(self, "_update_overlay_positions"):
+            self._update_overlay_positions()
+        super().moveEvent(event)
+
     def resizeEvent(self, event):
         if hasattr(self, "_update_upload_hint_responsive"):
             self._update_upload_hint_responsive()
             QTimer.singleShot(0, self._update_upload_hint_responsive)
-        try:
-            if hasattr(self, '_update_volume_badge'):
-                self._update_volume_badge()
-            if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
-                r = self.video_surface.rect()
-                top_left = self.video_surface.mapToGlobal(r.topLeft())
-                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
-                if hasattr(self, '_update_portrait_mask_overlay_state'):
-                    self._update_portrait_mask_overlay_state()
-        except Exception as e:
-            if hasattr(self, "logger"):
-                self.logger.error("Resize child update error: %s", e)
+        if hasattr(self, "_update_overlay_positions"):
+            self._update_overlay_positions()
         if hasattr(self, '_resize_timer'):
             self._resize_timer.start()
         else:
             if hasattr(self, '_delayed_resize_event'):
                 self._delayed_resize_event()
-
-    def moveEvent(self, event):
-        if hasattr(self, 'handle_persistence_event'):
-            self.handle_persistence_event()
-        try:
-            if hasattr(self, "portrait_mask_overlay") and self.portrait_mask_overlay and hasattr(self, "video_surface"):
-                r = self.video_surface.rect()
-                top_left = self.video_surface.mapToGlobal(r.topLeft())
-                self.portrait_mask_overlay.setGeometry(QRect(top_left, r.size()))
-        except Exception: pass
+        super().resizeEvent(event)
 
     def _delayed_resize_event(self):
         try:
@@ -76,6 +64,8 @@ class MainWindowEventsMixin:
                 self._adjust_trim_margins()
             if hasattr(self, "_update_portrait_mask_overlay_state"):
                 self._update_portrait_mask_overlay_state()
+            if hasattr(self, "_update_overlay_positions"):
+                self._update_overlay_positions()
         except Exception:
             pass
 
