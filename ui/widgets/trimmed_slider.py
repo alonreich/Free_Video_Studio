@@ -30,8 +30,13 @@ class TrimmedSlider(QSlider):
         self._show_trim_overlays = True
         self.speed_segments = []
         self.base_speed = 1.1
+        self.thumbnail_pos_ms = -1
         self.rangeChanged.connect(self._update_range_cache)
         self._update_range_cache()
+
+    def set_thumbnail_pos_ms(self, ms):
+        self.thumbnail_pos_ms = int(ms)
+        self.update()
 
     def _update_range_cache(self):
         try:
@@ -83,24 +88,17 @@ class TrimmedSlider(QSlider):
         return f"{m}:{s:02d}"
 
     def _get_groove_rect(self):
-        fallback_rect = QRect(8, self.height() // 2 - 2, max(1, self.width() - 16), 4)
+        margin = 10
         try:
-            if self._is_destroying:
-                return fallback_rect
-            opt = QStyleOptionSlider()
-            try:
-                self.initStyleOption(opt)
-            except:
-                return fallback_rect
-            style = self.style()
-            if not style:
-                return fallback_rect
-            rect = style.subControlRect(QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self)
-            if not rect.isValid() or rect.width() < 10:
-                return fallback_rect
-            return rect
+            w = self.width()
+            h = self.height()
+            gh = 4
+            gy = (h - gh) // 2
+            gx = margin + 8
+            gw = max(1, w - (margin * 2) - 16)
+            return QRect(gx, gy, gw, gh)
         except Exception:
-            return fallback_rect
+            return QRect(18, 23, 100, 4)
 
     def _get_handle_rect(self, handle_type):
         try:
@@ -444,6 +442,23 @@ class TrimmedSlider(QSlider):
                                      handle_rect.y(), handle_rect.width() * 0.1, 
                                      handle_rect.height() * 0.8)
                         p.drawPath(path)
+            except Exception: pass
+            try:
+                if self.thumbnail_pos_ms >= 0:
+                    tx = self._map_value_to_pos(self.thumbnail_pos_ms)
+                    ty = groove_rect.center().y()
+                    tw, th = 22, 16
+                    t_rect = QRect(tx - tw // 2, ty - th // 2, tw, th)
+                    p.setPen(QPen(Qt.black, 1))
+                    p.setBrush(QColor("#7DD3FC"))
+                    p.drawRoundedRect(t_rect, 2, 2)
+                    p.setBrush(Qt.black)
+                    p.drawEllipse(t_rect.center(), 4, 4)
+                    p.setBrush(QColor("#7DD3FC"))
+                    p.drawEllipse(t_rect.center(), 2, 2)
+                    lens_rect = QRect(t_rect.right() - 6, t_rect.top() + 2, 4, 3)
+                    p.setBrush(Qt.white)
+                    p.drawRect(lens_rect)
             except Exception: pass
         except Exception: pass
         finally:

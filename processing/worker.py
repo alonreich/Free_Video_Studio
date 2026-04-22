@@ -1,12 +1,9 @@
-﻿import os
+import os
 import tempfile
 import uuid
 import shutil
-import subprocess
-import time
 from typing import Tuple, Dict, Any, Optional, List
 from PyQt5.QtCore import QThread, pyqtSignal
-from .processing_models import ProcessingJob, ProcessingResult
 from .system_utils import create_subprocess, kill_process_tree, check_disk_space, monitor_ffmpeg_progress
 from .filter_builder import FilterBuilder
 from .step_concat import ConcatProcessor
@@ -15,15 +12,6 @@ from .encoders import EncoderManager
 from .media_utils import MediaProber, calculate_video_bitrate
 from .processing_utils import ProgressScaler, generate_text_overlay_png
 from .config_data import VideoConfig
-try:
-    from developer_tools.coordinate_math import inverse_transform_from_content_area_int
-except ImportError:
-    import sys
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    if root_dir not in sys.path:
-        sys.path.append(root_dir)
-
-    from developer_tools.coordinate_math import inverse_transform_from_content_area_int
 
 class ProcessThread(QThread):
     progress_update_signal = pyqtSignal(int)
@@ -100,6 +88,7 @@ class ProcessThread(QThread):
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
         return normalized
+
     @staticmethod
     def _emit_signal_or_callback(target, *args):
         try:
@@ -171,15 +160,11 @@ class ProcessThread(QThread):
             if self.portrait_text:
                 text_png_path = os.path.join(self.temp_job_dir, "portrait_text.png")
                 try:
-                    tw = 1080
-                except Exception:
-                    tw = 1080
-                try:
                     from .text_ops import TextWrapper
                     wrapper = TextWrapper(self.config)
                     final_size, wrapped_lines = wrapper.fit_and_wrap(self.portrait_text, target_width=1000, logger=self.logger)
                     text_to_render = "\n".join(wrapped_lines)
-                    gen_ok = generate_text_overlay_png(text_to_render, tw, 150, final_size, self.config.line_spacing, text_png_path, self.config, self.logger)
+                    gen_ok = generate_text_overlay_png(text_to_render, 1080, 150, final_size, self.config.line_spacing, text_png_path, self.config, self.logger)
                     if not gen_ok or not os.path.exists(text_png_path) or os.path.getsize(text_png_path) == 0:
                         if self.logger: self.logger.error(f"TEXT_GEN_FAILED_OR_EMPTY: ok={gen_ok} exists={os.path.exists(text_png_path)}")
                         text_png_path = None

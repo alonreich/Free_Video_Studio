@@ -1,4 +1,4 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
+﻿import os
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -88,6 +88,8 @@ class MainWindowFileAMixin:
         self.logger.info("FILE: loading for playback: %s", file_path)
         self.input_file_path = file_path
         self._set_upload_hint_active(False)
+        if hasattr(self, "positionSlider"):
+            self.positionSlider.set_thumbnail_pos_ms(-1)
         self.drop_label.setWordWrap(True)
         self.drop_label.setText(os.path.basename(self.input_file_path))
         dir_path = os.path.dirname(file_path)

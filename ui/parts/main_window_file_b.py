@@ -1,5 +1,4 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
-from PyQt5.QtCore import *
+﻿from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 

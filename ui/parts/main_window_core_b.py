@@ -1,4 +1,4 @@
-﻿import os, sys, time, threading, logging, subprocess, traceback
+﻿import os, sys, time
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -29,15 +29,10 @@ class MainWindowCoreBMixin:
             if bool(getattr(self, "_handling_video_end", False)): return
             self._handling_video_end = True
             if getattr(self, "player", None): self._safe_mpv_set("pause", True)
-            self.positionSlider.blockSignals(True)
-            self.positionSlider.setValue(self.positionSlider.maximum())
-            self.positionSlider.blockSignals(False)
+            self.positionSlider.blockSignals(True); self.positionSlider.setValue(self.positionSlider.maximum()); self.positionSlider.blockSignals(False)
             if getattr(self, "playPauseButton", None):
-                self.playPauseButton.setText("PLAY")
-                self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-            self.is_playing = False
-            self.wants_to_play = False
-            self.timer.stop()
+                self.playPauseButton.setText("PLAY"); self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            self.is_playing = False; self.wants_to_play = False; self.timer.stop()
         except Exception: pass
         finally: self._handling_video_end = False
 
@@ -50,33 +45,17 @@ class MainWindowCoreBMixin:
         if self.player:
             if not self._safe_mpv_get("pause", True):
                 self._safe_mpv_set("pause", True)
-                self.playPauseButton.setText("PLAY")
-                self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-                self.is_playing = False
+                self.playPauseButton.setText("PLAY"); self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.is_playing = False
                 if self.timer.isActive(): self.timer.stop()
-        self.logger.info(f"Playback speed changed to {value}x. Player paused.")
+        self.logger.info(f"UI: Playback speed changed to {value}x. Recalculating quality..."); self._update_quality_label()
     @property
-    def original_duration(self):
-        return self.original_duration_ms / 1000.0 if self.original_duration_ms else 0.0
+    def original_duration(self): return self.original_duration_ms / 1000.0 if self.original_duration_ms else 0.0
 
     def _setup_mpv(self):
-        os.makedirs(os.path.join(self.base_dir, "logs"), exist_ok=True)
-        self.player = None
+        os.makedirs(os.path.join(self.base_dir, "logs"), exist_ok=True); self.player = None
         try:
-            self.video_surface.setAttribute(Qt.WA_NativeWindow)
-            wid = int(self.video_surface.winId())
-            self.player = MPVSafetyManager.create_safe_mpv(
-                wid=wid,
-                osc=False,
-                hr_seek='yes',
-                hwdec='auto',
-                keep_open='yes',
-                ytdl=False,
-                demuxer_max_bytes='500M',
-                demuxer_max_back_bytes='100M',
-                vo='gpu' if sys.platform == 'win32' else 'gpu',
-                extra_mpv_flags=[('force-window', 'no')]
-            )
+            self.video_surface.setAttribute(Qt.WA_NativeWindow); wid = int(self.video_surface.winId())
+            self.player = MPVSafetyManager.create_safe_mpv(wid=wid, osc=False, hr_seek='yes', hwdec='auto', keep_open='yes', ytdl=False, demuxer_max_bytes='500M', demuxer_max_back_bytes='100M', vo='gpu' if sys.platform == 'win32' else 'gpu', extra_mpv_flags=[('force-window', 'no')])
             self.mpv_instance = self.player
             if self.player:
                 self.player.volume = 100
@@ -85,17 +64,8 @@ class MainWindowCoreBMixin:
                 self._bind_main_player_output()
                 @self.player.event_callback('end-file')
                 def h_ef(event):
-                    try:
-                        QTimer.singleShot(0, self._on_mpv_end_reached)
-                    except:
-                        pass
+                    try: QTimer.singleShot(0, self._on_mpv_end_reached)
+                    except: pass
                 self._mpv_end_file_cb = h_ef
-        except Exception as e:
-            self.logger.error(f"CRITICAL: MPV Error: {e}")
-            self.player = None
-        if self.player:
-            self._suspend_volume_sync = True
-
-            def _evs():
-                if getattr(self, "player", None): self._suspend_volume_sync = False
-            QTimer.singleShot(600, _evs)
+        except Exception as e: self.logger.error(f"CRITICAL: MPV Error: {e}"); self.player = None
+        if self.player: self._suspend_volume_sync = True

@@ -1,14 +1,7 @@
-﻿import os
+import os
 from typing import Dict, Any, Optional
-try:
-    from PyQt5.QtCore import QObject, pyqtSignal, QTimer, Qt, QRect
-    from PyQt5.QtGui import QImage, QPainter, QFont, QColor
-    HAS_GUI = True
-except ImportError:
-    HAS_GUI = False
-
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from .processing_models import ProcessingJob, ProcessingResult, validate_job
-from .processing_utils import ProgressScaler, generate_text_overlay_png
 from .config_data import VideoConfig
 from .encoders import EncoderManager
 from .filter_builder import FilterBuilder

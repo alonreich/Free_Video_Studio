@@ -23,6 +23,7 @@ from ui.parts.phase_overlay_mixin import PhaseOverlayMixin
 from ui.styles import UIStyles
 from system.config import ConfigManager
 from system.state_transfer import StateTransfer
+from ui.widgets.tooltip_manager import ToolTipManager
 
 class _QtLiveLogHandler(logging.Handler):
     def __init__(self, target):
@@ -51,67 +52,39 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
 
     def __init__(self, file_path=None, hardware_strategy="Scanning...", bin_dir="", config_manager=None, tooltip_manager=None):
         super().__init__()
-        PlayerMixin.__init__(self)
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        self.bin_dir = bin_dir
-        if config_manager is None:
-            self.config_manager = ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
-        else:
-            self.config_manager = config_manager
-        self.tooltip_manager = tooltip_manager
-        self.logger = logging.getLogger("Main_App")
-        self._mpv_lock = threading.RLock()
-        self._is_seeking_active = False
-        self._last_player_output_bind_ts = 0
-        self._binding_player_output = False
+        self.bin_dir = bin_dir if bin_dir else os.path.join(self.base_dir, 'binaries')
+        self.config_manager = config_manager if config_manager else ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
+        self.tooltip_manager = tooltip_manager if tooltip_manager else ToolTipManager(self)
+        PlayerMixin.__init__(self)
+        self.logger = logging.getLogger("Main_App"); self._mpv_lock = threading.RLock(); self._is_seeking_active = False; self._last_player_output_bind_ts = 0; self._binding_player_output = False
         self.duration_changed_signal.connect(self._safe_handle_duration_changed)
-        try:
-            StateTransfer.clear_state()
-        except Exception as state_err:
-            self.logger.debug("Could not clear startup session state: %s", state_err)
-        self.setWindowTitle("Fortnite Video Software - Pro Edition")
-        self.setMinimumSize(1200, 800)
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
+        self.thumbnail_extracted_signal.connect(self._on_thumb_extracted)
+        try: StateTransfer.clear_state()
+        except: pass
+        self.setWindowTitle("Fortnite Video Software - Pro Edition"); self.setMinimumSize(1200, 800)
+        self.central_widget = QWidget(); self.setCentralWidget(self.central_widget)
         self._init_core_logic(file_path, hardware_strategy)
-        self.init_ui()
-        self._setup_mpv()
-        self._set_video_controls_enabled(False)
-        self.setAcceptDrops(True)
-        self.status_bar = self.statusBar()
-        self.restore_geometry()
-        QApplication.instance().installEventFilter(self)
-        self.show()
-        
+        self.set_style(); self.init_ui(); self._setup_mpv(); self._set_video_controls_enabled(False)
+        self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.restore_geometry()
+        QApplication.instance().installEventFilter(self); self.show()
+
     def _init_core_logic(self, file_path, hardware_strategy):
-        self.input_file_path = None
-        self.original_duration_ms = 0
-        self.original_resolution = ""
-        self.trim_start_ms = 0
-        self.trim_end_ms = 0
-        self.is_playing = False
-        self.wants_to_play = False
-        self.playback_rate = 1.1
-        self.hardware_strategy = hardware_strategy
-        self.scan_complete = (hardware_strategy != "Scanning...")
-        self.speed_segments = []
+        self.input_file_path = None; self.original_duration_ms = 0; self.original_resolution = ""; self.trim_start_ms = 0; self.trim_end_ms = 0
+        self.is_playing = False; self.wants_to_play = False; self.playback_rate = 1.1; self.hardware_strategy = hardware_strategy
+        self.scan_complete = (hardware_strategy != "Scanning..."); self.speed_segments = []
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser("~"))
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_player_state)
-        if file_path and os.path.exists(file_path):
-            QTimer.singleShot(500, lambda: self.handle_file_selection(file_path))
+        self.timer = QTimer(self); self.timer.timeout.connect(self.update_player_state)
+        if file_path and os.path.exists(file_path): QTimer.singleShot(500, lambda: self.handle_file_selection(file_path))
 
     def _on_mpv_idle_changed(self, is_idle):
-        if is_idle and self.wants_to_play:
-            QTimer.singleShot(0, self._safe_handle_mpv_end)
+        if is_idle and self.wants_to_play: QTimer.singleShot(0, self._safe_handle_mpv_end)
 
     def _update_overlay_positions(self):
-        if hasattr(self, "_update_upload_hint_responsive"):
-            self._update_upload_hint_responsive()
+        if hasattr(self, "_update_upload_hint_responsive"): self._update_upload_hint_responsive()
         try:
-            if hasattr(self, "_resize_overlay"):
-                self._resize_overlay()
-        except Exception: pass
+            if hasattr(self, "_resize_overlay"): self._resize_overlay()
+        except: pass
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls(): event.accept()
@@ -123,13 +96,10 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
 
     def resizeEvent(self, event):
         self._update_overlay_positions()
-        if hasattr(self, "_update_upload_hint_responsive"):
-            self._update_upload_hint_responsive()
+        if hasattr(self, "_update_upload_hint_responsive"): self._update_upload_hint_responsive()
         MainWindowEventsMixin.resizeEvent(self, event)
 
-    def mousePressEvent(self, event):
-        MainWindowEventsMixin.mousePressEvent(self, event)
+    def mousePressEvent(self, event): MainWindowEventsMixin.mousePressEvent(self, event)
 
-    def closeEvent(self, event):
-        MainWindowEventsMixin.closeEvent(self, event)
+    def closeEvent(self, event): MainWindowEventsMixin.closeEvent(self, event)
 VideoCompressorApp = FortniteVideoSoftware

@@ -1,4 +1,4 @@
-﻿from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPropertyAnimation, pyqtProperty, QEasingCurve
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPropertyAnimation, pyqtProperty, QEasingCurve
 from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QLinearGradient, QRadialGradient, QPainterPath
 from PyQt5.QtWidgets import QWidget
 import math
@@ -8,10 +8,10 @@ class SpinningWheelSlider(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._value = 2
+        self._value = 0
         self._range = (0, 4)
         self._labels = ["BAD", "OKAY", "STANDARD", "GOOD", "MAXIMUM"]
-        self._rotation = 2.0 
+        self._rotation = 0.0 
         self._anim = QPropertyAnimation(self, b"rotation")
         self._anim.setDuration(150)
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
@@ -22,6 +22,10 @@ class SpinningWheelSlider(QWidget):
         self._last_mouse_x = 0
         self._drag_velocity = 0
         self._overscroll = 0.08
+
+    def setLabels(self, labels):
+        self._labels = labels
+        self.update()
 
     def _clamp_rotation(self, val: float) -> float:
         lo = self._range[0] - self._overscroll
@@ -38,19 +42,24 @@ class SpinningWheelSlider(QWidget):
             self.valueChanged.emit(new_val)
         self.update()
 
-    def setValue(self, val):
+    def setValue(self, val, animated=True):
         val = max(self._range[0], min(self._range[1], int(val)))
         if val != self._value or abs(self._rotation - val) > 0.01:
             self._value = val
-            self._anim.stop()
-            self._anim.setStartValue(self._rotation)
-            self._anim.setEndValue(float(val))
-            self._anim.start()
+            if animated:
+                self._anim.stop()
+                self._anim.setStartValue(self._rotation)
+                self._anim.setEndValue(float(val))
+                self._anim.start()
+            else:
+                self.rotation = float(val)
             self.valueChanged.emit(val)
 
     def value(self): return self._value
 
-    def setRange(self, min_val, max_val): self._range = (min_val, max_val)
+    def setRange(self, min_val, max_val):
+        self._range = (min_val, max_val)
+        self.update()
 
     def mousePressEvent(self, event):
         if not self.isEnabled(): return
@@ -99,8 +108,8 @@ class SpinningWheelSlider(QWidget):
         p.setPen(QPen(pen_color, 1))
         p.drawRoundedRect(inner_rect, 4, 4)
         p.setPen(Qt.NoPen)
-        for i in range(-5, 15):
-            rib_angle = (i/2.0 - self._rotation) * (math.pi / 4)
+        for i in range(self._range[0] - 5, self._range[1] + 6):
+            rib_angle = (i - self._rotation) * (math.pi / 5)
             if abs(rib_angle) > math.pi / 1.8: continue
             rib_opacity = math.cos(rib_angle) ** 2.0
             rib_x = cx + math.sin(rib_angle) * (w * 0.85)
@@ -122,8 +131,8 @@ class SpinningWheelSlider(QWidget):
         p.drawRoundedRect(shadow_rect, 4, 4)
         p.save()
         p.setClipRect(shadow_rect)
-        for i in range(5):
-            angle = (i - self._rotation) * (math.pi / 4)
+        for i in range(self._range[0], self._range[1] + 1):
+            angle = (i - self._rotation) * (math.pi / 5)
             if abs(angle) > math.pi / 1.4: continue
             opacity = math.cos(angle)
             if opacity < 0: continue
@@ -133,7 +142,7 @@ class SpinningWheelSlider(QWidget):
             f = QFont("Segoe UI", int(9 * scale), QFont.Bold)
             p.setFont(f)
             fm = QFontMetrics(f)
-            txt = self._labels[i]
+            txt = self._labels[i] if i < len(self._labels) else str(i)
             tw, th = fm.horizontalAdvance(txt), fm.height()
             if i == self._value:
                 color = QColor("#50ffef") if self.isEnabled() else QColor("#95a5a6")

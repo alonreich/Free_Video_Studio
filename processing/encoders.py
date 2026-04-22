@@ -139,8 +139,8 @@ class EncoderManager:
                 '-quality', amf_quality,
                 '-rc', 'vbr_peak',
                 '-enforce_hrd', '1',
-                '-vbaq', '1',           
-                '-bf', '3',             
+                '-vbaq', '1',
+                '-bf', '3',
                 '-profile:v', 'high',
                 '-level', '4.2'
             ])
