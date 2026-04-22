@@ -178,6 +178,22 @@ if __name__ == "__main__":
     if not success: logger.warning("BOOT: Single instance lock active. Exiting."); sys.exit(0)
     PID_FILE_HANDLE = pid_handle
     if not check_mpv_dependencies(): logger.warning("FILES: MPV core missing. Playback will be unavailable.")
+    from system.recovery_manager import RecoveryManager
+    recovery = RecoveryManager("main_app", logger)
+    if recovery.check_fault():
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle(tr("app_name"))
+        msg_box.setText("The application crashed last time. Would you like to restore your previous session?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if msg_box.exec_() == QMessageBox.Yes:
+            os.environ["FVS_RESTORE_SESSION"] = "1"
+            recovery.activate_safe_mode()
+        else:
+            recovery.clear_state()
+    recovery.acquire_lock()
+    app.aboutToQuit.connect(recovery.cleanup_lock)
+
     from ui.main_window import VideoCompressorApp
     if not is_valid_deps:
          while True:

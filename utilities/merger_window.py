@@ -59,9 +59,11 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._cleanup_stale_temps()
         self.init_ui()
         self.logic_handler.load_config()
+        self._setup_recovery_manager()
         self.connect_signals()
         self.setAcceptDrops(True)
         QTimer.singleShot(100, self._scan_mp3_folder)
+        QTimer.singleShot(500, self._restore_recovery_state)
         self._original_merge_btn_style = """
             QPushButton {
                 background-color: #1b6d26;
@@ -75,6 +77,74 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         """
         self.event_handler.update_button_states()
         self.logger.info("OPEN: Video Merger window created")
+
+    def _setup_recovery_manager(self):
+        from system.recovery_manager import RecoveryManager
+        self.recovery_manager = RecoveryManager("video_merger", self.logger)
+        self.recovery_timer = QTimer(self)
+        self.recovery_timer.timeout.connect(self._save_recovery_state)
+        self.recovery_timer.start(5000)
+
+    def _save_recovery_state(self):
+        if not hasattr(self, "recovery_manager"): return
+        video_files = []
+        for i in range(self.listw.count()):
+            it = self.listw.item(i)
+            video_files.append({
+                "path": it.data(Qt.UserRole),
+                "probe_data": it.data(Qt.UserRole + 1),
+                "hash": it.data(Qt.UserRole + 2),
+                "clip_id": it.data(Qt.UserRole + 3)
+            })
+        state = {
+            "assets": {
+                "video_files": video_files,
+                "wizard_tracks": self.unified_music_widget.get_wizard_tracks() if hasattr(self.unified_music_widget, "get_wizard_tracks") else []
+            },
+            "volatile_settings": {
+                "video_volume": self.unified_music_widget.get_video_volume() if hasattr(self.unified_music_widget, "get_video_volume") else 100,
+                "music_volume": self.unified_music_widget.get_volume() if hasattr(self.unified_music_widget, "get_volume") else 80,
+                "quality_level": self.quality_slider.value() if hasattr(self, "quality_slider") else 7
+            },
+            "ui_dynamics": {
+                "window_geometry_base64": bytes(self.saveGeometry().toBase64()).decode("utf-8"),
+                "last_dir": self._last_dir,
+                "last_out_dir": self._last_out_dir
+            }
+        }
+        self.recovery_manager.save_state_async(state)
+
+    def _restore_recovery_state(self):
+        if os.environ.get("FVS_RESTORE_SESSION") != "1": return
+        state = self.recovery_manager.load_state()
+        if not state: return
+        self.logger.info("RECOVERY: Restoring previous session state...")
+        a = state.get("assets", {})
+        v = state.get("volatile_settings", {})
+        u = state.get("ui_dynamics", {})
+        video_files = a.get("video_files", [])
+        if video_files:
+            self.event_handler.clear_all()
+            for item in video_files:
+                p = item.get("path")
+                if p and os.path.exists(p):
+                    self.event_handler._add_single_item_internal(
+                        p,
+                        probe_data=item.get("probe_data"),
+                        f_hash=item.get("hash"),
+                        clip_id=item.get("clip_id")
+                    )
+        if hasattr(self, "unified_music_widget"):
+            w_tracks = a.get("wizard_tracks", [])
+            if w_tracks:
+                self.unified_music_widget.apply_state({
+                    "wizard_tracks": w_tracks,
+                    "video_volume": v.get("video_volume", 100),
+                    "music_volume": v.get("music_volume", 80)
+                })
+        if hasattr(self, "quality_slider"):
+            self.quality_slider.setValue(v.get("quality_level", 7))
+        self.event_handler.update_button_states()
 
     def showEvent(self, event):
         if not getattr(self, "_loaded", False):

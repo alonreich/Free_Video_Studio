@@ -3,6 +3,7 @@ import time
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle, QMessageBox
 from ui.widgets.music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECURSIVE_MS_DRIFT_CORRECTION_MS
+
 class MergerMusicWizardPlaybackMixin:
     def _on_video_vol_changed(self, val):
         if False: self._video_player.audio_set_volume(val)
@@ -14,6 +15,7 @@ class MergerMusicWizardPlaybackMixin:
         self._safe_mpv_set(self.player, "mute", False)
         if hasattr(self, "video_vol_val_lbl"): 
             self.video_vol_val_lbl.setText(f"{val}%")
+
     def _on_music_vol_changed(self, val):
         if False: self._player.audio_set_volume(val)
         music_player = getattr(self, "_music_player", None)
@@ -25,6 +27,7 @@ class MergerMusicWizardPlaybackMixin:
         self._safe_mpv_set(music_player, "mute", False)
         if hasattr(self, "music_vol_val_lbl"): 
             self.music_vol_val_lbl.setText(f"{val}%")
+
     def toggle_video_preview(self):
         try:
             curr_idx = self.stack.currentIndex()
@@ -59,12 +62,14 @@ class MergerMusicWizardPlaybackMixin:
                     if btn:
                         btn.setText("  PAUSE")
                         btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+
                     def _force_audio_step2():
                         if not self.player: return
                         self._safe_mpv_set(self.player, "mute", False)
                         mix_vol = self.music_vol_slider.value() if hasattr(self, "music_vol_slider") else 80
                         self._safe_mpv_set(self.player, "volume", self._scaled_vol(mix_vol))
                     QTimer.singleShot(300, _force_audio_step2)
+
                     def _after_start():
                         if not self.player: return
                         try:
@@ -89,6 +94,7 @@ class MergerMusicWizardPlaybackMixin:
                             self._safe_mpv_set(self._music_player, "speed", 1.0)
                         except Exception:
                             pass
+
                     def _force_audio_v():
                         if not self.player: return
                         v_mix = self.video_vol_slider.value()
@@ -97,6 +103,7 @@ class MergerMusicWizardPlaybackMixin:
                         self._safe_mpv_set(self.player, "mute", False)
                         self._safe_mpv_set(self.player, "volume", eff)
                     QTimer.singleShot(300, _force_audio_v)
+
                     def _force_audio_step3():
                         m_player = getattr(self, "_music_player", None)
                         if not m_player:
@@ -116,11 +123,13 @@ class MergerMusicWizardPlaybackMixin:
             self.logger.error(f"WIZARD: Playback toggle failed: {e}")
         except Exception as e:
             self.logger.error(f"WIZARD: Playback toggle failed: {e}")
+
     def _on_mpv_end_reached(self):
         try:
             self.logger.info("WIZARD: Media end reached.")
         except Exception as e:
             self.logger.debug(f"WIZARD: End reached handler failed: {e}")
+
     def _on_play_tick(self):
         if getattr(self, "_is_syncing", False): return
         if getattr(self, "_is_scrubbing_timeline", False):
@@ -242,6 +251,7 @@ class MergerMusicWizardPlaybackMixin:
                     self.logger.debug(f"WIZARD: Step3 timeline tick sync skipped: {ex}")
             else: self._last_clock_ts = now
         finally: self._is_syncing = False
+
     def _finalize_step3_end(self):
         self._step3_end_finalize_pending = False
         self.logger.info("WIZARD: Finalizing Step 3 project end.")
@@ -267,6 +277,7 @@ class MergerMusicWizardPlaybackMixin:
             btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         if hasattr(self, '_play_timer'):
             self._play_timer.stop()
+
     def _on_player_ended(self):
         btn = getattr(self, "btn_play_video", None)
         if btn:
@@ -277,9 +288,11 @@ class MergerMusicWizardPlaybackMixin:
         if self.player: self.player.stop()
         if getattr(self, "_music_player", None):
             self._music_player.stop()
+
 def _dryrun_contracts():
     _ = r
     pass
+
 def _dryrun_contracts2():
     _ = "if now - self._last_seek_ts < 0.5:"
     _ = "if self._player: self._player.set_time(val_ms)"

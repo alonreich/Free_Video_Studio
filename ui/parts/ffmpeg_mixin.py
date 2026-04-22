@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import time
 import subprocess
@@ -8,29 +8,36 @@ from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPro
 from PyQt5.QtGui import QIcon, QFont, QDesktopServices, QPixmap, QPainter
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton, QMessageBox, QSizePolicy)
+
 from processing.worker import ProcessThread
 from ui.styles import UIStyles
 from system.utils import UIManager, MediaProber
+
 class FfmpegMixin:
     def _quit_application(self, dialog_to_close):
         if dialog_to_close: dialog_to_close.accept()
         if hasattr(self, "cleanup_and_exit"): self.cleanup_and_exit()
         else: QCoreApplication.instance().quit()
+
     def _safe_status(self, text: str, color: str = "white"):
         try: self.set_status_text_with_color(text, color)
         except: pass
+
     def _safe_set_phase(self, name: str, ok: bool | None = None):
         try: self.on_phase_update(name)
         except: pass
+
     def _safe_set_duration_text(self, text: str):
         try: self.duration_label.setText(text)
         except: pass
+
     def show_message(self, title: str, message: str):
         try:
             if str(title).strip().lower() in {"error", "critical"}: QMessageBox.critical(self, title, message)
             elif str(title).strip().lower() in {"warning", "warn"}: QMessageBox.warning(self, title, message)
             else: QMessageBox.information(self, title, message)
         except: pass
+
     def cancel_processing(self):
         if not self.is_processing: return
         if hasattr(self, "cancel_button"):
@@ -42,6 +49,7 @@ class FfmpegMixin:
             self.process_thread.wait(5000)
         self.on_process_finished(False, "Processing was canceled by the user.")
         self._save_app_state_and_config()
+
     def start_processing(self):
         try:
             if self.is_processing:
@@ -50,6 +58,7 @@ class FfmpegMixin:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
                 self.show_message("Error", "Please select a valid video file first.")
                 return
+
             from processing.system_utils import check_disk_space
             out_dir = os.path.join(os.path.expanduser("~"), "Downloads")
             os.makedirs(out_dir, exist_ok=True)
@@ -94,7 +103,7 @@ class FfmpegMixin:
             self.is_processing = True; self._proc_start_ts = time.time(); self._pulse_phase = 0
             self.process_button.setEnabled(False); self.cancel_button.setVisible(True); self.cancel_button.setEnabled(True)
             self.progress_bar.setRange(0, 0); self.progress_bar.setValue(0); self._pulse_timer.start(250)
-            self.process_button.setText("Processing..."); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+            self.process_button.setText("PROCESSING"); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
             self._safe_set_phase("Processing"); self._show_processing_overlay(); self._safe_status("Preparing... (probing/seek)...", "white")
             self.progress_update_signal.emit(0)
             cfg = dict(self.config_manager.config); cfg['last_speed'] = float(speed_factor); cfg['mobile_checked'] = bool(is_mobile_format); cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
@@ -119,6 +128,7 @@ class FfmpegMixin:
             self.process_thread.start()
         except:
             self.is_processing = False; self.process_button.setEnabled(True)
+
     def _show_error_with_log(self, message):
         msg = QMessageBox(self); msg.setIcon(QMessageBox.Critical); msg.setWindowTitle("Processing Error"); msg.setText("An error occurred during processing."); msg.setInformativeText(message)
         UIManager.style_and_size_msg_box(msg, message)
@@ -133,11 +143,14 @@ class FfmpegMixin:
                         lines = f.readlines(); log_content = "".join(lines[-100:])
                 except: pass
             d = QDialog(self); d.setWindowTitle("Technical Logs (Last 100 Lines)"); d.resize(900, 600); l = QVBoxLayout(d)
+
             from PyQt5.QtWidgets import QTextEdit
             t = QTextEdit(); t.setFont(QFont("Consolas", 10)); t.setReadOnly(True); t.setPlainText(log_content); l.addWidget(t); d.exec_()
+
     def share_via_whatsapp(self):
         try: QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
         except: pass
+
     def open_output_in_explorer(self, file_path: str):
         full_path = os.path.abspath(file_path)
         if not os.path.exists(full_path): return
@@ -146,13 +159,15 @@ class FfmpegMixin:
             elif sys.platform == "darwin": subprocess.Popen(["open", "-R", full_path])
             else: subprocess.Popen(["xdg-open", os.path.dirname(full_path)])
         except: pass
+
     def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
         return f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed}); color: white; font-weight: bold; font-family: Arial; font-size: {font_size}px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.45); padding: 0px; text-align: center; min-width: 180px; max-width: 180px; min-height: 45px; max-height: 45px; }} QPushButton:hover {{ border: 1px solid #7DD3FC; }} QPushButton:pressed {{ background-color: {pressed}; }}"
+
     def on_process_finished(self, success, message):
         self.is_processing = False; self._proc_start_ts = None; self._phase_is_processing = False
         if hasattr(self, "_pulse_timer"): self._pulse_timer.stop()
         self._hide_processing_overlay(); self.process_button.setEnabled(True); self.cancel_button.setVisible(False)
-        self.process_button.setText("Process Video"); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+        self.process_button.setText("PROCESS"); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
         self.progress_bar.setRange(0, 100); self.progress_bar.setValue(0); self.selected_intro_abs_time = None
         if success: self._safe_set_phase("Done", ok=True)
         else:
@@ -163,6 +178,7 @@ class FfmpegMixin:
             if hasattr(self, "set_overlays_force_hidden"):
                 self.set_overlays_force_hidden(True)
             output_path = message; self._block_portrait_overlay = True
+
             class FinishedDialog(QDialog):
                 def closeEvent(self, e): self.accept()
             dialog = FinishedDialog(self); dialog.setWindowTitle("Done! Video Processed Successfully!"); dialog.setModal(True); dialog.setFixedSize(800, 460)
@@ -188,14 +204,17 @@ class FfmpegMixin:
             if result == QDialog.Rejected: self.handle_new_file()
         else:
             if "canceled by user" not in message.lower(): self._show_error_with_log(message)
+
     def get_video_info(self):
         if not self.input_file_path or not os.path.exists(self.input_file_path): return
         self._safe_status("Analyzing video...", "orange")
+
         def _bg_worker(p):
             try:
                 d, r = MediaProber.probe_metadata(self.bin_dir, p)
                 return True, d, r
             except Exception as e: return False, 0.0, str(e)
+
         def _on_worker_finished(result):
             success, duration_s, res_or_err = result
             if not success: return
@@ -209,15 +228,19 @@ class FfmpegMixin:
             except: pass
             finally:
                 if hasattr(self, "timer") and not self.timer.isActive(): self.timer.start(100)
+
         class _ProbeBridge(QObject):
             done = pyqtSignal(object)
         self._probe_bridge = _ProbeBridge(); self._probe_bridge.done.connect(_on_worker_finished)
+
         def _thread_target():
             result = _bg_worker(str(self.input_file_path)); self._probe_bridge.done.emit(result)
         threading.Thread(target=_thread_target, daemon=True).start()
+
     def on_progress(self, value: int):
         if self.progress_bar.maximum() == 0: self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(int(max(0, min(100, value))))
+
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         accumulated_wall_time = 0.0; current_v = 0.0
         for seg in segments:

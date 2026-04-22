@@ -1,4 +1,4 @@
-import os
+﻿import os
 import tempfile
 import uuid
 import shutil
@@ -88,7 +88,6 @@ class ProcessThread(QThread):
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
         return normalized
-
     @staticmethod
     def _emit_signal_or_callback(target, *args):
         try:

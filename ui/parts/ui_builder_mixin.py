@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 import uuid
@@ -21,7 +21,6 @@ except ImportError:
     TimelineOverlay = None
 
 class ClickableSpinBox(QDoubleSpinBox):
-
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             opt = QStyleOptionSpinBox()
@@ -34,7 +33,6 @@ class ClickableSpinBox(QDoubleSpinBox):
         super().mousePressEvent(event)
 
 class UiBuilderMixin:
-
     def _pick_thumbnail_from_current_frame(self):
         try:
             if not self.input_file_path or not os.path.exists(self.input_file_path):
@@ -113,6 +111,21 @@ class UiBuilderMixin:
     def _on_boss_hp_toggled(self, checked):
         self.logger.info(f'OPTION: Boss HP -> {checked}')
 
+    def _update_granular_button_state(self):
+        if not hasattr(self, "granular_button"): return
+        has_segments = bool(getattr(self, "speed_segments", []))
+        has_freeze = bool(getattr(self, "freeze_images", []))
+        if has_segments or has_freeze:
+            self.granular_button.setText("REMOVE GRANULAR SPEEDS")
+            self.granular_button.setStyleSheet(UIStyles.BUTTON_DANGER + "QPushButton { font-size: 10px; }")
+        else:
+            self.granular_button.setText("GRANULAR SPEED")
+            self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { font-size: 10px; }")
+
+    def _clear_speed_segments(self):
+        if hasattr(self, "open_granular_speed_dialog"):
+            pass
+
     def _update_process_button_text(self) -> None:
         try:
             self._pulse_phase = (getattr(self, '_pulse_phase', 0) + 1) % 8
@@ -134,7 +147,7 @@ class UiBuilderMixin:
                 self.process_button.setIcon(QIcon(pm))
                 self.process_button.setIconSize(QSize(24, 24))
             else:
-                self.process_button.setText('PROCESS VIDEO')
+                self.process_button.setText('PROCESS')
                 self.process_button.setIcon(QIcon())
         except:
             pass
@@ -179,15 +192,19 @@ class UiBuilderMixin:
 
     def _maybe_enable_process(self):
         try:
-            is_ready = self.positionSlider.maximum() > 0 and getattr(self, 'scan_complete', False)
-            if is_ready:
+            has_video = self.positionSlider.maximum() > 0
+            scan_done = getattr(self, 'scan_complete', False)
+            if has_video and scan_done:
                 if not self.process_button.isEnabled():
                     self.process_button.setEnabled(True)
-                    self.process_button.setText('PROCESS VIDEO')
+                    self.process_button.setText('PROCESS')
                     self._ensure_default_trim()
-            elif self.positionSlider.maximum() > 0 and (not getattr(self, 'scan_complete', False)):
+            elif has_video and not scan_done:
                 self.process_button.setEnabled(False)
                 self.process_button.setText('SCANNING HW...')
+            else:
+                self.process_button.setEnabled(False)
+                self.process_button.setText('PROCESS')
         except:
             pass
 
@@ -223,12 +240,11 @@ class UiBuilderMixin:
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
         self._top_row = QHBoxLayout()
-        self._top_row.setSpacing(12)
+        self._top_row.setSpacing(6)
         self._build_player_column()
         self._build_right_panel()
-        self._top_row.addWidget(self.player_col_container, stretch=6)
-        self._top_row.addWidget(self.right_panel, stretch=1)
-        self._top_row.addSpacing(10)
+        self._top_row.addWidget(self.player_col_container, stretch=1)
+        self._top_row.addWidget(self.right_panel)
         left_layout.addLayout(self._top_row)
         left_layout.addWidget(self.progress_bar)
         main_layout.addLayout(left_layout, stretch=1)
@@ -271,6 +287,7 @@ class UiBuilderMixin:
         trim_c.addStretch(1)
         trim_c.addLayout(self.trim_layout)
         trim_c.addStretch(1)
+        player_col.addSpacing(8)
         player_col.addLayout(trim_c)
         self._init_process_controls()
         player_col.addLayout(self.center_btn_container)
@@ -281,7 +298,7 @@ class UiBuilderMixin:
         self.player_col_container.installEventFilter(self)
 
     def _set_video_controls_enabled(self, enabled: bool):
-        widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider, self.speed_spinbox, self.granular_checkbox, self.mobile_checkbox, self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input, self.music_button, self.positionSlider, self.start_minute_input, self.start_second_input, self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input, self.crop_tool_btn]
+        widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider, self.speed_spinbox, self.granular_button, self.mobile_checkbox, self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input, self.music_button, self.positionSlider, self.start_minute_input, self.start_second_input, self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input]
         for w in widgets:
             if w is not None:
                 w.setEnabled(enabled)
@@ -418,6 +435,7 @@ class UiBuilderMixin:
     def _init_process_controls(self):
         self.quality_label = QLabel('OUTPUT FILE SIZE')
         self.quality_label.setStyleSheet('font-size: 11px; font-weight: bold;')
+
         from ui.widgets.spinning_wheel_slider import SpinningWheelSlider
         self.quality_slider = SpinningWheelSlider()
         self.quality_slider.setRange(0, 20)
@@ -439,7 +457,7 @@ class UiBuilderMixin:
         q_v.addWidget(self.quality_value_label, 0, Qt.AlignHCenter)
         self.quality_container = QWidget()
         self.quality_container.setLayout(q_v)
-        self.process_button = QPushButton('PROCESS VIDEO')
+        self.process_button = QPushButton('PROCESS')
         self.process_button.setFixedSize(140, 50)
         self.process_button.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
         self.process_button.clicked.connect(self._on_process_clicked)
@@ -472,20 +490,15 @@ class UiBuilderMixin:
         s_l.addWidget(self.speed_spinbox, 0, Qt.AlignHCenter)
         speed_w = QWidget()
         speed_w.setLayout(s_l)
-        self.granular_checkbox = QCheckBox('Granular Speed')
-        self.granular_checkbox.setStyleSheet(UIStyles.CHECKBOX)
-        self.granular_checkbox.clicked.connect(self._handle_granular_click)
-        self.granular_checkbox.setEnabled(False)
-        self.clear_segments_btn = QPushButton('Clear')
-        self.clear_segments_btn.setFixedSize(50, 24)
-        self.clear_segments_btn.setStyleSheet(UIStyles.BUTTON_DANGER)
-        self.clear_segments_btn.clicked.connect(self._clear_speed_segments)
-        self.clear_segments_btn.setEnabled(False)
-        g_l = QHBoxLayout()
-        g_l.addWidget(self.granular_checkbox)
-        g_l.addWidget(self.clear_segments_btn)
+        self.granular_button = QPushButton('GRANULAR SPEED')
+        self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
+        self.granular_button.setFixedSize(140, 35)
+        self.granular_button.clicked.connect(self._handle_granular_click)
+        self.granular_button.setEnabled(False)
         granular_w = QWidget()
-        granular_w.setLayout(g_l)
+        g_l = QHBoxLayout(granular_w)
+        g_l.setContentsMargins(0,0,0,0)
+        g_l.addWidget(self.granular_button)
         self.mobile_checkbox = QCheckBox('Mobile Format (Portrait)')
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         try:
@@ -528,43 +541,47 @@ class UiBuilderMixin:
 
     def _build_right_panel(self):
         self.right_panel = QWidget()
+        self.right_panel.setFixedWidth(160)
         self.right_panel.installEventFilter(self)
         r_l = QVBoxLayout(self.right_panel)
         r_l.setContentsMargins(0, 0, 0, 0)
         r_l.setAlignment(Qt.AlignTop)
         self.drop_area = DropAreaFrame()
         self.drop_area.file_dropped.connect(self.handle_file_selection)
-        self.drop_area.setFixedSize(140, 180)
+        self.drop_area.setFixedSize(150, 180)
         d_l = QVBoxLayout(self.drop_area)
         self.drop_label = QLabel('Drag & Drop\r\na Video File Here:')
         self.drop_label.setAlignment(Qt.AlignCenter)
         self.drop_label.setStyleSheet('font-size: 11px; font-weight: bold;')
         d_l.addWidget(self.drop_label)
         r_l.addWidget(self.drop_area, 0, Qt.AlignHCenter)
-        self.upload_button = QPushButton('📂 UPLOAD VIDEO FILE 📂')
-        self.upload_button.setFixedSize(150, 65)
-        self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { margin-top: 15px; }')
+        self.upload_button = QPushButton('📂 UPLOAD VIDEO 📂')
+        self.upload_button.setFixedSize(150, 42)
+        self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { font-size: 11px; }')
         self.upload_button.clicked.connect(self.select_file)
         r_l.addWidget(self.upload_button, 0, Qt.AlignHCenter)
+        r_l.addSpacing(15)
         self.music_button = QPushButton('♪ ADD MUSIC ♪')
-        self.music_button.setFixedSize(150, 75)
-        self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { margin-top: 15px; margin-bottom: 15px; }')
+        self.music_button.setFixedSize(150, 45)
+        self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + 'QPushButton { font-size: 11px; }')
         self.music_button.clicked.connect(self.open_music_wizard)
         self.music_button.setEnabled(False)
         r_l.addWidget(self.music_button, 0, Qt.AlignHCenter)
+        r_l.addSpacing(15)
         r_l.addStretch(1)
         self.no_fade_checkbox = QCheckBox('Disable Fade-In/Out')
         self.no_fade_checkbox.setEnabled(False)
         r_l.addWidget(self.no_fade_checkbox, 0, Qt.AlignRight)
         bb = QVBoxLayout()
+        bb.setContentsMargins(0, 0, 25, 0)
         self.merge_btn = QPushButton('VIDEO MERGER')
         self.crop_tool_btn = QPushButton('CROP SETTINGS')
         self.adv_editor_btn = QPushButton('ADVANCED\n VIDEO EDITOR')
         for b in (self.merge_btn, self.crop_tool_btn, self.adv_editor_btn):
             b.setStyleSheet(UIStyles.BUTTON_TOOL)
-            b.setFixedSize(140, 45)
+            b.setFixedSize(130, 38)
             b.setCursor(Qt.PointingHandCursor)
-            bb.addWidget(b, 0, Qt.AlignCenter)
+            bb.addWidget(b, 0, Qt.AlignRight)
         self.merge_btn.clicked.connect(self.launch_video_merger)
         self.crop_tool_btn.clicked.connect(self.launch_crop_tool)
         self.adv_editor_btn.clicked.connect(self.launch_advanced_editor)

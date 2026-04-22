@@ -39,6 +39,9 @@ class TrimmedSlider(QSlider):
         self.thumbnail_pos_ms = int(ms)
         self.update()
 
+    def get_thumbnail_pos_ms(self):
+        return getattr(self, "thumbnail_pos_ms", 0)
+
     def _update_range_cache(self):
         try:
             self._cached_min = self.minimum()

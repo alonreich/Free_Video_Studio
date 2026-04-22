@@ -1,4 +1,4 @@
-import os, sys, time
+﻿import os, sys, time
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -7,10 +7,10 @@ class MainWindowCoreAMixin:
     def open_granular_speed_dialog(self):
         try:
             if not self.input_file_path:
-                 self.granular_checkbox.blockSignals(True); self.granular_checkbox.setChecked(False); self.granular_checkbox.blockSignals(False)
                  QMessageBox.warning(self, "No Video", "Please load a video first."); return
-            if not self.granular_checkbox.isChecked():
-                self.statusBar().showMessage("Granular Speed disabled (segments preserved).", 3000); return
+            if self.speed_segments or getattr(self, "freeze_images", []):
+                self._clear_speed_segments()
+                return
             self.logger.info("UI: Opening Granular Speed Editor..."); self._opening_granular_dialog = True; self._ignore_mpv_end_until = time.time() + 2.0; current_ms = 0
             if self.player:
                 if not self._safe_mpv_get("pause", True): self._safe_mpv_set("pause", True)
@@ -29,12 +29,9 @@ class MainWindowCoreAMixin:
             res = dlg.exec_(); self._opening_granular_dialog = False; self._ignore_mpv_end_until = time.time() + 1.0; QThread.msleep(150); QCoreApplication.processEvents()
             if res == QDialog.Accepted:
                 self.logger.info(f"UI: Granular Speed segments updated ({len(dlg.speed_segments)} segments). Recalculating quality..."); self.speed_segments = sorted(dlg.speed_segments, key=lambda x: x['start'])
-                self.granular_checkbox.blockSignals(True); self.granular_checkbox.setChecked(True); self.granular_checkbox.blockSignals(False)
+                self.freeze_images = getattr(dlg, "freeze_images", [])
                 if hasattr(self, "_update_quality_label"): self._update_quality_label()
-            else:
-                self.logger.info("UI: Granular Speed Editor cancelled.")
-                if not self.speed_segments:
-                    self.granular_checkbox.blockSignals(True); self.granular_checkbox.setChecked(False); self.granular_checkbox.blockSignals(False)
+            if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
             if hasattr(self, "positionSlider"):
                 self.positionSlider.set_speed_segments(self.speed_segments); self.positionSlider.update()
             if m_p:
@@ -46,14 +43,20 @@ class MainWindowCoreAMixin:
             self.logger.error(f"UI: Error in granular dialog: {e}"); self._opening_granular_dialog = False
 
     def _clear_speed_segments(self):
-        if not self.speed_segments: return
-        if QMessageBox.question(self, "Clear Speed Segments", "Are you sure you want to clear all speed segments?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            self.logger.info("UI: Clearing all speed segments. Recalculating quality..."); self.speed_segments = []
+        has_segments = bool(self.speed_segments)
+        has_freeze = bool(getattr(self, "freeze_images", []))
+        if not has_segments and not has_freeze: return
+        msg = "Are you sure you want to clear all speed segments?"
+        if has_freeze: msg = "Are you sure you want to clear all speed segments and frozen images?"
+        if QMessageBox.question(self, "Clear Granular Speeds", msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            self.logger.info("UI: Clearing all granular settings. Recalculating quality..."); 
+            self.speed_segments = []
+            if hasattr(self, "freeze_images"): self.freeze_images = []
             if hasattr(self, "positionSlider"):
                 self.positionSlider.set_speed_segments([]); self.positionSlider.update()
-            self.granular_checkbox.blockSignals(True); self.granular_checkbox.setChecked(False); self.granular_checkbox.blockSignals(False)
+            if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
             if hasattr(self, "_update_quality_label"): self._update_quality_label()
-            self.statusBar().showMessage("Speed segments cleared.", 3000)
+            self.statusBar().showMessage("Granular speeds and frozen images cleared.", 3000)
 
     def show_priority_message(self, message: str, duration_ms: int = 5000, is_critical: bool = False):
         try:

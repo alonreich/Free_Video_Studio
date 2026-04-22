@@ -14,6 +14,7 @@ class AudioFilterMixin:
         elif audio_filter_cmd: raw_parts.append(audio_filter_cmd)
         if vfade_in_d > 0: raw_parts.append(f"afade=t=in:st=0:d={vfade_in_d:.3f}")
         cleaned_parts = []
+
         def flatten(item):
             if isinstance(item, list):
                 for sub in item: flatten(sub)
@@ -79,10 +80,12 @@ class AudioFilterMixin:
 class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
     def __init__(self, logger=None):
         self.logger = logger
+
     def build_granular_speed_chain(self, input_path=None, total_duration_ms=0, segments=None, base_speed=1.0, source_cut_start_ms=0, input_v_label="[0:v]", input_a_label="[0:a]", target_fps="60", video_path=None, duration_ms=None, speed_segments=None):
         input_path = input_path or video_path; total_duration_ms = total_duration_ms or duration_ms or 0
         segments = segments or speed_segments or []; total_duration_sec = float(total_duration_ms) / 1000.0
         timeline_origin_sec = float(source_cut_start_ms or 0.0) / 1000.0
+
         def _to_clip_relative_sec(t_abs_sec):
             try: rel = float(t_abs_sec) - timeline_origin_sec
             except: rel = 0.0
@@ -114,6 +117,7 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             if curr_ch_start < ch_end - 0.001:
                 final_chunks.append({'start': curr_ch_start, 'end': ch_end, 'speed': ch['speed']})
         chunks = [ch for ch in final_chunks if (abs(ch['speed']) < 0.001 or (ch['end'] - ch['start']) > 0.001)]
+
         def time_mapper(timeline_sec):
             target = _to_clip_relative_sec(timeline_sec); mapped = 0.0
             for ch in chunks:

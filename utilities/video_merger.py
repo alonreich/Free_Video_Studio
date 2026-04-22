@@ -39,6 +39,22 @@ def main():
             pass
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+
+    from system.recovery_manager import RecoveryManager
+    recovery = RecoveryManager("video_merger", logger)
+    if recovery.check_fault():
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("Video Merger")
+        msg_box.setText("The application crashed last time. Would you like to restore your previous session?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if msg_box.exec_() == QMessageBox.Yes:
+            os.environ["FVS_RESTORE_SESSION"] = "1"
+            recovery.activate_safe_mode()
+        else:
+            recovery.clear_state()
+    recovery.acquire_lock()
+    app.aboutToQuit.connect(recovery.cleanup_lock)
     logger.info("=== Video Merger Started ===")
     success, pid_handle = ProcessManager.acquire_pid_lock("fortnite_video_merger")
     if not success:

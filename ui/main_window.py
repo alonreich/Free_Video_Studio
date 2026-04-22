@@ -68,8 +68,10 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.setWindowTitle("Fortnite Video Software - Pro Edition"); self.setMinimumSize(1200, 800)
         self.central_widget = QWidget(); self.setCentralWidget(self.central_widget)
         self._init_core_logic(file_path, hardware_strategy)
+        self._setup_recovery_manager()
         self.set_style(); self.init_ui(); self._setup_mpv(); self._set_video_controls_enabled(False)
         self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.restore_geometry()
+        self._restore_recovery_state()
         self.positionSlider.sliderMoved.connect(self.set_player_position)
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
@@ -87,6 +89,97 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser("~"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.update_player_state)
         if file_path and os.path.exists(file_path): QTimer.singleShot(500, lambda: self.handle_file_selection(file_path))
+
+    def _setup_recovery_manager(self):
+        from system.recovery_manager import RecoveryManager
+        self.recovery_manager = RecoveryManager("main_app", self.logger)
+        self.recovery_timer = QTimer(self)
+        self.recovery_timer.timeout.connect(self._save_recovery_state)
+        self.recovery_timer.start(5000)
+
+    def _save_recovery_state(self):
+        if not hasattr(self, "recovery_manager"): return
+        state = {
+            "assets": {
+                "input_file_path": self.input_file_path,
+                "wizard_tracks": getattr(self, "_wizard_tracks", []),
+                "current_music_path": getattr(self, "_current_music_path", None)
+            },
+            "volatile_settings": {
+                "trim_start_ms": self.trim_start_ms,
+                "trim_end_ms": self.trim_end_ms,
+                "playback_rate": self.playback_rate,
+                "speed_segments": self.speed_segments,
+                "video_mix_volume": self.volume_slider.value() if hasattr(self, "volume_slider") else 100,
+                "music_volume_pct": getattr(self, "_music_volume_pct", 80),
+                "video_volume_pct": getattr(self, "_video_volume_pct", 80),
+                "quality_slider_index": self.quality_slider.value() if hasattr(self, "quality_slider") else 7,
+                "current_music_offset": getattr(self, "_current_music_offset", 0.0),
+                "music_timeline_start_ms": getattr(self, "music_timeline_start_ms", 0),
+                "music_timeline_end_ms": getattr(self, "music_timeline_end_ms", 0),
+                "thumbnail_pos_ms": self.positionSlider.get_thumbnail_pos_ms() if hasattr(self, "positionSlider") else 0,
+                "hardware_strategy": self.hardware_strategy
+            },
+            "ui_dynamics": {
+                "mobile_checked": self.mobile_checkbox.isChecked() if hasattr(self, "mobile_checkbox") else False,
+                "teammates_checked": self.teammates_checkbox.isChecked() if hasattr(self, "teammates_checkbox") else False,
+                "boss_hp_checked": self.boss_hp_checkbox.isChecked() if hasattr(self, "boss_hp_checkbox") else False,
+                "granular_checked": self.granular_checkbox.isChecked() if hasattr(self, "granular_checkbox") else False,
+                "no_fade_checked": getattr(self, "no_fade_checkbox", None).isChecked() if getattr(self, "no_fade_checkbox", None) else False,
+                "portrait_text": self.portrait_text_input.text() if hasattr(self, "portrait_text_input") else "",
+                "active_tab_index": 0,
+                "window_geometry_base64": bytes(self.saveGeometry().toBase64()).decode("utf-8"),
+                "last_directory": self.last_dir,
+                "slider_value_ms": self.positionSlider.value() if hasattr(self, "positionSlider") else 0
+            }
+        }
+        self.recovery_manager.save_state_async(state)
+
+    def _restore_recovery_state(self):
+        if os.environ.get("FVS_RESTORE_SESSION") != "1": return
+        state = self.recovery_manager.load_state()
+        if not state: return
+        self.logger.info("RECOVERY: Restoring previous session state...")
+        v = state.get("volatile_settings", {})
+        u = state.get("ui_dynamics", {})
+        a = state.get("assets", {})
+        f = a.get("input_file_path")
+        if f and os.path.exists(f):
+            self.handle_file_selection(f)
+            self.trim_start_ms = v.get("trim_start_ms", 0)
+            self.trim_end_ms = v.get("trim_end_ms", self.trim_end_ms)
+            self.playback_rate = v.get("playback_rate", 1.1)
+            self.speed_segments = v.get("speed_segments", [])
+            if hasattr(self, "speed_spinbox"): self.speed_spinbox.setValue(self.playback_rate)
+            if hasattr(self, "volume_slider"): self.volume_slider.setValue(v.get("video_mix_volume", 100))
+            if hasattr(self, "quality_slider"): self.quality_slider.setValue(v.get("quality_slider_index", 7))
+            self._wizard_tracks = a.get("wizard_tracks", [])
+            self._music_volume_pct = v.get("music_volume_pct", 80)
+            self._video_volume_pct = v.get("video_volume_pct", 80)
+            self._current_music_offset = v.get("current_music_offset", 0.0)
+            self.music_timeline_start_ms = v.get("music_timeline_start_ms", 0)
+            self.music_timeline_end_ms = v.get("music_timeline_end_ms", 0)
+            if hasattr(self, "mobile_checkbox"): self.mobile_checkbox.setChecked(u.get("mobile_checked", False))
+            if hasattr(self, "teammates_checkbox"): self.teammates_checkbox.setChecked(u.get("teammates_checked", False))
+            if hasattr(self, "boss_hp_checkbox"): self.boss_hp_checkbox.setChecked(u.get("boss_hp_checked", False))
+            if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(u.get("granular_checked", False))
+            if hasattr(self, "portrait_text_input"): self.portrait_text_input.setText(u.get("portrait_text", ""))
+            if self._wizard_tracks and self._ensure_music_player_ready():
+                f_t = self._wizard_tracks[0]; self._current_music_path = f_t[0]
+                self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)
+            QTimer.singleShot(1000, lambda: self._apply_restored_slider_state(v, u))
+
+    def _apply_restored_slider_state(self, v, u):
+        if hasattr(self, "positionSlider"):
+            self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
+            if self._wizard_tracks:
+                self.positionSlider.set_music_visible(True)
+                self.positionSlider.set_music_times(self.music_timeline_start_ms, self.music_timeline_end_ms)
+            self.positionSlider.setValue(u.get("slider_value_ms", 0))
+            self.positionSlider.set_thumbnail_pos_ms(v.get("thumbnail_pos_ms", 0))
+            self.positionSlider.set_speed_segments(self.speed_segments)
+        self._update_trim_widgets_from_trim_times()
+        self._update_quality_label()
 
     def _on_mpv_idle_changed(self, is_idle):
         if is_idle and self.wants_to_play: QTimer.singleShot(0, self._safe_handle_mpv_end)

@@ -3,6 +3,7 @@ import sys
 import subprocess
 from PyQt5.QtCore import QPoint, QRect, QTimer
 from PyQt5.QtWidgets import QApplication, QLabel
+
 class MergerMusicWizardMiscMixin:
     def _safe_mpv_get(self, player, prop, default=None):
         if not player: return default
@@ -12,6 +13,7 @@ class MergerMusicWizardMiscMixin:
             return getattr(player, prop, default)
         except: return default
         finally: self._mpv_lock.release()
+
     def _safe_mpv_set(self, player, prop, value):
         if not player: return
         if not hasattr(self, "_mpv_lock"): setattr(player, prop, value); return
@@ -20,6 +22,7 @@ class MergerMusicWizardMiscMixin:
             setattr(player, prop, value)
         except: pass
         finally: self._mpv_lock.release()
+
     def _bind_video_output(self):
         if not getattr(self, "_video_player", None): return
         if not hasattr(self, "video_container"): return
@@ -27,13 +30,16 @@ class MergerMusicWizardMiscMixin:
             wid = int(self.video_container.winId())
             self._video_player.wid = wid
         except: pass
+
     def _get_default_size(self, step_idx):
         if step_idx == 0: return (1100, 850)
         if step_idx == 1: return (1300, 580)
         if step_idx == 2: return (1600, 850)
         return (1300, 850)
+
     def _apply_step_geometry(self, step_idx):
         if not hasattr(self, "parent_window") or not hasattr(self.parent_window, "config_manager"): return
+
         def _do_apply():
             self._is_applying_geometry = True
             try:
@@ -68,6 +74,7 @@ class MergerMusicWizardMiscMixin:
             finally:
                 QTimer.singleShot(200, lambda: setattr(self, "_is_applying_geometry", False))
         QTimer.singleShot(0, _do_apply)
+
     def _save_step_geometry(self):
         if not getattr(self, "_startup_complete", False): return
         if getattr(self, "_is_applying_geometry", False): return
@@ -80,6 +87,7 @@ class MergerMusicWizardMiscMixin:
             self._save_geo_timer.setInterval(1000)
             self._save_geo_timer.timeout.connect(self._do_save_step_geometry)
         self._save_geo_timer.start()
+
     def _do_save_step_geometry(self):
         try:
             step_idx = self.stack.currentIndex()
@@ -92,9 +100,11 @@ class MergerMusicWizardMiscMixin:
             }
             self.parent_window.config_manager.save_config(cfg)
         except: pass
+
     def moveEvent(self, event):
         super().moveEvent(event)
         self._save_step_geometry()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "_save_step_geometry"):
@@ -102,6 +112,7 @@ class MergerMusicWizardMiscMixin:
         if hasattr(self, "stack") and self.stack.currentIndex() == 1:
             if hasattr(self, "_refresh_wave_scaled"):
                 self._refresh_wave_scaled()
+
     def _sync_caret(self, override_ms=None, override_state=None):
         try:
             if not hasattr(self, "_wave_caret") or self._wave_caret is None: return
@@ -148,6 +159,7 @@ class MergerMusicWizardMiscMixin:
             else: 
                 self._wave_caret.hide(); self._wave_time_badge.hide(); self._wave_time_badge_bottom.hide()
         except: pass
+
     def _scaled_vol(self, mix_val):
         try:
             if hasattr(self.parent_window, "_vol_eff"):
@@ -157,6 +169,7 @@ class MergerMusicWizardMiscMixin:
                 return final_vol
         except: pass
         return int(max(0, min(100, mix_val)))
+
     def _format_time_long(self, ms):
         total_seconds = int(ms / 1000)
         hours = total_seconds // 3600
@@ -164,6 +177,7 @@ class MergerMusicWizardMiscMixin:
         seconds = total_seconds % 60
         if hours > 0: return f"{hours}:{minutes:02d}:{seconds:02d}"
         return f"{minutes:02d}:{seconds:02d}"
+
     def _probe_media_duration(self, path):
         try:
             ffprobe = os.path.join(self.bin_dir, "ffprobe.exe")
@@ -171,11 +185,13 @@ class MergerMusicWizardMiscMixin:
             r = subprocess.run(cmd, capture_output=True, text=True, creationflags=0x08000000, timeout=5)
             return float(r.stdout.strip()) if r.returncode == 0 else 0.0
         except: return 0.0
+
     def update_coverage_ui(self):
         covered = sum(t[2] for t in self.selected_tracks)
         pct = int((covered / self.total_video_sec) * 100) if self.total_video_sec > 0 else 0
         self.coverage_progress.setValue(min(100, pct))
         self.coverage_progress.setFormat(f"Music Coverage: {covered:.1f}s / {self.total_video_sec:.1f}s (%p%)")
+
     def _cache_wall_times(self):
         self._cached_wall_durations = []
         for seg in self.speed_segments:
@@ -185,6 +201,7 @@ class MergerMusicWizardMiscMixin:
             else:
                 self._cached_wall_durations.append(dur_source / seg['speed'])
         self._wall_trim_start = self._calculate_wall_clock_time_raw(self.trim_start_ms, self.speed_segments, self.speed_factor)
+
     def _calculate_wall_clock_time_raw(self, video_ms, segments, base_speed):
         target = float(video_ms)
         base_speed = base_speed or 1.1
@@ -216,10 +233,12 @@ class MergerMusicWizardMiscMixin:
             if base_speed < 0.001: accumulated_wall_ms += (target - current_video_time)
             else: accumulated_wall_ms += (target - current_video_time) / base_speed
         return accumulated_wall_ms / 1000.0
+
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         if video_ms == self.trim_start_ms and hasattr(self, "_wall_trim_start"):
             return self._wall_trim_start
         return self._calculate_wall_clock_time_raw(video_ms, segments, base_speed)
+
     def _project_time_to_source_ms(self, project_sec):
         target_wall_ms = (project_sec * 1000.0) + (self._wall_trim_start * 1000.0)
         if not self.speed_segments:
@@ -247,9 +266,11 @@ class MergerMusicWizardMiscMixin:
                 return int(end + ((target_wall_ms - accumulated_wall_ms) * self.speed_factor))
             accumulated_wall_ms += gap_wall
         return int(self.speed_segments[-1]['end'] + ((target_wall_ms - accumulated_wall_ms) * self.speed_factor))
+
     def _on_search_changed(self, text): 
         if hasattr(self, "_search_timer"):
             self._search_timer.start(300)
+
     def _do_search(self):
         txt = self.search_input.text().lower()
         for i in range(self.track_list.count()):

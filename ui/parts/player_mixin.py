@@ -4,6 +4,7 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
 from system.time_sync import TimeSyncEngine
 from system.utils import MPVSafetyManager
+
 class PlayerMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -13,18 +14,22 @@ class PlayerMixin:
         self._in_freeze_segment = False
         self._freeze_start_ts = 0
         self._freeze_seg = None
+
     def _safe_mpv_set(self, prop, value, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return
         MPVSafetyManager.safe_mpv_set(p, prop, value, lock=self._mpv_lock)
+
     def _safe_mpv_get(self, prop, default=None, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return default
         return MPVSafetyManager.safe_mpv_get(p, prop, default, lock=self._mpv_lock)
+
     def _safe_mpv_command(self, *args, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
         if not p: return False
         return MPVSafetyManager.safe_mpv_command(p, args[0], *args[1:], lock=self._mpv_lock)
+
     def _safe_stop_playback(self):
         try:
             p = getattr(self, "player", None)
@@ -36,6 +41,7 @@ class PlayerMixin:
                 self.positionSlider.setValue(0)
         except Exception:
             pass
+
     def toggle_play_pause(self):
         if getattr(self, "_in_transition", False):
             return
@@ -93,6 +99,7 @@ class PlayerMixin:
                 self.timer.start(50)
             self.playPauseButton.setText("PAUSE")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+
     def update_player_state(self):
         if getattr(self, "_in_transition", False): return
         try:
@@ -137,6 +144,7 @@ class PlayerMixin:
                     self.is_playing = is_p; icon = QStyle.SP_MediaPause if self.is_playing else QStyle.SP_MediaPlay; label = "PAUSE" if self.is_playing else "PLAY"
                     if hasattr(self, "playPauseButton"): self.playPauseButton.setText(label); self.playPauseButton.setIcon(self.style().standardIcon(icon))
         except Exception: pass
+
     def _check_and_update_speed(self, current_ms):
         if not hasattr(self, "speed_segments") or not getattr(self, "granular_checkbox", None) or not self.granular_checkbox.isChecked(): return
         target_speed = self.playback_rate; target_seg = None
@@ -160,6 +168,7 @@ class PlayerMixin:
         if abs(current_rate - target_speed) > 0.005:
             if self._safe_mpv_set("speed", target_speed):
                 self._last_speed_update = now
+
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
@@ -191,6 +200,7 @@ class PlayerMixin:
             self._execute_throttled_seek()
         elif not self._seek_timer.isActive():
             self._seek_timer.start(interval)
+
     def _execute_throttled_seek(self):
         if not hasattr(self, "_pending_seek_ms") or self._pending_seek_ms is None:
             return
@@ -205,6 +215,7 @@ class PlayerMixin:
         self._pending_force_pause = False
         self._is_seeking_active = True
         self._last_seek_start_ts = time.time()
+
         def _native_seek_task():
             try:
                 if getattr(self, "_in_transition", False) or getattr(self, "_shutting_down", False):
@@ -238,6 +249,7 @@ class PlayerMixin:
             finally:
                 self._is_seeking_active = False
         threading.Thread(target=_native_seek_task, daemon=True).start()
+
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         accumulated_wall_time = 0.0
         current_v = 0.0
@@ -254,12 +266,14 @@ class PlayerMixin:
             if base_speed < 0.001: accumulated_wall_time += (video_ms - current_v)
             else: accumulated_wall_time += (video_ms - current_v) / base_speed
         return accumulated_wall_time
+
     def _on_mpv_end_reached(self, event=None):
         try:
             QTimer.singleShot(0, self._safe_handle_mpv_end)
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.error(f"MPV End Event failed to defer: {e}")
+
     def _bind_main_player_output(self):
         if not getattr(self, "player", None):
             return
@@ -269,6 +283,7 @@ class PlayerMixin:
         last_ts = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)
         if (now - last_ts) < 0.8:
             return
+
         def _perform_bind():
             try:
                 wid = None
@@ -293,6 +308,7 @@ class PlayerMixin:
         self._binding_player_output = True
         self._last_player_output_bind_ts = now
         _perform_bind()
+
         def _delayed_bind():
             now2 = time.time()
             last2 = float(getattr(self, "_last_player_output_bind_ts", 0.0) or 0.0)
@@ -301,6 +317,7 @@ class PlayerMixin:
             self._last_player_output_bind_ts = now2
             _perform_bind()
         QTimer.singleShot(300, _delayed_bind)
+
     def _safe_handle_mpv_end(self):
         try:
             if not self.signalsBlocked():
