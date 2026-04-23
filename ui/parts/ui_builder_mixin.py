@@ -109,7 +109,7 @@ class UiBuilderMixin:
             self.portrait_mask_overlay.set_force_hidden(hidden)
 
     def _on_boss_hp_toggled(self, checked):
-        self.logger.info(f'OPTION: Boss HP -> {checked}')
+        pass
 
     def _update_granular_button_state(self):
         if not hasattr(self, "granular_button"): return
@@ -121,10 +121,6 @@ class UiBuilderMixin:
         else:
             self.granular_button.setText("GRANULAR SPEED")
             self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { font-size: 10px; }")
-
-    def _clear_speed_segments(self):
-        if hasattr(self, "open_granular_speed_dialog"):
-            pass
 
     def _update_process_button_text(self) -> None:
         try:
@@ -192,7 +188,8 @@ class UiBuilderMixin:
 
     def _maybe_enable_process(self):
         try:
-            has_video = self.positionSlider.maximum() > 0
+            path = getattr(self, 'input_file_path', None)
+            has_video = bool(path and isinstance(path, str) and os.path.exists(path) and self.positionSlider.maximum() > 0)
             scan_done = getattr(self, 'scan_complete', False)
             if has_video and scan_done:
                 if not self.process_button.isEnabled():
@@ -251,6 +248,7 @@ class UiBuilderMixin:
         self.central_widget.setLayout(main_layout)
         self._ensure_overlay_widgets()
         self._hide_processing_overlay()
+        self._maybe_enable_process()
         QTimer.singleShot(0, self._adjust_trim_margins)
         QTimer.singleShot(0, self.apply_master_volume)
         QTimer.singleShot(0, lambda: self.setFocus(Qt.ActiveWindowFocusReason))
@@ -314,6 +312,7 @@ class UiBuilderMixin:
         self.volume_slider = QSlider(Qt.Vertical)
         self.volume_slider.setFixedWidth(40)
         self.volume_slider.setRange(0, 100)
+        self.volume_slider.setCursor(Qt.PointingHandCursor)
         self.volume_slider.setStyleSheet(UIStyles.SLIDER_VOLUME_VERTICAL_METALLIC)
         try:
             eff = int(self.config_manager.config.get('video_mix_volume', 100))
@@ -420,7 +419,6 @@ class UiBuilderMixin:
         self.end_ms_input.hide()
         self.boss_hp_checkbox = QCheckBox('Boss HP')
         self.boss_hp_checkbox.setStyleSheet('font-size: 10px;')
-        self.boss_hp_checkbox.toggled.connect(self._on_boss_hp_toggled)
         self.boss_hp_checkbox.setEnabled(False)
         self.trim_layout = QHBoxLayout()
         self.trim_layout.setSpacing(14)
@@ -445,7 +443,7 @@ class UiBuilderMixin:
         self.quality_slider.setFixedSize(180, 35)
         self.quality_slider.setEnabled(False)
         self.quality_slider.valueChanged.connect(lambda _: self._update_quality_label())
-        self.quality_value_label = QLabel('Standard')
+        self.quality_value_label = QLabel('')
         self.quality_value_label.setStyleSheet('font-size: 10px; font-weight: bold;')
         self.quality_value_label.setMinimumWidth(100)
         self.quality_value_label.setAlignment(Qt.AlignCenter)
@@ -499,7 +497,7 @@ class UiBuilderMixin:
         g_l = QHBoxLayout(granular_w)
         g_l.setContentsMargins(0,0,0,0)
         g_l.addWidget(self.granular_button)
-        self.mobile_checkbox = QCheckBox('Mobile Format (Portrait)')
+        self.mobile_checkbox = QCheckBox('Portrait (9:16)')
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         try:
             val = bool(self.config_manager.config.get('mobile_checked', False))
@@ -590,11 +588,13 @@ class UiBuilderMixin:
     def _update_quality_label(self):
         if not hasattr(self, 'quality_value_label'):
             return
+        if not getattr(self, 'input_file_path', None) or not os.path.exists(self.input_file_path):
+            self.quality_value_label.setText('')
+            return
         idx = int(self.quality_slider.value())
         dur_ms = getattr(self, 'trim_end_ms', 0) - getattr(self, 'trim_start_ms', 0)
         if dur_ms <= 0:
-            self.quality_value_label.setText('Standard')
-            self.quality_value_label.setStyleSheet('color: white;')
+            self.quality_value_label.setText('')
             return
         try:
             if idx >= 20:
@@ -622,7 +622,6 @@ class UiBuilderMixin:
         self.quality_value_label.setStyleSheet(f'color: {color}; font-weight: bold;')
 
     def _on_mobile_toggled(self, checked: bool):
-        self.logger.info(f'OPTION: Mobile Format -> {checked}')
         self.teammates_checkbox.setVisible(checked)
         self.teammates_checkbox.setEnabled(checked)
         self.portrait_text_input.setVisible(checked)

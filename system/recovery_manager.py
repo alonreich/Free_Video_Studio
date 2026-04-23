@@ -141,9 +141,7 @@ RECOVERY_JSON_SCHEMA_MERGER = {
     "app_id": "video_merger",
     "version": "1.0.1",
     "assets": {
-        "video_files": [
-            {"path": "...", "probe_data": {}, "hash": "...", "clip_id": "..."}
-        ],
+        "video_files": [],
         "wizard_tracks": []
     },
     "volatile_settings": {

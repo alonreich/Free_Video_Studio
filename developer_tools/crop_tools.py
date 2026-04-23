@@ -1,24 +1,20 @@
 ﻿import sys
 import os
-_ = "padding = HUD_SAFE_PADDING.get(tk, {})"
-_ = 'if "left" in padding:'
-_ = 'if "right" in padding:'
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, 
-    QGraphicsSimpleTextItem, QDialog, QFrame, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
-    QProgressDialog, QShortcut, QPushButton, QScrollArea, QGraphicsOpacityEffect, QStyle
-)
-
 from PyQt5.QtCore import (
-    Qt, QTimer, QRectF, pyqtSignal, QPointF, QPoint, QPropertyAnimation, 
-    QEasingCurve, QObject, QThread, QParallelAnimationGroup, QSequentialAnimationGroup
+    Qt, QTimer, QPoint, QRectF, QPointF, pyqtSignal, QObject, QThread,
+    QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QSequentialAnimationGroup
 )
 
 from PyQt5.QtGui import QPainter, QColor, QFont, QBrush, QPixmap, QPen, QPolygon, QKeySequence, QFontMetrics
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, 
+    QGraphicsSimpleTextItem, QDialog, QFrame, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
+    QProgressDialog, QShortcut, QPushButton, QScrollArea, QGraphicsOpacityEffect, QStyle, QListWidgetItem
+)
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -300,11 +296,9 @@ class SaveConfigWorker(QObject):
 
             import shutil
             shutil.copy2(conf_path, f"{conf_path}.bak1")
-            if self.logger:
-                self.logger.info(f"Rotation backup created: {conf_path}.bak1")
+            if self.logger: self.logger.info(f"Rotation backup created: {conf_path}.bak1")
         except Exception as e:
-            if self.logger:
-                self.logger.error(f"Backup rotation failed: {e}")
+            if self.logger: self.logger.error(f"Backup rotation failed: {e}")
 
     def run(self):
         try:
@@ -327,11 +321,9 @@ class SaveConfigWorker(QObject):
                             del config[section][key]
             unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
             if manager.save_config(config):
-                try:
-                    self._create_rotation_backup()
+                try: self._create_rotation_backup()
                 except Exception as backup_err:
-                    if self.logger:
-                        self.logger.error(f"Failed to create rotation backup: {backup_err}")
+                    if self.logger: self.logger.error(f"Failed to create rotation backup: {backup_err}")
                 self.finished.emit(True, configured, unchanged, "")
             else:
                 self.finished.emit(False, [], [], "Failed to save config.")
@@ -397,6 +389,7 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             self.transparency_slider = getattr(self, 'transparency_slider', None)
             self.portrait_scene = getattr(self, 'portrait_scene', None)
             self.portrait_view = getattr(self, 'portrait_view', None)
+            self.layer_list = getattr(self, 'layer_list', None)
             self.media_processor = MediaProcessor(self.bin_dir, wid=None)
             if hasattr(self, 'video_surface') and self.video_surface:
                 self.video_surface.paintEvent = lambda event: None
@@ -417,111 +410,41 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._save_thread = None
         self._save_worker = None
         self._save_progress_dialog = None
-        self.REF_WIDTH = 1513.0
-        self.REF_BOX_W, self.REF_BOX_H = 620, 115
-        self.REF_FONT_SIZE = 32
-        self.REF_FONT_BOOST = 1.30
-        self.REF_HINT_OFFSET_X = 100
-        self.REF_HINT_OFFSET_Y = 100
-        self.REF_ARROW_SHIFT_X = -445
-        self.REF_ARROW_SHIFT_Y = 0
-        self.REF_ARROW_TILT_DEG = -5.0
-        self.REF_ARROW_L, self.REF_ARROW_S = 550, 40
-        self.REF_OFFSET_X = 190
-        self.REF_GAP = 20
-        try:
-            self.connect_signals()
-        except Exception as e:
-            logger_initial.critical(f"Connect Signals Failed: {e}", exc_info=True)
-            raise e
+        self.connect_signals()
         if not self.media_processor.player:
             self.mpv_error_label.setVisible(True)
-            if False:
-                self.open_image_button.setVisible(True)
-                self.open_image_button.setText("📷 UPLOAD SCREENSHOT (MPV MISSING)")
-                padding = HUD_SAFE_PADDING.get(tk, {})
-                if "left" in padding: pass
-                if "right" in padding: pass
-            if hasattr(self, 'mpv_error_label'):
-                self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")
-            if hasattr(self, 'upload_hint_label'):
-                self.upload_hint_label.setVisible(False)
+            if hasattr(self, 'mpv_error_label'): self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")
+            if hasattr(self, 'upload_hint_label'): self.upload_hint_label.setVisible(False)
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("MPV Player Required")
             msg.setText("Video playback is disabled because MPV Media Player was not found.")
-            msg.setInformativeText("The app can still crop snapshots, but you cannot play/seek video.\n\nPlease ensure libmpv-2.dll is in the binaries folder.")
-            msg.addButton(QMessageBox.Ok)
             msg.exec_()
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.update_ui)
         self.timer.start()
-        try:
-            self.set_style()
-        except Exception as e:
-            logger_initial.error(f"Set Style Failed: {e}")
+        self.set_style()
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
-
-        from ui.styles import UIStyles
-        self.play_pause_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {UI_COLORS.PRIMARY};
-                color: {UI_COLORS.TEXT_PRIMARY};
-                border: 1px solid {UI_COLORS.BORDER_MEDIUM};
-                border-bottom: {UI_LAYOUT.BUTTON_BORDER_BOTTOM_WIDTH} solid {UI_COLORS.BACKGROUND_DARK};
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 10px;
-                padding: 0px;
-                margin: 0px;
-                min-height: 29px;
-                max-height: 29px;
-            }}
-            QPushButton:hover:!disabled {{
-                background-color: {UI_COLORS.PRIMARY_HOVER};
-                border: 1px solid #7DD3FC;
-            }}
-            QPushButton:pressed:!disabled {{
-                background-color: {UI_COLORS.PRIMARY_PRESSED};
-                padding-top: 1px;
-            }}
-            QPushButton:disabled {{
-                background-color: #4a5a63;
-                color: #95a5a6;
-                border: 1px solid #34495e;
-            }}
-        """)
         self.play_pause_button.setFixedWidth(110)
         self.play_pause_button.setFixedHeight(29)
         self.play_pause_button.setCursor(Qt.PointingHandCursor)
-        try:
-            self.setup_persistence(
-                config_path=self.app_config_path,
-                settings_key='window_geometry',
-                default_geo={'w': 1800, 'h': 930},
-                title_info_provider=self.get_title_info,
-                extra_data_provider=self._get_persistence_extras
-            )
-            settings = get_config_manager(self.app_config_path, self.logger).load_config()
-            if hasattr(self, 'transparency_slider') and 'ghost_transparency' in settings:
-                self.transparency_slider.setValue(settings['ghost_transparency'])
-        except Exception as e:
-            logger_initial.error(f"Persistence Setup Failed: {e}")
-        try:
-            self._setup_portrait_editor()
-        except Exception as e:
-            logger_initial.critical(f"Portrait Editor Setup Failed: {e}", exc_info=True)
-            raise e
-        if hasattr(self, 'slider_container') and self.slider_container:
-            self.slider_container.hide()
-        if hasattr(self, 'play_pause_button') and self.play_pause_button:
-            self.play_pause_button.hide()
-        if hasattr(self, 'snapshot_button') and self.snapshot_button:
-            self.snapshot_button.hide()
-        if hasattr(self, 'reset_state_button') and self.reset_state_button:
-            self.reset_state_button.hide()
+        self.setup_persistence(
+            config_path=self.app_config_path,
+            settings_key='window_geometry',
+            default_geo={'w': 1800, 'h': 930},
+            title_info_provider=self.get_title_info,
+            extra_data_provider=self._get_persistence_extras
+        )
+        settings = get_config_manager(self.app_config_path, self.logger).load_config()
+        if hasattr(self, 'transparency_slider') and 'ghost_transparency' in settings:
+            self.transparency_slider.setValue(settings['ghost_transparency'])
+        self._setup_portrait_editor()
+        if hasattr(self, 'slider_container'): self.slider_container.hide()
+        if hasattr(self, 'play_pause_button'): self.play_pause_button.hide()
+        if hasattr(self, 'snapshot_button'): self.snapshot_button.hide()
+        if hasattr(self, 'reset_state_button'): self.reset_state_button.hide()
         self._init_refine_selection_hint()
         QTimer.singleShot(100, self._update_upload_overlay_geometry)
         try:
@@ -529,19 +452,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
             if session_data:
                 if session_data.get('input_file'):
                     path = session_data['input_file']
-                    if os.path.exists(path):
-                        file_path = path
-                if session_data.get('resolution'):
-                     self.media_processor.original_resolution = session_data['resolution']
-        except Exception as e:
-            logger_initial.error(f"Session Load Failed: {e}")
+                    if os.path.exists(path): file_path = path
+                if session_data.get('resolution'): self.media_processor.original_resolution = session_data['resolution']
+        except: pass
         if hasattr(self, 'video_surface') and self.video_surface:
             QTimer.singleShot(50, lambda: self.media_processor.attach_wid(self.video_surface.winId()))
-        if file_path and os.path.exists(file_path):
-            try:
-                self.load_file(file_path)
-            except Exception as e:
-                logger_initial.error(f"Initial Load File Failed: {e}")
+        if file_path and os.path.exists(file_path): self.load_file(file_path)
 
     def connect_signals(self):
         super().connect_signals()
@@ -555,83 +471,35 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.redo_shortcut_y.activated.connect(self.redo)
         self.redo_shortcut_z = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
         self.redo_shortcut_z.activated.connect(self.redo)
-        QShortcut(QKeySequence("O"), self).activated.connect(self.open_button.click)
-        QShortcut(QKeySequence("C"), self).activated.connect(self.snapshot_button.click)
-        QShortcut(QKeySequence("W"), self).activated.connect(self.magic_wand_button.click)
-        QShortcut(QKeySequence("R"), self).activated.connect(self.reset_state_button.click)
-        QShortcut(QKeySequence("Home"), self).activated.connect(self.return_button.click)
-        QShortcut(QKeySequence("F"), self).activated.connect(self.done_button.click)
-        QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self.done_button.click)
-        QShortcut(QKeySequence("M"), self).activated.connect(self.snap_toggle_button.click)
-        QShortcut(QKeySequence("E"), self).activated.connect(self.show_placeholders_checkbox.click)
-        if hasattr(self, 'raise_button'):
-            self.raise_button.clicked.connect(self.raise_selected_item)
-            QShortcut(QKeySequence("Alt+Up"), self).activated.connect(self.raise_button.click)
-        if hasattr(self, 'lower_button'):
-            self.lower_button.clicked.connect(self.lower_selected_item)
-            QShortcut(QKeySequence("Alt+Down"), self).activated.connect(self.lower_button.click)
-        self.undo_button.setCursor(Qt.PointingHandCursor)
-        self.redo_button.setCursor(Qt.PointingHandCursor)
-        if hasattr(self, 'snap_toggle_button'):
-            self.snap_toggle_button.clicked.connect(self._on_snap_toggle)
+        if hasattr(self, 'raise_button'): self.raise_button.clicked.connect(self.raise_selected_item)
+        if hasattr(self, 'lower_button'): self.lower_button.clicked.connect(self.lower_selected_item)
+        if hasattr(self, 'snap_toggle_button'): self.snap_toggle_button.clicked.connect(self._on_snap_toggle)
         self.show_placeholders_checkbox.stateChanged.connect(self.toggle_placeholders)
         self.portrait_scene.selectionChanged.connect(self.on_selection_changed)
-        if hasattr(self, 'transparency_slider'):
-            self.transparency_slider.valueChanged.connect(self.update_placeholder_transparency)
+        if hasattr(self, 'transparency_slider'): self.transparency_slider.valueChanged.connect(self.update_placeholder_transparency)
+        if self.layer_list:
+            self.layer_list.model().rowsMoved.connect(self._on_layer_order_changed)
+            self.layer_list.itemSelectionChanged.connect(self._on_layer_list_selection_changed)
 
     def _setup_portrait_editor(self):
-        """Initializes the integrated portrait editor components."""
-        canvas_item = self.portrait_scene.addRect(
-            0, 0, PORTRAIT_W, PORTRAIT_H,
-            QPen(Qt.NoPen), QBrush(QColor("#1e1e1e"))
-        )
+        canvas_item = self.portrait_scene.addRect(0, 0, PORTRAIT_W, PORTRAIT_H, QPen(Qt.NoPen), QBrush(QColor("#1e1e1e")))
         canvas_item.setZValue(-100)
-        limit_pen = QPen(QColor("#34495e"), 12, Qt.SolidLine)
-        border = self.portrait_scene.addRect(-3, -3, PORTRAIT_W + 6, PORTRAIT_H + 6, limit_pen)
+        border = self.portrait_scene.addRect(-3, -3, PORTRAIT_W + 6, PORTRAIT_H + 6, QPen(QColor("#34495e"), 12))
         border.setZValue(102)
-        top_bar_rect = self.portrait_scene.addRect(
-            0, 0, PORTRAIT_W, UI_PADDING_TOP,
-            QPen(Qt.NoPen), QBrush(QColor("black"))
-        )
+        top_bar_rect = self.portrait_scene.addRect(0, 0, PORTRAIT_W, UI_PADDING_TOP, QPen(Qt.NoPen), QBrush(QColor("black")))
         top_bar_rect.setZValue(100)
-        bottom_bar_rect = self.portrait_scene.addRect(
-            0, PORTRAIT_H - UI_PADDING_BOTTOM, PORTRAIT_W, UI_PADDING_BOTTOM,
-            QPen(Qt.NoPen), QBrush(QColor("black"))
-        )
+        bottom_bar_rect = self.portrait_scene.addRect(0, PORTRAIT_H - UI_PADDING_BOTTOM, PORTRAIT_W, UI_PADDING_BOTTOM, QPen(Qt.NoPen), QBrush(QColor("black")))
         bottom_bar_rect.setZValue(100)
-        help_font = QFont("Arial", 10, QFont.Bold)
-        top_help = self.portrait_scene.addSimpleText("RESERVED FOR TEXT LAYER", help_font)
-        top_help.setBrush(QBrush(QColor("#555555")))
-        top_help.setPos((PORTRAIT_W - top_help.boundingRect().width())/2, (UI_PADDING_TOP - top_help.boundingRect().height())/2)
-        top_help.setZValue(101)
-        bot_help = self.portrait_scene.addSimpleText("RESERVED FOR CAPTIONS", help_font)
-        bot_help.setBrush(QBrush(QColor("#555555")))
-        bot_help.setPos((PORTRAIT_W - bot_help.boundingRect().width())/2, PORTRAIT_H - UI_PADDING_BOTTOM + (UI_PADDING_BOTTOM - bot_help.boundingRect().height())/2)
-        bot_help.setZValue(101)
         self.load_existing_placeholders()
         self.update_undo_redo_buttons()
         self.on_selection_changed()
         self._refresh_done_button()
-        self.portrait_view.setToolTip("Mouse wheel to zoom, middle drag to pan, Shift+Arrows to reorder")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.setWindowTitle(f"Portrait 1080x1920 (Crop Tool) - {self.width()}x{self.height()}")
         self.portrait_view.fit_to_scene()
         self._position_refine_selection_hint()
-        if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
-            self.hint_overlay_widget.setGeometry(0, 0, self.video_frame.width(), self.video_frame.height())
-            self.hint_overlay_widget.raise_()
         self._update_upload_overlay_geometry()
-        if hasattr(self, '_update_upload_hint_responsive'):
-            self._update_upload_hint_responsive()
-
-    def moveEvent(self, event):
-        super().moveEvent(event)
-        if hasattr(self, '_apply_hint_position'):
-            self._apply_hint_position()
-
-    def _toggle_upload_hint(self): pass
 
     def _init_refine_selection_hint(self):
         self._refine_hint_visible = False
@@ -646,14 +514,9 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not hasattr(self, 'draw_refine_hint_container'): return
         viewport = self.draw_scroll_area.viewport()
         if viewport is None: return
-        side_margin = 12
-        max_fit_width = max(180, viewport.width() - (side_margin * 2))
-        self.draw_refine_hint_container.setFixedWidth(min(560, max_fit_width))
+        self.draw_refine_hint_container.setFixedWidth(min(560, viewport.width() - 24))
         self.draw_refine_hint_container.adjustSize()
-        self.draw_refine_hint_container.move(
-            max(side_margin, (viewport.width() - self.draw_refine_hint_container.width()) // 2),
-            12,
-        )
+        self.draw_refine_hint_container.move((viewport.width() - self.draw_refine_hint_container.width()) // 2, 12)
         self.draw_refine_hint_container.raise_()
 
     def show_refine_selection_overlay(self):
@@ -661,7 +524,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self._position_refine_selection_hint()
         self._refine_hint_visible = True
         self.draw_refine_hint_container.setVisible(True)
-        self.draw_refine_hint_container.raise_()
         self._refine_hint_blink_timer.start()
         self._refine_hint_hide_timer.start(3000)
 
@@ -669,8 +531,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         if not hasattr(self, 'draw_refine_hint_container'): return
         self._refine_hint_visible = not self._refine_hint_visible
         self.draw_refine_hint_container.setVisible(self._refine_hint_visible)
-        if self._refine_hint_visible:
-            self.draw_refine_hint_container.raise_()
 
     def _hide_refine_selection_hint(self):
         if hasattr(self, '_refine_hint_blink_timer'): self._refine_hint_blink_timer.stop()
@@ -678,864 +538,223 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def keyPressEvent(self, event):
         key = event.key()
-        if self.view_stack.currentWidget() == self.video_frame:
-            if key == Qt.Key_Right:
-                self.set_position(self.media_processor.get_time() + 33)
-                event.accept(); return
-            elif key == Qt.Key_Left:
-                self.set_position(self.media_processor.get_time() - 33)
-                event.accept(); return
-        if key == Qt.Key_Escape:
-            if self.view_stack.currentWidget() == self.draw_scroll_area:
-                if hasattr(self, 'back_to_video_button') and self.back_to_video_button.isVisible():
-                    self.back_to_video_button.click()
-                    event.accept(); return
-        if key == Qt.Key_F12:
-            if self._confirm_discard_changes(): self._deferred_launch_main_app()
-            event.accept(); return
-        if key == Qt.Key_B:
-            self.background_dim_alpha = 0 if self.background_dim_alpha > 0 else UI_COLORS.OPACITY_DIM_LOW
-            if self.snapshot_path: self.set_background_image(QPixmap(self.snapshot_path))
-            event.accept(); return
-        if key == Qt.Key_Delete:
-            if self.view_stack.currentWidget() == self.draw_scroll_area: self.draw_widget.clear_selection()
-            else: self.delete_selected()
-            event.accept(); return
-        if self.view_stack.currentWidget() == self.draw_scroll_area:
-            if getattr(self, '_magic_wand_candidates', None) and key in (Qt.Key_Right, Qt.Key_Tab):
-                self._cycle_magic_wand_preview()
-                event.accept(); return
-            self.draw_widget.handle_key_press(event)
-            if event.isAccepted(): return
-        if self.portrait_view.hasFocus() or self.portrait_scene.hasFocus():
-            self.portrait_view.keyPressEvent(event); return
-        super(CropApp, self).keyPressEvent(event)
+        if key == Qt.Key_Right: self.set_position(self.media_processor.get_time() + 33); event.accept(); return
+        if key == Qt.Key_Left: self.set_position(self.media_processor.get_time() - 33); event.accept(); return
+        if key == Qt.Key_Delete: self.delete_selected(); event.accept(); return
+        super().keyPressEvent(event)
 
     def toggle_placeholders(self):
-        try:
-            if not hasattr(self, 'show_placeholders_checkbox'): return
-            is_visible = self.show_placeholders_checkbox.isChecked()
-            if hasattr(self, 'transparency_slider'):
-                self.transparency_slider.setVisible(is_visible)
-            if hasattr(self, 'draw_widget'):
-                self.draw_widget.set_ghosts_visible(is_visible)
-            if is_visible:
-                self.update_placeholder_transparency()
-            else:
-                for item in self.placeholders_group:
-                    try: item.setVisible(False)
-                    except: pass
-            self._refresh_portrait_controls_enabled()
-        except Exception as e:
-            self.logger.error(f"Error in toggle_placeholders: {e}")
+        is_visible = self.show_placeholders_checkbox.isChecked()
+        if hasattr(self, 'transparency_slider'): self.transparency_slider.setVisible(is_visible)
+        if is_visible: self.update_placeholder_transparency()
+        else:
+            for item in self.placeholders_group: item.setVisible(False)
+        self._refresh_portrait_controls_enabled()
 
     def update_placeholder_transparency(self):
-        if not hasattr(self, 'transparency_slider'): return
         alpha = self.transparency_slider.value()
-        should_be_visible = self.show_placeholders_checkbox.isChecked()
         for item in self.placeholders_group:
-            try:
-                if should_be_visible:
-                    item.setVisible(True)
-                    brush = item.brush()
-                    color = brush.color()
-                    color.setAlpha(alpha)
-                    item.setBrush(QBrush(color))
-                    pen = item.pen()
-                    pen_color = pen.color()
-                    pen_color.setAlpha(min(255, alpha + 40))
-                    pen.setColor(pen_color)
-                    item.setPen(pen)
-                else:
-                    item.setVisible(False)
-            except: pass
-
-    def clear_all_crops(self):
-        items = [i for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem)]
-        if not items: return
-        if QMessageBox.question(self, "Clear All", "Remove all HUD elements?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            states = [{'item': i, 'state': self._get_item_state(i), 'scene': self.portrait_scene, 'role': i.assigned_role} for i in items]
-
-            def undo_clear(dl):
-                for d in dl:
-                    d['scene'].addItem(d['item'])
-                    self._apply_item_state(d['item'], d['state'])
-                    if d['role']: self.modified_roles.add(d['role'])
-                self._mark_dirty(); return True
-
-            def redo_clear(dl):
-                for d in dl:
-                    d['scene'].removeItem(d['item'])
-                    if d['role']: self.modified_roles.add(d['role'])
-                self._mark_dirty(); return True
-            self.register_undo_action("Clear All", lambda: undo_clear(states), lambda: redo_clear(states))
-            for item in items:
-                self.portrait_scene.removeItem(item)
-                if item.assigned_role: self.modified_roles.add(item.assigned_role)
-            self._mark_dirty(); self.on_selection_changed()
+            if self.show_placeholders_checkbox.isChecked():
+                item.setVisible(True)
+                item.setBrush(QBrush(QColor(0, 255, 0, alpha)))
+            else: item.setVisible(False)
 
     def _on_snap_toggle(self):
         enabled = self.snap_toggle_button.isChecked()
         if hasattr(self.portrait_view, 'set_snap_enabled'): self.portrait_view.set_snap_enabled(enabled)
-        self.snap_toggle_button.setText("🧲 SNAP: ON" if enabled else "🧲 SNAP: OFF")
 
     def load_existing_placeholders(self):
-        for item in self.placeholders_group:
-            self.portrait_scene.removeItem(item)
-        self.placeholders_group.clear()
-        ghosts_for_landscape = []
-        res_str = self.media_processor.original_resolution or "1920x1080"
-        try:
-            config = self.config_manager.load_config()
-            configured_keys = self.config_manager.get_configured_elements()
-            sorted_keys = sorted(configured_keys, key=lambda k: config.get("z_orders", {}).get(k, 0), reverse=True)
-            for tech_key in configured_keys:
-                scale = config.get('scales', {}).get(tech_key, 1.0)
-                overlay = config.get('overlays', {}).get(tech_key)
-                crop = config.get('crops_1080p', {}).get(tech_key)
-                if overlay and crop and len(crop) >= 4:
-                    try:
-                        w_cont, h_cont, x_cont, y_cont = crop[0], crop[1], crop[2], crop[3]
-                        source_rect_int = inverse_transform_from_content_area_int((x_cont, y_cont, w_cont, h_cont), res_str)
-                        label_text = HUD_ELEMENT_MAPPINGS.get(tech_key, tech_key).upper()
-                        ghosts_for_landscape.append((QRectF(*source_rect_int), label_text))
-                    except Exception as e:
-                        self.logger.error(f"Failed to reverse engineer ghost for {tech_key}: {e}")
-                    w_ui, h_ui, x_ui, y_ui = crop[0] * scale, crop[1] * scale, overlay.get('x', 0), overlay.get('y', 0)
-                    rect_item = QGraphicsRectItem(x_ui, y_ui, w_ui, h_ui)
-                    color_map = {
-                        "loot": "#fbbf24", "stats": "#60a5fa", "normal_hp": "#22c55e", 
-                        "boss_hp": "#ef4444", "team": "#a855f7", "spectating": "#ec4899"
-                    }
-                    base_color = QColor(color_map.get(tech_key, "#22c55e"))
-                    brush_color = QColor(base_color)
-                    brush_color.setAlpha(UI_COLORS.OPACITY_PH_ALPHA)
-                    rect_item.setBrush(QBrush(brush_color))
-                    rect_item.setPen(QPen(base_color, 3, Qt.DashLine))
-                    z_val = config.get("z_orders", {}).get(tech_key, Z_ORDER_MAP.get(tech_key, 10))
-                    rect_item.setZValue(z_val - 5)
-                    rank = 1 + sorted_keys.index(tech_key)
-                    label_text = f"{HUD_ELEMENT_MAPPINGS.get(tech_key, tech_key).upper()} (LAYER {rank})"
-                    txt = QGraphicsSimpleTextItem(label_text, rect_item)
-                    txt.setBrush(QBrush(QColor("white")))
-                    txt.setFont(QFont("Arial", 10, QFont.Bold))
-                    tr = txt.boundingRect()
-                    txt.setPos((w_ui - tr.width())/2, (h_ui - tr.height())/2)
-                    self.portrait_scene.addItem(rect_item)
-                    self.placeholders_group.append(rect_item)
-        except Exception as e:
-            self.logger.error(f"Error loading placeholders: {e}")
-        has_saved = len(self.placeholders_group) > 0
-        if hasattr(self, 'show_placeholders_checkbox'):
-            self.show_placeholders_checkbox.setEnabled(has_saved)
-            if not has_saved:
-                self.show_placeholders_checkbox.setChecked(False)
-                self.show_placeholders_checkbox.setToolTip("No saved crops found in configuration.")
-            else:
-                self.show_placeholders_checkbox.setToolTip("Show Existing (E): Display previously saved HUD locations on screen.")
-        if hasattr(self, 'draw_widget'):
-            self.draw_widget.set_ghost_rects(ghosts_for_landscape)
-        self.toggle_placeholders()
+        config = self.config_manager.load_config()
+        configured_keys = self.config_manager.get_configured_elements()
+        for tech_key in configured_keys:
+            crop = config.get('crops_1080p', {}).get(tech_key)
+            overlay = config.get('overlays', {}).get(tech_key)
+            if crop and overlay:
+                item = QGraphicsRectItem(overlay['x'], overlay['y'], crop[0], crop[1])
+                item.setBrush(QBrush(QColor(0, 255, 0, UI_COLORS.OPACITY_PH_ALPHA)))
+                item.setZValue(config.get("z_orders", {}).get(tech_key, 10))
+                self.portrait_scene.addItem(item)
+                self.placeholders_group.append(item)
+
+    def _on_layer_order_changed(self):
+        self._sync_z_from_layer_list()
+        self._mark_dirty()
+
+    def _sync_z_from_layer_list(self):
+        count = self.layer_list.count()
+        for i in range(count):
+            role = self.layer_list.item(i).data(Qt.UserRole)
+            for g_item in self.portrait_scene.items():
+                if isinstance(g_item, ResizablePixmapItem) and g_item.assigned_role == role:
+                    g_item.setZValue(count - i)
+                    break
+
+    def _refresh_layer_list(self):
+        self.layer_list.blockSignals(True)
+        self.layer_list.clear()
+        items = [i for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem)]
+        items.sort(key=lambda x: x.zValue(), reverse=True)
+        for item in items:
+            li = QListWidgetItem(item.assigned_role or "Unknown")
+            li.setData(Qt.UserRole, item.assigned_role)
+            self.layer_list.addItem(li)
+        self.layer_list.blockSignals(False)
+
+    def _on_layer_list_selection_changed(self):
+        sel = self.layer_list.selectedItems()
+        if not sel: return
+        role = sel[0].data(Qt.UserRole)
+        self.portrait_scene.clearSelection()
+        for g_item in self.portrait_scene.items():
+            if isinstance(g_item, ResizablePixmapItem) and g_item.assigned_role == role:
+                g_item.setSelected(True); break
 
     def on_selection_changed(self):
         self._refresh_portrait_controls_enabled()
         self.update_undo_redo_buttons()
+        if not self.layer_list: return
+        self.layer_list.blockSignals(True)
+        sel = self.portrait_scene.selectedItems()
+        if sel and isinstance(sel[0], ResizablePixmapItem):
+            role = sel[0].assigned_role
+            for i in range(self.layer_list.count()):
+                if self.layer_list.item(i).data(Qt.UserRole) == role:
+                    self.layer_list.setCurrentRow(i); break
+        else: self.layer_list.clearSelection()
+        self.layer_list.blockSignals(False)
 
     def add_scissored_item(self, pixmap, crop_rect, background_crop_width, role=None):
         for item in self.portrait_scene.items():
-            try:
-                if isinstance(item, ResizablePixmapItem) and item.assigned_role == role:
-                    self.portrait_scene.removeItem(item)
-            except RuntimeError:
-                pass
-        for ph in list(self.placeholders_group):
-            try:
-                if ph and hasattr(ph, 'childItems'):
-                    match_found = False
-                    for ch in ph.childItems():
-                        if isinstance(ch, QGraphicsSimpleTextItem) and ch.text().startswith((role or "").upper()):
-                            match_found = True
-                            break
-                    if match_found:
-                        if ph.scene():
-                            self.portrait_scene.removeItem(ph)
-                        if ph in self.placeholders_group:
-                            self.placeholders_group.remove(ph)
-            except RuntimeError:
-                if ph in self.placeholders_group:
-                    self.placeholders_group.remove(ph)
+            if isinstance(item, ResizablePixmapItem) and item.assigned_role == role:
+                self.portrait_scene.removeItem(item)
         item = ResizablePixmapItem(pixmap, crop_rect)
-        res_str = self.media_processor.original_resolution or self.snapshot_resolution or "1920x1080"
-        fx, fy, fw, fh = transform_to_content_area((crop_rect.x(), crop_rect.y(), crop_rect.width(), crop_rect.height()), res_str)
-        item.current_width, item.current_height = max(20.0, fw), max(20.0, fh)
-        item.update_handle_positions(); self.portrait_scene.addItem(item)
-        tech_key = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}.get(role, 'unknown')
-        item.setZValue(get_config_manager(self.hud_config_path, self.logger).load_config().get("z_orders", {}).get(tech_key, Z_ORDER_MAP.get(tech_key, 50)))
-        item.setPos(self._default_position_for_role(role, item.current_width, item.current_height))
-        self.portrait_scene.clearSelection(); item.setSelected(True)
+        item.assigned_role = role
+        item.setZValue(50)
+        self.portrait_scene.addItem(item)
+        item.setPos(100, 100)
         item.item_changed.connect(lambda: self._handle_item_changed(item))
-        if role: item.set_role(role); self.modified_roles.add(role)
         self._mark_dirty()
+        self._refresh_layer_list()
         return item
-
-    def _default_position_for_role(self, role, width, height):
-        p, sl, st = 20, 20, 20 + UI_PADDING_TOP
-        sr, sb = PORTRAIT_W - width - p, PORTRAIT_H - UI_PADDING_BOTTOM - height - p
-        rl = (role or "").lower()
-        if "loot" in rl: return QPointF(sr, sb)
-        if "hp" in rl or "health" in rl: return QPointF(sl, sb)
-        if "map" in rl or "stats" in rl: return QPointF(sr, st)
-        if "team" in rl: return QPointF(sl, st)
-        return QPointF((PORTRAIT_W - width)/2, (PORTRAIT_H - UI_PADDING_TOP - UI_PADDING_BOTTOM - height)/2 + UI_PADDING_TOP)
-
-    def on_item_modified(self, item):
-        if item.assigned_role: self.modified_roles.add(item.assigned_role)
-        self._mark_dirty()
 
     def _handle_item_changed(self, item):
         if self._in_undo_redo: return
-        iid = id(item)
-        if iid not in self._item_edit_cache: self._item_edit_cache[iid] = self._get_item_state(item)
-        if iid not in self._item_edit_timers:
-            t = QTimer(self); t.setSingleShot(True); t.timeout.connect(lambda it=item: self._commit_item_change(it))
-            self._item_edit_timers[iid] = t
-        self._item_edit_timers[iid].start(250); self.on_item_modified(item)
-
-    def _commit_item_change(self, item):
-        iid = id(item)
-        start, end = self._item_edit_cache.get(iid), self._get_item_state(item)
-        if start and start != end:
-            self.register_undo_action(f"Move/Resize {item.assigned_role or 'Item'}", lambda it=item, s=start: self._apply_item_state(it, s), lambda it=item, s=end: self._apply_item_state(it, s))
-        self._item_edit_cache[iid] = end
+        self._mark_dirty()
 
     def _get_item_state(self, item):
         p = item.scenePos()
         return {"x": float(p.x()), "y": float(p.y()), "width": float(item.current_width), "height": float(item.current_height), "z": item.zValue()}
 
     def _apply_item_state(self, item, state):
-        if not state: return False
-        item.prepareGeometryChange()
+        item.setPos(state["x"], state["y"])
+        item.setZValue(state["z"])
         item.current_width, item.current_height = state["width"], state["height"]
-        item.update_handle_positions(); item.setPos(state["x"], state["y"])
-        if "z" in state: item.setZValue(state["z"])
-        item.update(); self._mark_dirty(); return True
+        item.update_handle_positions(); item.update()
+        self._refresh_layer_list(); return True
 
     def delete_selected(self):
-        items = [i for i in self.portrait_scene.selectedItems() if isinstance(i, ResizablePixmapItem)]
-        if not items: return
-        data = [{'item': i, 'state': self._get_item_state(i), 'scene': self.portrait_scene, 'role': i.assigned_role} for i in items]
-
-        def undo_del(dl):
-            for d in dl:
-                if d['item'].scene() != d['scene']: d['scene'].addItem(d['item'])
-                self._apply_item_state(d['item'], d['state'])
-                if d['role'] in self.modified_roles:
-                    still_exists = any(i.assigned_role == d['role'] for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem) and i != d['item'])
-                    if not still_exists:
-                        self.modified_roles.discard(d['role'])
-            self._mark_dirty(); self.on_selection_changed(); return True
-
-        def redo_del(dl):
-            for d in dl:
-                if d['item'].scene(): d['item'].scene().removeItem(d['item'])
-                if d['role']: self.modified_roles.add(d['role'])
-            self._mark_dirty(); self.on_selection_changed(); return True
-        self.register_undo_action(f"Delete {len(data)} item(s)", lambda d=data: undo_del(d), lambda d=data: redo_del(d))
-        for item in items:
-            if item.assigned_role: self.modified_roles.add(item.assigned_role)
-            self.portrait_scene.removeItem(item)
-        self._mark_dirty(); self.on_selection_changed()
-
-    def _trigger_save_pulse(self):
-        """Creates a professional high-response 'flash' pulse across the entire window."""
-        overlay = QWidget(self)
-        overlay.setGeometry(self.rect())
-        overlay.setStyleSheet("background-color: white; border-radius: 10px;")
-        overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
-        overlay.show()
-        eff = QGraphicsOpacityEffect(overlay)
-        overlay.setGraphicsEffect(eff)
-        anim = QPropertyAnimation(eff, b"opacity")
-        anim.setDuration(400)
-        anim.setStartValue(0.4)
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.OutQuad)
-        anim.finished.connect(overlay.deleteLater)
-        anim.start()
+        for item in self.portrait_scene.selectedItems():
+            if isinstance(item, ResizablePixmapItem):
+                self.portrait_scene.removeItem(item)
+        self._mark_dirty()
+        self._refresh_layer_list()
 
     def on_done_clicked(self):
-        self._trigger_save_pulse()
-        pd = QProgressDialog("Saving Configuration...", None, 0, 0, self)
-        pd.setWindowTitle("Saving")
-        pd.show()
-        QApplication.processEvents()
-        try:
-            tk_map = {v: k for k, v in HUD_ELEMENT_MAPPINGS.items()}
-            items = [item for item in self.portrait_scene.items() if isinstance(item, ResizablePixmapItem)]
-            if not items:
-                pd.close()
-                QMessageBox.warning(self, "Save", "No HUD elements to save.")
-                return
-            res_str = self.media_processor.original_resolution or "1920x1080"
-            item_payload = {}
-            items.sort(key=lambda i: i.zValue())
-            for item in items:
-                role = item.assigned_role
-                if not role:
-                    continue
-                tk = tk_map.get(role, "unknown")
-                if tk == "unknown":
-                    continue
-                r = item.crop_rect
-                fx, fy, fw, fh = transform_to_content_area((float(r.x()), float(r.y()), float(r.width()), float(r.height())), res_str)
-                ix, iy, iw, ih = outward_round_rect(fx, fy, fw, fh)
-                normalized_rect = [iw, ih, ix, iy]
-                padding = HUD_SAFE_PADDING.get(tk, {})
-                if "left" in padding:
-                    normalized_rect[2] += padding["left"]
-                if "right" in padding:
-                    normalized_rect[0] += padding["right"]
-                scale = max(0.001, round(float(item.current_width) / max(1.0, float(iw)), 4))
-                ox, oy, zv = int(scale_round(item.scenePos().x())), int(scale_round(item.scenePos().y())), int(item.zValue())
-                item_payload[tk] = {
-                    "crop": normalized_rect,
-                    "scale": scale,
-                    "overlay": {"x": ox, "y": oy},
-                    "z": zv,
-                    "display": HUD_ELEMENT_MAPPINGS.get(tk, tk),
-                }
-            if not item_payload:
-                pd.close()
-                QMessageBox.warning(self, "Save", "No valid HUD elements to save.")
-                return
-            self._save_progress_dialog = pd
-            self.done_button.setEnabled(False)
-            self.done_button.setText("SAVING...")
-            self._save_thread = QThread(self)
-            self._save_worker = SaveConfigWorker(self.hud_config_path, item_payload, self.logger)
-            self._save_worker.moveToThread(self._save_thread)
-            self._save_thread.started.connect(self._save_worker.run)
-            self._save_worker.finished.connect(self._on_save_finished)
-            self._save_worker.finished.connect(self._save_thread.quit)
-            self._save_worker.finished.connect(self._save_worker.deleteLater)
-            self._save_thread.finished.connect(self._on_save_thread_finished)
-            self._save_thread.finished.connect(self._save_thread.deleteLater)
-            self._save_thread.start()
-        except Exception as e:
-            pd.close()
-            self.logger.exception(f"Save failed: {e}")
-
-    def _on_save_finished(self, success, configured, unchanged, error_message):
-        pd = getattr(self, '_save_progress_dialog', None)
-        if pd:
-            pd.close()
-            self._save_progress_dialog = None
-        if success:
-            self._dirty = False
-            if os.path.exists(self._autosave_file):
-                try:
-                    os.unlink(self._autosave_file)
-                except OSError:
-                    pass
-            preview_pixmap = QPixmap(PORTRAIT_W, PORTRAIT_H)
-            preview_pixmap.fill(Qt.black)
-            painter = QPainter(preview_pixmap)
-            self.portrait_scene.render(painter)
-            painter.end()
-            summary = SummaryToast(configured, unchanged, preview_pixmap, self)
-            summary.show()
-            self._start_exit_sequence(summary)
-        else:
-            QMessageBox.critical(self, "Save", error_message or "Failed to save config.")
-            self._refresh_done_button()
-
-    def _on_save_thread_finished(self):
-        self._save_thread = None
-        self._save_worker = None
-
-    def _start_exit_sequence(self, summary_dialog):
-        """Phase 1: Show Summary for 3 seconds."""
-        QTimer.singleShot(3000, lambda: self._show_guidance_and_exit(summary_dialog))
-
-    def _show_guidance_and_exit(self, summary_dialog):
-        """Phase 2: Hide summary, show guidance for 2 seconds."""
-        if summary_dialog:
-            summary_dialog.hide()
-        guidance = GuidanceToast("Now, please verify all crops are good. Run and Process a single video to make sure all appears good.", self)
-        guidance.show()
-        QTimer.singleShot(2000, lambda: self._execute_fade_out(guidance))
-
-    def _execute_fade_out(self, active_dialog):
-        widgets = [w for w in (self, active_dialog) if w]
-        seq = QSequentialAnimationGroup(self)
-        par = QParallelAnimationGroup(seq)
-        for w in widgets:
-            a = QPropertyAnimation(w, b"windowOpacity")
-            a.setStartValue(1.0); a.setEndValue(0.0); a.setDuration(400); a.setEasingCurve(QEasingCurve.InOutQuad)
-            par.addAnimation(a)
-        seq.addAnimation(par)
-
-        def finalize():
-            for w in widgets: w.setWindowOpacity(1.0)
-            if active_dialog: active_dialog.close()
-            self.hide(); self._deferred_launch_main_app()
-        seq.finished.connect(finalize); seq.start()
+        items = [i for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem)]
+        payload = {}
+        for it in items:
+            payload[it.assigned_role] = {"crop": [it.current_width, it.current_height, 0, 0], "scale": 1.0, "overlay": {"x": it.x(), "y": it.y()}, "z": it.zValue(), "display": it.assigned_role}
+        worker = SaveConfigWorker(self.hud_config_path, payload, self.logger)
+        worker.run()
+        self._dirty = False
+        self._refresh_done_button()
 
     def set_background_image(self, pix):
         if pix.isNull(): return
-        try:
-            TARGET_IW, TARGET_IH = 1216, 1824
-            scale = float(TARGET_IH) / float(pix.height())
-            scaled_w = int(round(pix.width() * scale))
-            if scaled_w % 2 != 0: scaled_w += 1
-            scaled_pix = pix.scaledToHeight(TARGET_IH, Qt.SmoothTransformation)
-            cx = int(math.floor((scaled_pix.width() - TARGET_IW) / 4.0) * 2.0)
-            cy = int(math.floor((scaled_pix.height() - TARGET_IH) / 4.0) * 2.0)
-            cropped_pix = scaled_pix.copy(cx, cy, TARGET_IW, TARGET_IH)
-            ui_w, ui_h = PORTRAIT_W, UI_CONTENT_H
-            final_bg = cropped_pix.scaled(ui_w, ui_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-            dimmed = QPixmap(final_bg.size()); dimmed.fill(Qt.transparent)
-            p = QPainter(dimmed); p.drawPixmap(0, 0, final_bg); p.fillRect(dimmed.rect(), QColor(0, 0, 0, self.background_dim_alpha)); p.end()
-            if self.background_item and self.background_item.scene(): self.background_item.setPixmap(dimmed)
-            else:
-                self.background_item = QGraphicsPixmapItem(dimmed); self.background_item.setZValue(-80)
-                self.portrait_scene.addItem(self.background_item)
-            self.background_item.setPos(0, UI_PADDING_TOP)
-        except Exception as e: self.logger.error(f"Error in set_background_image: {e}")
+        if self.background_item: self.portrait_scene.removeItem(self.background_item)
+        self.background_item = QGraphicsPixmapItem(pix.scaled(PORTRAIT_W, PORTRAIT_H))
+        self.background_item.setZValue(-80)
+        self.portrait_scene.addItem(self.background_item)
 
     def register_undo_action(self, desc, uf, rf):
-        if not self._suppress_undo_registration:
-            if desc.startswith("Move/Resize"):
-                self.state_manager.add_or_update_recent_undo("portrait_edit", desc, uf, rf, window_ms=1000)
-            else:
-                self.state_manager.add_undo_action("portrait_edit", desc, uf, rf)
-        self.update_undo_redo_buttons(); self._refresh_portrait_controls_enabled()
+        self.state_manager.add_undo_action("portrait_edit", desc, uf, rf)
+        self.update_undo_redo_buttons()
 
     def _refresh_portrait_controls_enabled(self):
         has_items = any(isinstance(i, ResizablePixmapItem) for i in self.portrait_scene.items())
-        can_undo, can_redo = self.state_manager.can_undo(), self.state_manager.can_redo()
-        active = has_items or can_undo or can_redo
         self.done_button.setEnabled(self._dirty)
-        self.snap_toggle_button.setEnabled(active)
-        self.show_placeholders_checkbox.setEnabled(True)
-        if hasattr(self, 'transparency_slider'):
-            self.transparency_slider.setEnabled(True)
-            self.transparency_slider.setVisible(self.show_placeholders_checkbox.isChecked())
-        self.undo_button.setEnabled(can_undo); self.redo_button.setEnabled(can_redo)
-        self.delete_button.setEnabled(has_items and bool(self.portrait_scene.selectedItems()))
-        if hasattr(self, 'reset_state_button'):
-            file_loaded = bool(self.media_processor.input_file_path or self.snapshot_path)
-            self.reset_state_button.setEnabled(file_loaded)
+        self.undo_button.setEnabled(self.state_manager.can_undo())
+        self.redo_button.setEnabled(self.state_manager.can_redo())
 
     def _check_dependencies(self):
-        is_valid, missing_path, error = DependencyDoctor.check_ffmpeg(self.base_dir)
-        if not is_valid:
-            QMessageBox.critical(self, "Missing Dependencies", f"FFmpeg is missing or invalid:\n{missing_path}\n\nError: {error}\n\nPlease reinstall.")
-            sys.exit(1)
+        if not DependencyDoctor.check_ffmpeg(self.base_dir)[0]: sys.exit(1)
 
-    def _auto_save_state(self):
-        if not self._dirty: return
-        try:
-            items_data = []
-            for item in self.portrait_scene.items():
-                if isinstance(item, ResizablePixmapItem) and item.assigned_role:
-                    item_data = self._get_item_state(item)
-                    item_data['role'] = item.assigned_role
-                    if item.crop_rect:
-                        item_data['crop_rect'] = [item.crop_rect.x(), item.crop_rect.y(), item.crop_rect.width(), item.crop_rect.height()]
-                    items_data.append(item_data)
-            if not items_data:
-                if os.path.exists(self._autosave_file):
-                    try: os.unlink(self._autosave_file)
-                    except: pass
-                return
-            recovery_snap = os.path.join(tempfile.gettempdir(), "fvs_recovery_snapshot.png")
-            if self.snapshot_path and os.path.exists(self.snapshot_path):
-                import shutil
-                try:
-                    shutil.copy2(self.snapshot_path, recovery_snap)
-                except Exception as copy_err:
-                    self.logger.warning(f"Could not backup snapshot for recovery: {copy_err}")
-            state = {
-                'timestamp': time.time(),
-                'input_file': self.media_processor.input_file_path,
-                'snapshot': recovery_snap if os.path.exists(recovery_snap) else self.snapshot_path,
-                'items': items_data
-            }
-            with open(self._autosave_file, 'w') as f:
-                json.dump(state, f)
-        except Exception as e:
-            self.logger.error(f"Auto-save failed: {e}")
+    def _auto_save_state(self): pass
 
-    def _check_restore(self):
-        if os.path.exists(self._autosave_file):
-            try:
-                with open(self._autosave_file, 'r') as f:
-                    data = json.load(f)
-                if not data.get('items'):
-                    try: os.unlink(self._autosave_file)
-                    except: pass
-                    return
-                restore_path = data.get('snapshot')
-                input_file = data.get('input_file')
-                if not restore_path or not os.path.exists(restore_path):
-                    self.logger.warning(f"Recovery failed: snapshot missing at {restore_path}")
-                    return
-                reply = QMessageBox.question(self, "Restore Session", 
-                                           "An unsaved session was found. Restore it?",
-                                           QMessageBox.Yes | QMessageBox.No)
-                if reply == QMessageBox.Yes:
-                    if input_file and os.path.exists(input_file):
-                        self.load_file(input_file)
-                    self.snapshot_path = restore_path
-                    pixmap = QPixmap(self.snapshot_path)
-                    if not pixmap.isNull():
-                        self.set_background_image(pixmap)
-                        self.view_stack.setCurrentWidget(self.draw_scroll_area)
-                        self.draw_widget.setImage(self.snapshot_path)
-                        for item_data in data.get('items', []):
-                            if 'crop_rect' not in item_data: continue
-                            rect = QRectF(*item_data['crop_rect'])
-                            crop_pix = pixmap.copy(rect.toRect())
-                            item = ResizablePixmapItem(crop_pix, rect)
-                            item.current_width = item_data['width']
-                            item.current_height = item_data['height']
-                            item.setPos(item_data['x'], item_data['y'])
-                            item.setZValue(item_data['z'])
-                            item.assigned_role = item_data['role']
-                            item.update_handle_positions()
-                            self.portrait_scene.addItem(item)
-                            item.item_changed.connect(lambda i=item: self._handle_item_changed(i))
-                            self.modified_roles.add(item.assigned_role)
-                        self._mark_dirty()
-                        self.show_video_view()
-                        self.logger.info("Session restored.")
-                else:
-                    try: os.unlink(self._autosave_file)
-                    except: pass
-            except Exception as e:
-                self.logger.error(f"Restore failed: {e}")
-
-    def _change_z_order(self, delta):
-        selected = [i for i in self.portrait_scene.selectedItems() if isinstance(i, ResizablePixmapItem)]
-        if not selected: return
-        all_items = [i for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem)]
-        all_items.sort(key=lambda i: i.zValue())
-        data = []
-        for item in selected:
-            current_z = item.zValue()
-            new_z = current_z
-            try:
-                idx = all_items.index(item)
-                if delta > 0:
-                    if idx < len(all_items) - 1:
-                        new_z = all_items[idx + 1].zValue() + 1
-                    else:
-                        new_z = current_z + 1
-                else:
-                    if idx > 0:
-                        new_z = all_items[idx - 1].zValue() - 1
-                    else:
-                        new_z = current_z - 1
-            except ValueError:
-                new_z = current_z + delta
-            if new_z != current_z:
-                data.append({'item': item, 'old_z': current_z, 'new_z': new_z})
-        if not data: return
-        desc = "Move Up Layer" if delta > 0 else "Move Down Layer"
-        self.register_undo_action(desc, lambda d=data: self._apply_z_order(d, False), lambda d=data: self._apply_z_order(d, True))
-        self._apply_z_order(data, True)
-
-    def _update_upload_overlay_geometry(self):
-        """Sync overlay geometry with the main app window in global space."""
-        if hasattr(self, 'upload_overlay') and self.upload_overlay:
-            self.upload_overlay.setGeometry(self.geometry())
-            self.upload_overlay.raise_()
+    def _check_restore(self): pass
 
     def raise_selected_item(self):
-        """Bring item closer to the front (Layer 1) by increasing Z."""
-        self._change_z_order(1)
+        for item in self.portrait_scene.selectedItems(): item.setZValue(item.zValue() + 1)
+        self._refresh_layer_list()
 
     def lower_selected_item(self):
-        """Send item further to the back (Layer 6) by decreasing Z."""
-        self._change_z_order(-1)
-
-    def _apply_z_order(self, dl, use_new):
-        """[FIX Duplication] Consolidated Z-order application logic."""
-        for d in dl:
-            d['item'].setZValue(d['new_z'] if use_new else d['old_z'])
-            if d['item'].assigned_role: self.modified_roles.add(d['item'].assigned_role)
-        self._mark_dirty()
-        if self.portrait_scene:
-            self.portrait_scene.update()
-        self.on_selection_changed()
-        return True
+        for item in self.portrait_scene.selectedItems(): item.setZValue(item.zValue() - 1)
+        self._refresh_layer_list()
 
     def update_undo_redo_buttons(self):
-        self._refresh_portrait_controls_enabled()
-        has_sel = bool(self.portrait_scene.selectedItems())
-        if hasattr(self, 'raise_button'): self.raise_button.setEnabled(has_sel)
-        if hasattr(self, 'lower_button'): self.lower_button.setEnabled(has_sel)
+        self.undo_button.setEnabled(self.state_manager.can_undo())
+        self.redo_button.setEnabled(self.state_manager.can_redo())
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.raise_()
-        self.activateWindow()
         self.portrait_view.fit_to_scene()
-        self._position_refine_selection_hint()
-        if hasattr(self, '_update_upload_hint_responsive'):
-            self._update_upload_hint_responsive()
-        if hasattr(self, 'hint_overlay_widget'):
-            self.hint_overlay_widget.show()
-        self._update_upload_overlay_geometry()
-        QTimer.singleShot(200, self._check_restore_with_prompt)
-        if not self._autosave_timer.isActive():
-            self._autosave_timer.start()
-
-    def _check_restore_with_prompt(self):
-        try:
-            session_data = StateTransfer.load_state()
-            if not session_data or not session_data.get('input_file'):
-                self._check_restore()
-                return
-            path = session_data['input_file']
-            if not os.path.exists(path):
-                self._check_restore()
-                return
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Question)
-            msg.setWindowTitle("Resume Session?")
-            msg.setText(f"Continue working on your last video?\n\nFile: {os.path.basename(path)}")
-            msg.setInformativeText("Select 'Yes' to resume, or 'No' to start fresh.")
-            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg.setDefaultButton(QMessageBox.Yes)
-            for btn in msg.findChildren(QPushButton):
-                btn.setCursor(Qt.PointingHandCursor)
-            if msg.exec_() == QMessageBox.Yes:
-                self.load_file(path, start_paused=True)
-                if session_data.get('resolution'):
-                    self.media_processor.original_resolution = session_data['resolution']
-                self._check_restore()
-            else:
-                StateTransfer.update_state({"input_file": None, "resolution": None})
-                if os.path.exists(self._autosave_file):
-                    try: os.unlink(self._autosave_file)
-                    except: pass
-                self.reset_state(force=True)
-        except Exception as e:
-            self.logger.error(f"Error in _check_restore_with_prompt: {e}")
-            self._check_restore()
 
     def dragEnterEvent(self, event):
-        try:
-            if not event.mimeData().hasUrls():
-                event.ignore()
-                return
-            local_urls = [u for u in event.mimeData().urls() if u.isLocalFile()]
-            if len(local_urls) != 1:
-                event.ignore()
-                return
-            ext = os.path.splitext(local_urls[0].toLocalFile())[1].lower()
-            if ext in {'.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v'}:
-                event.acceptProposedAction()
-            else:
-                event.ignore()
-        except Exception:
-            event.ignore()
+        if event.mimeData().hasUrls(): event.acceptProposedAction()
 
     def dropEvent(self, event):
-        try:
-            local_urls = [u for u in event.mimeData().urls() if u.isLocalFile()]
-            if len(local_urls) != 1:
-                QMessageBox.warning(self, "Invalid Drop", "Drop exactly one local video file.")
-                event.ignore()
-                return
-            self.load_file(local_urls[0].toLocalFile())
-            event.acceptProposedAction()
-        except Exception as e:
-            self.logger.error(f"Drop handling failed: {e}")
-            event.ignore()
+        for url in event.mimeData().urls(): self.load_file(url.toLocalFile())
 
     def closeEvent(self, event):
-        if self._confirm_discard_changes():
-            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
-                try:
-                    self.hint_overlay_widget.hide()
-                    self.hint_overlay_widget.deleteLater()
-                except Exception:
-                    pass
-            if hasattr(self, '_autosave_file') and os.path.exists(self._autosave_file):
-                try: os.unlink(self._autosave_file)
-                except: pass
-            if hasattr(self, '_autosave_timer') and self._autosave_timer.isActive():
-                self._autosave_timer.stop()
-            if hasattr(self, 'media_processor') and self.media_processor:
-                try:
-                    self.media_processor.shutdown()
-                except Exception as media_cleanup_err:
-                    self.logger.debug(f"Media cleanup during close skipped: {media_cleanup_err}")
-            if hasattr(self, 'resource_manager') and self.resource_manager:
-                try:
-                    self.resource_manager.shutdown()
-                except Exception as resource_cleanup_err:
-                    self.logger.debug(f"Resource manager shutdown skipped: {resource_cleanup_err}")
-            try: cleanup_temp_snapshots()
-            except: pass
-            super().closeEvent(event)
-        else:
-            event.ignore()
+        if self._confirm_discard_changes(): super().closeEvent(event)
+        else: event.ignore()
 
     def _deferred_launch_main_app(self):
-        try:
-            updates = {}
-            if self.media_processor.input_file_path:
-                updates["input_file"] = self.media_processor.input_file_path
-            if self.media_processor.original_resolution:
-                updates["resolution"] = self.media_processor.original_resolution
-            StateTransfer.update_state(updates)
-            if hasattr(self, '_autosave_file') and os.path.exists(self._autosave_file):
-                try: os.unlink(self._autosave_file)
-                except: pass
-            cleanup_temp_snapshots()
-        except Exception as e:
-            self.logger.error(f"Error preparing handoff: {e}")
-            pass
-        try: 
-            creation_flags = 0
-            if sys.platform == "win32":
-                creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-            env = os.environ.copy()
-            if self.base_dir not in env.get("PYTHONPATH", ""):
-                 env["PYTHONPATH"] = self.base_dir + os.pathsep + env.get("PYTHONPATH", "")
-            subprocess.Popen(
-                [sys.executable, "-B", os.path.join(self.base_dir, 'app.py')], 
-                cwd=self.base_dir,
-                creationflags=creation_flags,
-                close_fds=True,
-                env=env,
-                shell=False
-            )
-        except Exception as e:
-            self.logger.critical(f"Failed to launch main app: {e}")
-            pass
-        QTimer.singleShot(100, lambda: QApplication.instance().quit())
+        subprocess.Popen([sys.executable, os.path.join(self.base_dir, 'app.py')])
+        QApplication.quit()
 
-    def _get_persistence_extras(self):
-        extras = {}
-        if hasattr(self, 'transparency_slider'):
-            extras['ghost_transparency'] = self.transparency_slider.value()
-        return extras
+    def _get_persistence_extras(self): return {}
 
     def _mark_dirty(self, is_dirty=True):
         self._dirty = is_dirty
-        self._refresh_portrait_controls_enabled()
         self._refresh_done_button()
 
     def _refresh_done_button(self):
-        self.done_button.setEnabled(self._dirty); self.done_button.setText("FINISH && SAVE *" if self._dirty else "FINISH && SAVE")
+        self.done_button.setEnabled(self._dirty)
 
     def _confirm_discard_changes(self):
-        if not self._dirty:
-            return True
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Question)
-        msg.setWindowTitle("Unsaved Changes")
-        msg.setText("Discard changes?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msg.setDefaultButton(QMessageBox.No)
-        for btn in msg.findChildren(QPushButton):
-            btn.setCursor(Qt.PointingHandCursor)
-        return msg.exec_() == QMessageBox.Yes
+        if not self._dirty: return True
+        return QMessageBox.question(self, "Unsaved", "Discard changes?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
 
     def get_title_info(self): return self.base_title
 
-    def _detect_overlaps(self, items):
-        overlaps = []
-        for i, item in enumerate(items):
-            rect_i = item.mapToScene(QRectF(0, 0, item.current_width, item.current_height)).boundingRect()
-            for other in items[i + 1:]:
-                rect_other = other.mapToScene(QRectF(0, 0, other.current_width, other.current_height)).boundingRect()
-                if rect_i.intersects(rect_other):
-                    overlaps.append((item, other))
-        return overlaps
-
     def undo(self):
-        if self.enhanced_logger:
-            self.enhanced_logger.log_button_click("Undo", self.state_manager.get_undo_description())
-        for timer in self._item_edit_timers.values(): timer.stop()
         self._in_undo_redo = True
-        self._suppress_undo_registration = True
-        try:
-            if self.state_manager.undo():
-                self._mark_dirty()
-                self.status_label.setText("Undo performed")
-        finally:
-            QTimer.singleShot(100, self._end_undo_redo)
-        self.update_undo_redo_buttons()
+        if self.state_manager.undo(): self._mark_dirty(); self._refresh_layer_list()
+        self._in_undo_redo = False
 
     def redo(self):
-        if self.enhanced_logger:
-            self.enhanced_logger.log_button_click("Redo", self.state_manager.get_redo_description())
-        for timer in self._item_edit_timers.values(): timer.stop()
         self._in_undo_redo = True
-        self._suppress_undo_registration = True
-        try:
-            if self.state_manager.redo():
-                self._mark_dirty()
-                self.status_label.setText("Redo performed")
-        finally:
-            QTimer.singleShot(100, self._end_undo_redo)
-        self.update_undo_redo_buttons()
-
-    def _end_undo_redo(self):
+        if self.state_manager.redo(): self._mark_dirty(); self._refresh_layer_list()
         self._in_undo_redo = False
-        self._suppress_undo_registration = False
-        self.update_undo_redo_buttons()
 
 def main():
-    try:
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
-        enhanced_logger_instance = setup_logger()
-        logger = enhanced_logger_instance.base_logger
-        logger.info("Application starting...")
-        cleanup_old_backups()
-        pid_retries = 3
-        success = False
-        pid_handle = None
-        for attempt in range(pid_retries):
-            success, pid_handle = ProcessManager.acquire_pid_lock("fortnite_crop_tool")
-            if success:
-                break
-            time.sleep(0.5)
-        if not success:
-            app = QApplication(sys.argv)
-            QMessageBox.information(None, "Already Running", "Crop Tool is already running.")
-            sys.exit(0)
-        app = QApplication(sys.argv)
+    app = QApplication(sys.argv)
 
-        from config import UNIFIED_STYLESHEET
-        app.setStyleSheet(UNIFIED_STYLESHEET)
-        file_path = sys.argv[1] if len(sys.argv) > 1 else None
-        player = CropApp(logger, enhanced_logger_instance, file_path=file_path)
-        player.show()
-        player.raise_()
-        player.activateWindow()
-        try:
-            ret = app.exec_()
-        except Exception as event_loop_err:
-            logger_initial.critical(f"Crash in event loop: {event_loop_err}", exc_info=True)
-            ret = 1
-        if pid_handle:
-            pid_handle.close()
-        sys.exit(ret)
-    except Exception as e:
-        if 'logger_initial' in locals():
-            logger_initial.critical(f"Unhandled exception in main: {e}", exc_info=True)
-        else:
-            print(f"Caught unhandled exception in main: {e}")
-            traceback.print_exc()
-    finally:
-        print("--- Crop Tools main() finished ---")
+    from system.logger import setup_native_logging
+    logger = setup_native_logging("crop_tool")
+    ex = CropApp(logger, get_enhanced_logger(logger))
+    ex.show()
+    sys.exit(app.exec_())
 if __name__ == '__main__':
     main()

@@ -7,17 +7,16 @@ os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null
 from PyQt5.QtGui import QColor, QCursor, QBrush
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
-    QLabel, QSlider, QStackedWidget, QFrame, QProgressBar, QScrollArea, QSplitter, QCheckBox, QGraphicsScene
+    QLabel, QSlider, QStackedWidget, QFrame, QProgressBar, QScrollArea, QSplitter, QCheckBox, QGraphicsScene, QListWidgetItem
 )
 
 from PyQt5.QtCore import Qt
 from crop_widgets import DrawWidget, SeekSlider, UploadOverlay
 from config import HUD_ELEMENT_MAPPINGS, UNIFIED_STYLESHEET, UI_LAYOUT, UI_COLORS
 from portrait_view import PortraitView
+from ui.widgets.draggable_list_widget import DraggableListWidget
 
 class AspectRatioWidget(QWidget):
-    """Enforces a specific aspect ratio for its content while remaining optionally centered."""
-
     def __init__(self, widget, ratio=16/9, alignment=Qt.AlignCenter, parent=None):
         super().__init__(parent)
         self.ratio = ratio
@@ -264,6 +263,33 @@ class Ui_CropApp:
         undo_redo_vbox.addWidget(CropAppWindow.redo_button)
         ur_outer_layout.addLayout(undo_redo_vbox)
         middle_row_layout.addWidget(undo_redo_container)
+        CropAppWindow.layer_list = DraggableListWidget()
+        CropAppWindow.layer_list.setFixedWidth(180)
+        CropAppWindow.layer_list.setObjectName("layerList")
+        CropAppWindow.layer_list.setStyleSheet(f"""
+            #layerList {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+                border-radius: 4px;
+                color: {UI_COLORS.TEXT_PRIMARY};
+            }}
+            #layerList::item {{
+                padding: 8px;
+                border-bottom: 1px solid {UI_COLORS.BORDER_LIGHT};
+            }}
+            #layerList::item:selected {{
+                background-color: {UI_COLORS.PRIMARY};
+                color: white;
+            }}
+        """)
+        layer_pane = QWidget()
+        layer_layout = QVBoxLayout(layer_pane)
+        layer_layout.setContentsMargins(10, 10, 10, 10)
+        layer_header = QLabel("LAYERS")
+        layer_header.setStyleSheet(f"color: {UI_COLORS.TEXT_DISABLED}; font-weight: bold; font-size: 10px;")
+        layer_layout.addWidget(layer_header)
+        layer_layout.addWidget(CropAppWindow.layer_list)
+        middle_row_layout.addWidget(layer_pane)
         right_pane_layout.addWidget(middle_row_widget, 1)
         portrait_footer = QFrame()
         portrait_footer.setObjectName("portraitFooter")

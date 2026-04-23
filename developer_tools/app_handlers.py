@@ -43,7 +43,6 @@ class SnapshotWorker(QObject):
 
 class CropAppHandlers:
     def _is_wand_thread_running(self):
-        """Safely check Magic Wand thread state without touching deleted Qt wrappers."""
         thread = getattr(self, 'wand_thread', None)
         if thread is None:
             return False
@@ -54,7 +53,6 @@ class CropAppHandlers:
             return False
 
     def _cleanup_magic_wand_runtime(self):
-        """Cooperative Magic Wand cleanup without force-killing threads."""
         if hasattr(self, '_thinking_toast') and self._thinking_toast:
             self._thinking_toast.hide()
             self._thinking_toast = None
@@ -88,7 +86,6 @@ class CropAppHandlers:
         self.magic_wand_button.setEnabled(True)
 
     def _get_enhanced_logger(self):
-        """Get enhanced logger instance."""
         if hasattr(self, 'enhanced_logger') and self.enhanced_logger:
             return self.enhanced_logger
         return get_enhanced_logger(self.logger)
@@ -122,7 +119,6 @@ class CropAppHandlers:
         self.setStyleSheet(style)
 
     def _set_upload_hint_active(self, active):
-        """Directly toggle the pulsing 'UPLOAD VIDEO' guidance."""
         win = self if hasattr(self, 'upload_overlay') else getattr(self, 'window', lambda: None)()
         overlay = getattr(win, 'upload_overlay', None)
         crop_overlay = getattr(win, 'cropping_hint_overlay', None)
@@ -135,7 +131,6 @@ class CropAppHandlers:
                 overlay.hide()
 
     def _set_cropping_hint_active(self, active):
-        """Directly toggle the pulsing 'START CROPPING' guidance."""
         win = self if hasattr(self, 'cropping_hint_overlay') else getattr(self, 'window', lambda: None)()
         overlay = getattr(win, 'cropping_hint_overlay', None)
         upload_overlay = getattr(win, 'upload_overlay', None)
@@ -148,11 +143,9 @@ class CropAppHandlers:
                 overlay.hide()
 
     def back_to_video(self):
-        """[FIX #8] Return to video seeker from drawing view."""
         self.show_video_view()
 
     def open_image_fallback(self):
-        """Fallback path for MPV-missing environments: load a local screenshot safely."""
         image_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Screenshot",
@@ -212,7 +205,6 @@ class CropAppHandlers:
             self._refresh_portrait_controls_enabled()
 
     def update_wizard_step(self, step_num, instruction):
-        """[FIX #17, #22, #5] Short, punchy status labels with Goal/Status split."""
         self.current_step = step_num
         if not self._is_wand_thread_running():
             clamped_step = max(1, min(step_num, 5))
@@ -241,7 +233,6 @@ class CropAppHandlers:
         self.update_progress_tracker()
         
     def _on_video_info_ready(self, resolution):
-        """[FIX #2, #3, #4] Callback for background resolution detection."""
         try:
             if not hasattr(self, 'status_label') or not self.status_label:
                 return
@@ -282,7 +273,6 @@ class CropAppHandlers:
                 self.logger.error(f"Error in _on_video_info_ready: {e}")
 
     def update_progress_tracker(self):
-        """[FIX #5] Clean progress tracker without redundant checks."""
         if not hasattr(self, 'progress_labels'):
             return
         configured_display_names = self._get_configured_roles()
@@ -315,10 +305,6 @@ class CropAppHandlers:
         return {display_name for tech_key, display_name in HUD_ELEMENT_MAPPINGS.items() if tech_key in configured_tech_keys}
 
     def handle_crop_completed(self, pix, rect, role):
-        """
-        Handles the signal from the draw widget. Instead of launching a new window,
-        it now calls the integrated method to add the item to the portrait scene.
-        """
         if not pix or not rect: return
         process_rect = rect.toRect() if hasattr(rect, 'toRect') else rect
         if hasattr(self.draw_widget, 'pixmap') and not self.draw_widget.pixmap.isNull():
@@ -356,7 +342,6 @@ class CropAppHandlers:
         self.update_wizard_step(3, f"Adjust '{role}' in the Portrait Composer, then click FINISH && SAVE.")
 
     def on_magic_wand_clicked(self):
-        """[FIX #4, #5, #9, #29] Single worker pattern for Magic Wand with progress bar and thread safety."""
         if not self.snapshot_path or not os.path.exists(self.snapshot_path):
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
@@ -429,7 +414,6 @@ class CropAppHandlers:
         self.wand_thread.start()
 
     def _update_analyzing_state(self):
-        """Update the button text and progress bar to show animation."""
         self._analyzing_dots = (self._analyzing_dots % 3) + 1
         self.magic_wand_button.setText(f"Analyzing{'.' * self._analyzing_dots}")
         if hasattr(self, 'progress_bar'):
@@ -477,7 +461,6 @@ class CropAppHandlers:
         QMessageBox.warning(self, "Magic Wand Error", str(err))
 
     def _on_magic_wand_finished(self, regions, magic_id):
-        """[FIX #4, #5] Improved feedback on Magic Wand failure."""
         if magic_id != getattr(self, '_magic_wand_active_id', None):
             return
         if getattr(self, '_magic_wand_cancelled', False):
@@ -529,7 +512,6 @@ class CropAppHandlers:
         self.draw_widget.update()
 
     def reset_state(self, force=False):
-        """[FIX] Comprehensive system reset with UI view state restoration and scene cleanup."""
         if not force and getattr(self, '_dirty', False):
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Question)
@@ -679,7 +661,6 @@ class CropAppHandlers:
         self._snapshot_owned_by_app = False
 
     def load_file(self, file_path, start_paused=False):
-        """[FIX #12] Defer slider and status updates until media length is confirmed."""
         if not file_path or not os.path.isfile(file_path):
             QMessageBox.warning(self, "Invalid File", "Selected file does not exist or is not a regular file.")
             self._set_upload_hint_active(True)
@@ -713,7 +694,7 @@ class CropAppHandlers:
         if hasattr(self, 'snapshot_button') and self.snapshot_button:
             self.snapshot_button.show()
             self.snapshot_button.setText("START CROPPING")
-            self.snapshot_button.setEnabled(True)
+            self.snapshot_button.setEnabled(False)
         if hasattr(self, 'reset_state_button') and self.reset_state_button:
             self.reset_state_button.show()
         self.play_pause_button.setEnabled(True)
@@ -731,27 +712,15 @@ class CropAppHandlers:
         self.timer.start()
 
     def take_snapshot(self):
-        if not self.media_processor.original_resolution and self.media_processor.player:
-             w = getattr(self.media_processor.player, 'width', 0)
-             h = getattr(self.media_processor.player, 'height', 0)
-             if w > 0 and h > 0:
-                 self.media_processor.original_resolution = f"{w}x{h}"
-        max_resolution_wait_attempts = 12
-        if not hasattr(self, '_snapshot_wait_attempts'):
-            self._snapshot_wait_attempts = 0
         if not self.media_processor.original_resolution:
-             self._snapshot_wait_attempts += 1
-             if hasattr(self, 'status_label'):
-                 self.status_label.setText("WAITING FOR VIDEO...")
-             if self._snapshot_wait_attempts > max_resolution_wait_attempts:
-                 self.logger.error("Timed out waiting for video resolution before snapshot")
-                 QMessageBox.warning(self, "Snapshot", "Timed out waiting for video metadata. Try reloading the video.")
-                 self._snapshot_wait_attempts = 0
-                 self._reset_snapshot_ui()
-                 return
-             QTimer.singleShot(1000, self.take_snapshot)
+            if self.media_processor.player:
+                 w = getattr(self.media_processor.player, 'width', 0)
+                 h = getattr(self.media_processor.player, 'height', 0)
+                 if w > 0 and h > 0:
+                     self.media_processor.original_resolution = f"{w}x{h}"
+        if not self.media_processor.original_resolution:
+             QMessageBox.warning(self, "Snapshot", "Still waiting for video metadata. Please wait or try reloading the video.")
              return
-        self._snapshot_wait_attempts = 0
         if self._get_enhanced_logger():
             self._get_enhanced_logger().log_button_click("START CROPPING", f"Video Position: {self.position_slider.value()}ms")
         try:
@@ -780,7 +749,6 @@ class CropAppHandlers:
             self._reset_snapshot_ui()
 
     def _execute_snapshot_capture(self, path, time_val):
-        """Run snapshot capture off the GUI thread and return via signal."""
         if getattr(self, '_snapshot_thread', None) and self._snapshot_thread.isRunning():
             return
         self._snapshot_thread = QThread(self)
@@ -795,7 +763,6 @@ class CropAppHandlers:
         self._snapshot_thread.start()
 
     def _on_snapshot_capture_result(self, success, message):
-        """[FIX #7, #5] Direct signal transition for snapshots, removing polling jitter."""
         self._snapshot_worker = None
         if success:
             if os.path.exists(self.snapshot_path) and os.path.getsize(self.snapshot_path) > 100:
@@ -814,7 +781,7 @@ class CropAppHandlers:
     def _reset_snapshot_ui(self):
         has_video = bool(self.media_processor.input_file_path)
         self._snapshot_processing = False
-        self.snapshot_button.setEnabled(has_video)
+        self.snapshot_button.setEnabled(has_video and bool(self.media_processor.original_resolution))
         self.snapshot_button.setText("START CROPPING")
         self.snapshot_button.setVisible(has_video)
         if hasattr(self, 'slider_container'):
@@ -947,7 +914,6 @@ class CropAppHandlers:
         self.total_time_label.setText(self._format_time(total_ms))
         
     def update_ui(self):
-        """[FIX #12/32] update UI while respecting scrubbing and ensuring labels are current."""
         try:
             if not hasattr(self, 'media_processor') or not self.media_processor:
                 return
@@ -985,3 +951,4 @@ class CropAppHandlers:
         minutes = total_seconds // 60
         seconds = total_seconds % 60
         return f"{minutes:02d}:{seconds:02d}"
+

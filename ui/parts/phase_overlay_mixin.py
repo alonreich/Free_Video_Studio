@@ -88,8 +88,8 @@ class PhaseOverlayMixin:
         self.live_log.setMaximumBlockCount(5000)
         self.live_log.setStyleSheet("""
             QPlainTextEdit {
-                color:#25e825; background:#0b141d; border:1px solid #1f3545; border-radius:8px;
-                font-family: Consolas, monospace; font-size: 12px;
+                color: #00FF00; background: rgba(11, 20, 29, 150); border: none;
+                font-family: Consolas, monospace; font-size: 11px;
             }
         """)
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
@@ -135,6 +135,8 @@ class PhaseOverlayMixin:
                     local_pos = self._overlay.mapFromGlobal(global_pos)
                     w_rect = QRect(local_pos, w.size())
                     mask_region = mask_region.subtracted(QRegion(w_rect))
+            if hasattr(self, "timeline_overlay") and self.timeline_overlay:
+                 self.timeline_overlay.hide()
             self._overlay.setMask(mask_region)
             self._overlay.raise_()
             margin_x = 40
@@ -146,7 +148,9 @@ class PhaseOverlayMixin:
             if hasattr(self, "_graph"):
                 self._graph.setGeometry(margin_x, margin_y, avail_w, graph_h)
             if hasattr(self, "live_log"):
-                self.live_log.setGeometry(margin_x, margin_y + graph_h + 20, avail_w, avail_h - graph_h - 80)
+                log_y = margin_y + graph_h + 30
+                log_h = max(150, avail_h - graph_h - 100)
+                self.live_log.setGeometry(margin_x, log_y, avail_w, log_h)
                 self.live_log.show()
                 self.live_log.raise_()
         except Exception:

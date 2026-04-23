@@ -8,10 +8,13 @@ class UIStyles:
             border-style: solid;
             font-weight: bold;
         }
+    """
+    _DISABLED_COMMON = """
         QPushButton:disabled {
-            background-color: #7f8c8d;
-            color: #bdc3c7;
-            border: none;
+            background: #7f8c8d !important;
+            background-color: #7f8c8d !important;
+            color: #bdc3c7 !important;
+            border: none !important;
         }
     """
     _HOVER_BORDER = """
@@ -41,7 +44,7 @@ class UIStyles:
             padding-bottom: 9px;
             padding-right: 17px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_PLAY = _3D_COMMON + """
         QPushButton {
             background-color: #1b6d26;
@@ -64,7 +67,7 @@ class UIStyles:
             padding-bottom: 7px;
             padding-right: 13px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_PROCESS = _3D_COMMON + """
         QPushButton {
             background-color: #1b6d26;
@@ -87,7 +90,7 @@ class UIStyles:
             padding-bottom: 9px;
             padding-right: 17px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_CANCEL = _3D_COMMON + """
         QPushButton {
             background-color: #c0392b;
@@ -110,7 +113,7 @@ class UIStyles:
             padding-bottom: 9px;
             padding-right: 17px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_DANGER = _3D_COMMON + """
         QPushButton {
             background-color: #c0392b;
@@ -133,7 +136,7 @@ class UIStyles:
             padding-bottom: 3px;
             padding-right: 7px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_TOOL = _3D_COMMON + """
         QPushButton {
             background-color: #318181;
@@ -156,7 +159,7 @@ class UIStyles:
             padding-bottom: 4px;
             padding-right: 4px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_WIZARD_BLUE = _3D_COMMON + """
         QPushButton {
             background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
@@ -181,10 +184,11 @@ class UIStyles:
             padding-bottom: 7px;
             padding-right: 13px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_WIZARD_GREEN = _3D_COMMON + """
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
+            background-color: #27ae60;
+            background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
             color: #ffffff;
             border-radius: 10px;
             font-weight: bold;
@@ -196,7 +200,7 @@ class UIStyles:
             border-right: 1px solid rgba(0, 0, 0, 0.6);
         }
         QPushButton:pressed:!disabled {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
+            background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
             border-top: 1px solid rgba(0, 0, 0, 0.7);
             border-left: 1px solid rgba(0, 0, 0, 0.7);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -206,7 +210,7 @@ class UIStyles:
             padding-bottom: 9px;
             padding-right: 17px;
         }
-    """ + _HOVER_BORDER
+    """ + _HOVER_BORDER + _DISABLED_COMMON
     @staticmethod
     def get_3d_style(color, font_size=12, border_radius=8, padding="10px 18px"):
         try:
@@ -285,6 +289,9 @@ class UIStyles:
             margin: 0 -17px;
             border-radius: 2px;
         }
+        QSlider::handle:vertical:hover {
+            border: 2px solid #7DD3FC;
+        }
         QSlider::add-page:vertical {
             background: #1b6d26;
             border-radius: 3px;
@@ -350,6 +357,9 @@ class UIStyles:
             height: 40px;
             margin: -17px 0;
             border-radius: 2px;
+        }
+        QSlider::handle:horizontal:hover {
+            border: 2px solid #7DD3FC;
         }
         QSlider::sub-page:horizontal {
             background: #1b6d26;

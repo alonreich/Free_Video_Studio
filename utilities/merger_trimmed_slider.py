@@ -282,7 +282,7 @@ class TrimmedSlider(QSlider):
                 self._hovering_music_handle = new_hover_music
                 self.update()
             if self._hovering_handle or self._hovering_music_handle:
-                self.setCursor(Qt.SizeHorCursor)
+                self.setCursor(Qt.PointingHandCursor)
             elif over_groove:
                 self.setCursor(Qt.PointingHandCursor)
             else:

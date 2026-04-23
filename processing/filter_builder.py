@@ -147,7 +147,7 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             start, end, speed = chunk['start'], chunk['end'], chunk['speed']; v_src = input_v_label; a_src = input_a_label; v_chunk_label = f"[v_chunk_{i}]"; a_chunk_label = f"[a_chunk_{i}]"
             if abs(speed) < 0.001:
                 dur = chunk.get('freeze_dur', end - start)
-                full_chain_parts.append(f"{v_src}trim=start={start:.4f}:end={start+0.001:.4f},setpts=PTS-STARTPTS,loop=loop=-1:size=1:start=0,trim=duration={dur:.4f},setpts=PTS-STARTPTS,fps={target_fps}{v_chunk_label}")
+                full_chain_parts.append(f"{v_src}trim=start={start:.4f}:end={start+0.1:.4f},setpts=PTS-STARTPTS,loop=loop=-1:size=1:start=0,trim=duration={dur:.4f},setpts=PTS-STARTPTS,fps={target_fps}{v_chunk_label}")
                 full_chain_parts.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={dur:.4f},asetpts=PTS-STARTPTS{a_chunk_label}")
                 out_dur = dur
             else:

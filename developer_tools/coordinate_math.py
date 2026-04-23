@@ -3,26 +3,15 @@ import os
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
-"""
-Centralized coordinate transformation math for Fortnite Video Software.
-Ensures perfect mathematical alignment between any source resolution (16:9)
-and the target 9:16 portrait output.
-"""
 
 import math
 import re
 from typing import Tuple
 
 def scale_round(val: float) -> int:
-    """Consistent rounding to nearest integer using standard round()."""
     return int(round(val))
 
 def outward_round_rect(x: float, y: float, w: float, h: float) -> Tuple[int, int, int, int]:
-    """
-    Rounds a rectangle strictly outwards:
-    Left/Top edges floor, Right/Bottom edges ceil.
-    This ensures the selection never shrinks.
-    """
     ix = int(math.floor(x))
     iy = int(math.floor(y))
     iw = int(math.ceil(x + w)) - ix
@@ -30,7 +19,6 @@ def outward_round_rect(x: float, y: float, w: float, h: float) -> Tuple[int, int
     return ix, iy, max(1, iw), max(1, ih)
 
 def get_resolution_ints(res_str: str) -> Tuple[int, int]:
-    """Parses resolution string using robust regex."""
     if not res_str:
         return 1920, 1080
     try:
@@ -51,10 +39,6 @@ UI_TO_INTERNAL_SCALE = float(INTERNAL_W) / float(PORTRAIT_W)
 
 def transform_to_content_area(rect: Tuple[float, float, float, float],
                             original_resolution: str) -> Tuple[float, float, float, float]:
-    """
-    Transforms coordinates from original video pixels to the 1080x1920 Portrait UI area.
-    The content area starts at UI_PADDING_TOP (150).
-    """
     in_w, in_h = get_resolution_ints(original_resolution)
     x, y, w, h = rect
     scale = float(INTERNAL_H) / float(in_h)
@@ -78,11 +62,6 @@ def transform_to_content_area(rect: Tuple[float, float, float, float],
 def inverse_transform_from_content_area(rect: Tuple[float, float, float, float],
                                         original_resolution: str,
                                         drift_type: str = None) -> Tuple[float, float, float, float]:
-    """
-    Transforms absolute UI coordinates (0-1920) back to original video pixels.
-    Inverts the centering and scaling logic.
-    Applies mandated drift protection (+1px bias).
-    """
     in_w, in_h = get_resolution_ints(original_resolution)
     ui_x, ui_y, ui_w, ui_h = rect
     rel_ui_y = ui_y - UI_PADDING_TOP
@@ -136,7 +115,6 @@ def transform_to_content_area_int(rect: Tuple[int, int, int, int],
     return outward_round_rect(fx, fy, fw, fh)
 
 def clamp_overlay_position(x: float, y: float, width: float, height: float, padding_top_ui: int = 150, padding_bottom_ui: int = 150) -> Tuple[float, float]:
-    """Clamp overlay position to screen bounds in 1280x1920 backend canvas space."""
     backend_scale = float(INTERNAL_W) / float(PORTRAIT_W)
     min_y = float(padding_top_ui) * backend_scale
     max_y = max(min_y, float(INTERNAL_H) - height - (float(padding_bottom_ui) * backend_scale))

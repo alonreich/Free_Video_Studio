@@ -1,4 +1,4 @@
-﻿try:
+try:
     import mpv
 except Exception:
     mpv = None
@@ -99,8 +99,8 @@ class GranularTimelineSlider(TrimmedSlider):
             val = self._map_pos_to_value(e.pos().x())
             low = self.minimum()
             for i, seg in enumerate(self.segments):
-                if i != self.active_segment_index and abs(seg['speed']) > 0.001 and seg['end'] <= self.trimmed_start_ms:
-                    low = max(low, seg['end'] + 1000)
+                if i != self.active_segment_index and seg['end'] <= self.trimmed_start_ms:
+                    low = max(low, seg['end'] + 10)
             val = max(low, min(val, self.trimmed_end_ms - 10))
             if val != self.trimmed_start_ms:
                 self.trimmed_start_ms = val
@@ -111,10 +111,10 @@ class GranularTimelineSlider(TrimmedSlider):
             val = self._map_pos_to_value(e.pos().x())
             high = self.maximum()
             for i, seg in enumerate(self.segments):
-                if i != self.active_segment_index and abs(seg['speed']) > 0.001 and seg['start'] >= self.trimmed_end_ms:
-                    high = min(high, seg['start'] - 1000)
+                if i != self.active_segment_index and seg['start'] >= self.trimmed_end_ms:
+                    high = min(high, seg['start'] - 10)
             val = min(high, max(val, self.trimmed_start_ms + 10))
-            if val != self.trimmed_start_ms:
+            if val != self.trimmed_end_ms:
                 self.trimmed_end_ms = val
                 self.trim_times_changed.emit(self.trimmed_start_ms, self.trimmed_end_ms)
                 self.update()
@@ -138,8 +138,9 @@ class GranularTimelineSlider(TrimmedSlider):
             p.setRenderHint(QPainter.Antialiasing)
             groove_rect = self._get_groove_rect()
             p.setPen(Qt.NoPen); p.setBrush(QColor(40, 40, 40)); p.drawRoundedRect(groove_rect, 2, 2)
-            for seg in self.segments:
-                self._draw_segment_on_groove(p, groove_rect, seg['start'], seg['end'], seg['speed'])
+            for i, seg in enumerate(self.segments):
+                is_active = (i == self.active_segment_index)
+                self._draw_segment_on_groove(p, groove_rect, seg['start'], seg['end'], seg['speed'], is_pending=is_active)
             if self.pending_start != -1 and self.pending_end != -1:
                 self._draw_segment_on_groove(p, groove_rect, self.pending_start, self.pending_end, self.pending_speed, is_pending=True)
             min_v, max_v = self.minimum(), self.maximum()
@@ -188,7 +189,8 @@ class GranularTimelineSlider(TrimmedSlider):
 
     def _draw_segment_on_groove(self, p, groove_rect, start_ms, end_ms, speed, is_pending=False):
         if end_ms <= start_ms: return
-        if abs(speed) < 0.001: seg_color = QColor("#9b59b6")
+        is_freeze = abs(speed) < 0.001
+        if is_freeze: seg_color = QColor("#9b59b6")
         else: seg_color = QColor("#2ecc71") if speed > 1.101 else QColor("#e74c3c") if speed < 1.099 else QColor("#95a5a6")
         alpha = 180 if is_pending else 120
         seg_color.setAlpha(alpha); p.setBrush(seg_color); p.setPen(Qt.NoPen)
@@ -196,6 +198,13 @@ class GranularTimelineSlider(TrimmedSlider):
         if s_pos > e_pos: s_pos, e_pos = e_pos, s_pos
         h, y = 24, groove_rect.center().y() - 12
         seg_rect = QRect(s_pos, y, max(1, e_pos - s_pos), h); p.drawRect(seg_rect)
+        if is_freeze:
+            try:
+                cam_icon = self.style().standardIcon(QStyle.SP_DialogHelpButton)
+                icon_size = min(16, seg_rect.height() - 4)
+                icon_rect = QRect(seg_rect.center().x() - icon_size // 2, seg_rect.center().y() - icon_size // 2, icon_size, icon_size)
+                cam_icon.paint(p, icon_rect)
+            except: pass
         if is_pending:
             p.setBrush(Qt.NoBrush)
             if self.m_ants_timer.isActive():
@@ -209,6 +218,9 @@ class GranularSpeedEditor(QDialog):
     STYLE_METALLIC_GREEN = """QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a7a1a, stop:0.5 #105410, stop:1 #0a300a); color: #eeeeee; font-weight: bold; font-size: 11px; border-radius: 8px; border-top: 1px solid rgba(255, 255, 255, 0.2); border-left: 1px solid rgba(255, 255, 255, 0.2); border-bottom: 2px solid rgba(0, 0, 0, 0.9); border-right: 2px solid rgba(0, 0, 0, 0.9); padding: 10px 2px; } QPushButton:hover { border: 2px solid #2ecc71; } QPushButton:pressed { background: #031003; border-top: 2px solid rgba(0, 0, 0, 1.0); border-left: 2px solid rgba(0, 0, 0, 1.0); padding-top: 11px; padding-left: 3px; }"""
     STYLE_METALLIC_BLUE = """QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2e82a0, stop:0.5 #1e648c, stop:1 #123d50); color: #eeeeee; font-weight: bold; font-size: 11px; border-radius: 8px; border-top: 1px solid rgba(255, 255, 255, 0.2); border-left: 1px solid rgba(255, 255, 255, 0.2); border-bottom: 2px solid rgba(0, 0, 0, 0.9); border-right: 2px solid rgba(0, 0, 0, 0.9); padding: 10px 2px; } QPushButton:hover { border: 2px solid #7DD3FC; } QPushButton:pressed { background: #061a26; border-top: 2px solid rgba(0, 0, 0, 1.0); border-left: 2px solid rgba(0, 0, 0, 1.0); padding-top: 11px; padding-left: 3px; }"""
     status_update_signal = pyqtSignal(str)
+    @property
+    def freeze_images(self):
+        return [seg for seg in self.speed_segments if abs(seg['speed']) < 0.001]
 
     def _safe_mpv_set(self, prop, value):
         if not getattr(self, "player", None): return False
@@ -285,6 +297,7 @@ class GranularSpeedEditor(QDialog):
         self._last_rate_update = 0
         self._updating_ui = False
         self._start_manually_set = False
+        self._in_freeze_segment = False
         self.restore_geometry()
         self.init_ui()
         if sys.platform == 'win32': os.environ["LC_NUMERIC"] = "C"
@@ -412,11 +425,9 @@ class GranularSpeedEditor(QDialog):
         self.seek_video(new_rel, exact=True); self.timeline.setValue(int(new_rel)); self.timeline.update()
 
     def _check_collision(self, start, end, exclude_idx=-1, is_freeze=False):
-        if is_freeze: return False
         for i, seg in enumerate(self.speed_segments):
             if i == exclude_idx: continue
-            if abs(seg['speed']) < 0.001: continue
-            if start < seg['end'] + 1000 and end > seg['start'] - 1000: return True
+            if start < seg['end'] + 10 and end > seg['start'] - 10: return True
         return False
 
     def freeze_image(self):
@@ -426,7 +437,10 @@ class GranularSpeedEditor(QDialog):
         new_seg = {'start': start, 'end': start + freeze_dur_ms, 'speed': 0.0}
         self.speed_segments.append(new_seg); self.speed_segments.sort(key=lambda x: x['start'])
         self.timeline.set_segments(self.speed_segments); self.on_selection_cleared()
+        for i, seg in enumerate(self.speed_segments):
+            if seg == new_seg: self.edit_segment(i); break
         self.list_modified = True; self._update_clear_all_btn_state(); self.freeze_sec_spin.setValue(1)
+        if hasattr(self.parent_app, 'statusBar'): self.parent_app.statusBar().showMessage(f"✅ Image frozen for {freeze_dur_ms/1000.0}s at {self._fmt(start)} ✅", 3000)
         self.status_update_signal.emit(f"✅ Image frozen for {freeze_dur_ms/1000.0}s at {self._fmt(start)} ✅")
 
     def _fmt(self, ms: int) -> str:
@@ -446,6 +460,7 @@ class GranularSpeedEditor(QDialog):
         self.timer.stop(); self.play_btn.setText("PLAY"); self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
 
     def seek_video(self, pos, exact=False):
+        self._in_freeze_segment = False
         if not self.player: return
         rel_pos = max(0, min(self.duration, pos))
         abs_pos = self.abs_trim_start + rel_pos; mode = "exact" if exact else "fast"
@@ -462,8 +477,11 @@ class GranularSpeedEditor(QDialog):
                     self._in_freeze_segment = False; self._safe_mpv_set("pause", False)
                     self._safe_mpv_command("seek", (self.abs_trim_start + seg['start']) / 1000.0, "absolute", "exact")
                 return
+            curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
+            if self._start_manually_set:
+                self.timeline.set_trim_times(self.timeline.trimmed_start_ms, int(curr_rel))
+                self.update_pending_visualization()
             if not self.timeline.isSliderDown():
-                curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
                 if curr_rel >= self.duration: self.pause_video(); curr_rel = self.duration
                 elif curr_rel < 0: curr_rel = 0
                 t_i = int(round(curr_rel)); self.timeline.blockSignals(True); self.timeline.setValue(t_i); self.timeline.blockSignals(False); self.timeline.update()
@@ -491,7 +509,12 @@ class GranularSpeedEditor(QDialog):
             if self._safe_mpv_set("speed", target_speed): self._last_rate_update = now
 
     def on_speed_changed(self, val):
-        self.selection_modified = True; self.update_playback_speed(self.last_position_ms)
+        self.selection_modified = True
+        idx = self.timeline.active_segment_index
+        if idx != -1 and 0 <= idx < len(self.speed_segments):
+            self.speed_segments[idx]['speed'] = val
+            self.timeline.update()
+        self.update_playback_speed(self.last_position_ms)
 
     def on_trim_changed(self, s, e): self.update_pending_visualization()
 
@@ -500,18 +523,21 @@ class GranularSpeedEditor(QDialog):
         self.timeline.set_pending_segment(s, e, self.speed_spin.value())
 
     def on_selection_cleared(self):
-        self.timeline.active_segment_index = -1; self.delete_seg_btn.setEnabled(False); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY); self.speed_spin.setValue(self.base_speed); self.timeline.set_trim_times(-1, -1); self.update_pending_visualization()
+        self.timeline.active_segment_index = -1; self.delete_seg_btn.setEnabled(False); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_GREY); self.speed_spin.setValue(self.base_speed); self.timeline.set_trim_times(-1, -1); self.update_pending_visualization(); self.timeline.stop_ants()
 
     def edit_segment(self, idx):
         if 0 <= idx < len(self.speed_segments):
-            seg = self.speed_segments[idx]; self.timeline.active_segment_index = idx; self.timeline.set_trim_times(seg['start'], seg['end']); self.speed_spin.setValue(seg['speed']); self.delete_seg_btn.setEnabled(True); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_RED); self.update_pending_visualization()
+            seg = self.speed_segments[idx]; self.timeline.active_segment_index = idx; self.timeline.set_trim_times(seg['start'], seg['end']); self.speed_spin.setValue(seg['speed']); self.delete_seg_btn.setEnabled(True); self.delete_seg_btn.setStyleSheet(self.STYLE_METALLIC_RED); self.update_pending_visualization(); self.timeline.start_ants()
 
     def add_segment(self):
         s, e = self.timeline.trimmed_start_ms, self.timeline.trimmed_end_ms
         if e <= s + 10: return
         if self._check_collision(s, e): self.status_update_signal.emit("❌ Collision detected! Keep 1s gap. ❌"); return
         new_seg = {'start': s, 'end': e, 'speed': self.speed_spin.value()}
-        self.speed_segments.append(new_seg); self.speed_segments.sort(key=lambda x: x['start']); self.timeline.set_segments(self.speed_segments); self.on_selection_cleared(); self.list_modified = True; self._update_clear_all_btn_state()
+        self.speed_segments.append(new_seg); self.speed_segments.sort(key=lambda x: x['start']); self.timeline.set_segments(self.speed_segments)
+        for i, seg in enumerate(self.speed_segments):
+            if seg == new_seg: self.edit_segment(i); break
+        self.list_modified = True; self._update_clear_all_btn_state()
 
     def delete_segment(self, idx):
         if 0 <= idx < len(self.speed_segments):
@@ -526,26 +552,28 @@ class GranularSpeedEditor(QDialog):
         if msg.exec_() == QMessageBox.Yes: self.speed_segments = []; self.timeline.set_segments([]); self.on_selection_cleared(); self.list_modified = True; self._update_clear_all_btn_state()
 
     def set_start(self):
+        self.on_selection_cleared()
         curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
-        self.timeline.set_trim_times(int(curr_rel), self.timeline.trimmed_end_ms); self._start_manually_set = True; self.update_pending_visualization()
+        self.timeline.set_trim_times(int(curr_rel), self.timeline.trimmed_end_ms); self._start_manually_set = True; self.timeline.start_ants(); self.update_pending_visualization()
 
     def set_end(self):
         curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
         e = int(curr_rel)
         if self._start_manually_set:
             s = self.timeline.trimmed_start_ms
+            created = False
             if e > s + 10:
                 if self._check_collision(s, e): self.status_update_signal.emit("❌ Collision detected! Keep 1s gap. ❌")
                 else:
                     new_seg = {'start': s, 'end': e, 'speed': self.speed_spin.value()}; self.speed_segments.append(new_seg); self.speed_segments.sort(key=lambda x: x['start']); self.timeline.set_segments(self.speed_segments); self.list_modified = True; self._update_clear_all_btn_state()
                     for i, seg in enumerate(self.speed_segments):
-                        if seg == new_seg: self.edit_segment(i); break
+                        if seg == new_seg: self.edit_segment(i); created = True; break
             self._start_manually_set = False
+            if not created: self.timeline.stop_ants()
         else:
             s = 0
-            for seg in self.speed_segments:
-                if abs(seg['speed']) < 0.001: continue
-                if seg['end'] <= e: s = max(s, seg['end'] + 1000)
+            for seg in sorted(self.speed_segments, key=lambda x: x['end']):
+                if seg['end'] <= e: s = max(s, seg['end'] + 10)
             if e > s + 10:
                 if self._check_collision(s, e): self.status_update_signal.emit("❌ Collision detected! Keep 1s gap. ❌")
                 else:

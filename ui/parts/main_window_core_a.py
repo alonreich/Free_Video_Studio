@@ -11,7 +11,7 @@ class MainWindowCoreAMixin:
             if self.speed_segments or getattr(self, "freeze_images", []):
                 self._clear_speed_segments()
                 return
-            self.logger.info("UI: Opening Granular Speed Editor..."); self._opening_granular_dialog = True; self._ignore_mpv_end_until = time.time() + 2.0; current_ms = 0
+            self._opening_granular_dialog = True; self._ignore_mpv_end_until = time.time() + 2.0; current_ms = 0
             if self.player:
                 if not self._safe_mpv_get("pause", True): self._safe_mpv_set("pause", True)
                 current_ms = max(0, int((getattr(self.player, 'time-pos', 0) or 0) * 1000))
@@ -28,8 +28,15 @@ class MainWindowCoreAMixin:
             dlg = GranularSpeedEditor(self.input_file_path, self, self.speed_segments, base_speed=self.speed_spinbox.value(), start_time_ms=current_ms, mpv_instance=self.player, volume=self._vol_eff())
             res = dlg.exec_(); self._opening_granular_dialog = False; self._ignore_mpv_end_until = time.time() + 1.0; QThread.msleep(150); QCoreApplication.processEvents()
             if res == QDialog.Accepted:
-                self.logger.info(f"UI: Granular Speed segments updated ({len(dlg.speed_segments)} segments). Recalculating quality..."); self.speed_segments = sorted(dlg.speed_segments, key=lambda x: x['start'])
-                self.freeze_images = getattr(dlg, "freeze_images", [])
+                self.speed_segments = []
+                for s in dlg.speed_segments:
+                    self.speed_segments.append({
+                        'start': s['start'] + self.trim_start_ms,
+                        'end': s['end'] + self.trim_start_ms,
+                        'speed': s['speed']
+                    })
+                self.freeze_images = [s for s in self.speed_segments if abs(s['speed']) < 0.001]
+                if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(True)
                 if hasattr(self, "_update_quality_label"): self._update_quality_label()
             if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
             if hasattr(self, "positionSlider"):
@@ -40,7 +47,7 @@ class MainWindowCoreAMixin:
             if hasattr(self, "update_player_state"): self.update_player_state()
             self.activateWindow(); self.setFocus()
         except Exception as e:
-            self.logger.error(f"UI: Error in granular dialog: {e}"); self._opening_granular_dialog = False
+            self._opening_granular_dialog = False
 
     def _clear_speed_segments(self):
         has_segments = bool(self.speed_segments)
@@ -49,7 +56,6 @@ class MainWindowCoreAMixin:
         msg = "Are you sure you want to clear all speed segments?"
         if has_freeze: msg = "Are you sure you want to clear all speed segments and frozen images?"
         if QMessageBox.question(self, "Clear Granular Speeds", msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            self.logger.info("UI: Clearing all granular settings. Recalculating quality..."); 
             self.speed_segments = []
             if hasattr(self, "freeze_images"): self.freeze_images = []
             if hasattr(self, "positionSlider"):
@@ -70,7 +76,7 @@ class MainWindowCoreAMixin:
 
     def on_hardware_scan_finished(self, mode: str):
         if not hasattr(self, 'status_bar'): return
-        self.hardware_strategy = mode; self.scan_complete = True; self.logger.info(f"GPU: Hardware scan finished. Strategy: {mode}")
+        self.hardware_strategy = mode; self.scan_complete = True
         try:
             cfg = self.config_manager.config; cfg["last_hardware_strategy"] = mode; self.config_manager.save_config(cfg)
         except: pass

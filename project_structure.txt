@@ -198,3 +198,34 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 #    - 'DELETE' key must immediately remove the currently highlighted/active segment.
 #    - Default state: Start = Frame 0, End = Last Frame.
 # ==============================================================================
+
+# ==============================================================================
+# MUSIC WIZARD: 3-STEP SYNC ENGINE RULES
+# ==============================================================================
+# 1. STEP 1 (LIBRARY): Multi-character type-ahead (1.5s buffer) for rapid song searching.
+# 2. STEP 2 (PREVIEW): Metallic player with real-time tempo/pitch adjustment.
+# 3. STEP 3 (TIMELINE SYNC): 
+#    - Dual-lane view (Video thumbnails + Audio waveforms).
+#    - MASTER/SLAVE SYNC: Pink handle (Music) must jump to follow the Orange handle (Video Trim) if moved.
+#    - Waveforms are generated asynchronously to keep the UI responsive.
+#
+# ==============================================================================
+# SESSION RECOVERY & HARDWARE STRATEGY
+# ==============================================================================
+# 1. FAULT TOLERANCE: RecoveryManager performs async state saving every 5 seconds.
+# 2. RESTORE LOGIC: On startup, if a crash is detected, the app offers to restore the previous session state.
+# 3. HARDWARE SCAN: 
+#    - Background thread executes strategic scan: NVIDIA (NVENC) -> AMD (AMF) -> INTEL (QSV) -> CPU Fallback.
+#    - Successful scan result is cached in 'main_app.conf' for near-instant subsequent boots.
+#
+# ==============================================================================
+# SUITE COMPONENTS & RENDERING FEATURES
+# ==============================================================================
+# 1. VIDEO MERGER & ADVANCED EDITOR: Technically decoupled but share UI logic via local copies.
+# 2. INTRO STILL-FRAME GENERATOR: 
+#    - Extracts a high-quality frame (Still) from any timestamp.
+#    - Generates a 3-5 second intro clip with background music.
+# 3. TEXT OVERLAY & PORTRAIT MASKING:
+#    - PORTRAIT MODE (9:16): UI uses a real-time mask widget to visualize the social media crop.
+#    - OVERLAY TEXT: User text is wrapped and rendered as an HD PNG before being composited by FFmpeg.
+# ==============================================================================

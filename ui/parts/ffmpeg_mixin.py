@@ -100,6 +100,7 @@ class FfmpegMixin:
             music_vol_linear = self._music_eff() / 100.0 if music_path else 0.0
             q_level = int(self.quality_slider.value())
             if hasattr(self, 'portrait_mask_overlay'): self.portrait_mask_overlay.hide()
+            if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(True)
             self.is_processing = True; self._proc_start_ts = time.time(); self._pulse_phase = 0
             self.process_button.setEnabled(False); self.cancel_button.setVisible(True); self.cancel_button.setEnabled(True)
             self.progress_bar.setRange(0, 0); self.progress_bar.setValue(0); self._pulse_timer.start(250)
@@ -166,9 +167,11 @@ class FfmpegMixin:
     def on_process_finished(self, success, message):
         self.is_processing = False; self._proc_start_ts = None; self._phase_is_processing = False
         if hasattr(self, "_pulse_timer"): self._pulse_timer.stop()
-        self._hide_processing_overlay(); self.process_button.setEnabled(True); self.cancel_button.setVisible(False)
+        self._hide_processing_overlay(); self.cancel_button.setVisible(False)
         self.process_button.setText("PROCESS"); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
         self.progress_bar.setRange(0, 100); self.progress_bar.setValue(0); self.selected_intro_abs_time = None
+        if hasattr(self, "_maybe_enable_process"): self._maybe_enable_process()
+        else: self.process_button.setEnabled(True)
         if success: self._safe_set_phase("Done", ok=True)
         else:
             if "canceled by user" in message.lower(): self._safe_set_phase("Canceled", ok=False)

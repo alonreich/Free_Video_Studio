@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
+﻿from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor, QPainterPath, QLinearGradient, QBrush, QPolygon
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle
 
@@ -34,6 +34,10 @@ class TrimmedSlider(QSlider):
         self.thumbnail_pos_ms = -1
         self.rangeChanged.connect(self._update_range_cache)
         self._update_range_cache()
+
+    def set_speed_segments(self, segments):
+        self.speed_segments = segments
+        self.update()
 
     def set_thumbnail_pos_ms(self, ms):
         self.thumbnail_pos_ms = int(ms)
@@ -181,6 +185,7 @@ class TrimmedSlider(QSlider):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self.setCursor(Qt.PointingHandCursor)
             pos = event.pos()
             if self._show_music:
                 if self._get_music_handle_rect('start').contains(pos):
@@ -217,6 +222,7 @@ class TrimmedSlider(QSlider):
     def mouseMoveEvent(self, event):
         pos = event.pos()
         if self._dragging_music_handle:
+            self.setCursor(Qt.PointingHandCursor)
             new_val_ms = self._map_pos_to_value(pos.x())
             video_trim_start_ms = self.trimmed_start_ms
             video_trim_end_ms = self.trimmed_end_ms if self.trimmed_end_ms > 0 else self.maximum()
@@ -240,6 +246,7 @@ class TrimmedSlider(QSlider):
             self.update()
             return
         if self._dragging_handle:
+            self.setCursor(Qt.PointingHandCursor)
             val = self._map_pos_to_value(pos.x())
             if self._dragging_handle == 'start':
                 self.trimmed_start_ms = min(val, self.trimmed_end_ms - 100)
@@ -282,7 +289,7 @@ class TrimmedSlider(QSlider):
                 self._hovering_music_handle = new_hover_music
                 self.update()
             if self._hovering_handle or self._hovering_music_handle:
-                self.setCursor(Qt.SizeHorCursor)
+                self.setCursor(Qt.PointingHandCursor)
             elif over_groove:
                 self.setCursor(Qt.PointingHandCursor)
             else:
