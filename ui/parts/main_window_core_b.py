@@ -55,7 +55,20 @@ class MainWindowCoreBMixin:
         os.makedirs(os.path.join(self.base_dir, "logs"), exist_ok=True); self.player = None
         try:
             self.video_surface.setAttribute(Qt.WA_NativeWindow); wid = int(self.video_surface.winId())
-            self.player = MPVSafetyManager.create_safe_mpv(wid=wid, osc=False, hr_seek='yes', hwdec='auto', keep_open='yes', ytdl=False, demuxer_max_bytes='500M', demuxer_max_back_bytes='100M', vo='gpu' if sys.platform == 'win32' else 'gpu', extra_mpv_flags=[('force-window', 'no')])
+            self.player = MPVSafetyManager.create_safe_mpv(
+                wid=wid, 
+                osc=False, 
+                hr_seek='yes', 
+                hwdec='nvdec',
+                keep_open='yes',
+                ytdl=False,
+                demuxer_max_bytes='500M',
+                demuxer_max_back_bytes='100M',
+                vo='gpu' if sys.platform == 'win32' else 'gpu',
+                extra_mpv_flags=[('force-window', 'no')],
+                input_vo_keyboard=False,
+                input_default_bindings=False
+            )
             self.mpv_instance = self.player
             if self.player:
                 self.player.volume = 100

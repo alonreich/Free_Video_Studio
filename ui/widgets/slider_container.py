@@ -5,8 +5,8 @@ class SliderContainer(QWidget):
         super().__init__(parent)
         self.slider = slider_instance
         self.slider.setParent(self)
-        self.container_height = 50
-        self.slider_height = 80
+        self.container_height = 150
+        self.slider_height = 150
         self.v_offset = self.container_height - self.slider_height
 
     def resizeEvent(self, event):

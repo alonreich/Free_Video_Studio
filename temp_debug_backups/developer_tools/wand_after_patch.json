@@ -1,0 +1,44 @@
+[
+  {
+    "x": 1618,
+    "y": 0,
+    "w": 302,
+    "h": 220,
+    "tag": "Mini Map + Stats"
+  },
+  {
+    "x": 0,
+    "y": 934,
+    "w": 436,
+    "h": 126,
+    "tag": "Own Health Bar (HP)"
+  },
+  {
+    "x": 1380,
+    "y": 942,
+    "w": 540,
+    "h": 126,
+    "tag": "Loot Area"
+  },
+  {
+    "x": 8,
+    "y": 666,
+    "w": 626,
+    "h": 264,
+    "tag": "Own Health Bar (HP)"
+  },
+  {
+    "x": 62,
+    "y": 368,
+    "w": 74,
+    "h": 44,
+    "tag": "Teammates health Bars (HP)"
+  },
+  {
+    "x": 10,
+    "y": 410,
+    "w": 42,
+    "h": 48,
+    "tag": "Manual Crop"
+  }
+]

@@ -1,0 +1,4 @@
+from sanity_tests.test_real_sanity_challenges import test_challenge_03_dj_scrubbing_stress_keeps_throttle
+
+def test_challenge_03_dj_scrubbing(monkeypatch) -> None:
+    test_challenge_03_dj_scrubbing_stress_keeps_throttle(monkeypatch)

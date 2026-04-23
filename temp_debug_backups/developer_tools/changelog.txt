@@ -1,0 +1,118 @@
+# Detailed Changelog
+
+This file documents the code changes currently present in the working tree, including file names, line locations, and exact behavior changes.
+
+## 1) File: ui_setup.py
+
+- Line 86:
+  - Added: `CropAppWindow.hint_group_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)`
+  - Change purpose: Ensure the hint group container does not intercept mouse clicks.
+  - Behavioral result: Clicks pass through to underlying controls (including `UPLOAD VIDEO`).
+
+- Line 91:
+  - Added: `CropAppWindow.upload_hint_container.setAttribute(Qt.WA_TransparentForMouseEvents, True)`
+  - Change purpose: Make the visual upload hint box non-interactive for mouse events.
+  - Behavioral result: Decorative overlay cannot block button interaction.
+
+- Line 102:
+  - Added: `CropAppWindow.upload_hint_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)`
+  - Change purpose: Prevent text label from consuming clicks.
+  - Behavioral result: Click routing continues to underlying actionable widgets.
+
+- Line 114:
+  - Added: `CropAppWindow.upload_hint_arrow.setAttribute(Qt.WA_TransparentForMouseEvents, True)`
+  - Change purpose: Prevent arrow image widget from intercepting pointer events.
+  - Behavioral result: Upload button remains clickable even when hint overlay is visible.
+
+
+## 2) File: app_handlers.py
+
+- Line 24:
+  - Added method: `def _cleanup_magic_wand_runtime(self): ...`
+  - Change purpose: Centralized, safer cleanup for Magic Wand timers/thread state.
+  - Behavioral result: Lower risk of stale thread/timer UI state after errors/timeouts/reset.
+
+- Line 209:
+  - Added warning path for unknown role mapping:
+    - `QMessageBox.warning(self, "Unknown HUD Role", ...)`
+  - Change purpose: Replace silent return with explicit user-facing error.
+  - Behavioral result: Unknown roles are surfaced instead of failing silently.
+
+- Line 532:
+  - Added warning log on snapshot file delete failure:
+    - `self.logger.warning(f"Could not remove previous snapshot: {unlink_err}")`
+  - Change purpose: Remove silent exception suppression.
+  - Behavioral result: Better diagnostics for filesystem/permissions edge cases.
+
+- Line 623:
+  - Added clamped/normalized slider seek conversion:
+    - `normalized = max(0.0, min(1.0, clamped_ms / float(total)))`
+  - Change purpose: Prevent invalid seek ratios outside [0.0, 1.0].
+  - Behavioral result: More stable seeking behavior under edge values.
+
+
+## 3) File: config_manager.py
+
+- Lines 13-14:
+  - Added imports: `threading`, `uuid`
+  - Change purpose: Support thread-safe singleton access + lock token ownership.
+
+- Line 56:
+  - Added: `_config_manager_instances_lock = threading.Lock()`
+  - Change purpose: Guard global instance map from race conditions.
+
+- Line 126:
+  - Added instance field: `self._lock_owner_token: Optional[str] = None`
+  - Change purpose: Track lock ownership token per process instance.
+
+- Line 134:
+  - Implemented `_setup_validation_rules(...)`
+  - Change purpose: Initialize validation rule metadata rather than leaving stub/no-op.
+
+- Lines 282/288/291:
+  - Added structured lock payload (`pid`, `token`, `created_at`) and persisted JSON lock metadata.
+  - Change purpose: Improve stale-lock detection and ownership checks.
+
+- Lines 336/341/343/348:
+  - Added token-aware lock release logic and token mismatch warning.
+  - Change purpose: Avoid deleting locks owned by another writer.
+
+- Line 523:
+  - Added warning when stale backup removal fails.
+  - Change purpose: Observability for backup pruning failures.
+
+- Line 537:
+  - Added method: `def validate_config_data(self, config: Dict[str, Any]) -> List[str]`
+  - Change purpose: Validate in-memory config object without forced re-read.
+
+- Line 743:
+  - Added lock usage around singleton factory path:
+    - `with _config_manager_instances_lock:`
+  - Change purpose: Make `get_config_manager(...)` thread-safe.
+
+
+## 4) File: state_manager.py
+
+- Line 11:
+  - Added import: `threading`
+  - Change purpose: Support synchronized singleton initialization.
+
+- Line 390:
+  - Added: `_state_manager_lock = threading.Lock()`
+  - Change purpose: Protect global state manager instance creation.
+
+- Line 395:
+  - Added lock usage in `get_state_manager(...)`:
+    - `with _state_manager_lock:`
+  - Change purpose: Prevent concurrent races in singleton creation/update.
+
+
+## 5) Runtime verification performed
+
+- Ran: `python .\crop_tools.py`
+- Observed startup log:
+  - `Application starting...`
+- Observed clean shutdown log:
+  - `--- Crop Tools main() finished ---`
+
+This confirms the modified build launches successfully in standalone mode.

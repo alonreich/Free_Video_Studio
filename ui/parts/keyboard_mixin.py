@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QEvent
+﻿from PyQt5.QtCore import Qt, QEvent
 from PyQt5.QtWidgets import (
     QWidget,
     QApplication,
@@ -11,9 +11,6 @@ from PyQt5.QtWidgets import (
 
 class KeyboardMixin(QWidget):
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.KeyPress:
-            if self.handle_global_key_press(event):
-                return True
         return False
 
     def _is_editing_widget_focused(self) -> bool:

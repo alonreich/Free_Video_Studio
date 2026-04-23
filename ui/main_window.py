@@ -77,7 +77,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
         self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
         self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
-        QApplication.instance().installEventFilter(self); self.show()
+        self.show()
         QTimer.singleShot(100, self._update_overlay_positions)
         QTimer.singleShot(500, self._update_overlay_positions)
         QTimer.singleShot(1500, self._update_overlay_positions)

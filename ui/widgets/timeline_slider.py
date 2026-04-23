@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QPoint
+﻿from PyQt5.QtCore import Qt, QPoint
 from PyQt5.QtGui import QPainter, QFontMetrics, QPen, QColor
 from PyQt5.QtWidgets import QSlider, QToolTip
 
@@ -21,6 +21,14 @@ class TimelineSlider(QSlider):
             return f"{h:d}:{m:02d}:{s:02d}"
         return f"{m:d}:{s:02d}"
 
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            val = self.minimum() + (self.maximum() - self.minimum()) * max(0, min(e.pos().x(), self.width())) / max(1, self.width())
+            self.setValue(int(val))
+            self.sliderMoved.emit(self.value())
+            return
+        super().mousePressEvent(e)
+
     def mouseMoveEvent(self, e):
         super().mouseMoveEvent(e)
         if self._duration_ms <= 0 or self.maximum() <= 0:
@@ -36,6 +44,7 @@ class TimelineSlider(QSlider):
             return
         p = QPainter(self)
         try:
+            p.fillRect(self.rect(), QColor(0, 0, 0, 1))
             fm = QFontMetrics(self.font())
             w = self.width()
             h = self.height()

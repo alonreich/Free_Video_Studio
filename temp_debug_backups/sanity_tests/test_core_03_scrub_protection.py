@@ -1,0 +1,4 @@
+from sanity_tests.test_real_sanity_core import test_core_03_scrub_protection_throttles_under_50ms
+
+def test_core_03_scrub_protection(monkeypatch) -> None:
+    test_core_03_scrub_protection_throttles_under_50ms(monkeypatch)

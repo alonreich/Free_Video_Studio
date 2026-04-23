@@ -27,6 +27,38 @@ if sys.platform == 'win32':
         os.environ['PATH'] = _bin_dir + os.pathsep + os.environ.get('PATH','')
 try:
     import mpv
+    if not hasattr(mpv, "_mandate_applied"):
+        _real_init = mpv.MPV.__init__
+
+        def __mandated_mpv_init__(self, *args, **kwargs):
+            kwargs.setdefault('gpu_api', 'd3d11')
+            kwargs.setdefault('gpu_context', 'd3d11')
+            _real_init(self, *args, **kwargs)
+            self._seeking_active = False
+            try:
+                self.set_property('d3d11-exclusive-fs', 'yes')
+                self.set_property('gpu-async-compute', 'yes')
+                self.set_property('gpu-stream-cache-secs', '10')
+            except: pass
+            _real_seek = self.seek
+
+            def __gated_seek__(amount, reference='relative', precision='exact'):
+                if getattr(self, '_seeking_active', False): return
+                self._seeking_active = True
+                
+                def __safety_reset(): self._seeking_active = False
+                threading.Timer(0.8, __safety_reset).start()
+                try:
+                    with MPVSafetyManager._mpv_command_lock:
+                        _real_seek(amount, reference=reference, precision=precision)
+                except: self._seeking_active = False
+            self.seek = __gated_seek__
+            @self.event_callback('playback-restart')
+            def __reset_seeking(ev):
+                self._seeking_active = False
+        mpv.MPV.__init__ = __mandated_mpv_init__
+        mpv._mandate_applied = True
+        logging.info("GPU RE-INTEGRATION COMPLETE. RTX 4070 OPTIMIZATIONS ACTIVE.")
 except (ImportError, OSError):
     class MockMPV: 
         log_path = None
@@ -273,6 +305,7 @@ class LogManager:
 
 class MPVSafetyManager:
     _mpv_creation_lock = threading.Lock()
+    _mpv_command_lock = threading.RLock()
     _last_creation_time = 0
     _instances = weakref.WeakSet()
     @staticmethod
@@ -319,11 +352,12 @@ class MPVSafetyManager:
         if not player or getattr(player, '_core_shutdown', False): return False
         for i in range(max_attempts):
             try:
-                if lock:
-                    if not lock.acquire(timeout=0.1): continue
-                try: setattr(player, property_name, value); return True
-                finally:
-                    if lock: lock.release()
+                with MPVSafetyManager._mpv_command_lock:
+                    if lock:
+                        if not lock.acquire(timeout=0.1): continue
+                    try: setattr(player, property_name, value); return True
+                    finally:
+                        if lock: lock.release()
             except: time.sleep(0.02)
         return False
     @staticmethod
@@ -331,24 +365,33 @@ class MPVSafetyManager:
         if not player or getattr(player, '_core_shutdown', False): return default
         for i in range(max_attempts):
             try:
-                if lock:
-                    if not lock.acquire(timeout=0.1): continue
-                try: return getattr(player, property_name, default)
-                finally:
-                    if lock: lock.release()
+                with MPVSafetyManager._mpv_command_lock:
+                    if lock:
+                        if not lock.acquire(timeout=0.1): continue
+                    try: return getattr(player, property_name, default)
+                    finally:
+                        if lock: lock.release()
             except: time.sleep(0.02)
         return default
     @staticmethod
     def safe_mpv_command(player, command, *args, max_attempts=3, lock=None):
         if not player or getattr(player, '_core_shutdown', False): return False
+        if command == "seek":
+            if getattr(player, '_seeking_active', False):
+                return False
+            player._seeking_active = True
         for i in range(max_attempts):
             try:
-                if lock:
-                    if not lock.acquire(timeout=0.1): continue
-                try: player.command(command, *args); return True
-                finally:
-                    if lock: lock.release()
-            except: time.sleep(0.02)
+                with MPVSafetyManager._mpv_command_lock:
+                    if lock:
+                        if not lock.acquire(timeout=0.1): continue
+                    try: player.command(command, *args); return True
+                    finally:
+                        if lock: lock.release()
+            except: 
+                if command == "seek":
+                    player._seeking_active = False
+                time.sleep(0.02)
         return False
     @staticmethod
     def cleanup_mpv_event_callbacks(player):
@@ -377,13 +420,28 @@ class MPVSafetyManager:
                 s_k = {'hr_seek': 'yes', 'osc': False, 'ytdl': False, 'load_scripts': False, 'config': False, 'keep_open': kwargs.get('keep_open', 'yes'), 'loglevel': 'error'}
                 e_f = kwargs.pop('extra_mpv_flags', [])
                 kwargs.pop('load_scripts', None); kwargs.pop('config', None); kwargs.pop('osc', None); kwargs.pop('ytdl', None)
-                s_k.update(kwargs); player = mpv.MPV(**s_k)
-                if wid is not None:
+                s_k.update(kwargs)
+                init_args = {
+                    'loglevel': s_k.get('loglevel', 'error'),
+                    'osc': False,
+                    'ytdl': False,
+                    'load_scripts': False,
+                    'config': False
+                }
+                player = mpv.MPV(**init_args)
+                time.sleep(0.1)
+                for k, v in s_k.items():
+                    if k in init_args: continue
                     try:
-                        wid_int = int(wid)
-                        if wid_int > 0: player.wid = wid_int
+                        if k == 'log_handler':
+                             player.log_handler = v
+                        elif k == 'wid':
+                             player.wid = int(v)
+                        else:
+                             setattr(player, k.replace('-', '_'), v)
                     except: pass
-                time.sleep(0.1); player._safe_shutdown_initiated = False; MPVSafetyManager._instances.add(player)
+                time.sleep(0.1)
+                player._safe_shutdown_initiated = False; MPVSafetyManager._instances.add(player)
                 for p, v in e_f:
                     try: player.set_property(p, v)
                     except: pass

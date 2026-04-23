@@ -1,0 +1,120 @@
+# Project Vision: Fortnite Video Crop Coordinate Configurator
+
+## 1. Core Purpose
+This desktop application, built specifically for Windows, works alongside a separate video-processing tool. Its primary function is to help creators d
+
+## MANDATORY: NO CACHE POLICY (CRITICAL)
+- **Zero Tolerance:** Generation of `__pycache__` folders or `.pyc` files is a ROOKIE MISTAKE and is strictly prohibited.
+- **Enforcement:** Every Python file MUST include the following block at the ABSOLUTE TOP, before ANY other imports (including `import sys` if not already there):
+  ```python
+  import sys
+  import os
+  sys.dont_write_bytecode = True
+  os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+  os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
+  ```
+- **Execution:** All python commands MUST be executed with the `-B` flag (e.g., `python -B script.py`) or with `PYTHONDONTWRITEBYTECODE=1` set in the environment.
+- **Subprocesses:** The environment variable `PYTHONDONTWRITEBYTECODE=1` MUST be explicitly passed to all subprocess calls.
+- **Cleanup:** Any agent MUST verify and delete any `__pycache__` folders or `.pyc` files before finishing their task.
+- **Responsibility:** It is the absolute responsibility of the developer/AI to ensure the workspace remains clean of all bytecode artifacts.
+efine the precise coordinates and final placement of Heads‑Up Display (HUD) elements from a Fortnite gameplay video. These coordinates and placements are stored in a fixed JSON configuration file located in `..\processing\`, which the processing tool reads to produce perfectly cropped 9:16 portrait‑mode videos for mobile platforms. The aspect ratio is fixed at 9:16 and cannot be changed.
+
+## 2. Core Workflow
+1. **Load Sample Video:** The user loads a single video file (`.mp4`, `.avi`, `.mkv`). The tool is intended for one video at a time and supports only video file types.
+2. **Navigate to a Reference Frame:** Video playback controls—play, pause, a seek bar, and keyboard shortcuts such as left/right arrow keys for frame‑accurate seeking—help the user find a frame where all HUD elements are clearly visible.
+3. **Take a Snapshot:** Clicking "START CROPPING" freezes the current frame and opens the cropping interface.
+4. **Define Crop Regions:** The user can mark a HUD element in two ways:
+   * **Manual Drawing:** Click and drag to draw a rectangle around the HUD component.
+   * **Magic Wand Precision:** After taking a snapshot, the "MAGIC WAND" button becomes available. Clicking it triggers top-tier professional computer vision algorithms, using Otsu thresholding, HSV color masking, and adaptive temporal stability detection to directly find and shrink-wrap HUD elements. The logic uses ultra-tight expansion fractions (1-2%) and minimal padding (2px) to ensure boxes perfectly fit the HUD content while including vital nearby info like game stats (via a specific 8% bottom expansion for the Mini Map). Suggested regions are overlaid on the snapshot.
+5. **Tag Element:** Once a rectangle is defined, the user tags it with one of several Fortnite-specific preset roles: "Loot Area", "Mini Map + Stats", "Own Health Bar (HP)", "Boss HP (For When You Are The Boss Character)", "Teammates health Bars (HP)", or "Spectating Eye". Note: Health Bar includes both health and shield components as they are combined in Fortnite. The "Spectating Eye" represents the viewer count. Detection supports up to 6 distinct roles simultaneously.
+6. **Fine‑Tune in Portrait Composer:** Immediately after tagging, focus shifts to the integrated Portrait Composer pane. The element is auto‑placed based on its role. The user can drag it to reposition and use responsive handles to resize it. Visual indicators show element roles and dynamic Layer ranks (Layer 1 = Top-most).
+7. **Repeat for All Elements:** Steps 4–6 are repeated for each HUD component. When saving, the application surgically updates the JSON configuration, preserving unselected elements while maintaining atomic safety with file locking and a persistent 5-file rolling backup system.
+
+## 3. Key Features & Logic
+* **Undo/Redo:** Comprehensive undo/redo stack for all cropping, moving, resizing, and layering actions via `Ctrl+Z`, `Ctrl+Y`, or UI buttons. Redo stack integrity is protected during operations.
+* **Configuration Management:** Surgical JSON updates in `..\processing\` with atomic `os.replace` safety. Automatic persistent backup to a 5-file rolling history.
+* **Coordinate Validation:** Crops are validated to ensure they lie within the video frame and have reasonable HUD proportions to prevent overshadowing.
+* **Responsive UI:** Adaptive 1800x900 initial window size. High DPI scaling support for 4K monitors. FIFO log rotation limited to 10MB.
+* **Dynamic Layering:** Real-time Z-order management with "LAYER X" indicators (1 = Top). Spectating Eye defaults to the top-most layer.
+* **Ghosting Support:** "Show Existing Crops" displays previously saved elements with adjustable transparency and role-based color coding.
+* **MPV Integration:** Robust background resolution detection and frame-accurate seeking using MPV 64-bit.
+* **Magic Wand Precision:** Aggressive shrink-wrapping logic using Otsu thresholding and adaptive contour detection ensures boxes are perfectly sized to the HUD content.
+* **Clean State:** "RESET ALL" performs a factory-reset of the session, purging all temporary files and clearing the canvas to pitch-black.
+
+# ==============================================================================
+# APP INTEGRATION & HANDOFF (MAIN APP <-> CROP TOOL)
+# ==============================================================================
+# 1. SHARED SOURCE OF TRUTH:
+#    - Both apps read '.\processing\crops_coordinations.conf'.
+#    - Crop Tool is the WRITER; Main App (and Rendering Engine) is the READER.
+# 2. STATE TRANSFER:
+#    - 'system.state_transfer.StateTransfer' passes session data (video path, resolution).
+#    - This ensures the user doesn't have to re-select the video when switching apps.
+# 3. LIFECYCLE HANDOFF (SUBPROCESS):
+#    - Main App -> Crop Tool: Launched via subprocess when 'START CROPPING' is clicked.
+#    - Crop Tool -> Main App: Re-launches 'app.py' and exits itself upon 'SAVE' or 'RETURN'.
+# 4. SHARED BACKEND LOGIC:
+#    - Both apps use 'processing\config_data.py' for coordinate validation and default values.
+#    - Scaling math (1280p internal vs 1080p UI) is identical in both codebases.
+# ==============================================================================
+
+# ==============================================================================
+# HUD ELEMENT ARCHITECTURE FLOW (AI AGENT CONTEXT)
+# ==============================================================================
+# 1. DETECTION & TAGGING:
+#    - Crop Tool captures snapshot; elements defined via manual draw or MAGIC WAND.
+#    - Roles (6): Loot, Stats, HP, Boss HP, Team, Spectating Eye.
+# 2. COORDINATE MAPPING (SCALE-OUT TRICK):
+#    - UI Space: 1080x1920 canvas; HUDs restricted to 1080x1620 "Content Area" (y=150..1770).
+#    - Backend Space: Coordinates scaled to 1280x1920 fidelity canvas for processing.
+# 3. VALIDATION & SAVING:
+#    - Deep Check: Verifies crops, scales, overlays, and z_orders sections before saving.
+#    - Surgical Save: Only modified elements updated; atomic replace + 5-file rotation backup.
+# 4. APPLICATION STARTUP (SANITY CHECK):
+#    - App.py verifies valid JSON and presence of "crops_1080p" + "loot" element.
+#    - Self-Heal: Corrupted/missing files are instantly replaced with hardcoded defaults.
+# 5. FFmpeg RENDERING PIPELINE:
+#    - Backend applies +1px drift protection (Left for Map, Right for Loot).
+#    - Complex filtergraph crops source elements and overlays them onto 9:16 vertical frame.
+# ==============================================================================
+
+# The Crop Tool and Processing Engine usage a unique "Scale-Out" architecture to ensure high quality.
+#
+# 1. THE UI SPACE (1080x1920, WITH 1080x1620 CONTENT AREA):
+#    - The Crop Tool's Portrait View uses a 1080x1920 canvas.
+#    - The Top 150 pixels (y=0 to y=150) are STRICTLY RESERVED for the text/header canvas.
+#    - HUD elements are constrained to the 1080x1620 CONTENT AREA (y=150..1770).
+#    - IMPORTANT: crops_coordinations.conf stores crop rectangles in the CONTENT AREA
+#      coordinate space (1080x1620), i.e., y is relative to the content area and does
+#      NOT include the top 150px padding. Overlay positions are stored in full 1080x1920.
+#
+# 2. THE PROCESSING SPACE (1280x1920):
+#    - The backend (filter_builder.py) scales the main video to 1280x1920 (TARGET_W=1280) first.
+#    - This scaling (1280p) is larger than the UI space (1080p).
+#    - Why? To allow the 1080p content to be "centered" or manipulated with high fidelity before final output.
+#
+# 3. THE TRANSFORMATION PIPELINE:
+#    - CONFIG -> BACKEND (1280x1920 canvas):
+#         a. Crop Rect (content area): X_canvas = X_content * BACKEND_SCALE
+#         b. Crop Rect (content area): Y_canvas = Y_content * BACKEND_SCALE
+#         c. Element Size: Size_canvas = (Size_content * user_scale) * BACKEND_SCALE
+#    - BACKEND -> FFmpeg:
+#         a. The *Source Crop* is computed by inverting the content-area transform back
+#            to the original resolution using the same scale+center-crop math as FFmpeg.
+#         b. The *Overlay Position* is computed by scaling overlay x,y from 1080x1920
+#            to 1280x1920, and then subtracting the 150px top padding after scaling.
+#         c. The *Element Size* is also scaled to 1280x1920 to preserve relative size.
+#
+# 4. KEY TAKEAWAY:
+#    - Crop rectangles are stored in 1080x1620 content space; overlay positions are in 1080x1920.
+#    - The 150px top padding is applied ONLY to overlay positioning, not crop rectangles.
+#    - Do NOT remove the top-bar restriction; it protects the text layer.
+#    - Do NOT change the scaling logic without understanding the full round-trip:
+#      Original -> 1280x1920 (scale+crop) -> 1080x1620 content -> config -> back to original.
+#
+# 5. DRIFT PROTECTION / PREVENTION:
+#    - To prevent mathematical drift during coordinate transformation and stay on the safe side:
+#      a. Mini Map + Stats: An additional extra 1 pixel is added to the LEFT of the selection.
+#      b. Loot Area: An additional extra 1 pixel is added to the RIGHT of the selection.
+#    - This ensures HUD borders remain crisp and no content is clipped by rounding errors.
+# ==============================================================================

@@ -6,7 +6,7 @@ import tempfile
 from threading import Thread
 from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QCoreApplication
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QIcon
-from PyQt5.QtWidgets import QGridLayout, QMessageBox, QHBoxLayout, QVBoxLayout, QFrame, QSlider, QLabel, QStyle, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar, QWidget, QStyleOptionSpinBox, QStackedLayout, QLineEdit
+from PyQt5.QtWidgets import QGridLayout, QMessageBox, QHBoxLayout, QVBoxLayout, QFrame, QSlider, QLabel, QStyle, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar, QWidget, QStyleOptionSpinBox, QStackedLayout, QLineEdit, QGraphicsOpacityEffect
 from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
@@ -266,15 +266,27 @@ class UiBuilderMixin:
         video_and_volume.addWidget(self.video_frame, stretch=1)
         player_col.addLayout(video_and_volume)
         player_col.setStretch(0, 1)
-        badge_style = 'background: rgba(52, 152, 219, 220); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;'
-        self._main_time_badge_top = QLabel(self)
+        badge_style = "background: rgb(52, 152, 219); color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold; font-size: 11px; border: none;"
+        self._top_badge_container = QFrame(self)
+        self._top_badge_container.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._top_badge_container.hide()
+        tl = QHBoxLayout(self._top_badge_container); tl.setContentsMargins(0,0,0,0)
+        self._main_time_badge_top = QLabel(self._top_badge_container)
         self._main_time_badge_top.setStyleSheet(badge_style)
-        self._main_time_badge_top.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._main_time_badge_top.hide()
-        self._main_time_badge_bottom = QLabel(self)
+        tl.addWidget(self._main_time_badge_top)
+        self._top_badge_opacity = QGraphicsOpacityEffect(self._top_badge_container)
+        self._top_badge_container.setGraphicsEffect(self._top_badge_opacity)
+        self._top_badge_opacity.setOpacity(0.0)
+        self._bottom_badge_container = QFrame(self)
+        self._bottom_badge_container.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._bottom_badge_container.hide()
+        bl = QHBoxLayout(self._bottom_badge_container); bl.setContentsMargins(0,0,0,0)
+        self._main_time_badge_bottom = QLabel(self._bottom_badge_container)
         self._main_time_badge_bottom.setStyleSheet(badge_style)
-        self._main_time_badge_bottom.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._main_time_badge_bottom.hide()
+        bl.addWidget(self._main_time_badge_bottom)
+        self._bottom_badge_opacity = QGraphicsOpacityEffect(self._bottom_badge_container)
+        self._bottom_badge_container.setGraphicsEffect(self._bottom_badge_opacity)
+        self._bottom_badge_opacity.setOpacity(0.0)
         self._init_trim_controls()
         trim_c = QHBoxLayout()
         trim_c.setContentsMargins(10, 0, 10, 0)

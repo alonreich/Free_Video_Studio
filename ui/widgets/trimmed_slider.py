@@ -27,7 +27,7 @@ class TrimmedSlider(QSlider):
         self._cached_min = 0
         self._cached_max = 100
         if hasattr(self, 'setCursor'):
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.PointingHandCursor)
         self._show_trim_overlays = True
         self.speed_segments = []
         self.base_speed = 1.1
@@ -114,7 +114,7 @@ class TrimmedSlider(QSlider):
             val = self.trimmed_start_ms if handle_type == 'start' else self.trimmed_end_ms
             x = self._map_value_to_pos(val)
             w, h = 15, 36
-            return QRect(x - w // 2, groove.center().y() - h // 2, w, h)
+            return QRect(int(x - w // 2), int(groove.center().y() - h // 2), w, h)
         except Exception:
             return QRect()
 
@@ -126,7 +126,7 @@ class TrimmedSlider(QSlider):
             handle_size = 40
             y_center = self._get_groove_rect().center().y() + self.music_v_offset
             y_pos = y_center - (handle_size / 2)
-            return QRect(x - handle_size // 2, int(y_pos), handle_size, handle_size)
+            return QRect(int(x - handle_size // 2), int(y_pos), handle_size, handle_size)
         except Exception:
             return QRect()
 
@@ -134,8 +134,8 @@ class TrimmedSlider(QSlider):
         try:
             groove = self._get_groove_rect()
             x = self._map_value_to_pos(self.value())
-            w, h = 19, 47
-            return QRect(x - w // 2, groove.center().y() - h // 2, w, h)
+            size = 45
+            return QRect(int(x - size // 2), int(groove.center().y() - size // 2), size, size)
         except Exception:
             return QRect()
 
@@ -148,7 +148,7 @@ class TrimmedSlider(QSlider):
             line_height = 18
             y_center = self._get_groove_rect().center().y() + self.music_v_offset
             y_pos = y_center - (line_height / 2)
-            return QRect(start_x, int(y_pos), end_x - start_x, line_height)
+            return QRect(int(start_x), int(y_pos), int(end_x - start_x), line_height)
         except Exception:
             return QRect()
 
@@ -187,6 +187,8 @@ class TrimmedSlider(QSlider):
         if event.button() == Qt.LeftButton:
             self.setCursor(Qt.PointingHandCursor)
             pos = event.pos()
+            groove_rect = self._get_groove_rect()
+            is_in_seek_zone = True 
             if self._show_music:
                 if self._get_music_handle_rect('start').contains(pos):
                     self._dragging_music_handle = 'start'
@@ -208,7 +210,7 @@ class TrimmedSlider(QSlider):
                 self._dragging_handle = 'end'
             elif self._get_playhead_rect().contains(pos):
                 self._dragging_handle = 'playhead'
-            else:
+            elif is_in_seek_zone:
                 try:
                     val = self._map_pos_to_value(pos.x())
                     self.blockSignals(True)
@@ -283,17 +285,11 @@ class TrimmedSlider(QSlider):
                     new_hover = 'end'
                 elif self._get_playhead_rect().contains(pos):
                     new_hover = 'playhead'
-            over_groove = self._get_groove_rect().contains(pos)
+            self.setCursor(Qt.PointingHandCursor)
             if new_hover != self._hovering_handle or new_hover_music != self._hovering_music_handle:
                 self._hovering_handle = new_hover
                 self._hovering_music_handle = new_hover_music
                 self.update()
-            if self._hovering_handle or self._hovering_music_handle:
-                self.setCursor(Qt.PointingHandCursor)
-            elif over_groove:
-                self.setCursor(Qt.PointingHandCursor)
-            else:
-                self.setCursor(Qt.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
         self._dragging_handle = None
@@ -307,6 +303,7 @@ class TrimmedSlider(QSlider):
         try:
             p = QPainter(self)
             try:
+                p.fillRect(self.rect(), QColor(0, 0, 0, 1))
                 p.setRenderHint(QPainter.Antialiasing)
                 is_wizard = (self.property("is_wizard_slider") is True or getattr(self, "is_wizard", False) is True)
                 if is_wizard:
@@ -329,7 +326,7 @@ class TrimmedSlider(QSlider):
                         p.setBrush(fill_color)
                         kept_left = self._map_value_to_pos(self.trimmed_start_ms)
                         kept_right = self._map_value_to_pos(self.trimmed_end_ms)
-                        kept_rect = QRect(kept_left, groove_rect.y(), max(1, kept_right - kept_left), groove_rect.height())
+                        kept_rect = QRect(int(kept_left), int(groove_rect.y()), int(max(1, kept_right - kept_left)), int(groove_rect.height()))
                         p.drawRect(kept_rect)
                 except Exception: pass
                 try:
@@ -360,7 +357,7 @@ class TrimmedSlider(QSlider):
                             p.setPen(Qt.NoPen)
                             left = self._map_value_to_pos(start_ms)
                             right = self._map_value_to_pos(end_ms)
-                            seg_rect = QRect(left, y_top, max(1, right - left), line_height)
+                            seg_rect = QRect(int(left), int(y_top), int(max(1, right - left)), int(line_height))
                             p.drawRect(seg_rect)
                 except Exception: pass
                 try:
@@ -382,11 +379,11 @@ class TrimmedSlider(QSlider):
                                 is_minute = (sec % 60 == 0)
                                 p.setPen(QPen(QColor("#7DD3FC") if is_minute else QColor("#666666"), 1.5 if is_minute else 1))
                                 tick_len = 10 if is_minute else 5
-                                p.drawLine(x, groove_rect.bottom() + 2, x, groove_rect.bottom() + 2 + tick_len)
+                                p.drawLine(int(x), int(groove_rect.bottom() + 2), int(x), int(groove_rect.bottom() + 2 + tick_len))
                                 time_str = self._fmt(sec * 1000)
                                 text_width = fm.horizontalAdvance(time_str)
                                 p.setPen(QColor("#FFFFFF" if is_minute else "#AAAAAA"))
-                                p.drawText(x - text_width // 2, groove_rect.bottom() + 22, time_str)
+                                p.drawText(int(x - text_width // 2), int(groove_rect.bottom() + 22), time_str)
                         else:
                             major_tick_pixels = 120
                             num_major_ticks = max(1, int(round(groove_rect.width() / major_tick_pixels)))
@@ -395,10 +392,10 @@ class TrimmedSlider(QSlider):
                                 ms = dur_ms * ratio
                                 x = groove_rect.left() + int(ratio * (groove_rect.width() - 1))
                                 p.setPen(QColor(180, 180, 180))
-                                p.drawLine(x, groove_rect.bottom() + 1, x, groove_rect.bottom() + 6)
+                                p.drawLine(int(x), int(groove_rect.bottom() + 1), int(x), int(groove_rect.bottom() + 6))
                                 time_str = self._fmt(int(ms))
                                 text_width = fm.horizontalAdvance(time_str)
-                                p.drawText(x - text_width // 2, groove_rect.bottom() + 18, time_str)
+                                p.drawText(int(x - text_width // 2), int(groove_rect.bottom() + 18), time_str)
                 except Exception: pass
                 try:
                     for handle_type in ['start', 'end']:
@@ -415,25 +412,16 @@ class TrimmedSlider(QSlider):
                 try:
                     playhead_rect = self._get_playhead_rect()
                     if playhead_rect.isValid():
-                        knob_w, knob_h = 19, 47
+                        is_active = (self._dragging_handle == 'playhead')
+                        size = 45 if is_active else 35
                         cx = playhead_rect.center().x()
-                        cy = groove_rect.center().y()
-                        knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
-                        g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
-                        c1, c2 = QColor(90, 90, 90, 191), QColor(154, 154, 154, 191)
-                        if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                            c1 = c1.lighter(110); c2 = c2.lighter(110)
-                            p.setPen(QPen(QColor(125, 211, 252, 191), 2.5))
-                        else:
-                            p.setPen(QPen(QColor(17, 17, 17, 191), 1.5))
-                        g.setColorAt(0.0, c1); g.setColorAt(0.35, c2)
-                        g.setColorAt(0.38, QColor(0,0,0,191)); g.setColorAt(0.42, QColor(0,0,0,191))
-                        g.setColorAt(0.45, c2); g.setColorAt(0.48, QColor(0,0,0,191))
-                        g.setColorAt(0.52, QColor(0,0,0,191)); g.setColorAt(0.55, c2)
-                        g.setColorAt(0.58, QColor(0,0,0,191)); g.setColorAt(0.62, QColor(0,0,0,191))
-                        g.setColorAt(0.65, c2); g.setColorAt(1.0, c1)
-                        p.setBrush(QBrush(g))
-                        p.drawRoundedRect(knob_rect, 3, 3)
+                        cy = playhead_rect.center().y()
+                        p.setPen(QPen(QColor(150, 0, 0, 200), 1.5))
+                        p.setBrush(QColor(231, 76, 60, 255))
+                        p.drawEllipse(QPoint(int(cx), int(cy)), int(size // 2), int(size // 2))
+                        p.setBrush(Qt.white)
+                        p.setPen(Qt.NoPen)
+                        p.drawEllipse(QPoint(int(cx), int(cy)), 2, 2)
                 except Exception: pass
                 try:
                     if self._show_music:
@@ -459,7 +447,7 @@ class TrimmedSlider(QSlider):
                         tx = self._map_value_to_pos(self.thumbnail_pos_ms)
                         ty = groove_rect.center().y()
                         tw, th = 33, 24
-                        t_rect = QRect(tx - tw // 2, ty - th // 2, tw, th)
+                        t_rect = QRect(int(tx - tw // 2), int(ty - th // 2), int(tw), int(th))
                         p.setPen(QPen(Qt.black, 1.5))
                         p.setBrush(QColor("#7DD3FC"))
                         p.drawRoundedRect(t_rect, 3, 3)
@@ -467,7 +455,7 @@ class TrimmedSlider(QSlider):
                         p.drawEllipse(t_rect.center(), 6, 6)
                         p.setBrush(QColor("#7DD3FC"))
                         p.drawEllipse(t_rect.center(), 3, 3)
-                        lens_rect = QRect(t_rect.right() - 8, t_rect.top() + 3, 5, 4)
+                        lens_rect = QRect(int(t_rect.right() - 8), int(t_rect.top() + 3), 5, 4)
                         p.setBrush(Qt.white)
                         p.drawRect(lens_rect)
                 except Exception: pass

@@ -4,6 +4,29 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
 from system.time_sync import TimeSyncEngine
 from system.utils import MPVSafetyManager
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal
+
+class SeekWorker(QThread):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.active = True
+        self.event = threading.Event()
+        self.latest_data = None
+
+    def run(self):
+        while self.active:
+            self.event.wait(timeout=0.1)
+            if not self.event.is_set(): continue
+            data = self.latest_data
+            self.event.clear()
+            if not data: continue
+            try:
+                self.parent._apply_native_seek(data)
+                time.sleep(0.15)
+            except: pass
+            finally:
+                self.parent._is_seeking_active = False
 
 class PlayerMixin:
     def __init__(self, *args, **kwargs):
@@ -14,6 +37,74 @@ class PlayerMixin:
         self._in_freeze_segment = False
         self._freeze_start_ts = 0
         self._freeze_seg = None
+        self._observers_isolated = False
+        self._seek_worker = SeekWorker(self)
+        self._seek_worker.start()
+
+    def _isolate_observers(self):
+        if self._observers_isolated: return
+        p = getattr(self, "player", None)
+        if not p or getattr(p, '_core_shutdown', False): return
+        try:
+            p.observe_property('time-pos', None)
+            p.observe_property('idle-active', None)
+            p.observe_property('duration', None)
+            self._observers_isolated = True
+        except: pass
+
+    def _restore_observers(self):
+        if not self._observers_isolated: return
+        p = getattr(self, "player", None)
+        if not p or getattr(p, '_core_shutdown', False): return
+        try:
+            p.observe_property('time-pos', self.update_player_state)
+            self._observers_isolated = False
+        except: pass
+
+    def _apply_native_seek(self, data):
+        target_ms = data['ms']
+        force_pause = data['force_pause']
+        slider_is_down = data['slider_is_down']
+        speed_factor = data['speed_factor']
+        try:
+            if getattr(self, "_in_transition", False) or getattr(self, "_shutting_down", False):
+                return
+            p = getattr(self, "player", None)
+            if not p or getattr(p, '_core_shutdown', False): return
+            if slider_is_down:
+                self._isolate_observers()
+            target_m_sec = -1.0
+            precision = "fast"
+            if not slider_is_down: precision = "exact"
+            music_player = getattr(self, "_music_preview_player", None)
+            if music_player and getattr(self, "_wizard_tracks", None):
+                try:
+                    t_start = getattr(self, "trim_start_ms", 0)
+                    speed_segments = getattr(self, 'speed_segments', [])
+                    wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
+                    wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
+                    project_pos_sec = (wall_target - wall_start) / 1000.0
+                    accum = 0.0
+                    for path, offset, dur in self._wizard_tracks:
+                        if accum <= project_pos_sec < accum + dur:
+                            target_m_sec = offset + (project_pos_sec - accum)
+                            break
+                        accum += dur
+                except: pass
+            if not getattr(p, '_safe_shutdown_initiated', False):
+                if force_pause: self._safe_mpv_set("pause", True)
+                self._safe_mpv_command("seek", target_ms / 1000.0, "absolute", precision)
+                if music_player and target_m_sec >= 0 and not getattr(music_player, '_core_shutdown', False):
+                    if force_pause: self._safe_mpv_set("pause", True, target_player=music_player)
+                    self._safe_mpv_command("seek", target_m_sec, "absolute", "exact", target_player=music_player)
+                    self._safe_mpv_set("speed", 1.0, target_player=music_player)
+            if not slider_is_down:
+                QTimer.singleShot(200, self._restore_observers)
+            if hasattr(self, "timer") and not self.timer.isActive():
+                if getattr(self, "input_file_path", None):
+                    QTimer.singleShot(0, self.timer.start)
+        finally:
+            pass
 
     def _safe_mpv_set(self, prop, value, target_player=None):
         p = target_player if target_player is not None else getattr(self, "player", None)
@@ -102,6 +193,8 @@ class PlayerMixin:
 
     def update_player_state(self):
         if getattr(self, "_in_transition", False): return
+        if getattr(self, "_observers_isolated", False) or getattr(self, "_is_seeking_active", False):
+            return
         try:
             if getattr(self, "_in_freeze_segment", False):
                 now = time.time()
@@ -117,7 +210,10 @@ class PlayerMixin:
             p = getattr(self, "player", None)
             if not p: return
             idle_active = self._safe_mpv_get("idle-active", True)
-            if idle_active:
+            curr_pos = self._safe_mpv_get("time-pos", 0) or 0
+            dur = self._safe_mpv_get("duration", 0) or 0
+            is_really_at_end = (dur > 0 and curr_pos > (dur - 1.0))
+            if idle_active and (is_really_at_end or curr_pos == 0):
                 if getattr(self, "playPauseButton", None):
                     self.playPauseButton.setText("PLAY")
                     self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
@@ -132,11 +228,13 @@ class PlayerMixin:
             if current_time_ms >= 0:
                 if slider:
                     if slider.maximum() <= 0:
-                        dur = self._safe_mpv_get("duration", 0)
-                        if dur > 0:
-                            slider.setRange(0, int(dur * 1000))
-                            if hasattr(slider, 'set_duration_ms'): slider.set_duration_ms(int(dur * 1000))
+                        dur_p = self._safe_mpv_get("duration", 0)
+                        if dur_p > 0:
+                            slider.setRange(0, int(dur_p * 1000))
+                            if hasattr(slider, 'set_duration_ms'): slider.set_duration_ms(int(dur_p * 1000))
                     slider.blockSignals(True); slider.setValue(int(current_time_ms)); slider.blockSignals(False); slider.update()
+                    if hasattr(self, "_sync_main_timeline_badges"):
+                        self._sync_main_timeline_badges()
                 if hasattr(self, "_sync_music_preview"): self._sync_music_preview()
                 self._check_and_update_speed(current_time_ms)
                 is_p = not self._safe_mpv_get("pause", True)
@@ -186,16 +284,16 @@ class PlayerMixin:
         if getattr(self, "_is_seeking_active", False):
             if hasattr(self, "_last_seek_start_ts") and (now - self._last_seek_start_ts > 2.0):
                 self._is_seeking_active = False
-        if not force_pause and (now - self._last_scrub_ts < 0.05):
+        if not force_pause and (now - self._last_scrub_ts < 0.12):
             if not hasattr(self, "_seek_timer") or not self._seek_timer.isActive():
-                QTimer.singleShot(50, self._execute_throttled_seek)
+                QTimer.singleShot(120, self._execute_throttled_seek)
             return
         self._last_scrub_ts = now
         if not hasattr(self, "_seek_timer"):
             self._seek_timer = QTimer(self)
             self._seek_timer.setSingleShot(True)
             self._seek_timer.timeout.connect(self._execute_throttled_seek)
-        interval = 30 if force_pause else 50
+        interval = 60 if force_pause else 120
         if sync_only:
             self._execute_throttled_seek()
         elif not self._seek_timer.isActive():
@@ -215,41 +313,14 @@ class PlayerMixin:
         self._pending_force_pause = False
         self._is_seeking_active = True
         self._last_seek_start_ts = time.time()
-
-        def _native_seek_task():
-            try:
-                if getattr(self, "_in_transition", False) or getattr(self, "_shutting_down", False):
-                    return
-                target_m_sec = -1.0
-                precision = "fast"
-                if not slider_is_down: precision = "exact"
-                music_player = getattr(self, "_music_preview_player", None)
-                if music_player and getattr(self, "_wizard_tracks", None):
-                    try:
-                        t_start = getattr(self, "trim_start_ms", 0)
-                        speed_segments = getattr(self, 'speed_segments', [])
-                        wall_target = self._calculate_wall_clock_time(target_ms, speed_segments, speed_factor)
-                        wall_start = self._calculate_wall_clock_time(t_start, speed_segments, speed_factor)
-                        project_pos_sec = (wall_target - wall_start) / 1000.0
-                        accum = 0.0
-                        for path, offset, dur in self._wizard_tracks:
-                            if accum <= project_pos_sec < accum + dur:
-                                target_m_sec = offset + (project_pos_sec - accum)
-                                break
-                            accum += dur
-                    except: pass
-                p = getattr(self, "player", None)
-                if p and not getattr(p, '_core_shutdown', False) and not getattr(p, '_safe_shutdown_initiated', False):
-                    if force_pause: self._safe_mpv_set("pause", True)
-                    self._safe_mpv_command("seek", target_ms / 1000.0, "absolute", precision)
-                    if music_player and target_m_sec >= 0 and not getattr(music_player, '_core_shutdown', False):
-                        if force_pause: self._safe_mpv_set("pause", True, target_player=music_player)
-                        self._safe_mpv_command("seek", target_m_sec, "absolute", "exact", target_player=music_player)
-                        self._safe_mpv_set("speed", 1.0, target_player=music_player)
-            finally:
-                self._is_seeking_active = False
-        threading.Thread(target=_native_seek_task, daemon=True).start()
-
+        self._seek_worker.latest_data = {
+            'ms': target_ms,
+            'force_pause': force_pause,
+            'slider_is_down': slider_is_down,
+            'speed_factor': speed_factor
+        }
+        self._seek_worker.event.set()
+        
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         accumulated_wall_time = 0.0
         current_v = 0.0

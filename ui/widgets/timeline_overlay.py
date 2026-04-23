@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+﻿from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import Qt, QRect, QPoint
 from ui.widgets.trimmed_slider import TrimmedSlider
 
@@ -9,6 +9,7 @@ class TimelineOverlay(QWidget):
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
@@ -47,7 +48,7 @@ class TimelineOverlay(QWidget):
                 disp_w = int(surf_h * aspect)
             offset_x = (surf_w - disp_w) // 2
             tl = video_surface.mapToGlobal(QPoint(0, 0))
-            overlay_h = 90
+            overlay_h = 60
             target_rect = QRect(tl.x() + offset_x, tl.y() + surf_h - overlay_h - 45, disp_w, overlay_h)
             if self.geometry() != target_rect:
                 self.setGeometry(target_rect)

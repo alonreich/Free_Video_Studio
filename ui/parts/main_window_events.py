@@ -1,4 +1,4 @@
-from PyQt5.QtCore import *
+﻿from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
@@ -23,13 +23,6 @@ class MainWindowEventsMixin:
         QMainWindow.mousePressEvent(self, event)
 
     def eventFilter(self, obj, event):
-        try:
-            if event.type() == QEvent.KeyPress:
-                if hasattr(self, "handle_global_key_press") and self.handle_global_key_press(event):
-                    return True
-        except Exception as e:
-            if hasattr(self, 'logger'):
-                self.logger.error("Keyboard eventFilter error: %s", e)
         return False
 
     def moveEvent(self, event):
