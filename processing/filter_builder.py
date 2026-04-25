@@ -143,12 +143,16 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
             a_chain = f"{input_a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_speed_out]"
             return f"{v_chain};{a_chain}", "[v_speed_out]", "[a_speed_out]", (total_duration_sec/base_speed), time_mapper
         full_chain_parts = []; v_a_pads, final_duration = [], 0.0
+        v_splits = "".join([f"[v_split_{i}]" for i in range(n_chunks)])
+        a_splits = "".join([f"[a_split_{i}]" for i in range(n_chunks)])
+        full_chain_parts.append(f"{input_v_label}split={n_chunks}{v_splits}")
+        full_chain_parts.append(f"{input_a_label}asplit={n_chunks}{a_splits}")
         for i, chunk in enumerate(chunks):
-            start, end, speed = chunk['start'], chunk['end'], chunk['speed']; v_src = input_v_label; a_src = input_a_label; v_chunk_label = f"[v_chunk_{i}]"; a_chunk_label = f"[a_chunk_{i}]"
+            start, end, speed = chunk['start'], chunk['end'], chunk['speed']; v_src = f"[v_split_{i}]"; a_src = f"[a_split_{i}]"; v_chunk_label = f"[v_chunk_{i}]"; a_chunk_label = f"[a_chunk_{i}]"
             if abs(speed) < 0.001:
                 dur = chunk.get('freeze_dur', end - start)
                 full_chain_parts.append(f"{v_src}trim=start={start:.4f}:end={start+0.1:.4f},setpts=PTS-STARTPTS,loop=loop=-1:size=1:start=0,trim=duration={dur:.4f},setpts=PTS-STARTPTS,fps={target_fps}{v_chunk_label}")
-                full_chain_parts.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={dur:.4f},asetpts=PTS-STARTPTS{a_chunk_label}")
+                full_chain_parts.append(f"{a_src}anullsrc=r=48000:cl=stereo,atrim=duration={dur:.4f},asetpts=PTS-STARTPTS{a_chunk_label}")
                 out_dur = dur
             else:
                 out_dur = (end - start) / speed

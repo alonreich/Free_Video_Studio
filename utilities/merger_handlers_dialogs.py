@@ -74,6 +74,9 @@ class MergerHandlersDialogsMixin:
         """Displays success dialog using the synced ultra-polished layout/feel from main app."""
 
         class FinishedDialog(QDialog):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
             def closeEvent(self, e):
                 self.accept()
         dialog = FinishedDialog(self.parent)
@@ -87,15 +90,16 @@ class MergerHandlersDialogsMixin:
             screen_geo.center().x() - dlg_w // 2,
             screen_geo.center().y() - dlg_h // 2
         )
-        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint)
-        dialog.show()
-        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowStaysOnTopHint)
-        dialog.show()
         dialog.raise_()
         dialog.activateWindow()
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
+        close_btn = QPushButton("X", dialog)
+        close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 24px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(dialog.accept)
+        close_btn.setGeometry(760, 10, 30, 30)
         label = QLabel(f"File successfully saved to:\n{output_path}")
         label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
         label.setWordWrap(True)
@@ -107,41 +111,17 @@ class MergerHandlersDialogsMixin:
         grid.setContentsMargins(20, 20, 20, 20)
         whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆")
         whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40", font_size=12))
-        
-        def _on_wa():
-            QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
-            _hard_exit()
-        whatsapp_button.clicked.connect(_on_wa)
+        whatsapp_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://web.whatsapp.com")))
         open_folder_button = QPushButton("OPEN FOLDER")
-        open_folder_button.setStyleSheet(self._dialog_button_style("#6c5f9e", "#4E4476", font_size=12))
-        
-        def _on_folder():
-            self.open_output_in_explorer(output_path)
-            _hard_exit()
-        open_folder_button.clicked.connect(_on_folder)
+        open_folder_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c", font_size=12))
+        open_folder_button.clicked.connect(lambda: self.open_output_in_explorer(output_path))
         new_file_button = QPushButton("📂  UPLOAD NEW  📂")
-        new_file_button.setStyleSheet(self._dialog_button_style("#4a90e2", "#2D6DB8", font_size=12))
+        new_file_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c", font_size=12))
         new_file_button.clicked.connect(dialog.reject)
         done_button = QPushButton("DONE")
-        done_button.setStyleSheet(self._dialog_button_style("#821e1e", "#5D1515", font_size=12))
+        done_button.setStyleSheet(self._dialog_button_style("#1a7a1a", "#0a300a", font_size=12))
         done_button.clicked.connect(dialog.accept)
-        
-        def _hard_exit():
-            dialog.accept()
-            try:
-                if hasattr(self.parent, "close"):
-                    self.parent.close()
-            except: pass
-            try:
-                from utilities.merger_system import MergerProcessManager
-                MergerProcessManager.kill_orphans()
-            except: pass
-            QApplication.instance().quit()
-            QTimer.singleShot(500, lambda: os._exit(0))
-        finished_button = QPushButton("EXIT APP!")
-        finished_button.setStyleSheet(self._dialog_button_style("#c90e0e", "#950808", font_size=12))
-        finished_button.clicked.connect(_hard_exit) 
-        for b in [whatsapp_button, open_folder_button, new_file_button, done_button, finished_button]:
+        for b in [whatsapp_button, open_folder_button, new_file_button, done_button]:
             b.setFixedSize(180, 45)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             b.setCursor(Qt.PointingHandCursor)
@@ -149,17 +129,9 @@ class MergerHandlersDialogsMixin:
         grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
         grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)
         grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
-        grid.addWidget(finished_button, 2, 0, 1, 3, alignment=Qt.AlignCenter)
         layout.addLayout(grid)
-        fade_anim = QPropertyAnimation(dialog, b"windowOpacity")
-        fade_anim.setDuration(2000)
-        fade_anim.setStartValue(1.0)
-        fade_anim.setKeyValueAt(0.5, 0.4)
-        fade_anim.setEndValue(1.0)
-        fade_anim.setLoopCount(-1)
-        fade_anim.start()
-        dialog._fade_anim = fade_anim
         dialog.exec_()
+
         try:
             out_sz = Path(output_path).stat().st_size if output_path else 0
             self.logger.info("MERGE_DONE: output='%s' | size=%s", output_path, _human(out_sz))

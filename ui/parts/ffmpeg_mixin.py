@@ -162,7 +162,7 @@ class FfmpegMixin:
         except: pass
 
     def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
-        return f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed}); color: white; font-weight: bold; font-family: Arial; font-size: {font_size}px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.45); padding: 0px; text-align: center; min-width: 180px; max-width: 180px; min-height: 45px; max-height: 45px; }} QPushButton:hover {{ border: 1px solid #7DD3FC; }} QPushButton:pressed {{ background-color: {pressed}; }}"
+        return f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed}); color: white; font-weight: bold; font-family: Arial; font-size: {font_size}px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.45); padding: 0px; text-align: center; min-width: 180px; max-width: 180px; min-height: 45px; max-height: 45px; }} QPushButton:hover {{ border: 1px solid #7DD3FC; }} QPushButton:pressed {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {pressed}, stop:1 {color}); }}"
 
     def on_process_finished(self, success, message):
         self.is_processing = False; self._proc_start_ts = None; self._phase_is_processing = False
@@ -183,9 +183,17 @@ class FfmpegMixin:
             output_path = message; self._block_portrait_overlay = True
 
             class FinishedDialog(QDialog):
+                def __init__(self, parent=None):
+                    super().__init__(parent)
+                    self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
                 def closeEvent(self, e): self.accept()
             dialog = FinishedDialog(self); dialog.setWindowTitle("Done! Video Processed Successfully!"); dialog.setModal(True); dialog.setFixedSize(800, 460)
             layout = QVBoxLayout(dialog); layout.setContentsMargins(30, 30, 30, 30); layout.setSpacing(20)
+            close_btn = QPushButton("X", dialog)
+            close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 24px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
+            close_btn.setCursor(Qt.PointingHandCursor)
+            close_btn.clicked.connect(dialog.accept)
+            close_btn.setGeometry(760, 10, 30, 30)
             label = QLabel(f"File successfully saved to:\n{output_path}"); label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
             label.setAlignment(Qt.AlignCenter); layout.addWidget(label)
             grid = QGridLayout(); grid.setHorizontalSpacing(54); grid.setVerticalSpacing(44); grid.setContentsMargins(20, 20, 20, 20)
@@ -197,10 +205,8 @@ class FfmpegMixin:
             new_file_button.clicked.connect(lambda: dialog.done(QDialog.Rejected))
             done_button = QPushButton("DONE"); done_button.setStyleSheet(self._dialog_button_style("#1a7a1a", "#0a300a"))
             done_button.clicked.connect(dialog.accept)
-            exit_btn = QPushButton("EXIT APP!"); exit_btn.setStyleSheet(self._dialog_button_style("#b00000", "#300000"))
-            exit_btn.clicked.connect(lambda: self._quit_application(dialog))
-            for b in [whatsapp_button, open_folder_button, new_file_button, done_button, exit_btn]: b.setFixedSize(180, 45); b.setCursor(Qt.PointingHandCursor)
-            grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter); grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter); grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter); grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter); grid.addWidget(exit_btn, 2, 0, 1, 3, alignment=Qt.AlignCenter); layout.addLayout(grid)
+            for b in [whatsapp_button, open_folder_button, new_file_button, done_button]: b.setFixedSize(180, 45); b.setCursor(Qt.PointingHandCursor)
+            grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter); grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter); grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter); grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter); layout.addLayout(grid)
             result = dialog.exec_(); self._block_portrait_overlay = False
             if hasattr(self, "set_overlays_force_hidden"):
                 self.set_overlays_force_hidden(False)

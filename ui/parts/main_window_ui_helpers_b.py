@@ -47,7 +47,7 @@ class MainWindowUiHelpersBMixin:
                 self._hint_debounce_timer = QTimer(self)
                 self._hint_debounce_timer.setSingleShot(True)
                 self._hint_debounce_timer.timeout.connect(self._do_update_upload_hint_responsive)
-            self._hint_debounce_timer.start(50)
+            self._hint_debounce_timer.start(5)
         except: pass
 
     def _do_update_upload_hint_responsive(self):

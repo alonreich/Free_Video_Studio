@@ -109,11 +109,15 @@ class MainWindowCoreAMixin:
                 self.logger.warning("MPV DIAGNOSTIC ISOLATION ACTIVE: software-decoded visible preview active (hwdec=no, containment enabled).")
             except Exception:
                 pass
-        elif mode == "CPU":
+        if mode == "CPU":
             self.show_status_warning("⚠️ No compatible GPU detected. CPU-only mode.")
         else:
             self.show_priority_message(f"✅ Hardware Acceleration Enabled ({mode})", 5000, is_critical=True)
         if hasattr(self, "_maybe_enable_process"): self._maybe_enable_process()
+        if getattr(self, "_pending_process", False):
+            self._pending_process = False
+            QTimer.singleShot(100, self.start_processing)
+
 
     def show_status_warning(self, message: str):
         try:

@@ -169,7 +169,8 @@ class UiBuilderMixin:
             if not getattr(self, 'scan_complete', False):
                 self.process_button.setEnabled(False)
                 self.process_button.setText('WAITING FOR SCAN...')
-                self.status_update_signal.emit('⌛ Hardware scan in progress...')
+                self.status_update_signal.emit('⌛ Hardware scan in progress... Export will start automatically.')
+                self._pending_process = True
                 return
             if hasattr(self, 'portrait_mask_overlay') and self.portrait_mask_overlay:
                 self.portrait_mask_overlay.hide()

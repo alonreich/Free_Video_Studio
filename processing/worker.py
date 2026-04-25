@@ -260,8 +260,9 @@ class ProcessThread(QThread):
                     filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
                     with open(filter_script_path, 'w', encoding='utf-8') as f:
                         f.write(full_filter_str)
-                    ffmpeg_inputs = ['-err_detect', 'ignore_err', '-flags', 'output_corrupt', '-ss', f"{self.start_time_ms/1000.0:.3f}"]
+                    ffmpeg_inputs = ['-err_detect', 'ignore_err', '-flags', 'output_corrupt']
                     ffmpeg_inputs += ['-i', self.input_path]
+                    ffmpeg_inputs += ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
                     for track_path, _, _ in self.music_tracks:
                         ffmpeg_inputs += ['-i', track_path]
                     if txt_input_label:
