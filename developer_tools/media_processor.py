@@ -16,6 +16,7 @@ import threading
 import shutil
 import json
 from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG, pyqtSlot
+from system import diagnostic_runtime
 try:
     import mpv
 except Exception:
@@ -78,8 +79,15 @@ class MediaProcessor(QObject):
         try:
             logger.info(f"Attaching MPV to wid: {wid}")
             self.player.wid = int(wid)
-            self.player.vo = 'gpu,direct3d,d3d11,null'
-            self.player.hwdec = 'auto'
+            if diagnostic_runtime.is_isolation_active():
+                self.player.vo = 'null'
+                self.player.hwdec = 'no'
+                diagnostic_runtime.append_python_debug(
+                    f"CROP MPV ATTACH_WID | isolation_preserved=1 | wid={wid}"
+                )
+            else:
+                self.player.vo = 'gpu,direct3d,d3d11,null'
+                self.player.hwdec = 'auto'
         except Exception as e:
             logger.error(f"Failed to attach WID to MPV: {e}")
     @property

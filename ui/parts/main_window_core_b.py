@@ -54,7 +54,13 @@ class MainWindowCoreBMixin:
     def _setup_mpv(self):
         os.makedirs(os.path.join(self.base_dir, "logs"), exist_ok=True); self.player = None
         try:
-            self.video_surface.setAttribute(Qt.WA_NativeWindow); wid = int(self.video_surface.winId())
+            self.video_surface.setAttribute(Qt.WA_DontCreateNativeAncestors)
+            self.video_surface.setAttribute(Qt.WA_NativeWindow)
+            self.video_surface.setAttribute(Qt.WA_OpaquePaintEvent)
+            self.video_surface.setAttribute(Qt.WA_NoSystemBackground)
+            self.video_surface.setAutoFillBackground(False)
+            self.video_surface.show()
+            wid = int(self.video_surface.winId())
             self.player = MPVSafetyManager.create_safe_mpv(
                 wid=wid, 
                 osc=False, 

@@ -3,30 +3,15 @@ import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
 from system.time_sync import TimeSyncEngine
+from system import diagnostic_runtime
 from system.utils import MPVSafetyManager
-from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 
-class SeekWorker(QThread):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.parent = parent
-        self.active = True
-        self.event = threading.Event()
-        self.latest_data = None
-
-    def run(self):
-        while self.active:
-            self.event.wait(timeout=0.1)
-            if not self.event.is_set(): continue
-            data = self.latest_data
-            self.event.clear()
-            if not data: continue
-            try:
-                self.parent._apply_native_seek(data)
-                time.sleep(0.15)
-            except: pass
-            finally:
-                self.parent._is_seeking_active = False
+def _qt_single_shot(delay_ms, callback):
+    single_shot = getattr(QTimer, "singleShot", None)
+    if callable(single_shot):
+        single_shot(delay_ms, callback)
+    elif delay_ms <= 0 and callable(callback):
+        callback()
 
 class PlayerMixin:
     def __init__(self, *args, **kwargs):
@@ -38,39 +23,39 @@ class PlayerMixin:
         self._freeze_start_ts = 0
         self._freeze_seg = None
         self._observers_isolated = False
-        self._seek_worker = SeekWorker(self)
-        self._seek_worker.start()
+
+    def _refresh_seek_state(self):
+        player = getattr(self, "player", None)
+        clear_seek_guard = getattr(player, '_clear_seek_guard', None)
+        seek_guard_is_stale = getattr(player, '_seek_guard_is_stale', None)
+        if bool(getattr(player, '_seeking_active', False)) and callable(seek_guard_is_stale) and seek_guard_is_stale():
+            try:
+                if callable(clear_seek_guard):
+                    clear_seek_guard('ui-stale-check')
+            except Exception:
+                pass
+        player_busy = bool(getattr(player, '_seeking_active', False))
+        if getattr(self, "_is_seeking_active", False) and not player_busy:
+            self._is_seeking_active = False
+            PlayerMixin._restore_observers(self)
 
     def _isolate_observers(self):
-        if self._observers_isolated: return
-        p = getattr(self, "player", None)
-        if not p or getattr(p, '_core_shutdown', False): return
-        try:
-            p.observe_property('time-pos', None)
-            p.observe_property('idle-active', None)
-            p.observe_property('duration', None)
-            self._observers_isolated = True
-        except: pass
+        self._observers_isolated = True
 
     def _restore_observers(self):
-        if not self._observers_isolated: return
-        p = getattr(self, "player", None)
-        if not p or getattr(p, '_core_shutdown', False): return
-        try:
-            p.observe_property('time-pos', self.update_player_state)
-            self._observers_isolated = False
-        except: pass
+        self._observers_isolated = False
 
     def _apply_native_seek(self, data):
         target_ms = data['ms']
         force_pause = data['force_pause']
         slider_is_down = data['slider_is_down']
         speed_factor = data['speed_factor']
+        seek_applied = False
         try:
             if getattr(self, "_in_transition", False) or getattr(self, "_shutting_down", False):
-                return
+                return False
             p = getattr(self, "player", None)
-            if not p or getattr(p, '_core_shutdown', False): return
+            if not p or getattr(p, '_core_shutdown', False): return False
             if slider_is_down:
                 self._isolate_observers()
             target_m_sec = -1.0
@@ -93,16 +78,23 @@ class PlayerMixin:
                 except: pass
             if not getattr(p, '_safe_shutdown_initiated', False):
                 if force_pause: self._safe_mpv_set("pause", True)
-                self._safe_mpv_command("seek", target_ms / 1000.0, "absolute", precision)
+                seek_applied = bool(self._safe_mpv_command("seek", target_ms / 1000.0, "absolute", precision))
+                if not seek_applied:
+                    diagnostic_runtime.append_python_debug_throttled(
+                        f"player-seek-mpv-busy:{id(self)}",
+                        f"PLAYER SEEK DISCARDED | reason=mpv-busy | target_ms={target_ms}"
+                    )
+                    return False
                 if music_player and target_m_sec >= 0 and not getattr(music_player, '_core_shutdown', False):
                     if force_pause: self._safe_mpv_set("pause", True, target_player=music_player)
                     self._safe_mpv_command("seek", target_m_sec, "absolute", "exact", target_player=music_player)
                     self._safe_mpv_set("speed", 1.0, target_player=music_player)
-            if not slider_is_down:
-                QTimer.singleShot(200, self._restore_observers)
+            if not slider_is_down and not getattr(p, '_seeking_active', False):
+                _qt_single_shot(200, self._restore_observers)
             if hasattr(self, "timer") and not self.timer.isActive():
                 if getattr(self, "input_file_path", None):
-                    QTimer.singleShot(0, self.timer.start)
+                    _qt_single_shot(0, self.timer.start)
+            return seek_applied
         finally:
             pass
 
@@ -192,6 +184,7 @@ class PlayerMixin:
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
 
     def update_player_state(self):
+        PlayerMixin._refresh_seek_state(self)
         if getattr(self, "_in_transition", False): return
         if getattr(self, "_observers_isolated", False) or getattr(self, "_is_seeking_active", False):
             return
@@ -270,7 +263,14 @@ class PlayerMixin:
     def set_player_position(self, position_ms, sync_only=False, force_pause=False):
         if not hasattr(self, "_scrub_lock") or self._scrub_lock is None:
             self._scrub_lock = threading.RLock()
+        PlayerMixin._refresh_seek_state(self)
         target_ms = int(position_ms)
+        if getattr(self, "_is_seeking_active", False) or bool(getattr(getattr(self, "player", None), '_seeking_active', False)):
+            diagnostic_runtime.append_python_debug_throttled(
+                f"player-seek-in-flight:{id(self)}",
+                f"PLAYER SEEK DISCARDED | reason=seek-in-flight | target_ms={target_ms}"
+            )
+            return
         self._pending_seek_ms = target_ms
         self._pending_force_pause = force_pause
         self._captured_slider_down = False
@@ -281,19 +281,20 @@ class PlayerMixin:
             self._captured_speed = self.speed_spinbox.value()
         now = time.time()
         if not hasattr(self, "_last_scrub_ts"): self._last_scrub_ts = 0
-        if getattr(self, "_is_seeking_active", False):
-            if hasattr(self, "_last_seek_start_ts") and (now - self._last_seek_start_ts > 2.0):
-                self._is_seeking_active = False
-        if not force_pause and (now - self._last_scrub_ts < 0.12):
+        if not force_pause and (now - self._last_scrub_ts < 0.05):
+            diagnostic_runtime.append_python_debug_throttled(
+                f"player-seek-throttled:{id(self)}",
+                f"PLAYER SEEK THROTTLED | target_ms={target_ms} | delta={now - self._last_scrub_ts:.4f}"
+            )
             if not hasattr(self, "_seek_timer") or not self._seek_timer.isActive():
-                QTimer.singleShot(120, self._execute_throttled_seek)
+                _qt_single_shot(50, self._execute_throttled_seek)
             return
         self._last_scrub_ts = now
         if not hasattr(self, "_seek_timer"):
             self._seek_timer = QTimer(self)
             self._seek_timer.setSingleShot(True)
             self._seek_timer.timeout.connect(self._execute_throttled_seek)
-        interval = 60 if force_pause else 120
+        interval = 30 if force_pause else 50
         if sync_only:
             self._execute_throttled_seek()
         elif not self._seek_timer.isActive():
@@ -302,8 +303,14 @@ class PlayerMixin:
     def _execute_throttled_seek(self):
         if not hasattr(self, "_pending_seek_ms") or self._pending_seek_ms is None:
             return
-        if getattr(self, "_is_seeking_active", False):
-            QTimer.singleShot(30, self._execute_throttled_seek)
+        PlayerMixin._refresh_seek_state(self)
+        if getattr(self, "_is_seeking_active", False) or bool(getattr(getattr(self, "player", None), '_seeking_active', False)):
+            diagnostic_runtime.append_python_debug_throttled(
+                f"player-seek-active:{id(self)}",
+                f"PLAYER SEEK DISCARDED | reason=seek-active | pending_ms={self._pending_seek_ms}"
+            )
+            self._pending_seek_ms = None
+            self._pending_force_pause = False
             return
         target_ms = self._pending_seek_ms
         force_pause = getattr(self, "_pending_force_pause", False)
@@ -313,13 +320,45 @@ class PlayerMixin:
         self._pending_force_pause = False
         self._is_seeking_active = True
         self._last_seek_start_ts = time.time()
-        self._seek_worker.latest_data = {
+        seek_payload = {
             'ms': target_ms,
             'force_pause': force_pause,
             'slider_is_down': slider_is_down,
             'speed_factor': speed_factor
         }
-        self._seek_worker.event.set()
+        if hasattr(self, "_apply_native_seek"):
+            accepted = False
+            try:
+                accepted = bool(self._apply_native_seek(seek_payload))
+            finally:
+                player_busy = bool(getattr(getattr(self, "player", None), '_seeking_active', False))
+                self._is_seeking_active = bool(accepted and player_busy)
+                if not self._is_seeking_active:
+                    PlayerMixin._restore_observers(self)
+            return
+        try:
+            precision = "fast" if slider_is_down else "exact"
+            accepted = False
+            if force_pause:
+                self._safe_mpv_set("pause", True)
+            if hasattr(self, "_safe_mpv_command"):
+                accepted = bool(self._safe_mpv_command("seek", target_ms / 1000.0, "absolute", precision))
+            else:
+                player = getattr(self, "player", None)
+                if player:
+                    accepted = bool(MPVSafetyManager.safe_mpv_command(
+                        player,
+                        "seek",
+                        target_ms / 1000.0,
+                        "absolute",
+                        precision,
+                        lock=getattr(self, "_mpv_lock", None),
+                    ))
+        finally:
+            player_busy = bool(getattr(getattr(self, "player", None), '_seeking_active', False))
+            self._is_seeking_active = bool(locals().get('accepted', False) and player_busy)
+            if not self._is_seeking_active:
+                PlayerMixin._restore_observers(self)
         
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         accumulated_wall_time = 0.0
@@ -340,7 +379,7 @@ class PlayerMixin:
 
     def _on_mpv_end_reached(self, event=None):
         try:
-            QTimer.singleShot(0, self._safe_handle_mpv_end)
+            _qt_single_shot(0, self._safe_handle_mpv_end)
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.error(f"MPV End Event failed to defer: {e}")
@@ -387,7 +426,7 @@ class PlayerMixin:
                 return
             self._last_player_output_bind_ts = now2
             _perform_bind()
-        QTimer.singleShot(300, _delayed_bind)
+        _qt_single_shot(300, _delayed_bind)
 
     def _safe_handle_mpv_end(self):
         try:

@@ -2,6 +2,7 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from system import diagnostic_runtime
 
 class MainWindowCoreAMixin:
     def open_granular_speed_dialog(self):
@@ -76,15 +77,42 @@ class MainWindowCoreAMixin:
 
     def on_hardware_scan_finished(self, mode: str):
         if not hasattr(self, 'status_bar'): return
+        raw_mode = str(mode or "CPU")
+        upper_mode = raw_mode.upper()
+        if "NVIDIA" in upper_mode:
+            mode = "NVIDIA"
+        elif "AMD" in upper_mode:
+            mode = "AMD"
+        elif "INTEL" in upper_mode:
+            mode = "INTEL"
+        else:
+            mode = "CPU"
+        isolation_active = diagnostic_runtime.is_isolation_active()
+        if isolation_active:
+            mode = "CPU"
         self.hardware_strategy = mode; self.scan_complete = True
         try:
             cfg = self.config_manager.config; cfg["last_hardware_strategy"] = mode; self.config_manager.save_config(cfg)
         except: pass
         if hasattr(self, 'hardware_status_label'):
-            icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
-            self.hardware_status_label.setText(f"{icon} {mode} Mode"); self.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;"); self.hardware_status_label.show()
-        if mode == "CPU": self.show_status_warning("⚠️ No compatible GPU detected. CPU-only mode.")
-        else: self.show_priority_message(f"✅ Hardware Acceleration Enabled ({mode})", 5000, is_critical=True)
+            if isolation_active:
+                self.hardware_status_label.setText("🧪 CPU Isolation Mode")
+                self.hardware_status_label.setStyleSheet("color: #ffa500; font-weight: bold;")
+            else:
+                icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
+                self.hardware_status_label.setText(f"{icon} {mode} Mode")
+                self.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;")
+            self.hardware_status_label.show()
+        if isolation_active:
+            self.show_status_warning("🧪 Diagnostic isolation active: software-decoded preview active (hwdec=no) with crash containment enabled.")
+            try:
+                self.logger.warning("MPV DIAGNOSTIC ISOLATION ACTIVE: software-decoded visible preview active (hwdec=no, containment enabled).")
+            except Exception:
+                pass
+        elif mode == "CPU":
+            self.show_status_warning("⚠️ No compatible GPU detected. CPU-only mode.")
+        else:
+            self.show_priority_message(f"✅ Hardware Acceleration Enabled ({mode})", 5000, is_critical=True)
         if hasattr(self, "_maybe_enable_process"): self._maybe_enable_process()
 
     def show_status_warning(self, message: str):

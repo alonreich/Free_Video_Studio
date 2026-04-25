@@ -478,7 +478,7 @@ class GranularSpeedEditor(QDialog):
                     self._safe_mpv_command("seek", (self.abs_trim_start + seg['start']) / 1000.0, "absolute", "exact")
                 return
             curr_rel = (self._safe_mpv_get('time-pos', 0) or 0) * 1000 - self.abs_trim_start
-            if self._start_manually_set:
+            if getattr(self, "_start_manually_set", False):
                 self.timeline.set_trim_times(self.timeline.trimmed_start_ms, int(curr_rel))
                 self.update_pending_visualization()
             if not self.timeline.isSliderDown():
@@ -506,7 +506,9 @@ class GranularSpeedEditor(QDialog):
         if now - getattr(self, "_last_rate_update", 0) < 0.15: return
         current_rate = self._safe_mpv_get("speed", 1.0)
         if abs(current_rate - target_speed) > 0.005:
-            if self._safe_mpv_set("speed", target_speed): self._last_rate_update = now
+            result = self._safe_mpv_set("speed", target_speed)
+            if result is not False:
+                self._last_rate_update = now
 
     def on_speed_changed(self, val):
         self.selection_modified = True

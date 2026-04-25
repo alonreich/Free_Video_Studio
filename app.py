@@ -8,6 +8,7 @@ BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 if BASE_DIR not in sys.path: sys.path.insert(0, BASE_DIR)
 from system.utils import ConsoleManager, ProcessManager, MPVSafetyManager, DependencyDoctor
+from system import diagnostic_runtime
 from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
 from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
 from PyQt5.QtGui import QIcon
@@ -30,6 +31,13 @@ TRANSLATIONS = {
 }
 from system.utils import UIManager
 def tr(key: str) -> str: return TRANSLATIONS.get(LOCALE_CODE, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
+def normalize_hardware_strategy(value: str | None) -> str | None:
+    text = str(value or "").strip().upper()
+    if "NVIDIA" in text: return "NVIDIA"
+    if "AMD" in text: return "AMD"
+    if "INTEL" in text: return "INTEL"
+    if "CPU" in text: return "CPU"
+    return None
 PID_FILE_HANDLE = None
 def cleanup_pid_lock():
     global PID_FILE_HANDLE
@@ -218,9 +226,11 @@ if __name__ == "__main__":
         if os.path.exists(icon_path): app.setWindowIcon(QIcon(icon_path))
         else: app.setWindowIcon(app.style().standardIcon(QStyle.SP_ComputerIcon))
     except: pass
-    from system.config import ConfigManager; from ui.widgets.tooltip_manager import ToolTipManager; config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf'); cm = ConfigManager(config_path); tm = ToolTipManager(); cached_hw = cm.config.get("last_hardware_strategy")
-    if str(cached_hw or "").upper() == "CPU": cached_hw = None
-    file_arg = sys.argv[1] if len(sys.argv) > 1 else None; initial_strategy = cached_hw if cached_hw else "Scanning..."
+    from system.config import ConfigManager; from ui.widgets.tooltip_manager import ToolTipManager; config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf'); cm = ConfigManager(config_path); tm = ToolTipManager(); cached_hw = normalize_hardware_strategy(cm.config.get("last_hardware_strategy"))
+    if cached_hw == "CPU": cached_hw = None
+    isolation_active = diagnostic_runtime.is_isolation_active()
+    if isolation_active: cached_hw = "CPU"
+    file_arg = sys.argv[1] if len(sys.argv) > 1 else None; initial_strategy = "CPU" if isolation_active else (cached_hw if cached_hw else "Scanning...")
     if cached_hw == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
     elif cached_hw == "AMD": os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
     elif cached_hw == "INTEL": os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
@@ -235,6 +245,9 @@ if __name__ == "__main__":
         if hasattr(ex, "statusBar") and ex.statusBar(): ex.statusBar().showMessage(tr("ffmpeg_path_message").format(ffmpeg=ffmpeg_path), 8000)
     except: pass
     def start_hw_scan():
+        if isolation_active:
+            logger.warning("GPU: Diagnostic isolation active; forcing CPU-only playback profile and skipping GPU scan/cache.")
+            ex.on_hardware_scan_finished("CPU"); ex.scan_complete = True; return
         if cached_hw:
             logger.info(f"GPU: Loading cached strategy: {cached_hw}")
             ex.on_hardware_scan_finished(cached_hw); ex.scan_complete = True; return

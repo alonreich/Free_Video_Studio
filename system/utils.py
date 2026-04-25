@@ -11,6 +11,7 @@ import threading
 import weakref
 import json
 from PyQt5.QtCore import QTimer, QThread
+from system import diagnostic_runtime
 try:
     import sip
 except ImportError:
@@ -31,34 +32,93 @@ try:
         _real_init = mpv.MPV.__init__
 
         def __mandated_mpv_init__(self, *args, **kwargs):
-            kwargs.setdefault('gpu_api', 'd3d11')
-            kwargs.setdefault('gpu_context', 'd3d11')
+            kwargs = diagnostic_runtime.apply_mpv_runtime_overrides(dict(kwargs))
+            kwargs.setdefault('start_event_thread', not diagnostic_runtime.is_isolation_active())
+            if not diagnostic_runtime.is_isolation_active():
+                kwargs.setdefault('gpu_api', 'd3d11')
+                kwargs.setdefault('gpu_context', 'd3d11')
             _real_init(self, *args, **kwargs)
             self._seeking_active = False
+            self._seek_guard_timeout_sec = 0.45
+            self._seek_guard_deadline_monotonic = 0.0
+
+            def __seek_guard_is_stale():
+                deadline = float(getattr(self, '_seek_guard_deadline_monotonic', 0.0) or 0.0)
+                return bool(deadline and time.monotonic() >= deadline)
+
+            def __clear_seek_guard(reason='unknown'):
+                self._seek_guard_deadline_monotonic = 0.0
+                if getattr(self, '_seeking_active', False):
+                    self._seeking_active = False
+                    diagnostic_runtime.append_python_debug_throttled(
+                        f"mpv-seek-guard-reset:{id(self)}:{reason}",
+                        f"MPV SEEK GUARD RESET | reason={reason} | player_id={id(self)}"
+                    )
             try:
-                self.set_property('d3d11-exclusive-fs', 'yes')
-                self.set_property('gpu-async-compute', 'yes')
-                self.set_property('gpu-stream-cache-secs', '10')
+                if not diagnostic_runtime.is_isolation_active():
+                    self.set_property('d3d11-exclusive-fs', 'yes')
+                    self.set_property('gpu-async-compute', 'yes')
+                    self.set_property('gpu-stream-cache-secs', '10')
             except: pass
             _real_seek = self.seek
 
-            def __gated_seek__(amount, reference='relative', precision='exact'):
-                if getattr(self, '_seeking_active', False): return
+            def __submit_gated_seek__(amount, reference='relative', precision='exact'):
+                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
+                    diagnostic_runtime.append_python_debug_throttled(
+                        f"mpv-seek-shutdown:{id(self)}",
+                        f"MPV SEEK DROPPED | source=seek | reason=shutdown | player_id={id(self)}"
+                    )
+                    return False
+                if getattr(self, '_seeking_active', False):
+                    if __seek_guard_is_stale():
+                        __clear_seek_guard('stale-deadline')
+                    else:
+                        diagnostic_runtime.append_python_debug_throttled(
+                            f"mpv-seek-busy:{id(self)}:{reference}:{precision}",
+                        f"MPV SEEK DROPPED | source=seek | reference={reference} | precision={precision} | player_id={id(self)}"
+                        )
+                        return False
                 self._seeking_active = True
-                
-                def __safety_reset(): self._seeking_active = False
-                threading.Timer(0.8, __safety_reset).start()
+                self._seek_guard_deadline_monotonic = time.monotonic() + float(getattr(self, '_seek_guard_timeout_sec', 5.0) or 5.0)
                 try:
                     with MPVSafetyManager._mpv_command_lock:
                         _real_seek(amount, reference=reference, precision=precision)
-                except: self._seeking_active = False
+                    return True
+                except Exception as exc:
+                    diagnostic_runtime.append_python_debug_throttled(
+                        f"mpv-seek-error:{id(self)}",
+                        f"MPV SEEK ERROR | source=seek | error={exc} | player_id={id(self)}"
+                    )
+                    __clear_seek_guard('seek-error')
+                    return False
+
+            def __gated_seek__(amount, reference='relative', precision='exact'):
+                return __submit_gated_seek__(amount, reference=reference, precision=precision)
+            self._clear_seek_guard = __clear_seek_guard
+            self._seek_guard_is_stale = __seek_guard_is_stale
+            self._submit_gated_seek = __submit_gated_seek__
             self.seek = __gated_seek__
             @self.event_callback('playback-restart')
             def __reset_seeking(ev):
-                self._seeking_active = False
+                __clear_seek_guard('playback-restart')
+            @self.property_observer('seeking')
+            def __reset_seek_on_property(_name, value):
+                if value in (False, None, 0):
+                    __clear_seek_guard('seeking=false')
+            @self.event_callback('shutdown')
+            def __reset_seek_on_shutdown(ev):
+                __clear_seek_guard('shutdown')
+            diagnostic_runtime.log_isolation_alarm(logging.getLogger())
         mpv.MPV.__init__ = __mandated_mpv_init__
         mpv._mandate_applied = True
-        logging.info("GPU RE-INTEGRATION COMPLETE. RTX 4070 OPTIMIZATIONS ACTIVE.")
+        if diagnostic_runtime.is_isolation_active():
+            logging.warning("MPV DIAGNOSTIC ISOLATION ACTIVE. CPU-ONLY MODE ENABLED FOR SEEK CRASH TRIAGE.")
+            diagnostic_runtime.append_python_debug_throttled(
+                "mpv-event-thread-disabled",
+                "MPV EVENT THREAD DISABLED | isolation=1 | reason=python-mpv event loop crash containment"
+            )
+        else:
+            logging.info("GPU RE-INTEGRATION COMPLETE. RTX 4070 OPTIMIZATIONS ACTIVE.")
 except (ImportError, OSError):
     class MockMPV: 
         log_path = None
@@ -227,7 +287,14 @@ class ConsoleManager:
             s_t = ConsoleManager._source_tag(logger_name)
             r_l_p = os.path.join(l_d, f"mpv_{s_t}.raw.log")
             mpv.log_path = os.path.join(l_d, f"{app_p}_mpv.log")
-            f = open(r_l_p, 'a', encoding='utf-8', buffering=1)
+            python_debug_log_path = diagnostic_runtime.get_python_debug_log_path()
+            with open(r_l_p, 'a', encoding='utf-8', buffering=1):
+                pass
+            try:
+                mpv.log_path = diagnostic_runtime.get_mpv_trace_log_path()
+            except Exception:
+                pass
+            f = open(python_debug_log_path, 'a', encoding='utf-8', buffering=1)
             ConsoleManager._log_files.append(f)
             try:
                 import faulthandler
@@ -239,6 +306,9 @@ class ConsoleManager:
                 sys.stdout.reconfigure(line_buffering=True)
                 sys.stderr.reconfigure(line_buffering=True)
             logger.info("NATIVE DEBUG LOGGING ACTIVE - REALTIME MODE")
+            logger.info(f"PYTHON DEBUG LOG REDIRECT ACTIVE -> {python_debug_log_path}")
+            logger.info(f"MPV TRACE LOG REDIRECT ACTIVE -> {diagnostic_runtime.get_mpv_trace_log_path()}")
+            diagnostic_runtime.log_isolation_alarm(logger)
         except Exception as e:
             logger.error(f"Failed to setup native logging: {e}")
 
@@ -377,20 +447,47 @@ class MPVSafetyManager:
     def safe_mpv_command(player, command, *args, max_attempts=3, lock=None):
         if not player or getattr(player, '_core_shutdown', False): return False
         if command == "seek":
-            if getattr(player, '_seeking_active', False):
-                return False
-            player._seeking_active = True
+            submit_seek = getattr(player, '_submit_gated_seek', None)
+            if callable(submit_seek):
+                target = float(args[0]) if len(args) > 0 else 0.0
+                reference = args[1] if len(args) > 1 else 'relative'
+                precision = args[2] if len(args) > 2 else 'exact'
+                return bool(submit_seek(target, reference=reference, precision=precision))
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
                     if lock:
                         if not lock.acquire(timeout=0.1): continue
-                    try: player.command(command, *args); return True
+                    try:
+                        if command == "seek":
+                            target = float(args[0]) if len(args) > 0 else 0.0
+                            reference = args[1] if len(args) > 1 else 'relative'
+                            precision = args[2] if len(args) > 2 else 'exact'
+                            if not hasattr(player, 'set_property') and hasattr(player, 'seek'):
+                                player.seek(target, reference=reference, precision=precision)
+                            elif not hasattr(player, 'set_property') and hasattr(player, 'set_time') and reference == 'absolute':
+                                player.set_time(int(target * 1000))
+                            else:
+                                player.command(command, *args)
+                        else:
+                            player.command(command, *args)
+                        return True
                     finally:
                         if lock: lock.release()
             except: 
                 if command == "seek":
-                    player._seeking_active = False
+                    try:
+                        clear_seek_guard = getattr(player, '_clear_seek_guard', None)
+                        if callable(clear_seek_guard):
+                            clear_seek_guard('command-error')
+                        else:
+                            player._seeking_active = False
+                    except Exception:
+                        pass
+                    diagnostic_runtime.append_python_debug_throttled(
+                        f"mpv-seek-command-error:{id(player)}",
+                        f"MPV SEEK COMMAND ERROR | player_id={id(player)} | args={args}"
+                    )
                 time.sleep(0.02)
         return False
     @staticmethod
@@ -398,7 +495,11 @@ class MPVSafetyManager:
         if not player: return
         try:
             if hasattr(player, '_event_callbacks'): player._event_callbacks.clear()
-            if hasattr(player, '_property_observers'): player._property_observers.clear()
+            if hasattr(player, '_property_handlers'): player._property_handlers.clear()
+            elif hasattr(player, '_property_observers'): player._property_observers.clear()
+            if hasattr(player, 'unobserve_all_properties'):
+                try: player.unobserve_all_properties(None)
+                except Exception: pass
             if hasattr(player, 'event_callback'): player.event_callback = None
         except: pass
     @staticmethod
@@ -421,8 +522,12 @@ class MPVSafetyManager:
                 e_f = kwargs.pop('extra_mpv_flags', [])
                 kwargs.pop('load_scripts', None); kwargs.pop('config', None); kwargs.pop('osc', None); kwargs.pop('ytdl', None)
                 s_k.update(kwargs)
+                s_k = diagnostic_runtime.apply_mpv_runtime_overrides(s_k)
                 init_args = {
-                    'loglevel': s_k.get('loglevel', 'error'),
+                    'loglevel': s_k.get('loglevel', 'trace'),
+                    'log_file': s_k.get('log_file', diagnostic_runtime.get_mpv_trace_log_path()),
+                    'msg_level': s_k.get('msg_level', 'all=trace'),
+                    'start_event_thread': s_k.get('start_event_thread', not diagnostic_runtime.is_isolation_active()),
                     'osc': False,
                     'ytdl': False,
                     'load_scripts': False,

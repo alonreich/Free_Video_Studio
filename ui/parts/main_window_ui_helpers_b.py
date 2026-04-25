@@ -2,17 +2,43 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from system import diagnostic_runtime
 
 class MainWindowUiHelpersBMixin:
     def _set_upload_hint_active(self, active):
         target = getattr(self, 'hint_overlay_widget', None)
-        if not target or not hasattr(self, '_hint_group'): return
-        if active:
+        if not target: return
+        hint_group_container = getattr(self, 'hint_group_container', None)
+        if not hasattr(self, '_hint_group') and hasattr(self, '_init_upload_hint_blink'):
+            try:
+                self._init_upload_hint_blink()
+            except Exception:
+                pass
+        preview_notice_active = self._update_diagnostic_preview_notice()
+        if active or preview_notice_active:
             self._update_upload_hint_responsive()
+        if active:
+            if hint_group_container is not None:
+                hint_group_container.show()
             target.show(); target.raise_()
-            self._hint_group.start()
+            if hasattr(self, '_hint_group'):
+                self._hint_group.start()
         else:
-            self._hint_group.stop(); target.hide()
+            if hasattr(self, '_hint_group'):
+                self._hint_group.stop()
+            if hint_group_container is not None:
+                hint_group_container.setVisible(False)
+            if preview_notice_active:
+                target.show(); target.raise_()
+            else:
+                target.hide()
+
+    def _update_diagnostic_preview_notice(self):
+        container = getattr(self, 'preview_notice_container', None)
+        if container is None:
+            return False
+        container.hide()
+        return False
 
     def _update_upload_hint_responsive(self):
         try:
@@ -77,6 +103,30 @@ class MainWindowUiHelpersBMixin:
             except:
                 fallback_y = int(round((overlay_h * 0.35) - (visual_h / 2.0)))
                 self.hint_centering_layout.setContentsMargins(offset_x, max(0, fallback_y), 0, 0)
+            notice = getattr(self, 'preview_notice_container', None)
+            if notice is not None:
+                notice_w = min(max(260, int(round(540.0 * scale))), max(220, overlay_w - max(24, int(round(120.0 * scale)))))
+                notice.setFixedWidth(notice_w)
+                notice.setStyleSheet(
+                    f"#previewIsolationContainer {{"
+                    f"background-color: rgba(0, 0, 0, 215);"
+                    f"border: {max(2, int(round(2 * scale)))}px solid #f39c12;"
+                    f"border-radius: {max(10, int(round(14 * scale)))}px;"
+                    f"}}"
+                )
+                title = getattr(self, 'preview_notice_title', None)
+                detail = getattr(self, 'preview_notice_detail', None)
+                if title is not None:
+                    title.setStyleSheet(
+                        f"color:#f8c471;font-size:{max(13, int(round(22.0 * scale)))}px;"
+                        f"font-weight:bold;background:transparent;border:none;"
+                    )
+                if detail is not None:
+                    detail.setStyleSheet(
+                        f"color:#ecf0f1;font-size:{max(10, int(round(14.0 * scale)))}px;"
+                        f"background:transparent;border:none;"
+                    )
+                notice.setVisible(self._update_diagnostic_preview_notice())
         finally:
             self._updating_hint_responsive = False
 
