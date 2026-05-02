@@ -29,7 +29,7 @@ class IntroProcessor:
         loop_frames = max(1, int(round(still_len * fps_val)))
         target_w, target_h = (1080, 1920) if is_mobile else (1920, 1080)
         base_intro = (
-            f"select='eq(n\\,0)',format=nv12,setsar=1,"
+            f"select='eq(n\\,0)',format=yuv420p,setsar=1,"
             f"loop=loop={loop_frames}:size=1:start=0,fps={fps_expr},setpts=N/({fps_expr})/TB[vintro];"
             f"anullsrc=r=48000:cl=stereo,atrim=duration={still_len:.3f},asetpts=PTS-STARTPTS[aintro]"
         )
@@ -41,9 +41,9 @@ class IntroProcessor:
             is_nvidia = (enc_name == 'h264_nvenc')
             if use_hw:
                 if is_nvidia:
-                    hw_flags = ['-hwaccel', 'd3d11va']
+                    hw_flags = ['-hwaccel', 'dxva2']
                 elif enc_name in ('h264_amf', 'h264_qsv'):
-                    hw_flags = ['-hwaccel', 'd3d11va']
+                    hw_flags = ['-hwaccel', 'dxva2']
             try:
                 if "x" in original_res_str:
                     iw_str, ih_str = original_res_str.lower().split("x")
@@ -64,7 +64,7 @@ class IntroProcessor:
                 "-t", "0.2"
             ] + vcodec_intro + [
                 "-fps_mode", "cfr",
-                "-pix_fmt", "nv12", 
+                "-pix_fmt", "yuv420p", 
                 "-movflags", "+faststart",
                 "-c:a", "aac", "-b:a", f'{audio_kbps}k', '-ar', str(int(sample_rate) if sample_rate else 48000), '-ac', '2',
                 "-filter_complex", intro_filter,
@@ -77,7 +77,9 @@ class IntroProcessor:
             self.current_process = proc
 
             from .system_utils import monitor_ffmpeg_progress
-            monitor_ffmpeg_progress(proc, still_len, progress_signal, is_canceled_func, self.logger)
+
+            def on_output(line): self.logger.info(f"FFmpeg intro: {line}")
+            monitor_ffmpeg_progress(proc, still_len, progress_signal, is_canceled_func, self.logger, on_output_line=on_output)
             proc.wait()
             return proc.returncode == 0, False
         enc_name = preferred_encoder or self.encoder_mgr.get_initial_encoder()
@@ -85,8 +87,7 @@ class IntroProcessor:
         if is_hw_preferred:
             success, is_cuda_err = run_intro_cmd(use_hw=True)
             if not success:
-                self.logger.warning("Intro hardware processing failed. Retrying with CPU fallback...")
-                success, _ = run_intro_cmd(use_hw=False)
+                self.logger.error("Intro hardware processing failed. CPU fallback is disabled for GPU mode.")
         else:
             success, _ = run_intro_cmd(use_hw=False)
         return intro_path if success else None

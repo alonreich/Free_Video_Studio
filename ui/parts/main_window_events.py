@@ -30,7 +30,7 @@ class MainWindowEventsMixin:
             self.handle_persistence_event()
         if hasattr(self, "_update_overlay_positions"):
             self._update_overlay_positions()
-        super().moveEvent(event)
+        QMainWindow.moveEvent(self, event)
 
     def resizeEvent(self, event):
         if hasattr(self, "_update_upload_hint_responsive"):
@@ -43,7 +43,7 @@ class MainWindowEventsMixin:
         else:
             if hasattr(self, '_delayed_resize_event'):
                 self._delayed_resize_event()
-        super().resizeEvent(event)
+        QMainWindow.resizeEvent(self, event)
 
     def _delayed_resize_event(self):
         try:

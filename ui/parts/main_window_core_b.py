@@ -9,6 +9,7 @@ class MainWindowCoreBMixin:
         try:
             if getattr(self, "_in_transition", False): return
             if hasattr(self, "_set_overlay_phase"): self._set_overlay_phase(phase)
+            if phase and hasattr(self, "_append_live_log"): self._append_live_log(f"STATUS: {phase}")
             p = (phase or "").lower()
             if any(x in p for x in ("processing", "step", "encode", "intro", "core", "concat")):
                 self.is_processing = True

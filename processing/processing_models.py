@@ -64,7 +64,7 @@ def validate_job(job: ProcessingJob) -> Dict[str, Any]:
         validation_results["warnings"].append("Could not parse resolution, using default")
     if job.speed_factor < 0.25 or job.speed_factor > 4.0:
         validation_results["warnings"].append(f"Speed factor {job.speed_factor} is outside recommended range")
-    if job.quality_level < 0 or job.quality_level > 3:
+    if job.quality_level < 0 or job.quality_level > 20:
         validation_results["warnings"].append(f"Quality level {job.quality_level} is outside valid range")
     if not isinstance(job.speed_segments, list):
         validation_results["valid"] = False

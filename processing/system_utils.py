@@ -159,7 +159,7 @@ def check_filter_option(ffmpeg_path: str, filter_name: str, option_name: str) ->
     except Exception:
         return False
 
-def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger, on_error_line=None):
+def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger, on_error_line=None, on_output_line=None):
     last_poll_time = time.time()
     critical_signatures = (
         "error",
@@ -192,6 +192,11 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
         s = line.strip()
         if not s:
             continue
+        if on_output_line:
+            try:
+                on_output_line(s)
+            except Exception:
+                pass
         low = s.lower()
         if on_error_line and any(sig in low for sig in critical_signatures):
             on_error_line(s)

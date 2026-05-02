@@ -7,12 +7,6 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
 
 class MergerEngine(QThread):
-    """
-    Enhanced FFmpeg Engine.
-    - Supports GPU Encoding (NVENC/AMF/QSV) detection.
-    - Handles Audio Resampling to prevent mix failures.
-    - Non-blocking I/O.
-    """
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
@@ -33,12 +27,17 @@ class MergerEngine(QThread):
         self._is_cancelled = False
         self._last_time_str = "00:00:00"
 
+    def _cmd_base_with_decode_flags(self):
+        if not self.use_gpu:
+            return list(self.cmd_base)
+        expanded = []
+        for item in self.cmd_base:
+            if item == "-i":
+                expanded.extend(["-hwaccel", "dxva2"])
+            expanded.append(item)
+        return expanded
+
     def _detect_gpu_encoder(self):
-        """
-        Detects available GPU encoders (NVENC, AMF, QSV).
-        Falls back to libx264 if none found.
-        Adjusts quality based on self.quality_level (0=20% to 4:100%).
-        """
         quality_multipliers = {0: 0.20, 1: 0.40, 2: 0.60, 3: 0.80, 4: 1.0}
         mult = quality_multipliers.get(self.quality_level, 1.0)
         crf_map = {4: 22, 3: 26, 2: 30, 1: 34, 0: 40}
@@ -56,28 +55,30 @@ class MergerEngine(QThread):
             out = res.stdout
             if re.search(r"\s+h264_nvenc\s+", out):
                 self.logger.info(f"GPU: NVIDIA NVENC detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_nvenc", "-preset", "p4", "-spatial-aq", "1", "-temporal-aq", "1"]
+                base = ["-c:v", "h264_nvenc", "-preset", "p4", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-spatial-aq", "1", "-temporal-aq", "1"]
                 if not v_bitrate_args: base.extend(["-cq", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
             elif re.search(r"\s+h264_amf\s+", out):
                 self.logger.info(f"GPU: AMD AMF detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_amf", "-quality", "quality", "-vbaq", "1"]
+                base = ["-c:v", "h264_amf", "-quality", "quality", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-vbaq", "1"]
                 if not v_bitrate_args: base.extend(["-rc", "cqp", "-qp_i", str(crf_val), "-qp_p", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
             elif re.search(r"\s+h264_qsv\s+", out):
                 self.logger.info(f"GPU: Intel QSV detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_qsv", "-preset", "slow"]
+                base = ["-c:v", "h264_qsv", "-preset", "slow", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2"]
                 if not v_bitrate_args: base.extend(["-global_quality", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
+        if self.use_gpu:
+            raise RuntimeError("GPU encoding was requested, but FFmpeg did not expose h264_nvenc, h264_amf, or h264_qsv.")
         return self._get_cpu_flags(crf_val, v_bitrate_args)
 
     def _get_cpu_flags(self, crf_val, v_bitrate_args):
-        base = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p"]
+        base = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2"]
         if not v_bitrate_args:
             base.extend(["-crf", str(crf_val)])
         else:
@@ -87,11 +88,15 @@ class MergerEngine(QThread):
     def run(self):
         while True:
             self._is_cancelled = False
-            cmd = [self.ffmpeg_path, "-y", "-hide_banner", "-progress", "pipe:1"] + list(self.cmd_base)
+            cmd = [self.ffmpeg_path, "-y", "-hide_banner", "-progress", "pipe:1"] + self._cmd_base_with_decode_flags()
             a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
             a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
             cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
-            cmd.extend(self._detect_gpu_encoder())
+            try:
+                cmd.extend(self._detect_gpu_encoder())
+            except Exception as e:
+                self.finished.emit(False, str(e))
+                return
             cmd.append(str(self.output_path))
             self.logger.info(f"ENGINE: Executing: {' '.join(cmd)}")
             startupinfo = None
@@ -149,10 +154,6 @@ class MergerEngine(QThread):
                 return
             self._process.wait()
             rc = self._process.returncode
-            if rc != 0 and self.use_gpu:
-                self.logger.warning("GPU Encoding failed, falling back to CPU...")
-                self.use_gpu = False
-                continue
             self.logger.info(f"FFMPEG LOG DUMP:\n" + "\n".join(log_buffer))
             if rc == 0:
                 if os.path.exists(self.output_path) and os.path.getsize(self.output_path) > 0:
@@ -170,7 +171,6 @@ class MergerEngine(QThread):
             break
 
     def _parse_progress_v2(self, line):
-        """Precision tracking using out_time_us."""
         if 'out_time_us=' in line:
             try:
                 _, val = line.split('=')

@@ -4,6 +4,17 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 class MainWindowToolsMixin:
+    def _watch_child_tool(self, proc, title):
+        if proc.poll() is None:
+            QTimer.singleShot(1000, lambda: self._watch_child_tool(proc, title))
+            return
+        code = proc.returncode
+        if code == 0:
+            self.close()
+            return
+        self.show()
+        QMessageBox.critical(self, "Launch Failed", f"{title} closed unexpectedly (Code: {code}).")
+
     def launch_crop_tool(self):
         try:
             self.hide()
@@ -20,12 +31,7 @@ class MainWindowToolsMixin:
             creation_flags = 0
             if sys.platform == "win32": creation_flags = 0x00000008 | 0x00000200
             proc = subprocess.Popen(cmd, cwd=os.path.join(root_dir, 'developer_tools'), env=env, creationflags=creation_flags, close_fds=True, shell=False)
-
-            def _check_proc():
-                if proc.poll() is not None:
-                    self.show(); QMessageBox.critical(self, "Launch Failed", f"Crop Tool failed to start (Code: {proc.returncode})")
-                else: self.close()
-            QTimer.singleShot(2000, _check_proc)
+            QTimer.singleShot(800, lambda: self._watch_child_tool(proc, "Crop Tool"))
         except Exception as e:
             self.show(); QMessageBox.critical(self, "Launch Failed", f"Could not launch Crop Tool: {e}")
 
@@ -36,5 +42,8 @@ class MainWindowToolsMixin:
             command = [sys.executable, os.path.join(self.base_dir, 'advanced', 'advanced_video_editor.py')]
             if self.input_file_path: command.append(self.input_file_path)
             if self.player: self.player.stop()
-            subprocess.Popen(command, cwd=self.base_dir); self.close()
-        except Exception as e: QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor: {e}")
+            self.hide()
+            proc = subprocess.Popen(command, cwd=os.path.join(self.base_dir, 'advanced'), close_fds=True, shell=False)
+            QTimer.singleShot(800, lambda: self._watch_child_tool(proc, "Advanced Editor"))
+        except Exception as e:
+            self.show(); QMessageBox.critical(self, "Launch Failed", f"Could not launch Advanced Editor: {e}")

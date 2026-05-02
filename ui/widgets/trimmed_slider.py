@@ -6,8 +6,8 @@ class TrimmedSlider(QSlider):
     trim_times_changed = pyqtSignal(int, int)
     music_trim_changed = pyqtSignal(int, int)
 
-    def __init__(self, parent=None):
-        super().__init__(Qt.Horizontal, parent)
+    def __init__(self, orientation=Qt.Horizontal, parent=None):
+        super().__init__(orientation, parent)
         self._is_destroying = False
         self._is_painting = False
         self.music_v_offset = -6
@@ -24,16 +24,16 @@ class TrimmedSlider(QSlider):
         self._music_drag_offset_ms = 0
         self.setMouseTracking(True)
         self.setMinimumHeight(50)
-        self._cached_min = 0
-        self._cached_max = 100
         if hasattr(self, 'setCursor'):
             self.setCursor(Qt.PointingHandCursor)
         self._show_trim_overlays = True
         self.speed_segments = []
         self.base_speed = 1.1
         self.thumbnail_pos_ms = -1
-        self.rangeChanged.connect(self._update_range_cache)
-        self._update_range_cache()
+
+    def setValue(self, value):
+        super().setValue(value)
+        self.update()
 
     def set_speed_segments(self, segments):
         self.speed_segments = segments
@@ -46,13 +46,6 @@ class TrimmedSlider(QSlider):
     def get_thumbnail_pos_ms(self):
         return getattr(self, "thumbnail_pos_ms", 0)
 
-    def _update_range_cache(self):
-        try:
-            self._cached_min = self.minimum()
-            self._cached_max = self.maximum()
-        except:
-            pass
-
     def enable_trim_overlays(self, enabled):
         self._show_trim_overlays = bool(enabled)
         self.update()
@@ -60,7 +53,6 @@ class TrimmedSlider(QSlider):
     def set_duration_ms(self, ms):
         self._duration_ms = max(0, int(ms))
         self.setRange(0, self._duration_ms)
-        self._update_range_cache()
         self.update()
 
     def set_trim_times(self, start_ms, end_ms):
@@ -155,13 +147,13 @@ class TrimmedSlider(QSlider):
     def _map_pos_to_value(self, px):
         try:
             groove = self._get_groove_rect()
-            if groove.width() <= 1: return self._cached_min
+            if groove.width() <= 1: return self.minimum()
             pos = px - groove.left()
             ratio = pos / float(groove.width() - 1)
-            val = self._cached_min + ratio * (self._cached_max - self._cached_min)
-            return int(max(self._cached_min, min(self._cached_max, val)))
+            val = self.minimum() + ratio * (self.maximum() - self.minimum())
+            return int(max(self.minimum(), min(self.maximum(), val)))
         except Exception:
-            return self._cached_min
+            return self.minimum()
 
     def _map_value_to_pos(self, value):
         try:
@@ -170,7 +162,7 @@ class TrimmedSlider(QSlider):
             groove = self._get_groove_rect()
             if not groove.isValid() or groove.width() <= 1:
                 return groove.left() if groove.isValid() else 8
-            minv, maxv = self._cached_min, self._cached_max
+            minv, maxv = self.minimum(), self.maximum()
             if maxv <= minv:
                 return groove.left()
             span = maxv - minv

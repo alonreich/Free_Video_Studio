@@ -33,14 +33,14 @@ from Keyboard_Mixing import KeyboardShortcutMixin
 from media_processor import MediaProcessor
 from ui_setup import Ui_CropApp
 from app_handlers import CropAppHandlers
-from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR, HUD_SAFE_PADDING
+from config import HUD_ELEMENT_MAPPINGS, Z_ORDER_MAP, UI_COLORS, UI_LAYOUT, UI_BEHAVIOR, HUD_SAFE_PADDING, get_tech_key_from_role
 from logger_setup import setup_logger
 from enhanced_logger import get_enhanced_logger
 from config_manager import get_config_manager
 from state_manager import get_state_manager
 from graphics_items import ResizablePixmapItem
 from coordinate_math import (
-    transform_to_content_area, inverse_transform_from_content_area_int, get_resolution_ints, outward_round_rect, scale_round,
+    transform_to_content_area, transform_to_content_area_int, inverse_transform_from_content_area_int, get_resolution_ints, outward_round_rect, scale_round,
     PORTRAIT_W, PORTRAIT_H, UI_PADDING_TOP, UI_PADDING_BOTTOM, UI_CONTENT_H
 )
 
@@ -308,17 +308,15 @@ class SaveConfigWorker(QObject):
             saved_keys = set()
             configured = []
             for tech_key, payload in self.item_payload.items():
+                for section in ["crops_1080p", "scales", "overlays", "z_orders"]:
+                    if section not in config or not isinstance(config[section], dict):
+                        config[section] = {}
                 config["crops_1080p"][tech_key] = payload["crop"]
                 config["scales"][tech_key] = payload["scale"]
                 config["overlays"][tech_key] = payload["overlay"]
                 config["z_orders"][tech_key] = payload["z"]
                 configured.append(payload["display"])
                 saved_keys.add(tech_key)
-            for key in list(config.get("crops_1080p", {}).keys()):
-                if key not in saved_keys:
-                    for section in ["crops_1080p", "scales", "overlays", "z_orders"]:
-                        if section in config and key in config[section]:
-                            del config[section][key]
             unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
             if manager.save_config(config):
                 try: self._create_rotation_backup()
@@ -661,13 +659,61 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def on_done_clicked(self):
         items = [i for i in self.portrait_scene.items() if isinstance(i, ResizablePixmapItem)]
+        if not items:
+            QMessageBox.information(self, "Nothing To Save", "No HUD elements are currently placed.")
+            return
         payload = {}
+        original_resolution = getattr(self.media_processor, 'original_resolution', None) or getattr(self, 'snapshot_resolution', None) or "1920x1080"
         for it in items:
-            payload[it.assigned_role] = {"crop": [it.current_width, it.current_height, 0, 0], "scale": 1.0, "overlay": {"x": it.x(), "y": it.y()}, "z": it.zValue(), "display": it.assigned_role}
-        worker = SaveConfigWorker(self.hud_config_path, payload, self.logger)
-        worker.run()
+            role = it.assigned_role
+            tech_key = get_tech_key_from_role(role)
+            if tech_key == "unknown":
+                continue
+            rect_obj = it.crop_rect.toRect() if hasattr(it.crop_rect, "toRect") else it.crop_rect
+            source_rect = (int(rect_obj.x()), int(rect_obj.y()), int(rect_obj.width()), int(rect_obj.height()))
+            transformed = transform_to_content_area_int(source_rect, original_resolution)
+            crop_w = max(2, int(transformed[2]))
+            crop_h = max(2, int(transformed[3]))
+            scale_x = float(it.current_width) / float(crop_w)
+            scale_y = float(it.current_height) / float(crop_h)
+            scale_val = max(0.0001, round((scale_x + scale_y) / 2.0, 4))
+            payload[tech_key] = {"crop": [crop_w, crop_h, int(transformed[0]), int(transformed[1])], "scale": scale_val, "overlay": {"x": int(round(it.scenePos().x())), "y": int(round(it.scenePos().y()))}, "z": int(round(it.zValue())), "display": role}
+        if not payload:
+            QMessageBox.warning(self, "Nothing To Save", "No recognized HUD elements are currently placed.")
+            return
+        self.done_button.setEnabled(False)
+        self._save_progress_dialog = QProgressDialog("Saving crop settings...", None, 0, 0, self)
+        self._save_progress_dialog.setWindowModality(Qt.ApplicationModal)
+        self._save_progress_dialog.setMinimumDuration(0)
+        self._save_progress_dialog.show()
+        self._save_thread = QThread(self)
+        self._save_worker = SaveConfigWorker(self.hud_config_path, payload, self.logger)
+        self._save_worker.moveToThread(self._save_thread)
+        self._save_thread.started.connect(self._save_worker.run)
+        self._save_worker.finished.connect(self._on_save_finished)
+        self._save_worker.finished.connect(self._save_thread.quit)
+        self._save_worker.finished.connect(self._save_worker.deleteLater)
+        self._save_thread.finished.connect(self._save_thread.deleteLater)
+        self._save_thread.start()
+
+    def _on_save_finished(self, success, configured, unchanged, error):
+        if self._save_progress_dialog:
+            self._save_progress_dialog.close()
+            self._save_progress_dialog = None
+        self._save_thread = None
+        self._save_worker = None
+        if not success:
+            self.done_button.setEnabled(True)
+            QMessageBox.critical(self, "Save Failed", error or "The crop configuration could not be saved.")
+            return
         self._dirty = False
         self._refresh_done_button()
+        try:
+            self._summary_toast = SummaryToast(configured, unchanged, self.portrait_view.grab(), self)
+            self._summary_toast.show()
+        except Exception:
+            pass
+        QTimer.singleShot(900, self._deferred_launch_main_app)
 
     def set_background_image(self, pix):
         if pix.isNull(): return

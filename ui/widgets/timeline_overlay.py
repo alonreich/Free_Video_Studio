@@ -17,7 +17,7 @@ class TimelineOverlay(QWidget):
         self.slider_wrap.setStyleSheet("background: transparent; border: none;")
         self.slider_layout = QHBoxLayout(self.slider_wrap)
         self.slider_layout.setContentsMargins(0, 0, 0, 0)
-        self.positionSlider = TrimmedSlider(self)
+        self.positionSlider = TrimmedSlider(Qt.Horizontal, self)
         self.positionSlider.setFixedHeight(60)
         self.slider_layout.addWidget(self.positionSlider)
         self.layout.addWidget(self.slider_wrap)

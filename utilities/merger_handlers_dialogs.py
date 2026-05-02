@@ -77,6 +77,7 @@ class MergerHandlersDialogsMixin:
             def __init__(self, parent=None):
                 super().__init__(parent)
                 self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+
             def closeEvent(self, e):
                 self.accept()
         dialog = FinishedDialog(self.parent)
@@ -131,7 +132,6 @@ class MergerHandlersDialogsMixin:
         grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
         layout.addLayout(grid)
         dialog.exec_()
-
         try:
             out_sz = Path(output_path).stat().st_size if output_path else 0
             self.logger.info("MERGE_DONE: output='%s' | size=%s", output_path, _human(out_sz))

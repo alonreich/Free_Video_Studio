@@ -59,6 +59,7 @@ class MainWindowCoreAMixin:
         if QMessageBox.question(self, "Clear Granular Speeds", msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.speed_segments = []
             if hasattr(self, "freeze_images"): self.freeze_images = []
+            if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(False)
             if hasattr(self, "positionSlider"):
                 self.positionSlider.set_speed_segments([]); self.positionSlider.update()
             if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
@@ -117,7 +118,6 @@ class MainWindowCoreAMixin:
         if getattr(self, "_pending_process", False):
             self._pending_process = False
             QTimer.singleShot(100, self.start_processing)
-
 
     def show_status_warning(self, message: str):
         try:

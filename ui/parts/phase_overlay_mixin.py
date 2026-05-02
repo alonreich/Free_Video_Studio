@@ -19,7 +19,6 @@ class GpuWorker(QThread):
 
     def stop(self):
         self._running = False
-        self.wait()
 
     def run(self):
         while self._running:
@@ -48,14 +47,14 @@ class GpuWorker(QThread):
 
 class PhaseOverlayMixin:
     def _append_live_log(self, line: str) -> None:
-        if not getattr(self, "live_log", None):
-            return
         if " | " in line:
             parts = line.split(" | ")
             line = parts[-1].strip()
         if not hasattr(self, "_log_buffer"):
             self._log_buffer = []
-        self._log_buffer.append(line)
+        line = str(line or "").strip()
+        if line:
+            self._log_buffer.append(line)
 
     def _flush_logs(self):
         if hasattr(self, "_log_buffer") and self._log_buffer and getattr(self, "live_log", None):
@@ -88,8 +87,8 @@ class PhaseOverlayMixin:
         self.live_log.setMaximumBlockCount(5000)
         self.live_log.setStyleSheet("""
             QPlainTextEdit {
-                color: #00FF00; background: rgba(11, 20, 29, 150); border: none;
-                font-family: Consolas, monospace; font-size: 11px;
+                color: #00ff66; background: rgba(2, 10, 14, 230); border: 1px solid rgba(0, 255, 102, 90);
+                font-family: Consolas, monospace; font-size: 8pt; padding: 4px;
             }
         """)
         for nm in ("_cpu_hist", "_gpu_hist", "_mem_hist", "_iops_hist"):
@@ -157,6 +156,7 @@ class PhaseOverlayMixin:
             pass
 
     def _show_processing_overlay(self) -> None:
+        if not getattr(self, "is_processing", False): return
         self._ensure_overlay_widgets()
         try:
             if hasattr(self, "process_button") and not hasattr(self, "_original_process_btn_style"):
@@ -167,6 +167,11 @@ class PhaseOverlayMixin:
                 if hasattr(self, nm):
                     getattr(self, nm).clear()
             self._overlay.setGeometry(self.rect())
+            if hasattr(self, "live_log"):
+                self.live_log.clear()
+            if hasattr(self, "_log_buffer"):
+                self._log_buffer.clear()
+            self._append_live_log("Backend log stream attached.")
             self._overlay.show()
             self._overlay.raise_()
             QTimer.singleShot(0, self._update_overlay_mask)
@@ -186,12 +191,16 @@ class PhaseOverlayMixin:
 
     def _hide_processing_overlay(self) -> None:
         try:
+            if getattr(self, "_overlay", None):
+                self._overlay.hide()
+                self._overlay.lower()
+        except: pass
+        try:
             if getattr(self, "_stats_timer", None):
                 self._stats_timer.stop()
-            if hasattr(self, "_gpu_worker") and self._gpu_worker.isRunning():
+            if hasattr(self, "_gpu_worker"):
                 self._gpu_worker.stop()
-        except Exception:
-            pass
+        except: pass
         try:
             if getattr(self, "_color_pulse_timer", None):
                 self._color_pulse_timer.stop()
@@ -200,13 +209,7 @@ class PhaseOverlayMixin:
                 self.process_button.setIcon(QIcon())
             if hasattr(self, "cancel_button") and hasattr(self, "_original_cancel_btn_style"):
                 self.cancel_button.setStyleSheet(self._original_cancel_btn_style)
-        except Exception:
-            pass
-        try:
-            if getattr(self, "_overlay", None):
-                self._overlay.hide()
-        except Exception:
-            pass
+        except: pass
 
     def _pulse_button_color(self):
         try:
@@ -285,6 +288,7 @@ class PhaseOverlayMixin:
     def _set_overlay_phase(self, phase: str) -> None:
         p = (phase or "").lower()
         if any(x in p for x in ("processing", "step", "encode", "intro", "core", "concat")):
+            if not getattr(self, "is_processing", False): return
             if not getattr(self, "_overlay", None) or not self._overlay.isVisible():
                 self._show_processing_overlay()
         elif any(x in p for x in ("done", "idle", "error", "failed")):

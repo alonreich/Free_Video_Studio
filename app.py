@@ -9,8 +9,8 @@ BIN_DIR   = os.path.join(BASE_DIR, 'binaries')
 if BASE_DIR not in sys.path: sys.path.insert(0, BASE_DIR)
 from system.utils import ConsoleManager, ProcessManager, MPVSafetyManager, DependencyDoctor
 from system import diagnostic_runtime
-from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle
-from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale
+from PyQt5.QtWidgets import QApplication, QMessageBox, QProgressDialog, QStyle, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox
+from PyQt5.QtCore import QCoreApplication, QObject, QThread, pyqtSignal, QTimer, Qt, QLocale, QEvent
 from PyQt5.QtGui import QIcon
 from ui.styles import UIStyles
 logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
@@ -112,7 +112,7 @@ class HardwareWorker(QObject):
             if not self._is_aborted: self.finished.emit(detected_mode)
         except Exception as e:
             logger.error(f"GPU: Hardware scan error: {e}")
-            if not self._is_aborted: self.finished.emit("CPU")
+            if not self._is_aborted: self.finished.emit(FORCE_GPU if FORCE_GPU in {"NVIDIA", "AMD", "INTEL"} else "CPU")
         finally:
             if self.watchdog_timer: self.watchdog_timer.cancel()
     def _determine_hardware_strategy_with_stop(self, available_accels, ffmpeg_path):
@@ -122,13 +122,14 @@ class HardwareWorker(QObject):
             if FORCE_GPU == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"; return "NVIDIA"
             if FORCE_GPU == "AMD": os.environ["VIDEO_HW_ENCODER"] = "h264_amf"; return "AMD"
             if FORCE_GPU == "INTEL": os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"; return "INTEL"
-        if not self.stop_requested and not self._is_aborted and "cuda" in available_accels:
-            if check_encoder_capability(self.ffmpeg_path, "h264_nvenc"): os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"; return "NVIDIA"
-        if not self.stop_requested and not self._is_aborted and "d3d11va" in available_accels:
-            if check_encoder_capability(self.ffmpeg_path, "h264_amf"): os.environ["VIDEO_HW_ENCODER"] = "h264_amf"; return "AMD"
-        if not self.stop_requested and not self._is_aborted and ("qsv" in available_accels or "d3d11va" in available_accels):
-            if check_encoder_capability(self.ffmpeg_path, "h264_qsv"): os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"; return "INTEL"
-        os.environ["VIDEO_FORCE_CPU"] = "1"; return "CPU"
+        for mode, encoder in (("NVIDIA", "h264_nvenc"), ("AMD", "h264_amf"), ("INTEL", "h264_qsv")):
+            if self.stop_requested or self._is_aborted:
+                break
+            if check_encoder_capability(self.ffmpeg_path, encoder):
+                os.environ["VIDEO_HW_ENCODER"] = encoder
+                return mode
+        os.environ["VIDEO_FORCE_CPU"] = "1"
+        return "CPU"
 def build_diagnostics(ffmpeg_path: str, ffprobe_path: str, error_text: str) -> str: return tr("dependency_error_details").format(ffmpeg=ffmpeg_path, ffprobe=ffprobe_path, bin_dir=BIN_DIR, error=error_text or "Unknown error")
 def show_dependency_error_dialog(ffmpeg_path: str, ffprobe_path: str, error_text: str):
     msg_box = QMessageBox(); msg_box.setIcon(QMessageBox.Critical); msg_box.setWindowTitle(tr("dependency_error_title")); msg_box.setText(tr("dependency_error_text")); details = build_diagnostics(ffmpeg_path, ffprobe_path, error_text); msg_box.setDetailedText(details); UIManager.style_and_size_msg_box(msg_box, details, tr("copy_to_clipboard")); open_button = msg_box.addButton(tr("dependency_error_open_folder"), QMessageBox.ActionRole); retry_button = msg_box.addButton(tr("dependency_error_retry"), QMessageBox.AcceptRole); exit_button = msg_box.addButton(tr("dependency_error_exit"), QMessageBox.RejectRole); msg_box.exec_(); clicked = msg_box.clickedButton()
@@ -178,6 +179,23 @@ if __name__ == "__main__":
     else: logger.error(f"FILES: FFmpeg core verification failed: {dep_error}")
     app = QCoreApplication.instance()
     if app is None: app = QApplication(sys.argv)
+    
+    class GlobalKeyboardFilter(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Space, Qt.Key_BracketLeft, Qt.Key_BracketRight, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
+                    fw = QApplication.focusWidget()
+                    if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
+                        return False
+                    mw = QApplication.activeWindow()
+                    if mw and hasattr(mw, "handle_global_key_press"):
+                        if mw.handle_global_key_press(event):
+                            return True
+            return False
+    kb_filter = GlobalKeyboardFilter(app)
+    app.installEventFilter(kb_filter)
+    
     app.setStyleSheet(UIStyles.GLOBAL_STYLE); app.setApplicationName(tr("app_name")); QCoreApplication.setOrganizationName("FortniteVideoSoftware"); sys.excepthook = exception_hook; import time; pid_retries = 3; success = False; pid_handle = None
     for attempt in range(pid_retries):
         success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)
@@ -227,7 +245,7 @@ if __name__ == "__main__":
         else: app.setWindowIcon(app.style().standardIcon(QStyle.SP_ComputerIcon))
     except: pass
     from system.config import ConfigManager; from ui.widgets.tooltip_manager import ToolTipManager; config_path = os.path.join(BASE_DIR, 'config', 'main_app', 'main_app.conf'); cm = ConfigManager(config_path); tm = ToolTipManager(); cached_hw = normalize_hardware_strategy(cm.config.get("last_hardware_strategy"))
-    if cached_hw == "CPU": cached_hw = None
+    if cached_hw == "CPU": cached_hw = normalize_hardware_strategy(cm.config.get("cached_hardware"))
     isolation_active = diagnostic_runtime.is_isolation_active()
     if isolation_active: cached_hw = "CPU"
     file_arg = sys.argv[1] if len(sys.argv) > 1 else None; initial_strategy = "CPU" if isolation_active else (cached_hw if cached_hw else "Scanning...")

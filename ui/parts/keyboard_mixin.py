@@ -9,51 +9,26 @@ from PyQt5.QtWidgets import (
     QComboBox,
 )
 
-class KeyboardMixin(QWidget):
-    def eventFilter(self, obj, event):
-        return False
-
+class KeyboardMixin:
     def _is_editing_widget_focused(self) -> bool:
         fw = QApplication.focusWidget()
         if fw is None: return False
-        if hasattr(self, "portrait_text_input") and fw == self.portrait_text_input:
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
             return True
-        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)): return True
-        if isinstance(fw, QComboBox) and (fw.isEditable() or fw.hasFocus()): return True
-        try:
-            if bool(fw.property("ignore_global_shortcuts")): return True
-        except Exception: pass
+        if isinstance(fw, QComboBox) and fw.isEditable():
+            return True
         return False
-
-    def _launch_dev_tool(self):
-        if hasattr(self, 'launch_crop_tool'):
-            self.launch_crop_tool()
-        else:
-            self.logger.error("launch_crop_tool method not found.")
 
     def handle_global_key_press(self, event):
         if QApplication.activeModalWidget() is not None:
-            return False
-        is_typing_overlay = (
-            hasattr(self, "portrait_text_input") and 
-            self.portrait_text_input.isVisible() and 
-            self.portrait_text_input.hasFocus()
-        )
-        if is_typing_overlay:
             return False
         if self._is_editing_widget_focused():
             return False
         key = event.key()
         mods = event.modifiers()
         if key == Qt.Key_F12:
-            self._launch_dev_tool()
-            return True
-        if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
-            if self._handle_volume_keys(key, mods):
-                return True
-        if key in (Qt.Key_Return, Qt.Key_Enter):
-            if hasattr(self, "_on_process_clicked"):
-                self._on_process_clicked()
+            if hasattr(self, 'launch_crop_tool'):
+                self.launch_crop_tool()
                 return True
         if key == Qt.Key_Space:
             if hasattr(self, "toggle_play_pause"):
@@ -67,19 +42,20 @@ class KeyboardMixin(QWidget):
             if hasattr(self, "set_end_time"):
                 self.set_end_time()
                 return True
-        if key == Qt.Key_Right:
+        if key in (Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus, Qt.Key_Up, Qt.Key_Down):
+            if self._handle_volume_keys(key, mods):
+                return True
+        if key in (Qt.Key_Left, Qt.Key_Right):
+            ms = 1000
             if mods == Qt.ControlModifier: ms = 100
             elif mods == Qt.ShiftModifier: ms = 3000
-            else: ms = 1000
+            if key == Qt.Key_Left: ms = -ms
             if hasattr(self, "seek_relative_time"):
                 self.seek_relative_time(ms)
                 return True
-        if key == Qt.Key_Left:
-            if mods == Qt.ControlModifier: ms = -100
-            elif mods == Qt.ShiftModifier: ms = -3000
-            else: ms = -1000
-            if hasattr(self, "seek_relative_time"):
-                self.seek_relative_time(ms)
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            if hasattr(self, "_on_process_clicked"):
+                self._on_process_clicked()
                 return True
         return False
 

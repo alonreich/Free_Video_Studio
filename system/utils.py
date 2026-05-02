@@ -33,18 +33,37 @@ try:
 
         def __mandated_mpv_init__(self, *args, **kwargs):
             kwargs = diagnostic_runtime.apply_mpv_runtime_overrides(dict(kwargs))
-            kwargs.setdefault('start_event_thread', not diagnostic_runtime.is_isolation_active())
+            kwargs['start_event_thread'] = False
             if not diagnostic_runtime.is_isolation_active():
                 kwargs.setdefault('gpu_api', 'd3d11')
                 kwargs.setdefault('gpu_context', 'd3d11')
+                kwargs.setdefault('msg_level', 'all=info')
             _real_init(self, *args, **kwargs)
             self._seeking_active = False
-            self._seek_guard_timeout_sec = 0.45
             self._seek_guard_deadline_monotonic = 0.0
+            self._event_pump_timer = QTimer()
+            self._event_pump_timer.setInterval(25)
+            
+            def _pump_events():
+                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
+                    self._event_pump_timer.stop()
+                    return
+                try:
+                    for _ in range(50):
+                        with MPVSafetyManager._mpv_command_lock:
+                            ev = self.wait_event(0)
+                        if not ev or ev.get('event_id') == 0:
+                            break
+                        self._handle_event(ev)
+                except Exception:
+                    pass
+            self._event_pump_timer.timeout.connect(_pump_events)
+            self._event_pump_timer.start()
 
             def __seek_guard_is_stale():
                 deadline = float(getattr(self, '_seek_guard_deadline_monotonic', 0.0) or 0.0)
-                return bool(deadline and time.monotonic() >= deadline)
+                if not deadline: return False
+                return time.monotonic() >= deadline
 
             def __clear_seek_guard(reason='unknown'):
                 self._seek_guard_deadline_monotonic = 0.0
@@ -64,22 +83,18 @@ try:
 
             def __submit_gated_seek__(amount, reference='relative', precision='exact'):
                 if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
-                    diagnostic_runtime.append_python_debug_throttled(
-                        f"mpv-seek-shutdown:{id(self)}",
-                        f"MPV SEEK DROPPED | source=seek | reason=shutdown | player_id={id(self)}"
-                    )
                     return False
+                try:
+                    if not self.seeking:
+                        __clear_seek_guard('poll-clear')
+                except: pass
                 if getattr(self, '_seeking_active', False):
                     if __seek_guard_is_stale():
                         __clear_seek_guard('stale-deadline')
                     else:
-                        diagnostic_runtime.append_python_debug_throttled(
-                            f"mpv-seek-busy:{id(self)}:{reference}:{precision}",
-                        f"MPV SEEK DROPPED | source=seek | reference={reference} | precision={precision} | player_id={id(self)}"
-                        )
                         return False
                 self._seeking_active = True
-                self._seek_guard_deadline_monotonic = time.monotonic() + float(getattr(self, '_seek_guard_timeout_sec', 5.0) or 5.0)
+                self._seek_guard_deadline_monotonic = time.monotonic() + 0.45
                 try:
                     with MPVSafetyManager._mpv_command_lock:
                         _real_seek(amount, reference=reference, precision=precision)
@@ -396,15 +411,14 @@ class MPVSafetyManager:
         try:
             if getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return True
             player._safe_shutdown_initiated = True
+            MPVSafetyManager.cleanup_mpv_event_callbacks(player)
 
             def _do_shutdown():
                 try:
-                    if lock:
-                        if lock.acquire(timeout=0.2):
-                            try: player.pause = True; player.stop(); player.terminate()
-                            finally: lock.release()
-                        else: player.pause = True; player.terminate()
-                    else: player.pause = True; player.stop(); player.terminate()
+                    with MPVSafetyManager._mpv_command_lock:
+                        player.pause = True
+                        player.stop()
+                        player.terminate()
                 except: pass
             t = threading.Thread(target=_do_shutdown, daemon=True)
             t.start()
@@ -414,38 +428,31 @@ class MPVSafetyManager:
                     if getattr(player, '_core_shutdown', True): break
                 except: break
                 time.sleep(0.05)
-            MPVSafetyManager.cleanup_mpv_event_callbacks(player)
             return True
         except: return False
     @staticmethod
     def safe_mpv_set(player, property_name, value, max_attempts=3, lock=None):
-        if not player or getattr(player, '_core_shutdown', False): return False
+        if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return False
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
-                    if lock:
-                        if not lock.acquire(timeout=0.1): continue
                     try: setattr(player, property_name, value); return True
-                    finally:
-                        if lock: lock.release()
+                    finally: pass
             except: time.sleep(0.02)
         return False
     @staticmethod
     def safe_mpv_get(player, property_name, default=None, max_attempts=3, lock=None):
-        if not player or getattr(player, '_core_shutdown', False): return default
+        if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return default
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
-                    if lock:
-                        if not lock.acquire(timeout=0.1): continue
                     try: return getattr(player, property_name, default)
-                    finally:
-                        if lock: lock.release()
+                    finally: pass
             except: time.sleep(0.02)
         return default
     @staticmethod
     def safe_mpv_command(player, command, *args, max_attempts=3, lock=None):
-        if not player or getattr(player, '_core_shutdown', False): return False
+        if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return False
         if command == "seek":
             submit_seek = getattr(player, '_submit_gated_seek', None)
             if callable(submit_seek):
@@ -456,24 +463,19 @@ class MPVSafetyManager:
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
-                    if lock:
-                        if not lock.acquire(timeout=0.1): continue
                     try:
                         if command == "seek":
                             target = float(args[0]) if len(args) > 0 else 0.0
                             reference = args[1] if len(args) > 1 else 'relative'
                             precision = args[2] if len(args) > 2 else 'exact'
-                            if not hasattr(player, 'set_property') and hasattr(player, 'seek'):
+                            if hasattr(player, 'seek'):
                                 player.seek(target, reference=reference, precision=precision)
-                            elif not hasattr(player, 'set_property') and hasattr(player, 'set_time') and reference == 'absolute':
-                                player.set_time(int(target * 1000))
                             else:
                                 player.command(command, *args)
                         else:
                             player.command(command, *args)
                         return True
-                    finally:
-                        if lock: lock.release()
+                    finally: pass
             except: 
                 if command == "seek":
                     try:
@@ -484,23 +486,19 @@ class MPVSafetyManager:
                             player._seeking_active = False
                     except Exception:
                         pass
-                    diagnostic_runtime.append_python_debug_throttled(
-                        f"mpv-seek-command-error:{id(player)}",
-                        f"MPV SEEK COMMAND ERROR | player_id={id(player)} | args={args}"
-                    )
                 time.sleep(0.02)
         return False
     @staticmethod
     def cleanup_mpv_event_callbacks(player):
         if not player: return
         try:
-            if hasattr(player, '_event_callbacks'): player._event_callbacks.clear()
-            if hasattr(player, '_property_handlers'): player._property_handlers.clear()
-            elif hasattr(player, '_property_observers'): player._property_observers.clear()
-            if hasattr(player, 'unobserve_all_properties'):
-                try: player.unobserve_all_properties(None)
-                except Exception: pass
-            if hasattr(player, 'event_callback'): player.event_callback = None
+            with MPVSafetyManager._mpv_command_lock:
+                if hasattr(player, '_event_callbacks'): player._event_callbacks.clear()
+                if hasattr(player, '_property_handlers'): player._property_handlers.clear()
+                elif hasattr(player, '_property_observers'): player._property_observers.clear()
+                if hasattr(player, 'unobserve_all_properties'):
+                    try: player.unobserve_all_properties(None)
+                    except Exception: pass
         except: pass
     @staticmethod
     def create_safe_mpv(**kwargs):
@@ -522,6 +520,8 @@ class MPVSafetyManager:
                 e_f = kwargs.pop('extra_mpv_flags', [])
                 kwargs.pop('load_scripts', None); kwargs.pop('config', None); kwargs.pop('osc', None); kwargs.pop('ytdl', None)
                 s_k.update(kwargs)
+                if wid is not None:
+                    s_k['wid'] = wid
                 s_k = diagnostic_runtime.apply_mpv_runtime_overrides(s_k)
                 init_args = {
                     'loglevel': s_k.get('loglevel', 'trace'),

@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QStyle
+﻿from PyQt5.QtWidgets import QStyle
 
 class TrimMixin:
     MIN_TRIM_GAP = 1000
@@ -50,7 +50,9 @@ class TrimMixin:
     def set_end_time(self):
         if not hasattr(self, "positionSlider") or not self.positionSlider: return
         pos_ms = int(self.positionSlider.value())
-        if pos_ms < getattr(self, "trim_start_ms", 0) + self.MIN_TRIM_GAP:
+        if not hasattr(self, "trim_start_ms") or self.trim_start_ms < 0:
+            self.trim_start_ms = 0
+        if pos_ms < self.trim_start_ms + self.MIN_TRIM_GAP:
             self.trim_start_ms = max(0, pos_ms - self.MIN_TRIM_GAP)
             if pos_ms - self.trim_start_ms < self.MIN_TRIM_GAP:
                 pos_ms = min(getattr(self, "original_duration_ms", 0), self.trim_start_ms + self.MIN_TRIM_GAP)
@@ -58,7 +60,7 @@ class TrimMixin:
             pos_ms = self.original_duration_ms
         self.trim_end_ms = pos_ms
         if hasattr(self, "logger"):
-            self.logger.info("TRIM: end set at %d ms from slider", self.trim_end_ms)
+            self.logger.info("TRIM: end set at %d ms from slider (start=%d)", self.trim_end_ms, self.trim_start_ms)
         if hasattr(self, "_on_slider_trim_changed"):
             self._on_slider_trim_changed(self.trim_start_ms, self.trim_end_ms)
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)

@@ -57,7 +57,11 @@ class MusicMixin:
 
     def open_music_wizard(self):
         self._in_transition = True
-        if hasattr(self, 'music_button'): self.music_button.setEnabled(False)
+        if hasattr(self, 'music_button'):
+            self.music_button.setEnabled(False)
+            self.music_button.setCursor(Qt.PointingHandCursor)
+        if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(True)
+        if hasattr(self, 'timeline_overlay') and self.timeline_overlay: self.timeline_overlay.hide()
         self._pre_wizard_state = {}
         if hasattr(self, "player") and self.player:
             try:
@@ -71,7 +75,6 @@ class MusicMixin:
             self.playPauseButton.setText("PLAY")
             self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         if hasattr(self, "positionSlider"):
-            self.positionSlider.show()
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
         if hasattr(self, 'timer') and self.timer.isActive(): self.timer.stop()
         QTimer.singleShot(150, self._delayed_wizard_launch)
@@ -92,6 +95,9 @@ class MusicMixin:
         if t_p_s <= 0:
             QMessageBox.warning(self, "No Video", "Please load a video file first!")
             if hasattr(self, 'music_button'): self.music_button.setEnabled(True)
+            if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(False)
+            self._in_transition = False
+            if hasattr(self, "_update_overlay_positions"): QTimer.singleShot(0, self._update_overlay_positions)
             self._restore_pre_wizard_state(); return
         m_d = self._mp3_dir(); c_s_ms = self.positionSlider.value() if hasattr(self, "positionSlider") else 0
         try:
@@ -120,7 +126,11 @@ class MusicMixin:
 
     def _continue_wizard_return(self, res, t_s, t_e, segs, sp, wizard):
         try:
-            if hasattr(self, 'music_button'): self.music_button.setEnabled(True)
+            if hasattr(self, 'music_button'):
+                self.music_button.setEnabled(True)
+                self.music_button.setCursor(Qt.PointingHandCursor)
+            if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(False)
+            if hasattr(self, "_update_overlay_positions"): QTimer.singleShot(0, self._update_overlay_positions)
             self.wants_to_play = False; self._in_transition = False; self.raise_(); self.activateWindow()
             if hasattr(self, "video_surface"): self.video_surface.show()
             if hasattr(self, "player") and self.player:
@@ -148,7 +158,10 @@ class MusicMixin:
             else:
                 self._restore_pre_wizard_state()
         except: pass
-        finally: self._in_transition = False
+        finally:
+            if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(False)
+            if hasattr(self, "_update_overlay_positions"): QTimer.singleShot(0, self._update_overlay_positions)
+            self._in_transition = False
 
     def _final_unmute_after_wizard(self):
         if hasattr(self, "_sync_all_volumes"): self._sync_all_volumes()

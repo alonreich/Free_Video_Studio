@@ -270,7 +270,15 @@ class MergerUIStyleMixin:
             self.parent.btn_cancel_merge.setStyleSheet(MergerUIStyle.BUTTON_CANCEL)
         for b in [self.parent.btn_add, self.parent.btn_add_folder, self.parent.btn_undo, self.parent.btn_redo]:
             b.setStyleSheet(MergerUIStyle.BUTTON_STANDARD)
+            b.setCursor(Qt.PointingHandCursor)
         for b in [self.parent.btn_remove, self.parent.btn_clear]:
             b.setStyleSheet(MergerUIStyle.BUTTON_DANGER)
+            b.setCursor(Qt.PointingHandCursor)
         self.parent.btn_up.setStyleSheet(MergerUIStyle.BUTTON_ARROW)
+        self.parent.btn_up.setCursor(Qt.PointingHandCursor)
         self.parent.btn_down.setStyleSheet(MergerUIStyle.BUTTON_ARROW)
+        self.parent.btn_down.setCursor(Qt.PointingHandCursor)
+        self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
+        self.parent.btn_back.setCursor(Qt.PointingHandCursor)
+        if hasattr(self.parent, "btn_cancel_merge"):
+            self.parent.btn_cancel_merge.setCursor(Qt.PointingHandCursor)

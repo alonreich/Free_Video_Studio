@@ -46,6 +46,10 @@ class MediaProber:
             return kbps
         return None
 
+    def has_audio(self):
+        val_str = self._run_command(["-select_streams", "a:0", "-show_entries", "stream=index"])
+        return bool(val_str)
+
     def get_sample_rate(self):
         val_str = self._run_command(["-select_streams", "a:0", "-show_entries", "stream=sample_rate"])
         if val_str:
@@ -159,7 +163,7 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
         return 6000
     if keep_highest_res and prober:
         orig_br = prober.get_video_bitrate()
-        return int(orig_br * 1.15)
+        return min(int(orig_br * 1.15), 240000)
     if target_mb is None:
         target_mb = 45.0
     total_bits_available = float(target_mb) * 8 * 1024 * 1024
@@ -170,8 +174,6 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     if video_bits <= 0:
         return 300
     calculated_kbps = int(video_bits / (1000 * duration))
-    if False:
-        return max(300, calculated_kbps)
     try:
         w, h = map(int, res_str.lower().split('x'))
     except:
@@ -183,8 +185,8 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     bpp_targets = [0.06, 0.09, 0.13, 0.18]
     target_bpp = bpp_targets[min(quality_level, 3)]
     min_quality_kbps = int((w * h * fps * target_bpp) / 1000)
-    final_kbps = max(300, min(calculated_kbps, min_quality_kbps * 2))
-    final_kbps = min(final_kbps, 50000)
+    max_gpu_kbps = 240000
+    final_kbps = max(300, min(calculated_kbps, max_gpu_kbps))
     if logger:
-        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Final {final_kbps}k")
+        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | QualityFloor {min_quality_kbps}k | Final {final_kbps}k")
     return final_kbps

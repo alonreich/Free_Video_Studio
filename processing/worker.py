@@ -65,7 +65,10 @@ class ProcessThread(QThread):
         self.config = VideoConfig(self.base_dir)
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level)
         self.filter_builder = FilterBuilder(self.logger)
-        self.encoder_mgr = EncoderManager(self.logger, hardware_strategy=self.hardware_strategy)
+        self.ffmpeg_path = os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe')
+        if not os.path.exists(self.ffmpeg_path):
+            self.ffmpeg_path = 'ffmpeg'
+        self.encoder_mgr = EncoderManager(self.logger, hardware_strategy=self.hardware_strategy, ffmpeg_path=self.ffmpeg_path)
         self.prober = MediaProber(os.path.join(self.base_dir, 'binaries'), self.input_path)
         self.current_process = None
         self.is_canceled = False
@@ -88,6 +91,11 @@ class ProcessThread(QThread):
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
         return normalized
+
+    def _hardware_decode_flags(self, encoder_name: str) -> list[str]:
+        if str(self.hardware_strategy or "").upper() == "CPU" or encoder_name == "libx264":
+            return []
+        return ["-hwaccel", "dxva2"]
     @staticmethod
     def _emit_signal_or_callback(target, *args):
         try:
@@ -146,15 +154,10 @@ class ProcessThread(QThread):
             self.temp_job_dir = os.path.join(tempfile.gettempdir(), f"fvs_job_{self.job_id}")
             os.makedirs(self.temp_job_dir, exist_ok=True)
             scaler_core = ProgressScaler(self.progress_update_signal, 0, 50)
+            source_has_audio = self.prober.has_audio()
             source_audio_kbps = self.prober.get_audio_bitrate() or 192
             audio_kbps = max(192, int(source_audio_kbps))
             target_fps_expr = self.prober.get_video_fps_expr()
-            video_bitrate_kbps = calculate_video_bitrate(
-                self.input_path, self.duration_corrected_sec, audio_kbps, 
-                self.target_mb, self.keep_highest_res, self.logger, 
-                self.original_resolution, target_fps_expr, self.quality_level,
-                prober=self.prober
-            )
             text_png_path = None
             if self.portrait_text:
                 text_png_path = os.path.join(self.temp_job_dir, "portrait_text.png")
@@ -183,10 +186,17 @@ class ProcessThread(QThread):
                     self.speed_factor,
                     source_cut_start_ms=self.start_time_ms,
                     input_v_label="[0:v]",
-                    input_a_label="[0:a]",
+                    input_a_label="[0:a]" if source_has_audio else None,
                     target_fps=target_fps_expr
                 )
                 granular_v_a_filters = g_str
+            bitrate_duration_sec = max(0.01, g_dur + max(0.0, self.intro_still_sec))
+            video_bitrate_kbps = calculate_video_bitrate(
+                self.input_path, bitrate_duration_sec, audio_kbps,
+                self.target_mb, self.keep_highest_res, self.logger,
+                self.original_resolution, target_fps_expr, self.quality_level,
+                prober=self.prober
+            )
             if self.bg_music_path and not self.music_tracks:
                  self.music_tracks = [(self.bg_music_path, self.bg_music_offset_ms/1000.0, g_dur)]
             music_start_index = 1
@@ -200,9 +210,7 @@ class ProcessThread(QThread):
                 total_project_duration=g_dur
             )
             core_path = os.path.normpath(os.path.join(self.temp_job_dir, "core.mp4"))
-            ffmpeg_path = os.path.join(self.base_dir, 'binaries', 'ffmpeg.exe')
-            if not os.path.exists(ffmpeg_path):
-                ffmpeg_path = 'ffmpeg'
+            ffmpeg_path = self.ffmpeg_path
 
             def run_ffmpeg(use_cuda):
                 current_encoder = self.encoder_mgr.get_initial_encoder() if use_cuda else 'libx264'
@@ -214,7 +222,6 @@ class ProcessThread(QThread):
                     )
                     attempt_core_filters = []
                     v_label = "[0:v]"
-                    a_label = "[0:a]"
                     working_duration_sec = g_dur
                     cfr_filter = f"fps={target_fps_expr}:round=near"
                     txt_input_label = None
@@ -237,7 +244,10 @@ class ProcessThread(QThread):
                         while tmp_s < 0.5: audio_speed_filters.append("atempo=0.5"); tmp_s /= 0.5
                         while tmp_s > 2.0: audio_speed_filters.append("atempo=2.0"); tmp_s /= 2.0
                         audio_speed_filters.append(f"atempo={tmp_s:.4f}")
-                        a_sync = f"{a_label}asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_prepared_base]"
+                        if source_has_audio:
+                            a_sync = f"[0:a]asetpts=PTS-STARTPTS,{','.join(audio_speed_filters)},aresample=48000:async=1:min_comp=0.01[a_prepared_base]"
+                        else:
+                            a_sync = f"anullsrc=r=48000:cl=stereo,atrim=duration={working_duration_sec:.4f},asetpts=PTS-STARTPTS[a_prepared_base]"
                         attempt_core_filters.append(v_sync)
                         attempt_core_filters.append(a_sync)
                     if self.is_mobile_format:
@@ -260,14 +270,15 @@ class ProcessThread(QThread):
                     filter_script_path = os.path.join(self.temp_job_dir, "filter_complex.txt")
                     with open(filter_script_path, 'w', encoding='utf-8') as f:
                         f.write(full_filter_str)
-                    ffmpeg_inputs = ['-err_detect', 'ignore_err', '-flags', 'output_corrupt']
-                    ffmpeg_inputs += ['-i', self.input_path]
-                    ffmpeg_inputs += ['-ss', f"{self.start_time_ms/1000.0:.3f}"]
+                    input_duration_sec = max(0.001, (self.end_time_ms - self.start_time_ms) / 1000.0)
+                    ffmpeg_inputs = ['-fflags', '+genpts+discardcorrupt', '-err_detect', 'explode']
+                    ffmpeg_inputs += self._hardware_decode_flags(current_encoder)
+                    ffmpeg_inputs += ['-ss', f"{self.start_time_ms/1000.0:.3f}", '-t', f"{input_duration_sec:.3f}", '-i', self.input_path]
                     for track_path, _, _ in self.music_tracks:
                         ffmpeg_inputs += ['-i', track_path]
                     if txt_input_label:
                         ffmpeg_inputs += ['-loop', '1', '-i', text_png_path]
-                    ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + [
+                    ffmpeg_cmd = [ffmpeg_path, '-y', '-hide_banner', '-xerror', '-progress', 'pipe:1'] + ffmpeg_inputs + [
                         '-filter_complex_script', filter_script_path,
                         '-map', v_final_pad, '-map', final_a_label,
                         '-fps_mode', 'cfr',
@@ -280,20 +291,29 @@ class ProcessThread(QThread):
                     self.current_process = create_subprocess(ffmpeg_cmd)
                     error_lines = []
 
-                    def on_err(line): error_lines.append(line)
+                    def on_err(line):
+                        error_lines.append(line)
+                        if self.status_update_signal:
+                            self.status_update_signal.emit(f"FFmpeg Error: {line}")
+
+                    def on_output(line):
+                        self.logger.info(f"FFmpeg: {line}")
+                        if self.status_update_signal:
+                            self.status_update_signal.emit(f"FFmpeg: {line}")
                     monitor_ffmpeg_progress(
                         self.current_process,
                         working_duration_sec,
                         scaler_core,
                         self._monitor_disk_space,
                         self.logger,
-                        on_error_line=on_err
+                        on_error_line=on_err,
+                        on_output_line=on_output
                     )
                     exit_code = self.current_process.wait()
                     if exit_code == 0:
                         return True
                     if use_cuda and not self.is_canceled:
-                        fallbacks = self.encoder_mgr.get_fallback_list(current_encoder)
+                        fallbacks = self.encoder_mgr.get_fallback_list(current_encoder, allow_cpu=False)
                         if fallbacks:
                             next_enc = fallbacks[0]
                             self.logger.warning(f"Hardware encoder '{current_encoder}' failed (exit {exit_code}). Falling back to '{next_enc}'...")

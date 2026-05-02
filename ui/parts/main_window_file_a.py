@@ -100,6 +100,11 @@ class MainWindowFileAMixin:
         p = os.path.abspath(str(file_path))
         if not os.path.isfile(p):
             self.logger.error("Selected file not found: %s", p)
+            QMessageBox.critical(self, "File Not Found", f"The selected file no longer exists:\n{p}")
+            self.input_file_path = None
+            self.drop_label.setText('Drag & Drop\r\na Video File Here:')
+            self._set_upload_hint_active(True)
+            self._set_video_controls_enabled(False)
             return
         if self.player:
             try:
@@ -129,6 +134,12 @@ class MainWindowFileAMixin:
                     QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
             except Exception as e:
                 self.logger.error("Failed to play media with MPV: %s", e)
+                QMessageBox.critical(self, "Preview Failed", f"The video could not be opened in the preview player:\n{e}")
+                self.input_file_path = None
+                self.drop_label.setText('Drag & Drop\r\na Video File Here:')
+                self._set_upload_hint_active(True)
+                self._set_video_controls_enabled(False)
+                return
         else:
             self.logger.warning("MPV not available. Skipping playback. (CPU Mode)")
         self.get_video_info()

@@ -195,10 +195,17 @@ class PlayerMixin:
                 seg = self._freeze_seg
                 seg_dur = seg['end'] - seg['start']
                 if elapsed >= seg_dur:
+                    resume_ms = int(seg['end'])
                     self._in_freeze_segment = False
+                    self._freeze_seg = None
+                    self._safe_mpv_command("seek", resume_ms / 1000.0, "absolute", "exact")
+                    self._check_and_update_speed(resume_ms)
                     self._safe_mpv_set("pause", False)
-                    self._safe_mpv_command("seek", seg['end'] / 1000.0, "absolute", "exact")
-                    if hasattr(self, "positionSlider"): self.positionSlider.setValue(int(seg['end']))
+                    music_player = getattr(self, "_music_preview_player", None)
+                    if music_player:
+                        if hasattr(self, "_sync_music_preview"): self._sync_music_preview()
+                        self._safe_mpv_set("pause", False, target_player=music_player)
+                    if hasattr(self, "positionSlider"): self.positionSlider.setValue(resume_ms)
                 return
             p = getattr(self, "player", None)
             if not p: return
@@ -252,6 +259,9 @@ class PlayerMixin:
                 music_player = getattr(self, "_music_preview_player", None)
                 if music_player: self._safe_mpv_set("pause", True, target_player=music_player)
             return
+        if getattr(self, "_in_freeze_segment", False):
+            self._in_freeze_segment = False
+            self._freeze_seg = None
         now = time.time()
         if not hasattr(self, "_last_speed_update"): self._last_speed_update = 0
         if now - self._last_speed_update < 0.20: return
@@ -265,6 +275,8 @@ class PlayerMixin:
             self._scrub_lock = threading.RLock()
         PlayerMixin._refresh_seek_state(self)
         target_ms = int(position_ms)
+        self._in_freeze_segment = False
+        self._freeze_seg = None
         if getattr(self, "_is_seeking_active", False) or bool(getattr(getattr(self, "player", None), '_seeking_active', False)):
             diagnostic_runtime.append_python_debug_throttled(
                 f"player-seek-in-flight:{id(self)}",

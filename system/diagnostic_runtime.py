@@ -28,13 +28,13 @@ ALARM_MESSAGE = (
     r"C:\Users\user\.gemini\Backups. PROCEED TO TEST."
 )
 DEFAULT_RUNTIME_PROFILE: dict[str, Any] = {
-    "mode": "diagnostic_isolation",
+    "mode": "gpu_reintegration",
     "diagnostic_profile": {
-        "hwdec": "no",
+        "hwdec": "nvdec",
         "vo": "gpu",
         "video_vo": "gpu",
         "audio_vo": "null",
-        "msg_level": "all=trace",
+        "msg_level": "all=info",
         "log_file": str(MPV_TRACE_LOG_PATH),
     },
     "gpu_profile": {
@@ -154,14 +154,14 @@ def get_runtime_profile() -> dict[str, Any]:
 def write_runtime_profile(mode: str) -> dict[str, Any]:
     config = _load_config()
     profile = get_runtime_profile()
-    profile["mode"] = str(mode or "diagnostic_isolation")
+    profile["mode"] = str(mode or "gpu_reintegration")
     config["mpv_runtime_profile"] = profile
     _atomic_write_json(MAIN_APP_CONFIG_PATH, config)
     append_python_debug(f"RUNTIME PROFILE UPDATED | mode={profile['mode']}")
     return profile
 
 def is_isolation_active() -> bool:
-    return str(get_runtime_profile().get("mode", "diagnostic_isolation")).lower() == "diagnostic_isolation"
+    return str(get_runtime_profile().get("mode", "gpu_reintegration")).lower() == "diagnostic_isolation"
 
 def apply_mpv_runtime_overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
     runtime = get_runtime_profile()

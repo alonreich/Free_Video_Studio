@@ -68,16 +68,20 @@ class ConcatProcessor:
             vcodec, _ = self.encoder_mgr.get_codec_flags(enc, target_kbps, 5.0, fps_expr=str(fps_expr))
             return vcodec
 
+        def _decode_flags(enc: str):
+            return [] if enc == "libx264" else ["-hwaccel", "dxva2"]
+
         def _build_concat_cmd(enc: str):
             if use_reencode:
                 cmd = [self.ffmpeg_path, "-y", "-progress", "pipe:1", "-threads", "0"]
                 cmd.extend(["-fflags", "+genpts"])
                 for fp in files_to_concat:
+                    cmd.extend(_decode_flags(enc))
                     cmd.extend(["-i", fp])
                 if len(files_to_concat) > 1:
                     filter_parts = []
                     for i in range(len(files_to_concat)):
-                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={target_w}:{target_h},setpts=PTS-STARTPTS,format=nv12,setsar=1[v{i}]")
+                        filter_parts.append(f"[{i}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={target_w}:{target_h},setpts=PTS-STARTPTS,format=yuv420p,setsar=1[v{i}]")
                         filter_parts.append(f"[{i}:a]aresample=48000:async=1:first_pts=0:min_comp=0.001,asetpts=PTS-STARTPTS[a{i}]")
                     concat_in = "".join([f"[v{i}][a{i}]" for i in range(len(files_to_concat))])
                     filter_parts.append(f"{concat_in}concat=n={len(files_to_concat)}:v=1:a=1[vout][aout]")
@@ -149,13 +153,14 @@ class ConcatProcessor:
             self.current_process = create_subprocess(concat_cmd, self.logger)
 
             from .system_utils import monitor_ffmpeg_progress
-            monitor_ffmpeg_progress(self.current_process, total_dur, progress_signal, cancellation_check, self.logger)
+
+            def on_output(line): self.logger.info(f"FFmpeg concat: {line}")
+            monitor_ffmpeg_progress(self.current_process, total_dur, progress_signal, cancellation_check, self.logger, on_output_line=on_output)
             self.current_process.wait()
             return self.current_process.returncode == 0
         success = _run_once(preferred_encoder)
         if not success and preferred_encoder != "libx264":
-            self.logger.warning(f"Concat with {preferred_encoder} failed. Retrying with libx264 for stability.")
-            success = _run_once("libx264")
+            self.logger.error(f"Concat with {preferred_encoder} failed. CPU fallback is disabled for GPU mode.")
         try:
             if success:
                 progress_signal.emit(100)

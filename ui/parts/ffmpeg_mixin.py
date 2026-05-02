@@ -4,10 +4,10 @@ import time
 import subprocess
 import json
 import threading
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QUrl
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QUrl, QEasingCurve
 from PyQt5.QtGui import QIcon, QFont, QDesktopServices, QPixmap, QPainter
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
-                             QGridLayout, QPushButton, QMessageBox, QSizePolicy)
+                             QGridLayout, QPushButton, QMessageBox, QSizePolicy, QFrame, QHBoxLayout)
 
 from processing.worker import ProcessThread
 from ui.styles import UIStyles
@@ -125,10 +125,30 @@ class FfmpegMixin:
                 segment_duration = (end_time_ms - start_time_ms) / 1000.0
                 intro_abs_time = (start_time_ms / 1000.0) + (segment_duration * 0.66)
             intro_abs_time_ms = int(intro_abs_time * 1000)
-            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=getattr(self, "_wizard_tracks", []))
+            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=getattr(self, "_wizard_tracks", []))
             self.process_thread.start()
-        except:
-            self.is_processing = False; self.process_button.setEnabled(True)
+        except Exception as e:
+            try:
+                self.logger.exception(f"Could not start processing: {e}")
+            except Exception:
+                pass
+            self.is_processing = False
+            try:
+                self._pulse_timer.stop()
+            except Exception:
+                pass
+            try:
+                self._hide_processing_overlay()
+            except Exception:
+                pass
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            self.cancel_button.setVisible(False)
+            if hasattr(self, "_maybe_enable_process"):
+                self._maybe_enable_process()
+            else:
+                self.process_button.setEnabled(True)
+            self.show_message("Error", f"Could not start processing:\n{e}")
 
     def _show_error_with_log(self, message):
         msg = QMessageBox(self); msg.setIcon(QMessageBox.Critical); msg.setWindowTitle("Processing Error"); msg.setText("An error occurred during processing."); msg.setInformativeText(message)
@@ -186,31 +206,103 @@ class FfmpegMixin:
                 def __init__(self, parent=None):
                     super().__init__(parent)
                     self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
-                def closeEvent(self, e): self.accept()
-            dialog = FinishedDialog(self); dialog.setWindowTitle("Done! Video Processed Successfully!"); dialog.setModal(True); dialog.setFixedSize(800, 460)
-            layout = QVBoxLayout(dialog); layout.setContentsMargins(30, 30, 30, 30); layout.setSpacing(20)
-            close_btn = QPushButton("X", dialog)
-            close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 24px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
+                    self.setAttribute(Qt.WA_TranslucentBackground, True)
+                    self.setWindowOpacity(0.0)
+                    self._closing = False
+                    self._anim = None
+                    self._pulse = None
+
+                def showEvent(self, e):
+                    super().showEvent(e)
+                    QTimer.singleShot(0, self.fade_in)
+
+                def fade_in(self):
+                    self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+                    self._anim.setDuration(1500)
+                    self._anim.setStartValue(0.0)
+                    self._anim.setEndValue(1.0)
+                    self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+                    self._anim.finished.connect(self.start_pulse)
+                    self._anim.start()
+
+                def start_pulse(self):
+                    if self._closing: return
+                    self._pulse = QPropertyAnimation(self, b"windowOpacity", self)
+                    self._pulse.setDuration(4000)
+                    self._pulse.setStartValue(1.0)
+                    self._pulse.setKeyValueAt(0.5, 0.3)
+                    self._pulse.setEndValue(1.0)
+                    self._pulse.setEasingCurve(QEasingCurve.InOutSine)
+                    self._pulse.setLoopCount(-1)
+                    self._pulse.start()
+
+                def fade_done(self, result):
+                    if self._closing: return
+                    self._closing = True
+                    if self._pulse: self._pulse.stop()
+                    self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+                    self._anim.setDuration(1000)
+                    self._anim.setStartValue(float(self.windowOpacity()))
+                    self._anim.setEndValue(0.0)
+                    self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+                    self._anim.finished.connect(lambda: QDialog.done(self, result))
+                    self._anim.start()
+
+                def fade_accept(self): self.fade_done(QDialog.Accepted)
+
+                def fade_reject(self): self.fade_done(QDialog.Rejected)
+
+                def accept(self): self.fade_accept()
+
+                def reject(self): self.fade_accept()
+
+                def closeEvent(self, e):
+                    if self._closing:
+                        super().closeEvent(e); return
+                    e.ignore(); self.fade_accept()
+            dialog = FinishedDialog(self); dialog.setWindowTitle("Done! Video Processed Successfully!"); dialog.setModal(True); dialog.setFixedSize(760, 420)
+            outer = QVBoxLayout(dialog); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
+            frame = QFrame(dialog); frame.setObjectName("finishedFrame")
+            frame.setStyleSheet("QFrame#finishedFrame { background-color: #0b141d; border: 2px solid #7DD3FC; border-radius: 14px; }")
+            outer.addWidget(frame)
+            layout = QVBoxLayout(frame); layout.setContentsMargins(28, 18, 28, 30); layout.setSpacing(18)
+            top_row = QHBoxLayout(); top_row.setContentsMargins(0, 0, 0, 0); top_row.addStretch(1)
+            close_btn = QPushButton("X", frame)
+            close_btn.setFixedSize(60, 52)
+            close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 42px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
             close_btn.setCursor(Qt.PointingHandCursor)
-            close_btn.clicked.connect(dialog.accept)
-            close_btn.setGeometry(760, 10, 30, 30)
+            close_btn.clicked.connect(dialog.fade_accept)
+            top_row.addWidget(close_btn)
+            layout.addLayout(top_row)
             label = QLabel(f"File successfully saved to:\n{output_path}"); label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
             label.setAlignment(Qt.AlignCenter); layout.addWidget(label)
-            grid = QGridLayout(); grid.setHorizontalSpacing(54); grid.setVerticalSpacing(44); grid.setContentsMargins(20, 20, 20, 20)
+            grid = QGridLayout(); grid.setHorizontalSpacing(42); grid.setVerticalSpacing(28); grid.setContentsMargins(80, 18, 80, 8)
             whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆"); whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40"))
             whatsapp_button.clicked.connect(self.share_via_whatsapp)
+            whatsapp_button.clicked.connect(lambda: dialog.fade_done(999))
             open_folder_button = QPushButton("OPEN FOLDER"); open_folder_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c"))
             open_folder_button.clicked.connect(lambda: self.open_output_in_explorer(output_path))
+            open_folder_button.clicked.connect(lambda: dialog.fade_done(999))
             new_file_button = QPushButton("📂  UPLOAD NEW  📂"); new_file_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c"))
-            new_file_button.clicked.connect(lambda: dialog.done(QDialog.Rejected))
-            done_button = QPushButton("DONE"); done_button.setStyleSheet(self._dialog_button_style("#1a7a1a", "#0a300a"))
-            done_button.clicked.connect(dialog.accept)
-            for b in [whatsapp_button, open_folder_button, new_file_button, done_button]: b.setFixedSize(180, 45); b.setCursor(Qt.PointingHandCursor)
-            grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter); grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter); grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter); grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter); layout.addLayout(grid)
+            new_file_button.clicked.connect(dialog.fade_reject)
+            exit_button = QPushButton("EXIT APP!"); exit_button.setStyleSheet(self._dialog_button_style("#c0392b", "#a93226"))
+            exit_button.clicked.connect(lambda: dialog.fade_done(999))
+            for b in [whatsapp_button, open_folder_button, new_file_button, exit_button]: b.setFixedSize(180, 45); b.setCursor(Qt.PointingHandCursor)
+            grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter); grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter); grid.addWidget(new_file_button, 1, 0, alignment=Qt.AlignCenter); grid.addWidget(exit_button, 1, 1, alignment=Qt.AlignCenter); layout.addLayout(grid)
             result = dialog.exec_(); self._block_portrait_overlay = False
+            if hasattr(self, "_hide_processing_overlay"):
+                self._hide_processing_overlay()
             if hasattr(self, "set_overlays_force_hidden"):
                 self.set_overlays_force_hidden(False)
-            if result == QDialog.Rejected: self.handle_new_file()
+            if hasattr(self, "timeline_overlay") and self.timeline_overlay:
+                self.timeline_overlay.show()
+            if hasattr(self, "_set_video_controls_enabled"):
+                self._set_video_controls_enabled(True)
+            if self.mobile_checkbox.isChecked() and hasattr(self, "_update_portrait_mask_overlay_state"):
+                self._update_portrait_mask_overlay_state()
+            if result == 999:
+                self._quit_application(None)
+            elif result == QDialog.Rejected: self.handle_new_file()
         else:
             if "canceled by user" not in message.lower(): self._show_error_with_log(message)
 
@@ -226,7 +318,12 @@ class FfmpegMixin:
 
         def _on_worker_finished(result):
             success, duration_s, res_or_err = result
-            if not success: return
+            if not success:
+                self._safe_status("Video analysis failed.", "red")
+                self._safe_set_duration_text("Duration: unavailable")
+                self.process_button.setEnabled(False)
+                self.show_message("Error", f"Could not analyze this video:\n{res_or_err}")
+                return
             duration_ms = int(duration_s * 1000)
             try:
                 self.original_duration_ms = duration_ms; self.original_resolution = res_or_err
@@ -234,7 +331,14 @@ class FfmpegMixin:
                 self.positionSlider.setRange(0, duration_ms); self.positionSlider.set_duration_ms(duration_ms)
                 self._update_trim_inputs(); self._safe_set_duration_text(f"Duration: {duration_s:.2f} s | Res: {self.original_resolution}")
                 self.trim_start_ms = 0; self.trim_end_ms = duration_ms; self._update_trim_widgets_from_trim_times(); self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms); self._safe_status("Video loaded.", "white")
-            except: pass
+                if hasattr(self, "_maybe_enable_process"):
+                    self._maybe_enable_process()
+            except Exception as e:
+                try:
+                    self.logger.exception(f"Failed to update UI after probe: {e}")
+                except Exception:
+                    pass
+                self.show_message("Error", f"Video loaded, but the UI could not be updated:\n{e}")
             finally:
                 if hasattr(self, "timer") and not self.timer.isActive(): self.timer.start(100)
 

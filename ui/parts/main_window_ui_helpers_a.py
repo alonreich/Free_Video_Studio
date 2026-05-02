@@ -81,24 +81,28 @@ class MainWindowUiHelpersAMixin:
             pass
 
     def _init_upload_hint_blink(self):
-        if not hasattr(self, 'hint_group_container'):
+        if not hasattr(self, 'hint_group_container') or self.hint_group_container is None:
             return
 
         from PyQt5.QtWidgets import QGraphicsOpacityEffect
-        from PyQt5.QtCore import QPropertyAnimation, QSequentialAnimationGroup, QEasingCurve
-        self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
-        self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
-        anim_in = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_in.setDuration(1800)
-        anim_in.setStartValue(0.05)
-        anim_in.setEndValue(1.0)
-        anim_in.setEasingCurve(QEasingCurve.InOutSine)
-        anim_out = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
-        anim_out.setDuration(1800)
-        anim_out.setStartValue(1.0)
-        anim_out.setEndValue(0.05)
-        anim_out.setEasingCurve(QEasingCurve.InOutSine)
-        self._hint_group = QSequentialAnimationGroup(self)
-        self._hint_group.addAnimation(anim_in)
-        self._hint_group.addAnimation(anim_out)
-        self._hint_group.setLoopCount(-1)
+        import math
+        if not hasattr(self, '_hint_opacity_effect'):
+            self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
+            self._hint_opacity_effect.setOpacity(1.0)
+            self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
+        if not hasattr(self, '_hint_pulse_timer'):
+            self._hint_pulse_timer = QTimer(self)
+            self._hint_pulse_timer.setInterval(20) 
+            self._hint_pulse_start_time = time.time()
+
+            def _do_pulse():
+                try:
+                    elapsed = (time.time() - self._hint_pulse_start_time) % 4.0
+                    norm_val = (math.cos((elapsed / 4.0) * 2 * math.pi) + 1) / 2.0
+                    opacity = 0.01 + (norm_val * 0.99)
+                    self._hint_opacity_effect.setOpacity(opacity)
+                except: pass
+            self._hint_pulse_timer.timeout.connect(_do_pulse)
+        if not self._hint_pulse_timer.isActive():
+            self._hint_pulse_timer.start()
+            self._hint_pulse_start_time = time.time()

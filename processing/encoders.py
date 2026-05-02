@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 class EncoderManager:
     ENCODER_PREFERENCE = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"]
+    HARDWARE_BY_STRATEGY = {"NVIDIA": "h264_nvenc", "AMD": "h264_amf", "INTEL": "h264_qsv"}
 
     def _fps_to_float(self, fps_expr: str, default: float = 60.0) -> float:
         from fractions import Fraction
@@ -13,27 +14,30 @@ class EncoderManager:
         except Exception:
             return float(default)
 
-    def __init__(self, logger: Any, hardware_strategy: Optional[str] = None):
+    def __init__(self, logger: Any, hardware_strategy: Optional[str] = None, ffmpeg_path: Optional[str] = None):
         self.logger = logger
+        if ffmpeg_path:
+            self.ffmpeg_path = ffmpeg_path
+        else:
+            local_ffmpeg = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'binaries', 'ffmpeg.exe'))
+            self.ffmpeg_path = local_ffmpeg if os.path.exists(local_ffmpeg) else 'ffmpeg'
         self.available_encoders = self._detect_available_encoders()
         self.primary_encoder = os.environ.get('VIDEO_HW_ENCODER', 'h264_nvenc')
         self.forced_cpu = (os.environ.get('VIDEO_FORCE_CPU') == '1')
+        self.hardware_strategy = hardware_strategy
         if hardware_strategy:
-            if hardware_strategy == "NVIDIA" and "h264_nvenc" in self.available_encoders:
-                self.primary_encoder = "h264_nvenc"
+            requested_encoder = self.HARDWARE_BY_STRATEGY.get(str(hardware_strategy).upper())
+            if requested_encoder:
+                self.primary_encoder = requested_encoder
                 self.forced_cpu = False
-            elif hardware_strategy == "AMD" and "h264_amf" in self.available_encoders:
-                self.primary_encoder = "h264_amf"
-                self.forced_cpu = False
-            elif hardware_strategy == "INTEL" and "h264_qsv" in self.available_encoders:
-                self.primary_encoder = "h264_qsv"
-                self.forced_cpu = False
+                if requested_encoder not in self.available_encoders:
+                    self.logger.error(f"Hardware strategy '{hardware_strategy}' requires '{requested_encoder}', but FFmpeg did not list it. Export will fail instead of using CPU.")
             elif hardware_strategy == "CPU":
                 self.primary_encoder = "libx264"
                 self.forced_cpu = True
             else:
                 if hardware_strategy != "CPU":
-                    self.logger.warning(f"Hardware strategy '{hardware_strategy}' requested but encoder not found. Falling back to libx264.")
+                    self.logger.error(f"Unknown hardware strategy '{hardware_strategy}'. Falling back to CPU only because the requested GPU vendor is unknown.")
                 self.primary_encoder = "libx264"
                 self.forced_cpu = True
         self.attempted_encoders: set[str] = set()
@@ -45,7 +49,7 @@ class EncoderManager:
             if os.name == 'nt':
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            res = subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], 
+            res = subprocess.run([self.ffmpeg_path, '-hide_banner', '-encoders'], 
                                 capture_output=True, text=True, 
                                 startupinfo=startupinfo,
                                 creationflags=0x08000000 if os.name == 'nt' else 0,
@@ -66,8 +70,11 @@ class EncoderManager:
             return "libx264"
         return self.primary_encoder
 
-    def get_fallback_list(self, failed_encoder: str) -> list[str]:
+    def get_fallback_list(self, failed_encoder: str, allow_cpu: bool = True) -> list[str]:
         self.attempted_encoders.add(failed_encoder)
+        if str(self.hardware_strategy or "").upper() in self.HARDWARE_BY_STRATEGY:
+            self.logger.error(f"GPU encoder '{failed_encoder}' failed under strict {self.hardware_strategy} mode. CPU fallback is disabled.")
+            return []
         try:
             start_index = self.ENCODER_PREFERENCE.index(failed_encoder) + 1
         except ValueError:
@@ -75,6 +82,8 @@ class EncoderManager:
         fallback_options: list[str] = []
         for i in range(start_index, len(self.ENCODER_PREFERENCE)):
             encoder = self.ENCODER_PREFERENCE[i]
+            if not allow_cpu and encoder == "libx264":
+                continue
             if encoder not in self.attempted_encoders:
                 fallback_options.append(encoder)
         self.logger.info(f"Fallback initiated. Failed: '{failed_encoder}'. Attempted so far: {self.attempted_encoders}. Next options: {fallback_options}")
@@ -86,7 +95,7 @@ class EncoderManager:
             cpu_preset = 'fast' if quality_level <= 1 else 'medium'
             crf = '20' if quality_level <= 1 else '17'
             self.logger.info(f"Encoder: CPU Force Enabled. Preset={cpu_preset} CRF={crf}")
-            return ['-c:v', 'libx264', '-preset', cpu_preset, '-crf', crf, '-pix_fmt', 'yuv420p'], f"CPU ({cpu_preset}/{crf})"
+            return ['-c:v', 'libx264', '-preset', cpu_preset, '-crf', crf, '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.2'], f"CPU ({cpu_preset}/{crf})"
         vcodec = ['-c:v', encoder_name]
         rc_label = "Unknown"
         gop = str(int(round(fps_value * 2.0)))
@@ -101,7 +110,8 @@ class EncoderManager:
             else: 
                 nv_preset, multipass, lookahead = 'p6', 'fullres', '40'
                 aq_flags = ['-spatial-aq', '1', '-temporal-aq', '1']
-            h264_level = 'auto'
+            target_kbps = int(video_bitrate_kbps) if video_bitrate_kbps else 0
+            h264_level = '5.1' if target_kbps > 62500 else '4.2'
             vcodec.extend([
                 '-pix_fmt', 'yuv420p',
                 '-preset', nv_preset,
@@ -119,8 +129,8 @@ class EncoderManager:
                 '-level:v', h264_level
             ])
             if video_bitrate_kbps:
-                kbps = min(40000, int(video_bitrate_kbps))
-                max_rate = min(50000, int(kbps * 1.5))
+                kbps = min(240000, max(300, int(video_bitrate_kbps)))
+                max_rate = min(240000, int(kbps * 1.5))
                 vcodec.extend([
                     '-b:v', f'{kbps}k',
                     '-maxrate', f'{max_rate}k',
@@ -142,7 +152,7 @@ class EncoderManager:
                 '-vbaq', '1',
                 '-bf', '3',
                 '-profile:v', 'high',
-                '-level', '4.2'
+                '-level:v', '4.2'
             ])
             if video_bitrate_kbps:
                 kbps = int(video_bitrate_kbps)
@@ -157,7 +167,7 @@ class EncoderManager:
                 '-look_ahead', '1', 
                 '-look_ahead_depth', '60' if quality_level <= 1 else '100',
                 '-profile:v', 'high',
-                '-level', '4.2'
+                '-level:v', '4.2'
             ])
             if video_bitrate_kbps:
                 kbps = int(video_bitrate_kbps)
@@ -170,6 +180,7 @@ class EncoderManager:
             if video_bitrate_kbps is None:
                 crf = '23' if quality_level <= 0 else ('20' if quality_level <= 1 else '17')
                 vcodec.extend(['-preset', cpu_preset, '-crf', crf, '-bf', '3'])
+                vcodec.extend(['-profile:v', 'high', '-level:v', '4.2'])
                 return vcodec, f"CPU libx264 ({cpu_preset}/CRF{crf})"
             else:
                 kbps = int(video_bitrate_kbps)
@@ -179,7 +190,8 @@ class EncoderManager:
                     '-b:v', f'{kbps}k',
                     '-maxrate', f'{int(kbps * 1.5)}k',
                     '-bufsize', f'{int(kbps * 3.0)}k',
-                    '-profile:v', 'high'
+                    '-profile:v', 'high',
+                    '-level:v', '4.2'
                 ])
                 return vcodec, f"CPU libx264 ({cpu_preset})"
         else:

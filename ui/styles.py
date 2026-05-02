@@ -326,6 +326,9 @@ class UIStyles:
             margin: 0 -17px;
             border-radius: 2px;
         }
+        QSlider::handle:vertical:hover {
+            border: 2px solid #7DD3FC;
+        }
         QSlider::add-page:vertical {
             background: #1b6d26;
             border-radius: 3px;
@@ -487,3 +490,4 @@ class UIStyles:
             background-color: #2ecc71;
         }
     """
+

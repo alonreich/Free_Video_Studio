@@ -57,6 +57,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.bin_dir = bin_dir if bin_dir else os.path.join(self.base_dir, 'binaries')
         self.config_manager = config_manager if config_manager else ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
         self.tooltip_manager = tooltip_manager if tooltip_manager else ToolTipManager(self)
+        QCoreApplication.instance().installEventFilter(self.tooltip_manager)
         self.timeline_overlay = TimelineOverlay(self)
         self.positionSlider = self.timeline_overlay.positionSlider
         PlayerMixin.__init__(self)
@@ -77,10 +78,15 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
         self.positionSlider.rangeChanged.connect(lambda *_: self._maybe_enable_process())
         self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
+        self.status_update_signal.connect(self.log_overlay_sink)
         self.show()
         QTimer.singleShot(100, self._update_overlay_positions)
         QTimer.singleShot(500, self._update_overlay_positions)
         QTimer.singleShot(1500, self._update_overlay_positions)
+
+    def log_overlay_sink(self, msg: str):
+        if hasattr(self, "_append_live_log"):
+            self._append_live_log(msg)
 
     def _init_core_logic(self, file_path, hardware_strategy):
         self.input_file_path = None; self.original_duration_ms = 0; self.original_resolution = ""; self.trim_start_ms = 0; self.trim_end_ms = 0

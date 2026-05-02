@@ -86,11 +86,17 @@ class VideoConfig:
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
-                required = ["loot", "stats", "team", "normal_hp", "boss_hp", "spectating"]
-                for req in required:
-                    if req not in loaded_data.get("crops_1080p", {}) or req not in loaded_data.get("overlays", {}):
-                        return None
-                return loaded_data
+                if not isinstance(loaded_data, dict):
+                    return None
+                merged = json.loads(json.dumps(default_conf_data))
+                for section in ("crops_1080p", "scales", "overlays", "z_orders"):
+                    incoming = loaded_data.get(section, {})
+                    if isinstance(incoming, dict):
+                        merged[section].update(incoming)
+                for key, value in loaded_data.items():
+                    if key not in merged:
+                        merged[key] = value
+                return merged
             except:
                 return None
         if not os.path.exists(conf_path):
@@ -128,24 +134,16 @@ class VideoConfig:
         try:
             q = int(quality_level)
         except Exception:
-            q = 2
+            q = 7
         keep_highest_res = False
         target_mb = None
-        if q >= 4:
+        if q >= 20:
             keep_highest_res = True
         else:
             keep_highest_res = False
             if target_mb_override is not None:
                 target_mb = float(target_mb_override)
             else:
-                if q <= 0:
-                    target_mb = 15.0
-                elif q == 1:
-                    target_mb = 25.0
-                elif q == 2:
-                    target_mb = 45.0
-                elif q == 3:
-                    target_mb = 90.0
-                else:
-                    target_mb = 45.0
+                q = max(0, min(19, q))
+                target_mb = float(5 + q * 5)
         return keep_highest_res, target_mb, q
