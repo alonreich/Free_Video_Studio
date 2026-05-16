@@ -28,14 +28,7 @@ class MergerEngine(QThread):
         self._last_time_str = "00:00:00"
 
     def _cmd_base_with_decode_flags(self):
-        if not self.use_gpu:
-            return list(self.cmd_base)
-        expanded = []
-        for item in self.cmd_base:
-            if item == "-i":
-                expanded.extend(["-hwaccel", "dxva2"])
-            expanded.append(item)
-        return expanded
+        return list(self.cmd_base)
 
     def _detect_gpu_encoder(self):
         quality_multipliers = {0: 0.20, 1: 0.40, 2: 0.60, 3: 0.80, 4: 1.0}
@@ -74,8 +67,22 @@ class MergerEngine(QThread):
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
         if self.use_gpu:
-            raise RuntimeError("GPU encoding was requested, but FFmpeg did not expose h264_nvenc, h264_amf, or h264_qsv.")
+            self.logger.warning("GPU encoding was requested, but no H.264 hardware encoder was exposed. Falling back to CPU.")
         return self._get_cpu_flags(crf_val, v_bitrate_args)
+
+    def _audio_bitrate_kbps(self):
+        raw = self.target_a_bitrate
+        try:
+            text = str(raw).strip().lower()
+            if text.endswith("k"):
+                value = int(float(text[:-1]))
+            else:
+                value = int(float(text)) if text else 128
+                if value > 5000:
+                    value = int(round(value / 1000.0))
+        except Exception:
+            value = 128
+        return max(64, min(320, value))
 
     def _get_cpu_flags(self, crf_val, v_bitrate_args):
         base = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2"]
@@ -89,12 +96,18 @@ class MergerEngine(QThread):
         while True:
             self._is_cancelled = False
             cmd = [self.ffmpeg_path, "-y", "-hide_banner", "-progress", "pipe:1"] + self._cmd_base_with_decode_flags()
-            a_bitrate = f"{self.target_a_bitrate}" if self.target_a_bitrate > 0 else "128k"
+            a_bitrate = f"{self._audio_bitrate_kbps()}k"
             a_rate = f"{self.target_a_rate}" if self.target_a_rate > 0 else "48000"
             cmd.extend(["-c:a", "aac", "-ar", a_rate, "-b:a", a_bitrate])
             try:
-                cmd.extend(self._detect_gpu_encoder())
+                video_flags = self._detect_gpu_encoder()
+                used_cpu = len(video_flags) >= 2 and video_flags[1] == "libx264"
+                cmd.extend(video_flags)
             except Exception as e:
+                if self.use_gpu:
+                    self.logger.warning(f"GPU setup failed: {e}. Falling back to CPU.")
+                    self.use_gpu = False
+                    continue
                 self.finished.emit(False, str(e))
                 return
             cmd.append(str(self.output_path))
@@ -167,6 +180,10 @@ class MergerEngine(QThread):
                 ]
                 err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
                 self.logger.error(f"FFMPEG ERROR OUTPUT:\n" + err_msg)
+                if self.use_gpu and not used_cpu:
+                    self.logger.warning("Hardware encode failed during merge. Retrying once with CPU.")
+                    self.use_gpu = False
+                    continue
                 self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
             break
 

@@ -7,7 +7,7 @@ os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null
 import sys
 import os
 import logging
-from logging.handlers import RotatingFileHandler
+from system.live_logging import ReopenableFileHandler
 current_dir = os.path.abspath(os.path.dirname(__file__))
 project_root = current_dir
 if project_root not in sys.path:
@@ -58,8 +58,6 @@ class StreamToLogger(object):
         else:
             return 2
 
-import threading
-
 class SafeStreamHandler(logging.StreamHandler):
     """
     A StreamHandler that suppresses OSError during flush and emit, 
@@ -90,35 +88,8 @@ class SafeStreamHandler(logging.StreamHandler):
         """Quietly ignore errors during logging to prevent infinite loops or console clutter."""
         pass
 
-class AggressiveFileHandler(RotatingFileHandler):
-    """
-    Ensures logs are written to disk AND the file handle is released 
-    after every entry, allowing other processes to read/lock the file on Windows.
-    Uses an internal lock to prevent race conditions during close/open.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._aggressive_lock = threading.Lock()
-
-    def emit(self, record):
-        with self._aggressive_lock:
-            try:
-                if self.shouldRollover(record):
-                    self.doRollover()
-                if self.stream is None or getattr(self.stream, 'closed', False):
-                    self.stream = self._open()
-                msg = self.format(record)
-                self.stream.write(msg + self.terminator)
-                self.flush()
-                try:
-                    os.fsync(self.stream.fileno())
-                except (OSError, ValueError):
-                    pass
-                self.stream.close()
-                self.stream = None
-            except Exception:
-                self.handleError(record)
+class AggressiveFileHandler(ReopenableFileHandler):
+    pass
 
 def setup_logger():
     """

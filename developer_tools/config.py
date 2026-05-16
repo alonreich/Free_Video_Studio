@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
@@ -655,34 +655,3 @@ def get_stylesheet():
     return ""
 PORTRAIT_WINDOW_STYLESHEET = ""
 CROP_APP_STYLESHEET = UNIFIED_STYLESHEET
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

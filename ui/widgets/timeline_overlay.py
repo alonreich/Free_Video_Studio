@@ -6,7 +6,8 @@ class TimelineOverlay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._force_hidden = True
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        flags = getattr(Qt, "Tool", 0) | getattr(Qt, "FramelessWindowHint", 0) | getattr(Qt, "WindowStaysOnTopHint", 0)
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)

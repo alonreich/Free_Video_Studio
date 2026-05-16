@@ -1,6 +1,7 @@
 ﻿import os
 import sys
 import subprocess
+import json
 from fractions import Fraction
 
 class MediaProber:
@@ -8,6 +9,7 @@ class MediaProber:
         self.bin_dir = bin_dir
         self.input_path = input_path
         self.ffprobe_path = os.path.join(self.bin_dir, 'ffprobe.exe')
+        self.probe_timeout = 8.0
 
     def _run_command(self, args):
         try:
@@ -20,11 +22,34 @@ class MediaProber:
                 capture_output=True, 
                 text=True, 
                 check=True,
-                creationflags=creationflags
+                creationflags=creationflags,
+                timeout=self.probe_timeout
             )
             return (result.stdout or "").strip()
+        except subprocess.TimeoutExpired:
+            return None
         except Exception:
             return None
+
+    def _run_json(self, args):
+        try:
+            full_cmd = [self.ffprobe_path, "-v", "error", "-of", "json"] + args + [self.input_path]
+            creationflags = 0
+            if sys.platform == "win32":
+                creationflags = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(
+                full_cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                creationflags=creationflags,
+                timeout=self.probe_timeout
+            )
+            return json.loads(result.stdout or "{}")
+        except subprocess.TimeoutExpired:
+            return {}
+        except Exception:
+            return {}
 
     def run_probe(self, args):
         val_str = self._run_command(args)
@@ -34,7 +59,7 @@ class MediaProber:
                 if val > 0:
                     return max(8, int(round(val / 1000.0)))
             except ValueError:
-                pass
+                return None
         return None
 
     def get_audio_bitrate(self):
@@ -56,7 +81,7 @@ class MediaProber:
             try:
                 return int(val_str)
             except ValueError:
-                pass
+                return 48000
         return 48000
 
     def get_video_bitrate(self):
@@ -69,7 +94,7 @@ class MediaProber:
         val_str = self._run_command(["-show_entries", "format=duration"])
         try:
             return float(val_str)
-        except:
+        except (TypeError, ValueError):
             return 0.0
 
     def get_resolution(self):
@@ -79,33 +104,111 @@ class MediaProber:
             return f"{w}x{h}"
         return None
 
-    def get_video_fps_expr(self, fallback: str = "60000/1001"):
-        raw = self._run_command([
+    def get_video_timing_info(self):
+        data = self._run_json([
             "-select_streams", "v:0",
-            "-show_entries", "stream=avg_frame_rate"
+            "-show_entries", "stream=avg_frame_rate,r_frame_rate,nb_frames,duration:format=duration"
         ])
-        if not raw:
-            return fallback
+        streams = data.get("streams") or []
+        stream = streams[0] if streams else {}
+        fmt = data.get("format") or {}
+
+        def _rate_fraction(name):
+            raw = stream.get(name)
+            try:
+                val = Fraction(str(raw))
+                if val > 0:
+                    return val
+            except Exception:
+                return Fraction(0, 1)
+            return Fraction(0, 1)
+
+        def _rate(name):
+            val = _rate_fraction(name)
+            if val > 0:
+                return float(val)
+            return 0.0
+
+        def _float(name):
+            try:
+                val = float(stream.get(name))
+                if val > 0:
+                    return val
+            except Exception:
+                return 0.0
+            return 0.0
+
+        def _int(name):
+            try:
+                val = int(stream.get(name))
+                if val > 0:
+                    return val
+            except Exception:
+                return 0
+            return 0
+        avg_q = _rate_fraction("avg_frame_rate")
+        nominal_q = _rate_fraction("r_frame_rate")
+        avg = float(avg_q) if avg_q > 0 else 0.0
+        nominal = float(nominal_q) if nominal_q > 0 else 0.0
+        duration = _float("duration")
+        if duration <= 0:
+            try:
+                duration = float(fmt.get("duration") or 0.0)
+            except Exception:
+                duration = 0.0
+        if duration <= 0:
+            duration = self.get_duration()
+        frames = _int("nb_frames")
+        counted = (frames / duration) if frames and duration > 0 else 0.0
+        observed = counted or avg or nominal
+        vfr = False
+        if avg and nominal and abs(avg - nominal) > 0.5:
+            vfr = True
+        if counted and avg and abs(counted - avg) > 0.5:
+            vfr = True
+        return {
+            "avg_fps": avg,
+            "nominal_fps": nominal,
+            "counted_fps": counted,
+            "observed_fps": observed,
+            "duration": duration,
+            "frame_count": frames,
+            "is_vfr": vfr,
+            "avg_fps_expr": str(avg_q) if avg_q > 0 else "",
+            "nominal_fps_expr": str(nominal_q) if nominal_q > 0 else "",
+        }
+
+    def get_video_fps_expr(self, fallback: str = "60000/1001"):
         try:
-            frac = Fraction(str(raw).strip())
-            if frac.denominator == 0:
+            info = self.get_video_timing_info()
+            candidates = []
+            for key in ("counted_fps", "avg_fps_expr", "nominal_fps_expr"):
+                raw = info.get(key)
+                if not raw:
+                    continue
+                try:
+                    candidates.append(Fraction(str(raw)).limit_denominator(1001))
+                except Exception:
+                    continue
+            fps_q = next((q for q in candidates if q > 1), Fraction(0, 1))
+            if fps_q <= 1:
                 return fallback
-            fps = float(frac)
-            if fps <= 1.0:
-                return fallback
-            if fps > 60.01:
-                if abs(fps - 119.88) < 0.1 or abs(fps - 239.76) < 0.1:
+            if info.get("is_vfr") and fps_q > 55:
+                fps_q = Fraction(60, 1)
+            if fps_q > 60:
+                if abs(fps_q - Fraction(120000, 1001)) < Fraction(1, 10) or abs(fps_q - Fraction(240000, 1001)) < Fraction(1, 10):
                     return "60000/1001"
                 return "60"
-            if abs(fps - 60.0) < 0.001: return "60"
-            if abs(fps - 59.94) < 0.01: return "60000/1001"
-            if abs(fps - 30.0) < 0.001: return "30"
-            if abs(fps - 29.97) < 0.01: return "30000/1001"
-            if abs(fps - 24.0) < 0.001: return "24"
-            if abs(fps - 23.976) < 0.01: return "24000/1001"
-            if abs(fps - round(fps)) < 0.001:
-                return str(int(round(fps)))
-            return str(frac)
+            if abs(fps_q - Fraction(60, 1)) < Fraction(1, 1000): return "60"
+            if abs(fps_q - Fraction(60000, 1001)) < Fraction(1, 100): return "60000/1001"
+            if abs(fps_q - Fraction(30, 1)) < Fraction(1, 1000): return "30"
+            if abs(fps_q - Fraction(30000, 1001)) < Fraction(1, 100): return "30000/1001"
+            if abs(fps_q - Fraction(24, 1)) < Fraction(1, 1000): return "24"
+            if abs(fps_q - Fraction(24000, 1001)) < Fraction(1, 100): return "24000/1001"
+            fps_q = min(Fraction(60, 1), fps_q).limit_denominator(1001)
+            if fps_q.denominator == 1:
+                return str(fps_q.numerator)
+            return f"{fps_q.numerator}/{fps_q.denominator}"
         except Exception:
             return fallback
 
@@ -159,34 +262,41 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str, logger=None, h
         return False
 
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
+    max_h264_level_42_kbps = 50000
+    audio_kbps = min(320, max(128, int(audio_kbps or 128)))
     if duration <= 0:
         return 6000
-    if keep_highest_res and prober:
+    if target_mb is None and keep_highest_res and prober:
         orig_br = prober.get_video_bitrate()
-        return min(int(orig_br * 1.15), 240000)
+        return min(int(orig_br * 1.05), max_h264_level_42_kbps)
     if target_mb is None:
         target_mb = 45.0
-    total_bits_available = float(target_mb) * 8 * 1024 * 1024
-    audio_bits_total = audio_kbps * 1000 * duration
-    video_bits_available = total_bits_available - audio_bits_total
-    safe_video_bits = video_bits_available * 0.95
-    video_bits = safe_video_bits
+    duration_q = Fraction(str(duration))
+    target_mb_q = Fraction(str(target_mb))
+    total_bits_available = target_mb_q * 8 * 1024 * 1024
+    audio_bits_total = Fraction(audio_kbps * 1000) * duration_q
+    mux_margin_bits = max(total_bits_available / 100, Fraction(64 * 1024 * 8))
+    video_bits = total_bits_available - audio_bits_total - mux_margin_bits
     if video_bits <= 0:
+        if logger:
+            logger.info(f"BITRATE: Target {target_mb}MB is below audio/container budget. Clamping video bitrate to 300k.")
         return 300
-    calculated_kbps = int(video_bits / (1000 * duration))
+    calculated_kbps = int(video_bits / (1000 * duration_q))
     try:
         w, h = map(int, res_str.lower().split('x'))
-    except:
+    except (AttributeError, TypeError, ValueError):
         w, h = 1920, 1080
     try:
-        fps = float(Fraction(fps_expr))
-    except:
-        fps = 60.0
-    bpp_targets = [0.06, 0.09, 0.13, 0.18]
-    target_bpp = bpp_targets[min(quality_level, 3)]
-    min_quality_kbps = int((w * h * fps * target_bpp) / 1000)
-    max_gpu_kbps = 240000
-    final_kbps = max(300, min(calculated_kbps, max_gpu_kbps))
+        fps_q = Fraction(str(fps_expr))
+    except (TypeError, ValueError, ZeroDivisionError):
+        fps_q = Fraction(60, 1)
+    fps_q = min(Fraction(60, 1), max(Fraction(1, 1), fps_q))
+    bpp_targets = [Fraction(6, 100), Fraction(9, 100), Fraction(13, 100), Fraction(18, 100)]
+    target_bpp = bpp_targets[max(0, min(int(quality_level), 3))]
+    min_quality_kbps = int((w * h * fps_q * target_bpp) / 1000)
+    final_kbps = max(300, min(calculated_kbps, max_h264_level_42_kbps))
     if logger:
-        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | QualityFloor {min_quality_kbps}k | Final {final_kbps}k")
+        if min_quality_kbps > final_kbps:
+            logger.info(f"BITRATE: Target {target_mb}MB caps video below quality floor. Floor {min_quality_kbps}k | Final {final_kbps}k")
+        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Level42Cap {max_h264_level_42_kbps}k | Final {final_kbps}k")
     return final_kbps

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterator, Optional, Sequence, cast
 import psutil
+from system.live_logging import append_text_unlocked, touch_unlocked
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
 MASTER_BACKUP_DIR = Path(r"C:\Users\user\.gemini\Backups")
@@ -30,19 +31,18 @@ ALARM_MESSAGE = (
 DEFAULT_RUNTIME_PROFILE: dict[str, Any] = {
     "mode": "gpu_reintegration",
     "diagnostic_profile": {
-        "hwdec": "nvdec",
-        "vo": "gpu",
-        "video_vo": "gpu",
+        "hwdec": "no",
+        "vo": "null",
+        "video_vo": "null",
         "audio_vo": "null",
-        "msg_level": "all=info",
+        "msg_level": "all=trace",
         "log_file": str(MPV_TRACE_LOG_PATH),
     },
     "gpu_profile": {
-        "hwdec": "nvdec",
+        "hwdec": "auto-copy",
         "vo": "gpu",
         "gpu_api": "d3d11",
         "gpu_context": "d3d11",
-        "d3d11_exclusive_fs": "yes",
     },
 }
 TEXT_SUFFIXES = {
@@ -52,7 +52,6 @@ TEXT_SUFFIXES = {
 _alarm_emitted = False
 _runtime_lock = threading.RLock()
 _runtime_dirs_ready = False
-_python_debug_handle: Optional[Any] = None
 _last_debug_emit_monotonic: dict[str, float] = {}
 
 def _clone_default_profile() -> dict[str, Any]:
@@ -70,31 +69,13 @@ def ensure_runtime_directories() -> None:
         _runtime_dirs_ready = True
 
 def _close_python_debug_handle() -> None:
-    global _python_debug_handle
-    with _runtime_lock:
-        if _python_debug_handle is not None:
-            try:
-                _python_debug_handle.flush()
-                _python_debug_handle.close()
-            except Exception:
-                pass
-            _python_debug_handle = None
+    return None
 atexit.register(_close_python_debug_handle)
-
-def _get_python_debug_handle() -> Any:
-    global _python_debug_handle
-    ensure_runtime_directories()
-    with _runtime_lock:
-        if _python_debug_handle is None or getattr(_python_debug_handle, 'closed', False):
-            _python_debug_handle = open(PYTHON_DEBUG_LOG_PATH, "a", encoding="utf-8", buffering=1)
-        return _python_debug_handle
 
 def append_python_debug(message: str) -> None:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with _runtime_lock:
-        handle = _get_python_debug_handle()
-        handle.write(f"{stamp} | {message}\n")
-        handle.flush()
+        append_text_unlocked(PYTHON_DEBUG_LOG_PATH, f"{stamp} | {message}\n")
 
 def append_python_debug_throttled(key: str, message: str, min_interval_sec: float = 0.20) -> bool:
     now = time.monotonic()
@@ -108,11 +89,22 @@ def append_python_debug_throttled(key: str, message: str, min_interval_sec: floa
 
 def get_python_debug_log_path() -> str:
     ensure_runtime_directories()
+    touch_unlocked(PYTHON_DEBUG_LOG_PATH)
     return str(PYTHON_DEBUG_LOG_PATH)
 
 def get_mpv_trace_log_path() -> str:
     ensure_runtime_directories()
+    touch_unlocked(MPV_TRACE_LOG_PATH)
     return str(MPV_TRACE_LOG_PATH)
+
+def append_mpv_trace(level: str, prefix: str, text: str) -> None:
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    clean = str(text or "").rstrip()
+    if not clean:
+        return
+    with _runtime_lock:
+        for line in clean.splitlines():
+            append_text_unlocked(MPV_TRACE_LOG_PATH, f"{stamp} | {level} | {prefix} | {line}\n")
 
 def _load_config() -> dict[str, Any]:
     if not MAIN_APP_CONFIG_PATH.exists():
@@ -166,9 +158,11 @@ def is_isolation_active() -> bool:
 def apply_mpv_runtime_overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
     runtime = get_runtime_profile()
     result = dict(kwargs)
-    result.setdefault("msg_level", runtime["diagnostic_profile"].get("msg_level", "all=trace"))
-    result.setdefault("log_file", runtime["diagnostic_profile"].get("log_file", get_mpv_trace_log_path()))
-    result.setdefault("loglevel", "trace")
+    result.setdefault("msg_level", runtime["diagnostic_profile"].get("msg_level", "all=info"))
+    result.setdefault("loglevel", "info")
+    result.pop("log_file", None)
+    result.pop("log-file", None)
+    embedded = result.get("wid") is not None
     audio_only = str(result.get("vid", "")).lower() == "no" or str(result.get("vo", "")).lower() == "null"
     if is_isolation_active():
         for key in (
@@ -181,18 +175,20 @@ def apply_mpv_runtime_overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
         ):
             result.pop(key, None)
         result["hwdec"] = runtime["diagnostic_profile"].get("hwdec", "no")
-        if audio_only:
+        if audio_only and not embedded:
             result["vo"] = runtime["diagnostic_profile"].get("audio_vo", "null")
         else:
-            result["vo"] = runtime["diagnostic_profile"].get("video_vo", "gpu")
+            requested_vo = runtime["diagnostic_profile"].get("video_vo", "gpu")
+            if str(requested_vo).lower() == "null" and embedded:
+                requested_vo = "gpu"
+            result["vo"] = requested_vo
         return result
     gpu = runtime.get("gpu_profile", {})
     if not audio_only:
-        result.setdefault("hwdec", gpu.get("hwdec", "nvdec"))
-        result.setdefault("vo", gpu.get("vo", "gpu"))
-    result.setdefault("gpu_api", gpu.get("gpu_api", "d3d11"))
-    result.setdefault("gpu_context", gpu.get("gpu_context", "d3d11"))
-    result.setdefault("d3d11_exclusive_fs", gpu.get("d3d11_exclusive_fs", "yes"))
+        result["hwdec"] = gpu.get("hwdec", "auto-copy")
+        result["vo"] = gpu.get("vo", "gpu")
+    result["gpu_api"] = gpu.get("gpu_api", "d3d11")
+    result["gpu_context"] = gpu.get("gpu_context", "d3d11")
     return result
 
 def log_isolation_alarm(logger: Optional[Any] = None) -> None:

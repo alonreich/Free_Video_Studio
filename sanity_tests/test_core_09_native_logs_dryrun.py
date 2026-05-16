@@ -5,9 +5,8 @@ def test_core_09_native_logs_dryrun() -> None:
     assert_all_present(
         src,
         [
-            "os.dup2(f.fileno(), sys.stdout.fileno())",
-            "os.dup2(f.fileno(), sys.stderr.fileno())",
-            "faulthandler.enable(f)",
+            "ReopenableTextStream",
+            "faulthandler.enable(restoreable_original_stderr())",
             "NATIVE DEBUG LOGGING ACTIVE",
         ],
     )

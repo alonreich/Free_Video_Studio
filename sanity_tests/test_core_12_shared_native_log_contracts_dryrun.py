@@ -5,11 +5,10 @@ def test_core_12_main_and_crop_native_logging_contract_dryrun() -> None:
     assert_all_present(
         src,
         [
-            'mpv.log_path = os.path.join(log_dir, f"{app_prefix}_mpv.log")',
-            'raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")',
-            "os.dup2(f.fileno(), sys.stdout.fileno())",
-            "os.dup2(f.fileno(), sys.stderr.fileno())",
-            "faulthandler.enable(f)",
+            'mpv.log_path = os.path.join(l_d, f"{app_p}_mpv.log")',
+            'r_l_p = os.path.join(l_d, f"mpv_{s_t}.raw.log")',
+            "ReopenableTextStream",
+            "faulthandler.enable(restoreable_original_stderr())",
             "NATIVE DEBUG LOGGING ACTIVE",
             "maxBytes=5*1024*1024",
             '"Main_App": "main_app"',
@@ -23,9 +22,8 @@ def test_core_12_merger_native_logging_should_share_mpv_log_dryrun() -> None:
         [
             'mpv.log_path = os.path.join(log_dir, "mpv.log")',
             'raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")',
-            "os.dup2(f.fileno(), sys.stdout.fileno())",
-            "os.dup2(f.fileno(), sys.stderr.fileno())",
-            "faulthandler.enable(f)",
+            "touch_unlocked(raw_log_path)",
+            "UNLOCKED REALTIME MODE",
             "source_tag = \"video_merger\"",
             "maxBytes=5*1024*1024",
         ],

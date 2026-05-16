@@ -39,5 +39,5 @@ class ConfigManager:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_path, self.file_path)
-        except Exception as e:
-            print(f"Error saving config file: {e}")
+        except Exception:
+            pass

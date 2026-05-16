@@ -52,11 +52,6 @@ class MergerMusicWizard(
         self._cache_wall_times()
         self.setWindowTitle("Background Music Selection Wizard")
         self.setModal(True)
-        if os.name == 'nt':
-            import ctypes
-            try:
-                ctypes.windll.ole32.CoInitializeEx(None, 0x0)
-            except: pass
         self.setStyleSheet('''
             QDialog { background-color: #2c3e50; color: #ecf0f1; }
             QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: "Helvetica Neue", Arial, sans-serif; }

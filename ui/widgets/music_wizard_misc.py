@@ -236,6 +236,42 @@ class MergerMusicWizardMiscMixin:
             return self._wall_trim_start
         return self._calculate_wall_clock_time_raw(video_ms, segments, base_speed)
 
+    def _step3_video_speed_for_source_ms(self, source_ms):
+        try:
+            source_ms = float(source_ms)
+        except (TypeError, ValueError):
+            source_ms = float(getattr(self, "trim_start_ms", 0) or 0)
+        try:
+            base_speed = float(getattr(self, "speed_factor", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            base_speed = 1.0
+
+        def _segment_start(seg):
+            try:
+                return float(seg.get("start", seg.get("start_ms", 0)))
+            except (AttributeError, TypeError, ValueError):
+                return float("inf")
+        for seg in sorted(getattr(self, "speed_segments", []) or [], key=_segment_start):
+            try:
+                start = float(seg.get("start", seg.get("start_ms", 0)))
+                end = float(seg.get("end", seg.get("end_ms", 0)))
+                speed = float(seg.get("speed", base_speed))
+            except (TypeError, ValueError):
+                continue
+            if start <= source_ms < end:
+                return max(0.0, speed)
+        return max(0.0, base_speed)
+
+    def _apply_step3_video_speed_for_source_ms(self, source_ms):
+        if not getattr(self, "player", None):
+            return 0.0
+        speed = self._step3_video_speed_for_source_ms(source_ms)
+        if speed < 0.001:
+            self._safe_mpv_set(self.player, "pause", True)
+            return 0.0
+        self._safe_mpv_set(self.player, "speed", speed)
+        return speed
+
     def _project_time_to_source_ms(self, project_sec):
         target_wall_ms = (project_sec * 1000.0) + (self._wall_trim_start * 1000.0)
         if not self.speed_segments:

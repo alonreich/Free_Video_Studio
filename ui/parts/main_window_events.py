@@ -4,10 +4,10 @@ from PyQt5.QtWidgets import *
 
 class MainWindowEventsMixin:
     def keyPressEvent(self, event):
-        if hasattr(self, "handle_global_key_press") and self.handle_global_key_press(event):
-            return
         if event.key() == Qt.Key_F11:
-            self.launch_advanced_editor()
+            btn = getattr(self, "adv_editor_btn", None)
+            if btn is None or btn.isEnabled():
+                self.launch_advanced_editor()
         elif event.key() == Qt.Key_F12:
             self.launch_crop_tool()
         else:
@@ -73,11 +73,7 @@ class MainWindowEventsMixin:
             if reply == QMessageBox.No:
                 event.ignore()
                 return
-        if getattr(self, "_switching_app", False):
-            if hasattr(self, 'cleanup_and_exit'):
-                self.cleanup_and_exit()
-            QMainWindow.closeEvent(self, event)
-            return
+        self.blockSignals(True)
         try:
             import psutil
             current_process = psutil.Process()
@@ -90,5 +86,9 @@ class MainWindowEventsMixin:
                 except: pass
         except: pass
         if hasattr(self, 'cleanup_and_exit'):
-            self.cleanup_and_exit()
+            try:
+                self.cleanup_and_exit()
+            except Exception as e:
+                if hasattr(self, 'logger'): self.logger.error(f"EXIT: Cleanup error: {e}")
+        event.accept()
         QMainWindow.closeEvent(self, event)

@@ -2,7 +2,7 @@
 import os
 import sys
 import traceback
-from logging.handlers import RotatingFileHandler
+from system.live_logging import ReopenableFileHandler
 
 class LogFileStream:
     def __init__(self, logger, level=logging.INFO, original_stream=None):
@@ -48,7 +48,7 @@ def setup_logger(base_dir, log_filename, logger_name):
         final_log_filename = log_filename
     log_path = os.path.join(log_dir, final_log_filename)
     fmt = logging.Formatter("%(asctime)s | %(name)-12s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    file_handler = RotatingFileHandler(log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
+    file_handler = ReopenableFileHandler(log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(fmt)
     logger.addHandler(file_handler)
     for handler in logger.handlers[:]:

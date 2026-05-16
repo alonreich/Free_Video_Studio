@@ -58,26 +58,46 @@ def _python_machine_name():
     m = (platform.machine() or "").lower()
     if "arm" in m: return "arm64"
     return "x64" if struct.calcsize("P") * 8 == 64 else "x86"
-def check_mpv_dependencies():
-    logger.info("FILES: Checking MPV dependencies...")
+def probe_mpv_dependencies():
     required = ["libmpv-2.dll"]
     missing = [f for f in required if not os.path.exists(os.path.join(BIN_DIR, f))]
     if missing:
         logger.error(f"FILES: Missing required MPV binaries: {missing}")
-        msg_box = QMessageBox(); msg_box.setIcon(QMessageBox.Critical); msg_box.setWindowTitle("MPV Not Found"); msg_box.setText("MPV is required for video playback.\n\nPlease ensure 'libmpv-2.dll' is in the 'binaries' folder next to this app."); msg_box.exec_(); return False
-    libmpv_path = os.path.join(BIN_DIR, "libmpv-2.dll"); py_arch = _python_machine_name(); dll_arch = _pe_machine_name(libmpv_path)
+        return False, "MPV playback requires libmpv-2.dll in the binaries folder next to this app."
+    libmpv_path = os.path.join(BIN_DIR, "libmpv-2.dll")
+    py_arch = _python_machine_name()
+    dll_arch = _pe_machine_name(libmpv_path)
     if dll_arch in ("x86", "x64", "arm64") and dll_arch != py_arch:
         logger.error(f"FILES: Architecture mismatch: Python is {py_arch}, libmpv is {dll_arch}")
-        msg_box = QMessageBox(); msg_box.setIcon(QMessageBox.Critical); msg_box.setWindowTitle("MPV Architecture Mismatch"); msg_box.setText(f"Python architecture: {py_arch}\nlibmpv architecture: {dll_arch}"); msg_box.exec_(); return False
+        return False, f"MPV DLL architecture ({dll_arch}) does not match this Python build ({py_arch}). Replace libmpv-2.dll with a matching build."
     try:
         import mpv
         logger.info("FILES: MPV dependencies verified successfully.")
-        return True
+        return True, ""
     except Exception as e:
         logger.error(f"FILES: MPV import failed: {e}")
-        arch = platform.machine(); msg_box = QMessageBox(); msg_box.setIcon(QMessageBox.Critical); msg_box.setWindowTitle("MPV Import Error"); err_msg = str(e)
-        if "WinError 193" in err_msg or "could not load" in err_msg: err_msg = (f"Architecture Mismatch: The MPV DLL in 'binaries' is not compatible with this Python version.\n\nSystem Arch: {arch} / Python: {py_arch} / libmpv: {dll_arch}\nError: {e}\n\nPlease ensure you have a matching version of 'libmpv-2.dll' in the 'binaries' folder.")
-        msg_box.setText(f"Failed to import mpv library:\n\n{err_msg}"); msg_box.exec_(); return False
+        arch = platform.machine()
+        err_msg = str(e)
+        if "WinError 193" in err_msg or "could not load" in err_msg:
+            err_msg = (
+                f"The MPV DLL in binaries is not compatible with this Python.\n\n"
+                f"System: {arch} / Python: {py_arch} / libmpv: {dll_arch}\n{e}"
+            )
+        return False, f"Failed to load mpv library:\n\n{err_msg}"
+
+def notify_mpv_probe_failure(reason: str):
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Critical)
+    msg_box.setWindowTitle("MPV Not Available")
+    msg_box.setText("Video preview playback will be disabled until MPV is fixed.")
+    msg_box.setInformativeText(reason)
+    msg_box.exec_()
+
+def check_mpv_dependencies():
+    ok, reason = probe_mpv_dependencies()
+    if not ok:
+        notify_mpv_probe_failure(reason)
+    return ok
 def get_ffmpeg_hwaccels(ffmpeg_path: str) -> list:
     try:
         startupinfo = None
@@ -98,6 +118,7 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str) -> bool:
     return res
 class HardwareWorker(QObject):
     finished = pyqtSignal(str)
+    status_update = pyqtSignal(str)
     def __init__(self, ffmpeg_path):
         super().__init__(); self.ffmpeg_path = ffmpeg_path; self.stop_requested = False; self.watchdog_timer = None; self._is_aborted = False
     def abort(self): self._is_aborted = True; self.stop_requested = True
@@ -107,6 +128,7 @@ class HardwareWorker(QObject):
         def watchdog(): self.stop_requested = True
         self.watchdog_timer = threading.Timer(15.0, watchdog); self.watchdog_timer.daemon = True; self.watchdog_timer.start(); ffmpeg_path = self.ffmpeg_path
         try:
+            self.status_update.emit("🔍 Initializing Hardware Triage...")
             available = get_ffmpeg_hwaccels(ffmpeg_path); logger.info(f"GPU: Available FFmpeg hwaccels: {available}")
             detected_mode = self._determine_hardware_strategy_with_stop(available, ffmpeg_path)
             if not self._is_aborted: self.finished.emit(detected_mode)
@@ -119,15 +141,19 @@ class HardwareWorker(QObject):
         os.environ.pop("VIDEO_HW_ENCODER", None); os.environ.pop("VIDEO_FORCE_CPU", None)
         if FORCE_GPU:
             logger.info(f"GPU: Forced GPU mode: {FORCE_GPU}")
+            self.status_update.emit(f"🚀 Forcing {FORCE_GPU} Hardware Mode...")
             if FORCE_GPU == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"; return "NVIDIA"
             if FORCE_GPU == "AMD": os.environ["VIDEO_HW_ENCODER"] = "h264_amf"; return "AMD"
             if FORCE_GPU == "INTEL": os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"; return "INTEL"
         for mode, encoder in (("NVIDIA", "h264_nvenc"), ("AMD", "h264_amf"), ("INTEL", "h264_qsv")):
             if self.stop_requested or self._is_aborted:
                 break
+            self.status_update.emit(f"🧪 Testing {mode} Acceleration...")
             if check_encoder_capability(self.ffmpeg_path, encoder):
+                self.status_update.emit(f"✅ {mode} Acceleration Verified!")
                 os.environ["VIDEO_HW_ENCODER"] = encoder
                 return mode
+        self.status_update.emit("⚠️ Hardware acceleration unavailable. Falling back to CPU.")
         os.environ["VIDEO_FORCE_CPU"] = "1"
         return "CPU"
 def build_diagnostics(ffmpeg_path: str, ffprobe_path: str, error_text: str) -> str: return tr("dependency_error_details").format(ffmpeg=ffmpeg_path, ffprobe=ffprobe_path, bin_dir=BIN_DIR, error=error_text or "Unknown error")
@@ -153,12 +179,16 @@ def exception_hook(exctype, value, tb):
         app = QCoreApplication.instance()
         if app is not None:
             msg_box = QMessageBox(); msg_box.setIcon(QMessageBox.Critical); msg_box.setWindowTitle(tr("diagnostics_title")); msg_box.setText(str(value)); msg_box.setDetailedText(error_text); UIManager.style_and_size_msg_box(msg_box, f"Value: {value}\n\nTraceback:\n{error_text}", tr("copy_to_clipboard")); msg_box.exec_()
-    except Exception: pass
+    except Exception as dialog_err:
+        try:
+            logger.critical(f"FATAL: Could not show crash dialog: {dialog_err}")
+        except Exception:
+            pass
     sys.__excepthook__(exctype, value, tb)
 if __name__ == "__main__":
     logger.info("BOOT: Starting Fortnite Video Software core...")
     def validate_crops_coordinations():
-        import json; conf_dir = os.path.join(BASE_DIR, 'processing'); conf_path = os.path.join(conf_dir, 'crops_coordinations.conf'); default_conf_data = {"crops_1080p": {"loot": [400, 400, 680, 1220], "stats": [350, 350, 730, 0], "normal_hp": [450, 150, 30, 1470], "boss_hp": [450, 150, 30, 1470], "team": [300, 400, 30, 100], "spectating": [0, 0, 0, 0]}, "scales": {"loot": 1.0, "stats": 1.0, "team": 1.0, "normal_hp": 1.0, "boss_hp": 1.0, "spectating": 1.0}, "overlays": {"loot": {"x": 680, "y": 1470}, "stats": {"x": 730, "y": 150}, "team": {"x": 30, "y": 250}, "normal_hp": {"x": 30, "y": 1770}, "boss_hp": {"x": 30, "y": 1770}, "spectating": {"x": 30, "y": 1300}}, "z_orders": {"loot": 10, "normal_hp": 20, "boss_hp": 20, "stats": 30, "team": 40, "spectating": 100}}
+        import json; from processing.hud_config import DEFAULT_HUD_CONFIG, sanitize_hud_config, validate_hud_config; conf_dir = os.path.join(BASE_DIR, 'processing'); conf_path = os.path.join(conf_dir, 'crops_coordinations.conf'); default_conf_data = DEFAULT_HUD_CONFIG
         def write_defaults():
             try:
                 os.makedirs(conf_dir, exist_ok=True)
@@ -168,13 +198,21 @@ if __name__ == "__main__":
         if not os.path.exists(conf_path): logger.warning(f"FILES: Config missing at {conf_path}, using internal defaults."); write_defaults(); return
         try:
             with open(conf_path, 'r', encoding='utf-8') as f: data = json.load(f)
-            is_valid = True
-            if not isinstance(data, dict) or "crops_1080p" not in data or "overlays" not in data: is_valid = False
-            if not is_valid: logger.warning(f"FILES: Config validation failed at {conf_path}, resetting."); write_defaults()
+            issues = validate_hud_config(data)
+            if issues:
+                logger.warning(f"FILES: Config validation failed at {conf_path}, repairing: {issues}"); data = sanitize_hud_config(data); os.makedirs(conf_dir, exist_ok=True)
+                with open(conf_path, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4)
             else: logger.info(f"FILES: Config verified at {conf_path}")
         except Exception as e: logger.error(f"FILES: Error reading {conf_path}: {e}"); write_defaults()
     validate_crops_coordinations()
-    ProcessManager.kill_orphans(); ProcessManager.cleanup_temp_files(); logger.info("FILES: Verifying FFmpeg core..."); is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR); ffprobe_path = os.path.join(os.path.dirname(ffmpeg_path), "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+    ProcessManager.kill_orphans(); ProcessManager.cleanup_temp_files()
+    if os.environ.get("FVS_STATE_TRANSFER_RESTORE") != "1":
+        try:
+            from system.temp_video_workspace import cleanup_workspace
+            cleanup_workspace(logger)
+        except Exception as e:
+            logger.warning(f"TEMP_WORKSPACE: boot cleanup skipped: {e}")
+    logger.info("FILES: Verifying FFmpeg core..."); is_valid_deps, ffmpeg_path, dep_error = DependencyDoctor.check_ffmpeg(BASE_DIR); ffprobe_path = os.path.join(os.path.dirname(ffmpeg_path), "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
     if is_valid_deps: logger.info(f"FILES: FFmpeg core verified: {ffmpeg_path}")
     else: logger.error(f"FILES: FFmpeg core verification failed: {dep_error}")
     app = QCoreApplication.instance()
@@ -184,7 +222,7 @@ if __name__ == "__main__":
         def eventFilter(self, obj, event):
             if event.type() == QEvent.KeyPress:
                 key = event.key()
-                if key in (Qt.Key_Space, Qt.Key_BracketLeft, Qt.Key_BracketRight, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
+                if key in (Qt.Key_Space, Qt.Key_BracketLeft, Qt.Key_BracketRight, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus, Qt.Key_F12, Qt.Key_Return, Qt.Key_Enter):
                     fw = QApplication.focusWidget()
                     if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
                         return False
@@ -203,7 +241,10 @@ if __name__ == "__main__":
         time.sleep(0.5)
     if not success: logger.warning("BOOT: Single instance lock active. Exiting."); sys.exit(0)
     PID_FILE_HANDLE = pid_handle
-    if not check_mpv_dependencies(): logger.warning("FILES: MPV core missing. Playback will be unavailable.")
+    logger.info("FILES: Checking MPV dependencies...")
+    mpv_ready, mpv_hint = probe_mpv_dependencies()
+    if not mpv_ready:
+        notify_mpv_probe_failure(mpv_hint)
     from system.recovery_manager import RecoveryManager
     recovery = RecoveryManager("main_app", logger)
     if recovery.check_fault():
@@ -252,7 +293,7 @@ if __name__ == "__main__":
     if cached_hw == "NVIDIA": os.environ["VIDEO_HW_ENCODER"] = "h264_nvenc"
     elif cached_hw == "AMD": os.environ["VIDEO_HW_ENCODER"] = "h264_amf"
     elif cached_hw == "INTEL": os.environ["VIDEO_HW_ENCODER"] = "h264_qsv"
-    ex = VideoCompressorApp(file_arg, initial_strategy, bin_dir=BIN_DIR, config_manager=cm, tooltip_manager=tm)
+    ex = VideoCompressorApp(file_arg, initial_strategy, bin_dir=BIN_DIR, config_manager=cm, tooltip_manager=tm, mpv_ready=mpv_ready, mpv_error_hint=mpv_hint if not mpv_ready else "")
     try:
         if icon_path and os.path.exists(icon_path): ex.setWindowIcon(QIcon(icon_path))
         elif hasattr(app, "style"): ex.setWindowIcon(app.style().standardIcon(QStyle.SP_ComputerIcon))
@@ -269,7 +310,7 @@ if __name__ == "__main__":
         if cached_hw:
             logger.info(f"GPU: Loading cached strategy: {cached_hw}")
             ex.on_hardware_scan_finished(cached_hw); ex.scan_complete = True; return
-        hw_thread = QThread(); hw_worker = HardwareWorker(ffmpeg_path); hw_worker.moveToThread(hw_thread); hw_thread.started.connect(hw_worker.run); hw_worker.finished.connect(ex.on_hardware_scan_finished); hw_worker.finished.connect(hw_thread.quit); hw_worker.finished.connect(hw_worker.deleteLater); hw_thread.finished.connect(hw_thread.deleteLater); ex._hw_thread = hw_thread; ex._hw_worker = hw_worker; hw_thread.start(); logger.info("GPU: Background hardware scan started.")
+        hw_thread = QThread(); hw_worker = HardwareWorker(ffmpeg_path); hw_worker.moveToThread(hw_thread); hw_thread.started.connect(hw_worker.run); hw_worker.status_update.connect(lambda msg: ex.status_update_signal.emit(msg)); hw_worker.finished.connect(ex.on_hardware_scan_finished); hw_worker.finished.connect(hw_thread.quit); hw_worker.finished.connect(hw_worker.deleteLater); hw_thread.finished.connect(hw_thread.deleteLater); ex._hw_thread = hw_thread; ex._hw_worker = hw_worker; hw_thread.start(); logger.info("GPU: Background hardware scan started.")
     QTimer.singleShot(500, start_hw_scan); from system.utils import MPVSafetyManager; MPVSafetyManager.register_global_shutdown_handler(); logger.info("BOOT: Fortnite Video Software initialized successfully."); ret = app.exec_(); logger.info(f"BOOT: App exiting with code: {ret}")
     try:
         if hasattr(ex, "_hw_worker") and ex._hw_worker: ex._hw_worker.abort()

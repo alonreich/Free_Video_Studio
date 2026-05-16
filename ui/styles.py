@@ -439,7 +439,7 @@ class UIStyles:
                 border: 3px dashed {color};
                 border-radius: 10px;
                 background-color: #34495e;
-                padding: 20px;
+                padding: 6px;
             }}
         """
     GLOBAL_STYLE = """

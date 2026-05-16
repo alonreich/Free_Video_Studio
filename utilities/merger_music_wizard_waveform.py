@@ -45,7 +45,7 @@ class MergerMusicWizardWaveformMixin:
         self._pending_step2_seek_ms = None
         self._is_seeking_active = True
         try:
-            precision = "fast" if getattr(self, "_wave_dragging", False) else "exact"
+            precision = "keyframes" if getattr(self, "_wave_dragging", False) else "exact"
             if getattr(self, "_mpv_lock", None) and self._mpv_lock.acquire(timeout=0.05):
                 try: player.seek(target_ms / 1000.0, reference='absolute', precision=precision)
                 except Exception as ex: self.logger.debug(f"WIZARD_STEP2: safe seek skipped: {ex}")

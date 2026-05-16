@@ -15,7 +15,15 @@ import atexit
 import threading
 import shutil
 import json
-from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG
+try:
+    from PyQt5.QtCore import pyqtSlot
+except ImportError:
+    def pyqtSlot(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 from system import diagnostic_runtime
 try:
     import mpv

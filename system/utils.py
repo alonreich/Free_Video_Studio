@@ -10,7 +10,7 @@ import time
 import threading
 import weakref
 import json
-from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtCore import QTimer, QThread, QObject, pyqtSignal, QCoreApplication, Qt
 from system import diagnostic_runtime
 try:
     import sip
@@ -26,6 +26,60 @@ if sys.platform == 'win32':
             try: os.add_dll_directory(_bin_dir)
             except: pass
         os.environ['PATH'] = _bin_dir + os.pathsep + os.environ.get('PATH','')
+_VALID_SEEK_PRECISIONS = ('unused', 'default-precise', 'keyframes', 'exact')
+_qt_dispatcher_lock = threading.RLock()
+_qt_dispatcher = None
+
+class _QtCallbackDispatcher(QObject):
+    callback_signal = pyqtSignal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.callback_signal.connect(self._run, Qt.QueuedConnection)
+
+    def _run(self, callback):
+        try:
+            if callable(callback):
+                callback()
+        except Exception as e:
+            diagnostic_runtime.append_python_debug_throttled(
+                f"qt-callback-dispatcher:{type(e).__name__}",
+                f"QT CALLBACK DISPATCH ERROR | {e}"
+            )
+
+def _get_qt_dispatcher():
+    global _qt_dispatcher
+    app = QCoreApplication.instance()
+    if app is None:
+        return None
+    with _qt_dispatcher_lock:
+        if _qt_dispatcher is None:
+            _qt_dispatcher = _QtCallbackDispatcher()
+        if _qt_dispatcher.thread() != app.thread():
+            _qt_dispatcher.moveToThread(app.thread())
+        return _qt_dispatcher
+
+def _dispatch_on_qt_thread(callback):
+    app = QCoreApplication.instance()
+    if app is None:
+        threading.Timer(0, callback).start()
+        return True
+    try:
+        if QThread.currentThread() == app.thread():
+            QTimer.singleShot(0, callback)
+        else:
+            dispatcher = _get_qt_dispatcher()
+            if dispatcher is None:
+                threading.Timer(0, callback).start()
+            else:
+                dispatcher.callback_signal.emit(callback)
+        return True
+    except Exception:
+        try:
+            threading.Timer(0, callback).start()
+            return True
+        except Exception:
+            return False
 try:
     import mpv
     if not hasattr(mpv, "_mandate_applied"):
@@ -33,105 +87,119 @@ try:
 
         def __mandated_mpv_init__(self, *args, **kwargs):
             kwargs = diagnostic_runtime.apply_mpv_runtime_overrides(dict(kwargs))
-            kwargs['start_event_thread'] = False
+            kwargs.pop('log_file', None)
+            kwargs.pop('log-file', None)
+            kwargs.setdefault('log_handler', diagnostic_runtime.append_mpv_trace)
+            kwargs.pop('start_event_thread', None)
             if not diagnostic_runtime.is_isolation_active():
-                kwargs.setdefault('gpu_api', 'd3d11')
-                kwargs.setdefault('gpu_context', 'd3d11')
                 kwargs.setdefault('msg_level', 'all=info')
             _real_init(self, *args, **kwargs)
+            self._seek_state_lock = threading.RLock()
             self._seeking_active = False
-            self._seek_guard_deadline_monotonic = 0.0
-            self._event_pump_timer = QTimer()
-            self._event_pump_timer.setInterval(25)
-            
-            def _pump_events():
-                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
-                    self._event_pump_timer.stop()
-                    return
-                try:
-                    for _ in range(50):
-                        with MPVSafetyManager._mpv_command_lock:
-                            ev = self.wait_event(0)
-                        if not ev or ev.get('event_id') == 0:
-                            break
-                        self._handle_event(ev)
-                except Exception:
-                    pass
-            self._event_pump_timer.timeout.connect(_pump_events)
-            self._event_pump_timer.start()
+            self._seek_guard_start_mono = 0.0
+            self._pending_seek_target = None
+            self._tracked_event_callbacks = []
+            self._tracked_property_observers = []
+            _real_seek = self.seek
 
-            def __seek_guard_is_stale():
-                deadline = float(getattr(self, '_seek_guard_deadline_monotonic', 0.0) or 0.0)
-                if not deadline: return False
-                return time.monotonic() >= deadline
+            def __submit_gated_seek(target, reference='absolute', precision='exact'):
+                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
+                    return False
+                if precision not in _VALID_SEEK_PRECISIONS:
+                    precision = 'keyframes'
+                now = time.monotonic()
+                with self._seek_state_lock:
+                    if self._seeking_active and (now - self._seek_guard_start_mono) > 2.0:
+                        self._seeking_active = False
+                        diagnostic_runtime.append_python_debug("SEEK GUARD FALLBACK TRIGGERED | Event lost or timeout reached")
+                    if self._seeking_active:
+                        self._pending_seek_target = (target, reference, precision)
+                        return True
+                    self._seeking_active = True
+                    self._seek_guard_start_mono = now
+                    self._pending_seek_target = None
+                try:
+                    if diagnostic_runtime.is_isolation_active():
+                        try:
+                            with MPVSafetyManager._mpv_command_lock:
+                                self.set_property('vo', 'null')
+                                self.set_property('hwdec', 'no')
+                        except: pass
+                    with MPVSafetyManager._mpv_command_lock:
+                        _real_seek(target, reference=reference, precision=precision)
+                    return True
+                except Exception:
+                    with self._seek_state_lock:
+                        self._seeking_active = False
+                        self._pending_seek_target = None
+                    return False
 
             def __clear_seek_guard(reason='unknown'):
-                self._seek_guard_deadline_monotonic = 0.0
-                if getattr(self, '_seeking_active', False):
+                with self._seek_state_lock:
+                    was_active = self._seeking_active
                     self._seeking_active = False
+                    self._seek_guard_start_mono = 0.0
+                    pending = self._pending_seek_target
+                    self._pending_seek_target = None
+                if was_active:
                     diagnostic_runtime.append_python_debug_throttled(
                         f"mpv-seek-guard-reset:{id(self)}:{reason}",
                         f"MPV SEEK GUARD RESET | reason={reason} | player_id={id(self)}"
                     )
-            try:
-                if not diagnostic_runtime.is_isolation_active():
-                    self.set_property('d3d11-exclusive-fs', 'yes')
-                    self.set_property('gpu-async-compute', 'yes')
-                    self.set_property('gpu-stream-cache-secs', '10')
-            except: pass
-            _real_seek = self.seek
+                if pending is not None:
+                    t, r, p = pending
+                    _dispatch_on_qt_thread(lambda: __submit_gated_seek(t, reference=r, precision=p))
 
-            def __submit_gated_seek__(amount, reference='relative', precision='exact'):
-                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
-                    return False
-                try:
-                    if not self.seeking:
-                        __clear_seek_guard('poll-clear')
-                except: pass
-                if getattr(self, '_seeking_active', False):
-                    if __seek_guard_is_stale():
-                        __clear_seek_guard('stale-deadline')
-                    else:
-                        return False
-                self._seeking_active = True
-                self._seek_guard_deadline_monotonic = time.monotonic() + 0.45
-                try:
-                    with MPVSafetyManager._mpv_command_lock:
-                        _real_seek(amount, reference=reference, precision=precision)
-                    return True
-                except Exception as exc:
-                    diagnostic_runtime.append_python_debug_throttled(
-                        f"mpv-seek-error:{id(self)}",
-                        f"MPV SEEK ERROR | source=seek | error={exc} | player_id={id(self)}"
-                    )
-                    __clear_seek_guard('seek-error')
-                    return False
-
-            def __gated_seek__(amount, reference='relative', precision='exact'):
-                return __submit_gated_seek__(amount, reference=reference, precision=precision)
+            def __schedule_clear_seek_guard(reason='unknown'):
+                _dispatch_on_qt_thread(lambda: __clear_seek_guard(reason))
+            self._submit_gated_seek = __submit_gated_seek
             self._clear_seek_guard = __clear_seek_guard
-            self._seek_guard_is_stale = __seek_guard_is_stale
-            self._submit_gated_seek = __submit_gated_seek__
-            self.seek = __gated_seek__
             @self.event_callback('playback-restart')
-            def __reset_seeking(ev):
-                __clear_seek_guard('playback-restart')
+            def __on_playback_restart(ev):
+                __schedule_clear_seek_guard('playback-restart')
+            self._tracked_event_callbacks.append(('playback-restart', __on_playback_restart))
+            @self.event_callback('seek')
+            def __on_seek(ev):
+                pass
             @self.property_observer('seeking')
-            def __reset_seek_on_property(_name, value):
+            def __on_seeking_change(_name, value):
                 if value in (False, None, 0):
-                    __clear_seek_guard('seeking=false')
-            @self.event_callback('shutdown')
-            def __reset_seek_on_shutdown(ev):
-                __clear_seek_guard('shutdown')
+                    __schedule_clear_seek_guard('seeking=false')
+            self._tracked_property_observers.append(('seeking', __on_seeking_change))
+
+            def __seek_watchdog():
+                while not getattr(self, '_core_shutdown', False) and not getattr(self, '_safe_shutdown_initiated', False):
+                    time.sleep(0.5)
+                    if not getattr(self, '_seeking_active', False):
+                        continue
+                    try:
+                        if (time.monotonic() - getattr(self, '_seek_guard_start_mono', 0.0)) > 2.5:
+                             __schedule_clear_seek_guard('watchdog-timeout')
+                    except:
+                        pass
+            t = threading.Thread(target=__seek_watchdog, daemon=True)
+            t.start()
+            if not diagnostic_runtime.is_isolation_active():
+                self._gpu_post_init_applied = False
+                @self.event_callback('playback-restart')
+                def __apply_gpu_post_init(ev):
+                    def __apply_gpu_properties():
+                        if getattr(self, '_gpu_post_init_applied', False): return
+                        self._gpu_post_init_applied = True
+                        if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False): return
+                        try:
+                            with MPVSafetyManager._mpv_command_lock:
+                                self.set_property('d3d11-exclusive-fs', 'yes')
+                                self.set_property('gpu-async-compute', 'yes')
+                                self.set_property('gpu-stream-cache-secs', '10')
+                        except Exception: pass
+                    _dispatch_on_qt_thread(__apply_gpu_properties)
+                self._tracked_event_callbacks.append(('playback-restart', __apply_gpu_post_init))
             diagnostic_runtime.log_isolation_alarm(logging.getLogger())
         mpv.MPV.__init__ = __mandated_mpv_init__
         mpv._mandate_applied = True
         if diagnostic_runtime.is_isolation_active():
             logging.warning("MPV DIAGNOSTIC ISOLATION ACTIVE. CPU-ONLY MODE ENABLED FOR SEEK CRASH TRIAGE.")
-            diagnostic_runtime.append_python_debug_throttled(
-                "mpv-event-thread-disabled",
-                "MPV EVENT THREAD DISABLED | isolation=1 | reason=python-mpv event loop crash containment"
-            )
         else:
             logging.info("GPU RE-INTEGRATION COMPLETE. RTX 4070 OPTIMIZATIONS ACTIVE.")
 except (ImportError, OSError):
@@ -144,7 +212,16 @@ except (ImportError, OSError):
             def terminate(self): pass
     mpv = MockMPV()
 
-from logging.handlers import RotatingFileHandler
+from system.live_logging import (
+    ReopenableFileHandler,
+    ReopenableTextStream,
+    restoreable_original_stdout,
+    restoreable_original_stderr,
+    start_log_pipe_broker,
+    start_touch_heartbeat,
+    touch_unlocked,
+)
+
 from typing import Optional, Tuple
 
 class DependencyDoctor:
@@ -287,6 +364,11 @@ class UIManager:
 
 class ConsoleManager:
     _log_files = []
+    _stdout_stream = None
+    _stderr_stream = None
+    _log_broker = None
+    _log_broker_stdin = None
+    _log_touch_stop = None
     @staticmethod
     def _source_tag(name: str) -> str:
         m = {"Main_App": "main_app", "Crop_Tool": "crop_tools", "Advanced_Editor": "advanced_editor"}
@@ -299,33 +381,26 @@ class ConsoleManager:
         try:
             l_d = os.path.join(base_dir, "logs")
             os.makedirs(l_d, exist_ok=True)
-            s_t = ConsoleManager._source_tag(logger_name)
-            r_l_p = os.path.join(l_d, f"mpv_{s_t}.raw.log")
-            mpv.log_path = os.path.join(l_d, f"{app_p}_mpv.log")
             python_debug_log_path = diagnostic_runtime.get_python_debug_log_path()
-            with open(r_l_p, 'a', encoding='utf-8', buffering=1):
-                pass
-            try:
-                mpv.log_path = diagnostic_runtime.get_mpv_trace_log_path()
-            except Exception:
-                pass
-            f = open(python_debug_log_path, 'a', encoding='utf-8', buffering=1)
-            ConsoleManager._log_files.append(f)
+            mpv_trace_log_path = diagnostic_runtime.get_mpv_trace_log_path()
+            ConsoleManager._stdout_stream = ReopenableTextStream(
+                python_debug_log_path, "stdout", restoreable_original_stdout()
+            )
+            ConsoleManager._stderr_stream = ReopenableTextStream(
+                python_debug_log_path, "stderr", restoreable_original_stderr()
+            )
             try:
                 import faulthandler
-                os.dup2(f.fileno(), sys.stdout.fileno())
-                os.dup2(f.fileno(), sys.stderr.fileno())
-                faulthandler.enable(f)
+                faulthandler.enable()
             except: pass
-            if hasattr(sys.stdout, 'reconfigure'):
-                sys.stdout.reconfigure(line_buffering=True)
-                sys.stderr.reconfigure(line_buffering=True)
-            logger.info("NATIVE DEBUG LOGGING ACTIVE - REALTIME MODE")
+            sys.stdout = ConsoleManager._stdout_stream
+            sys.stderr = ConsoleManager._stderr_stream
+            logger.info("STABLE LOGGING ACTIVE - PIPE BROKER DISABLED")
             logger.info(f"PYTHON DEBUG LOG REDIRECT ACTIVE -> {python_debug_log_path}")
-            logger.info(f"MPV TRACE LOG REDIRECT ACTIVE -> {diagnostic_runtime.get_mpv_trace_log_path()}")
+            logger.info(f"MPV TRACE LOG REDIRECT ACTIVE -> {mpv_trace_log_path}")
             diagnostic_runtime.log_isolation_alarm(logger)
         except Exception as e:
-            logger.error(f"Failed to setup native logging: {e}")
+            logger.error(f"Failed to setup stable logging: {e}")
 
         def exc_h(t, v, tb):
             if issubclass(t, KeyboardInterrupt):
@@ -354,9 +429,20 @@ class ConsoleManager:
         import atexit
 
         def close_logs():
-            for f in ConsoleManager._log_files:
-                try: f.flush(); f.close()
+            for stream in (ConsoleManager._stdout_stream, ConsoleManager._stderr_stream):
+                try: stream.flush()
                 except: pass
+            try:
+                if ConsoleManager._log_broker_stdin is not None:
+                    ConsoleManager._log_broker_stdin.flush()
+                    ConsoleManager._log_broker_stdin.close()
+            except Exception:
+                pass
+            try:
+                if ConsoleManager._log_touch_stop is not None:
+                    ConsoleManager._log_touch_stop.set()
+            except Exception:
+                pass
         atexit.register(close_logs)
         return logger
 
@@ -369,23 +455,13 @@ class LogManager:
         l_d = os.path.join(base_dir, "logs")
         os.makedirs(l_d, exist_ok=True)
         l_p = os.path.join(l_d, log_filename)
-        h = RotatingFileHandler(l_p, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+        h = ReopenableFileHandler(l_p, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(h)
         c = logging.StreamHandler(sys.stdout)
         c.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(c)
-
-        def force_flush_emit(record):
-            try:
-                h.emit(record)
-                h.flush()
-                if hasattr(h.stream, 'flush'): h.stream.flush()
-                c.emit(record)
-                c.flush()
-                if sys.stdout: sys.stdout.flush()
-            except: pass
-        logger.handle = force_flush_emit
+        logger.propagate = False
         return logger
 
 class MPVSafetyManager:
@@ -393,6 +469,9 @@ class MPVSafetyManager:
     _mpv_command_lock = threading.RLock()
     _last_creation_time = 0
     _instances = weakref.WeakSet()
+    @staticmethod
+    def run_on_qt_thread(callback):
+        return _dispatch_on_qt_thread(callback)
     @staticmethod
     def log_mpv_diagnostics(player, logger, context_tag="GENERAL"):
         if not player or not logger: return
@@ -470,6 +549,8 @@ class MPVSafetyManager:
                             precision = args[2] if len(args) > 2 else 'exact'
                             if hasattr(player, 'seek'):
                                 player.seek(target, reference=reference, precision=precision)
+                            elif hasattr(player, 'set_time'):
+                                player.set_time(int(round(target * 1000.0)))
                             else:
                                 player.command(command, *args)
                         else:
@@ -493,13 +574,23 @@ class MPVSafetyManager:
         if not player: return
         try:
             with MPVSafetyManager._mpv_command_lock:
-                if hasattr(player, '_event_callbacks'): player._event_callbacks.clear()
-                if hasattr(player, '_property_handlers'): player._property_handlers.clear()
-                elif hasattr(player, '_property_observers'): player._property_observers.clear()
-                if hasattr(player, 'unobserve_all_properties'):
-                    try: player.unobserve_all_properties(None)
-                    except Exception: pass
-        except: pass
+                tracked_observers = list(getattr(player, '_tracked_property_observers', []))
+                tracked_callbacks = list(getattr(player, '_tracked_event_callbacks', []))
+                unobserve = getattr(player, 'unobserve_property', None)
+                if callable(unobserve):
+                    for name, handler in tracked_observers:
+                        try: unobserve(name, handler)
+                        except Exception: pass
+                unregister = getattr(player, 'unregister_event_callback', None)
+                if callable(unregister):
+                    for _name, handler in tracked_callbacks:
+                        try: unregister(handler)
+                        except Exception: pass
+                if hasattr(player, '_tracked_property_observers'):
+                    player._tracked_property_observers = []
+                if hasattr(player, '_tracked_event_callbacks'):
+                    player._tracked_event_callbacks = []
+        except Exception: pass
     @staticmethod
     def create_safe_mpv(**kwargs):
         with MPVSafetyManager._mpv_creation_lock:
@@ -523,28 +614,27 @@ class MPVSafetyManager:
                 if wid is not None:
                     s_k['wid'] = wid
                 s_k = diagnostic_runtime.apply_mpv_runtime_overrides(s_k)
+                s_k.pop('log_file', None)
+                s_k.pop('log-file', None)
+                if wid is not None and str(s_k.get('vo', '')).lower() == 'null' and not diagnostic_runtime.is_isolation_active():
+                    s_k['vo'] = 'gpu'
+                default_log_handler = s_k.pop('log_handler', diagnostic_runtime.append_mpv_trace)
                 init_args = {
-                    'loglevel': s_k.get('loglevel', 'trace'),
-                    'log_file': s_k.get('log_file', diagnostic_runtime.get_mpv_trace_log_path()),
-                    'msg_level': s_k.get('msg_level', 'all=trace'),
-                    'start_event_thread': s_k.get('start_event_thread', not diagnostic_runtime.is_isolation_active()),
-                    'osc': False,
-                    'ytdl': False,
-                    'load_scripts': False,
-                    'config': False
+                    'loglevel': s_k.pop('loglevel', 'trace'),
+                    'log_handler': default_log_handler,
+                    'msg_level': s_k.pop('msg_level', 'all=trace'),
+                    'start_event_thread': s_k.pop('start_event_thread', not diagnostic_runtime.is_isolation_active()),
+                    'osc': s_k.pop('osc', False),
+                    'ytdl': s_k.pop('ytdl', False),
+                    'load_scripts': s_k.pop('load_scripts', False),
+                    'config': s_k.pop('config', False)
                 }
-                player = mpv.MPV(**init_args)
-                time.sleep(0.1)
+                if wid is not None:
+                    init_args['wid'] = int(wid)
+                    s_k.pop('wid', None)
                 for k, v in s_k.items():
-                    if k in init_args: continue
-                    try:
-                        if k == 'log_handler':
-                             player.log_handler = v
-                        elif k == 'wid':
-                             player.wid = int(v)
-                        else:
-                             setattr(player, k.replace('-', '_'), v)
-                    except: pass
+                    init_args[k.replace('-', '_')] = v
+                player = mpv.MPV(**init_args)
                 time.sleep(0.1)
                 player._safe_shutdown_initiated = False; MPVSafetyManager._instances.add(player)
                 for p, v in e_f:
@@ -564,6 +654,17 @@ class MPVSafetyManager:
                 except: pass
         atexit.register(global_shutdown)
 
+class AppTransitionManager:
+    @staticmethod
+    def return_to_main(base_dir, current_window):
+        try:
+            current_window.close()
+            main_script = os.path.join(base_dir, "app.py")
+            subprocess.Popen([sys.executable, main_script], cwd=base_dir, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
+            sys.exit(0)
+        except Exception as e:
+            logging.error(f"Failed to return to main: {e}")
+
 class MediaProber:
     @staticmethod
     def probe_duration(bin_dir, path):
@@ -577,11 +678,18 @@ class MediaProber:
     def probe_metadata(bin_dir, path):
         try:
             ffp = os.path.join(bin_dir, 'ffprobe.exe') if sys.platform == 'win32' else 'ffprobe'
-            cmd = [ffp, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration,width,height", "-of", "json", path]
+            cmd = [ffp, "-v", "error", "-show_entries", "format=duration:stream=duration,width,height", "-of", "json", path]
             r = subprocess.run(cmd, text=True, capture_output=True, creationflags=0x08000000 if sys.platform == 'win32' else 0)
             data = json.loads(r.stdout)
-            stream = data.get('streams', [{}])[0]
-            dur = float(stream.get('duration', 0.0) or 0.0)
-            res = f"{stream.get('width', 0)}x{stream.get('height', 0)}"
+            streams = data.get('streams', [])
+            dur = 0.0
+            res = "0x0"
+            if streams:
+                stream = streams[0]
+                dur = float(stream.get('duration', 0.0) or 0.0)
+                res = f"{stream.get('width', 0)}x{stream.get('height', 0)}"
+            if dur <= 0.0:
+                fmt = data.get('format', {})
+                dur = float(fmt.get('duration', 0.0) or 0.0)
             return dur, res
         except: return 0.0, "0x0"

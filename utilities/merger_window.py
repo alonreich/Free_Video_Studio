@@ -227,7 +227,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             self._progress_samples = []
 
     def _cleanup_stale_temps(self):
-        """Clean up old temp directories from previous crashes (Fix #8, #16)."""
         try:
             tmp = Path(tempfile.gettempdir())
             now = time.time()
@@ -382,7 +381,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             pass
 
     def connect_signals(self):
-        """Connect all signals with deduplication."""
         self.event_handler.setup_list_connections()
         self.listw.itemSelectionChanged.connect(self.event_handler.update_button_states)
         self.listw.itemSelectionChanged.connect(self.event_handler.refresh_selection_highlights)
@@ -420,7 +418,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         super().closeEvent(event)
 
     def _stop_all_workers(self):
-        """Safely stops all background threads before exit."""
         if hasattr(self, '_stats_worker') and self._stats_worker:
             try:
                 self._stats_worker.stop()
@@ -698,10 +695,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._merge_finished_cleanup(False, msg)
 
     def _validate_and_finalize(self, results, total_duration):
-        """
-        Validate resolution consistency and audio presence (Fix #1, #2).
-        Calculates peak quality targets to match original media.
-        """
         if not self.is_processing: return
         result_by_path = {r.get("path"): r for r in (results or []) if isinstance(r, dict)}
         video_files = []
@@ -974,7 +967,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._pulse_phase += 1
         
     def _scan_mp3_folder(self):
-        """Initial music scan."""
         try:
             mp3_dir = os.path.join(self.base_dir, "mp3") if self.base_dir else "mp3"
             self.unified_music_widget.load_tracks(mp3_dir)

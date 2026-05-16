@@ -37,6 +37,7 @@ def test_trim_start_ss_is_correct_with_speed_and_granular_segments(monkeypatch, 
 
     def _fake_create_subprocess(cmd, _logger=None):
         captured_cmds.append(list(cmd))
+        Path(cmd[-1]).write_bytes(b"ok")
         return _Proc()
     monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
     monkeypatch.setattr("processing.worker.monitor_ffmpeg_progress", lambda *a, **k: None)
@@ -44,9 +45,12 @@ def test_trim_start_ss_is_correct_with_speed_and_granular_segments(monkeypatch, 
     monkeypatch.setattr("processing.worker.calculate_video_bitrate", lambda *a, **k: 1500)
     monkeypatch.setattr("processing.worker.MediaProber.get_audio_bitrate", lambda self: 128)
     monkeypatch.setattr("processing.worker.MediaProber.get_sample_rate", lambda self: 48000)
+    monkeypatch.setattr("processing.worker.MediaProber.get_video_timing_info", lambda self: {"is_vfr": False, "observed_fps": 60.0})
+    monkeypatch.setattr("processing.worker.MediaProber.get_video_fps_expr", lambda self, fallback="60": "60")
+    monkeypatch.setattr("processing.worker.ProcessThread._validate_render_output", lambda *a, **k: (True, "OK"))
+    monkeypatch.setattr("processing.worker.ProcessThread._target_size_bounds", lambda self: None)
     out_file = tmp_path / "rendered.mp4"
     out_file.write_bytes(b"ok")
-    monkeypatch.setattr("processing.worker.ConcatProcessor.run_concat", lambda *a, **k: str(out_file))
     thr = ProcessThread(
         input_path=str(out_file),
         start_time_ms=12000,
@@ -195,7 +199,6 @@ def test_granular_editor_uses_trim_window_and_resume_frame_from_main_preview(mon
     editor.timeline.setRange(0, int(editor.duration))
     GranularSpeedEditor._finalize_startup(editor)
     assert editor.timeline.range_calls, "Granular editor must set timeline range"
-    assert editor.player.command_calls, "Granular editor must seek to startup frame"
     assert editor.timeline.range_calls[-1] == (0, int(trim_end_ms - trim_start_ms))
     assert editor.player.set_time_calls, "Granular editor must seek to startup frame"
     assert editor.player.set_time_calls[-1] == (trim_start_ms + main_preview_paused_ms)

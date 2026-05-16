@@ -87,17 +87,33 @@ class MainWindowFileAMixin:
             self.reset_app_state()
         except Exception as reset_err:
             self.logger.error("Error during UI reset: %s", reset_err)
-        self.logger.info("FILE: loading for playback: %s", file_path)
-        self.input_file_path = file_path
+        try:
+            from system.temp_video_workspace import cleanup_workspace, is_workspace_path, stage_video_file
+            real_path = os.path.abspath(str(file_path))
+            if not is_workspace_path(real_path):
+                cleanup_workspace(self.logger)
+            staged_path = stage_video_file(real_path, self.logger)
+            self.source_file_path = real_path if not is_workspace_path(real_path) else getattr(self, "source_file_path", real_path)
+            self.input_file_path = staged_path
+            self._loaded_display_path = self.source_file_path
+        except Exception as stage_err:
+            self.logger.error("FILE: failed to stage selected video: %s", stage_err)
+            QMessageBox.critical(self, "File Copy Failed", f"The selected file could not be copied to the working folder:\n{stage_err}")
+            self.input_file_path = None
+            self.drop_label.setText('Drag & Drop\r\na Video File Here:')
+            self._set_upload_hint_active(True)
+            self._set_video_controls_enabled(False)
+            return
+        self.logger.info("FILE: loading staged copy for playback: %s", self.input_file_path)
         self._set_upload_hint_active(False)
         if hasattr(self, "positionSlider"):
             self.positionSlider.set_thumbnail_pos_ms(-1)
         self.drop_label.setWordWrap(True)
-        self.drop_label.setText(os.path.basename(self.input_file_path))
+        self.drop_label.setText(os.path.basename(getattr(self, "_loaded_display_path", self.input_file_path)))
         dir_path = os.path.dirname(file_path)
         if os.path.isdir(dir_path):
             self.last_dir = dir_path
-        p = os.path.abspath(str(file_path))
+        p = os.path.abspath(str(self.input_file_path))
         if not os.path.isfile(p):
             self.logger.error("Selected file not found: %s", p)
             QMessageBox.critical(self, "File Not Found", f"The selected file no longer exists:\n{p}")
@@ -142,6 +158,10 @@ class MainWindowFileAMixin:
                 return
         else:
             self.logger.warning("MPV not available. Skipping playback. (CPU Mode)")
+            try:
+                self.statusBar().showMessage("Preview player unavailable. Export settings remain available; preview-only tools are disabled.", 5000)
+            except Exception:
+                pass
         self.get_video_info()
         self._update_portrait_mask_overlay_state()
         if hasattr(self, "set_overlays_force_hidden"):
@@ -151,3 +171,5 @@ class MainWindowFileAMixin:
             QTimer.singleShot(100, self._update_overlay_positions)
             QTimer.singleShot(500, self._update_overlay_positions)
         self._set_video_controls_enabled(True)
+        if hasattr(self, "_set_preview_controls_available"):
+            self._set_preview_controls_available(bool(self.player))

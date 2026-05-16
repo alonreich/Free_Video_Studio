@@ -1,5 +1,6 @@
 ﻿import os
 import json
+from .hud_config import DEFAULT_HUD_CONFIG, sanitize_hud_config
 
 class VideoConfig:
     def __init__(self, base_dir):
@@ -27,77 +28,34 @@ class VideoConfig:
                     try:
                         if os.path.exists(new_b): os.remove(new_b)
                         os.rename(old_b, new_b)
-                    except: pass
+                    except OSError as e:
+                        if hasattr(self, "logger"):
+                            self.logger.warning(f"Backup rotation skipped for {old_b}: {e}")
             if os.path.exists(conf_path):
                 try:
                     target = f"{conf_path}.bak1"
                     if os.path.exists(target): os.remove(target)
                     os.rename(conf_path, target)
-                except: pass
-        except Exception:
-            pass
+                except OSError as e:
+                    if hasattr(self, "logger"):
+                        self.logger.warning(f"Primary config backup rotation skipped: {e}")
+        except OSError as e:
+            if hasattr(self, "logger"):
+                self.logger.warning(f"Backup rotation failed for {conf_path}: {e}")
 
     def get_mobile_coordinates(self, logger=None):
         conf_dir = os.path.join(self.base_dir, 'processing')
         conf_path = os.path.join(conf_dir, 'crops_coordinations.conf')
-        default_conf_data = {
-            "crops_1080p": {
-                "loot": [511, 103, 1420, 1612],
-                "stats": [326, 233, 1620, 180],
-                "normal_hp": [465, 71, -839, 1620],
-                "boss_hp": [450, 150, 30, 1470],
-                "team": [270, 181, -881, 1406],
-                "spectating": [54, 22, -842, 1705]
-            },
-            "scales": {
-                "loot": 1.0227,
-                "stats": 1.2694,
-                "team": 1.1253,
-                "normal_hp": 1.1107,
-                "boss_hp": 1.0,
-                "spectating": 1.2059
-            },
-            "overlays": {
-                "loot": {"x": 539, "y": 1406},
-                "stats": {"x": 666, "y": 150},
-                "team": {"x": 0, "y": 150},
-                "normal_hp": {"x": 9, "y": 1419},
-                "boss_hp": {"x": 30, "y": 1620},
-                "spectating": {"x": 18, "y": 1524}
-            },
-            "z_orders": {
-                "loot": 10,
-                "normal_hp": 20,
-                "boss_hp": 20,
-                "stats": 30,
-                "team": 40,
-                "spectating": 100
-            },
-            "window_geometry": {
-                "x": 71, "y": 43, "w": 1600, "h": 880
-            },
-            "last_directory": "C:/",
-            "portrait_window_geometry": {
-                "x": 595, "y": 90, "w": 700, "h": 880
-            }
-        }
-        
+        default_conf_data = DEFAULT_HUD_CONFIG
+
         def _try_load(path):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
                 if not isinstance(loaded_data, dict):
                     return None
-                merged = json.loads(json.dumps(default_conf_data))
-                for section in ("crops_1080p", "scales", "overlays", "z_orders"):
-                    incoming = loaded_data.get(section, {})
-                    if isinstance(incoming, dict):
-                        merged[section].update(incoming)
-                for key, value in loaded_data.items():
-                    if key not in merged:
-                        merged[key] = value
-                return merged
-            except:
+                return sanitize_hud_config(loaded_data)
+            except (json.JSONDecodeError, OSError, TypeError):
                 return None
         if not os.path.exists(conf_path):
             for i in range(1, 6):
@@ -134,11 +92,13 @@ class VideoConfig:
         try:
             q = int(quality_level)
         except Exception:
-            q = 7
+            q = 2
         keep_highest_res = False
         target_mb = None
         if q >= 20:
             keep_highest_res = True
+            if target_mb_override is not None:
+                target_mb = float(target_mb_override)
         else:
             keep_highest_res = False
             if target_mb_override is not None:

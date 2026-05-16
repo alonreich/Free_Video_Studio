@@ -318,10 +318,11 @@ class SaveConfigWorker(QObject):
                 configured.append(payload["display"])
                 saved_keys.add(tech_key)
             unchanged = [HUD_ELEMENT_MAPPINGS.get(k, k) for k in sorted(existing_before - saved_keys)]
+            try:
+                self._create_rotation_backup()
+            except Exception as backup_err:
+                if self.logger: self.logger.error(f"Failed to create rotation backup: {backup_err}")
             if manager.save_config(config):
-                try: self._create_rotation_backup()
-                except Exception as backup_err:
-                    if self.logger: self.logger.error(f"Failed to create rotation backup: {backup_err}")
                 self.finished.emit(True, configured, unchanged, "")
             else:
                 self.finished.emit(False, [], [], "Failed to save config.")
@@ -354,10 +355,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         self.resource_manager = get_resource_manager(self.logger)
         self.resource_manager.setup_cleanup_timer(30000)
         self._check_dependencies()
-        self._autosave_file = os.path.join(tempfile.gettempdir(), "fvs_autosave_recovery.json")
-        self._autosave_timer = QTimer(self)
-        self._autosave_timer.setInterval(5000)
-        self._autosave_timer.timeout.connect(self._auto_save_state)
         self.last_dir = None
         self.bin_dir = os.path.abspath(os.path.join(self.base_dir, 'binaries'))
         self.snapshot_path = None
@@ -448,6 +445,12 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         try:
             session_data = StateTransfer.load_state()
             if session_data:
+                self.session_trim_start_ms = int(session_data.get('trim_start', 0) or 0)
+                self.session_trim_end_ms = int(session_data.get('trim_end', 0) or 0)
+                self.session_speed_segments = list(session_data.get('speed_segments', []) or [])
+                self.session_granular_checked = bool(session_data.get('granular_checked', bool(self.session_speed_segments)))
+                self.session_hardware_mode = session_data.get('hardware_mode', 'CPU')
+                self.session_source_file = session_data.get('source_file')
                 if session_data.get('input_file'):
                     path = session_data['input_file']
                     if os.path.exists(path): file_path = path
@@ -536,6 +539,10 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def keyPressEvent(self, event):
         key = event.key()
+        if key == Qt.Key_F12:
+            if self._confirm_discard_changes(): self._deferred_launch_main_app()
+            event.accept()
+            return
         if key == Qt.Key_Right: self.set_position(self.media_processor.get_time() + 33); event.accept(); return
         if key == Qt.Key_Left: self.set_position(self.media_processor.get_time() - 33); event.accept(); return
         if key == Qt.Key_Delete: self.delete_selected(); event.accept(); return
@@ -735,10 +742,6 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
     def _check_dependencies(self):
         if not DependencyDoctor.check_ffmpeg(self.base_dir)[0]: sys.exit(1)
 
-    def _auto_save_state(self): pass
-
-    def _check_restore(self): pass
-
     def raise_selected_item(self):
         for item in self.portrait_scene.selectedItems(): item.setZValue(item.zValue() + 1)
         self._refresh_layer_list()
@@ -762,12 +765,44 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
         for url in event.mimeData().urls(): self.load_file(url.toLocalFile())
 
     def closeEvent(self, event):
-        if self._confirm_discard_changes(): super().closeEvent(event)
+        if self._confirm_discard_changes():
+            self._cleanup_managed_snapshots()
+            super().closeEvent(event)
         else: event.ignore()
 
+    def _cleanup_managed_snapshots(self):
+        try:
+            if hasattr(self, "_delete_managed_snapshot"):
+                self._delete_managed_snapshot()
+        except Exception:
+            pass
+        try:
+            cleanup_temp_snapshots()
+        except Exception:
+            pass
+
     def _deferred_launch_main_app(self):
-        subprocess.Popen([sys.executable, os.path.join(self.base_dir, 'app.py')])
-        QApplication.quit()
+        self._cleanup_managed_snapshots()
+        current_input = getattr(self, 'input_file_path', None) or getattr(getattr(self, 'media_processor', None), 'input_file_path', None)
+        updates = {
+            "input_file": current_input,
+            "source_file": getattr(self, "session_source_file", None),
+            "resolution": getattr(self.media_processor, 'original_resolution', None),
+            "trim_start": getattr(self, "session_trim_start_ms", 0),
+            "trim_end": getattr(self, "session_trim_end_ms", 0),
+            "speed_segments": getattr(self, "session_speed_segments", []),
+            "granular_checked": getattr(self, "session_granular_checked", False),
+            "hardware_mode": getattr(self, "session_hardware_mode", "CPU"),
+            "returned_from_crop_tool": True,
+        }
+        StateTransfer.update_state(updates)
+        args = [sys.executable, "-B", os.path.join(self.base_dir, 'app.py')]
+        if current_input:
+            args.append(current_input)
+        env = os.environ.copy()
+        env["FVS_STATE_TRANSFER_RESTORE"] = "1"
+        subprocess.Popen(args, env=env)
+        QApplication.instance().quit()
 
     def _get_persistence_extras(self): return {}
 
@@ -780,7 +815,13 @@ class CropApp(KeyboardShortcutMixin, PersistentWindowMixin, QWidget, CropAppHand
 
     def _confirm_discard_changes(self):
         if not self._dirty: return True
-        return QMessageBox.question(self, "Unsaved", "Discard changes?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle("Unsaved")
+        msg.setText("Discard changes?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        return msg.exec_() == QMessageBox.Yes
 
     def get_title_info(self): return self.base_title
 

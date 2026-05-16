@@ -127,7 +127,17 @@ class UnifiedMusicWidget(QWidget):
         try:
             m_vol = state.get("music_volume", 80)
             v_vol = state.get("video_volume", 100)
-            self.set_wizard_tracks([], music_vol=m_vol, video_vol=v_vol)
+            raw_tracks = state.get("tracks", state.get("wizard_tracks", [])) or []
+            tracks = []
+            for item in raw_tracks:
+                if not isinstance(item, (list, tuple)) or len(item) < 3:
+                    continue
+                path, offset, duration = item[0], item[1], item[2]
+                try:
+                    tracks.append((str(path), max(0.0, float(offset)), max(0.0, float(duration))))
+                except Exception:
+                    continue
+            self.set_wizard_tracks(tracks, music_vol=m_vol, video_vol=v_vol)
             self._video_total_sec = float(state.get("video_total_sec", 0.0))
         except Exception:
             pass

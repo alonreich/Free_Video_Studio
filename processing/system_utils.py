@@ -4,6 +4,8 @@ import psutil
 import re
 import os
 import time
+import queue
+import threading
 _job_handle = None
 if sys.platform == "win32":
     try:
@@ -161,6 +163,15 @@ def check_filter_option(ffmpeg_path: str, filter_name: str, option_name: str) ->
 
 def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_space_callback, logger, on_error_line=None, on_output_line=None):
     last_poll_time = time.time()
+    line_queue = queue.Queue()
+    reader_done = threading.Event()
+    stats = {
+        "critical_lines": [],
+        "dup_frames": 0,
+        "drop_frames": 0,
+        "last_out_time_us": 0,
+        "progress_seen": False,
+    }
     critical_signatures = (
         "error",
         "failed",
@@ -176,22 +187,21 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
         "queue input is backward in time",
         "application provided invalid",
     )
-    while True:
-        current_time = time.time()
-        if current_time - last_poll_time > 0.05:
-            if check_disk_space_callback and check_disk_space_callback():
-                logger.warning("MONITOR: Disk full or Cancellation detected. Terminating FFmpeg.")
-                kill_process_tree(proc.pid, logger)
-                break
-            last_poll_time = current_time
-        line = proc.stdout.readline()
-        if not line:
-            if proc.poll() is not None:
-                break
-            continue
+
+    def reader():
+        try:
+            if not proc.stdout:
+                return
+            for line in iter(proc.stdout.readline, ''):
+                line_queue.put(line)
+        finally:
+            reader_done.set()
+    threading.Thread(target=reader, daemon=True).start()
+
+    def handle_line(line):
         s = line.strip()
         if not s:
-            continue
+            return
         if on_output_line:
             try:
                 on_output_line(s)
@@ -200,6 +210,7 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
         low = s.lower()
         if on_error_line and any(sig in low for sig in critical_signatures):
             on_error_line(s)
+            stats["critical_lines"].append(s)
         if '=' in s:
             key, _, val = s.partition('=')
             key = key.strip()
@@ -207,15 +218,45 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
             if key == 'out_time_us':
                 try:
                     us = int(val)
+                    stats["last_out_time_us"] = us
                     current_seconds = us / 1000000.0
                     if duration_sec > 0:
                         percent = current_seconds / float(duration_sec)
                         calc_prog = int(max(0, min(100, percent * 100)))
                         progress_signal.emit(calc_prog)
+                        stats["progress_seen"] = True
+                except ValueError:
+                    pass
+            elif key == 'dup_frames':
+                try:
+                    stats["dup_frames"] = max(stats["dup_frames"], int(val))
+                except ValueError:
+                    pass
+            elif key == 'drop_frames':
+                try:
+                    stats["drop_frames"] = max(stats["drop_frames"], int(val))
                 except ValueError:
                     pass
             elif key == 'error':
                  logger.error(f"FFmpeg reported error: {val}")
+                 stats["critical_lines"].append(s)
         else:
             if any(sig in low for sig in critical_signatures):
                 logger.error(f"FFmpeg Output: {s}")
+                stats["critical_lines"].append(s)
+    while True:
+        current_time = time.time()
+        if current_time - last_poll_time > 0.05:
+            if check_disk_space_callback and check_disk_space_callback():
+                logger.warning("MONITOR: Disk full or Cancellation detected. Terminating FFmpeg.")
+                kill_process_tree(proc.pid, logger)
+                break
+            last_poll_time = current_time
+        try:
+            line = line_queue.get(timeout=0.05)
+        except queue.Empty:
+            if proc.poll() is not None and reader_done.is_set() and line_queue.empty():
+                break
+            continue
+        handle_line(line)
+    return stats

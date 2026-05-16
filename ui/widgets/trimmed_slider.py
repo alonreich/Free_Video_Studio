@@ -22,6 +22,11 @@ class TrimmedSlider(QSlider):
         self._hovering_music_handle = None
         self._dragging_music_handle = None
         self._music_drag_offset_ms = 0
+        self._has_moved_since_press = False
+        try:
+            self._press_pos = QPoint()
+        except TypeError:
+            self._press_pos = None
         self.setMouseTracking(True)
         self.setMinimumHeight(50)
         if hasattr(self, 'setCursor'):
@@ -36,7 +41,19 @@ class TrimmedSlider(QSlider):
         self.update()
 
     def set_speed_segments(self, segments):
-        self.speed_segments = segments
+        normalized = []
+        for seg in segments or []:
+            if not isinstance(seg, dict):
+                continue
+            try:
+                start_ms = int(seg.get("start", seg.get("start_ms", 0)))
+                end_ms = int(seg.get("end", seg.get("end_ms", 0)))
+                speed = float(seg.get("speed", self.base_speed))
+            except Exception:
+                continue
+            if end_ms > start_ms:
+                normalized.append({"start": start_ms, "end": end_ms, "start_ms": start_ms, "end_ms": end_ms, "speed": speed})
+        self.speed_segments = normalized
         self.update()
 
     def set_thumbnail_pos_ms(self, ms):
@@ -178,6 +195,9 @@ class TrimmedSlider(QSlider):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.setCursor(Qt.PointingHandCursor)
+            self.setSliderDown(True)
+            self._press_pos = event.pos()
+            self._has_moved_since_press = False
             pos = event.pos()
             groove_rect = self._get_groove_rect()
             is_in_seek_zone = True 
@@ -200,8 +220,6 @@ class TrimmedSlider(QSlider):
                 self._dragging_handle = 'start'
             elif self._get_handle_rect('end').contains(pos):
                 self._dragging_handle = 'end'
-            elif self._get_playhead_rect().contains(pos):
-                self._dragging_handle = 'playhead'
             elif is_in_seek_zone:
                 try:
                     val = self._map_pos_to_value(pos.x())
@@ -209,12 +227,15 @@ class TrimmedSlider(QSlider):
                     self.setValue(val)
                     self.blockSignals(False)
                     self._dragging_handle = 'playhead'
-                    QTimer.singleShot(10, lambda: self.sliderMoved.emit(val))
+                    self.sliderMoved.emit(val)
                 except Exception: pass
             self.update()
 
     def mouseMoveEvent(self, event):
         pos = event.pos()
+        if not self._has_moved_since_press:
+            if (pos - self._press_pos).manhattanLength() > 5:
+                self._has_moved_since_press = True
         if self._dragging_music_handle:
             self.setCursor(Qt.PointingHandCursor)
             new_val_ms = self._map_pos_to_value(pos.x())
@@ -284,9 +305,16 @@ class TrimmedSlider(QSlider):
                 self.update()
 
     def mouseReleaseEvent(self, event):
+        active_handle = getattr(self, "_dragging_handle", None)
+        self.setSliderDown(False)
         self._dragging_handle = None
         self._dragging_music_handle = None
         self.update()
+        if active_handle == 'playhead':
+            pos = event.pos()
+            val = self._map_pos_to_value(pos.x())
+            self.setValue(val)
+            self.sliderMoved.emit(val)
 
     def paintEvent(self, event):
         if getattr(self, '_is_destroying', False) or getattr(self, '_is_painting', False):
@@ -322,11 +350,13 @@ class TrimmedSlider(QSlider):
                         p.drawRect(kept_rect)
                 except Exception: pass
                 try:
-                    if self._show_music and self.music_start_ms >= 0 and self.music_end_ms > 0:
-                        music_color = QColor(255, 105, 180, 100)
+                    if self._show_music and self.music_start_ms >= 0 and self.music_end_ms > self.music_start_ms:
+                        music_color = QColor(255, 105, 180, 180)
                         p.setBrush(music_color)
                         p.setPen(Qt.NoPen)
-                        music_rect = self._get_music_line_rect()
+                        m_left = self._map_value_to_pos(self.music_start_ms)
+                        m_right = self._map_value_to_pos(self.music_end_ms)
+                        music_rect = QRect(int(m_left), int(groove_rect.y() + self.music_v_offset), int(max(1, m_right - m_left)), 4)
                         if music_rect.isValid():
                             p.drawRect(music_rect)
                 except Exception: pass
@@ -338,19 +368,29 @@ class TrimmedSlider(QSlider):
                             start_ms = seg['start']
                             end_ms = seg['end']
                             speed = seg['speed']
-                            if speed > self.base_speed + 0.001:
+                            is_freeze = abs(float(speed)) < 0.001
+                            if is_freeze:
+                                seg_color = QColor("#9b59b6")
+                            elif speed > self.base_speed + 0.001:
                                 seg_color = QColor("#2ecc71")
                             elif speed < self.base_speed - 0.001:
                                 seg_color = QColor("#e74c3c")
                             else:
                                 seg_color = QColor("#95a5a6")
-                            seg_color.setAlpha(100)
+                            seg_color.setAlpha(160 if is_freeze else 100)
                             p.setBrush(seg_color)
                             p.setPen(Qt.NoPen)
                             left = self._map_value_to_pos(start_ms)
                             right = self._map_value_to_pos(end_ms)
                             seg_rect = QRect(int(left), int(y_top), int(max(1, right - left)), int(line_height))
                             p.drawRect(seg_rect)
+                            if is_freeze and seg_rect.width() >= 12:
+                                try:
+                                    icon = self.style().standardIcon(QStyle.SP_DialogHelpButton)
+                                    icon_size = min(14, line_height - 4)
+                                    icon_rect = QRect(seg_rect.center().x() - icon_size // 2, seg_rect.center().y() - icon_size // 2, icon_size, icon_size)
+                                    icon.paint(p, icon_rect)
+                                except Exception: pass
                 except Exception: pass
                 try:
                     f = QFont(self.font())

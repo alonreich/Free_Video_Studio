@@ -2,51 +2,107 @@
 import sys
 import time
 import subprocess
-import json
 import threading
+import logging
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, QObject, pyqtSignal, QPropertyAnimation, QUrl, QEasingCurve
 from PyQt5.QtGui import QIcon, QFont, QDesktopServices, QPixmap, QPainter
 from PyQt5.QtWidgets import (QStyle, QApplication, QDialog, QVBoxLayout, QLabel,
                              QGridLayout, QPushButton, QMessageBox, QSizePolicy, QFrame, QHBoxLayout)
 
 from processing.worker import ProcessThread
+from processing.system_utils import kill_process_tree
 from ui.styles import UIStyles
 from system.utils import UIManager, MediaProber
 
 class FfmpegMixin:
+    def _log_ffmpeg_ui_exc(self, context: str, err: Exception):
+        log = getattr(self, "logger", None)
+        if log is not None:
+            log.exception("FfmpegMixin %s: %s", context, err)
+        else:
+            logging.getLogger("Main_App").exception("FfmpegMixin %s", context)
+
     def _quit_application(self, dialog_to_close):
         if dialog_to_close: dialog_to_close.accept()
         if hasattr(self, "cleanup_and_exit"): self.cleanup_and_exit()
         else: QCoreApplication.instance().quit()
 
     def _safe_status(self, text: str, color: str = "white"):
-        try: self.set_status_text_with_color(text, color)
-        except: pass
+        try:
+            if hasattr(self, "hardware_status_label") and self.hardware_status_label is not None:
+                self.hardware_status_label.setText(text)
+                hex_color = color if str(color).startswith("#") else {"white": "#ecf0f1", "orange": "#f39c12", "red": "#e74c3c"}.get(str(color).lower(), "#ecf0f1")
+                self.hardware_status_label.setStyleSheet(f"color: {hex_color}; font-weight: bold;")
+                return
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("_safe_status hardware_status_label", err)
+        try:
+            sb = getattr(self, "status_bar", None) or (self.statusBar() if hasattr(self, "statusBar") else None)
+            if sb is not None:
+                sb.showMessage(text, 6000)
+                return
+        except Exception as err2:
+            self._log_ffmpeg_ui_exc("_safe_status statusBar", err2)
+        try:
+            self.status_update_signal.emit(text)
+        except Exception as err3:
+            self._log_ffmpeg_ui_exc("_safe_status status_update_signal", err3)
 
     def _safe_set_phase(self, name: str, ok: bool | None = None):
-        try: self.on_phase_update(name)
-        except: pass
+        try:
+            self.on_phase_update(name)
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("on_phase_update", err)
 
     def _safe_set_duration_text(self, text: str):
-        try: self.duration_label.setText(text)
-        except: pass
+        try:
+            if hasattr(self, "resolution_label") and self.resolution_label is not None:
+                self.resolution_label.setText(text)
+                return
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("resolution_label.setText", err)
 
     def show_message(self, title: str, message: str):
         try:
-            if str(title).strip().lower() in {"error", "critical"}: QMessageBox.critical(self, title, message)
-            elif str(title).strip().lower() in {"warning", "warn"}: QMessageBox.warning(self, title, message)
-            else: QMessageBox.information(self, title, message)
-        except: pass
+            if str(title).strip().lower() in {"error", "critical"}:
+                QMessageBox.critical(self, title, message)
+            elif str(title).strip().lower() in {"warning", "warn"}:
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("show_message", err)
 
     def cancel_processing(self):
-        if not self.is_processing: return
+        if not self.is_processing:
+            return
         if hasattr(self, "cancel_button"):
             self.cancel_button.setEnabled(False)
             self.cancel_button.setText("Stopping...")
         QApplication.processEvents()
-        if hasattr(self, "process_thread") and self.process_thread and self.process_thread.isRunning():
-            self.process_thread.cancel()
-            self.process_thread.wait(5000)
+        th = getattr(self, "process_thread", None)
+        if th and th.isRunning():
+            th.cancel()
+            th.wait(5000)
+        if th and th.isRunning():
+            th.cancel()
+            th.wait(4000)
+        if th and th.isRunning() and getattr(th, "current_process", None):
+            try:
+                kill_process_tree(th.current_process.pid, getattr(self, "logger", None))
+            except Exception as err:
+                self._log_ffmpeg_ui_exc("kill_process_tree on cancel", err)
+            th.wait(3000)
+        if th and th.isRunning():
+            try:
+                self.logger.error("ProcessThread did not stop cleanly; terminating thread.")
+            except Exception:
+                pass
+            th.terminate()
+            th.wait(2000)
+        if hasattr(self, "cancel_button"):
+            self.cancel_button.setEnabled(True)
+            self.cancel_button.setText("Cancel")
         self.on_process_finished(False, "Processing was canceled by the user.")
         self._save_app_state_and_config()
 
@@ -81,10 +137,12 @@ class FfmpegMixin:
             self.trim_start_ms = start_time_ms; self.trim_end_ms = end_time_ms
             is_mobile_format = self.mobile_checkbox.isChecked()
             speed_factor = float(self.speed_spinbox.value())
-            if speed_factor < 0.5 or speed_factor > 3.1:
-                self.show_message("Invalid Speed", "Allowed speed range is 0.5x to 3.1x."); self.is_processing = False
+            if speed_factor < 0.1 or speed_factor > 4.0:
+                self.show_message("Invalid Speed", "Allowed speed range is 0.1x to 4.0x."); self.is_processing = False
                 self.process_button.setEnabled(True); return
-            granular_enabled = bool(getattr(self, "granular_checkbox", None) and self.granular_checkbox.isChecked())
+            checkbox = getattr(self, "granular_checkbox", None)
+            is_checked = getattr(checkbox, "isChecked", None)
+            granular_enabled = bool(is_checked()) if callable(is_checked) else bool(getattr(self, "speed_segments", []))
             raw_segments = list(getattr(self, "speed_segments", []) or []) if granular_enabled else []
             segments = []; speed_segments_for_worker = []
             for seg in raw_segments:
@@ -93,18 +151,30 @@ class FfmpegMixin:
                     if e_ms <= s_ms: continue
                     segments.append({"start": s_ms, "end": e_ms, "speed": spd}); speed_segments_for_worker.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
                 except: continue
+            segments.sort(key=lambda item: (item["start"], item["end"]))
+            speed_segments_for_worker.sort(key=lambda item: (item["start_ms"], item["end_ms"]))
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-            music_path = None; music_offset_s = 0.0; linear_video_vol = self._get_master_eff() / 100.0
+            music_path = None; music_offset_s = 0.0; linear_video_vol = float(getattr(self, "_video_volume_pct", self._get_master_eff())) / 100.0
             if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
                 music_path = self._wizard_tracks[0][0]; music_offset_s = self._wizard_tracks[0][1]
-            music_vol_linear = self._music_eff() / 100.0 if music_path else 0.0
+            music_vol_linear = float(getattr(self, "_music_volume_pct", self._music_eff())) / 100.0 if music_path else 0.0
             q_level = int(self.quality_slider.value())
+            try:
+                target_mb = (os.path.getsize(self.input_file_path) / (1024 * 1024)) if q_level >= 20 else float(5 + q_level * 5)
+            except Exception:
+                target_mb = float(5 + q_level * 5)
             if hasattr(self, 'portrait_mask_overlay'): self.portrait_mask_overlay.hide()
             if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(True)
             self.is_processing = True; self._proc_start_ts = time.time(); self._pulse_phase = 0
             self.process_button.setEnabled(False); self.cancel_button.setVisible(True); self.cancel_button.setEnabled(True)
             self.progress_bar.setRange(0, 0); self.progress_bar.setValue(0); self._pulse_timer.start(250)
-            self.process_button.setText("PROCESSING"); self.process_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+            self.process_button.setText("PROCESSING")
+            try:
+                reload_icon = getattr(QStyle, "SP_BrowserReload", None)
+                if reload_icon is not None:
+                    self.process_button.setIcon(self.style().standardIcon(reload_icon))
+            except Exception as icon_err:
+                self._log_ffmpeg_ui_exc("set processing icon", icon_err)
             self._safe_set_phase("Processing"); self._show_processing_overlay(); self._safe_status("Preparing... (probing/seek)...", "white")
             self.progress_update_signal.emit(0)
             cfg = dict(self.config_manager.config); cfg['last_speed'] = float(speed_factor); cfg['mobile_checked'] = bool(is_mobile_format); cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
@@ -125,7 +195,7 @@ class FfmpegMixin:
                 segment_duration = (end_time_ms - start_time_ms) / 1000.0
                 intro_abs_time = (start_time_ms / 1000.0) + (segment_duration * 0.66)
             intro_abs_time_ms = int(intro_abs_time * 1000)
-            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=getattr(self, "_wizard_tracks", []))
+            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), show_spectating_overlay=is_mobile_format, quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=getattr(self, "_wizard_tracks", []), target_mb_override=target_mb)
             self.process_thread.start()
         except Exception as e:
             try:
@@ -162,24 +232,33 @@ class FfmpegMixin:
                 try:
                     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                         lines = f.readlines(); log_content = "".join(lines[-100:])
-                except: pass
+                except Exception as err:
+                    self._log_ffmpeg_ui_exc("read main_app.log tail", err)
             d = QDialog(self); d.setWindowTitle("Technical Logs (Last 100 Lines)"); d.resize(900, 600); l = QVBoxLayout(d)
 
             from PyQt5.QtWidgets import QTextEdit
             t = QTextEdit(); t.setFont(QFont("Consolas", 10)); t.setReadOnly(True); t.setPlainText(log_content); l.addWidget(t); d.exec_()
 
-    def share_via_whatsapp(self):
-        try: QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
-        except: pass
+    def share_via_whatsapp(self, file_path: str = None):
+        try:
+            QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
+            if file_path:
+                self.open_output_in_explorer(file_path)
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("share_via_whatsapp", err)
 
     def open_output_in_explorer(self, file_path: str):
         full_path = os.path.abspath(file_path)
         if not os.path.exists(full_path): return
         try:
-            if os.name == "nt": subprocess.run(['explorer', '/select,', os.path.normpath(full_path)], check=False)
-            elif sys.platform == "darwin": subprocess.Popen(["open", "-R", full_path])
-            else: subprocess.Popen(["xdg-open", os.path.dirname(full_path)])
-        except: pass
+            if os.name == "nt":
+                subprocess.run(['explorer', '/select,', os.path.normpath(full_path)], check=False)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", full_path])
+            else:
+                subprocess.Popen(["xdg-open", os.path.dirname(full_path)])
+        except Exception as err:
+            self._log_ffmpeg_ui_exc("open_output_in_explorer", err)
 
     def _dialog_button_style(self, color: str, pressed: str, *, font_size: int = 12) -> str:
         return f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {pressed}); color: white; font-weight: bold; font-family: Arial; font-size: {font_size}px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.45); padding: 0px; text-align: center; min-width: 180px; max-width: 180px; min-height: 45px; max-height: 45px; }} QPushButton:hover {{ border: 1px solid #7DD3FC; }} QPushButton:pressed {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {pressed}, stop:1 {color}); }}"
@@ -201,6 +280,8 @@ class FfmpegMixin:
             if hasattr(self, "set_overlays_force_hidden"):
                 self.set_overlays_force_hidden(True)
             output_path = message; self._block_portrait_overlay = True
+            if hasattr(self, "_cleanup_staged_input_workspace"):
+                self._cleanup_staged_input_workspace(clear_input=True)
 
             class FinishedDialog(QDialog):
                 def __init__(self, parent=None):
@@ -278,7 +359,7 @@ class FfmpegMixin:
             label.setAlignment(Qt.AlignCenter); layout.addWidget(label)
             grid = QGridLayout(); grid.setHorizontalSpacing(42); grid.setVerticalSpacing(28); grid.setContentsMargins(80, 18, 80, 8)
             whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆"); whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40"))
-            whatsapp_button.clicked.connect(self.share_via_whatsapp)
+            whatsapp_button.clicked.connect(lambda: self.share_via_whatsapp(output_path))
             whatsapp_button.clicked.connect(lambda: dialog.fade_done(999))
             open_folder_button = QPushButton("OPEN FOLDER"); open_folder_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c"))
             open_folder_button.clicked.connect(lambda: self.open_output_in_explorer(output_path))
@@ -297,7 +378,7 @@ class FfmpegMixin:
             if hasattr(self, "timeline_overlay") and self.timeline_overlay:
                 self.timeline_overlay.show()
             if hasattr(self, "_set_video_controls_enabled"):
-                self._set_video_controls_enabled(True)
+                self._set_video_controls_enabled(bool(getattr(self, "input_file_path", None)))
             if self.mobile_checkbox.isChecked() and hasattr(self, "_update_portrait_mask_overlay_state"):
                 self._update_portrait_mask_overlay_state()
             if result == 999:
@@ -305,6 +386,8 @@ class FfmpegMixin:
             elif result == QDialog.Rejected: self.handle_new_file()
         else:
             if "canceled by user" not in message.lower(): self._show_error_with_log(message)
+            if hasattr(self, "_cleanup_staged_input_workspace"):
+                self._cleanup_staged_input_workspace(clear_input=True)
 
     def get_video_info(self):
         if not self.input_file_path or not os.path.exists(self.input_file_path): return
@@ -327,7 +410,6 @@ class FfmpegMixin:
             duration_ms = int(duration_s * 1000)
             try:
                 self.original_duration_ms = duration_ms; self.original_resolution = res_or_err
-                if hasattr(self, 'resolution_label'): self.resolution_label.setText(self.original_resolution)
                 self.positionSlider.setRange(0, duration_ms); self.positionSlider.set_duration_ms(duration_ms)
                 self._update_trim_inputs(); self._safe_set_duration_text(f"Duration: {duration_s:.2f} s | Res: {self.original_resolution}")
                 self.trim_start_ms = 0; self.trim_end_ms = duration_ms; self._update_trim_widgets_from_trim_times(); self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms); self._safe_status("Video loaded.", "white")
@@ -356,7 +438,7 @@ class FfmpegMixin:
 
     def _calculate_wall_clock_time(self, video_ms, segments, base_speed):
         accumulated_wall_time = 0.0; current_v = 0.0
-        for seg in segments:
+        for seg in sorted(segments or [], key=lambda item: (item.get('start', 0), item.get('end', 0))):
             if video_ms <= seg['start']: break
             if seg['start'] > current_v:
                 if base_speed < 0.001: accumulated_wall_time += (seg['start'] - current_v)

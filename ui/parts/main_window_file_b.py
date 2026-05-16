@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import *
 class MainWindowFileBMixin:
     def reset_app_state(self):
         self.input_file_path = None
+        self.source_file_path = None
+        self._loaded_display_path = None
         self.original_resolution = None
         if hasattr(self, 'set_resolution_text'):
             self.set_resolution_text("")
@@ -42,3 +44,20 @@ class MainWindowFileBMixin:
     def handle_new_file(self):
         self.reset_app_state()
         self.select_file()
+
+    def _cleanup_staged_input_workspace(self, clear_input=True):
+        try:
+            from system.temp_video_workspace import cleanup_workspace, is_workspace_path
+            current = getattr(self, "input_file_path", None)
+            if current and is_workspace_path(current) and getattr(self, "player", None):
+                try: self.player.stop()
+                except Exception: pass
+            cleanup_workspace(getattr(self, "logger", None))
+            if clear_input:
+                self.input_file_path = None
+                self.source_file_path = None
+                self._loaded_display_path = None
+                if hasattr(self, "_set_video_controls_enabled"): self._set_video_controls_enabled(False)
+        except Exception as e:
+            try: self.logger.warning("TEMP_WORKSPACE: staged cleanup failed: %s", e)
+            except Exception: pass

@@ -302,6 +302,16 @@ class HUDExtractor:
             }
         }
 
+    def _build_hud_zone_mask(self, shape):
+        mask = np.zeros(shape, dtype=np.uint8)
+        for spec in self._get_role_specs().values():
+            zx1, zy1, zx2, zy2 = spec["zone"]
+            sx1, sy1 = int(self.scale_w * zx1), int(self.scale_h * zy1)
+            sx2, sy2 = int(self.scale_w * zx2), int(self.scale_h * zy2)
+            if sx2 > sx1 and sy2 > sy1:
+                mask[sy1:sy2, sx1:sx2] = 255
+        return mask
+
     def _extract_role_candidates(self, role_name, spec, base_mask, anchor_mask, edge_mask, stability_mask):
         zx1, zy1, zx2, zy2 = spec["zone"]
         sx1, sy1 = int(self.scale_w * zx1), int(self.scale_h * zy1)
@@ -408,7 +418,9 @@ class HUDExtractor:
     def _extract_generic_candidates(self, base_mask, anchor_mask, edge_mask, stability_mask=None):
         if stability_mask is None:
             stability_mask = np.full(base_mask.shape[:2], 255, dtype=np.uint8)
-        contours, _ = cv2.findContours(base_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        zone_mask = self._build_hud_zone_mask(base_mask.shape[:2])
+        search_mask = cv2.bitwise_and(base_mask, zone_mask)
+        contours, _ = cv2.findContours(search_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         scored = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
@@ -613,7 +625,8 @@ class HUDExtractor:
         if not selected:
             self.logger.warning("No candidates found by role/generic detectors.")
             return []
-        final = self._dedupe_rects_by_iou(selected, iou_threshold=0.45)
+        merged = self._merge_overlapping_rects(list(selected))
+        final = self._dedupe_rects_by_iou(merged, iou_threshold=0.45)
         self.logger.info(f"--- Detection Finished: Found {len(final)} final HUD elements. ---")
         return final
 

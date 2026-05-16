@@ -346,7 +346,7 @@ class MergerMusicWizardTimelineMixin:
         if force_playing is True:
             try:
                 self._safe_mpv_set(self.player, "pause", False)
-                self._safe_mpv_set(self.player, "speed", self.speed_factor)
+                self._apply_step3_video_speed_for_source_ms(real_v_pos_ms)
             except Exception:
                 pass
             if music_player and target_music_idx != -1:

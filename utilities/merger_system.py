@@ -8,7 +8,7 @@ import shutil
 import traceback
 import time
 import threading
-from logging.handlers import RotatingFileHandler
+from system.live_logging import ReopenableFileHandler, touch_unlocked
 from typing import Optional, Tuple
 
 class MergerDependencyDoctor:
@@ -117,21 +117,15 @@ class MergerConsoleManager:
         try:
             import mpv
             mpv.log_path = os.path.join(log_dir, "mpv.log")
-        except ImportError:
-            class MockMPV: 
-                log_path = os.path.join(log_dir, "mpv.log")
-            mpv = MockMPV()
+        except (ImportError, OSError):
+            from system.utils import mpv as mpv
+            try: mpv.log_path = os.path.join(log_dir, "mpv.log")
+            except Exception: pass
         if str(logger_name) == "Video_Merger":
-            logger.info("NATIVE DEBUG LOGGING ACTIVE (DUP2/FAULTHANDLER DISABLED FOR STABILITY)")
-            if False:
-                source_tag = "video_merger"
-                raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
-                f = open(raw_log_path, 'a', encoding='utf-8')
-                os.dup2(f.fileno(), sys.stdout.fileno())
-                os.dup2(f.fileno(), sys.stderr.fileno())
-
-                import faulthandler
-                faulthandler.enable(f)
+            logger.info("NATIVE DEBUG LOGGING ACTIVE (UNLOCKED REALTIME MODE)")
+            source_tag = "video_merger"
+            raw_log_path = os.path.join(log_dir, f"mpv_{source_tag}.raw.log")
+            touch_unlocked(raw_log_path)
             
         def global_exception_handler(exc_type, exc_value, exc_traceback):
             if issubclass(exc_type, KeyboardInterrupt):
@@ -170,11 +164,12 @@ class MergerLogManager:
         log_dir = os.path.join(base_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, log_filename)
-        handler = RotatingFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+        handler = ReopenableFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         console = logging.StreamHandler()
         console.setFormatter(formatter)
         logger.addHandler(console)
+        logger.propagate = False
         return logger

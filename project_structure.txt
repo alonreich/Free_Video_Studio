@@ -5,6 +5,14 @@
 A high-performance, GPU-accelerated Fortnite video editor with mathematically perfect audio-visual synchronization.
 The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Advanced Editor.
 
+# ==============================================================================
+# NATIVE RUNTIME & LANGUAGE BOUNDARY
+# ==============================================================================
+# Shipped runtime: Python 3 + PyQt5. Heavy work is delegated to subprocesses (bundled ffmpeg.exe / ffprobe.exe
+# in processing/worker.py and related modules) and to in-process preview via python-mpv plus libmpv-2.dll.
+# There is no maintained C++ application source tree inside this repository; "native" means bundled executables
+# and DLLs loaded by Python, not hand-authored C++ product code checked in beside the Python sources.
+
 # General Project Guidelines:
 # 1. Modular Architecture: Files should remain focused (target 150-250 lines). 
 # 2. Sync Logic: Video tempo scales with speed multiplier. Background music ALWAYS remains at a constant 1.0x tempo.
@@ -103,9 +111,9 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 │
 ├── processing/: The core rendering engine.
 │   ├── filter_builder.py: Builds complex audio/video chains (atempo, smart afade, ducking).
-│   ├── worker.py: ProcessThread orchestrating the FFmpeg pipeline.
+│   ├── worker.py: ProcessThread orchestrating FFmpeg; large filter graphs are passed via -filter_complex_script (graph text file).
 │   ├── encoders.py: GPU vs CPU codec management.
-│   └── (media_utils.py, step_concat.py, step_intro.py, system_utils.py, text_ops.py)
+│   └── (media_utils.py, filter_mobile.py, system_utils.py, text_ops.py)
 │
 ├── system/: Operating system and lifecycle management.
 │   ├── utils.py: ProcessManager, DependencyDoctor, and Native Console initialization.
@@ -222,10 +230,25 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # SUITE COMPONENTS & RENDERING FEATURES
 # ==============================================================================
 # 1. VIDEO MERGER & ADVANCED EDITOR: Technically decoupled but share UI logic via local copies.
-# 2. INTRO STILL-FRAME GENERATOR: 
-#    - Extracts a high-quality frame (Still) from any timestamp.
-#    - Generates a 3-5 second intro clip with background music.
+# 2. INTRO LEAD-IN (WHATSAPP / THUMBNAIL CONTRACT, MAIN COMPRESSOR):
+#    - The export pipeline prepends a very short still (intro_still_sec = 0.1 seconds, not longer) taken from the
+#      user-selected intro moment ("SET THUMBNAIL" / custom frame) or from the default timeline-derived timestamp.
+#    - Purpose: avoid an all-black first frame in chat apps (e.g. WhatsApp) that pick the opening frame as the
+#      inline preview thumbnail. This is NOT a multi-second branded intro clip; keep the lead-in at or below 0.1s.
 # 3. TEXT OVERLAY & PORTRAIT MASKING:
 #    - PORTRAIT MODE (9:16): UI uses a real-time mask widget to visualize the social media crop.
 #    - OVERLAY TEXT: User text is wrapped and rendered as an HD PNG before being composited by FFmpeg.
+# ==============================================================================
+
+# ==============================================================================
+# INTENDED BEHAVIOR & BY-DESIGN CHOICES (DO NOT MODIFY)
+# ==============================================================================
+# 1. SUCCESS DIALOG AUTO-EXIT:
+#    - After a successful export, clicking 'SHARE VIA WHATSAPP' or 'OPEN FOLDER'
+#      WILL close the application. This is intended to keep the workflow fast
+#      and snappy for the user.
+# 2. SILENT FILE DELETION (FILE PICKER):
+#    - In the custom file dialog, the 'Delete' key and context-menu 'Delete'
+#      action are SILENT and do NOT require confirmation. This is by design
+#      for power-user efficiency.
 # ==============================================================================

@@ -10,8 +10,8 @@ class KeyboardShortcutMixin:
     def keyPressEvent(self, event):
         key = event.key()
         if key == Qt.Key_F12:
-            if hasattr(self, '_launch_main_app') and callable(self._launch_main_app):
-                self._launch_main_app()
+            if hasattr(self, '_confirm_discard_changes') and hasattr(self, '_deferred_launch_main_app'):
+                if self._confirm_discard_changes(): self._deferred_launch_main_app()
                 event.accept()
                 return
         if key == Qt.Key_Space:

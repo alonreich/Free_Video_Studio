@@ -3,6 +3,7 @@ import sys
 import subprocess
 import uuid
 import tempfile
+from fractions import Fraction
 from threading import Thread
 from PyQt5.QtCore import Qt, QTimer, QSize, QEvent, QCoreApplication
 from PyQt5.QtGui import QPixmap, QPainter, QFont, QIcon
@@ -55,9 +56,6 @@ class UiBuilderMixin:
             pos_s = float(pos_ms) / 1000.0
             if self.original_duration_ms > 0 and pos_ms > self.original_duration_ms:
                 pos_s = self.original_duration_ms / 1000.0
-            self.selected_intro_abs_time = pos_s
-            mm = int(self.selected_intro_abs_time // 60)
-            ss = self.selected_intro_abs_time % 60.0
             self.thumb_pick_btn.setText('⏳ EXTRACTING... ⏳')
             self.thumb_pick_btn.setEnabled(False)
             self.status_update_signal.emit('📸 Extracting thumbnail... please wait.')
@@ -75,36 +73,76 @@ class UiBuilderMixin:
                 ffmpeg_path = 'ffmpeg.exe'
             cmd = [ffmpeg_path, '-y', '-ss', f'{pos_s:.3f}', '-i', os.path.normpath(self.input_file_path), '-frames:v', '1', '-an', '-f', 'image2', '-q:v', '2', temp_thumb]
 
-            def _run_extract(rid, m, s, p_ms):
+            def _run_extract(rid, m, s, p_ms, p_sec, t_path):
+                success = False
+                err_text = ''
                 try:
-                    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=134217728 if sys.platform == 'win32' else 0, timeout=12)
-                except:
-                    pass
+                    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, creationflags=134217728 if sys.platform == 'win32' else 0, timeout=12)
+                    rc_ok = (res.returncode == 0)
+                    file_ok = os.path.exists(t_path) and os.path.getsize(t_path) > 0
+                    success = bool(rc_ok and file_ok)
+                    if not success:
+                        try:
+                            err_text = (res.stderr or b'').decode('utf-8', errors='ignore').strip().splitlines()[-1] if res.stderr else ''
+                        except Exception:
+                            err_text = ''
+                except subprocess.TimeoutExpired:
+                    err_text = 'ffmpeg timed out'
+                except Exception as e:
+                    err_text = str(e)
                 finally:
                     try:
+                        if os.path.exists(t_path):
+                            os.remove(t_path)
+                    except Exception:
+                        pass
+                    try:
                         is_latest = getattr(self, '_current_thumb_request', None) == rid
+                        payload = (m, s, is_latest, p_ms, bool(success), p_sec, err_text)
                         if hasattr(self, 'thumbnail_extracted_signal'):
-                            self.thumbnail_extracted_signal.emit(m, s, is_latest)
+                            self.thumbnail_extracted_signal.emit(payload)
                         else:
-                            QTimer.singleShot(0, lambda: self._on_thumb_extracted(m, s, is_latest, p_ms))
+                            QTimer.singleShot(0, lambda: self._on_thumb_extracted(payload))
                     except:
                         pass
-            Thread(target=lambda: _run_extract(request_id, mm, ss, pos_ms), daemon=True).start()
+            mm = int(pos_s // 60)
+            ss = pos_s % 60.0
+            Thread(target=lambda: _run_extract(request_id, mm, ss, pos_ms, pos_s, temp_thumb), daemon=True).start()
         except Exception as e:
             self.thumb_pick_btn.setEnabled(True)
             self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
             QMessageBox.warning(self, 'Error', f'Failed to pick thumbnail: {e}')
 
-    def _on_thumb_extracted(self, mm, ss, is_latest=True, pos_ms=0):
+    def _on_thumb_extracted(self, payload, *legacy_args):
+        if isinstance(payload, tuple):
+            mm, ss, is_latest, pos_ms, success, pos_sec, err_text = payload
+        else:
+            mm = int(payload)
+            ss = float(legacy_args[0]) if len(legacy_args) >= 1 else 0.0
+            is_latest = bool(legacy_args[1]) if len(legacy_args) >= 2 else True
+            pos_ms = int(legacy_args[2]) if len(legacy_args) >= 3 else 0
+            success = True
+            pos_sec = pos_ms / 1000.0
+            err_text = ''
         self.thumb_pick_btn.setEnabled(True)
-        if is_latest:
+        if not is_latest:
+            self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+            return
+        if success:
+            self.selected_intro_abs_time = float(pos_sec)
             self.thumb_pick_btn.setText(f'✅ THUMBNAIL SET ✅')
-            self.status_update_signal.emit(f'✅ SUCCESS: Thumbnail set at {mm:02d}:{ss:05.2f} ✅')
+            self.status_update_signal.emit(f'✅ SUCCESS: Thumbnail set at {int(mm):02d}:{float(ss):05.2f} ✅')
             if hasattr(self, 'positionSlider'):
                 self.positionSlider.set_thumbnail_pos_ms(pos_ms)
             QTimer.singleShot(4000, lambda: self.thumb_pick_btn.setText(f'📸 THUMBNAIL SET 📸'))
         else:
             self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+            short = err_text or 'extraction failed'
+            self.status_update_signal.emit(f'❌ Thumbnail extraction failed: {short}')
+            try:
+                QMessageBox.warning(self, 'Thumbnail Failed', f'Could not extract a thumbnail at this position.\n\nDetails: {short}')
+            except Exception:
+                pass
 
     def set_overlays_force_hidden(self, hidden):
         if hasattr(self, 'timeline_overlay') and self.timeline_overlay:
@@ -113,18 +151,26 @@ class UiBuilderMixin:
             self.portrait_mask_overlay.set_force_hidden(hidden)
 
     def _on_boss_hp_toggled(self, checked):
-        pass
+        if hasattr(self, "timeline_overlay"):
+            self.timeline_overlay.set_boss_hp_mode(checked)
+        if hasattr(self, "_update_quality_label"):
+            self._update_quality_label()
 
-    def _update_granular_button_state(self):
+    def _safe_stop_playback(self):
+        if hasattr(self, "player") and self.player:
+            self._safe_mpv_set("pause", True)
+        m_p = getattr(self, "_music_preview_player", None)
+        if m_p:
+            self._safe_mpv_set("pause", True, target_player=m_p)
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
+        if hasattr(self, "playPauseButton"):
+            self.playPauseButton.setText("PLAY")
+            self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+        self.is_playing = False
         if not hasattr(self, "granular_button"): return
-        has_segments = bool(getattr(self, "speed_segments", []))
-        has_freeze = bool(getattr(self, "freeze_images", []))
-        if has_segments or has_freeze:
-            self.granular_button.setText("REMOVE GRANULAR SPEEDS")
-            self.granular_button.setStyleSheet(UIStyles.BUTTON_DANGER + "QPushButton { font-size: 10px; }")
-        else:
-            self.granular_button.setText("GRANULAR SPEED")
-            self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { font-size: 10px; }")
+        if hasattr(self, "_update_granular_button_state"):
+            self._update_granular_button_state()
 
     def _update_process_button_text(self) -> None:
         try:
@@ -156,6 +202,26 @@ class UiBuilderMixin:
         if hasattr(self, 'open_granular_speed_dialog'):
             self.open_granular_speed_dialog()
 
+    def _on_granular_checkbox_toggled(self, checked):
+        if hasattr(self, "_update_quality_label"):
+            self._update_quality_label()
+        if hasattr(self, "positionSlider"):
+            visible_segments = list(getattr(self, "speed_segments", []) or []) if checked else []
+            self.positionSlider.set_speed_segments(visible_segments)
+            self.positionSlider.update()
+        if not checked:
+            self._in_freeze_segment = False
+            self._freeze_seg = None
+            try:
+                base_rate = getattr(self, "playback_rate", None)
+                if base_rate is None and hasattr(self, "speed_spinbox"):
+                    base_rate = self.speed_spinbox.value()
+                self._safe_mpv_set("speed", base_rate or 1.0)
+            except Exception:
+                pass
+        if hasattr(self, "_sync_music_preview"):
+            QTimer.singleShot(0, self._sync_music_preview)
+
     def _ensure_default_trim(self):
         try:
             if self.end_minute_input.maximum() == 0 and self.positionSlider.maximum() == 0:
@@ -170,6 +236,9 @@ class UiBuilderMixin:
 
     def _on_process_clicked(self):
         try:
+            if not getattr(self, 'input_file_path', None) or self.positionSlider.maximum() <= 0:
+                QMessageBox.warning(self, 'No Video Loaded', 'Please load a video file before starting the process.')
+                return
             if not getattr(self, 'scan_complete', False):
                 self.process_button.setEnabled(False)
                 self.process_button.setText('WAITING FOR SCAN...')
@@ -207,6 +276,8 @@ class UiBuilderMixin:
             else:
                 self.process_button.setEnabled(False)
                 self.process_button.setText('PROCESS')
+            if hasattr(self, 'quality_slider'):
+                self.quality_slider.setEnabled(has_video)
             if hasattr(self, 'music_button'):
                 self.music_button.setCursor(Qt.PointingHandCursor if self.music_button.isEnabled() else Qt.ArrowCursor)
             if hasattr(self, 'granular_button'):
@@ -224,7 +295,6 @@ class UiBuilderMixin:
             StateTransfer.save_state({'input_file': getattr(self, 'input_file_path', None), 'trim_start': getattr(self, 'trim_start_ms', 0), 'trim_end': getattr(self, 'trim_end_ms', 0), 'mobile_checked': self.mobile_checkbox.isChecked()})
             flags = 16 if sys.platform == 'win32' else 0
             subprocess.Popen([sys.executable, p], cwd=self.base_dir, creationflags=flags, close_fds=True, start_new_session=True)
-            QCoreApplication.quit()
         except Exception as e:
             QMessageBox.critical(self, 'Launch Error', f'Failed: {e}')
 
@@ -260,9 +330,14 @@ class UiBuilderMixin:
         self._ensure_overlay_widgets()
         self._hide_processing_overlay()
         self._maybe_enable_process()
-        QTimer.singleShot(0, self._adjust_trim_margins)
-        QTimer.singleShot(0, self.apply_master_volume)
-        QTimer.singleShot(0, lambda: self.setFocus(Qt.ActiveWindowFocusReason))
+        single_shot = getattr(QTimer, "singleShot", None)
+        if callable(single_shot):
+            single_shot(0, self._adjust_trim_margins)
+            single_shot(0, self.apply_master_volume)
+            single_shot(0, lambda: self.setFocus(getattr(Qt, "ActiveWindowFocusReason", 0)))
+        else:
+            self._adjust_trim_margins()
+            self.apply_master_volume()
 
     def _build_player_column(self):
         player_col = QVBoxLayout()
@@ -319,7 +394,7 @@ class UiBuilderMixin:
         self.player_col_container.installEventFilter(self)
 
     def _set_video_controls_enabled(self, enabled: bool):
-        widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider, self.speed_spinbox, self.granular_button, self.mobile_checkbox, self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input, self.music_button, self.positionSlider, self.start_minute_input, self.start_second_input, self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input]
+        widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.boss_hp_checkbox, self.quality_slider, self.speed_spinbox, self.granular_button, getattr(self, "granular_clear_button", None), self.granular_checkbox, self.mobile_checkbox, self.teammates_checkbox, self.no_fade_checkbox, self.portrait_text_input, self.music_button, self.positionSlider, self.start_minute_input, self.start_second_input, self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input]
         for w in widgets:
             if w is not None:
                 w.setEnabled(enabled)
@@ -327,6 +402,19 @@ class UiBuilderMixin:
             is_m = self.mobile_checkbox.isChecked()
             self.teammates_checkbox.setEnabled(is_m)
             self.portrait_text_input.setEnabled(is_m)
+        if hasattr(self, "_update_granular_button_state"):
+            self._update_granular_button_state()
+
+    def _set_preview_controls_available(self, available: bool):
+        preview_widgets = [self.playPauseButton, self.start_trim_button, self.end_trim_button, self.thumb_pick_btn, self.granular_button, self.granular_checkbox, self.music_button, self.positionSlider]
+        for w in preview_widgets:
+            if w is not None:
+                w.setEnabled(bool(available))
+        clear_btn = getattr(self, "granular_clear_button", None)
+        if clear_btn is not None:
+            clear_btn.setEnabled(bool(available and getattr(self, "speed_segments", [])))
+        if hasattr(self, "_update_granular_button_state"):
+            self._update_granular_button_state()
 
     def _init_volume_slider(self):
         v_l = QVBoxLayout()
@@ -426,7 +514,7 @@ class UiBuilderMixin:
         self.playPauseButton.setEnabled(False)
         self.thumb_pick_btn = QPushButton('📸 SET THUMBNAIL 📸')
         self.thumb_pick_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
-        self.thumb_pick_btn.setFixedSize(100, 35)
+        self.thumb_pick_btn.setFixedSize(155, 35)
         self.thumb_pick_btn.setCursor(Qt.PointingHandCursor)
         self.thumb_pick_btn.setToolTip("Use current frame as video intro/thumbnail")
         self.thumb_pick_btn.clicked.connect(self._pick_thumbnail_from_current_frame)
@@ -444,14 +532,14 @@ class UiBuilderMixin:
             s.setCursor(Qt.PointingHandCursor)
             s.setToolTip("Fine-tune trim timing")
             s.valueChanged.connect(self._on_trim_spin_changed)
-        self.start_trim_button = QPushButton('SET START')
+        self.start_trim_button = QPushButton('MARK START')
         self.start_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.start_trim_button.setFixedSize(100, 35)
         self.start_trim_button.setCursor(Qt.PointingHandCursor)
         self.start_trim_button.setToolTip("Set trim start to current position ([)")
         self.start_trim_button.clicked.connect(self.set_start_time)
         self.start_trim_button.setEnabled(False)
-        self.end_trim_button = QPushButton('SET END')
+        self.end_trim_button = QPushButton('MARK END')
         self.end_trim_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.end_trim_button.setFixedSize(100, 35)
         self.end_trim_button.setCursor(Qt.PointingHandCursor)
@@ -462,8 +550,9 @@ class UiBuilderMixin:
         def _ml(t, s):
             l = QHBoxLayout()
             l.setContentsMargins(0, 0, 0, 0)
+            l.setSpacing(0)
             lbl = QLabel(t)
-            lbl.setStyleSheet('font-size: 10px;')
+            lbl.setStyleSheet('font-size: 10px; padding: 0px; margin: 0px;')
             l.addWidget(lbl)
             l.addWidget(s)
             return l
@@ -473,14 +562,23 @@ class UiBuilderMixin:
         self.boss_hp_checkbox.setStyleSheet('font-size: 10px;')
         self.boss_hp_checkbox.setCursor(Qt.PointingHandCursor)
         self.boss_hp_checkbox.setToolTip("Enable social media safe-zone for Boss HP bars")
+        self.boss_hp_checkbox.toggled.connect(self._on_boss_hp_toggled)
         self.boss_hp_checkbox.setEnabled(False)
         self.trim_layout = QHBoxLayout()
         self.trim_layout.setSpacing(14)
         self.trim_layout.addLayout(_ml('Min:', self.start_minute_input))
         self.trim_layout.addLayout(_ml('Sec:', self.start_second_input))
-        self.trim_layout.addWidget(self.start_trim_button)
-        self.trim_layout.addWidget(self.playPauseButton)
-        self.trim_layout.addWidget(self.end_trim_button)
+        self.trim_layout.addSpacing(40)
+        self.trim_button_cluster = QWidget()
+        cluster_layout = QHBoxLayout(self.trim_button_cluster)
+        cluster_layout.setContentsMargins(10, 0, 10, 0)
+        cluster_layout.setSpacing(35)
+        cluster_layout.addWidget(self.start_trim_button)
+        cluster_layout.addWidget(self.playPauseButton)
+        cluster_layout.addWidget(self.end_trim_button)
+        self.trim_button_cluster.setFixedWidth(420)
+        self.trim_layout.addWidget(self.trim_button_cluster)
+        self.trim_layout.addSpacing(40)
         self.trim_layout.addLayout(_ml('Min:', self.end_minute_input))
         self.trim_layout.addLayout(_ml('Sec:', self.end_second_input))
 
@@ -534,7 +632,7 @@ class UiBuilderMixin:
         btn_l.addWidget(self.cancel_button)
         btn_l.addWidget(self.process_button)
         self.speed_spinbox = ClickableSpinBox()
-        self.speed_spinbox.setRange(0.5, 3.1)
+        self.speed_spinbox.setRange(0.1, 4.0)
         self.speed_spinbox.setValue(1.1)
         self.speed_spinbox.setFixedWidth(55)
         self.speed_spinbox.setFixedHeight(35)
@@ -551,9 +649,8 @@ class UiBuilderMixin:
         speed_w = QWidget()
         speed_w.setLayout(s_l)
         self.granular_checkbox = QCheckBox('GRANULAR SPEED')
-        self.granular_checkbox.hide()
-        self.granular_checkbox.setCursor(Qt.PointingHandCursor)
-        self.granular_checkbox.toggled.connect(lambda _: self._update_quality_label())
+        self.granular_checkbox.setVisible(False)
+        self.granular_checkbox.toggled.connect(self._on_granular_checkbox_toggled)
         self.granular_button = QPushButton('GRANULAR SPEED')
         self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
         self.granular_button.setFixedSize(140, 35)
@@ -561,11 +658,25 @@ class UiBuilderMixin:
         self.granular_button.setToolTip("Open the detailed speed curve editor")
         self.granular_button.clicked.connect(self._handle_granular_click)
         self.granular_button.setEnabled(False)
+        self.granular_clear_button = QPushButton()
+        self.granular_clear_button.setStyleSheet(UIStyles.BUTTON_DANGER + "QPushButton { padding: 0px; }")
+        self.granular_clear_button.setFixedSize(35, 35)
+        trash_icon = getattr(QStyle, "SP_TrashIcon", getattr(QStyle, "SP_DialogDiscardButton", 0))
+        self.granular_clear_button.setIcon(self.style().standardIcon(trash_icon))
+        try:
+            self.granular_clear_button.setIconSize(QSize(18, 18))
+        except TypeError:
+            pass
+        self.granular_clear_button.setToolTip("Clear all granular speeds and freeze frames")
+        self.granular_clear_button.clicked.connect(self._clear_speed_segments)
+        self.granular_clear_button.setEnabled(False)
+        self.granular_clear_button.setVisible(False)
         granular_w = QWidget()
         g_l = QHBoxLayout(granular_w)
         g_l.setContentsMargins(0,0,0,0)
+        g_l.setSpacing(4)
         g_l.addWidget(self.granular_button)
-        g_l.addWidget(self.granular_checkbox)
+        g_l.addWidget(self.granular_clear_button)
         self.mobile_checkbox = QCheckBox('Portrait (9:16)')
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         self.mobile_checkbox.setCursor(Qt.PointingHandCursor)
@@ -612,27 +723,31 @@ class UiBuilderMixin:
         self.center_btn_container = grid
 
     def _build_right_panel(self):
-        self.right_panel = QWidget()
-        self.right_panel.setFixedWidth(125)
+        self.right_panel = QFrame()
+        self.right_panel.setFixedWidth(135)
+        self.right_panel.setFrameShape(getattr(QFrame, "StyledPanel", 0))
+        self.right_panel.setStyleSheet("QFrame { border: 1px solid #34495e; background-color: #2c3e50; border-radius: 8px; } QFrame > * { border: none; }")
         self.right_panel.installEventFilter(self)
         r_l = QVBoxLayout(self.right_panel)
-        r_l.setContentsMargins(0, 0, 0, 0)
+        r_l.setContentsMargins(5, 5, 5, 5)
         r_l.setAlignment(Qt.AlignTop)
         self.drop_area = DropAreaFrame()
         self.drop_area.file_dropped.connect(self.handle_file_selection)
-        self.drop_area.setFixedSize(120, 200)
+        self.drop_area.clicked.connect(self.select_file)
+        self.drop_area.setFixedSize(125, 220)
         self.drop_area.setCursor(Qt.PointingHandCursor)
-        self.drop_area.setToolTip("Drag and drop a video file here to start")
+        self.drop_area.setToolTip("Drag & drop a video file here, or click to browse")
         d_l = QVBoxLayout(self.drop_area)
+        d_l.setContentsMargins(4, 4, 4, 4)
         self.drop_label = QLabel('Drag & Drop\r\na Video File Here:')
         self.drop_label.setAlignment(Qt.AlignCenter)
         self.drop_label.setStyleSheet('font-size: 10px; font-weight: bold;')
-        d_l.addWidget(self.drop_label)
+        d_l.addWidget(self.drop_label, 1, Qt.AlignCenter)
         r_l.addWidget(self.drop_area)
         self.upload_button = QPushButton('📂  UPLOAD VIDEO  📂')
         self.upload_button.setCursor(Qt.PointingHandCursor)
         self.upload_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + ' QPushButton { font-size: 10px; padding: 0px; }')
-        self.upload_button.setFixedSize(120, 35)
+        self.upload_button.setFixedSize(120, 42)
         self.upload_button.setToolTip("Browse files to upload a video")
         self.upload_button.clicked.connect(self.select_file)
         r_l.addWidget(self.upload_button)
@@ -640,7 +755,7 @@ class UiBuilderMixin:
         self.music_button = QPushButton('♪    ADD MUSIC    ♪')
         self.music_button.setCursor(Qt.PointingHandCursor)
         self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + ' QPushButton { font-size: 10px; padding: 0px; }')
-        self.music_button.setFixedSize(120, 35)
+        self.music_button.setFixedSize(120, 42)
         self.music_button.setToolTip("Open the background music synchronization wizard")
         self.music_button.clicked.connect(self.open_music_wizard)
         self.music_button.setEnabled(False)
@@ -662,12 +777,17 @@ class UiBuilderMixin:
         self.adv_editor_btn.setToolTip("Launch the professional video editor")
         for b in (self.merge_btn, self.crop_tool_btn, self.adv_editor_btn):
             b.setStyleSheet(UIStyles.BUTTON_TOOL)
-            b.setFixedSize(130, 38)
+            b.setFixedSize(130, 42)
             b.setCursor(Qt.PointingHandCursor)
             bb.addWidget(b, 0, Qt.AlignRight)
         self.merge_btn.clicked.connect(self.launch_video_merger)
         self.crop_tool_btn.clicked.connect(self.launch_crop_tool)
         self.adv_editor_btn.clicked.connect(self.launch_advanced_editor)
+        adv_editor_script = os.path.join(self.base_dir, 'advanced', 'advanced_video_editor.py')
+        if not os.path.exists(adv_editor_script):
+            self.adv_editor_btn.setEnabled(False)
+            self.adv_editor_btn.setToolTip("Advanced Editor is not bundled with this build.")
+            self.adv_editor_btn.setCursor(Qt.ArrowCursor)
         r_l.addLayout(bb)
 
     def _effective_project_duration_sec(self, trim_start_ms, trim_end_ms):
@@ -727,16 +847,23 @@ class UiBuilderMixin:
         except:
             target_mb = 5 + idx * 5
         dur_sec = self._effective_project_duration_sec(getattr(self, 'trim_start_ms', 0), getattr(self, 'trim_end_ms', 0))
+        dur_sec += 3.0
         if dur_sec <= 0:
             self.quality_value_label.setText('')
             return
-        kbps = target_mb * 8 * 1024 / dur_sec
-        try:
-            res = str(getattr(self, 'original_resolution', '') or '1920x1080').lower()
-            w, h = [int(part) for part in res.split('x', 1)]
-        except Exception:
+        total_kbps = target_mb * 8192 / dur_sec
+        audio_kbps = 128 if total_kbps < 900 else (160 if total_kbps < 1800 else (192 if total_kbps < 3200 else 256))
+        video_kbps = max(300.0, total_kbps - audio_kbps - (total_kbps * 0.01))
+        if self.mobile_checkbox.isChecked():
+            w, h = 1080, 1920
+        else:
             w, h = 1920, 1080
-        bpp = kbps * 1024 / (max(1, w) * max(1, h) * 60)
+        try:
+            fps_expr = getattr(self, "source_fps_expr", None) or "60"
+            fps = min(60.0, max(1.0, float(Fraction(str(fps_expr)))))
+        except Exception:
+            fps = 60.0
+        bpp = video_kbps * 1000 / (max(1, w) * max(1, h) * fps)
         if not self.mobile_checkbox.isChecked():
             bpp /= 1.5
         spectrum = [(0.02, 'Unwatchable', '#e74c3c'), (0.04, 'Pixelated', '#e74c3c'), (0.06, 'Blurry', '#e74c3c'), (0.1, 'Clear', 'white'), (0.15, 'Sharp', '#2ecc71'), (0.25, 'Crisp-Clear', '#2ecc71'), (99.0, 'Lifelike', '#2ecc71')]
@@ -794,11 +921,13 @@ class UiBuilderMixin:
         status_l.addStretch(1)
         status_l.addWidget(self.resolution_label)
         status_l.addStretch(1)
-        if hasattr(self, 'status_bar') and self.status_bar:
-            self.status_bar.addPermanentWidget(self.status_container, 1)
+        status_bar = getattr(self, 'status_bar', None)
+        if status_bar and hasattr(status_bar, 'addPermanentWidget'):
+            status_bar.addPermanentWidget(self.status_container, 1)
         self.progress_update_signal.connect(self.on_progress)
         self.status_update_signal.connect(self.on_phase_update)
         self.process_finished_signal.connect(self.on_process_finished)
+        self.video_ended_signal.connect(self._handle_video_end)
         try:
             from ui.main_window import _QtLiveLogHandler
             import logging

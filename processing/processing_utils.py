@@ -138,7 +138,6 @@ from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QGuiApplication, QImage, QPainter, QFont, QColor, QFontDatabase
 from PyQt5.QtCore import Qt, QRect
 app = QGuiApplication(sys.argv)
-# Explicitly load system fonts to avoid offscreen rendering empty results
 font_loaded = False
 font_family = "Arial"
 possible_fonts = [
@@ -175,7 +174,6 @@ font = QFont(font_family)
 font.setPixelSize({font_size})
 font.setBold(True)
 painter.setFont(font)
-# Log font info to stdout for debugging
 print(f"FONT_USED: {{font_family}} SIZE: {{font.pixelSize()}}")
 fm = painter.fontMetrics()
 line_h = fm.height()
@@ -183,25 +181,20 @@ lines = text.splitlines()
 if not lines: lines = [text]
 block_h = (len(lines) * line_h) + ((len(lines) - 1) * line_spacing)
 if len(lines) > 1:
-    # Shift up more (from -10 to -25) to utilize the top void area better for multi-line text
     start_y = max(5, (150 - block_h) // 2 - 25)
 else:
     start_y = (150 - block_h) // 2
 current_y = start_y
 align_flag = Qt.AlignCenter
-# Debug logging to file because stdout might be captured/lost
 with open(os.path.join(os.path.dirname(output_path), "text_gen_debug.log"), "a", encoding="utf-8") as df:
     df.write(f"START_DRAW: text={{repr(text)}} y={{current_y}} font_size={{font_size}}\\n")
 for line in lines:
-    # Use full width for text rect to avoid clipping
     text_rect = QRect(0, current_y, width, line_h)
-    # Extra thick Shadow/Stroke for visibility
     painter.setPen(QColor(0, 0, 0, 255))
     for dx in range(-3, 4):
         for dy in range(-3, 4):
             if dx == 0 and dy == 0: continue
             painter.drawText(text_rect.adjusted(dx, dy, dx, dy), align_flag, line)
-    # Main text
     painter.setPen(QColor(255, 255, 255, 255))
     painter.drawText(text_rect, align_flag, line)
     current_y += (line_h + line_spacing)

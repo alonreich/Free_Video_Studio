@@ -42,25 +42,38 @@ class MainWindowCoreCMixin:
         except: pass
 
     def cleanup_and_exit(self):
-        self.logger.info("SYSTEM: Shutdown sequence initiated.")
-        self.blockSignals(True)
-        if hasattr(self, "timer") and self.timer.isActive(): self.timer.stop()
-        if hasattr(self, "_hw_worker") and self._hw_worker:
-            try: self._hw_worker.abort()
-            except: pass
-        if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
-            try:
-                self.process_thread.cancel()
-                if self.process_thread.isRunning(): self.process_thread.wait(3000)
-            except: pass
         try:
-            from system.utils import MPVSafetyManager
-            if getattr(self, "player", None): MPVSafetyManager.safe_mpv_shutdown(self.player, lock=getattr(self, "_mpv_lock", None))
-            if getattr(self, "_music_preview_player", None): MPVSafetyManager.safe_mpv_shutdown(self._music_preview_player, lock=getattr(self, "_mpv_lock", None))
-        except: pass
+            if hasattr(self, "logger"): self.logger.info("SYSTEM: Shutdown sequence initiated.")
+            self.blockSignals(True)
+            if hasattr(self, "timer") and self.timer.isActive(): self.timer.stop()
+            if hasattr(self, "_hw_worker") and self._hw_worker:
+                try: self._hw_worker.abort()
+                except: pass
+            if getattr(self, "is_processing", False) and hasattr(self, "process_thread"):
+                try:
+                    self.process_thread.cancel()
+                    if self.process_thread.isRunning(): self.process_thread.wait(1000)
+                except: pass
 
-        from system.utils import ProcessManager
-        ProcessManager.cleanup_temp_files(); self._save_app_state_and_config(); self.logger.info("SYSTEM: Cleaning up and exiting process."); QCoreApplication.instance().quit()
+            from system.utils import MPVSafetyManager
+            if getattr(self, "player", None): 
+                MPVSafetyManager.safe_mpv_shutdown(self.player, timeout=0.3, lock=getattr(self, "_mpv_lock", None))
+            if getattr(self, "_music_preview_player", None): 
+                MPVSafetyManager.safe_mpv_shutdown(self._music_preview_player, timeout=0.3, lock=getattr(self, "_mpv_lock", None))
+
+            from system.utils import ProcessManager
+            try: ProcessManager.cleanup_temp_files()
+            except: pass
+            if not getattr(self, "_preserve_staged_input_on_close", False) and hasattr(self, "_cleanup_staged_input_workspace"):
+                try: self._cleanup_staged_input_workspace(clear_input=False)
+                except: pass
+            try: self._save_app_state_and_config()
+            except: pass
+            if hasattr(self, "logger"): self.logger.info("SYSTEM: Cleanup complete.")
+            QTimer.singleShot(100, lambda: QCoreApplication.instance().quit())
+        except Exception as e:
+            if hasattr(self, "logger"): self.logger.error(f"SYSTEM: Error during cleanup: {e}")
+            QCoreApplication.instance().quit()
 
     def _on_slider_trim_changed(self, start_ms, end_ms):
         self.logger.info(f"TRIM: Slider range updated -> START: {start_ms}ms, END: {end_ms}ms")

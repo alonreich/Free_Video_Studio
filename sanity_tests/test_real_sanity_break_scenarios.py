@@ -35,7 +35,8 @@ def test_break_scenario_overlapping_unsorted_segments_are_stable() -> None:
         source_cut_start_ms=0,
     )
     assert "concat=n=" in chain
-    assert "setpts='(" in chain
+    assert "setpts='PTS/" in chain
+    assert "fps=" not in chain
     assert final_dur > 0.0
     assert tmap(0.0) >= 0.0
     assert tmap(3.0) >= tmap(1.0)
@@ -53,6 +54,7 @@ def test_break_scenario_trim_near_zero_never_generates_negative_seek(monkeypatch
 
     def _fake_create_subprocess(cmd, _logger=None):
         captured_cmds.append(list(cmd))
+        Path(cmd[-1]).write_bytes(b"ok")
         return _Proc()
     monkeypatch.setattr("processing.worker.create_subprocess", _fake_create_subprocess)
     monkeypatch.setattr("processing.worker.monitor_ffmpeg_progress", lambda *a, **k: None)
@@ -60,9 +62,12 @@ def test_break_scenario_trim_near_zero_never_generates_negative_seek(monkeypatch
     monkeypatch.setattr("processing.worker.calculate_video_bitrate", lambda *a, **k: 1200)
     monkeypatch.setattr("processing.worker.MediaProber.get_audio_bitrate", lambda self: 128)
     monkeypatch.setattr("processing.worker.MediaProber.get_sample_rate", lambda self: 48000)
+    monkeypatch.setattr("processing.worker.MediaProber.get_video_timing_info", lambda self: {"is_vfr": False, "observed_fps": 60.0})
+    monkeypatch.setattr("processing.worker.MediaProber.get_video_fps_expr", lambda self, fallback="60": "60")
+    monkeypatch.setattr("processing.worker.ProcessThread._validate_render_output", lambda *a, **k: (True, "OK"))
+    monkeypatch.setattr("processing.worker.ProcessThread._target_size_bounds", lambda self: None)
     out_file = tmp_path / "ok.mp4"
     out_file.write_bytes(b"ok")
-    monkeypatch.setattr("processing.worker.ConcatProcessor.run_concat", lambda *a, **k: str(out_file))
     thr = ProcessThread(
         input_path=str(out_file),
         start_time_ms=200,

@@ -91,7 +91,12 @@ class MainWindowUiHelpersAMixin:
             self._hint_opacity_effect.setOpacity(1.0)
             self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
         if not hasattr(self, '_hint_pulse_timer'):
-            self._hint_pulse_timer = QTimer(self)
+            try:
+                self._hint_pulse_timer = QTimer(self)
+            except TypeError:
+                self._hint_pulse_timer = None
+            if not self._hint_pulse_timer or not callable(getattr(self._hint_pulse_timer, "setInterval", None)):
+                return
             self._hint_pulse_timer.setInterval(20) 
             self._hint_pulse_start_time = time.time()
 
@@ -103,6 +108,10 @@ class MainWindowUiHelpersAMixin:
                     self._hint_opacity_effect.setOpacity(opacity)
                 except: pass
             self._hint_pulse_timer.timeout.connect(_do_pulse)
-        if not self._hint_pulse_timer.isActive():
-            self._hint_pulse_timer.start()
+        timer_start = getattr(self._hint_pulse_timer, "start", None)
+        timer_active = getattr(self._hint_pulse_timer, "isActive", None)
+        if not callable(timer_start):
+            return
+        if not callable(timer_active) or not timer_active():
+            timer_start()
             self._hint_pulse_start_time = time.time()

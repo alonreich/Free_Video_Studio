@@ -12,6 +12,32 @@ from PyQt5.QtWidgets import (QStyleOptionSlider, QStyle, QDialog, QVBoxLayout,
 from ui.widgets.trimmed_slider import TrimmedSlider
 from system.utils import MPVSafetyManager, MediaProber
 
+def _active_speed_segments(host):
+    raw_segments = list(getattr(host, "speed_segments", []) or [])
+    segments = []
+    for seg in raw_segments:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            start = int(seg.get("start", seg.get("start_ms", 0)))
+            end = int(seg.get("end", seg.get("end_ms", 0)))
+            speed = float(seg.get("speed", getattr(host, "playback_rate", 1.0)))
+        except Exception:
+            continue
+        if end > start:
+            segments.append({"start": start, "end": end, "start_ms": start, "end_ms": end, "speed": speed})
+    if not segments:
+        return []
+    segments.sort(key=lambda item: (item["start"], item["end"]))
+    checkbox = getattr(host, "granular_checkbox", None)
+    is_checked = getattr(checkbox, "isChecked", None)
+    if callable(is_checked):
+        try:
+            return segments if bool(is_checked()) else []
+        except Exception:
+            return []
+    return segments
+
 class MusicMixin:
     def _mp3_dir(self):
         try:
@@ -84,11 +110,11 @@ class MusicMixin:
         t_s = getattr(self, "trim_start_ms", 0); t_e = getattr(self, "trim_end_ms", 0)
         if t_e <= t_s: t_s = 0; t_e = getattr(self, "original_duration_ms", 0)
         sp = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
-        segs = list(getattr(self, 'speed_segments', [])) if getattr(self, 'granular_checkbox', None) and self.granular_checkbox.isChecked() else []
+        speed_segments = _active_speed_segments(self)
         try:
-            if segs:
-                w_s = self._calculate_wall_clock_time(t_s, segs, sp)
-                w_e = self._calculate_wall_clock_time(t_e, segs, sp)
+            if speed_segments:
+                w_s = self._calculate_wall_clock_time(t_s, speed_segments, sp)
+                w_e = self._calculate_wall_clock_time(t_e, speed_segments, sp)
                 t_p_s = (w_e - w_s) / 1000.0
             else: t_p_s = ((t_e - t_s) / 1000.0) / sp
         except: t_p_s = 0.0
@@ -101,13 +127,13 @@ class MusicMixin:
             self._restore_pre_wizard_state(); return
         m_d = self._mp3_dir(); c_s_ms = self.positionSlider.value() if hasattr(self, "positionSlider") else 0
         try:
-            if segs:
-                w_s = self._calculate_wall_clock_time(t_s, segs, sp)
-                w_c = self._calculate_wall_clock_time(c_s_ms, segs, sp)
+            if speed_segments:
+                w_s = self._calculate_wall_clock_time(t_s, speed_segments, sp)
+                w_c = self._calculate_wall_clock_time(c_s_ms, speed_segments, sp)
                 c_p_s = max(0.0, (w_c - w_s) / 1000.0)
             else: c_p_s = max(0.0, ((c_s_ms - t_s) / 1000.0) / sp)
         except: c_p_s = 0.0
-        wizard = MergerMusicWizard(self, self.player, self.bin_dir, m_d, t_p_s, sp, trim_start_ms=t_s, trim_end_ms=t_e, speed_segments=segs, initial_project_sec=c_p_s)
+        wizard = MergerMusicWizard(self, self.player, self.bin_dir, m_d, t_p_s, sp, trim_start_ms=t_s, trim_end_ms=t_e, speed_segments=speed_segments, initial_project_sec=c_p_s)
         curr_eff = self._get_master_eff()
         wizard.video_vol_slider.blockSignals(True); wizard.video_vol_slider.setValue(curr_eff); wizard.video_vol_slider.blockSignals(False)
         if hasattr(self, "_music_volume_pct"): 
@@ -115,7 +141,7 @@ class MusicMixin:
         if hasattr(self, "_wizard_tracks") and self._wizard_tracks: wizard.selected_tracks = list(self._wizard_tracks)
         res = wizard.exec_(); self._in_transition = True
         if hasattr(wizard, 'stop_previews'): wizard.stop_previews()
-        QTimer.singleShot(100, lambda: self._complete_wizard_return(res, wizard, t_s, t_e, segs, sp))
+        QTimer.singleShot(100, lambda: self._complete_wizard_return(res, wizard, t_s, t_e, speed_segments, sp))
 
     def _complete_wizard_return(self, res, wizard, t_s, t_e, segs, sp):
         try:
@@ -207,31 +233,6 @@ class MusicMixin:
         finally:
             if hasattr(self, '_pre_wizard_state'): del self._pre_wizard_state
 
-    def _attempt_player_recovery(self):
-        try:
-            if hasattr(self, "player") and self.player:
-                try: self.player.stop()
-                except: pass
-                self.player = None; self.mpv_instance = None
-            QApplication.processEvents(); QTimer.singleShot(100, self._actually_reinit_player)
-        except: pass
-
-    def _actually_reinit_player(self):
-        try:
-            if hasattr(self, "_setup_mpv"):
-                self._setup_mpv()
-                if hasattr(self, "current_video_path") and self.current_video_path:
-                    QTimer.singleShot(200, lambda: self._restore_video_after_recovery())
-        except: pass
-
-    def _restore_video_after_recovery(self):
-        try:
-            if hasattr(self, "current_video_path") and self.current_video_path and self.player:
-                self._safe_mpv_command("loadfile", self.current_video_path, "replace")
-                self._safe_mpv_set("pause", True)
-                if hasattr(self, "trim_start_ms"): self.set_player_position(self.trim_start_ms, sync_only=False, force_pause=True)
-        except: pass
-
     def _reset_music_player(self):
         self.music_timeline_start_ms = 0; self.music_timeline_end_ms = 0; self._wizard_tracks = []
         if getattr(self, "_music_preview_player", None): self._safe_mpv_set("pause", True, target_player=self._music_preview_player)
@@ -259,7 +260,7 @@ class MusicMixin:
             m_s_ms = getattr(self, "music_timeline_start_ms", getattr(self, "trim_start_ms", 0))
             m_e_ms = getattr(self, "music_timeline_end_ms", getattr(self, "trim_end_ms", 0))
             sp = self.speed_spinbox.value() if hasattr(self, 'speed_spinbox') else 1.1
-            segs = getattr(self, 'speed_segments', [])
+            segs = _active_speed_segments(self)
             w_n = self._calculate_wall_clock_time(c_v_ms, segs, sp); w_m_s = self._calculate_wall_clock_time(m_s_ms, segs, sp)
             p_p_s = (w_n - w_m_s) / 1000.0; m_p = getattr(self, "_music_preview_player", None)
             if not m_p: 

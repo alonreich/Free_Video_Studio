@@ -151,6 +151,89 @@ def test_granular_preview_rate_updates_are_debounced_to_avoid_sluggy_playback(mo
         f"actual set_rate_calls={host.player.set_rate_calls}."
     )
 
+def test_granular_preview_seek_commands_are_throttled_and_release_deduped(monkeypatch) -> None:
+    """
+    Granular preview scrubbing must not issue one MPV seek per mouse event, and
+    the playhead release path must not send an exact seek followed by the same
+    keyframe seek.
+    """
+    clock = {"v": 100.0}
+    monkeypatch.setattr(granular_mod.import_time, "monotonic", lambda: clock["v"])
+    commands: list[tuple] = []
+    speed_updates: list[int] = []
+    host = types.SimpleNamespace(
+        player=object(),
+        duration=10_000,
+        abs_trim_start=0,
+        last_position_ms=0,
+        _pending_seek=None,
+        _seek_timer=None,
+        _last_seek_command_ts=0.0,
+        _last_seek_target_ms=None,
+        _last_seek_exact=False,
+        _in_freeze_segment=False,
+        _freeze_seg_idx=-1,
+        _safe_mpv_command=lambda *args: commands.append(args) or True,
+        update_playback_speed=lambda rel: speed_updates.append(int(rel)),
+    )
+    for name in (
+        "_normalize_seek_position",
+        "_start_seek_timer",
+        "_stop_seek_timer",
+        "_last_seek_timestamp",
+        "_is_duplicate_seek",
+        "_issue_seek_now",
+    ):
+        setattr(host, name, types.MethodType(getattr(GranularSpeedEditor, name), host))
+    GranularSpeedEditor.seek_video(host, 1000, exact=False)
+    clock["v"] += 0.010
+    GranularSpeedEditor.seek_video(host, 1200, exact=False)
+    clock["v"] += 0.010
+    GranularSpeedEditor.seek_video(host, 1500, exact=False)
+    assert len(commands) == 1, f"Expected rapid drag seeks to coalesce; commands={commands!r}."
+    assert host._pending_seek == (1500, False), "Expected latest scrub position to be retained as pending."
+    clock["v"] += 0.050
+    GranularSpeedEditor._flush_pending_seek(host)
+    assert len(commands) == 2, f"Expected one flushed pending seek; commands={commands!r}."
+    assert commands[-1] == ("seek", 1.5, "absolute", "keyframes")
+    GranularSpeedEditor.seek_video(host, 1500, exact=True)
+    assert len(commands) == 3, "Expected exact release seek after a keyframe drag seek."
+    GranularSpeedEditor.seek_video(host, 1500, exact=False)
+    assert len(commands) == 3, (
+        "Expected duplicate keyframe seek after exact release to be suppressed; "
+        f"commands={commands!r}."
+    )
+    assert speed_updates[-1] == 1500
+
+def test_granular_safe_mpv_command_uses_guarded_seek_route() -> None:
+    """
+    Regression contract: granular editor must not bypass the MPV safety manager
+    for seeks, otherwise the shared native seek gate cannot protect scrubbing.
+    """
+
+    import threading
+
+    class _GatedSeekPlayer:
+        def __init__(self) -> None:
+            self.gated_calls: list[tuple] = []
+            self.raw_commands: list[tuple] = []
+
+        def _submit_gated_seek(self, target, reference='absolute', precision='exact') -> bool:
+            self.gated_calls.append((target, reference, precision))
+            return True
+
+        def command(self, *args) -> None:
+            self.raw_commands.append(args)
+    player = _GatedSeekPlayer()
+    host = types.SimpleNamespace(
+        player=player,
+        _mpv_lock=threading.RLock(),
+        _mpv_lock_timeout=0.1,
+    )
+    assert GranularSpeedEditor._safe_mpv_command(host, "seek", 1.25, "absolute", "keyframes")
+    assert player.gated_calls == [(1.25, "absolute", "keyframes")]
+    assert player.raw_commands == [], "Raw player.command('seek') bypasses crash protection."
+
 class _StrictIntTimeline:
     def __init__(self) -> None:
         self.values: list[int] = []

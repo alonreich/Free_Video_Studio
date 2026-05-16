@@ -20,7 +20,11 @@ class MainWindowCoreBMixin:
                 if hasattr(self, "progress_bar"): self.progress_bar.hide()
                 if hasattr(self, "_pulse_timer"): self._pulse_timer.start(750)
             if hasattr(self, "_update_process_button_text"): self._update_process_button_text()
-        except Exception: pass
+        except Exception as err:
+            try:
+                self.logger.debug("on_phase_update failed: %s", err)
+            except Exception:
+                pass
 
     def _handle_video_end(self):
         try:
@@ -54,6 +58,9 @@ class MainWindowCoreBMixin:
 
     def _setup_mpv(self):
         os.makedirs(os.path.join(self.base_dir, "logs"), exist_ok=True); self.player = None
+        if not getattr(self, "_mpv_ready", True):
+            self.mpv_instance = None
+            return
         try:
             self.video_surface.setAttribute(Qt.WA_DontCreateNativeAncestors)
             self.video_surface.setAttribute(Qt.WA_NativeWindow)
@@ -62,11 +69,17 @@ class MainWindowCoreBMixin:
             self.video_surface.setAutoFillBackground(False)
             self.video_surface.show()
             wid = int(self.video_surface.winId())
+            hw_strat = str(getattr(self, "hardware_strategy", "CPU")).upper()
+            target_hwdec = "auto"
+            if "NVIDIA" in hw_strat: target_hwdec = "nvdec"
+            elif "AMD" in hw_strat: target_hwdec = "d3d11va"
+            elif "INTEL" in hw_strat: target_hwdec = "d3d11va"
+            elif hw_strat == "CPU": target_hwdec = "no"
             self.player = MPVSafetyManager.create_safe_mpv(
                 wid=wid, 
                 osc=False, 
                 hr_seek='yes', 
-                hwdec='nvdec',
+                hwdec=target_hwdec,
                 keep_open='yes',
                 ytdl=False,
                 demuxer_max_bytes='500M',
@@ -84,7 +97,7 @@ class MainWindowCoreBMixin:
                 self._bind_main_player_output()
                 @self.player.event_callback('end-file')
                 def h_ef(event):
-                    try: QTimer.singleShot(0, self._on_mpv_end_reached)
+                    try: MPVSafetyManager.run_on_qt_thread(self._on_mpv_end_reached)
                     except: pass
                 self._mpv_end_file_cb = h_ef
         except Exception as e: self.logger.error(f"CRITICAL: MPV Error: {e}"); self.player = None

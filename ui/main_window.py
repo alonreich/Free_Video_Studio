@@ -26,6 +26,13 @@ from system.state_transfer import StateTransfer
 from ui.widgets.tooltip_manager import ToolTipManager
 from ui.widgets.timeline_overlay import TimelineOverlay
 
+def _safe_single_shot(delay_ms, callback):
+    single_shot = getattr(QTimer, "singleShot", None)
+    if callable(single_shot):
+        single_shot(delay_ms, callback)
+    elif delay_ms <= 0 and callable(callback):
+        callback()
+
 class _QtLiveLogHandler(logging.Handler):
     def __init__(self, target):
         super().__init__()
@@ -37,7 +44,11 @@ class _QtLiveLogHandler(logging.Handler):
             if t and hasattr(t, "log_overlay_sink"):
                 msg = self.format(record)
                 t.log_overlay_sink(msg)
-        except Exception: pass
+        except Exception as err:
+            try:
+                logging.getLogger("Main_App").debug("log_overlay_sink failed: %s", err)
+            except Exception:
+                pass
 
 class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixin,
                             MainWindowCoreAMixin, MainWindowCoreBMixin, MainWindowCoreCMixin,
@@ -48,23 +59,40 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
     status_update_signal = pyqtSignal(str)
     process_finished_signal = pyqtSignal(bool, str)
     video_ended_signal = pyqtSignal()
-    thumbnail_extracted_signal = pyqtSignal(int, float, bool)
+    thumbnail_extracted_signal = pyqtSignal(object)
     duration_changed_signal = pyqtSignal(int)
 
-    def __init__(self, file_path=None, hardware_strategy="Scanning...", bin_dir="", config_manager=None, tooltip_manager=None):
+    def __init__(self, file_path=None, hardware_strategy="Scanning...", bin_dir="", config_manager=None, tooltip_manager=None, mpv_ready=True, mpv_error_hint=""):
         super().__init__()
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         self.bin_dir = bin_dir if bin_dir else os.path.join(self.base_dir, 'binaries')
         self.config_manager = config_manager if config_manager else ConfigManager(os.path.join(self.base_dir, 'config', 'main_app', 'main_app.conf'))
         self.tooltip_manager = tooltip_manager if tooltip_manager else ToolTipManager(self)
-        QCoreApplication.instance().installEventFilter(self.tooltip_manager)
+        app_instance = None
+        try:
+            app_getter = getattr(QCoreApplication, "instance", None)
+            app_instance = app_getter() if callable(app_getter) else None
+        except Exception:
+            app_instance = None
+        if app_instance and hasattr(app_instance, "installEventFilter"):
+            app_instance.installEventFilter(self.tooltip_manager)
         self.timeline_overlay = TimelineOverlay(self)
         self.positionSlider = self.timeline_overlay.positionSlider
         PlayerMixin.__init__(self)
         self.logger = logging.getLogger("Main_App"); self._mpv_lock = threading.RLock(); self._is_seeking_active = False; self._last_player_output_bind_ts = 0; self._binding_player_output = False
+        self._mpv_ready = bool(mpv_ready)
+        self._mpv_error_hint = str(mpv_error_hint or "")
         self.duration_changed_signal.connect(self._safe_handle_duration_changed)
         self.thumbnail_extracted_signal.connect(self._on_thumb_extracted)
-        try: StateTransfer.clear_state()
+        restore_transfer = os.environ.pop("FVS_STATE_TRANSFER_RESTORE", "") == "1"
+        self._state_transfer_session = {}
+        try:
+            if restore_transfer:
+                self._state_transfer_session = StateTransfer.load_state() or {}
+                if not file_path and self._state_transfer_session.get("input_file"):
+                    file_path = self._state_transfer_session.get("input_file")
+            else:
+                StateTransfer.clear_state()
         except: pass
         self.setWindowTitle("Fortnite Video Software - Pro Edition"); self.setMinimumSize(1200, 800)
         self.central_widget = QWidget(); self.setCentralWidget(self.central_widget)
@@ -72,7 +100,11 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self._setup_recovery_manager()
         self.set_style(); self.init_ui(); self._setup_mpv(); self._set_video_controls_enabled(False)
         self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.restore_geometry()
-        self._restore_recovery_state()
+        if not self._mpv_ready and self.statusBar():
+            hint = (self._mpv_error_hint or "MPV playback is unavailable.").strip().replace("\n", " ")
+            self.statusBar().showMessage(f"Preview disabled: {hint}", 0)
+        if self._state_transfer_session:
+            _safe_single_shot(1200, self._restore_state_transfer_session)
         self.positionSlider.sliderMoved.connect(self.set_player_position)
         self.positionSlider.trim_times_changed.connect(self._on_slider_trim_changed)
         self.positionSlider.music_trim_changed.connect(self._on_slider_music_trim_changed)
@@ -80,9 +112,37 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.positionSlider.valueChanged.connect(lambda: self._sync_main_timeline_badges())
         self.status_update_signal.connect(self.log_overlay_sink)
         self.show()
-        QTimer.singleShot(100, self._update_overlay_positions)
-        QTimer.singleShot(500, self._update_overlay_positions)
-        QTimer.singleShot(1500, self._update_overlay_positions)
+        _safe_single_shot(0, self._post_show_bootstrap)
+        _safe_single_shot(100, self._update_overlay_positions)
+        _safe_single_shot(500, self._update_overlay_positions)
+        _safe_single_shot(1500, self._update_overlay_positions)
+
+    def _post_show_bootstrap(self):
+        try:
+            p = getattr(self, "player", None)
+            if p and hasattr(p, "_wid_bound_once"):
+                p._wid_bound_once = False
+        except Exception:
+            pass
+        try:
+            vs = getattr(self, "video_surface", None)
+            if vs:
+                vs.show()
+        except Exception:
+            pass
+        self._bind_main_player_output()
+        self._restore_recovery_state()
+        try:
+            p = getattr(self, "player", None)
+            if p and getattr(self, "input_file_path", None):
+                p.command("video-reload")
+        except Exception:
+            pass
+        try:
+            if os.environ.get("FVS_RESTORE_SESSION") == "1":
+                os.environ.pop("FVS_RESTORE_SESSION", None)
+        except Exception:
+            pass
 
     def log_overlay_sink(self, msg: str):
         if hasattr(self, "_append_live_log"):
@@ -94,7 +154,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.scan_complete = (hardware_strategy != "Scanning..."); self.speed_segments = []
         self.last_dir = self.config_manager.config.get('last_directory', os.path.expanduser("~"))
         self.timer = QTimer(self); self.timer.timeout.connect(self.update_player_state)
-        if file_path and os.path.exists(file_path): QTimer.singleShot(500, lambda: self.handle_file_selection(file_path))
+        if file_path and os.path.exists(file_path): _safe_single_shot(500, lambda: self.handle_file_selection(file_path))
 
     def _setup_recovery_manager(self):
         from system.recovery_manager import RecoveryManager
@@ -107,7 +167,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         if not hasattr(self, "recovery_manager"): return
         state = {
             "assets": {
-                "input_file_path": self.input_file_path,
+                "input_file_path": getattr(self, "source_file_path", None) or self.input_file_path,
                 "wizard_tracks": getattr(self, "_wizard_tracks", []),
                 "current_music_path": getattr(self, "_current_music_path", None)
             },
@@ -169,11 +229,81 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
             if hasattr(self, "teammates_checkbox"): self.teammates_checkbox.setChecked(u.get("teammates_checked", False))
             if hasattr(self, "boss_hp_checkbox"): self.boss_hp_checkbox.setChecked(u.get("boss_hp_checked", False))
             if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(u.get("granular_checked", False))
+            if hasattr(self, "no_fade_checkbox"): self.no_fade_checkbox.setChecked(u.get("no_fade_checked", False))
             if hasattr(self, "portrait_text_input"): self.portrait_text_input.setText(u.get("portrait_text", ""))
             if self._wizard_tracks and self._ensure_music_player_ready():
                 f_t = self._wizard_tracks[0]; self._current_music_path = f_t[0]
                 self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)
-            QTimer.singleShot(1000, lambda: self._apply_restored_slider_state(v, u))
+            _safe_single_shot(1000, lambda: self._apply_restored_slider_state(v, u))
+
+    def _restore_state_transfer_session(self, attempt=0):
+        state = getattr(self, "_state_transfer_session", {}) or {}
+        if not state:
+            return
+        try:
+            state_file = state.get("input_file")
+            if state_file and not os.path.exists(state_file) and state.get("source_file"):
+                state_file = state.get("source_file")
+            if state_file and os.path.exists(state_file) and os.path.abspath(str(getattr(self, "input_file_path", "") or "")) != os.path.abspath(str(state_file)):
+                self.handle_file_selection(state_file)
+                if state.get("source_file"):
+                    self.source_file_path = state.get("source_file")
+                    self._loaded_display_path = state.get("source_file")
+                    if hasattr(self, "drop_label"):
+                        self.drop_label.setText(os.path.basename(str(state.get("source_file"))))
+                if attempt < 12:
+                    _safe_single_shot(500, lambda: self._restore_state_transfer_session(attempt + 1))
+                return
+            duration_ms = int(getattr(self, "original_duration_ms", 0) or 0)
+            if duration_ms <= 0 and hasattr(self, "positionSlider"):
+                duration_ms = int(self.positionSlider.maximum() or 0)
+            if duration_ms <= 0 and attempt < 12:
+                _safe_single_shot(500, lambda: self._restore_state_transfer_session(attempt + 1))
+                return
+            trim_start = int(state.get("trim_start", 0) or 0)
+            trim_end = int(state.get("trim_end", duration_ms) or duration_ms)
+            if duration_ms > 0:
+                trim_start = max(0, min(trim_start, duration_ms))
+                trim_end = max(trim_start, min(trim_end, duration_ms))
+            self.trim_start_ms = trim_start
+            self.trim_end_ms = trim_end
+            restored_segments = []
+            for seg in list(state.get("speed_segments", []) or []):
+                if not isinstance(seg, dict):
+                    continue
+                try:
+                    seg_start = int(seg.get("start", seg.get("start_ms", 0)))
+                    seg_end = int(seg.get("end", seg.get("end_ms", 0)))
+                    seg_speed = float(seg.get("speed", getattr(self, "playback_rate", 1.0)))
+                except Exception:
+                    continue
+                if seg_end > seg_start:
+                    restored_segments.append({"start": seg_start, "end": seg_end, "start_ms": seg_start, "end_ms": seg_end, "speed": seg_speed})
+            self.speed_segments = restored_segments
+            if hasattr(self, "granular_checkbox"):
+                self.granular_checkbox.setChecked(bool(state.get("granular_checked", bool(self.speed_segments))))
+            if state.get("hardware_mode"):
+                self.hardware_strategy = state.get("hardware_mode")
+            if state.get("resolution"):
+                self.original_resolution = state.get("resolution")
+                if hasattr(self, "resolution_label"):
+                    self.resolution_label.setText(str(self.original_resolution))
+            if hasattr(self, "positionSlider"):
+                self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
+                visible_segments = self.speed_segments if bool(getattr(self, "granular_checkbox", None) and self.granular_checkbox.isChecked()) else []
+                self.positionSlider.set_speed_segments(visible_segments)
+                self.positionSlider.update()
+            if hasattr(self, "_update_trim_widgets_from_trim_times"):
+                self._update_trim_widgets_from_trim_times()
+            if hasattr(self, "_update_granular_button_state"):
+                self._update_granular_button_state()
+            if hasattr(self, "_update_quality_label"):
+                self._update_quality_label()
+            StateTransfer.clear_state()
+            self._state_transfer_session = {}
+            self.logger.info("STATE_TRANSFER: Restored session returned from Crop Tool.")
+        except Exception as e:
+            self.logger.warning(f"STATE_TRANSFER: Failed to restore crop session state: {e}")
 
     def _apply_restored_slider_state(self, v, u):
         if hasattr(self, "positionSlider"):
@@ -188,7 +318,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self._update_quality_label()
 
     def _on_mpv_idle_changed(self, is_idle):
-        if is_idle and self.wants_to_play: QTimer.singleShot(0, self._safe_handle_mpv_end)
+        if is_idle and self.wants_to_play: _safe_single_shot(0, self._safe_handle_mpv_end)
 
     def _update_overlay_positions(self):
         if hasattr(self, "_update_upload_hint_responsive"): self._update_upload_hint_responsive()

@@ -12,7 +12,7 @@ from sanity_tests._real_sanity_harness import (
 install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
-from processing.media_utils import calculate_video_bitrate
+from processing.media_utils import MediaProber, calculate_video_bitrate
 from system.config import ConfigManager
 from ui.parts.music_mixin import MusicMixin
 from ui.parts.player_mixin import PlayerMixin
@@ -154,3 +154,20 @@ def test_challenge_10_multi_instance_config_refresh_without_restart(tmp_path: Pa
     assert app_b.load_config().get("custom_mp3_dir") == "D:/music_a"
     app_b.save_config({"custom_mp3_dir": "E:/music_b"})
     assert app_a.load_config().get("custom_mp3_dir") == "E:/music_b"
+
+def test_challenge_11_probe_does_not_count_full_video_before_render(monkeypatch, tmp_path: Path) -> None:
+    calls = []
+
+    class Result:
+        stdout = '{"streams":[{"avg_frame_rate":"120/1","r_frame_rate":"120/1","nb_frames":"10224","duration":"85.2"}],"format":{"duration":"85.2"}}'
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return Result()
+    monkeypatch.setattr("processing.media_utils.subprocess.run", fake_run)
+    prober = MediaProber(str(tmp_path), "video.mp4")
+    info = prober.get_video_timing_info()
+    assert info["observed_fps"] == 120.0
+    assert calls
+    assert all("-count_frames" not in cmd for cmd, _ in calls)
+    assert all(kwargs.get("timeout") == prober.probe_timeout for _, kwargs in calls)
