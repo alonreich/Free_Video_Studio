@@ -244,19 +244,40 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
             if any(sig in low for sig in critical_signatures):
                 logger.error(f"FFmpeg Output: {s}")
                 stats["critical_lines"].append(s)
+    last_active_time = time.time()
     while True:
         current_time = time.time()
+        if current_time - last_active_time > 10.0:
+             if proc.poll() is not None:
+                 logger.warning("MONITOR: Process dead and 10s inactivity. Safety break.")
+                 break
         if current_time - last_poll_time > 0.05:
-            if check_disk_space_callback and check_disk_space_callback():
-                logger.warning("MONITOR: Disk full or Cancellation detected. Terminating FFmpeg.")
-                kill_process_tree(proc.pid, logger)
-                break
+            if check_disk_space_callback:
+                try:
+                    status = check_disk_space_callback()
+                    if status == 2:
+                        logger.error("MONITOR: Disk space exhausted. Terminating FFmpeg.")
+                        kill_process_tree(proc.pid, logger)
+                        stats["critical_lines"].append("Error: Disk space exhausted.")
+                        break
+                    elif status == 1:
+                        logger.info("MONITOR: Cancellation detected. Terminating FFmpeg.")
+                        kill_process_tree(proc.pid, logger)
+                        break
+                except Exception as monitor_err:
+                    logger.debug(f"Monitor callback error: {monitor_err}")
             last_poll_time = current_time
         try:
             line = line_queue.get(timeout=0.05)
+            last_active_time = current_time
+            handle_line(line)
         except queue.Empty:
-            if proc.poll() is not None and reader_done.is_set() and line_queue.empty():
+            is_dead = proc.poll() is not None
+            if is_dead and reader_done.is_set() and line_queue.empty():
+                logger.debug("MONITOR: Normal exit (Process dead, reader done, queue empty).")
                 break
+            if is_dead and line_queue.empty() and current_time - last_active_time > 2.0:
+                 logger.warning("MONITOR: Process dead and queue empty for 2s. Exiting.")
+                 break
             continue
-        handle_line(line)
     return stats

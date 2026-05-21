@@ -17,7 +17,6 @@ def _proj_root() -> Path:
 
 def _conf_path() -> Path:
     return _proj_root() / "config" / "video_merger.conf"
-
 SESSION_ONLY_CONFIG_KEYS = {"music_widget"}
 
 def sanitize_persistent_config(cfg: dict) -> dict:

@@ -136,6 +136,8 @@ class UiBuilderMixin:
                 self.positionSlider.set_thumbnail_pos_ms(pos_ms)
             if hasattr(self, "_save_recovery_state"):
                 self._save_recovery_state()
+            if hasattr(self, "_update_granular_button_state"):
+                self._update_granular_button_state()
             QTimer.singleShot(4000, lambda: self.thumb_pick_btn.setText(f'📸 THUMBNAIL SET 📸'))
         else:
             self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
@@ -201,10 +203,6 @@ class UiBuilderMixin:
                 self.process_button.setIcon(QIcon())
         except:
             pass
-
-    def _handle_granular_click(self):
-        if hasattr(self, 'open_granular_speed_dialog'):
-            self.open_granular_speed_dialog()
 
     def _on_granular_checkbox_toggled(self, checked):
         if hasattr(self, "_update_quality_label"):
@@ -314,7 +312,6 @@ class UiBuilderMixin:
                     return
                 self.show()
                 QMessageBox.critical(self, 'Launch Error', f'Video Merger closed unexpectedly (Code: {proc.returncode}).')
-
             QTimer.singleShot(900, _complete_merger_handoff)
         except Exception as e:
             self.show()
@@ -494,12 +491,18 @@ class UiBuilderMixin:
         self.upload_hint_container = QFrame()
         self.upload_hint_container.setObjectName('uploadHintContainer')
         hi_l = QVBoxLayout(self.upload_hint_container)
-        self.upload_hint_label = QLabel('')
+        hi_l.setContentsMargins(18, 12, 18, 12)
+        self.upload_hint_label = QLabel('Upload Video File to begin!')
+        self.upload_hint_label.setAlignment(Qt.AlignCenter)
+        self.upload_hint_label.setWordWrap(True)
         self.upload_hint_label.hide()
         hi_l.addWidget(self.upload_hint_label)
         self.upload_hint_arrow = QLabel()
+        self.upload_hint_arrow.hide()
         self.hint_group_layout.addWidget(self.upload_hint_container)
         self.hint_group_layout.addWidget(self.upload_hint_arrow)
+        self.upload_hint_container.hide()
+        self.hint_group_container.hide()
         self.preview_notice_container = QFrame(self.hint_overlay_widget)
         self.preview_notice_container.setObjectName('previewIsolationContainer')
         self.preview_notice_container.hide()
@@ -655,8 +658,10 @@ class UiBuilderMixin:
         btn_l.addWidget(self.process_button)
         self.speed_spinbox = ClickableSpinBox()
         self.speed_spinbox.setRange(0.1, 4.0)
+        self.speed_spinbox.setDecimals(1)
+        self.speed_spinbox.setSingleStep(0.1)
         self.speed_spinbox.setValue(1.1)
-        self.speed_spinbox.setFixedWidth(55)
+        self.speed_spinbox.setFixedWidth(76)
         self.speed_spinbox.setFixedHeight(35)
         self.speed_spinbox.setEnabled(False)
         self.speed_spinbox.setCursor(Qt.PointingHandCursor)
@@ -675,30 +680,16 @@ class UiBuilderMixin:
         self.granular_checkbox.toggled.connect(self._on_granular_checkbox_toggled)
         self.granular_button = QPushButton('GRANULAR SPEED')
         self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE)
-        self.granular_button.setFixedSize(140, 35)
+        self.granular_button.setFixedSize(160, 35)
         self.granular_button.setCursor(Qt.PointingHandCursor)
         self.granular_button.setToolTip("Open the detailed speed curve editor")
         self.granular_button.clicked.connect(self._handle_granular_click)
         self.granular_button.setEnabled(False)
-        self.granular_clear_button = QPushButton()
-        self.granular_clear_button.setStyleSheet(UIStyles.BUTTON_DANGER + "QPushButton { padding: 0px; }")
-        self.granular_clear_button.setFixedSize(35, 35)
-        trash_icon = getattr(QStyle, "SP_TrashIcon", getattr(QStyle, "SP_DialogDiscardButton", 0))
-        self.granular_clear_button.setIcon(self.style().standardIcon(trash_icon))
-        try:
-            self.granular_clear_button.setIconSize(QSize(18, 18))
-        except TypeError:
-            pass
-        self.granular_clear_button.setToolTip("Clear all granular speeds and freeze frames")
-        self.granular_clear_button.clicked.connect(self._clear_speed_segments)
-        self.granular_clear_button.setEnabled(False)
-        self.granular_clear_button.setVisible(False)
         granular_w = QWidget()
         g_l = QHBoxLayout(granular_w)
         g_l.setContentsMargins(0,0,0,0)
-        g_l.setSpacing(4)
+        g_l.setSpacing(0)
         g_l.addWidget(self.granular_button)
-        g_l.addWidget(self.granular_clear_button)
         self.mobile_checkbox = QCheckBox('Portrait (9:16)')
         self.mobile_checkbox.setStyleSheet(UIStyles.CHECKBOX)
         self.mobile_checkbox.setCursor(Qt.PointingHandCursor)
@@ -781,7 +772,7 @@ class UiBuilderMixin:
         self.music_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + ' QPushButton { font-size: 10px; padding: 0px; }')
         self.music_button.setFixedSize(120, 42)
         self.music_button.setToolTip("Open the background music synchronization wizard")
-        self.music_button.clicked.connect(self.open_music_wizard)
+        self.music_button.clicked.connect(self.on_music_button_clicked)
         self.music_button.setEnabled(False)
         r_l.addWidget(self.music_button)
         r_l.addSpacing(15)
@@ -793,18 +784,20 @@ class UiBuilderMixin:
         self.no_fade_checkbox.toggled.connect(lambda _checked: self._save_recovery_state() if hasattr(self, "_save_recovery_state") else None)
         r_l.addWidget(self.no_fade_checkbox, 0, Qt.AlignRight)
         bb = QVBoxLayout()
-        bb.setContentsMargins(0, 0, 25, 0)
+        bb.setContentsMargins(0, 0, 0, 0)
+        bb.setSpacing(6)
+        bb.setAlignment(Qt.AlignHCenter)
         self.merge_btn = QPushButton('VIDEO MERGER')
         self.crop_tool_btn = QPushButton('CROP SETTINGS')
-        self.adv_editor_btn = QPushButton('ADVANCED\n VIDEO EDITOR')
+        self.adv_editor_btn = QPushButton('ADVANCED\nVIDEO EDITOR')
         self.merge_btn.setToolTip("Open the multi-video merger tool")
         self.crop_tool_btn.setToolTip("Open crop and portrait configuration (F12)")
         self.adv_editor_btn.setToolTip("Launch the professional video editor")
         for b in (self.merge_btn, self.crop_tool_btn, self.adv_editor_btn):
             b.setStyleSheet(UIStyles.BUTTON_TOOL)
-            b.setFixedSize(130, 42)
+            b.setFixedSize(112, 36)
             b.setCursor(Qt.PointingHandCursor)
-            bb.addWidget(b, 0, Qt.AlignRight)
+            bb.addWidget(b, 0, Qt.AlignHCenter)
         self.merge_btn.clicked.connect(self.launch_video_merger)
         self.crop_tool_btn.clicked.connect(self.launch_crop_tool)
         self.adv_editor_btn.clicked.connect(self.launch_advanced_editor)

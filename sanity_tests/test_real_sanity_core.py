@@ -146,7 +146,6 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     assert host.player.paused >= 1
     assert host.wants_to_play is False
     assert host.positionSlider.time_calls and host.positionSlider.time_calls[-1] == (1200, 8200)
-
     host._music_preview_player = DummyMediaPlayer()
     host._ensure_music_player_ready = lambda: True
     host._safe_mpv_command = lambda *a, **k: True

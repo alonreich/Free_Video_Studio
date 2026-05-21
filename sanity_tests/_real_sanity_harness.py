@@ -447,15 +447,25 @@ def install_qt_mpv_stubs():
                 self._x, self._y, self._w, self._h = map(int, vals[:4])
 
         def x(self) -> int: return self._x
+
         def y(self) -> int: return self._y
+
         def left(self) -> int: return self._x
+
         def top(self) -> int: return self._y
+
         def width(self) -> int: return self._w
+
         def height(self) -> int: return self._h
+
         def right(self) -> int: return self._x + self._w
+
         def bottom(self) -> int: return self._y + self._h
+
         def isValid(self) -> bool: return self._w > 0 and self._h > 0
+
         def center(self): return _Point(self._x + self._w // 2, self._y + self._h // 2)
+
         def contains(self, point) -> bool:
             return self.left() <= int(point.x()) <= self.right() and self.top() <= int(point.y()) <= self.bottom()
 
@@ -783,7 +793,6 @@ def install_qt_mpv_stubs():
         def globalPos(self): return qtcore.QPoint()
         @staticmethod
         def clipboard(): return MockObject()
-
         @staticmethod
         def instance(): return MockObject._app_instance
 
@@ -810,6 +819,7 @@ def install_qt_mpv_stubs():
         def setDirectory(self, *args): pass
 
         def setSidebarUrls(self, *args): pass
+
     class QTimer(MockObject):
         @staticmethod
         def singleShot(_delay_ms, callback):
@@ -822,7 +832,6 @@ def install_qt_mpv_stubs():
     class QCoreApplication(QApplication):
         @staticmethod
         def setOrganizationName(*args): pass
-
     qtcore.QObject = MockObject
     qtcore.QThread = MockObject
     qtcore.QTimer = QTimer

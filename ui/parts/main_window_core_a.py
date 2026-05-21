@@ -23,18 +23,23 @@ class MainWindowCoreAMixin:
         if not hasattr(self, "granular_button"):
             return
         has_segments = bool(getattr(self, "speed_segments", []))
-        if has_segments:
-            self.granular_button.setText("EDIT SPEEDS")
-            self.granular_button.setToolTip("Open the detailed speed editor")
+        has_thumbnail = bool(getattr(self, "selected_intro_abs_time", None))
+        if has_segments or has_thumbnail:
+            self.granular_button.setText("REMOVE SPEED SEGMENTS")
+            self.granular_button.setStyleSheet(UIStyles.BUTTON_DANGER + " QPushButton { font-size: 10px; padding: 0px; }")
+            self.granular_button.setToolTip("Click to completely remove all granular speed segments, freeze images, and thumbnails")
         else:
             self.granular_button.setText("GRANULAR SPEED")
-            self.granular_button.setToolTip("Open the detailed speed editor")
-        self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + "QPushButton { font-size: 10px; }")
-        clear_btn = getattr(self, "granular_clear_button", None)
-        if clear_btn:
-            clear_btn.setVisible(has_segments)
-            clear_btn.setEnabled(has_segments and self.granular_button.isEnabled())
-            clear_btn.setCursor(Qt.PointingHandCursor if clear_btn.isEnabled() else Qt.ArrowCursor)
+            self.granular_button.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + " QPushButton { font-size: 10px; padding: 0px; }")
+            self.granular_button.setToolTip("Open the detailed speed editor to add variable speeds or freeze frames")
+
+    def _handle_granular_click(self):
+        has_segments = bool(getattr(self, "speed_segments", []))
+        has_thumbnail = bool(getattr(self, "selected_intro_abs_time", None))
+        if has_segments or has_thumbnail:
+            self._clear_speed_segments()
+        else:
+            self.open_granular_speed_dialog()
 
     def open_granular_speed_dialog(self):
         try:
@@ -151,18 +156,21 @@ class MainWindowCoreAMixin:
     def _clear_speed_segments(self):
         has_segments = bool(self.speed_segments)
         has_freeze = bool(self.freeze_images)
-        if not has_segments: return
-        if has_freeze:
-            n_freeze = len(self.freeze_images)
-            n_speed = len(self.speed_segments) - n_freeze
-            msg = f"Are you sure you want to clear all {n_speed} speed segment(s) and {n_freeze} frozen image(s)?"
-        else:
-            msg = "Are you sure you want to clear all speed segments?"
+        has_thumbnail = bool(getattr(self, "selected_intro_abs_time", None))
+        if not has_segments and not has_thumbnail: return
+        msg = "Are you sure you want to clear all granular speeds, freeze images, and thumbnails?"
+        if has_freeze or has_thumbnail:
+             msg = "Are you sure you want to clear all speed segments and freeze/thumbnail images?"
         if QMessageBox.question(self, "Clear Granular Speeds", msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.speed_segments = []
-            if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(False)
+            self.selected_intro_abs_time = None
             if hasattr(self, "positionSlider"):
-                self.positionSlider.set_speed_segments([]); self.positionSlider.update()
+                self.positionSlider.set_speed_segments([])
+                self.positionSlider.set_thumbnail_pos_ms(-1)
+                self.positionSlider.update()
+            if hasattr(self, "thumb_pick_btn"):
+                self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
+            if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(False)
             if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
             if hasattr(self, "_update_quality_label"): self._update_quality_label()
             if hasattr(self, "_save_recovery_state"): self._save_recovery_state()

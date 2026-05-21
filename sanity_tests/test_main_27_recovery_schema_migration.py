@@ -1,8 +1,6 @@
-from __future__ import annotations
-
+﻿from __future__ import annotations
 import types
 from pathlib import Path
-
 from sanity_tests._real_sanity_harness import (
     DummyButton,
     DummyCheckBox,
@@ -11,17 +9,14 @@ from sanity_tests._real_sanity_harness import (
     DummySpinBox,
     install_qt_mpv_stubs,
 )
-
 install_qt_mpv_stubs()
 
 from ui.main_window import FortniteVideoSoftware
 from ui.parts.music_mixin import MusicMixin
 
-
 class _Geometry:
     def toBase64(self):
         return b"geometry"
-
 
 class _TextInput:
     def __init__(self, value=""):
@@ -33,14 +28,12 @@ class _TextInput:
     def text(self):
         return self.value
 
-
 class _CaptureRecoveryManager:
     def __init__(self):
         self.saved = []
 
     def save_state_async(self, state):
         self.saved.append(state)
-
 
 def _make_day_to_day_host(tmp_path: Path, *, mobile: bool, teammates: bool):
     video = tmp_path / ("portrait.mp4" if mobile else "landscape.mp4")
@@ -87,7 +80,6 @@ def _make_day_to_day_host(tmp_path: Path, *, mobile: bool, teammates: bool):
     )
     return host, recovery, video, music_a, music_b
 
-
 def _make_restore_host(state):
     commands = []
     sets = []
@@ -125,14 +117,12 @@ def _make_restore_host(state):
     host._apply_restored_slider_state = types.MethodType(FortniteVideoSoftware._apply_restored_slider_state, host)
     return host, commands, sets, saved_after_restore
 
-
 def test_recovery_captures_and_restores_full_day_to_day_portrait_music_state(tmp_path, monkeypatch) -> None:
     capture_host, recovery, video, music_a, music_b = _make_day_to_day_host(
         tmp_path, mobile=True, teammates=True
     )
     FortniteVideoSoftware._save_recovery_state(capture_host)
     state = recovery.saved[-1]
-
     assert state["assets"]["input_file_path"] == str(video)
     assert state["assets"]["wizard_tracks"] == [
         {"path": str(music_a), "offset_sec": 7.25, "duration_sec": 12.0},
@@ -158,11 +148,9 @@ def test_recovery_captures_and_restores_full_day_to_day_portrait_music_state(tmp
     assert ui["portrait_text"] == "Recovery overlay text"
     assert ui["music_button_active"] is True
     assert ui["slider_value_ms"] == 22_222
-
     restore_host, commands, sets, saved_after_restore = _make_restore_host(state)
     monkeypatch.setenv("FVS_RESTORE_SESSION", "1")
     FortniteVideoSoftware._restore_recovery_state(restore_host)
-
     assert restore_host.input_file_path == str(video)
     assert restore_host.trim_start_ms == 10_000
     assert restore_host.trim_end_ms == 50_000
@@ -190,24 +178,19 @@ def test_recovery_captures_and_restores_full_day_to_day_portrait_music_state(tmp
     assert any(call[0][:2] == ("volume", 73) for call in sets)
     assert saved_after_restore
 
-
 def test_recovery_captures_and_restores_non_portrait_without_teammate_health(tmp_path, monkeypatch) -> None:
     capture_host, recovery, _, _, _ = _make_day_to_day_host(tmp_path, mobile=False, teammates=False)
     FortniteVideoSoftware._save_recovery_state(capture_host)
     state = recovery.saved[-1]
-
     assert state["ui_dynamics"]["mobile_checked"] is False
     assert state["ui_dynamics"]["teammates_checked"] is False
-
     restore_host, _, _, _ = _make_restore_host(state)
     monkeypatch.setenv("FVS_RESTORE_SESSION", "1")
     FortniteVideoSoftware._restore_recovery_state(restore_host)
-
     assert restore_host.mobile_checkbox.isChecked() is False
     assert restore_host.teammates_checkbox.isChecked() is False
     assert restore_host.positionSlider.music_start_ms == 18_000
     assert restore_host.positionSlider.music_end_ms == 38_500
-
 
 def test_recovery_schema_migration_requires_explicit_restore_and_normalizes_old_fields(tmp_path, monkeypatch) -> None:
     video = tmp_path / "legacy.mp4"
@@ -232,15 +215,12 @@ def test_recovery_schema_migration_requires_explicit_restore_and_normalizes_old_
         "ui_dynamics": {"mobile_checked": True, "teammates_checked": False, "granular_checked": True},
     }
     restore_host, _, _, _ = _make_restore_host(legacy_state)
-
     monkeypatch.delenv("FVS_RESTORE_SESSION", raising=False)
     FortniteVideoSoftware._restore_recovery_state(restore_host)
     assert restore_host.input_file_path is None
     assert not hasattr(restore_host, "_wizard_tracks")
-
     monkeypatch.setenv("FVS_RESTORE_SESSION", "1")
     FortniteVideoSoftware._restore_recovery_state(restore_host)
-
     assert restore_host.input_file_path == str(video)
     assert restore_host._wizard_tracks == [(str(music), 2.5, 6.0)]
     assert restore_host.speed_segments == [{"start": 2000, "end": 5000, "start_ms": 2000, "end_ms": 5000, "speed": 4.0}]

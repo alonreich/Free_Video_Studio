@@ -1,11 +1,8 @@
-from __future__ import annotations
-
+﻿from __future__ import annotations
 import types
-
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
 from sanity_tests._real_sanity_harness import DummyButton as HarnessButton
 from sanity_tests._real_sanity_harness import DummyCheckBox, DummyLogger, DummySlider, DummySpinBox
-
 install_qt_mpv_stubs()
 
 from processing.filter_builder import FilterBuilder
@@ -16,8 +13,8 @@ from ui.main_window import (
     _normalize_recovery_speed_segments,
     _serialize_recovery_music_tracks,
 )
-from ui.parts.music_mixin import MusicMixin
 
+from ui.parts.music_mixin import MusicMixin
 
 class DummyButton:
     def __init__(self):
@@ -34,15 +31,12 @@ class DummyButton:
     def setToolTip(self, value):
         self.tooltip_value = value
 
-
 def test_recovery_music_tracks_round_trip_as_json_safe_dicts(tmp_path):
     mp3 = tmp_path / "song.mp3"
     mp3.write_bytes(b"fake")
-
     serialized = _serialize_recovery_music_tracks([(str(mp3), 275.0, 28.7)])
     assert serialized == [{"path": str(mp3), "offset_sec": 275.0, "duration_sec": 28.7}]
     assert _deserialize_recovery_music_tracks(serialized) == [(str(mp3), 275.0, 28.7)]
-
 
 def test_recovery_keeps_freeze_and_speed_segments():
     segments = _normalize_recovery_speed_segments(
@@ -55,7 +49,6 @@ def test_recovery_keeps_freeze_and_speed_segments():
         {"start": 1000, "end": 3000, "start_ms": 1000, "end_ms": 3000, "speed": 2.5},
         {"start": 4000, "end": 5000, "start_ms": 4000, "end_ms": 5000, "speed": 0.0},
     ]
-
 
 def test_recovery_manager_validates_dict_and_tuple_music_tracks(tmp_path):
     mp3_a = tmp_path / "a.mp3"
@@ -73,7 +66,6 @@ def test_recovery_manager_validates_dict_and_tuple_music_tracks(tmp_path):
     valid, missing = RecoveryManager("test_recovery_music").validate_assets(state)
     assert valid is True
     assert missing == []
-
 
 def test_filter_builder_accepts_recovered_dict_music_track():
     fb = FilterBuilder(logger=types.SimpleNamespace(info=lambda *args, **kwargs: None))
@@ -93,16 +85,13 @@ def test_filter_builder_accepts_recovered_dict_music_track():
     assert "[1:a]atrim=start=275.000:duration=28.700" in joined
     assert "volume=0.7000" in joined
 
-
 def test_music_button_reflects_recovered_music_state():
     host = types.SimpleNamespace(music_button=DummyButton())
     MusicMixin._set_music_button_state(host, True)
     assert "MUSIC ADDED" in host.music_button.text_value
     assert "edit the selected music" in host.music_button.tooltip_value
-
     MusicMixin._set_music_button_state(host, False)
     assert "ADD MUSIC" in host.music_button.text_value
-
 
 def test_full_recovery_restores_music_trim_quality_thumbnail_and_granular_state(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
@@ -112,7 +101,6 @@ def test_full_recovery_restores_music_trim_quality_thumbnail_and_granular_state(
     commands: list[tuple] = []
     sets: list[tuple] = []
     saved: list[bool] = []
-
     state = {
         "assets": {
             "input_file_path": str(video),
@@ -159,7 +147,6 @@ def test_full_recovery_restores_music_trim_quality_thumbnail_and_granular_state(
 
         def text(self):
             return self.value
-
     host = types.SimpleNamespace(
         recovery_manager=types.SimpleNamespace(load_state=lambda: state),
         logger=DummyLogger(),
@@ -191,10 +178,8 @@ def test_full_recovery_restores_music_trim_quality_thumbnail_and_granular_state(
     host._maybe_enable_process = lambda: None
     host._save_recovery_state = lambda: saved.append(True)
     host._apply_restored_slider_state = types.MethodType(FortniteVideoSoftware._apply_restored_slider_state, host)
-
     monkeypatch.setenv("FVS_RESTORE_SESSION", "1")
     FortniteVideoSoftware._restore_recovery_state(host)
-
     assert host.input_file_path == str(video)
     assert host.trim_start_ms == 1234
     assert host.trim_end_ms == 15678

@@ -5,7 +5,26 @@ from PyQt5.QtWidgets import *
 from system import diagnostic_runtime
 
 class MainWindowUiHelpersBMixin:
+    def _has_uploaded_video(self):
+        path = getattr(self, 'input_file_path', None)
+        if not path:
+            return False
+        try:
+            return os.path.exists(str(path))
+        except Exception:
+            return True
+
+    def _hide_upload_hint_group(self):
+        for attr in ('upload_hint_label', 'upload_hint_arrow', 'upload_hint_container', 'hint_group_container'):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                try:
+                    widget.hide()
+                except Exception:
+                    pass
+
     def _set_upload_hint_active(self, active):
+        self._upload_hint_active = bool(active)
         target = getattr(self, 'hint_overlay_widget', None)
         if not target: return
         hint_group_container = getattr(self, 'hint_group_container', None)
@@ -15,21 +34,33 @@ class MainWindowUiHelpersBMixin:
             except Exception:
                 pass
         preview_notice_active = self._update_diagnostic_preview_notice()
-        if active or preview_notice_active:
+        show_hint = self._upload_hint_active and not self._has_uploaded_video()
+        if show_hint or preview_notice_active:
             self._update_upload_hint_responsive()
-        if active:
+        if show_hint:
+            if hasattr(self, 'upload_hint_label'):
+                self.upload_hint_label.show()
+            if hasattr(self, 'upload_hint_container'):
+                self.upload_hint_container.show()
+            if hasattr(self, 'upload_hint_arrow'):
+                self.upload_hint_arrow.hide()
             if hint_group_container is not None:
                 hint_group_container.show()
             target.show(); target.raise_()
-            if hasattr(self, '_hint_pulse_timer'):
-                if not self._hint_pulse_timer.isActive():
-                    self._hint_pulse_start_time = time.time()
-                    self._hint_pulse_timer.start()
-        else:
-            if hasattr(self, '_hint_pulse_timer'):
-                self._hint_pulse_timer.stop()
             if hint_group_container is not None:
-                hint_group_container.setVisible(False)
+                hint_group_container.raise_()
+            timer = getattr(self, '_hint_pulse_timer', None)
+            if timer is not None:
+                timer_active = getattr(timer, 'isActive', None)
+                timer_start = getattr(timer, 'start', None)
+                if callable(timer_start) and (not callable(timer_active) or not timer_active()):
+                    self._hint_pulse_start_time = time.time()
+                    timer_start()
+        else:
+            timer = getattr(self, '_hint_pulse_timer', None)
+            if timer is not None and callable(getattr(timer, 'stop', None)):
+                timer.stop()
+            self._hide_upload_hint_group()
             if preview_notice_active:
                 target.show(); target.raise_()
             else:
@@ -55,10 +86,43 @@ class MainWindowUiHelpersBMixin:
     def _do_update_upload_hint_responsive(self):
         if not hasattr(self, 'hint_group_container') or self.hint_group_container is None: return
         try:
-            self.hint_group_container.hide()
+            if not getattr(self, '_upload_hint_active', False) or self._has_uploaded_video():
+                self._hide_upload_hint_group()
+                return
+            target = getattr(self, 'hint_overlay_widget', None)
+            label = getattr(self, 'upload_hint_label', None)
+            hint_box = getattr(self, 'upload_hint_container', None)
+            if target is None or label is None or hint_box is None:
+                self._hide_upload_hint_group()
+                return
+            if not label.text().strip():
+                label.setText('Upload Video File to begin!')
+            label.setAlignment(Qt.AlignCenter)
+            label.setWordWrap(True)
+            label.setStyleSheet('font-size: 22px; font-weight: bold; color: #ffffff; padding: 0px;')
+            hint_box.setStyleSheet(
+                'QFrame#uploadHintContainer {'
+                'background-color: rgba(0, 0, 0, 135);'
+                'border: 1px solid rgba(125, 211, 252, 180);'
+                'border-radius: 8px;'
+                '}'
+            )
             if hasattr(self, 'upload_hint_arrow'):
                 self.upload_hint_arrow.hide()
-            return
+            max_width = max(260, min(520, int(target.width() * 0.78)))
+            label.setMaximumWidth(max_width - 36)
+            hint_box.setMaximumWidth(max_width)
+            hint_box.adjustSize()
+            self.hint_group_container.adjustSize()
+            hint_size = self.hint_group_container.sizeHint()
+            self.hint_group_container.resize(hint_size)
+            x = max(0, (target.width() - hint_size.width()) // 2)
+            y = max(0, (target.height() - hint_size.height()) // 2)
+            self.hint_group_container.move(x, y)
+            label.show()
+            hint_box.show()
+            self.hint_group_container.show()
+            self.hint_group_container.raise_()
         except: pass
 
     def _update_window_size_in_title(self):

@@ -1,10 +1,8 @@
-import json
+﻿import json
 import sys
-
 sys.dont_write_bytecode = True
 
 from utilities.merger_config import MergerConfigManager
-
 
 def test_merger_config_drops_session_music_on_load_and_save(tmp_path):
     cfg_path = tmp_path / "video_merger.conf"
@@ -21,11 +19,8 @@ def test_merger_config_drops_session_music_on_load_and_save(tmp_path):
         ),
         encoding="utf-8",
     )
-
     manager = MergerConfigManager(str(cfg_path))
-
     assert manager.config == {"last_dir": "C:/Videos"}
-
     manager.save_config(
         {
             "last_dir": "C:/Videos",
@@ -33,5 +28,4 @@ def test_merger_config_drops_session_music_on_load_and_save(tmp_path):
         }
     )
     saved = json.loads(cfg_path.read_text(encoding="utf-8"))
-
     assert saved == {"last_dir": "C:/Videos"}

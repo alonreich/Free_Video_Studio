@@ -43,7 +43,6 @@ def _successful_ffmpeg(captured: list[list[str]]):
         captured.append(list(cmd))
         Path(cmd[-1]).write_bytes(b"jpg")
         return types.SimpleNamespace(returncode=0, stderr=b"")
-
     return _run
 
 def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkeypatch, tmp_path: Path) -> None:

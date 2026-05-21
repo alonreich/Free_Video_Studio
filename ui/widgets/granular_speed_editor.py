@@ -440,10 +440,14 @@ class GranularSpeedEditor(QDialog):
             if start < end <= seg_end:
                 end = start
                 break
-        start = 0
-        for _i, _start, seg_end in sorted(self._sorted_segments(), key=lambda item: item[2]):
-            if seg_end + AUTO_START_AFTER_PREVIOUS_MS <= end:
-                start = max(start, seg_end + AUTO_START_AFTER_PREVIOUS_MS)
+        gap = self._gap_for_point(max(0, end - 1))
+        if gap is None:
+            low = 0
+        else:
+            low, _high = gap
+        start = low + AUTO_START_AFTER_PREVIOUS_MS
+        if start >= end:
+            start = low
         end = self._clamp_selection_end(end, start)
         return start, end
 

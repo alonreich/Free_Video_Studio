@@ -140,10 +140,20 @@ class FfmpegMixin:
             if speed_factor < 0.1 or speed_factor > 4.0:
                 self.show_message("Invalid Speed", "Allowed speed range is 0.1x to 4.0x."); self.is_processing = False
                 self.process_button.setEnabled(True); return
+            stored_speed_segments = list(getattr(self, "speed_segments", []) or [])
             checkbox = getattr(self, "granular_checkbox", None)
             is_checked = getattr(checkbox, "isChecked", None)
-            granular_enabled = bool(is_checked()) if callable(is_checked) else bool(getattr(self, "speed_segments", []))
-            raw_segments = list(getattr(self, "speed_segments", []) or []) if granular_enabled else []
+            checkbox_enabled = bool(is_checked()) if callable(is_checked) else bool(stored_speed_segments)
+            if stored_speed_segments and not checkbox_enabled:
+                try:
+                    self.logger.warning("GRANULAR: hidden checkbox was off while segments exist; exporting stored segments anyway.")
+                except Exception:
+                    pass
+                try:
+                    checkbox.setChecked(True)
+                except Exception:
+                    pass
+            raw_segments = stored_speed_segments
             segments = []; speed_segments_for_worker = []
             for seg in raw_segments:
                 try:
@@ -153,6 +163,14 @@ class FfmpegMixin:
                 except: continue
             segments.sort(key=lambda item: (item["start"], item["end"]))
             speed_segments_for_worker.sort(key=lambda item: (item["start_ms"], item["end_ms"]))
+            try:
+                self.logger.info(
+                    "GRANULAR_EXPORT_STATE: stored=%d worker=%d base_speed=%.3f trim=%d-%d segments=%s",
+                    len(stored_speed_segments), len(speed_segments_for_worker), speed_factor,
+                    start_time_ms, end_time_ms, speed_segments_for_worker,
+                )
+            except Exception:
+                pass
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
             music_path = None; music_offset_s = 0.0; music_tracks_for_worker = []
             linear_video_vol = self._get_master_eff() / 100.0

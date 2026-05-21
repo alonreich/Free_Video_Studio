@@ -112,6 +112,6 @@ class MainWindowUiHelpersAMixin:
         timer_active = getattr(self._hint_pulse_timer, "isActive", None)
         if not callable(timer_start):
             return
-        if not callable(timer_active) or not timer_active():
+        if getattr(self, '_upload_hint_active', False) and (not callable(timer_active) or not timer_active()):
             timer_start()
             self._hint_pulse_start_time = time.time()

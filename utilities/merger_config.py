@@ -1,11 +1,8 @@
-import os
+﻿import os
 import json
 import logging
-
 from utilities.merger_utils import sanitize_persistent_config
-
 logger = logging.getLogger("Video_Merger")
-
 
 class MergerConfigManager:
     def __init__(self, config_path):

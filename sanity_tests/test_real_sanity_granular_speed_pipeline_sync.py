@@ -6,6 +6,8 @@ from sanity_tests._real_sanity_harness import DummyCheckBox, DummySpinBox, insta
 install_qt_mpv_stubs()
 
 from ui.parts.player_mixin import PlayerMixin
+from ui.parts.player_mixin import _active_speed_segments as player_active_speed_segments
+from ui.parts.music_mixin import _active_speed_segments as music_active_speed_segments
 from ui.widgets.music_wizard_misc import MergerMusicWizardMiscMixin
 from ui.widgets.music_wizard_timeline import MergerMusicWizardTimelineMixin
 
@@ -105,6 +107,20 @@ def test_main_preview_player_reflects_granular_segment_speeds(monkeypatch) -> No
     assert get_target_speed(1000) == 0.5
     assert get_target_speed(5000) == 2.0
     assert get_target_speed(9000) == 1.1
+
+def test_granular_segments_are_source_of_truth_when_hidden_checkbox_desyncs() -> None:
+    host = types.SimpleNamespace()
+    host.playback_rate = 1.1
+    host.granular_checkbox = DummyCheckBox(False)
+    host.speed_segments = [
+        {"start": 1000, "end": 2500, "speed": 2.0},
+        {"start": 4000, "end": 5000, "speed": 0.5},
+    ]
+    assert player_active_speed_segments(host) == [
+        {"start": 1000, "end": 2500, "start_ms": 1000, "end_ms": 2500, "speed": 2.0},
+        {"start": 4000, "end": 5000, "start_ms": 4000, "end_ms": 5000, "speed": 0.5},
+    ]
+    assert music_active_speed_segments(host) == player_active_speed_segments(host)
 
 class _WizardVideoPlayer:
     def get_full_state(self) -> dict[str, int]:

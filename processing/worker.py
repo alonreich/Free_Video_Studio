@@ -60,6 +60,15 @@ class ProcessThread(QThread):
         self.intro_from_midpoint = bool(intro_from_midpoint)
         self.intro_abs_time_ms = int(intro_abs_time_ms) if intro_abs_time_ms is not None else None
         self.speed_segments = self._normalize_speed_segments(speed_segments)
+        if self.logger:
+            try:
+                self.logger.info(
+                    "GRANULAR_WORKER_STATE: normalized=%d base_speed=%.3f trim=%d-%d segments=%s",
+                    len(self.speed_segments), float(self.speed_factor),
+                    int(self.start_time_ms), int(self.end_time_ms), self.speed_segments,
+                )
+            except Exception:
+                pass
         self.hardware_strategy = hardware_strategy
         self.music_config = dict(music_config or {})
         if self.bg_music_path and "music_vol" not in self.music_config and "volume" not in self.music_config:
@@ -216,20 +225,22 @@ class ProcessThread(QThread):
         if self.current_process: kill_process_tree(self.current_process.pid, self.logger)
 
     def _monitor_disk_space(self):
+        if self.is_canceled:
+            return 1
         try:
             os.makedirs(self._output_dir, exist_ok=True)
         except OSError as e:
             if self.logger: self.logger.error(f"Output directory unavailable: {e}")
             self.cancel()
-            return True
+            return 1
         dynamic_threshold_gb = 0.5
         if hasattr(self, 'target_mb') and self.target_mb:
             dynamic_threshold_gb = float(max(Fraction(1, 2), (Fraction(str(self.target_mb)) * 3) / 1024))
         if not check_disk_space(self._output_dir, dynamic_threshold_gb):
             if self.logger: self.logger.error(f"Insufficient disk space. Required: {dynamic_threshold_gb:.2f}GB")
             self.cancel()
-            return True
-        return self.is_canceled
+            return 2
+        return 0
 
     def _emit_status(self, msg):
         self._emit_signal_or_callback(self.status_update_signal, msg)
@@ -308,6 +319,14 @@ class ProcessThread(QThread):
                     target_fps=target_fps_expr
                 )
                 granular_v_a_filters = g_str
+                if self.logger:
+                    try:
+                        self.logger.info(
+                            "GRANULAR_FILTER_STATE: enabled=True duration=%.3fs video_pad=%s audio_pad=%s filter_len=%d",
+                            float(g_dur), g_v, g_a, len(granular_v_a_filters),
+                        )
+                    except Exception:
+                        pass
             bitrate_duration_sec = max(0.01, g_dur + max(0.0, self.intro_still_sec))
             audio_kbps = self._choose_audio_bitrate(source_audio_kbps, bitrate_duration_sec)
             video_bitrate_kbps = calculate_video_bitrate(
@@ -546,6 +565,7 @@ class ProcessThread(QThread):
                 low_bytes, high_bytes = size_bounds
                 self.logger.info(f"SIZE_CHECK: actual={actual_bytes} low={low_bytes} high={high_bytes}")
                 if low_bytes <= actual_bytes <= high_bytes:
+                    self.logger.info("SIZE_CHECK: Success, within bounds.")
                     break
                 if actual_bytes < low_bytes and current_bitrate_kbps >= EncoderManager.H264_LEVEL_42_MAX_KBPS:
                     self.logger.info("SIZE_CHECK: output under target at legal H.264 level cap; accepting max-quality result.")
@@ -559,28 +579,38 @@ class ProcessThread(QThread):
                 next_bitrate = int(max(300, min(EncoderManager.H264_LEVEL_42_MAX_KBPS, current_bitrate_kbps * ratio)))
                 if abs(next_bitrate - current_bitrate_kbps) < 25:
                     next_bitrate = current_bitrate_kbps + (25 if actual_bytes < low_bytes else -25)
+                self.logger.info(f"SIZE_ADJUST: old_bitrate={current_bitrate_kbps} new_bitrate={next_bitrate} ratio={float(ratio):.4f}")
                 current_bitrate_kbps = int(max(300, min(EncoderManager.H264_LEVEL_42_MAX_KBPS, next_bitrate)))
+            self.logger.info("SIZE_PASS_LOOP: Loop finished or broken.")
             if size_bounds:
                 actual_bytes = os.path.getsize(core_path) if os.path.exists(core_path) else 0
                 low_bytes, high_bytes = size_bounds
+                self.logger.info(f"FINAL_SIZE_CHECK: actual={actual_bytes} low={low_bytes} high={high_bytes}")
                 if actual_bytes > high_bytes:
+                    self.logger.error(f"SIZE_FAIL: Final file size {actual_bytes} > {high_bytes}")
                     self._emit_finished(False, f"Final file size missed target: {actual_bytes / (1024 * 1024):.2f}MB for {self.target_mb:.2f}MB target.")
                     return
                 if actual_bytes < low_bytes and current_bitrate_kbps < EncoderManager.H264_LEVEL_42_MAX_KBPS:
+                    self.logger.error(f"SIZE_FAIL: Final file size {actual_bytes} < {low_bytes}")
                     self._emit_finished(False, f"Final file size missed target: {actual_bytes / (1024 * 1024):.2f}MB for {self.target_mb:.2f}MB target.")
                     return
+            self.logger.info("FINALIZING: Moving file to destination.")
             self._emit_status("Finalizing output...")
             if not os.path.exists(core_path) or os.path.getsize(core_path) <= 0:
+                self.logger.error("FINALIZING_FAIL: core.mp4 missing or empty.")
                 self._emit_finished(False, "Final render output is missing.")
                 return
             final_output = self._resolve_final_output_path()
+            self.logger.info(f"FINALIZING: Output path resolved to {final_output}")
             try:
                 if os.path.exists(final_output):
                     os.remove(final_output)
             except OSError as e:
+                self.logger.error(f"FINALIZING_FAIL: Could not remove existing {final_output}: {e}")
                 self._emit_finished(False, f"Could not replace existing output file: {e}")
                 return
             shutil.move(core_path, final_output)
+            self.logger.info("FINALIZING: Move successful.")
             self._emit_progress(100)
             self._emit_finished(True, final_output)
         except Exception as e:

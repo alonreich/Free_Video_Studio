@@ -103,7 +103,6 @@ def main():
                         return
                     window.show()
                     QMessageBox.critical(window, "Launch Error", f"Main app closed unexpectedly (Code: {proc.returncode}).")
-
                 QTimer.singleShot(900, _complete_main_handoff)
             except Exception as ex:
                 window.show()

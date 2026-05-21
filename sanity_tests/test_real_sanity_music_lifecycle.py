@@ -10,7 +10,6 @@ from processing.filter_builder import FilterBuilder
 from ui.parts.main_window_core_c import MainWindowCoreCMixin
 from ui.parts.music_mixin import MusicMixin
 
-
 def _music_host():
     host = types.SimpleNamespace()
     host.logger = DummyLogger()

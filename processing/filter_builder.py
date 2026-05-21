@@ -31,6 +31,7 @@ class AudioFilterMixin:
             chain.append(f"{main_audio_label}{main_audio_filter}[a_main_raw]")
         else:
             chain.append(f"anullsrc=r={target_sample_rate}:cl=stereo,atrim=duration={max(0.01, float(main_duration)):.4f},asetpts=PTS-STARTPTS[a_main_raw]")
+
         def normalize_music_track(track, fallback_duration=0.0):
             if isinstance(track, dict):
                 path = track.get("path")
@@ -55,7 +56,6 @@ class AudioFilterMixin:
             if dur_val <= 0.001 and fallback_duration:
                 dur_val = max(0.001, float(fallback_duration))
             return (str(path), offset_val, dur_val)
-
         tracks = []
         fallback_music_duration = total_project_duration if total_project_duration is not None else main_duration
         for raw_track in list(music_tracks or []):
@@ -194,7 +194,6 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
                 overlap_end = min(float(range_end), float(source_chunk['end']))
                 if overlap_end > overlap_start + 0.001:
                     out_chunks.append({'start': overlap_start, 'end': overlap_end, 'speed': float(source_chunk['speed'])})
-
         chunks = []
         source_cursor = 0.0
         for f in freezes:
@@ -226,6 +225,15 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
                     break
             return max(0.0, mapped)
         n_chunks = len(chunks)
+        if self.logger:
+            try:
+                self.logger.info(
+                    "GRANULAR_CHAIN_STATE: chunks=%d input_is_cuda=%s base_speed=%.3f source_cut_ms=%d total_ms=%d normalized=%s",
+                    n_chunks, bool(input_is_cuda), float(base_speed),
+                    int(source_cut_start_ms or 0), int(total_duration_ms or 0), normalized_segments,
+                )
+            except Exception:
+                pass
         if n_chunks == 0:
             v_chain = f"{input_v_work_label}setpts='(PTS-STARTPTS)/{base_speed:.4f}'[v_speed_out]"
             tmp_s = float(base_speed); audio_speed_filters = []

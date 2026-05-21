@@ -1,10 +1,8 @@
-from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
-
+﻿from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_main_to_merger_handoff_closes_main_without_killing_child() -> None:
     events_src = read_source("ui/parts/main_window_events.py")
     ui_src = read_source("ui/parts/ui_builder_mixin.py")
-
     assert_all_present(
         events_src,
         [
@@ -24,10 +22,8 @@ def test_main_to_merger_handoff_closes_main_without_killing_child() -> None:
         ],
     )
 
-
 def test_merger_to_main_handoff_closes_merger_after_main_starts() -> None:
     merger_src = read_source("utilities/video_merger.py")
-
     assert_all_present(
         merger_src,
         [

@@ -30,13 +30,6 @@ def _active_speed_segments(host):
     if not segments:
         return []
     segments.sort(key=lambda item: (item["start"], item["end"]))
-    checkbox = getattr(host, "granular_checkbox", None)
-    is_checked = getattr(checkbox, "isChecked", None)
-    if callable(is_checked):
-        try:
-            return segments if bool(is_checked()) else []
-        except Exception:
-            return []
     return segments
 
 def _host_mpv_set(host, prop, value, target_player=None):

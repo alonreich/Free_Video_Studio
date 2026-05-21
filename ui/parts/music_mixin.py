@@ -30,13 +30,6 @@ def _active_speed_segments(host):
     if not segments:
         return []
     segments.sort(key=lambda item: (item["start"], item["end"]))
-    checkbox = getattr(host, "granular_checkbox", None)
-    is_checked = getattr(checkbox, "isChecked", None)
-    if callable(is_checked):
-        try:
-            return segments if bool(is_checked()) else []
-        except Exception:
-            return []
     return segments
 
 class MusicMixin:
@@ -45,13 +38,26 @@ class MusicMixin:
         if not btn:
             return
         if has_music:
-            btn.setText('♪  MUSIC ADDED  ♪')
-            btn.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN + ' QPushButton { font-size: 10px; padding: 0px; }')
-            btn.setToolTip("Open the background music wizard to edit the selected music")
+            btn.setText('♪  REMOVE MUSIC  ♪')
+            btn.setStyleSheet(UIStyles.BUTTON_DANGER + ' QPushButton { font-size: 10px; padding: 0px; }')
+            btn.setToolTip("Click to completely remove all background music and settings")
         else:
             btn.setText('♪    ADD MUSIC    ♪')
             btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + ' QPushButton { font-size: 10px; padding: 0px; }')
             btn.setToolTip("Open the background music synchronization wizard")
+
+    def on_music_button_clicked(self):
+        has_music = bool(getattr(self, "_wizard_tracks", []))
+        if has_music:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Remove Music")
+            msg.setText("Are you sure you want to remove all background music and settings?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            if msg.exec_() == QMessageBox.Yes:
+                self._reset_music_player()
+        else:
+            self.open_music_wizard()
 
     def _mp3_dir(self):
         try:

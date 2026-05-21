@@ -187,8 +187,7 @@ class UIStyles:
     """ + _HOVER_BORDER + _DISABLED_COMMON
     BUTTON_WIZARD_GREEN = _3D_COMMON + """
         QPushButton {
-            background-color: #27ae60;
-            background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:0.1 #27ae60, stop:1 #1b6d26);
             color: #ffffff;
             border-radius: 10px;
             font-weight: bold;
@@ -199,8 +198,11 @@ class UIStyles:
             border-bottom: 1px solid rgba(0, 0, 0, 0.6);
             border-right: 1px solid rgba(0, 0, 0, 0.6);
         }
+        QPushButton:hover:!disabled {
+            border: 2px solid #7DD3FC;
+        }
         QPushButton:pressed:!disabled {
-            background-image: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0e3514, stop:1 #1b6d26);
             border-top: 1px solid rgba(0, 0, 0, 0.7);
             border-left: 1px solid rgba(0, 0, 0, 0.7);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -210,7 +212,7 @@ class UIStyles:
             padding-bottom: 9px;
             padding-right: 17px;
         }
-    """ + _HOVER_BORDER + _DISABLED_COMMON
+    """ + _DISABLED_COMMON
     @staticmethod
     def get_3d_style(color, font_size=12, border_radius=8, padding="10px 18px"):
         try:
