@@ -2,11 +2,10 @@
 from pathlib import Path
 import tempfile
 import types
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs
 install_qt_mpv_stubs()
 
+from PyQt5.QtCore import QTimer
 from ui.parts.ui_builder_mixin import UiBuilderMixin
 
 class _DummyBtn:
@@ -37,14 +36,22 @@ def _sync_threads(monkeypatch) -> None:
         def start(self):
             if self._target:
                 self._target()
-    monkeypatch.setattr("threading.Thread", _InstantThread)
+    monkeypatch.setattr("ui.parts.ui_builder_mixin.Thread", _InstantThread)
+
+def _successful_ffmpeg(captured: list[list[str]]):
+    def _run(cmd, **kwargs):
+        captured.append(list(cmd))
+        Path(cmd[-1]).write_bytes(b"jpg")
+        return types.SimpleNamespace(returncode=0, stderr=b"")
+
+    return _run
 
 def test_thumbnail_pick_uses_absolute_slider_time_even_when_speed_changes(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(QTimer, "singleShot", lambda ms, cb: cb())
     video_file = tmp_path / "video.mp4"
     video_file.write_bytes(b"ok")
     captured: list[list[str]] = []
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kwargs: captured.append(list(cmd)))
+    monkeypatch.setattr("subprocess.run", _successful_ffmpeg(captured))
     _sync_threads(monkeypatch)
     host = types.SimpleNamespace()
 
@@ -85,7 +92,7 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     video_file = tmp_path / "video2.mp4"
     video_file.write_bytes(b"ok")
     captured: list[list[str]] = []
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kwargs: captured.append(list(cmd)))
+    monkeypatch.setattr("subprocess.run", _successful_ffmpeg(captured))
     _sync_threads(monkeypatch)
     host = types.SimpleNamespace()
 
@@ -104,6 +111,7 @@ def test_thumbnail_pick_clamps_to_duration_when_slider_exceeds_length(monkeypatc
     host._on_thumb_extracted = types.MethodType(UiBuilderMixin._on_thumb_extracted, host)
     UiBuilderMixin._pick_thumbnail_from_current_frame(host)
     assert abs(host.selected_intro_abs_time - 10.0) < 1e-6
-    assert "SET: 00:10.00" in host.thumb_pick_btn.text()
+    assert "THUMBNAIL SET" in host.thumb_pick_btn.text()
+    assert any("00:10.00" in call for call in host.status_update_signal.calls)
     ss_idx = captured[0].index("-ss")
     assert captured[0][ss_idx + 1] == "10.000"

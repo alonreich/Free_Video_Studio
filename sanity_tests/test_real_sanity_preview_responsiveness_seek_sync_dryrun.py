@@ -14,9 +14,9 @@ def test_preview_players_have_anti_stutter_tick_and_seek_guards_dryrun() -> None
     assert_all_present(
         main_preview,
         [
-            "if not force_pause and (now - self._last_scrub_ts < 0.05):",
+            "if last_scrub_ts and (now - last_scrub_ts) < 0.05:",
             "if slider and slider.isSliderDown():",
-            "self.timer.start(50)",
+            "self._seek_timer.start(0 if force_pause else 50)",
         ],
     )
     assert_all_present(
@@ -25,7 +25,8 @@ def test_preview_players_have_anti_stutter_tick_and_seek_guards_dryrun() -> None
             "do_heavy = (now - self._last_tick_ts > 0.1)",
             "if now - self._last_seek_ts < 0.5:",
             "self.timeline.set_current_time(project_time)",
-            "self._sync_music_only_to_time(project_time)",
+            "target_m_sec = offset + (project_time - accum)",
+            'self._safe_mpv_command(m_player, "seek", target_m_sec, "absolute", "exact")',
         ],
     )
     assert_all_present(
@@ -89,8 +90,8 @@ def test_step3_click_to_seek_timeline_contracts_dryrun() -> None:
         [
             "def _on_timeline_seek(self, pct):",
             "self.timeline.set_current_time(target_sec)",
-            "self._video_player.set_time(real_v_pos_ms)",
-            "self._sync_all_players_to_time(target_sec)",
+            "self._apply_step3_seek_target(float(pending))",
+            "self._sync_all_players_to_time(safe_sec, force_playing=is_currently_playing, seek_exact=True)",
             "self._sync_caret()",
         ],
     )
@@ -103,11 +104,11 @@ def test_granular_editor_seek_and_timeline_sync_contracts_dryrun() -> None:
     assert_all_present(
         granular_src,
         [
-            "self.timeline.sliderMoved.connect(self.seek_video)",
-            "def seek_video(self, pos):",
-            "self.player.seek(pos / 1000.0, reference='absolute', precision='exact')",
+            "self.timeline.sliderMoved.connect(self._on_timeline_moved)",
+            "def seek_video(self, pos, exact=False):",
+            'self._safe_mpv_command("seek", abs_pos_ms / 1000.0, "absolute", mode)',
             "if not self.timeline.isSliderDown():",
-            "t_i = int(round(t))",
+            "t_i = int(round(curr_rel))",
             "self.timeline.setValue(t_i)",
         ],
     )

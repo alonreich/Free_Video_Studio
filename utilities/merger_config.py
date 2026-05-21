@@ -1,7 +1,11 @@
-﻿import os
+import os
 import json
 import logging
+
+from utilities.merger_utils import sanitize_persistent_config
+
 logger = logging.getLogger("Video_Merger")
+
 
 class MergerConfigManager:
     def __init__(self, config_path):
@@ -14,14 +18,16 @@ class MergerConfigManager:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, dict):
-                        return data
+                        return sanitize_persistent_config(data)
             except (json.JSONDecodeError, PermissionError, OSError):
                 pass
         return {}
 
     def save_config(self, config=None):
         if config is not None:
-            self.config = config
+            self.config = sanitize_persistent_config(config)
+        else:
+            self.config = sanitize_persistent_config(self.config)
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:

@@ -6,7 +6,6 @@ from ui.widgets.music_wizard_constants import PREVIEW_VISUAL_LEAD_MS, RECURSIVE_
 
 class MergerMusicWizardPlaybackMixin:
     def _on_video_vol_changed(self, val):
-        if False: self._video_player.audio_set_volume(val)
         if not self.player:
             return
         eff = self._scaled_vol(val)
@@ -17,7 +16,6 @@ class MergerMusicWizardPlaybackMixin:
             self.video_vol_val_lbl.setText(f"{val}%")
 
     def _on_music_vol_changed(self, val):
-        if False: self._player.audio_set_volume(val)
         music_player = getattr(self, "_music_player", None)
         if not music_player:
             return

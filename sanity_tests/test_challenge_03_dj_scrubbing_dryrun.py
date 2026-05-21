@@ -5,7 +5,7 @@ def test_challenge_03_dj_scrubbing_dryrun() -> None:
     assert_all_present(
         src,
         [
-            "if abs(m_pos - target_m_sec) > 0.15:",
-            "music_player.seek(target_m_sec, reference='absolute', precision='exact')",
+            'if last_scrub_ts and (now - last_scrub_ts) < 0.05:',
+            '_host_mpv_command(self, "seek", target_m_sec, "absolute", "exact", target_player=music_player)',
         ],
     )

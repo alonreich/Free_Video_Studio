@@ -154,10 +154,38 @@ class FfmpegMixin:
             segments.sort(key=lambda item: (item["start"], item["end"]))
             speed_segments_for_worker.sort(key=lambda item: (item["start_ms"], item["end_ms"]))
             self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms)
-            music_path = None; music_offset_s = 0.0; linear_video_vol = float(getattr(self, "_video_volume_pct", self._get_master_eff())) / 100.0
-            if hasattr(self, "_wizard_tracks") and self._wizard_tracks:
-                music_path = self._wizard_tracks[0][0]; music_offset_s = self._wizard_tracks[0][1]
-            music_vol_linear = float(getattr(self, "_music_volume_pct", self._music_eff())) / 100.0 if music_path else 0.0
+            music_path = None; music_offset_s = 0.0; music_tracks_for_worker = []
+            linear_video_vol = self._get_master_eff() / 100.0
+            if hasattr(self, "_video_volume_pct"):
+                linear_video_vol = float(getattr(self, "_video_volume_pct", 80)) / 100.0
+            for track in list(getattr(self, "_wizard_tracks", []) or []):
+                try:
+                    if isinstance(track, dict):
+                        t_path = track.get("path")
+                        t_offset = float(track.get("offset_sec", track.get("offset", track.get("file_offset_sec", 0.0))) or 0.0)
+                        t_dur = float(track.get("duration_sec", track.get("duration", track.get("dur", 0.0))) or 0.0)
+                    else:
+                        t_path = track[0]
+                        t_offset = float(track[1]) if len(track) > 1 else 0.0
+                        t_dur = float(track[2]) if len(track) > 2 else 0.0
+                    if not t_path or not os.path.exists(str(t_path)):
+                        continue
+                    if t_dur <= 0.001:
+                        t_dur = max(0.001, (end_time_ms - start_time_ms) / 1000.0)
+                    music_tracks_for_worker.append((str(t_path), max(0.0, t_offset), max(0.001, t_dur)))
+                except Exception:
+                    continue
+            if getattr(self, "_wizard_tracks", None) and not music_tracks_for_worker:
+                self.show_message(
+                    "Music unavailable",
+                    "Music is selected, but none of the selected music files are available. Please reselect the music before processing.",
+                )
+                return
+            if music_tracks_for_worker:
+                music_path = music_tracks_for_worker[0][0]; music_offset_s = music_tracks_for_worker[0][1]
+            music_vol_linear = self._music_eff() / 100.0 if music_path else 0.0
+            if music_path and hasattr(self, "_music_volume_pct"):
+                music_vol_linear = float(getattr(self, "_music_volume_pct", 80)) / 100.0
             q_level = int(self.quality_slider.value())
             try:
                 target_mb = (os.path.getsize(self.input_file_path) / (1024 * 1024)) if q_level >= 20 else float(5 + q_level * 5)
@@ -180,12 +208,23 @@ class FfmpegMixin:
             cfg = dict(self.config_manager.config); cfg['last_speed'] = float(speed_factor); cfg['mobile_checked'] = bool(is_mobile_format); cfg['teammates_checked'] = bool(self.teammates_checkbox.isChecked())
             self.config_manager.save_config(cfg)
             m_start_ms = int(getattr(self, 'music_timeline_start_ms', self.trim_start_ms)); m_end_ms = int(getattr(self, 'music_timeline_end_ms', self.trim_end_ms))
+            if music_path and m_end_ms <= m_start_ms:
+                m_start_ms = self.trim_start_ms
+                m_end_ms = self.trim_end_ms
             v_wall_start = self._calculate_wall_clock_time(start_time_ms, segments, speed_factor)
             m_wall_start = self._calculate_wall_clock_time(m_start_ms, segments, speed_factor)
             m_wall_end = self._calculate_wall_clock_time(m_end_ms, segments, speed_factor)
             m_proj_start_sec = max(0.0, (m_wall_start - v_wall_start) / 1000.0)
             m_proj_end_sec = max(0.0, (m_wall_end - v_wall_start) / 1000.0)
             music_conf = {'path': music_path, 'ducking_threshold': 0.15, 'ducking_ratio': 2.5, 'eq_enabled': True, 'main_vol': linear_video_vol, 'music_vol': music_vol_linear if music_path else 1.0, 'timeline_start_sec': m_proj_start_sec, 'timeline_end_sec': m_proj_end_sec, 'file_offset_sec': music_offset_s}
+            try:
+                self.logger.info(
+                    "MUSIC_EXPORT_STATE: enabled=%s tracks=%d path=%s offset=%.3fs music_vol=%.2f video_vol=%.2f timeline_ms=%d-%d project_sec=%.3f-%.3f",
+                    bool(music_path), len(music_tracks_for_worker), music_path, music_offset_s,
+                    music_vol_linear, linear_video_vol, m_start_ms, m_end_ms, m_proj_start_sec, m_proj_end_sec,
+                )
+            except Exception:
+                pass
             p_text = None
             if is_mobile_format and hasattr(self, 'portrait_text_input'):
                 raw_text = self.portrait_text_input.text().strip()
@@ -195,7 +234,7 @@ class FfmpegMixin:
                 segment_duration = (end_time_ms - start_time_ms) / 1000.0
                 intro_abs_time = (start_time_ms / 1000.0) + (segment_duration * 0.66)
             intro_abs_time_ms = int(intro_abs_time * 1000)
-            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), show_spectating_overlay=is_mobile_format, quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=getattr(self, "_wizard_tracks", []), target_mb_override=target_mb)
+            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), show_spectating_overlay=is_mobile_format, quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=music_tracks_for_worker, target_mb_override=target_mb)
             self.process_thread.start()
         except Exception as e:
             try:

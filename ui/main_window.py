@@ -33,6 +33,65 @@ def _safe_single_shot(delay_ms, callback):
     elif delay_ms <= 0 and callable(callback):
         callback()
 
+def _recovery_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+def _recovery_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+def _normalize_recovery_music_track(track):
+    if isinstance(track, dict):
+        path = track.get("path") or track.get("file") or track.get("music_path")
+        offset = track.get("offset_sec", track.get("offset", track.get("file_offset_sec", None)))
+        if offset is None and track.get("start_ms") is not None:
+            offset = _recovery_float(track.get("start_ms"), 0.0) / 1000.0
+        duration = track.get("duration_sec", track.get("duration", track.get("dur", 0.0)))
+    elif isinstance(track, (list, tuple)) and len(track) >= 1:
+        path = track[0]
+        offset = track[1] if len(track) >= 2 else 0.0
+        duration = track[2] if len(track) >= 3 else 0.0
+    else:
+        return None
+    if not path:
+        return None
+    return (str(path), max(0.0, _recovery_float(offset, 0.0)), max(0.0, _recovery_float(duration, 0.0)))
+
+def _deserialize_recovery_music_tracks(raw_tracks):
+    tracks = []
+    for track in list(raw_tracks or []):
+        normalized = _normalize_recovery_music_track(track)
+        if normalized:
+            tracks.append(normalized)
+    return tracks
+
+def _serialize_recovery_music_tracks(raw_tracks):
+    result = []
+    for path, offset, duration in _deserialize_recovery_music_tracks(raw_tracks):
+        result.append({"path": path, "offset_sec": offset, "duration_sec": duration})
+    return result
+
+def _normalize_recovery_speed_segments(raw_segments):
+    segments = []
+    for seg in list(raw_segments or []):
+        if not isinstance(seg, dict):
+            continue
+        try:
+            start = int(seg.get("start", seg.get("start_ms", 0)))
+            end = int(seg.get("end", seg.get("end_ms", 0)))
+            speed = float(seg.get("speed", seg.get("multiplier", 1.0)))
+        except Exception:
+            continue
+        if end > start:
+            segments.append({"start": start, "end": end, "start_ms": start, "end_ms": end, "speed": speed})
+    segments.sort(key=lambda item: (item["start"], item["end"]))
+    return segments
+
 class _QtLiveLogHandler(logging.Handler):
     def __init__(self, target):
         super().__init__()
@@ -165,25 +224,41 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
 
     def _save_recovery_state(self):
         if not hasattr(self, "recovery_manager"): return
+        if getattr(self, "_restoring_recovery_state", False): return
+        music_tracks = _serialize_recovery_music_tracks(getattr(self, "_wizard_tracks", []))
+        has_music = bool(music_tracks)
+        music_start_ms = _recovery_int(getattr(self, "music_timeline_start_ms", 0), 0)
+        music_end_ms = _recovery_int(getattr(self, "music_timeline_end_ms", 0), 0)
+        if has_music and music_end_ms <= music_start_ms:
+            music_start_ms = _recovery_int(getattr(self, "trim_start_ms", 0), 0)
+            track_duration_ms = int(round(float(music_tracks[0].get("duration_sec", 0.0) or 0.0) * 1000.0))
+            trim_end_ms = _recovery_int(getattr(self, "trim_end_ms", 0), 0)
+            music_end_ms = trim_end_ms if trim_end_ms > music_start_ms else music_start_ms + max(0, track_duration_ms)
+        speed_value = _recovery_float(self.speed_spinbox.value() if hasattr(self, "speed_spinbox") else getattr(self, "playback_rate", 1.1), 1.1)
+        thumbnail_ms = self.positionSlider.get_thumbnail_pos_ms() if hasattr(self, "positionSlider") and hasattr(self.positionSlider, "get_thumbnail_pos_ms") else 0
+        selected_intro_sec = getattr(self, "selected_intro_abs_time", None)
+        if selected_intro_sec is None and thumbnail_ms:
+            selected_intro_sec = _recovery_float(thumbnail_ms, 0.0) / 1000.0
         state = {
             "assets": {
                 "input_file_path": getattr(self, "source_file_path", None) or self.input_file_path,
-                "wizard_tracks": getattr(self, "_wizard_tracks", []),
+                "wizard_tracks": music_tracks,
                 "current_music_path": getattr(self, "_current_music_path", None)
             },
             "volatile_settings": {
                 "trim_start_ms": self.trim_start_ms,
                 "trim_end_ms": self.trim_end_ms,
-                "playback_rate": self.playback_rate,
-                "speed_segments": self.speed_segments,
+                "playback_rate": speed_value,
+                "speed_segments": _normalize_recovery_speed_segments(self.speed_segments),
                 "video_mix_volume": self.volume_slider.value() if hasattr(self, "volume_slider") else 100,
                 "music_volume_pct": getattr(self, "_music_volume_pct", 80),
                 "video_volume_pct": getattr(self, "_video_volume_pct", 80),
                 "quality_slider_index": self.quality_slider.value() if hasattr(self, "quality_slider") else 7,
                 "current_music_offset": getattr(self, "_current_music_offset", 0.0),
-                "music_timeline_start_ms": getattr(self, "music_timeline_start_ms", 0),
-                "music_timeline_end_ms": getattr(self, "music_timeline_end_ms", 0),
-                "thumbnail_pos_ms": self.positionSlider.get_thumbnail_pos_ms() if hasattr(self, "positionSlider") else 0,
+                "music_timeline_start_ms": music_start_ms,
+                "music_timeline_end_ms": music_end_ms,
+                "thumbnail_pos_ms": thumbnail_ms,
+                "selected_intro_abs_time_sec": selected_intro_sec,
                 "hardware_strategy": self.hardware_strategy
             },
             "ui_dynamics": {
@@ -193,6 +268,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
                 "granular_checked": self.granular_checkbox.isChecked() if hasattr(self, "granular_checkbox") else False,
                 "no_fade_checked": getattr(self, "no_fade_checkbox", None).isChecked() if getattr(self, "no_fade_checkbox", None) else False,
                 "portrait_text": self.portrait_text_input.text() if hasattr(self, "portrait_text_input") else "",
+                "music_button_active": has_music,
                 "active_tab_index": 0,
                 "window_geometry_base64": bytes(self.saveGeometry().toBase64()).decode("utf-8"),
                 "last_directory": self.last_dir,
@@ -205,6 +281,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         if os.environ.get("FVS_RESTORE_SESSION") != "1": return
         state = self.recovery_manager.load_state()
         if not state: return
+        self._restoring_recovery_state = True
         self.logger.info("RECOVERY: Restoring previous session state...")
         v = state.get("volatile_settings", {})
         u = state.get("ui_dynamics", {})
@@ -212,29 +289,52 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         f = a.get("input_file_path")
         if f and os.path.exists(f):
             self.handle_file_selection(f)
-            self.trim_start_ms = v.get("trim_start_ms", 0)
-            self.trim_end_ms = v.get("trim_end_ms", self.trim_end_ms)
-            self.playback_rate = v.get("playback_rate", 1.1)
-            self.speed_segments = v.get("speed_segments", [])
+            self.trim_start_ms = _recovery_int(v.get("trim_start_ms", 0), 0)
+            self.trim_end_ms = _recovery_int(v.get("trim_end_ms", self.trim_end_ms), self.trim_end_ms)
+            self.playback_rate = _recovery_float(v.get("playback_rate", 1.1), 1.1)
+            self.speed_segments = _normalize_recovery_speed_segments(v.get("speed_segments", []))
             if hasattr(self, "speed_spinbox"): self.speed_spinbox.setValue(self.playback_rate)
             if hasattr(self, "volume_slider"): self.volume_slider.setValue(v.get("video_mix_volume", 100))
             if hasattr(self, "quality_slider"): self.quality_slider.setValue(v.get("quality_slider_index", 7))
-            self._wizard_tracks = a.get("wizard_tracks", [])
-            self._music_volume_pct = v.get("music_volume_pct", 80)
-            self._video_volume_pct = v.get("video_volume_pct", 80)
-            self._current_music_offset = v.get("current_music_offset", 0.0)
-            self.music_timeline_start_ms = v.get("music_timeline_start_ms", 0)
-            self.music_timeline_end_ms = v.get("music_timeline_end_ms", 0)
+            self._wizard_tracks = _deserialize_recovery_music_tracks(a.get("wizard_tracks", []))
+            self._music_volume_pct = _recovery_int(v.get("music_volume_pct", 80), 80)
+            self._video_volume_pct = _recovery_int(v.get("video_volume_pct", 80), 80)
+            self._current_music_offset = _recovery_float(v.get("current_music_offset", 0.0), 0.0)
+            self.music_timeline_start_ms = _recovery_int(v.get("music_timeline_start_ms", 0), 0)
+            self.music_timeline_end_ms = _recovery_int(v.get("music_timeline_end_ms", 0), 0)
+            if not self._wizard_tracks and a.get("current_music_path"):
+                fallback_path = str(a.get("current_music_path"))
+                if os.path.exists(fallback_path):
+                    duration_sec = max(0.0, (self.music_timeline_end_ms - self.music_timeline_start_ms) / 1000.0)
+                    self._wizard_tracks = [(fallback_path, self._current_music_offset, duration_sec)]
+            self._wizard_tracks = [track for track in self._wizard_tracks if os.path.exists(track[0])]
+            if self._wizard_tracks and self.music_timeline_end_ms <= self.music_timeline_start_ms:
+                self.music_timeline_start_ms = self.trim_start_ms
+                duration_ms = int(round(self._wizard_tracks[0][2] * 1000.0))
+                self.music_timeline_end_ms = min(self.trim_end_ms, self.music_timeline_start_ms + duration_ms) if duration_ms > 0 else self.trim_end_ms
+            restored_intro_sec = v.get("selected_intro_abs_time_sec", v.get("intro_abs_time_sec", None))
+            if restored_intro_sec is not None:
+                self.selected_intro_abs_time = _recovery_float(restored_intro_sec, 0.0)
             if hasattr(self, "mobile_checkbox"): self.mobile_checkbox.setChecked(u.get("mobile_checked", False))
             if hasattr(self, "teammates_checkbox"): self.teammates_checkbox.setChecked(u.get("teammates_checked", False))
             if hasattr(self, "boss_hp_checkbox"): self.boss_hp_checkbox.setChecked(u.get("boss_hp_checked", False))
             if hasattr(self, "granular_checkbox"): self.granular_checkbox.setChecked(u.get("granular_checked", False))
             if hasattr(self, "no_fade_checkbox"): self.no_fade_checkbox.setChecked(u.get("no_fade_checked", False))
             if hasattr(self, "portrait_text_input"): self.portrait_text_input.setText(u.get("portrait_text", ""))
+            if hasattr(self, "_set_music_button_state"): self._set_music_button_state(bool(self._wizard_tracks))
             if self._wizard_tracks and self._ensure_music_player_ready():
-                f_t = self._wizard_tracks[0]; self._current_music_path = f_t[0]
+                f_t = self._wizard_tracks[0]; self._current_music_path = f_t[0]; self._current_music_offset = f_t[1]
                 self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)
+                self._safe_mpv_set("volume", self._music_volume_pct, target_player=self._music_preview_player)
+            self.logger.info(
+                "RECOVERY: Restored trim=%s-%sms speed=%.3fx music=%s tracks=%d quality=%s thumbnail=%s granular=%d",
+                self.trim_start_ms, self.trim_end_ms, self.playback_rate, bool(self._wizard_tracks),
+                len(self._wizard_tracks), v.get("quality_slider_index", 7), v.get("thumbnail_pos_ms", 0),
+                len(self.speed_segments),
+            )
             _safe_single_shot(1000, lambda: self._apply_restored_slider_state(v, u))
+        else:
+            self._restoring_recovery_state = False
 
     def _restore_state_transfer_session(self, attempt=0):
         state = getattr(self, "_state_transfer_session", {}) or {}
@@ -311,11 +411,21 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
             if self._wizard_tracks:
                 self.positionSlider.set_music_visible(True)
                 self.positionSlider.set_music_times(self.music_timeline_start_ms, self.music_timeline_end_ms)
+            else:
+                self.positionSlider.reset_music_times()
             self.positionSlider.setValue(u.get("slider_value_ms", 0))
-            self.positionSlider.set_thumbnail_pos_ms(v.get("thumbnail_pos_ms", 0))
-            self.positionSlider.set_speed_segments(self.speed_segments)
+            if hasattr(self.positionSlider, "set_thumbnail_pos_ms"):
+                self.positionSlider.set_thumbnail_pos_ms(v.get("thumbnail_pos_ms", 0))
+            visible_segments = self.speed_segments if bool(getattr(self, "granular_checkbox", None) and self.granular_checkbox.isChecked()) else []
+            self.positionSlider.set_speed_segments(visible_segments)
+            self.positionSlider.update()
+        if hasattr(self, "_set_music_button_state"): self._set_music_button_state(bool(getattr(self, "_wizard_tracks", [])))
         self._update_trim_widgets_from_trim_times()
         self._update_quality_label()
+        if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
+        if hasattr(self, "_maybe_enable_process"): self._maybe_enable_process()
+        self._restoring_recovery_state = False
+        self._save_recovery_state()
 
     def _on_mpv_idle_changed(self, is_idle):
         if is_idle and self.wants_to_play: _safe_single_shot(0, self._safe_handle_mpv_end)

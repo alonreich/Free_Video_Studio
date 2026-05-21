@@ -28,6 +28,9 @@ class DummySpinBox:
 
     def value(self) -> float:
         return self._value
+
+    def setValue(self, value: float) -> None:
+        self._value = float(value)
         
     def blockSignals(self, b: bool) -> None:
         pass
@@ -44,6 +47,9 @@ class DummyCheckBox:
 
     def isChecked(self) -> bool:
         return self._checked
+
+    def setChecked(self, checked: bool) -> None:
+        self._checked = bool(checked)
 
 class DummyTimer:
     def __init__(self, active: bool = False):
@@ -62,9 +68,15 @@ class DummyButton:
     def __init__(self, text: str = ""):
         self._text = text
         self._enabled = True
+        self._visible = True
+        self.style_value = ""
+        self.tooltip_value = ""
 
     def setText(self, text: str) -> None:
         self._text = text
+
+    def text(self) -> str:
+        return self._text
 
     def setIcon(self, *args: Any) -> None:
         pass
@@ -75,10 +87,33 @@ class DummyButton:
     def isEnabled(self) -> bool:
         return self._enabled
 
+    def setVisible(self, visible: bool) -> None:
+        self._visible = bool(visible)
+
+    def isVisible(self) -> bool:
+        return self._visible
+
+    def setStyleSheet(self, value: str) -> None:
+        self.style_value = value
+
+    def setToolTip(self, value: str) -> None:
+        self.tooltip_value = value
+
+    def setCursor(self, *args: Any) -> None:
+        pass
+
 class DummySlider:
     def __init__(self, value: int = 0):
         self._value = value
         self.time_calls: list[tuple[int, int]] = []
+        self.visible_calls: list[bool] = []
+        self.music_start_ms = -1
+        self.music_end_ms = -1
+        self._show_music = False
+        self.trimmed_start_ms = 0
+        self.trimmed_end_ms = 0
+        self.speed_segments = []
+        self.thumbnail_pos_ms = 0
 
     def value(self) -> int:
         return self._value
@@ -97,10 +132,39 @@ class DummySlider:
 
     def reset_music_times(self) -> None:
         self.time_calls.append((0, 0))
+        self.music_start_ms = -1
+        self.music_end_ms = -1
+        self._show_music = False
         
     def set_trim_times(self, start_ms: int, end_ms: int) -> None:
         self.time_calls.append((int(start_ms), int(end_ms)))
+        self.trimmed_start_ms = int(start_ms)
+        self.trimmed_end_ms = int(end_ms)
         return None
+
+    def set_music_visible(self, visible: bool) -> None:
+        self._show_music = bool(visible)
+
+    def set_music_times(self, start_ms: int, end_ms: int) -> None:
+        self.music_start_ms = int(start_ms)
+        self.music_end_ms = int(end_ms)
+        self._show_music = True
+        self.time_calls.append((int(start_ms), int(end_ms)))
+
+    def set_speed_segments(self, segments) -> None:
+        self.speed_segments = list(segments or [])
+
+    def get_thumbnail_pos_ms(self) -> int:
+        return int(self.thumbnail_pos_ms)
+
+    def set_thumbnail_pos_ms(self, value: int) -> None:
+        self.thumbnail_pos_ms = int(value)
+
+    def setVisible(self, visible: bool) -> None:
+        self.visible_calls.append(bool(visible))
+
+    def update(self) -> None:
+        pass
         
     def blockSignals(self, *args: Any) -> None:
         return None
@@ -161,6 +225,21 @@ class DummyMediaPlayer:
     def get_time(self) -> int:
         return self._time
 
+    def set_rate(self, rate: float) -> None:
+        self.speed = float(rate)
+
+    def get_rate(self) -> float:
+        return self._rate
+
+    def audio_set_volume(self, value: int) -> None:
+        self.volume = int(value)
+
+    def audio_set_mute(self, muted: bool) -> None:
+        self._mute = bool(muted)
+
+    def set_media(self, media) -> None:
+        self.media = media
+
     def observe_property(self, *args, **kwargs): pass
 
     def event_callback(self, *args, **kwargs):
@@ -197,6 +276,50 @@ class DummyConfigManager:
     def load_config(self) -> dict[str, Any]:
         return self.config
 
+class DummyListItem:
+    def __init__(self, text: Any = "", user_data: Any | None = None):
+        self._text = text if isinstance(text, str) else ""
+        self._data: dict[int, Any] = {}
+        self._hidden = False
+        self.size_hint = None
+        if user_data is not None:
+            self._data[0x0100] = user_data
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str) -> None:
+        self._text = str(text)
+
+    def setSizeHint(self, value: Any) -> None:
+        self.size_hint = value
+
+    def setData(self, role: int, value: Any) -> None:
+        self._data[int(role)] = value
+
+    def data(self, role: int) -> Any:
+        return self._data.get(int(role))
+
+    def setHidden(self, hidden: bool) -> None:
+        self._hidden = bool(hidden)
+
+    def isHidden(self) -> bool:
+        return self._hidden
+
+class DummyKeyEvent:
+    def __init__(self, text: str = "", key: int | None = None):
+        self._text = text
+        self._key = key if key is not None else (ord(text.upper()) if text else 0)
+
+    def text(self) -> str:
+        return self._text
+
+    def key(self) -> int:
+        return int(self._key)
+
+    def modifiers(self) -> int:
+        return 0
+
 def install_qt_mpv_stubs():
     pyqt5 = types.ModuleType("PyQt5")
     qtcore = types.ModuleType("PyQt5.QtCore")
@@ -224,7 +347,9 @@ def install_qt_mpv_stubs():
     qtcore.Qt.ClosedHandCursor = 12
     qtcore.Qt.ControlModifier = 0x04000000
     qtcore.Qt.ShiftModifier = 0x02000000
+    qtcore.Qt.NoModifier = 0
     qtcore.Qt.Key_Space = 0x20
+    qtcore.Qt.Key_Backspace = 0x01000003
     qtcore.Qt.Key_Left = 0x01000012
     qtcore.Qt.Key_Right = 0x01000014
     qtcore.Qt.Key_Up = 0x01000013
@@ -282,7 +407,60 @@ def install_qt_mpv_stubs():
     
     def _generic_void(*args, **kwargs): return MockObject()
 
+    class _Point:
+        def __init__(self, x: int = 0, y: int = 0):
+            self._x = int(x)
+            self._y = int(y)
+
+        def x(self) -> int:
+            return self._x
+
+        def y(self) -> int:
+            return self._y
+
+        def manhattanLength(self) -> int:
+            return abs(self._x) + abs(self._y)
+
+        def __sub__(self, other):
+            return _Point(self._x - int(other.x()), self._y - int(other.y()))
+
+    class _Size:
+        def __init__(self, w: int = 0, h: int = 0):
+            self._w = int(w)
+            self._h = int(h)
+
+        def width(self) -> int:
+            return self._w
+
+        def height(self) -> int:
+            return self._h
+
+    class _Rect:
+        def __init__(self, *args):
+            if len(args) == 2 and hasattr(args[0], "x") and hasattr(args[1], "width"):
+                self._x = int(args[0].x())
+                self._y = int(args[0].y())
+                self._w = int(args[1].width())
+                self._h = int(args[1].height())
+            else:
+                vals = list(args) + [0, 0, 0, 0]
+                self._x, self._y, self._w, self._h = map(int, vals[:4])
+
+        def x(self) -> int: return self._x
+        def y(self) -> int: return self._y
+        def left(self) -> int: return self._x
+        def top(self) -> int: return self._y
+        def width(self) -> int: return self._w
+        def height(self) -> int: return self._h
+        def right(self) -> int: return self._x + self._w
+        def bottom(self) -> int: return self._y + self._h
+        def isValid(self) -> bool: return self._w > 0 and self._h > 0
+        def center(self): return _Point(self._x + self._w // 2, self._y + self._h // 2)
+        def contains(self, point) -> bool:
+            return self.left() <= int(point.x()) <= self.right() and self.top() <= int(point.y()) <= self.bottom()
+
     class MockObject:
+        _app_instance = None
         TicksBothSides = 3
         Accepted = 1
         StackAll = 1
@@ -317,9 +495,17 @@ def install_qt_mpv_stubs():
 
         def __init__(self, *args, **kwargs):
             self._signals = {}
+            self._visible = True
+            self._value = 0
+            self._text = ""
+            self._items = []
+            self._item_widgets = {}
+            self._current = None
+            if self.__class__.__name__ in {"QApplication", "QCoreApplication"}:
+                MockObject._app_instance = self
 
         def __getattr__(self, name):
-            if name.endswith("_signal") or name in ["valueChanged", "toggled", "clicked", "sliderPressed", "sliderReleased", "sliderMoved", "rangeChanged", "trim_times_changed", "currentTextChanged", "progress", "finished", "error", "level_signal", "recording_started", "recording_finished", "playhead_updated", "time_updated", "state_updated", "data_changed", "file_dropped", "clip_selected", "seek_request", "clip_split_requested", "param_changed", "play_requested", "interaction_started", "interaction_ended", "audio_analysis_finished", "progress_started", "progress_updated", "progress_finished", "waveform_ready", "thumbnail_ready", "timeout", "triggered", "sortIndicatorChanged"]:
+            if name.endswith("_signal") or name in ["valueChanged", "toggled", "clicked", "sliderPressed", "sliderReleased", "sliderMoved", "rangeChanged", "trim_times_changed", "currentTextChanged", "editingFinished", "progress", "finished", "error", "level_signal", "recording_started", "recording_finished", "playhead_updated", "time_updated", "state_updated", "data_changed", "file_dropped", "clip_selected", "seek_request", "clip_split_requested", "param_changed", "play_requested", "interaction_started", "interaction_ended", "audio_analysis_finished", "progress_started", "progress_updated", "progress_finished", "waveform_ready", "thumbnail_ready", "timeout", "triggered", "sortIndicatorChanged"]:
                 if name not in self._signals: self._signals[name] = DummySignal()
                 return self._signals[name]
             return _generic_void
@@ -350,7 +536,11 @@ def install_qt_mpv_stubs():
 
         def setDisabled(self, *args): pass
 
-        def setVisible(self, *args): pass
+        def setVisible(self, *args):
+            if args:
+                self._visible = bool(args[0])
+
+        def isVisible(self): return self._visible
 
         def setStyleSheet(self, *args): pass
 
@@ -399,15 +589,19 @@ def install_qt_mpv_stubs():
 
         def setSpacing(self, *args): pass
 
-        def clear(self): pass
+        def clear(self):
+            self._items.clear()
+            self._item_widgets.clear()
 
         def raise_(self): pass
 
         def isChecked(self): return False
 
-        def value(self): return 0
+        def value(self): return self._value
 
-        def text(self): return ""
+        def text(self): return self._text
+
+        def setText(self, text): self._text = str(text)
 
         def style(self): 
             return types.SimpleNamespace(standardIcon=lambda *_: MockObject())
@@ -434,7 +628,9 @@ def install_qt_mpv_stubs():
 
         def setRange(self, *args): pass
 
-        def setValue(self, *args): pass
+        def setValue(self, *args):
+            if args:
+                self._value = args[0]
 
         def setCursor(self, *args): pass
 
@@ -446,9 +642,33 @@ def install_qt_mpv_stubs():
 
         def setShortcut(self, *args): pass
 
-        def count(self): return 0
+        def count(self): return len(getattr(self, "_items", []))
 
-        def item(self, i): return MockObject()
+        def item(self, i):
+            try:
+                return self._items[i]
+            except Exception:
+                return MockObject()
+
+        def addItem(self, item):
+            self._items.append(item)
+
+        def setItemWidget(self, item, widget):
+            self._item_widgets[item] = widget
+
+        def itemWidget(self, item):
+            widget = self._item_widgets.get(item)
+            if widget is not None:
+                return widget
+            text_func = getattr(item, "text", None)
+            if callable(text_func):
+                return types.SimpleNamespace(name_lbl=types.SimpleNamespace(text=text_func))
+            return None
+
+        def setCurrentItem(self, item):
+            self._current = item
+
+        def scrollToItem(self, *args): pass
 
         def data(self, *args): return None
 
@@ -564,6 +784,9 @@ def install_qt_mpv_stubs():
         @staticmethod
         def clipboard(): return MockObject()
 
+        @staticmethod
+        def instance(): return MockObject._app_instance
+
         def mimeData(self): return MockObject()
 
         def hasUrls(self): return False
@@ -587,12 +810,36 @@ def install_qt_mpv_stubs():
         def setDirectory(self, *args): pass
 
         def setSidebarUrls(self, *args): pass
+    class QTimer(MockObject):
+        @staticmethod
+        def singleShot(_delay_ms, callback):
+            if callable(callback):
+                callback()
+
+    class QApplication(MockObject):
+        pass
+
+    class QCoreApplication(QApplication):
+        @staticmethod
+        def setOrganizationName(*args): pass
+
     qtcore.QObject = MockObject
     qtcore.QThread = MockObject
-    qtcore.QTimer = MockObject
+    qtcore.QTimer = QTimer
+    qtcore.QCoreApplication = QCoreApplication
+    qtcore.QPoint = _Point
+    qtcore.QSize = _Size
+    qtcore.QRect = _Rect
     qtcore.QThreadPool = MockObject
     core_list = ["QObject", "QThread", "QTimer", "QThreadPool", "QPropertyAnimation", "QUrl", "QRunnable", "QPointF", "QRectF", "QLineF", "QProcess", "QBuffer", "QIODevice", "QMimeData", "QModelIndex", "QAbstractListModel", "QAbstractItemModel", "QVariant", "QTranslator", "QLibraryInfo", "QEasingCurve", "QParallelAnimationGroup", "QSequentialAnimationGroup", "QVariantAnimation", "QWaitCondition", "QMutex", "QMutexLocker", "QSemaphore", "QReadWriteLock", "QReadLocker", "QMetaObject", "QSizeF", "QLocale", "QRegularExpression", "QRegularExpressionValidator", "QStandardPaths", "QStorageInfo", "QFileSystemWatcher", "QMimeDatabase", "QMimeType", "QCommandLineParser"]
     for n in core_list:
+        if n == "QTimer":
+            continue
+        if n == "QCoreApplication":
+            setattr(qtcore, n, QCoreApplication)
+            continue
+        if n in {"QPoint", "QSize", "QRect"}:
+            continue
         setattr(qtcore, n, type(n, (MockObject,), {"system": MockObject.system}))
     qtcore.Q_ARG = lambda *a: None
     
@@ -616,7 +863,12 @@ def install_qt_mpv_stubs():
         "QGraphicsTextItem", "QGraphicsEllipseItem", "QGraphicsPolygonItem", "QGraphicsLineItem", "QListWidget", "QSystemTrayIcon", "QInputDialog", "QUndoStack", "QUndoCommand", "QKeySequenceEdit", "QGraphicsObject", "QGraphicsSimpleTextItem", "QProgressDialog", "QGraphicsOpacityEffect", "QUndoGroup", "QUndoView", "QErrorMessage", "QShortcut", "QTreeView", "QListView", "QRubberBand", "QAbstractItemView", "QProxyStyle", "QStyledItemDelegate", "QStyleOption"
     ]
     for n in widgets_list:
-        setattr(qtwidgets, n, type(n, (MockObject,), {"clipboard": MockObject.clipboard}))
+        if n == "QApplication":
+            setattr(qtwidgets, n, QApplication)
+        elif n == "QListWidgetItem":
+            setattr(qtwidgets, n, DummyListItem)
+        else:
+            setattr(qtwidgets, n, type(n, (MockObject,), {"clipboard": MockObject.clipboard}))
     qtwidgets.QSizePolicy = MockObject
     qtwidgets.QStyle = MockObject
     qtwidgets.QRubberBand = MockObject

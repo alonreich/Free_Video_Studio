@@ -6,7 +6,7 @@ def test_core_09_native_logs_dryrun() -> None:
         src,
         [
             "ReopenableTextStream",
-            "faulthandler.enable(restoreable_original_stderr())",
-            "NATIVE DEBUG LOGGING ACTIVE",
+            "faulthandler.enable()",
+            "STABLE LOGGING ACTIVE - PIPE BROKER DISABLED",
         ],
     )

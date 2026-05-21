@@ -16,10 +16,15 @@ def test_core_13_music_handle_controls_music_only_in_wizard_players_dryrun() -> 
     merger_playback_src = read_source("utilities/merger_music_wizard_playback.py")
     main_block = _def_block(main_playback_src, "_on_music_vol_changed")
     merger_block = _def_block(merger_playback_src, "_on_music_vol_changed")
-    assert "self._player.audio_set_volume(val)" in main_block
-    assert "self._video_player.audio_set_volume" not in main_block
-    assert "self._player.audio_set_volume(val)" in merger_block
-    assert "self._video_player.audio_set_volume" not in merger_block
+    assert 'music_player = getattr(self, "_music_player", None)' in main_block
+    assert 'self._safe_mpv_set(music_player, "volume", eff)' in main_block
+    assert 'self._safe_mpv_set(music_player, "mute", False)' in main_block
+    assert "audio_set_volume" not in main_block
+    assert "self.player" not in main_block.replace('self._safe_mpv_set(music_player, "volume", eff)', "").replace('self._safe_mpv_set(music_player, "mute", False)', "")
+    assert 'music_player = getattr(self, "_music_player", None)' in merger_block
+    assert 'self._safe_mpv_set(music_player, "volume", eff)' in merger_block
+    assert 'self._safe_mpv_set(music_player, "mute", False)' in merger_block
+    assert "audio_set_volume" not in merger_block
 
 def test_core_13_music_handle_stays_separate_from_video_export_mix_dryrun() -> None:
     main_mix_src = read_source("ui/parts/ffmpeg_mixin.py")

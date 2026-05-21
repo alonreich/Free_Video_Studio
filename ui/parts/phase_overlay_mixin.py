@@ -1,5 +1,6 @@
 ﻿import math
 import shutil
+import os
 import subprocess
 import sys
 import time
@@ -8,7 +9,23 @@ import psutil
 from PyQt5.QtCore import Qt, QTimer, QRect, QThread, pyqtSignal, QPoint
 from PyQt5.QtGui import QRegion, QIcon, QColor, QPainter, QPen, QBrush, QFont
 from PyQt5.QtWidgets import QWidget, QPlainTextEdit
-_ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
+
+def _find_nvidia_smi():
+    found = shutil.which("nvidia-smi")
+    if found:
+        return found
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\Windows\System32\nvidia-smi.exe",
+            r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+        ]
+        for path in candidates:
+            try:
+                if os.path.exists(path):
+                    return path
+            except Exception:
+                pass
+    return None
 
 class GpuWorker(QThread):
     stats_updated = pyqtSignal(int)
@@ -16,18 +33,25 @@ class GpuWorker(QThread):
     def __init__(self):
         super().__init__()
         self._running = True
+        self._nvidia_smi = _find_nvidia_smi()
 
     def stop(self):
         self._running = False
+
+    def start_polling(self):
+        self._running = True
+        if self.isRunning():
+            return
+        self.start()
 
     def run(self):
         while self._running:
             gpu = 0
             try:
-                if _ENABLE_SAFE_GPU_STATS and self._running:
+                if self._nvidia_smi and self._running:
                     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                     r = subprocess.run(
-                        ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.encoder", "--format=csv,noheader,nounits", "-i", "0"],
+                        [self._nvidia_smi, "--query-gpu=utilization.gpu,utilization.encoder", "--format=csv,noheader,nounits", "-i", "0"],
                         capture_output=True, text=True, timeout=1.5, creationflags=flags
                     )
                     if r.returncode == 0 and self._running:
@@ -108,7 +132,11 @@ class PhaseOverlayMixin:
         self._overlay.installEventFilter(self)
 
     def _on_gpu_update(self, val):
-        self._last_gpu_val = val
+        try:
+            val = int(val)
+        except Exception:
+            val = 0
+        self._last_gpu_val = max(0, min(100, val))
 
     def _resize_overlay(self) -> None:
         try:
@@ -179,8 +207,8 @@ class PhaseOverlayMixin:
             QTimer.singleShot(500, self._update_overlay_mask)
             self._sample_perf_counters_safe()
             self._stats_timer.start()
-            if hasattr(self, "_gpu_worker") and not self._gpu_worker.isRunning():
-                self._gpu_worker.start()
+            if hasattr(self, "_gpu_worker"):
+                self._gpu_worker.start_polling()
             if not getattr(self, "_color_pulse_timer", None):
                 self._color_pulse_timer = QTimer(self)
                 self._color_pulse_timer.setInterval(100)
@@ -198,7 +226,7 @@ class PhaseOverlayMixin:
         try:
             if getattr(self, "_stats_timer", None):
                 self._stats_timer.stop()
-            if hasattr(self, "_gpu_worker"):
+            if hasattr(self, "_gpu_worker") and self._gpu_worker.isRunning():
                 self._gpu_worker.stop()
         except: pass
         try:

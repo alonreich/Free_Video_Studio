@@ -89,3 +89,5 @@ class VolumeMixin:
             except: pass
         self._update_volume_badge()
         self._schedule_volume_reinforce(250)
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()

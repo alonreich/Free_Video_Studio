@@ -5,29 +5,43 @@ from pathlib import Path
 from sanity_tests._real_sanity_harness import install_qt_mpv_stubs, DummyLogger
 install_qt_mpv_stubs()
 
-from ui.main_window import VideoCompressorApp
-from PyQt5.QtWidgets import QApplication
 from ui.widgets.trimmed_slider import TrimmedSlider
-from processing.worker import ProcessThread
 from processing.filter_builder import FilterBuilder
-import sys
+from ui.parts.main_window_core_c import MainWindowCoreCMixin
+from ui.parts.music_mixin import MusicMixin
+
+
+def _music_host():
+    host = types.SimpleNamespace()
+    host.logger = DummyLogger()
+    host.positionSlider = TrimmedSlider()
+    host.positionSlider.set_duration_ms(20000)
+    host.positionSlider.setRange(0, 20000)
+    host.trim_start_ms = 0
+    host.trim_end_ms = 15000
+    host.music_timeline_start_ms = 0
+    host.music_timeline_end_ms = 0
+    host._wizard_tracks = []
+    host._update_trim_widgets_from_trim_times = lambda: None
+    host._update_quality_label = lambda: None
+    host._save_recovery_state = lambda: None
+    host._set_music_button_state = lambda has_music: setattr(host, "_has_music_button", bool(has_music))
+    return host
 
 def test_music_state_wiped_on_fresh_startup_or_new_file(monkeypatch, tmp_path):
     """
     Test 1: Check if the app had background music in the last processing,
     then the app reopened (or a fresh file loaded), that the music state is completely wiped fresh.
     """
-    app = QApplication.instance() or QApplication(sys.argv)
-    main_app = VideoCompressorApp(None, "CPU")
+    main_app = _music_host()
     main_app._wizard_tracks = [("some_music.mp3", 0.0, 5.0)]
     main_app.music_timeline_start_ms = 2000
     main_app.music_timeline_end_ms = 7000
     main_app.positionSlider.set_music_times(2000, 7000)
     main_app.original_duration_ms = 15000
-    main_app._safe_handle_duration_changed(15000)
-    main_app._update_trim_inputs()
-    main_app._wizard_tracks = []
-    main_app._on_slider_trim_changed(0, 15000)
+    MainWindowCoreCMixin._safe_handle_duration_changed(main_app, 15000)
+    MusicMixin._reset_music_player(main_app)
+    MainWindowCoreCMixin._on_slider_trim_changed(main_app, 0, 15000)
     assert main_app.music_timeline_start_ms == 0, "Music start should be wiped to 0 on fresh state"
     assert main_app.music_timeline_end_ms == 0, "Music end should be wiped to 0 on fresh state"
     assert main_app.positionSlider.music_start_ms == -1 or main_app.positionSlider.music_start_ms == 0, "Slider music start should reset"
@@ -39,8 +53,7 @@ def test_video_trim_pushes_music_boundaries_and_ffmpeg_output():
     Same logic for the end.
     Also verifies FFmpeg final output file and preview player constraints.
     """
-    app = QApplication.instance() or QApplication(sys.argv)
-    main_app = VideoCompressorApp(None, "CPU")
+    main_app = _music_host()
     main_app.original_duration_ms = 20000
     main_app.trim_start_ms = 7000
     main_app.trim_end_ms = 15000
@@ -49,7 +62,7 @@ def test_video_trim_pushes_music_boundaries_and_ffmpeg_output():
     main_app.music_timeline_end_ms = 15000
     main_app.positionSlider.set_trim_times(10000, 15000)
     main_app.trim_start_ms = 10000
-    main_app._on_slider_trim_changed(10000, 15000)
+    MainWindowCoreCMixin._on_slider_trim_changed(main_app, 10000, 15000)
     assert main_app.music_timeline_start_ms == 10000, "Music start must jump to the new trim start"
     assert main_app.music_timeline_end_ms == 15000
     assert main_app._wizard_tracks[0][2] == 5.0, "Music duration must be truncated to 5s"
@@ -76,7 +89,6 @@ def test_music_dragged_independently_bounds_and_ffmpeg_output():
     Test 3 & 4: If trim start is at 7s and user drags music start to 10s,
     the music should start at 10s. Verifies preview constraints and FFmpeg output.
     """
-    app = QApplication.instance() or QApplication(sys.argv)
     slider = TrimmedSlider()
     slider.set_duration_ms(20000)
     slider.setRange(0, 20000)
@@ -87,6 +99,7 @@ def test_music_dragged_independently_bounds_and_ffmpeg_output():
     assert slider.music_start_ms == 10000
     assert slider.music_end_ms == 14000
     slider._dragging_handle = 'end'
+    slider._has_moved_since_press = True
 
     class MockEvent:
         def pos(self): return types.SimpleNamespace(x=lambda: 0)

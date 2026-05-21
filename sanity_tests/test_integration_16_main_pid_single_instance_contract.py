@@ -9,7 +9,7 @@ def test_integration_16_main_pid_single_instance_contract() -> None:
         [
             'PID_APP_NAME = "fortnite_video_software_main"',
             "success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)",
-            "msg_box.setWindowTitle(tr(\"single_instance_title\"))",
-            "msg_box.setText(tr(\"single_instance_text\"))",
+            'logger.warning("BOOT: Single instance lock active. Exiting.")',
+            "sys.exit(0)",
         ],
     )

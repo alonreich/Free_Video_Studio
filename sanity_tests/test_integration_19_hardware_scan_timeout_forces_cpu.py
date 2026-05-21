@@ -11,6 +11,7 @@ def test_integration_19_hardware_scan_timeout_forces_cpu() -> None:
             "self.watchdog_timer = threading.Timer(15.0, watchdog)",
             "self.stop_requested = True",
             'os.environ["VIDEO_FORCE_CPU"] = "1"',
-            "if check_encoder_capability(self.ffmpeg_path, \"h264_nvenc\"):",
+            'for mode, encoder in (("NVIDIA", "h264_nvenc"), ("AMD", "h264_amf"), ("INTEL", "h264_qsv")):',
+            "if check_encoder_capability(self.ffmpeg_path, encoder):",
         ],
     )

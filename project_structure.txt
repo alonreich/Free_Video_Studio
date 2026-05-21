@@ -75,6 +75,17 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # 4. SHARED BACKEND LOGIC:
 #    - Both apps use 'processing\config_data.py' for coordinate validation and default values.
 #    - Scaling math (1280p internal vs 1080p UI) is identical in both codebases.
+# 5. MAIN APP <-> VIDEO MERGER HANDOFF:
+#    - Main App -> Video Merger: launched as a subprocess from app.py; once the merger window starts
+#      successfully, the main app closes itself without terminating the merger child process.
+#    - Video Merger -> Main App: relaunches app.py when returning to the compressor; once the main app
+#      starts successfully, Video Merger closes itself.
+#    - Video Merger clean launch state MUST NOT persist selected music/session-only playlist data from
+#      config/video_merger.conf. Session music is only restored when an explicit recovery flow is used.
+# 6. MAIN APP RECOVERY CONTRACT:
+#    - Recovery state must round-trip all user-visible processing state: trim start/end, selected music,
+#      music button state, music timeline, volume sliders, quality/file-size slider, thumbnail/freeze image,
+#      mobile/overlay toggles, and granular speed/freeze segments.
 # ==============================================================================
 
 # ==============================================================================

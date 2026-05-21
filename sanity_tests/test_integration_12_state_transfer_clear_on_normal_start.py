@@ -7,8 +7,8 @@ def test_integration_12_state_transfer_clear_on_normal_start() -> None:
     assert_all_present(
         src,
         [
+            'restore_transfer = os.environ.pop("FVS_STATE_TRANSFER_RESTORE", "") == "1"',
             "StateTransfer.clear_state()",
-            "except Exception as state_err:",
-            "self.logger.debug(\"Could not clear startup session state: %s\", state_err)",
+            "except: pass",
         ],
     )

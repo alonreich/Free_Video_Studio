@@ -4,6 +4,7 @@ sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QIcon
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -91,8 +92,22 @@ def main():
 
         def restart_main_app():
             main_app_path = os.path.join(BASE_DIR, 'app.py')
-            subprocess.Popen([sys.executable, main_app_path], cwd=BASE_DIR)
-            window.close()
+            try:
+                flags = 16 if sys.platform == 'win32' else 0
+                proc = subprocess.Popen([sys.executable, main_app_path], cwd=BASE_DIR, creationflags=flags, close_fds=True)
+                window.hide()
+
+                def _complete_main_handoff():
+                    if proc.poll() is None:
+                        window.close()
+                        return
+                    window.show()
+                    QMessageBox.critical(window, "Launch Error", f"Main app closed unexpectedly (Code: {proc.returncode}).")
+
+                QTimer.singleShot(900, _complete_main_handoff)
+            except Exception as ex:
+                window.show()
+                QMessageBox.critical(window, "Launch Error", f"Could not launch Main App: {ex}")
         if hasattr(window, 'return_to_main'):
             window.return_to_main.connect(restart_main_app)
         exit_code = app.exec_()

@@ -53,6 +53,7 @@ class MainWindowCoreBMixin:
                 self.playPauseButton.setText("PLAY"); self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.is_playing = False
                 if self.timer.isActive(): self.timer.stop()
         self.logger.info(f"UI: Playback speed changed to {value}x. Recalculating quality..."); self._update_quality_label()
+        if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
     @property
     def original_duration(self): return self.original_duration_ms / 1000.0 if self.original_duration_ms else 0.0
 

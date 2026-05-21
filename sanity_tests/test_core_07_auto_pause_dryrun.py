@@ -6,7 +6,8 @@ def test_core_07_auto_pause_dryrun() -> None:
         src,
         [
             "def open_music_wizard(self):",
-            "self.player.pause()",
+            "self.player.pause = True",
+            "self.player.mute = True",
             "self.wants_to_play = False",
         ],
     )

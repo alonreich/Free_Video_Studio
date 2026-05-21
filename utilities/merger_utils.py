@@ -18,6 +18,17 @@ def _proj_root() -> Path:
 def _conf_path() -> Path:
     return _proj_root() / "config" / "video_merger.conf"
 
+SESSION_ONLY_CONFIG_KEYS = {"music_widget"}
+
+def sanitize_persistent_config(cfg: dict) -> dict:
+    """Drop state that should never survive a clean Video Merger launch."""
+    if not isinstance(cfg, dict):
+        return {}
+    clean = dict(cfg)
+    for key in SESSION_ONLY_CONFIG_KEYS:
+        clean.pop(key, None)
+    return clean
+
 def _human(n_bytes: int) -> str:
     """Returns human-readable size."""
     if n_bytes is None: return "0 B"
@@ -42,7 +53,7 @@ def _load_conf() -> dict:
         if p.exists():
             content = p.read_text(encoding="utf-8")
             cfg = json.loads(content)
-            return cfg
+            return sanitize_persistent_config(cfg)
         return {}
     except Exception as e:
         logger.error(f"Failed to load config from {p}: {e}")
@@ -53,6 +64,7 @@ def _save_conf(cfg: dict) -> None:
     p = _conf_path()
     logger = _get_logger()
     try:
+        cfg = sanitize_persistent_config(cfg)
         p.parent.mkdir(parents=True, exist_ok=True)
 
         import tempfile

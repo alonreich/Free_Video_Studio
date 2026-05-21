@@ -23,8 +23,8 @@ def _has_any(text: str, needles: list[str]) -> bool:
 
 def _assess_mpv_player_contract(name: str, src: str) -> PlayerAccelerationResult:
     gpu_accel_enabled = (
-        _has_any(src, ["--avcodec-hw=any", "--hwdec=auto", "--hwaccel", "h264_nvenc", "mpv.MPV"])
-        and _has_any(src, ["hr_seek", "keep_open", "ytdl=False"])
+        _has_any(src, ["--avcodec-hw=any", "hwdec='auto'", "'hwdec': 'auto'", "target_hwdec", "mpv.MPV", "MPVSafetyManager.create_safe_mpv"])
+        and _has_any(src, ["hr_seek", "keep_open", "ytdl=False", "vo='gpu'", "'vo': 'gpu'"])
     )
     cpu_fallback_present = _has_any(
         src,
@@ -52,14 +52,15 @@ def test_real_sanity_video_player_acceleration_report_end_user_readable(
     capsys: "pytest.CaptureFixture[str]",
 ) -> None:
     app_boot_src = read_source("app.py")
-    main_preview_src = read_source("ui/main_window.py")
+    main_preview_src = read_source("ui/parts/main_window_core_b.py")
     granular_src = read_source("ui/widgets/granular_speed_editor.py")
     main_wizard_src = read_source("ui/widgets/music_wizard.py")
     crop_src = read_source("developer_tools/media_processor.py")
     merger_wizard_src = read_source("utilities/merger_music_wizard.py")
     app_level_cpu_control = (
         'os.environ["VIDEO_FORCE_CPU"] = "1"' in app_boot_src
-        and 'if check_encoder_capability(ffmpeg_path, "h264_nvenc"):' in app_boot_src
+        and 'for mode, encoder in (("NVIDIA", "h264_nvenc"), ("AMD", "h264_amf"), ("INTEL", "h264_qsv")):' in app_boot_src
+        and "if check_encoder_capability(self.ffmpeg_path, encoder):" in app_boot_src
     )
     results = [
         _assess_mpv_player_contract("Main App - Preview Player", main_preview_src),

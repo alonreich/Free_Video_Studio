@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import types
 import os
+import sys
 from sanity_tests._real_sanity_harness import (
     DummyButton,
     DummyCheckBox,
@@ -144,15 +145,30 @@ def test_core_07_and_08_open_wizard_pauses_video_and_adds_overlay(monkeypatch) -
     MusicMixin.open_music_wizard(host)
     assert host.player.paused >= 1
     assert host.wants_to_play is False
-    assert host.positionSlider.visible_calls and host.positionSlider.visible_calls[-1] is True
     assert host.positionSlider.time_calls and host.positionSlider.time_calls[-1] == (1200, 8200)
+
+    host._music_preview_player = DummyMediaPlayer()
+    host._ensure_music_player_ready = lambda: True
+    host._safe_mpv_command = lambda *a, **k: True
+    host._sync_music_preview = lambda: None
+    host._safe_seek_to_start = lambda *_: None
+    host._final_unmute_after_wizard = lambda: None
+    host._set_transition_false = lambda: None
+    host.raise_ = lambda: None
+    host.activateWindow = lambda: None
+    host.video_surface = types.SimpleNamespace(show=lambda: None)
+    host._bind_main_player_output = lambda: None
+    host._set_music_button_state = lambda has_music: setattr(host, "_music_button_has_music", bool(has_music))
+    MusicMixin._continue_wizard_return(host, 1, 1200, 8200, [], 1.5, DummyWizard())
+    assert host.positionSlider._show_music is True
+    assert host.positionSlider.music_start_ms == 1200
+    assert host.positionSlider.music_end_ms == 8200
+    assert host._music_button_has_music is True
 
 def test_core_09_native_logs_faulthandler_pipeline(monkeypatch, tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    dup_calls: list[tuple[int, int]] = []
     fh_calls: list[object] = []
-    monkeypatch.setattr("os.dup2", lambda a, b: dup_calls.append((a, b)))
     monkeypatch.setattr("faulthandler.enable", lambda *a, **_k: fh_calls.append(a[0] if a else None))
     monkeypatch.setattr("sys.stdout", open(os.devnull, "w", encoding="utf-8"), raising=False)
     monkeypatch.setattr("sys.stderr", open(os.devnull, "w", encoding="utf-8"), raising=False)
@@ -162,7 +178,10 @@ def test_core_09_native_logs_faulthandler_pipeline(monkeypatch, tmp_path: Path) 
     assert log_dir_path.exists()
     logs = list(log_dir_path.glob("*.log"))
     assert len(logs) >= 1, f"No log files found in {log_dir_path}"
-    assert len(dup_calls) >= 2
+    assert ConsoleManager._stdout_stream is sys.stdout
+    assert ConsoleManager._stderr_stream is sys.stderr
+    assert ConsoleManager._stdout_stream.__class__.__name__ == "ReopenableTextStream"
+    assert ConsoleManager._stderr_stream.__class__.__name__ == "ReopenableTextStream"
     assert len(fh_calls) == 1
 
 def test_core_10_folder_persistence_prioritizes_custom_path(tmp_path: Path) -> None:

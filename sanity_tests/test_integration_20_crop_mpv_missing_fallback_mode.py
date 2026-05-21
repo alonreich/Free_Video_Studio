@@ -9,7 +9,8 @@ def test_integration_20_crop_mpv_missing_fallback_mode() -> None:
         [
             "if not self.media_processor.player:",
             "self.mpv_error_label.setVisible(True)",
-            "self.open_image_button.setVisible(True)",
-            "self.open_image_button.setText(\"📷 UPLOAD SCREENSHOT (MPV MISSING)\")",
+            'self.mpv_error_label.setText("⚠️ MPV ENGINE MISSING")',
+            "self.upload_hint_label.setVisible(False)",
+            'msg.setWindowTitle("MPV Player Required")',
         ],
     )

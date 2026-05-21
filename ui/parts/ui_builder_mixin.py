@@ -134,6 +134,8 @@ class UiBuilderMixin:
             self.status_update_signal.emit(f'✅ SUCCESS: Thumbnail set at {int(mm):02d}:{float(ss):05.2f} ✅')
             if hasattr(self, 'positionSlider'):
                 self.positionSlider.set_thumbnail_pos_ms(pos_ms)
+            if hasattr(self, "_save_recovery_state"):
+                self._save_recovery_state()
             QTimer.singleShot(4000, lambda: self.thumb_pick_btn.setText(f'📸 THUMBNAIL SET 📸'))
         else:
             self.thumb_pick_btn.setText('📸 SET THUMBNAIL 📸')
@@ -155,6 +157,8 @@ class UiBuilderMixin:
             self.timeline_overlay.set_boss_hp_mode(checked)
         if hasattr(self, "_update_quality_label"):
             self._update_quality_label()
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()
 
     def _safe_stop_playback(self):
         if hasattr(self, "player") and self.player:
@@ -221,6 +225,8 @@ class UiBuilderMixin:
                 pass
         if hasattr(self, "_sync_music_preview"):
             QTimer.singleShot(0, self._sync_music_preview)
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()
 
     def _ensure_default_trim(self):
         try:
@@ -294,8 +300,24 @@ class UiBuilderMixin:
             from system.state_transfer import StateTransfer
             StateTransfer.save_state({'input_file': getattr(self, 'input_file_path', None), 'trim_start': getattr(self, 'trim_start_ms', 0), 'trim_end': getattr(self, 'trim_end_ms', 0), 'mobile_checked': self.mobile_checkbox.isChecked()})
             flags = 16 if sys.platform == 'win32' else 0
-            subprocess.Popen([sys.executable, p], cwd=self.base_dir, creationflags=flags, close_fds=True, start_new_session=True)
+            if getattr(self, "player", None):
+                try: self.player.stop()
+                except Exception: pass
+            self.hide()
+            proc = subprocess.Popen([sys.executable, p], cwd=self.base_dir, creationflags=flags, close_fds=True, start_new_session=True)
+
+            def _complete_merger_handoff():
+                if proc.poll() is None:
+                    self._preserve_child_processes_on_close = True
+                    self._preserve_staged_input_on_close = True
+                    self.close()
+                    return
+                self.show()
+                QMessageBox.critical(self, 'Launch Error', f'Video Merger closed unexpectedly (Code: {proc.returncode}).')
+
+            QTimer.singleShot(900, _complete_merger_handoff)
         except Exception as e:
+            self.show()
             QMessageBox.critical(self, 'Launch Error', f'Failed: {e}')
 
     def eventFilter(self, obj, event):
@@ -596,7 +618,7 @@ class UiBuilderMixin:
         self.quality_slider.setEnabled(False)
         self.quality_slider.setCursor(Qt.PointingHandCursor)
         self.quality_slider.setToolTip("Adjust target output file size (MB)")
-        self.quality_slider.valueChanged.connect(lambda _: self._update_quality_label())
+        self.quality_slider.valueChanged.connect(self._on_quality_slider_changed)
         self.quality_value_label = QLabel('')
         self.quality_value_label.setStyleSheet('font-size: 10px; font-weight: bold;')
         self.quality_value_label.setMinimumWidth(100)
@@ -694,12 +716,14 @@ class UiBuilderMixin:
         self.teammates_checkbox.setToolTip("Enable overlay for teammates' health in portrait mode")
         self.teammates_checkbox.setEnabled(False)
         self.teammates_checkbox.setVisible(self.mobile_checkbox.isChecked())
+        self.teammates_checkbox.toggled.connect(lambda _checked: self._save_recovery_state() if hasattr(self, "_save_recovery_state") else None)
         self.portrait_text_input = QLineEdit()
         self.portrait_text_input.setPlaceholderText('Overlay Text')
         self.portrait_text_input.setToolTip("Custom text for the portrait mode overlay")
         self.portrait_text_input.setEnabled(False)
         self.portrait_text_input.setVisible(self.mobile_checkbox.isChecked())
         self.portrait_text_input.setStyleSheet('background-color: #4a667a; color: white; border: 1px solid #266b89; border-radius: 4px; padding: 4px;')
+        self.portrait_text_input.editingFinished.connect(lambda: self._save_recovery_state() if hasattr(self, "_save_recovery_state") else None)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
@@ -766,6 +790,7 @@ class UiBuilderMixin:
         self.no_fade_checkbox.setCursor(Qt.PointingHandCursor)
         self.no_fade_checkbox.setToolTip("Toggle automatic fade transitions at start/end")
         self.no_fade_checkbox.setEnabled(False)
+        self.no_fade_checkbox.toggled.connect(lambda _checked: self._save_recovery_state() if hasattr(self, "_save_recovery_state") else None)
         r_l.addWidget(self.no_fade_checkbox, 0, Qt.AlignRight)
         bb = QVBoxLayout()
         bb.setContentsMargins(0, 0, 25, 0)
@@ -879,6 +904,11 @@ class UiBuilderMixin:
         self.quality_value_label.setText(desc)
         self.quality_value_label.setStyleSheet(f'color: {color}; font-weight: bold;')
 
+    def _on_quality_slider_changed(self, *_args):
+        self._update_quality_label()
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()
+
     def _on_mobile_toggled(self, checked: bool):
         self.teammates_checkbox.setVisible(checked)
         self.teammates_checkbox.setEnabled(checked)
@@ -888,6 +918,8 @@ class UiBuilderMixin:
             self.portrait_mask_overlay.setVisible(checked and bool(self.input_file_path))
             self._update_portrait_mask_overlay_state()
         self._update_quality_label()
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()
 
     def _update_portrait_mask_overlay_state(self):
         if not hasattr(self, 'portrait_mask_overlay') or not self.portrait_mask_overlay or getattr(self, 'is_processing', False):

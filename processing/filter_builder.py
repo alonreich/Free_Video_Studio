@@ -9,6 +9,7 @@ class FilterResult(tuple):
 class AudioFilterMixin:
     def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, sample_rate=48000, music_tracks=None, music_start_index=1, total_project_duration=None, main_audio_label="[0:a]"):
         chain = []
+        music_config = music_config if isinstance(music_config, dict) else {}
         target_sample_rate = sample_rate or 48000
         raw_parts = []
         if isinstance(audio_filter_cmd, list): raw_parts.extend(audio_filter_cmd)
@@ -30,7 +31,37 @@ class AudioFilterMixin:
             chain.append(f"{main_audio_label}{main_audio_filter}[a_main_raw]")
         else:
             chain.append(f"anullsrc=r={target_sample_rate}:cl=stereo,atrim=duration={max(0.01, float(main_duration)):.4f},asetpts=PTS-STARTPTS[a_main_raw]")
-        tracks = music_tracks if music_tracks else []
+        def normalize_music_track(track, fallback_duration=0.0):
+            if isinstance(track, dict):
+                path = track.get("path")
+                offset = track.get("offset_sec", track.get("offset", track.get("file_offset_sec", 0.0)))
+                duration = track.get("duration_sec", track.get("duration", track.get("dur", fallback_duration)))
+            elif isinstance(track, (list, tuple)) and len(track) >= 1:
+                path = track[0]
+                offset = track[1] if len(track) >= 2 else 0.0
+                duration = track[2] if len(track) >= 3 else fallback_duration
+            else:
+                return None
+            if not path:
+                return None
+            try:
+                offset_val = max(0.0, float(offset or 0.0))
+            except Exception:
+                offset_val = 0.0
+            try:
+                dur_val = max(0.0, float(duration or 0.0))
+            except Exception:
+                dur_val = 0.0
+            if dur_val <= 0.001 and fallback_duration:
+                dur_val = max(0.001, float(fallback_duration))
+            return (str(path), offset_val, dur_val)
+
+        tracks = []
+        fallback_music_duration = total_project_duration if total_project_duration is not None else main_duration
+        for raw_track in list(music_tracks or []):
+            normalized = normalize_music_track(raw_track, fallback_music_duration)
+            if normalized:
+                tracks.append(normalized)
         if not tracks and music_config and music_config.get("path"):
             path = music_config.get("path")
             offset = music_config.get("file_offset_sec", 0.0)
@@ -47,7 +78,10 @@ class AudioFilterMixin:
         if tracks and music_window_sec is not None:
             clipped_tracks = []; remaining = music_window_sec
             for path, offset, dur in tracks:
-                try: dur_val, offset_val = max(0.0, float(dur)), max(0.0, float(offset))
+                try:
+                    dur_val, offset_val = max(0.0, float(dur)), max(0.0, float(offset))
+                    if dur_val <= 0.001:
+                        dur_val = remaining
                 except Exception: continue
                 take = min(dur_val, remaining)
                 if take > 0.001:
@@ -59,7 +93,10 @@ class AudioFilterMixin:
             return chain, "[a_main_prepared]"
         initial_delay_sec = 0.0
         if music_config:
-            m_start_proj = float(music_config.get('timeline_start_sec', 0.0))
+            try:
+                m_start_proj = float(music_config.get('timeline_start_sec', 0.0))
+            except Exception:
+                m_start_proj = 0.0
             initial_delay_sec = max(0.0, m_start_proj)
         prepared_music_labels = []; accum_project_sec = initial_delay_sec
         for i, (path, file_offset, dur_sec) in enumerate(tracks):
@@ -150,18 +187,28 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         if current_sec < total_duration_sec - 0.001:
             source_chunks.append({'start': current_sec, 'end': total_duration_sec, 'speed': float(base_speed)})
         freezes = sorted([s for s in normalized_segments if abs(float(s.get('speed', base_speed))) < 0.001], key=lambda x: x['start'])
+
+        def append_source_range(out_chunks, range_start, range_end):
+            for source_chunk in source_chunks:
+                overlap_start = max(float(range_start), float(source_chunk['start']))
+                overlap_end = min(float(range_end), float(source_chunk['end']))
+                if overlap_end > overlap_start + 0.001:
+                    out_chunks.append({'start': overlap_start, 'end': overlap_end, 'speed': float(source_chunk['speed'])})
+
         chunks = []
-        last_source_pos = 0.0
+        source_cursor = 0.0
         for f in freezes:
-            f_start = float(f['start'])
-            f_end = float(f['end'])
+            f_start = max(source_cursor, float(f['start']))
+            f_end = max(f_start, float(f['end']))
+            if f_end <= source_cursor + 0.001:
+                continue
+            if f_start > source_cursor + 0.001:
+                append_source_range(chunks, source_cursor, f_start)
             f_dur = max(0.001, f_end - f_start)
-            if f_start > last_source_pos + 0.001:
-                chunks.append({'start': last_source_pos, 'end': f_start, 'speed': float(base_speed)})
             chunks.append({'start': f_start, 'end': f_start + 0.001, 'speed': 0.0, 'freeze_dur': f_dur})
-            last_source_pos = f_start
-        if total_duration_sec > last_source_pos + 0.001:
-            chunks.append({'start': last_source_pos, 'end': total_duration_sec, 'speed': float(base_speed)})
+            source_cursor = f_end
+        if total_duration_sec > source_cursor + 0.001:
+            append_source_range(chunks, source_cursor, total_duration_sec)
 
         def time_mapper(timeline_sec):
             target = _to_clip_relative_sec(timeline_sec)

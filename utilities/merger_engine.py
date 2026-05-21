@@ -7,6 +7,8 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
 
 class MergerEngine(QThread):
+    H264_LEVEL_42_MAX_BPS = 50_000_000
+    H264_LEVEL_42_MIN_BPS = 300_000
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
@@ -30,15 +32,26 @@ class MergerEngine(QThread):
     def _cmd_base_with_decode_flags(self):
         return list(self.cmd_base)
 
+    def _video_bitrate_args(self, multiplier):
+        if self.target_v_bitrate <= 0:
+            return []
+        requested = int(self.target_v_bitrate * multiplier)
+        effective = max(self.H264_LEVEL_42_MIN_BPS, min(self.H264_LEVEL_42_MAX_BPS, requested))
+        if effective != requested:
+            self.logger.info(
+                "GPU: Clamped merger video bitrate from %s to %s for H.264 Level 4.2.",
+                requested,
+                effective,
+            )
+        bufsize = min(self.H264_LEVEL_42_MAX_BPS, max(effective, effective * 2))
+        return ["-b:v", str(effective), "-maxrate:v", str(effective), "-bufsize:v", str(bufsize)]
+
     def _detect_gpu_encoder(self):
         quality_multipliers = {0: 0.20, 1: 0.40, 2: 0.60, 3: 0.80, 4: 1.0}
         mult = quality_multipliers.get(self.quality_level, 1.0)
         crf_map = {4: 22, 3: 26, 2: 30, 1: 34, 0: 40}
         crf_val = crf_map.get(self.quality_level, 26)
-        v_bitrate_args = []
-        if self.target_v_bitrate > 0:
-            effective_bitrate = int(self.target_v_bitrate * mult)
-            v_bitrate_args = ["-b:v", f"{effective_bitrate}", "-maxrate:v", f"{int(effective_bitrate * 1.5)}", "-bufsize:v", f"{int(effective_bitrate * 2)}"]
+        v_bitrate_args = self._video_bitrate_args(mult)
         if not self.use_gpu:
             return self._get_cpu_flags(crf_val, v_bitrate_args)
         try:
@@ -67,7 +80,7 @@ class MergerEngine(QThread):
         except Exception as e:
             self.logger.warning(f"GPU Probe failed: {e}")
         if self.use_gpu:
-            self.logger.warning("GPU encoding was requested, but no H.264 hardware encoder was exposed. Falling back to CPU.")
+            raise RuntimeError("GPU encoding was requested, but no H.264 hardware encoder was exposed.")
         return self._get_cpu_flags(crf_val, v_bitrate_args)
 
     def _audio_bitrate_kbps(self):
@@ -105,9 +118,10 @@ class MergerEngine(QThread):
                 cmd.extend(video_flags)
             except Exception as e:
                 if self.use_gpu:
-                    self.logger.warning(f"GPU setup failed: {e}. Falling back to CPU.")
-                    self.use_gpu = False
-                    continue
+                    msg = f"GPU setup failed and CPU fallback is disabled: {e}"
+                    self.logger.error(msg)
+                    self.finished.emit(False, msg)
+                    return
                 self.finished.emit(False, str(e))
                 return
             cmd.append(str(self.output_path))
@@ -181,9 +195,9 @@ class MergerEngine(QThread):
                 err_msg = "\n".join(important[-12:] if important else log_buffer[-12:]) or f"Exit Code {rc}"
                 self.logger.error(f"FFMPEG ERROR OUTPUT:\n" + err_msg)
                 if self.use_gpu and not used_cpu:
-                    self.logger.warning("Hardware encode failed during merge. Retrying once with CPU.")
-                    self.use_gpu = False
-                    continue
+                    self.logger.error("Hardware encode failed during merge; CPU fallback is disabled.")
+                    self.finished.emit(False, f"Hardware Encoding Failed (CPU fallback disabled):\n{err_msg}")
+                    return
                 self.finished.emit(False, f"Encoding Failed:\n{err_msg}")
             break
 

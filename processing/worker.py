@@ -67,7 +67,7 @@ class ProcessThread(QThread):
                 self.music_config["music_vol"] = float(bg_music_volume)
             except (TypeError, ValueError):
                 self.music_config["music_vol"] = 0.8
-        self.music_tracks = music_tracks or []
+        self.music_tracks = self._normalize_music_tracks(music_tracks)
         self.config = VideoConfig(self.base_dir)
         self.keep_highest_res, self.target_mb, self.quality_level = self.config.get_quality_settings(quality_level, target_mb_override=target_mb_override)
         self.filter_builder = FilterBuilder(self.logger)
@@ -109,6 +109,32 @@ class ProcessThread(QThread):
                 s_ms, e_ms = clamped_s, clamped_e
             normalized.append({"start_ms": s_ms, "end_ms": e_ms, "speed": spd})
         normalized.sort(key=lambda x: x["start_ms"])
+        return normalized
+
+    def _normalize_music_tracks(self, raw_tracks):
+        normalized = []
+        try:
+            fallback_duration = max(0.001, (float(self.end_time_ms) - float(self.start_time_ms)) / 1000.0 / max(0.001, float(self.speed_factor)))
+        except Exception:
+            fallback_duration = 0.001
+        for track in list(raw_tracks or []):
+            try:
+                if isinstance(track, dict):
+                    path = track.get("path")
+                    offset = track.get("offset_sec", track.get("offset", track.get("file_offset_sec", 0.0)))
+                    duration = track.get("duration_sec", track.get("duration", track.get("dur", fallback_duration)))
+                else:
+                    path = track[0]
+                    offset = track[1] if len(track) > 1 else 0.0
+                    duration = track[2] if len(track) > 2 else fallback_duration
+                if not path:
+                    continue
+                duration = float(duration or fallback_duration)
+                if duration <= 0.001:
+                    duration = fallback_duration
+                normalized.append((str(path), max(0.0, float(offset or 0.0)), max(0.001, duration)))
+            except Exception:
+                continue
         return normalized
 
     def _hardware_decode_flags(self, encoder_name: str) -> list[str]:
@@ -302,6 +328,18 @@ class ProcessThread(QThread):
                 music_start_index=music_start_index,
                 total_project_duration=g_dur
             )
+            if self.music_tracks and self.logger:
+                try:
+                    music_summary = [
+                        {"path": t[0], "offset": float(t[1]), "duration": float(t[2])}
+                        for t in self.music_tracks
+                    ]
+                    self.logger.info(
+                        "MUSIC_WORKER_STATE: total_project=%.3fs final_audio=%s tracks=%s config=%s",
+                        g_dur, final_a_label, music_summary, music_cfg,
+                    )
+                except Exception:
+                    pass
             core_path = os.path.normpath(os.path.join(self.temp_job_dir, "core.mp4"))
             ffmpeg_path = self.ffmpeg_path
             if self.intro_abs_time_ms is not None:

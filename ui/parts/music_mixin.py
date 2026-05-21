@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QStyleOptionSlider, QStyle, QDialog, QVBoxLayout,
                             QLabel, QHBoxLayout, QPushButton, QWidget, QSlider, QApplication, QMessageBox)
 
 from ui.widgets.trimmed_slider import TrimmedSlider
+from ui.styles import UIStyles
 from system.utils import MPVSafetyManager, MediaProber
 
 def _active_speed_segments(host):
@@ -39,6 +40,19 @@ def _active_speed_segments(host):
     return segments
 
 class MusicMixin:
+    def _set_music_button_state(self, has_music):
+        btn = getattr(self, "music_button", None)
+        if not btn:
+            return
+        if has_music:
+            btn.setText('♪  MUSIC ADDED  ♪')
+            btn.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN + ' QPushButton { font-size: 10px; padding: 0px; }')
+            btn.setToolTip("Open the background music wizard to edit the selected music")
+        else:
+            btn.setText('♪    ADD MUSIC    ♪')
+            btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + ' QPushButton { font-size: 10px; padding: 0px; }')
+            btn.setToolTip("Open the background music synchronization wizard")
+
     def _mp3_dir(self):
         try:
             custom = self.config_manager.config.get('custom_mp3_dir')
@@ -176,9 +190,11 @@ class MusicMixin:
                     if hasattr(self, "positionSlider"):
                         self.positionSlider.set_music_visible(True); self.positionSlider.set_music_times(t_s, t_e)
                         self.music_timeline_start_ms = t_s; self.music_timeline_end_ms = t_e
+                    self._set_music_button_state(True)
                     QTimer.singleShot(50, self._sync_music_preview)
                     QTimer.singleShot(150, lambda: self._safe_seek_to_start(t_s))
                     if hasattr(self, 'timer'): self.timer.start(100)
+                    if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
                 else: self._reset_music_player()
                 QTimer.singleShot(500, self._final_unmute_after_wizard)
             else:
@@ -235,8 +251,11 @@ class MusicMixin:
 
     def _reset_music_player(self):
         self.music_timeline_start_ms = 0; self.music_timeline_end_ms = 0; self._wizard_tracks = []
+        self._current_music_path = None; self._current_music_offset = 0.0
         if getattr(self, "_music_preview_player", None): self._safe_mpv_set("pause", True, target_player=self._music_preview_player)
         if hasattr(self, "positionSlider"): self.positionSlider.reset_music_times()
+        self._set_music_button_state(False)
+        if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
 
     def _get_master_eff(self):
         try:
@@ -250,6 +269,7 @@ class MusicMixin:
             self.music_timeline_start_ms = s_ms; self.music_timeline_end_ms = e_ms
             if hasattr(self, "_wizard_tracks") and len(self._wizard_tracks) == 1:
                 p, o, _ = self._wizard_tracks[0]; n_d = (e_ms - s_ms) / 1000.0; self._wizard_tracks[0] = (p, o, n_d)
+            if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
         except: pass
 
     def _sync_music_preview(self):

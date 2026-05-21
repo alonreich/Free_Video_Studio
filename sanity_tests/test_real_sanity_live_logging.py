@@ -82,7 +82,7 @@ def test_log_pipe_broker_recreates_deleted_logs_and_captures_native_pipe(tmp_pat
 def test_console_manager_keeps_logs_alive_after_delete_until_hard_exit(tmp_path) -> None:
     script = f"""
 
-import os, shutil, time
+import os, shutil, sys, time
 from pathlib import Path
 from system import diagnostic_runtime
 base = r"{str(tmp_path)}"
@@ -103,7 +103,11 @@ paths = [
 time.sleep(0.8)
 shutil.rmtree(logs, ignore_errors=True)
 time.sleep(0.8)
-os.write(2, b"native crash line after deletion\\n")
+logger.info("child logger after deletion")
+print("stdout after deletion")
+sys.stderr.write("stderr after deletion\\n")
+sys.stderr.flush()
+diagnostic_runtime.append_mpv_trace("info", "mpv", "mpv after deletion")
 time.sleep(0.8)
 os._exit(7)
 """
@@ -122,4 +126,8 @@ os._exit(7)
     assert main_log.exists(), "main_app.log should be recreated while app is still running."
     assert py_log.exists(), "python_debug.log should be recreated while app is still running."
     assert mpv_log.exists(), "mpv_trace.log should be recreated while app is still running."
-    assert "native crash line after deletion" in py_log.read_text(encoding="utf-8", errors="replace")
+    assert "child logger after deletion" in main_log.read_text(encoding="utf-8", errors="replace")
+    py_text = py_log.read_text(encoding="utf-8", errors="replace")
+    assert "stdout after deletion" in py_text
+    assert "stderr after deletion" in py_text
+    assert "mpv after deletion" in mpv_log.read_text(encoding="utf-8", errors="replace")

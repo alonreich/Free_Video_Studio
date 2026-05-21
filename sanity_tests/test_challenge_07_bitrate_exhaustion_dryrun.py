@@ -7,6 +7,7 @@ def test_challenge_07_bitrate_exhaustion_dryrun() -> None:
         [
             "if video_bits <= 0:",
             "return 300",
-            "return max(300, calculated_kbps)",
+            "final_kbps = max(300, min(calculated_kbps, max_h264_level_42_kbps))",
+            "return final_kbps",
         ],
     )

@@ -91,6 +91,10 @@ def test_real_video_bad_quality():
     elif enc_mgr.primary_encoder == "h264_amf": hw_strategy = "AMD"
     elif enc_mgr.primary_encoder == "h264_qsv": hw_strategy = "INTEL"
     logger.info(f"Using Hardware Strategy: {hw_strategy} (Encoder: {enc_mgr.primary_encoder})")
+    assert hw_strategy != "CPU", (
+        f"BAD quality sanity requires a hardware encoder; CPU fallback is not acceptable "
+        f"(primary_encoder={enc_mgr.primary_encoder!r})."
+    )
     config = VideoConfig(base_dir)
     q_level = 0
     keep_highest_res, target_mb, _ = config.get_quality_settings(q_level)

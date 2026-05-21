@@ -35,7 +35,15 @@ _SANITY_TMP_ROOT: Path | None = None
 _ORIG_TEMP_ENV: dict[str, str | None] = {"TMP": None, "TEMP": None, "TMPDIR": None}
 _RUN_STARTED_AT: str = ""
 
+def _cleanup_disabled() -> bool:
+    return os.environ.get("FVS_SANITY_NO_CLEANUP") == "1"
+
+def _report_disabled() -> bool:
+    return os.environ.get("FVS_SANITY_NO_REPORT") == "1"
+
 def _cleanup_pytest_cache() -> None:
+    if _cleanup_disabled():
+        return
     cache_dir = Path(".pytest_cache")
     if cache_dir.exists():
         shutil.rmtree(cache_dir, ignore_errors=True)
@@ -62,6 +70,8 @@ def _remove_path_quietly(path: Path) -> None:
         pass
 
 def _cleanup_new_tmp_entries(tmp_dir: Path, before_entries: set[str]) -> None:
+    if _cleanup_disabled():
+        return
     try:
         if not tmp_dir.exists():
             return
@@ -74,11 +84,12 @@ def _cleanup_new_tmp_entries(tmp_dir: Path, before_entries: set[str]) -> None:
 def _setup_tmp_sandbox(config) -> None:
     global _SANITY_TMP_ROOT
     temp_root = Path(tempfile.gettempdir())
-    for stale_dir in temp_root.glob("tmp_fvs_sanity_pytest_*"):
-        if stale_dir.is_dir():
-            try:
-                shutil.rmtree(stale_dir, ignore_errors=True)
-            except: pass
+    if not _cleanup_disabled():
+        for stale_dir in temp_root.glob("tmp_fvs_sanity_pytest_*"):
+            if stale_dir.is_dir():
+                try:
+                    shutil.rmtree(stale_dir, ignore_errors=True)
+                except: pass
     root = temp_root / f"tmp_fvs_sanity_pytest_{os.getpid()}_{int(time.time() * 1000)}"
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -118,14 +129,16 @@ def _install_legacy_import_alias() -> None:
 def pytest_configure(config) -> None:
     global _RUN_STARTED_AT
     _RUN_STARTED_AT = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
+    config.addinivalue_line("markers", "timeout(seconds): maximum expected runtime for long-running sanity tests")
     _disable_pytest_cacheprovider(config)
     _cleanup_pytest_cache()
     parent_dir = Path(__file__).parent
-    for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
-        if stale_dir.is_dir():
-            try:
-                shutil.rmtree(stale_dir, ignore_errors=True)
-            except: pass
+    if not _cleanup_disabled():
+        for stale_dir in parent_dir.glob("tmp_fvs_sanity_pytest_*"):
+            if stale_dir.is_dir():
+                try:
+                    shutil.rmtree(stale_dir, ignore_errors=True)
+                except: pass
     _setup_tmp_sandbox(config)
     _install_legacy_import_alias()
 
@@ -133,7 +146,7 @@ def pytest_sessionfinish(session, exitstatus) -> None:
     _ = (session, exitstatus)
     _cleanup_pytest_cache()
     global _SANITY_TMP_ROOT
-    if _SANITY_TMP_ROOT and _SANITY_TMP_ROOT.exists():
+    if not _cleanup_disabled() and _SANITY_TMP_ROOT and _SANITY_TMP_ROOT.exists():
         shutil.rmtree(_SANITY_TMP_ROOT, ignore_errors=True)
     _SANITY_TMP_ROOT = None
     for k, v in _ORIG_TEMP_ENV.items():
@@ -556,6 +569,8 @@ def _build_ai_fix_instructions(test_file: str, detail: str, status: str, scenari
     ]
 
 def _append_summary_report(grouped: dict[str, list[CaseOutcome]], total_passed: int, total_failed: int, total_skipped: int) -> None:
+    if _report_disabled():
+        return
     report_path = Path(__file__).resolve().parent.parent / "Report_Sanity_Test_Summary.txt"
     now_stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
     lines: list[str] = []
@@ -663,9 +678,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
             terminalreporter.write_line("    (none)")
     try:
         _append_summary_report(grouped, total_passed, total_failed, total_skipped)
-        terminalreporter.write_line(
-            f"{CYAN}Summary file appended:{RESET} Report_Sanity_Test_Summary.txt"
-        )
+        if _report_disabled():
+            terminalreporter.write_line(f"{CYAN}Summary file skipped:{RESET} FVS_SANITY_NO_REPORT=1")
+        else:
+            terminalreporter.write_line(
+                f"{CYAN}Summary file appended:{RESET} Report_Sanity_Test_Summary.txt"
+            )
     except Exception as ex:
         terminalreporter.write_line(f"{RED}Failed writing summary file:{RESET} {ex}")
     terminalreporter.write_sep(

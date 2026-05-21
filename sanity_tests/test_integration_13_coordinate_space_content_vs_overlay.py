@@ -4,12 +4,14 @@ import sys
 
 def test_integration_13_coordinate_space_content_vs_overlay() -> None:
     """Coordinate math must keep crop in content area logic and overlay in full portrait space."""
-    src = read_source("developer_tools/coordinate_math.py")
+    src = read_source("processing/coordinate_math.py")
     assert_all_present(
         src,
         [
-            "UI_CONTENT_H = PORTRAIT_H - UI_PADDING_TOP - UI_PADDING_BOTTOM",
-            "ui_y = (internal_y * ui_scale) + UI_PADDING_TOP",
+            "UI_CONTENT_H = 1620",
+            "PADDING_TOP = UI_PADDING_TOP",
+            "def transform_to_content_area",
+            "internal_y = (y * scale) - crop_y",
             "clamp_overlay_position",
         ],
     )

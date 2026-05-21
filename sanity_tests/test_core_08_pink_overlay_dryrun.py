@@ -6,8 +6,8 @@ def test_core_08_pink_overlay_dryrun() -> None:
         src,
         [
             "self.positionSlider.set_music_visible(True)",
-            "self.positionSlider.set_music_times(t_start, t_end)",
-            "self.music_timeline_start_ms = t_start",
-            "self.music_timeline_end_ms = t_end",
+            "self.positionSlider.set_music_times(t_s, t_e)",
+            "self.music_timeline_start_ms = t_s",
+            "self.music_timeline_end_ms = t_e",
         ],
     )

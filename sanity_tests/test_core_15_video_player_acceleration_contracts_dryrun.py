@@ -3,41 +3,41 @@ from sanity_tests._ai_sanity_helpers import assert_all_present, read_source
 
 def test_core_15_main_app_player_acceleration_contracts_dryrun() -> None:
     app_boot_src = read_source("app.py")
-    main_preview_src = read_source("ui/main_window.py")
+    main_preview_src = read_source("ui/parts/main_window_core_b.py")
     granular_src = read_source("ui/widgets/granular_speed_editor.py")
     main_wizard_src = read_source("ui/widgets/music_wizard.py")
     assert_all_present(
         app_boot_src,
         [
             'os.environ["VIDEO_FORCE_CPU"] = "1"',
-            'if check_encoder_capability(ffmpeg_path, "h264_nvenc"):',
-            'if check_encoder_capability(ffmpeg_path, "h264_amf"):',
-            'if check_encoder_capability(ffmpeg_path, "h264_qsv"):',
+            'for mode, encoder in (("NVIDIA", "h264_nvenc"), ("AMD", "h264_amf"), ("INTEL", "h264_qsv")):',
+            "if check_encoder_capability(self.ffmpeg_path, encoder):",
         ],
     )
     assert_all_present(
         main_preview_src,
         [
-            '"--avcodec-hw=any"',
-            '"--vout=direct3d11"',
-            "self.mpv_instance = mpv.MPV(mpv_args)",
+            "target_hwdec = \"auto\"",
+            "self.player = MPVSafetyManager.create_safe_mpv(",
+            "hwdec=target_hwdec",
+            "vo='gpu' if sys.platform == 'win32' else 'gpu'",
         ],
     )
     assert_all_present(
         granular_src,
         [
-            "'--no-video-title-show'",
-            "'--avcodec-hw=any'",
-            "'--vout=direct3d11'",
-            "self.mpv_instance = mpv.MPV(mpv_args)",
+            "self.player = MPVSafetyManager.create_safe_mpv(",
+            "hwdec='auto'",
+            "vo='gpu' if sys.platform == 'win32' else 'gpu'",
         ],
     )
     assert_all_present(
         main_wizard_src,
         [
-            "self.mpv_v = mpvProcessProxy('video', self.logger, self.bin_dir)",
-            "self.mpv_m = mpvProcessProxy('music', self.logger, self.bin_dir)",
-            "self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None",
+            "kwargs = {'osc': False, 'hr_seek': 'yes', 'hwdec': 'auto'",
+            "kwargs['vo'] = 'gpu'; kwargs['gpu-context'] = 'd3d11'",
+            "self.mpv_instance = mpv.MPV(**kwargs)",
+            "self._wizard_music_player = MPVSafetyManager.create_safe_mpv",
         ],
     )
 
@@ -47,17 +47,18 @@ def test_core_15_crop_and_merger_step3_acceleration_contracts_dryrun() -> None:
     assert_all_present(
         crop_src,
         [
-            "'--avcodec-hw=any'",
-            "'--vout=direct3d11'",
-            "fallback_args = [",
-            "'--vout=dummy'",
+            "'hwdec': 'no'",
+            "'vo': 'null' if wid is None else 'gpu,direct3d,d3d11,null'",
+            "self.player.hwdec = 'auto'",
+            "self.player.vo = 'gpu,direct3d,d3d11,null'",
         ],
     )
     assert_all_present(
         merger_wizard_src,
         [
-            '"--avcodec-hw=any"',
-            '"--vout=direct3d11"',
-            "self._video_player = self.mpv_v.media_player_new() if self.mpv_v else None",
+            "'hwdec': 'auto'",
+            "kwargs['vo'] = 'gpu'",
+            "kwargs['gpu-context'] = 'd3d11'",
+            "self._video_player = self._wizard_video_player",
         ],
     )

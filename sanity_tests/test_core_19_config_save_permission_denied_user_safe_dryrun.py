@@ -22,9 +22,10 @@ def test_core_19_config_save_permission_denied_user_safe_dryrun() -> None:
         [
             "def save_config(self, config_data: Dict[str, Any]) -> None:",
             "try:",
+            "fd, temp_path = tempfile.mkstemp",
             "json.dump(self.config, f, indent=4)",
-            "except Exception as e:",
-            "print(f\"Error saving config file: {e}\")",
+            "except Exception:",
+            "pass",
         ],
     )
     assert_all_present(

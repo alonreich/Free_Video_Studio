@@ -74,17 +74,18 @@ class MainWindowEventsMixin:
                 event.ignore()
                 return
         self.blockSignals(True)
-        try:
-            import psutil
-            current_process = psutil.Process()
-            children = current_process.children(recursive=True)
-            for child in children:
-                try:
-                    if hasattr(self, 'logger'):
-                        self.logger.info(f"EXIT: Killing child process {child.pid} ({child.name()})")
-                    child.kill()
-                except: pass
-        except: pass
+        if not getattr(self, "_preserve_child_processes_on_close", False):
+            try:
+                import psutil
+                current_process = psutil.Process()
+                children = current_process.children(recursive=True)
+                for child in children:
+                    try:
+                        if hasattr(self, 'logger'):
+                            self.logger.info(f"EXIT: Killing child process {child.pid} ({child.name()})")
+                        child.kill()
+                    except: pass
+            except: pass
         if hasattr(self, 'cleanup_and_exit'):
             try:
                 self.cleanup_and_exit()

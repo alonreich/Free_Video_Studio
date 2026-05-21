@@ -173,3 +173,5 @@ class MainWindowFileAMixin:
         self._set_video_controls_enabled(True)
         if hasattr(self, "_set_preview_controls_available"):
             self._set_preview_controls_available(bool(self.player))
+        if hasattr(self, "_save_recovery_state"):
+            self._save_recovery_state()

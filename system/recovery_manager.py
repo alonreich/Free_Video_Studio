@@ -23,6 +23,10 @@ class RecoveryManager:
         self.state_file = self.temp_dir / f"{self.app_id}_recovery_v2.json"
         self.safe_mode_file = self.temp_dir / f"{self.app_id}_safe_mode.sentinel"
         self._safe_mode_threshold = 120 
+        self._save_lock = threading.Lock()
+        self._save_counter_lock = threading.Lock()
+        self._save_counter = 0
+        self._latest_committed_save = 0
 
     def check_fault(self) -> bool:
         """
@@ -94,31 +98,40 @@ class RecoveryManager:
 
     def save_state_async(self, state: Dict[str, Any]):
         """Serializes session state on a background thread to prevent UI stutter."""
-        thread = threading.Thread(target=self.save_state, args=(state,), daemon=True)
+        with self._save_counter_lock:
+            self._save_counter += 1
+            sequence = self._save_counter
+        thread = threading.Thread(target=self.save_state, args=(state, sequence), daemon=True)
         thread.start()
 
-    def save_state(self, state: Dict[str, Any]):
+    def save_state(self, state: Dict[str, Any], sequence: Optional[int] = None):
         """
         Performs an atomic 'write-then-replace' state serialization.
         Ensures the recovery file is never corrupted mid-crash.
         """
         try:
-            state["_recovery_meta"] = {
-                "timestamp": time.time(),
-                "app_id": self.app_id,
-                "pid": os.getpid()
-            }
-            fd, temp_path = tempfile.mkstemp(dir=str(self.temp_dir), prefix="rec_", suffix=".tmp")
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(state, f, indent=4, ensure_ascii=False)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(temp_path, str(self.state_file))
-            except Exception as e:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                raise e
+            with self._save_lock:
+                if sequence is not None and sequence < self._latest_committed_save:
+                    return
+                state["_recovery_meta"] = {
+                    "timestamp": time.time(),
+                    "app_id": self.app_id,
+                    "pid": os.getpid(),
+                    "sequence": sequence
+                }
+                fd, temp_path = tempfile.mkstemp(dir=str(self.temp_dir), prefix="rec_", suffix=".tmp")
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(state, f, indent=4, ensure_ascii=False)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(temp_path, str(self.state_file))
+                    if sequence is not None:
+                        self._latest_committed_save = sequence
+                except Exception as e:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    raise e
         except Exception as e:
             self.logger.error(f"CRP: State save failed: {e}")
 
@@ -143,8 +156,16 @@ class RecoveryManager:
         input_path = assets.get("input_file_path")
         if input_path and not os.path.exists(input_path):
             missing.append(input_path)
+        current_music_path = assets.get("current_music_path")
+        if current_music_path and not os.path.exists(current_music_path):
+            missing.append(current_music_path)
         for track in assets.get("wizard_tracks", []):
-            p = track.get("path")
+            if isinstance(track, dict):
+                p = track.get("path") or track.get("file") or track.get("music_path")
+            elif isinstance(track, (list, tuple)) and track:
+                p = track[0]
+            else:
+                p = None
             if p and not os.path.exists(p):
                 missing.append(p)
         for video_entry in assets.get("video_files", []):

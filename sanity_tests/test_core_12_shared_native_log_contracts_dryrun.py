@@ -5,11 +5,11 @@ def test_core_12_main_and_crop_native_logging_contract_dryrun() -> None:
     assert_all_present(
         src,
         [
-            'mpv.log_path = os.path.join(l_d, f"{app_p}_mpv.log")',
-            'r_l_p = os.path.join(l_d, f"mpv_{s_t}.raw.log")',
+            "python_debug_log_path = diagnostic_runtime.get_python_debug_log_path()",
+            "mpv_trace_log_path = diagnostic_runtime.get_mpv_trace_log_path()",
             "ReopenableTextStream",
-            "faulthandler.enable(restoreable_original_stderr())",
-            "NATIVE DEBUG LOGGING ACTIVE",
+            "faulthandler.enable()",
+            "STABLE LOGGING ACTIVE - PIPE BROKER DISABLED",
             "maxBytes=5*1024*1024",
             '"Main_App": "main_app"',
         ],

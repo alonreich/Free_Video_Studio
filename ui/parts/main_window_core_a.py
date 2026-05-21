@@ -113,6 +113,7 @@ class MainWindowCoreAMixin:
             if hasattr(self, "positionSlider"):
                 visible_segments = self.speed_segments if bool(getattr(self, "granular_checkbox", None) and self.granular_checkbox.isChecked()) else []
                 self.positionSlider.set_speed_segments(visible_segments); self.positionSlider.update()
+            if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
             if m_p:
                 try: m_p.mute = False
                 except: pass
@@ -164,6 +165,7 @@ class MainWindowCoreAMixin:
                 self.positionSlider.set_speed_segments([]); self.positionSlider.update()
             if hasattr(self, "_update_granular_button_state"): self._update_granular_button_state()
             if hasattr(self, "_update_quality_label"): self._update_quality_label()
+            if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
             if hasattr(self, "statusBar"):
                 self.statusBar().showMessage("Granular speeds and frozen images cleared.", 3000)
 
