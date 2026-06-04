@@ -101,7 +101,7 @@ class AudioFilterMixin:
         prepared_music_labels = []; accum_project_sec = initial_delay_sec
         for i, (path, file_offset, dur_sec) in enumerate(tracks):
             input_label, out_label, pre_label = f"[{music_start_index + i}:a]", f"[a_mus_{i}]", f"[a_mus_{i}_pre]"
-            music_filters = [f"atrim=start={file_offset:.3f}:duration={dur_sec:.3f}"]
+            music_filters = [f"atrim=start={file_offset:.3f}:duration={dur_sec:.3f}", "asetpts=PTS-STARTPTS"]
             if not disable_fades and dur_sec > 0.5:
                 FADE_DUR = min(0.5, dur_sec / 4.0)
                 music_filters.append(f"afade=t=in:st=0:d={FADE_DUR:.3f}")
@@ -116,7 +116,7 @@ class AudioFilterMixin:
             accum_project_sec += dur_sec
         if len(prepared_music_labels) > 1:
             mix_inputs = "".join(prepared_music_labels)
-            chain.append(f"{mix_inputs}amix=inputs={len(prepared_music_labels)}:duration=longest:dropout_transition=0[a_bg_music]")
+            chain.append(f"{mix_inputs}amix=inputs={len(prepared_music_labels)}:duration=longest:dropout_transition=0:weights='{' '.join(['1']*len(prepared_music_labels))}'[a_bg_music]")
             bg_music_label = "[a_bg_music]"
         else: bg_music_label = prepared_music_labels[0]
         v_vol = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
@@ -130,8 +130,8 @@ class AudioFilterMixin:
         d_thresh, d_ratio = music_config.get('ducking_threshold', 0.15), music_config.get('ducking_ratio', 2.5)
         duck_params = f"threshold={d_thresh}:ratio={d_ratio}:attack=1:release=400:detection=rms"
         chain.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
-        chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
-        chain.append(f"[game_out_pre][a_music_reconstructed]amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,dynaudnorm=f=150:g=15,alimiter=limit=0.95:attack=5:release=50,aresample={target_sample_rate}:async=1[a_music_prepared]")
+        chain.append("[mus_low][mus_high_ducked]amix=inputs=2:weights='1 1':normalize=0[a_music_reconstructed]")
+        chain.append(f"[game_out_pre][a_music_reconstructed]amix=inputs=2:duration=first:dropout_transition=3:weights='1 1':normalize=0,dynaudnorm=f=150:g=15,alimiter=limit=0.95:attack=5:release=50,aresample={target_sample_rate}:async=1[a_music_prepared]")
         return [c for c in chain if c and c.strip()], "[a_music_prepared]"
 
 class FilterBuilder(AudioFilterMixin, MobileFilterMixin):

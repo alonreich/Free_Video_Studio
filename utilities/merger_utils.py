@@ -152,7 +152,7 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
     filters.append("[trig_cleaned]equalizer=f=1000:t=q:w=2:g=10[trig_final]")
     duck_params = "threshold=0.15:ratio=2.5:attack=1:release=400:detection=rms"
     filters.append(f"[mus_high][trig_final]sidechaincompress={duck_params}[mus_high_ducked]")
-    filters.append("[mus_low][mus_high_ducked]amix=inputs=2:weights=1 1:normalize=0[a_music_reconstructed]")
+    filters.append("[mus_low][mus_high_ducked]amix=inputs=2:weights='1 1':normalize=0[a_music_reconstructed]")
     if music_volume != 1.0:
         filters.append(f"[a_music_reconstructed]volume={music_volume:.4f}[a_music_vol]")
         music_reconstructed = "[a_music_vol]"
@@ -160,7 +160,7 @@ def build_audio_ducking_filters(video_audio_stream: str, music_stream: str, musi
         music_reconstructed = "[a_music_reconstructed]"
     filters.append(
         f"[game_out_pre]{music_reconstructed}"
-        "amix=inputs=2:duration=first:dropout_transition=3:weights=1 1:normalize=0,"
+        "amix=inputs=2:duration=first:dropout_transition=3:weights='1 1':normalize=0,"
         f"alimiter=limit=0.95:attack=5:release=50,aresample={sample_rate}[a_out]"
     )
     return filters

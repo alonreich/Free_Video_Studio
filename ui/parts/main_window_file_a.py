@@ -73,6 +73,7 @@ class MainWindowFileAMixin:
                 self._set_upload_hint_active(True)
 
     def handle_file_selection(self, file_path):
+        is_restoring = getattr(self, "_restoring_recovery_state", False)
         try:
             if self.player:
                 is_paused = getattr(self.player, "pause", True)
@@ -83,14 +84,17 @@ class MainWindowFileAMixin:
                 timer.stop()
         except Exception as stop_err:
             self.logger.error("Error stopping existing player: %s", stop_err)
-        try:
-            self.reset_app_state()
-        except Exception as reset_err:
-            self.logger.error("Error during UI reset: %s", reset_err)
+        
+        if not is_restoring:
+            try:
+                self.reset_app_state()
+            except Exception as reset_err:
+                self.logger.error("Error during UI reset: %s", reset_err)
+        
         try:
             from system.temp_video_workspace import cleanup_workspace, is_workspace_path, stage_video_file
             real_path = os.path.abspath(str(file_path))
-            if not is_workspace_path(real_path):
+            if not is_workspace_path(real_path) and not is_restoring:
                 cleanup_workspace(self.logger)
             staged_path = stage_video_file(real_path, self.logger)
             self.source_file_path = real_path if not is_workspace_path(real_path) else getattr(self, "source_file_path", real_path)
@@ -116,7 +120,8 @@ class MainWindowFileAMixin:
         p = os.path.abspath(str(self.input_file_path))
         if not os.path.isfile(p):
             self.logger.error("Selected file not found: %s", p)
-            QMessageBox.critical(self, "File Not Found", f"The selected file no longer exists:\n{p}")
+            if not is_restoring:
+                QMessageBox.critical(self, "File Not Found", f"The selected file no longer exists:\n{p}")
             self.input_file_path = None
             self.drop_label.setText('Drag & Drop\r\na Video File Here:')
             self._set_upload_hint_active(True)
@@ -132,7 +137,7 @@ class MainWindowFileAMixin:
                     self.player.speed = current_rate
                 except Exception as rate_err:
                     self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
-                self._safe_mpv_set("pause", False)
+                self._safe_mpv_set("pause", not is_restoring) # Keep paused if restoring
 
                 def _poll_dur():
                     if not self.player: return
@@ -150,7 +155,8 @@ class MainWindowFileAMixin:
                     QTimer.singleShot(150, lambda: self._on_mobile_toggled(self.mobile_checkbox.isChecked()))
             except Exception as e:
                 self.logger.error("Failed to play media with MPV: %s", e)
-                QMessageBox.critical(self, "Preview Failed", f"The video could not be opened in the preview player:\n{e}")
+                if not is_restoring:
+                    QMessageBox.critical(self, "Preview Failed", f"The video could not be opened in the preview player:\n{e}")
                 self.input_file_path = None
                 self.drop_label.setText('Drag & Drop\r\na Video File Here:')
                 self._set_upload_hint_active(True)
@@ -173,5 +179,5 @@ class MainWindowFileAMixin:
         self._set_video_controls_enabled(True)
         if hasattr(self, "_set_preview_controls_available"):
             self._set_preview_controls_available(bool(self.player))
-        if hasattr(self, "_save_recovery_state"):
+        if hasattr(self, "_save_recovery_state") and not is_restoring:
             self._save_recovery_state()

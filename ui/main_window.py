@@ -322,6 +322,12 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
             if hasattr(self, "no_fade_checkbox"): self.no_fade_checkbox.setChecked(u.get("no_fade_checked", False))
             if hasattr(self, "portrait_text_input"): self.portrait_text_input.setText(u.get("portrait_text", ""))
             if hasattr(self, "_set_music_button_state"): self._set_music_button_state(bool(self._wizard_tracks))
+            if self._wizard_tracks:
+                btn = getattr(self, "music_button", None)
+                if btn:
+                    btn.setText('♪  REMOVE MUSIC  ♪')
+                    from ui.styles import UIStyles
+                    btn.setStyleSheet(UIStyles.BUTTON_DANGER + ' QPushButton { font-size: 10px; padding: 0px; }')
             if self._wizard_tracks and self._ensure_music_player_ready():
                 f_t = self._wizard_tracks[0]; self._current_music_path = f_t[0]; self._current_music_offset = f_t[1]
                 self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)

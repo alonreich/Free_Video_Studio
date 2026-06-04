@@ -5,6 +5,7 @@ class TrimMixin:
 
     def _update_trim_inputs(self):
         if not hasattr(self, "start_minute_input"): return
+        if getattr(self, "_restoring_recovery_state", False): return
         total_ms = getattr(self, "original_duration_ms", 0)
         total_seconds = total_ms // 1000
         max_m = total_seconds // 60
