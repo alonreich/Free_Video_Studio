@@ -7,8 +7,8 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from utilities.merger_utils import _get_logger, kill_process_tree
 
 class MergerEngine(QThread):
-    H264_LEVEL_42_MAX_BPS = 50_000_000
-    H264_LEVEL_42_MIN_BPS = 300_000
+    H264_LEVEL_51_MAX_BPS = 100_000_000
+    H264_LEVEL_51_MIN_BPS = 300_000
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
     log_line = pyqtSignal(str)
@@ -36,14 +36,14 @@ class MergerEngine(QThread):
         if self.target_v_bitrate <= 0:
             return []
         requested = int(self.target_v_bitrate * multiplier)
-        effective = max(self.H264_LEVEL_42_MIN_BPS, min(self.H264_LEVEL_42_MAX_BPS, requested))
+        effective = max(self.H264_LEVEL_51_MIN_BPS, min(self.H264_LEVEL_51_MAX_BPS, requested))
         if effective != requested:
             self.logger.info(
-                "GPU: Clamped merger video bitrate from %s to %s for H.264 Level 4.2.",
+                "GPU: Clamped merger video bitrate from %s to %s for H.264 Level 5.1.",
                 requested,
                 effective,
             )
-        bufsize = min(self.H264_LEVEL_42_MAX_BPS, max(effective, effective * 2))
+        bufsize = min(self.H264_LEVEL_51_MAX_BPS, max(effective, effective * 2))
         return ["-b:v", str(effective), "-maxrate:v", str(effective), "-bufsize:v", str(bufsize)]
 
     def _detect_gpu_encoder(self):
@@ -62,19 +62,19 @@ class MergerEngine(QThread):
             if re.search(r"\s+h264_nvenc\s+", out):
                 self.logger.info(f"GPU: NVIDIA NVENC detected. Quality Level: {self.quality_level}")
                 nv_preset = "p7" if self.quality_level >= 4 else "p6"
-                base = ["-c:v", "h264_nvenc", "-preset", nv_preset, "-tune", "hq", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-spatial-aq", "1", "-temporal-aq", "1", "-aq-strength", "10" if nv_preset == "p7" else "9", "-bf", "2", "-b_ref_mode", "middle", "-weighted_pred", "0", "-nonref_p", "0", "-strict_gop", "1", "-forced-idr", "1", "-rc-lookahead", "64" if nv_preset == "p7" else "48", "-multipass", "fullres"]
+                base = ["-c:v", "h264_nvenc", "-preset", nv_preset, "-tune", "hq", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "5.1", "-spatial-aq", "1", "-temporal-aq", "1", "-aq-strength", "10" if nv_preset == "p7" else "9", "-bf", "2", "-b_ref_mode", "middle", "-weighted_pred", "0", "-nonref_p", "0", "-strict_gop", "1", "-forced-idr", "1", "-rc-lookahead", "64" if nv_preset == "p7" else "48", "-multipass", "fullres"]
                 if not v_bitrate_args: base.extend(["-cq", str(crf_val)])
                 else: base.extend(["-rc", "cbr"] + v_bitrate_args + ["-cbr", "1", "-cbr_padding", "1"])
                 return base
             elif re.search(r"\s+h264_amf\s+", out):
                 self.logger.info(f"GPU: AMD AMF detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_amf", "-quality", "quality", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-vbaq", "1"]
+                base = ["-c:v", "h264_amf", "-quality", "quality", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "5.1", "-vbaq", "1"]
                 if not v_bitrate_args: base.extend(["-rc", "cqp", "-qp_i", str(crf_val), "-qp_p", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
             elif re.search(r"\s+h264_qsv\s+", out):
                 self.logger.info(f"GPU: Intel QSV detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_qsv", "-preset", "slow", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2"]
+                base = ["-c:v", "h264_qsv", "-preset", "slow", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "5.1"]
                 if not v_bitrate_args: base.extend(["-global_quality", str(crf_val)])
                 else: base.extend(v_bitrate_args)
                 return base
@@ -99,7 +99,7 @@ class MergerEngine(QThread):
         return max(64, min(320, value))
 
     def _get_cpu_flags(self, crf_val, v_bitrate_args):
-        base = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2"]
+        base = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "5.1"]
         if not v_bitrate_args:
             base.extend(["-crf", str(crf_val)])
         else:

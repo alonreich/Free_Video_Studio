@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QStyledItemDelegate,
     QFrame,
+    QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
@@ -55,14 +56,19 @@ from PyQt5.QtGui import (
 from PyQt5.QtSvg import QSvgRenderer
 
 class _CenteredTextDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._fvs_dialog = None
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.displayAlignment = Qt.AlignCenter
-        dialog = self.parent()
-        while dialog:
-            if hasattr(dialog, "_cut_file_paths"):
-                break
-            dialog = dialog.parent()
+        if self._fvs_dialog is None:
+            dlg = self.parent()
+            while dlg and not hasattr(dlg, "_cut_file_paths"):
+                dlg = dlg.parent()
+            self._fvs_dialog = dlg
+        dialog = self._fvs_dialog
         if not dialog:
             return
         model = index.model()
@@ -286,6 +292,10 @@ class SVGSeekButton(QPushButton):
         self.direction = direction
         self.setFixedSize(65, 30)
         self.setCursor(Qt.PointingHandCursor)
+        self.setFlat(True)
+        self.setAutoFillBackground(False)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
         self._hover = False
         self._pressed = False
         self.setStyleSheet("background: transparent; border: none;")
@@ -332,26 +342,23 @@ class SVGSeekButton(QPushButton):
             color_hex = "#F1948A"
         
         if self.renderer and self.renderer.isValid():
-            # Create a pixmap to apply color tinting to the SVG
-            pixmap = QPixmap(self.size())
-            pixmap.fill(Qt.transparent)
+            from PyQt5.QtGui import QImage
+            # Use QImage for better transparency handling on top of native windows
+            img = QImage(self.size(), QImage.Format_ARGB32)
+            img.fill(Qt.transparent)
             
-            pix_painter = QPainter(pixmap)
-            # Render SVG centered
+            p = QPainter(img)
             svg_size = 24
             target_rect = QRect(int((self.width()-svg_size)/2), int((self.height()-svg_size)/2), svg_size, svg_size)
-            self.renderer.render(pix_painter, QRectF(target_rect))
-            pix_painter.end()
+            self.renderer.render(p, QRectF(target_rect))
             
             # Apply color tint
-            tint_painter = QPainter(pixmap)
-            tint_painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            tint_painter.fillRect(pixmap.rect(), QColor(color_hex))
-            tint_painter.end()
+            p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            p.fillRect(img.rect(), QColor(color_hex))
+            p.end()
             
-            painter.drawPixmap(0, 0, pixmap)
+            painter.drawImage(0, 0, img)
         else:
-            # Fallback to procedural triangles if SVG is missing
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(color_hex))
             y_mid = self.height() / 2
@@ -449,6 +456,7 @@ class CustomFileDialog(QFileDialog):
             QFileDialog#CustomFileDialog QPushButton:hover {
                 background-color: #6bb8f0;
                 border: 2px solid #ecf0f1;
+                cursor: pointer;
             }
             QFileDialog#CustomFileDialog QPushButton#openButton {
                 background-color: #336b70;
@@ -626,8 +634,19 @@ class CustomFileDialog(QFileDialog):
         self._preview_status.setWordWrap(True)
         self._preview_status.clicked.connect(self._launch_default_player)
         
-        self.btn_seek_back = SVGSeekButton(direction="back")
-        self.btn_seek_fwd = SVGSeekButton(direction="fwd")
+        # Bulletproof centering container
+        self.seek_controls_widget = QWidget(self._preview_panel)
+        self.seek_controls_widget.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.seek_controls_widget.setAttribute(Qt.WA_TranslucentBackground)
+        self.seek_controls_widget.setStyleSheet("background: transparent;")
+        self.seek_controls_widget.hide()
+        
+        seek_layout = QHBoxLayout(self.seek_controls_widget)
+        seek_layout.setContentsMargins(0, 0, 0, 0)
+        seek_layout.setSpacing(20)
+        
+        self.btn_seek_back = SVGSeekButton(direction="back", parent=self.seek_controls_widget)
+        self.btn_seek_fwd = SVGSeekButton(direction="fwd", parent=self.seek_controls_widget)
         
         self.btn_seek_back.clicked.connect(lambda: self._seek_preview(-20))
         self.btn_seek_fwd.clicked.connect(lambda: self._seek_preview(20))
@@ -636,11 +655,14 @@ class CustomFileDialog(QFileDialog):
         seek_layout.addWidget(self.btn_seek_back)
         seek_layout.addWidget(self.btn_seek_fwd)
         seek_layout.addStretch(1)
-
+        
         preview_layout.addWidget(self._preview_title)
         preview_layout.addWidget(self._preview_video, 1)
-        preview_layout.addLayout(seek_layout)
         preview_layout.addWidget(self._preview_status)
+        
+        self._preview_video.installEventFilter(self)
+        QTimer.singleShot(100, self._position_seek_buttons)
+
         try:
             self._preview_video.show()
             self._preview_player = MPVSafetyManager.create_safe_mpv(
@@ -661,77 +683,79 @@ class CustomFileDialog(QFileDialog):
                 MPVSafetyManager.safe_mpv_set(self._preview_player, "volume", 0)
                 MPVSafetyManager.safe_mpv_set(self._preview_player, "mute", True)
 
-                @self._preview_player.event_callback('end-file')
-                def _on_eof_event(event):
-                    # reason 0 = EOF, reason 2 = Stop command
-                    if event and getattr(event, 'reason', -1) == 0:
+                @self._preview_player.property_observer('idle-active')
+                def _on_idle_change(name, value):
+                    if value is True: # Player became idle (video finished)
                         MPVSafetyManager.run_on_qt_thread(self._handle_eof_reset)
         except Exception as exc:
             self._preview_player = None
             self._preview_status.setText(f"Preview unavailable: {exc}")
         if isinstance(layout, QGridLayout):
-            self._preview_panel.setFixedHeight(690)
-            orig_cols = layout.columnCount()
-            target_col = orig_cols
-            
-            # 1. Identify Buttons to move and Inputs to stretch
-            buttons_to_move = []
-            inputs_to_stretch = []
-            
-            for i in range(layout.count()):
-                item = layout.itemAt(i)
-                if not item: continue
-                w = item.widget()
-                r, c, rs, cs = layout.getItemPosition(i)
+            try:
+                self._preview_panel.setFixedHeight(690)
+                orig_cols = layout.columnCount()
+                target_col = orig_cols
                 
-                if w == self._preview_panel: continue
+                # 1. Identify Buttons to move and Inputs to stretch
+                buttons_to_move = []
+                inputs_to_stretch = []
                 
-                # Identify buttons (usually in the last column)
-                if isinstance(w, QPushButton) or (w and "Button" in w.metaObject().className()):
-                    if c + cs == orig_cols:
-                        buttons_to_move.append((i, r, c, rs, cs))
-                # Identify inputs and main view (usually starting at col 1)
-                elif c >= 1 and c < orig_cols:
-                    inputs_to_stretch.append((i, r, c, rs, cs))
+                for i in range(layout.count()):
+                    item = layout.itemAt(i)
+                    if not item: continue
+                    w = item.widget()
+                    r, c, rs, cs = layout.getItemPosition(i)
+                    
+                    if w == self._preview_panel: continue
+                    
+                    # Identify buttons (usually in the last column)
+                    if isinstance(w, QPushButton) or (w and "Button" in w.metaObject().className()):
+                        if c + cs == orig_cols:
+                            buttons_to_move.append((i, r, c, rs, cs))
+                    # Identify inputs and main view (usually starting at col 1)
+                    elif c >= 1 and c < orig_cols:
+                        inputs_to_stretch.append((i, r, c, rs, cs))
 
-            # 2. Process removals (Reverse order to maintain indices)
-            all_indices = sorted([x[0] for x in buttons_to_move] + [x[0] for x in inputs_to_stretch], reverse=True)
-            removed_items = {}
-            for idx in all_indices:
-                removed_items[idx] = layout.takeAt(idx)
+                # 2. Process removals (Reverse order to maintain indices)
+                all_indices = sorted([x[0] for x in buttons_to_move] + [x[0] for x in inputs_to_stretch], reverse=True)
+                removed_items = {}
+                for idx in all_indices:
+                    removed_items[idx] = layout.takeAt(idx)
 
-            # 3. Re-add Inputs with expanded span
-            for idx, r, c, rs, cs in inputs_to_stretch:
-                item = removed_items[idx]
-                w = item.widget()
-                new_cs = target_col - c # Stretch until the new button column
-                if w:
-                    if isinstance(w, (QLineEdit, QComboBox)):
-                        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                        w.setMaximumWidth(16777215)
-                    layout.addWidget(w, r, c, rs, new_cs)
-                elif item.layout():
-                    layout.addLayout(item.layout(), r, c, rs, new_cs)
-                else:
-                    layout.addItem(item, r, c, rs, new_cs)
+                # 3. Re-add Inputs with expanded span
+                for idx, r, c, rs, cs in inputs_to_stretch:
+                    item = removed_items[idx]
+                    w = item.widget()
+                    new_cs = target_col - c # Stretch until the new button column
+                    if w:
+                        if isinstance(w, (QLineEdit, QComboBox)):
+                            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                            w.setMaximumWidth(16777215)
+                        layout.addWidget(w, r, c, rs, new_cs)
+                    elif item.layout():
+                        layout.addLayout(item.layout(), r, c, rs, new_cs)
+                    else:
+                        layout.addItem(item, r, c, rs, new_cs)
 
-            # 4. Add Preview Panel to the new column
-            layout.addWidget(self._preview_panel, 0, target_col, 2, 1, Qt.AlignBottom)
+                # 4. Add Preview Panel to the new column
+                layout.addWidget(self._preview_panel, 0, target_col, 2, 1, Qt.AlignBottom)
 
-            # 5. Re-add Buttons to the new column
-            for idx, r, c, rs, cs in buttons_to_move:
-                item = removed_items[idx]
-                w = item.widget()
-                if w:
-                    layout.addWidget(w, r, target_col, rs, cs)
-                elif item.layout():
-                    layout.addLayout(item.layout(), r, target_col, rs, cs)
-                else:
-                    layout.addItem(item, r, target_col, rs, cs)
-            
-            # 6. Final Stretch Control
-            layout.setColumnStretch(1, 100)
-            layout.setColumnStretch(target_col, 0)
+                # 5. Re-add Buttons to the new column
+                for idx, r, c, rs, cs in buttons_to_move:
+                    item = removed_items[idx]
+                    w = item.widget()
+                    if w:
+                        layout.addWidget(w, r, target_col, rs, cs)
+                    elif item.layout():
+                        layout.addLayout(item.layout(), r, target_col, rs, cs)
+                    else:
+                        layout.addItem(item, r, target_col, rs, cs)
+                
+                # 6. Final Stretch Control
+                layout.setColumnStretch(1, 100)
+                layout.setColumnStretch(target_col, 0)
+            except Exception:
+                layout.addWidget(self._preview_panel)
         else:
             layout.addWidget(self._preview_panel)
 
@@ -754,7 +778,7 @@ class CustomFileDialog(QFileDialog):
 
     def _schedule_preview(self, view):
         self._preview_source_view = view
-        self._preview_timer.start(150)
+        self._preview_timer.start(400)
 
     def _preview_current_selection(self):
         view = self._preview_source_view
@@ -790,6 +814,8 @@ class CustomFileDialog(QFileDialog):
     def _handle_eof_reset(self):
         if self._preview_player is not None:
             self._set_preview_idle("Select a video")
+        if hasattr(self, 'seek_controls_widget'):
+            self.seek_controls_widget.hide()
 
     def _launch_default_player(self):
         if self._preview_path:
@@ -807,6 +833,8 @@ class CustomFileDialog(QFileDialog):
             self._preview_title.setText("Video Preview")
         if self._preview_status is not None:
             self._preview_status.setText(text)
+        if hasattr(self, 'seek_controls_widget'):
+            self.seek_controls_widget.hide()
 
     def _preview_video_path(self, path):
         if self._preview_player is None:
@@ -824,6 +852,12 @@ class CustomFileDialog(QFileDialog):
             self._preview_title.setText(os.path.basename(path))
         if self._preview_status is not None:
             self._preview_status.setText("Click To Preview")
+        
+        if hasattr(self, 'seek_controls_widget'):
+            self.seek_controls_widget.show()
+            self.seek_controls_widget.raise_()
+            self._position_seek_buttons()
+
         try:
             MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", True)
             ok = MPVSafetyManager.safe_mpv_command(self._preview_player, "loadfile", path, "replace")
@@ -850,6 +884,8 @@ class CustomFileDialog(QFileDialog):
                 pass
         self._preview_player = None
         self._preview_path = None
+        if hasattr(self, 'seek_controls_widget'):
+            self.seek_controls_widget.hide()
 
     def _install_silent_delete(self, view):
         if view is None:
@@ -857,7 +893,47 @@ class CustomFileDialog(QFileDialog):
         view.installEventFilter(self)
         view.viewport().installEventFilter(self)
 
+    def _position_seek_buttons(self):
+        if not hasattr(self, 'seek_controls_widget') or not self.seek_controls_widget:
+            return
+
+        v_rect = self._preview_video.geometry()
+
+        # Calculate actual video height inside the frame (Assuming 16:9 aspect ratio)
+        container_w = v_rect.width()
+        container_h = v_rect.height()
+
+        # mpv letterboxes content. We need to find the bottom of the visible video.
+        target_ratio = 16.0 / 9.0
+        actual_video_h = container_w / target_ratio
+
+        if actual_video_h > container_h:
+            # Video is taller than container (pillarboxed)
+            actual_video_h = container_h
+            y_offset = 0
+        else:
+            # Video is wider than container (letterboxed)
+            y_offset = (container_h - actual_video_h) / 2
+
+        # Container spans the width of the video area
+        self.seek_controls_widget.setFixedWidth(container_w)
+        self.seek_controls_widget.setFixedHeight(40) # Room for buttons
+        
+        # Anchor exactly 5px BELOW the active video content
+        # We move the container to (video_x, video_y + y_offset + footage_h + 5)
+        y = v_rect.y() + y_offset + actual_video_h + 5
+        
+        # Safety clamp
+        y_max = v_rect.y() + container_h - 40 - 5
+        y = min(y, y_max)
+        
+        self.seek_controls_widget.move(v_rect.x(), int(y))
+        self.seek_controls_widget.raise_()
+
     def eventFilter(self, obj, event):
+        if obj == getattr(self, "_preview_video", None) and event.type() == QEvent.Resize:
+            self._position_seek_buttons()
+            
         if event.type() == QEvent.ContextMenu:
             view = obj
             if not isinstance(obj, (QTreeView, QListView)):
@@ -1102,7 +1178,7 @@ class CustomFileDialog(QFileDialog):
             QMessageBox.warning(self, "Delete failed", msg)
 
     def _selected_paths_from_view(self, view):
-        if view is None:
+        if view is None or not hasattr(view, "selectionModel"):
             return []
         sm = view.selectionModel()
         model = view.model()

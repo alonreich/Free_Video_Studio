@@ -375,6 +375,17 @@ class ConsoleManager:
         return m.get(str(name), str(name).strip().lower())
     @staticmethod
     def initialize(base_dir: str, log_filename: str, logger_name: str):
+        # Sanitize root logger immediately to prevent pipe errors during early boot or late exit
+        root = logging.getLogger()
+        for h in root.handlers[:]:
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, SafeStreamHandler):
+                try:
+                    root.removeHandler(h)
+                    sc = SafeStreamHandler(h.stream)
+                    sc.setFormatter(h.formatter)
+                    root.addHandler(sc)
+                except: pass
+        
         app_p = logger_name.lower().replace(" ", "_")
         f_l_n = f"{app_p}_{log_filename}" if not log_filename.startswith(app_p) else log_filename
         logger = LogManager.setup_logger(base_dir, f_l_n, logger_name)
@@ -446,6 +457,28 @@ class ConsoleManager:
         atexit.register(close_logs)
         return logger
 
+class SafeStreamHandler(logging.StreamHandler):
+    def emit(self, record):
+        try:
+            if self.stream and not getattr(self.stream, 'closed', False):
+                super().emit(record)
+        except (OSError, ValueError):
+            pass
+        except Exception:
+            pass
+
+    def flush(self):
+        try:
+            if self.stream and hasattr(self.stream, "flush") and not getattr(self.stream, 'closed', False):
+                self.stream.flush()
+        except (OSError, ValueError):
+            pass
+        except Exception:
+            pass
+
+    def handleError(self, record):
+        pass
+
 class LogManager:
     @staticmethod
     def setup_logger(base_dir: str, log_filename: str, logger_name: str) -> logging.Logger:
@@ -458,7 +491,7 @@ class LogManager:
         h = ReopenableFileHandler(l_p, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(h)
-        c = logging.StreamHandler(sys.stdout)
+        c = SafeStreamHandler(sys.stdout)
         c.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(c)
         logger.propagate = False

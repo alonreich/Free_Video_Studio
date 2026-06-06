@@ -50,18 +50,28 @@ class MergerPhaseOverlayLogic:
             main_rect = parent.rect() if parent else self.rect()
             self._overlay.setGeometry(main_rect)
             self._overlay.raise_()
+            
             full_region = QRegion(self._overlay.rect())
             button_holes = QRegion()
-            for w_name in ["btn_merge", "btn_cancel_merge"]:
+            
+            # Identify buttons that need to be "punched through" the overlay
+            widgets_to_show = ["btn_merge", "btn_cancel", "btn_processing", "btn_back"]
+            for w_name in widgets_to_show:
                 w = getattr(self, w_name, None)
                 if w and not w.isHidden():
                     try:
+                        # Direct global mapping is the most robust way to handle nested layouts
                         g_pos = w.mapToGlobal(QPoint(0, 0))
                         o_pos = self._overlay.mapFromGlobal(g_pos)
-                        mapped_rect = QRect(o_pos, w.size())
+                        
+                        # Use a generous 12px padding to ensure the full button + glow/border is visible
+                        # This resolves the clipping issue where edges were being cut off
+                        mapped_rect = QRect(o_pos.x() - 12, o_pos.y() - 12, w.width() + 24, w.height() + 24)
                         button_holes |= QRegion(mapped_rect)
                         w.raise_()
                     except: pass
+            
+            # Apply the mask: only show the overlay where the buttons AREN'T
             self._overlay.setMask(full_region - button_holes)
             self._layout_overlay_panels(main_rect)
         except Exception:
@@ -127,23 +137,33 @@ class MergerPhaseOverlayLogic:
                 if getattr(self, "_color_pulse_timer", None):
                     self._color_pulse_timer.stop()
                 return
-            self._pulse_phase = (getattr(self, "_pulse_phase", 0) + 1) % 20
-            t = self._pulse_phase / 20.0
-            k = (math.sin(4 * math.pi * t) + 1) / 2
-            g1, g2 = (72, 235, 90), (10, 80, 16)
-            r = int(g1[0] * k + g2[0] * (1 - k))
-            g = int(g1[1] * k + g2[1] * (1 - k))
-            b = int(g1[2] * k + g2[2] * (1 - k))
-            self.btn_cancel_merge.setStyleSheet(f"""
+            self._pulse_phase = (getattr(self, "_pulse_phase", 0) + 1) % 40
+            k = (math.sin(self._pulse_phase * 0.4) + 1) / 2.0
+            r1, g1, b1 = 30, 200, 100  # Green
+            r2, g2, b2 = 180, 255, 200 # Light Green
+            r = int(r1 * k + r2 * (1 - k))
+            g = int(g1 * k + g2 * (1 - k))
+            b = int(b1 * k + b2 * (1 - k))
+            
+            dots = "." * (self._pulse_phase % 4)
+            current_text = f"PROCESSING{dots}"
+            
+            self.btn_processing.setStyleSheet(f"""
                 QPushButton {{
                     background-color: rgb({r},{g},{b});
                     color: black;
                     font-weight: bold;
                     font-size: 14px;
-                    border-radius: 15px;
+                    border-radius: 10px;
+                    padding: 10px 18px;
+                    border-style: solid;
+                    border-top: 1px solid rgba(255, 255, 255, 0.2);
+                    border-left: 1px solid rgba(255, 255, 255, 0.2);
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+                    border-right: 1px solid rgba(0, 0, 0, 0.6);
                 }}
-                QPushButton:hover {{ background-color: #c8f7c5; }}
             """)
+            self.btn_processing.setText(current_text)
         except Exception:
             pass
 

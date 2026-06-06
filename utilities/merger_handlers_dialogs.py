@@ -1,5 +1,5 @@
-﻿from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QGridLayout, QPushButton, QApplication, QSizePolicy, QMessageBox
-from PyQt5.QtCore import QUrl, Qt, QPropertyAnimation, QTimer
+﻿from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QPushButton, QApplication, QSizePolicy, QMessageBox, QFrame
+from PyQt5.QtCore import QUrl, Qt, QPropertyAnimation, QTimer, QEasingCurve
 from PyQt5.QtGui import QDesktopServices
 from pathlib import Path
 import os
@@ -70,6 +70,14 @@ class MergerHandlersDialogsMixin:
                 if hasattr(self.parent, "set_status_message"):
                     self.parent.set_status_message("✅ Music selection applied!", "color: #43b581; font-weight: bold;", 3000, force=True)
 
+    def share_via_whatsapp(self, file_path: str = None):
+        try:
+            QDesktopServices.openUrl(QUrl("https://web.whatsapp.com"))
+            if file_path:
+                self.open_output_in_explorer(file_path)
+        except Exception as err:
+            self.logger.error("share_via_whatsapp error: %s", err)
+
     def show_success_dialog(self, output_path: str):
         """Displays success dialog using the synced ultra-polished layout/feel from main app."""
 
@@ -77,63 +85,132 @@ class MergerHandlersDialogsMixin:
             def __init__(self, parent=None):
                 super().__init__(parent)
                 self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+                self.setAttribute(Qt.WA_TranslucentBackground, True)
+                self.setWindowOpacity(0.0)
+                self._closing = False
+                self._anim = None
+                self._pulse = None
+
+            def showEvent(self, e):
+                super().showEvent(e)
+                QTimer.singleShot(0, self.fade_in)
+
+            def fade_in(self):
+                self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+                self._anim.setDuration(1500)
+                self._anim.setStartValue(0.0)
+                self._anim.setEndValue(1.0)
+                self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+                self._anim.finished.connect(self.start_pulse)
+                self._anim.start()
+
+            def start_pulse(self):
+                if self._closing: return
+                self._pulse = QPropertyAnimation(self, b"windowOpacity", self)
+                self._pulse.setDuration(4000)
+                self._pulse.setStartValue(1.0)
+                self._pulse.setKeyValueAt(0.5, 0.3)
+                self._pulse.setEndValue(1.0)
+                self._pulse.setEasingCurve(QEasingCurve.InOutSine)
+                self._pulse.setLoopCount(-1)
+                self._pulse.start()
+
+            def fade_done(self, result):
+                if self._closing: return
+                self._closing = True
+                if self._pulse: self._pulse.stop()
+                self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+                self._anim.setDuration(1000)
+                self._anim.setStartValue(float(self.windowOpacity()))
+                self._anim.setEndValue(0.0)
+                self._anim.setEasingCurve(QEasingCurve.InOutQuad)
+                self._anim.finished.connect(lambda: QDialog.done(self, result))
+                self._anim.start()
+
+            def fade_accept(self): self.fade_done(QDialog.Accepted)
+            def fade_reject(self): self.fade_done(QDialog.Rejected)
+            def accept(self): self.fade_accept()
+            def reject(self): self.fade_accept()
 
             def closeEvent(self, e):
-                self.accept()
+                if self._closing:
+                    super().closeEvent(e); return
+                e.ignore(); self.fade_accept()
+
         dialog = FinishedDialog(self.parent)
         dialog.setWindowTitle("Done! Video Processed Successfully!")
         dialog.setModal(True)
-        dlg_w = 800
-        dlg_h = 460
-        dialog.setFixedSize(dlg_w, dlg_h)
-        screen_geo = QApplication.primaryScreen().availableGeometry()
-        dialog.move(
-            screen_geo.center().x() - dlg_w // 2,
-            screen_geo.center().y() - dlg_h // 2
-        )
-        dialog.raise_()
-        dialog.activateWindow()
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
-        close_btn = QPushButton("X", dialog)
-        close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 24px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
+        dialog.setFixedSize(760, 420)
+        
+        outer = QVBoxLayout(dialog)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        
+        frame = QFrame(dialog)
+        frame.setObjectName("finishedFrame")
+        frame.setStyleSheet("QFrame#finishedFrame { background-color: #0b141d; border: 2px solid #7DD3FC; border-radius: 14px; }")
+        outer.addWidget(frame)
+        
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(28, 18, 28, 30)
+        layout.setSpacing(18)
+        
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addStretch(1)
+        
+        close_btn = QPushButton("X", frame)
+        close_btn.setFixedSize(60, 52)
+        close_btn.setStyleSheet("QPushButton { background-color: transparent; color: #ff4d4d; font-size: 42px; font-weight: bold; border: none; } QPushButton:hover { color: #ff0000; }")
         close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.clicked.connect(dialog.accept)
-        close_btn.setGeometry(760, 10, 30, 30)
+        close_btn.clicked.connect(dialog.fade_accept)
+        top_row.addWidget(close_btn)
+        layout.addLayout(top_row)
+        
         label = QLabel(f"File successfully saved to:\n{output_path}")
         label.setStyleSheet("font-size: 16px; font-weight: bold; color: #7DD3FC;")
-        label.setWordWrap(True)
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
+        
         grid = QGridLayout()
-        grid.setHorizontalSpacing(54)
-        grid.setVerticalSpacing(44)
-        grid.setContentsMargins(20, 20, 20, 20)
+        grid.setHorizontalSpacing(42)
+        grid.setVerticalSpacing(28)
+        grid.setContentsMargins(80, 18, 80, 8)
+        
         whatsapp_button = QPushButton("✆  WHATSAPP SHARE  ✆")
-        whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40", font_size=12))
-        whatsapp_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://web.whatsapp.com")))
+        whatsapp_button.setStyleSheet(self._dialog_button_style("#3CA557", "#2B7D40"))
+        whatsapp_button.clicked.connect(lambda: self.share_via_whatsapp(output_path))
+        whatsapp_button.clicked.connect(lambda: dialog.fade_done(QDialog.Accepted))
+        
         open_folder_button = QPushButton("OPEN FOLDER")
-        open_folder_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c", font_size=12))
+        open_folder_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c"))
         open_folder_button.clicked.connect(lambda: self.open_output_in_explorer(output_path))
+        open_folder_button.clicked.connect(lambda: dialog.fade_done(QDialog.Accepted))
+        
         new_file_button = QPushButton("📂  UPLOAD NEW  📂")
-        new_file_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c", font_size=12))
-        new_file_button.clicked.connect(dialog.reject)
-        done_button = QPushButton("DONE")
-        done_button.setStyleSheet(self._dialog_button_style("#1a7a1a", "#0a300a", font_size=12))
-        done_button.clicked.connect(dialog.accept)
-        for b in [whatsapp_button, open_folder_button, new_file_button, done_button]:
+        new_file_button.setStyleSheet(self._dialog_button_style("#2e82a0", "#1e648c"))
+        new_file_button.clicked.connect(dialog.fade_reject)
+        
+        exit_button = QPushButton("EXIT APP!")
+        exit_button.setStyleSheet(self._dialog_button_style("#c0392b", "#a93226"))
+        exit_button.clicked.connect(lambda: dialog.fade_done(999))
+        
+        for b in [whatsapp_button, open_folder_button, new_file_button, exit_button]:
             b.setFixedSize(180, 45)
-            b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             b.setCursor(Qt.PointingHandCursor)
+            
         grid.addWidget(whatsapp_button, 0, 0, alignment=Qt.AlignCenter)
         grid.addWidget(open_folder_button, 0, 1, alignment=Qt.AlignCenter)
-        grid.addWidget(new_file_button, 0, 2, alignment=Qt.AlignCenter)
-        grid.addWidget(done_button, 1, 0, 1, 3, alignment=Qt.AlignCenter)
+        grid.addWidget(new_file_button, 1, 0, alignment=Qt.AlignCenter)
+        grid.addWidget(exit_button, 1, 1, alignment=Qt.AlignCenter)
         layout.addLayout(grid)
-        dialog.exec_()
+        
+        result = dialog.exec_()
+        
         try:
             out_sz = Path(output_path).stat().st_size if output_path else 0
             self.logger.info("MERGE_DONE: output='%s' | size=%s", output_path, _human(out_sz))
         except Exception:
             pass
+            
+        return result

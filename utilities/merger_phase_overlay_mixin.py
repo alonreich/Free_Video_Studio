@@ -4,6 +4,7 @@ import sys
 import time
 from collections import deque
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtGui import QPainter, QColor
 from PyQt5.QtWidgets import QWidget, QPlainTextEdit, QProgressBar
 _ENABLE_SAFE_GPU_STATS = shutil.which("nvidia-smi") is not None
 
@@ -73,6 +74,13 @@ class MergerPhaseOverlayMixin:
         self._graph.setAttribute(Qt.WA_NoSystemBackground, True)
         self._graph.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._graph.paintEvent = self._draw_performance_graphs
+        
+        def _paint_overlay(event):
+            painter = QPainter(self._overlay)
+            painter.fillRect(self._overlay.rect(), QColor(11, 20, 29, 250))
+            painter.end()
+        self._overlay.paintEvent = _paint_overlay
+
         self.live_log = QPlainTextEdit(self._overlay)
         self.live_log.setReadOnly(True)
         self.live_log.setMaximumBlockCount(5000)

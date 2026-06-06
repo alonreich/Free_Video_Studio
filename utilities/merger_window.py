@@ -1,4 +1,4 @@
-﻿from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QMessageBox, QShortcut
+﻿from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QMessageBox, QShortcut, QDialog
 from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QMutex, QMutexLocker
 from PyQt5.QtGui import QIcon, QKeySequence, QDesktopServices
 import sys
@@ -352,7 +352,8 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.set_icon()
         self._ensure_overlay_widgets()
         self._pulse_timer = QTimer(self)
-        self._pulse_timer.timeout.connect(self._update_process_button_text)
+        self._pulse_timer.timeout.connect(self._pulse_button_color)
+        self._pulse_phase = 0 # Initialize phase
         self.setup_progress_visualization()
         self.setup_keyboard_shortcuts()
         
@@ -464,6 +465,9 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                 self.logger.debug(f"Loader stop skip: {ex}")
 
     def handle_status_update(self, msg: str):
+        if hasattr(self, "btn_processing") and self.btn_processing.isVisible():
+            dots = "." * (getattr(self, "_pulse_phase", 0) % 4)
+            self.btn_processing.setText(f"MERGING{dots}")
         self.set_status_message(f"Processing... {msg}", "color: #43b581; font-weight: normal;", 1500)
 
     def set_status_message(self, msg: str, style: str | None = None, lock_ms: int = 0, force: bool = False):
@@ -684,9 +688,12 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
             self.set_status_message(f"Preparing merge. Estimated output length: {est_text}", "color: #43b581;", 2000, force=True)
         self._show_processing_overlay()
         self._pulse_timer.start(250)
+        
         self.btn_merge.hide()
-        self.btn_cancel_merge.show()
-        self.btn_cancel_merge.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.show()
+        self.btn_processing.show()
+        self.btn_processing.setEnabled(False)
+        
         self.event_handler.update_button_states()
         self.logic_handler.request_save_config()
         self.set_status_message("Analyzing files...", "color: #43b581;", 0, force=True)
@@ -952,18 +959,30 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self._pulse_timer.stop()
         self._hide_processing_overlay()
         self.setWindowTitle("Video Merger")
+        
+        # Robust Temp Cleanup to avoid WinError 32 (File in use)
         if self._temp_dir:
             try:
-                self._temp_dir.cleanup()
+                # Explicitly signal intent to cleanup and wait slightly for handles to clear
+                td = self._temp_dir
+                self._temp_dir = None # Clear reference first
+                td.cleanup()
             except Exception as ex:
-                self.logger.debug(f"Temp dir cleanup skip: {ex}")
-            self._temp_dir = None
-        self.btn_cancel_merge.hide()
+                self.logger.debug(f"Temp dir cleanup deferred/failed: {ex}")
+        
+        self.btn_cancel.hide()
+        self.btn_processing.hide()
         self.btn_merge.show()
+        
         self.event_handler.update_button_states()
         if success:
-            self.event_handler.show_success_dialog(result_msg)
+            result = self.event_handler.show_success_dialog(result_msg)
             self.set_status_message("Merge Complete!", "color: #43b581; font-weight: bold;", 5000, force=True)
+            if result == 999:
+                self.close()
+            elif result == QDialog.Rejected:
+                self.event_handler.clear_all()
+                self.add_videos()
         else:
             if "Cancelled" not in result_msg:
                  friendly = "Merge failed. Please check input files and available disk space."
@@ -975,12 +994,6 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
                  msg.exec_()
             self.set_status_message(f"Failed: {result_msg}", "color: #ff6b6b;", 5000, force=True)
             
-    def _update_process_button_text(self):
-        if not self.btn_cancel_merge.isVisible(): return
-        dots = "." * (self._pulse_phase % 4)
-        self.btn_cancel_merge.setText(f"Cancel Merge{dots}")
-        self._pulse_phase += 1
-        
     def _scan_mp3_folder(self):
         try:
             mp3_dir = os.path.join(self.base_dir, "mp3") if self.base_dir else "mp3"

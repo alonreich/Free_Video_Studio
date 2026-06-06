@@ -14,8 +14,13 @@ class LogFileStream:
     def write(self, message):
         if message:
             if self.original_stream:
-                self.original_stream.write(message)
-                self.original_stream.flush()
+                try:
+                    self.original_stream.write(message)
+                    self.original_stream.flush()
+                except (OSError, ValueError):
+                    pass
+                except Exception:
+                    pass
             self.buffer += message
             if '\n' in self.buffer:
                 lines = self.buffer.split('\n')
@@ -26,7 +31,12 @@ class LogFileStream:
     
     def flush(self):
         if self.original_stream:
-            self.original_stream.flush()
+            try:
+                self.original_stream.flush()
+            except (OSError, ValueError):
+                pass
+            except Exception:
+                pass
         if self.buffer.strip():
             self.logger.log(self.level, self.buffer)
             self.buffer = ""

@@ -45,11 +45,14 @@ class MergerUIBuildMixin(MergerUIWidgetsMixin):
         action_buttons_row.addSpacing(80)
         outer.addLayout(action_buttons_row, 0)
         outer.addWidget(bottom_band, 0)
+        outer.addStretch(1) # Push status and merge row to a stable bottom position
         self.parent.status_label = QLabel("Ready. Add 1 to 100 videos to begin.")
         self.parent.status_label.setStyleSheet("color: #7289da; font-weight: bold; font-size: 14px;")
         self.parent.status_label.setAlignment(Qt.AlignCenter)
         outer.addWidget(self.parent.status_label, 0)
+        outer.addSpacing(5)
         outer.addWidget(merge_row, 0)
+        outer.addSpacing(35) # Leave room for the overlay progress bar at the very bottom
 
     def create_move_buttons(self):
         col = QVBoxLayout()
