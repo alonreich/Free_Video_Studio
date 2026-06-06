@@ -25,12 +25,9 @@ class MainWindowCoreAMixin:
         segs = getattr(self, "speed_segments", []) or []
         has_segments = len(segs) > 0
         has_thumbnail = bool(getattr(self, "selected_intro_abs_time", None))
-        
-        # Check if granular is active in UI checkbox
         is_granular_active = False
         if hasattr(self, "granular_checkbox"):
             is_granular_active = self.granular_checkbox.isChecked()
-
         if (has_segments or has_thumbnail) and is_granular_active:
             self.granular_button.setText("REMOVE SPEED SEGMENTS")
             self.granular_button.setStyleSheet(UIStyles.BUTTON_DANGER + " QPushButton { font-size: 10px; padding: 0px; }")

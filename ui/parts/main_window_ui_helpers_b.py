@@ -28,11 +28,6 @@ class MainWindowUiHelpersBMixin:
         target = getattr(self, 'hint_overlay_widget', None)
         if not target: return
         hint_group_container = getattr(self, 'hint_group_container', None)
-        if not hasattr(self, '_hint_pulse_timer') and hasattr(self, '_init_upload_hint_blink'):
-            try:
-                self._init_upload_hint_blink()
-            except Exception:
-                pass
         preview_notice_active = self._update_diagnostic_preview_notice()
         show_hint = self._upload_hint_active and not self._has_uploaded_video()
         if show_hint or preview_notice_active:
@@ -49,22 +44,17 @@ class MainWindowUiHelpersBMixin:
             target.show(); target.raise_()
             if hint_group_container is not None:
                 hint_group_container.raise_()
-            timer = getattr(self, '_hint_pulse_timer', None)
-            if timer is not None:
-                timer_active = getattr(timer, 'isActive', None)
-                timer_start = getattr(timer, 'start', None)
-                if callable(timer_start) and (not callable(timer_active) or not timer_active()):
-                    self._hint_pulse_start_time = time.time()
-                    timer_start()
         else:
-            timer = getattr(self, '_hint_pulse_timer', None)
-            if timer is not None and callable(getattr(timer, 'stop', None)):
-                timer.stop()
             self._hide_upload_hint_group()
             if preview_notice_active:
                 target.show(); target.raise_()
             else:
                 target.hide()
+        if hasattr(self, '_init_upload_hint_blink'):
+            try:
+                self._init_upload_hint_blink()
+            except Exception:
+                pass
 
     def _update_diagnostic_preview_notice(self):
         container = getattr(self, 'preview_notice_container', None)
@@ -98,18 +88,20 @@ class MainWindowUiHelpersBMixin:
             if not label.text().strip():
                 label.setText('Upload Video File to begin!')
             label.setAlignment(Qt.AlignCenter)
-            label.setWordWrap(True)
-            label.setStyleSheet('font-size: 22px; font-weight: bold; color: #ffffff; padding: 0px;')
+            label.setWordWrap(False)
+            label.setStyleSheet('font-size: 38px; font-weight: bold; color: #ffffff; padding: 50px 80px;')
             hint_box.setStyleSheet(
                 'QFrame#uploadHintContainer {'
-                'background-color: rgba(0, 0, 0, 135);'
-                'border: 1px solid rgba(125, 211, 252, 180);'
-                'border-radius: 8px;'
+                'background-color: rgba(0, 0, 0, 160);'
+                'border: 2px solid rgba(125, 211, 252, 100);'
+                'border-radius: 16px;'
                 '}'
             )
             if hasattr(self, 'upload_hint_arrow'):
                 self.upload_hint_arrow.hide()
-            max_width = max(260, min(520, int(target.width() * 0.78)))
+            max_width = max(800, min(1400, int(target.width() * 0.95)))
+            label.setMinimumWidth(min(700, max_width - 36))
+            hint_box.setMinimumWidth(min(740, max_width))
             label.setMaximumWidth(max_width - 36)
             hint_box.setMaximumWidth(max_width)
             hint_box.adjustSize()

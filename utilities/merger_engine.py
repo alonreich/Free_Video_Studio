@@ -61,9 +61,10 @@ class MergerEngine(QThread):
             out = res.stdout
             if re.search(r"\s+h264_nvenc\s+", out):
                 self.logger.info(f"GPU: NVIDIA NVENC detected. Quality Level: {self.quality_level}")
-                base = ["-c:v", "h264_nvenc", "-preset", "p4", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-spatial-aq", "1", "-temporal-aq", "1"]
+                nv_preset = "p7" if self.quality_level >= 4 else "p6"
+                base = ["-c:v", "h264_nvenc", "-preset", nv_preset, "-tune", "hq", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.2", "-spatial-aq", "1", "-temporal-aq", "1", "-aq-strength", "10" if nv_preset == "p7" else "9", "-bf", "2", "-b_ref_mode", "middle", "-weighted_pred", "0", "-nonref_p", "0", "-strict_gop", "1", "-forced-idr", "1", "-rc-lookahead", "64" if nv_preset == "p7" else "48", "-multipass", "fullres"]
                 if not v_bitrate_args: base.extend(["-cq", str(crf_val)])
-                else: base.extend(v_bitrate_args)
+                else: base.extend(["-rc", "cbr"] + v_bitrate_args + ["-cbr", "1", "-cbr_padding", "1"])
                 return base
             elif re.search(r"\s+h264_amf\s+", out):
                 self.logger.info(f"GPU: AMD AMF detected. Quality Level: {self.quality_level}")

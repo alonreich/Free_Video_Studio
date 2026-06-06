@@ -660,7 +660,9 @@ class AppTransitionManager:
         try:
             current_window.close()
             main_script = os.path.join(base_dir, "app.py")
-            subprocess.Popen([sys.executable, main_script], cwd=base_dir, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
+            env = os.environ.copy()
+            env["FVS_STATE_TRANSFER_RESTORE"] = "1"
+            subprocess.Popen([sys.executable, main_script], cwd=base_dir, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
             sys.exit(0)
         except Exception as e:
             logging.error(f"Failed to return to main: {e}")

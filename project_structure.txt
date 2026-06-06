@@ -86,6 +86,10 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 #    - Recovery state must round-trip all user-visible processing state: trim start/end, selected music,
 #      music button state, music timeline, volume sliders, quality/file-size slider, thumbnail/freeze image,
 #      mobile/overlay toggles, and granular speed/freeze segments.
+# 7. GRANULAR SPEED & FREEZE CONTRACT:
+#    - Freeze Image: Inserts a still frame at the playhead. The underlying gameplay is NOT discarded;
+#      it is shifted forward in the timeline, increasing total output duration. This ensures the 
+#      end-user never misses any recorded gameplay pieces.
 # ==============================================================================
 
 # ==============================================================================

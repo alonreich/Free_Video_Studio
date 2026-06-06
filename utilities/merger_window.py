@@ -11,6 +11,7 @@ import subprocess
 import time
 import shutil
 from pathlib import Path
+from system.state_transfer import StateTransfer
 from utilities.merger_ui import MergerUI
 from utilities.merger_handlers_main import MergerHandlers
 from utilities.merger_utils import _get_logger, _human, escape_ffmpeg_path, get_disk_free_space, _ffprobe, build_audio_ducking_filters
@@ -60,6 +61,7 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         self.init_ui()
         self.logic_handler.load_config()
         self._setup_recovery_manager()
+        self._restore_state_transfer_session()
         self.connect_signals()
         self.setAcceptDrops(True)
         QTimer.singleShot(100, self._scan_mp3_folder)
@@ -77,6 +79,19 @@ class VideoMergerWindow(QMainWindow, MergerPhaseOverlayMixin, MergerPhaseOverlay
         """
         self.event_handler.update_button_states()
         self.logger.info("OPEN: Video Merger window created")
+
+    def _restore_state_transfer_session(self):
+        try:
+            state = StateTransfer.load_state()
+            if not state:
+                return
+            self.logger.info("STATE_TRANSFER: Loading session from main app...")
+            input_file = state.get("input_file")
+            if input_file and os.path.exists(input_file):
+                self.event_handler.add_videos_from_list([input_file])
+            StateTransfer.clear_state()
+        except Exception as e:
+            self.logger.error(f"STATE_TRANSFER: Failed to load state: {e}")
 
     def _setup_recovery_manager(self):
         from system.recovery_manager import RecoveryManager

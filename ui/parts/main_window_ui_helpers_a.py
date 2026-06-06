@@ -85,33 +85,21 @@ class MainWindowUiHelpersAMixin:
             return
 
         from PyQt5.QtWidgets import QGraphicsOpacityEffect
-        import math
+        from PyQt5.QtCore import QPropertyAnimation, QAbstractAnimation
         if not hasattr(self, '_hint_opacity_effect'):
             self._hint_opacity_effect = QGraphicsOpacityEffect(self.hint_group_container)
             self._hint_opacity_effect.setOpacity(1.0)
             self.hint_group_container.setGraphicsEffect(self._hint_opacity_effect)
-        if not hasattr(self, '_hint_pulse_timer'):
-            try:
-                self._hint_pulse_timer = QTimer(self)
-            except TypeError:
-                self._hint_pulse_timer = None
-            if not self._hint_pulse_timer or not callable(getattr(self._hint_pulse_timer, "setInterval", None)):
-                return
-            self._hint_pulse_timer.setInterval(20) 
-            self._hint_pulse_start_time = time.time()
-
-            def _do_pulse():
-                try:
-                    elapsed = (time.time() - self._hint_pulse_start_time) % 4.0
-                    norm_val = (math.cos((elapsed / 4.0) * 2 * math.pi) + 1) / 2.0
-                    opacity = 0.01 + (norm_val * 0.99)
-                    self._hint_opacity_effect.setOpacity(opacity)
-                except: pass
-            self._hint_pulse_timer.timeout.connect(_do_pulse)
-        timer_start = getattr(self._hint_pulse_timer, "start", None)
-        timer_active = getattr(self._hint_pulse_timer, "isActive", None)
-        if not callable(timer_start):
-            return
-        if getattr(self, '_upload_hint_active', False) and (not callable(timer_active) or not timer_active()):
-            timer_start()
-            self._hint_pulse_start_time = time.time()
+        if not hasattr(self, '_hint_anim'):
+            self._hint_anim = QPropertyAnimation(self._hint_opacity_effect, b"opacity")
+            self._hint_anim.setDuration(1500)
+            self._hint_anim.setStartValue(1.0)
+            self._hint_anim.setEndValue(0.2)
+            self._hint_anim.setLoopCount(-1)
+            self._hint_anim.setDirection(QAbstractAnimation.Backward)
+        if getattr(self, '_upload_hint_active', False):
+            if self._hint_anim.state() != QAbstractAnimation.Running:
+                self._hint_anim.start()
+        else:
+            self._hint_anim.stop()
+            self._hint_opacity_effect.setOpacity(1.0)

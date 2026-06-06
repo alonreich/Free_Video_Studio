@@ -27,6 +27,13 @@ class ConfigManager:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.config.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        self.config[key] = value
+        self.save_config(self.config)
+
     def save_config(self, config_data: Dict[str, Any]) -> None:
         self.config = dict(config_data)
         try:

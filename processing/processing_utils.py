@@ -89,18 +89,6 @@ def fps_to_float(fps_val):
         try: return float(fps_val)
         except: return 60.0
 
-def add_drawtext_filter(filter_cmd, textfile_path, font_size, line_spacing):
-    safe_path = textfile_path.replace("\\", "/").replace(":", "\\:")
-    font_arg = ""
-    if os.name == 'nt':
-        for fpath in ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf"]:
-            if os.path.exists(fpath):
-                safe_font = fpath.replace("\\", "/").replace(":", "\\:")
-                font_arg = f":fontfile='{safe_font}'"
-                break
-    drawtext = f",drawtext=textfile='{safe_path}':fontcolor=white:fontsize={font_size}:x=(w-tw)/2:y=50:line_spacing={line_spacing}{font_arg}"
-    return filter_cmd + drawtext
-
 class ProgressScaler:
     def __init__(self, real_signal, start_pct, range_pct):
         self.real_signal = real_signal

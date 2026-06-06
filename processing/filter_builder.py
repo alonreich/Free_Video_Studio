@@ -1,5 +1,5 @@
 ﻿from fractions import Fraction
-from .processing_utils import make_multiple, make_even, fps_to_float, add_drawtext_filter
+from .processing_utils import make_multiple, make_even, fps_to_float
 from .filter_mobile import MobileFilterMixin
 
 class FilterResult(tuple):
@@ -144,9 +144,6 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
         timeline_origin_sec = float(source_cut_start_ms or 0.0) / 1000.0
         input_v_work_label = input_v_label
         pre_chain_parts = []
-        if input_is_cuda:
-            input_v_work_label = "[v_granular_cpu_in]"
-            pre_chain_parts.append(f"{input_v_label}hwdownload,format=nv12,format=yuv420p{input_v_work_label}")
 
         def _to_clip_relative_sec(t_abs_sec):
             try: rel = float(t_abs_sec) - timeline_origin_sec
@@ -205,7 +202,7 @@ class FilterBuilder(AudioFilterMixin, MobileFilterMixin):
                 append_source_range(chunks, source_cursor, f_start)
             f_dur = max(0.001, f_end - f_start)
             chunks.append({'start': f_start, 'end': f_start + 0.001, 'speed': 0.0, 'freeze_dur': f_dur})
-            source_cursor = f_end
+            source_cursor = f_start
         if total_duration_sec > source_cursor + 0.001:
             append_source_range(chunks, source_cursor, total_duration_sec)
 

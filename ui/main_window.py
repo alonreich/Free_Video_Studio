@@ -326,6 +326,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
                 btn = getattr(self, "music_button", None)
                 if btn:
                     btn.setText('♪  REMOVE MUSIC  ♪')
+
                     from ui.styles import UIStyles
                     btn.setStyleSheet(UIStyles.BUTTON_DANGER + ' QPushButton { font-size: 10px; padding: 0px; }')
             if self._wizard_tracks and self._ensure_music_player_ready():

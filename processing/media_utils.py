@@ -261,14 +261,28 @@ def check_encoder_capability(ffmpeg_path: str, encoder_name: str, logger=None, h
             hardware_scan_details["errors"][encoder_name] = str(e)
         return False
 
+def choose_audio_bitrate(source_audio_kbps, duration_sec, target_mb):
+    source = int(source_audio_kbps or 192)
+    source = min(320, max(128, source))
+    if not target_mb or duration_sec <= 0:
+        return min(320, max(192, source))
+    total_kbps = (Fraction(str(target_mb)) * 8192) / max(Fraction(1, 1000), Fraction(str(duration_sec)))
+    if total_kbps < 900:
+        return 128
+    if total_kbps < 1800:
+        return min(160, source)
+    if total_kbps < 3200:
+        return min(192, max(160, source))
+    return min(256, max(192, source))
+
 def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_highest_res, logger=None, res_str="1920x1080", fps_expr="60", quality_level=2, prober=None):
-    max_h264_level_42_kbps = 50000
+    max_h264_bitrate_kbps = 100000
     audio_kbps = min(320, max(128, int(audio_kbps or 128)))
     if duration <= 0:
         return 6000
     if target_mb is None and keep_highest_res and prober:
         orig_br = prober.get_video_bitrate()
-        return min(int(orig_br * 1.05), max_h264_level_42_kbps)
+        return min(int(orig_br * 1.05), max_h264_bitrate_kbps)
     if target_mb is None:
         target_mb = 45.0
     duration_q = Fraction(str(duration))
@@ -279,7 +293,7 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     video_bits = total_bits_available - audio_bits_total - mux_margin_bits
     if video_bits <= 0:
         if logger:
-            logger.info(f"BITRATE: Target {target_mb}MB is below audio/container budget. Clamping video bitrate to 300k.")
+            logger.info(f"BITRATE: Target {target_mb}MB is below audio budget. Clamping to 300k.")
         return 300
     calculated_kbps = int(video_bits / (1000 * duration_q))
     try:
@@ -294,9 +308,9 @@ def calculate_video_bitrate(input_path, duration, audio_kbps, target_mb, keep_hi
     bpp_targets = [Fraction(6, 100), Fraction(9, 100), Fraction(13, 100), Fraction(18, 100)]
     target_bpp = bpp_targets[max(0, min(int(quality_level), 3))]
     min_quality_kbps = int((w * h * fps_q * target_bpp) / 1000)
-    final_kbps = max(300, min(calculated_kbps, max_h264_level_42_kbps))
+    final_kbps = max(300, min(calculated_kbps, max_h264_bitrate_kbps))
     if logger:
         if min_quality_kbps > final_kbps:
-            logger.info(f"BITRATE: Target {target_mb}MB caps video below quality floor. Floor {min_quality_kbps}k | Final {final_kbps}k")
-        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Level42Cap {max_h264_level_42_kbps}k | Final {final_kbps}k")
+            logger.info(f"BITRATE: Target {target_mb}MB caps video below floor {min_quality_kbps}k | Final {final_kbps}k")
+        logger.info(f"BITRATE: Target {target_mb}MB | Dur {duration:.2f}s | Calc {calculated_kbps}k | Cap {max_h264_bitrate_kbps}k | Final {final_kbps}k")
     return final_kbps

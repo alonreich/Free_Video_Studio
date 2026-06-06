@@ -27,20 +27,9 @@ def _even_ceil(value) -> int:
     return n if n % 2 == 0 else n + 1
 
 class MobileFilterMixin:
-    def build_mobile_filter(self, *args, **kwargs):
-        if len(args) >= 2 and isinstance(args[0], dict) and isinstance(args[1], str):
-            coords = args[0]
-            is_boss_hp = kwargs.get('is_boss_hp', False)
-            show_teammates = kwargs.get('show_teammates', False)
-            return self.build_mobile_filter_chain("[0:v]", coords, is_boss_hp, show_teammates, False, original_resolution=args[1])
-        return self.build_mobile_filter_chain(*args, **kwargs)
-
     def build_mobile_filter_chain(self, input_pad, mobile_coords, is_boss_hp, show_teammates, show_spectating=False, txt_input_label=None, use_cuda=False, original_resolution="1920x1080"):
         coords_data = mobile_coords or {}
         parts = []
-        if use_cuda:
-            parts.append(f"{input_pad}hwdownload,format=nv12,format=yuv420p[v_mobile_cpu_in]")
-            input_pad = "[v_mobile_cpu_in]"
         scales = coords_data.get("scales", {})
         overlays = coords_data.get("overlays", {})
         z_orders = coords_data.get("z_orders", {})
@@ -107,3 +96,15 @@ class MobileFilterMixin:
 
         from .filter_builder import FilterResult
         return FilterResult((";".join(parts), "[v_final]"))
+
+    def build_mobile_filter(self, *args, **kwargs):
+        if len(args) >= 2 and isinstance(args[0], dict) and isinstance(args[1], str):
+            return self.build_mobile_filter_chain(
+                "[0:v]",
+                args[0],
+                kwargs.get("is_boss_hp", False),
+                kwargs.get("show_teammates", False),
+                False,
+                original_resolution=args[1],
+            )
+        return self.build_mobile_filter_chain(*args, **kwargs)

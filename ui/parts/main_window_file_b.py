@@ -47,11 +47,14 @@ class MainWindowFileBMixin:
 
     def _cleanup_staged_input_workspace(self, clear_input=True):
         try:
-            from system.temp_video_workspace import cleanup_workspace, is_workspace_path
-            current = getattr(self, "input_file_path", None)
-            if current and is_workspace_path(current) and getattr(self, "player", None):
-                try: self.player.stop()
+            from system.temp_video_workspace import cleanup_workspace
+            if getattr(self, "player", None):
+                try: self._safe_mpv_set("pause", True)
                 except Exception: pass
+                try: self._safe_mpv_command("stop")
+                except Exception:
+                    try: self.player.stop()
+                    except Exception: pass
             cleanup_workspace(getattr(self, "logger", None))
             if clear_input:
                 self.input_file_path = None

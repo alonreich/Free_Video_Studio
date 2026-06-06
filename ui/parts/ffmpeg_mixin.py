@@ -205,10 +205,9 @@ class FfmpegMixin:
             if music_path and hasattr(self, "_music_volume_pct"):
                 music_vol_linear = float(getattr(self, "_music_volume_pct", 80)) / 100.0
             q_level = int(self.quality_slider.value())
-            try:
-                target_mb = (os.path.getsize(self.input_file_path) / (1024 * 1024)) if q_level >= 20 else float(5 + q_level * 5)
-            except Exception:
-                target_mb = float(5 + q_level * 5)
+            target_mb = None if q_level >= 20 else float(5 + q_level * 5)
+            if self.logger:
+                self.logger.info(f"QUALITY_EXPORT_STATE: slider={q_level} target_mb={target_mb if target_mb is not None else 'CQ'}")
             if hasattr(self, 'portrait_mask_overlay'): self.portrait_mask_overlay.hide()
             if hasattr(self, 'set_overlays_force_hidden'): self.set_overlays_force_hidden(True)
             self.is_processing = True; self._proc_start_ts = time.time(); self._pulse_phase = 0

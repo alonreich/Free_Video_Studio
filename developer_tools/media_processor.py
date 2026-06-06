@@ -377,15 +377,3 @@ class MediaProcessor(QObject):
                     os.unlink(temp_path)
                 except OSError:
                     pass
-
-def _dryrun_contracts():
-    _ = r"""'--avcodec-hw=any'"""
-    _ = r"""'--vout=direct3d11'"""
-    _ = "--hwdec=auto"
-    _ = "hr_seek"
-    _ = "keep_open"
-    _ = "ytdl=False"
-    _ = "CPU"
-    _ = "fallback_args"
-    _ = "mpv.MPV"
-    pass

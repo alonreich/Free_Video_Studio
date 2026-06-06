@@ -12,6 +12,7 @@ from ui.widgets.clickable_button import ClickableButton
 from ui.widgets.trimmed_slider import TrimmedSlider
 from ui.widgets.drop_area import DropAreaFrame
 from ui.styles import UIStyles
+from processing.media_utils import calculate_video_bitrate, choose_audio_bitrate
 try:
     from ui.widgets.portrait_mask_overlay import PortraitMaskOverlay
 except ImportError:
@@ -492,7 +493,7 @@ class UiBuilderMixin:
         self.upload_hint_container.setObjectName('uploadHintContainer')
         hi_l = QVBoxLayout(self.upload_hint_container)
         hi_l.setContentsMargins(18, 12, 18, 12)
-        self.upload_hint_label = QLabel('Upload Video File to begin!')
+        self.upload_hint_label = QLabel('')
         self.upload_hint_label.setAlignment(Qt.AlignCenter)
         self.upload_hint_label.setWordWrap(True)
         self.upload_hint_label.hide()
@@ -859,28 +860,25 @@ class UiBuilderMixin:
             return
         try:
             if idx >= 20:
-                target_mb = os.path.getsize(self.input_file_path) / (1024 * 1024)
+                self.quality_value_label.setText('Max CQ')
+                self.quality_value_label.setStyleSheet('color: #2ecc71; font-weight: bold;')
+                return
             else:
                 target_mb = 5 + idx * 5
         except:
             target_mb = 5 + idx * 5
         dur_sec = self._effective_project_duration_sec(getattr(self, 'trim_start_ms', 0), getattr(self, 'trim_end_ms', 0))
-        dur_sec += 3.0
+        dur_sec += 0.1
         if dur_sec <= 0:
             self.quality_value_label.setText('')
             return
-        total_kbps = target_mb * 8192 / dur_sec
-        audio_kbps = 128 if total_kbps < 900 else (160 if total_kbps < 1800 else (192 if total_kbps < 3200 else 256))
-        video_kbps = max(300.0, total_kbps - audio_kbps - (total_kbps * 0.01))
+        audio_kbps = choose_audio_bitrate(192, dur_sec, target_mb)
         if self.mobile_checkbox.isChecked():
             w, h = 1080, 1920
         else:
             w, h = 1920, 1080
-        try:
-            fps_expr = getattr(self, "source_fps_expr", None) or "60"
-            fps = min(60.0, max(1.0, float(Fraction(str(fps_expr)))))
-        except Exception:
-            fps = 60.0
+        fps = 60.0
+        video_kbps = float(calculate_video_bitrate(self.input_file_path, dur_sec, audio_kbps, target_mb, False, None, f"{w}x{h}", "60", idx))
         bpp = video_kbps * 1000 / (max(1, w) * max(1, h) * fps)
         if not self.mobile_checkbox.isChecked():
             bpp /= 1.5

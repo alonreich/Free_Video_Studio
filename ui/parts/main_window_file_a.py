@@ -1,4 +1,4 @@
-import os
+﻿import os
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -76,21 +76,27 @@ class MainWindowFileAMixin:
         is_restoring = getattr(self, "_restoring_recovery_state", False)
         try:
             if self.player:
-                is_paused = getattr(self.player, "pause", True)
-                if not is_paused:
-                    self.player.stop()
+                try:
+                    self._safe_mpv_set("pause", True)
+                except Exception:
+                    pass
+                try:
+                    self._safe_mpv_command("stop")
+                except Exception:
+                    try:
+                        self.player.stop()
+                    except Exception:
+                        pass
             timer = getattr(self, "timer", None)
             if timer and timer.isActive():
                 timer.stop()
         except Exception as stop_err:
             self.logger.error("Error stopping existing player: %s", stop_err)
-        
         if not is_restoring:
             try:
                 self.reset_app_state()
             except Exception as reset_err:
                 self.logger.error("Error during UI reset: %s", reset_err)
-        
         try:
             from system.temp_video_workspace import cleanup_workspace, is_workspace_path, stage_video_file
             real_path = os.path.abspath(str(file_path))
@@ -130,14 +136,14 @@ class MainWindowFileAMixin:
         if self.player:
             try:
                 self._bind_main_player_output()
-                self.player.command("loadfile", p, "replace")
+                self._safe_mpv_command("loadfile", p, "replace")
                 try:
                     current_rate = float(self.speed_spinbox.value()) if hasattr(self, "speed_spinbox") else float(getattr(self, "playback_rate", 1.1) or 1.1)
                     self.playback_rate = current_rate
                     self.player.speed = current_rate
                 except Exception as rate_err:
                     self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
-                self._safe_mpv_set("pause", not is_restoring) # Keep paused if restoring
+                self._safe_mpv_set("pause", not is_restoring)
 
                 def _poll_dur():
                     if not self.player: return

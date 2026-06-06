@@ -17,27 +17,42 @@ from PyQt5.QtWidgets import (
     QProxyStyle,
     QStyle,
     QInputDialog,
+    QLineEdit,
     QApplication,
     QStyledItemDelegate,
+    QFrame,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QGridLayout,
 )
 
+from system.utils import MPVSafetyManager
 from PyQt5.QtCore import (
     QByteArray,
     Qt,
     QUrl,
     QPoint,
     QRect,
+    QRectF,
     QEvent,
     QObject,
     QTimer,
     QMimeData,
     QSize,
+    pyqtSignal,
+    QPointF,
 )
 
 from PyQt5.QtGui import (
     QColor,
-    QPalette
+    QPalette,
+    QPainter,
+    QPolygonF,
+    QPixmap,
 )
+from PyQt5.QtSvg import QSvgRenderer
 
 class _CenteredTextDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
@@ -255,6 +270,105 @@ class CenterAlignedTreeView(QTreeView):
         except Exception:
             pass
 
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setCursor(Qt.PointingHandCursor)
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+class SVGSeekButton(QPushButton):
+    def __init__(self, direction="fwd", parent=None):
+        super().__init__("", parent)
+        self.direction = direction
+        self.setFixedSize(65, 30)
+        self.setCursor(Qt.PointingHandCursor)
+        self._hover = False
+        self._pressed = False
+        self.setStyleSheet("background: transparent; border: none;")
+        
+        # Load local SVG assets
+        base_path = r"C:\Users\user\Downloads"
+        file_name = "f7--forward-fill.svg" if direction == "fwd" else "f7--backward-fill.svg"
+        self.svg_path = os.path.join(base_path, file_name)
+        self.renderer = None
+        if os.path.exists(self.svg_path):
+            self.renderer = QSvgRenderer(self.svg_path)
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._pressed = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._pressed = False
+            self.update()
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Define color based on state
+        color_hex = "#E74C3C"
+        if self._pressed:
+            color_hex = "#C0392B"
+        elif self._hover:
+            color_hex = "#F1948A"
+        
+        if self.renderer and self.renderer.isValid():
+            # Create a pixmap to apply color tinting to the SVG
+            pixmap = QPixmap(self.size())
+            pixmap.fill(Qt.transparent)
+            
+            pix_painter = QPainter(pixmap)
+            # Render SVG centered
+            svg_size = 24
+            target_rect = QRect(int((self.width()-svg_size)/2), int((self.height()-svg_size)/2), svg_size, svg_size)
+            self.renderer.render(pix_painter, QRectF(target_rect))
+            pix_painter.end()
+            
+            # Apply color tint
+            tint_painter = QPainter(pixmap)
+            tint_painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            tint_painter.fillRect(pixmap.rect(), QColor(color_hex))
+            tint_painter.end()
+            
+            painter.drawPixmap(0, 0, pixmap)
+        else:
+            # Fallback to procedural triangles if SVG is missing
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(color_hex))
+            y_mid = self.height() / 2
+            h_half = 9; w = 11; gap = 2
+            total_w = (w * 2) + gap
+            start_x = (self.width() - total_w) / 2
+            
+            def draw_tri(x):
+                poly = QPolygonF()
+                if self.direction == "fwd":
+                    poly << QPointF(x, y_mid - h_half) << QPointF(x + w, y_mid) << QPointF(x, y_mid + h_half)
+                else:
+                    poly << QPointF(x + w, y_mid - h_half) << QPointF(x, y_mid) << QPointF(x + w, y_mid + h_half)
+                painter.drawPolygon(poly)
+            draw_tri(start_x)
+            draw_tri(start_x + w + gap)
+
 class CustomFileDialog(QFileDialog):
     def __init__(self, *args, config=None, **kwargs):
         super(CustomFileDialog, self).__init__(*args, **kwargs)
@@ -262,14 +376,26 @@ class CustomFileDialog(QFileDialog):
         self.setObjectName("CustomFileDialog")
         self._rb_helper = None
         self.tree_view = None
+        self.list_view = None
         self._text_delegate = None
         self._header_style = None
         self._cut_file_paths = set()
+        self._preview_path = None
+        self._preview_source_view = None
+        self._preview_player = None
+        self._preview_panel = None
+        self._preview_video = None
+        self._preview_title = None
+        self._preview_status = None
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.timeout.connect(self._preview_current_selection)
         self._init_dialog_flags()
         self._init_modes()
         self._init_title()
         self._apply_styles()
         self._bind_tree_view()
+        self._setup_preview_panel()
         self._setup_lookin_width()
         self._setup_sidebar()
         self._tune_buttons()
@@ -340,6 +466,32 @@ class CustomFileDialog(QFileDialog):
                 background-color: #6aa1c5;
                 border: 2px solid #ecf0f1;
             }
+            QFileDialog#CustomFileDialog QFrame#filePreviewPanel {
+                background-color: #18232e;
+                border: 1px solid #31495f;
+                border-radius: 8px;
+            }
+            QFileDialog#CustomFileDialog QLabel#filePreviewTitle {
+                color: #FF8800;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 4px;
+                text-decoration: underline;
+            }
+            QFileDialog#CustomFileDialog QLabel#filePreviewStatus {
+                color: #FF8800;
+                font-size: 11px;
+                padding: 4px;
+                text-decoration: underline;
+            }
+            QFileDialog#CustomFileDialog QLabel#filePreviewTitle:hover,
+            QFileDialog#CustomFileDialog QLabel#filePreviewStatus:hover {
+                color: #FFAA33;
+            }
+            QFileDialog#CustomFileDialog QFrame#filePreviewVideo {
+                background-color: #05080c;
+                border: 1px solid #0d141b;
+            }
             QFileDialog#CustomFileDialog QRubberBand {
                 border: 1px solid #5dade2;
                 background-color: transparent;
@@ -355,21 +507,25 @@ class CustomFileDialog(QFileDialog):
                 background-color: #2c3e50;
                 border: 1px solid #5dade2;
             }
-            QFileDialog#CustomFileDialog QLineEdit {
+            QLineEdit {
                 background-color: #34495e;
                 border: 1px solid #2980b9;
-                border-radius: 5px;
-                padding: 5px;
+                border-radius: 4px;
+                padding: 2px 4px;
                 color: #ecf0f1;
+                font-size: 13px;
+                min-height: 20px;
             }
-            QFileDialog#CustomFileDialog QComboBox {
+            QComboBox {
                 background-color: #34495e;
                 border: 1px solid #2980b9;
-                border-radius: 5px;
-                padding: 5px;
+                border-radius: 4px;
+                padding: 4px 8px;
                 color: #ecf0f1;
+                font-size: 13px;
+                min-height: 22px;
             }
-            QFileDialog#CustomFileDialog QComboBox QAbstractItemView {
+            QComboBox QAbstractItemView {
                 background-color: #34495e;
                 color: #ecf0f1;
             }
@@ -431,9 +587,269 @@ class CustomFileDialog(QFileDialog):
                 except Exception:
                     pass
             self._rb_helper = RubberBandHelper(self.tree_view)
+            self._bind_preview_selection(self.tree_view)
         self.list_view = self.findChild(QListView, "listView")
+        self._bind_preview_selection(self.list_view)
         self._install_silent_delete(self.tree_view)
         self._install_silent_delete(self.list_view)
+
+    def _setup_preview_panel(self):
+        if self._preview_panel is not None:
+            return
+        layout = self.layout()
+        if layout is None:
+            return
+        self._preview_panel = QFrame(self)
+        self._preview_panel.setObjectName("filePreviewPanel")
+        self._preview_panel.setMinimumWidth(360)
+        self._preview_panel.setMaximumWidth(460)
+        self._preview_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        preview_layout = QVBoxLayout(self._preview_panel)
+        preview_layout.setContentsMargins(10, 10, 10, 10)
+        preview_layout.setSpacing(8)
+        self._preview_title = ClickableLabel("Video Preview")
+        self._preview_title.setObjectName("filePreviewTitle")
+        self._preview_title.setAlignment(Qt.AlignCenter)
+        self._preview_title.clicked.connect(self._launch_default_player)
+        self._preview_video = QFrame(self._preview_panel)
+        self._preview_video.setObjectName("filePreviewVideo")
+        self._preview_video.setMinimumSize(320, 220)
+        self._preview_video.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._preview_video.setAttribute(Qt.WA_DontCreateNativeAncestors)
+        self._preview_video.setAttribute(Qt.WA_NativeWindow)
+        self._preview_video.setAttribute(Qt.WA_OpaquePaintEvent)
+        self._preview_video.setAttribute(Qt.WA_NoSystemBackground)
+        self._preview_video.setAutoFillBackground(False)
+        self._preview_status = ClickableLabel("Select a video")
+        self._preview_status.setObjectName("filePreviewStatus")
+        self._preview_status.setAlignment(Qt.AlignCenter)
+        self._preview_status.setWordWrap(True)
+        self._preview_status.clicked.connect(self._launch_default_player)
+        
+        self.btn_seek_back = SVGSeekButton(direction="back")
+        self.btn_seek_fwd = SVGSeekButton(direction="fwd")
+        
+        self.btn_seek_back.clicked.connect(lambda: self._seek_preview(-20))
+        self.btn_seek_fwd.clicked.connect(lambda: self._seek_preview(20))
+        
+        seek_layout.addStretch(1)
+        seek_layout.addWidget(self.btn_seek_back)
+        seek_layout.addWidget(self.btn_seek_fwd)
+        seek_layout.addStretch(1)
+
+        preview_layout.addWidget(self._preview_title)
+        preview_layout.addWidget(self._preview_video, 1)
+        preview_layout.addLayout(seek_layout)
+        preview_layout.addWidget(self._preview_status)
+        try:
+            self._preview_video.show()
+            self._preview_player = MPVSafetyManager.create_safe_mpv(
+                wid=int(self._preview_video.winId()),
+                osc=False,
+                hr_seek='yes',
+                hwdec='auto',
+                keep_open='yes',
+                ytdl=False,
+                demuxer_max_bytes='500M',
+                demuxer_max_back_bytes='100M',
+                vo='gpu,direct3d,d3d11,null',
+                input_vo_keyboard=False,
+                input_default_bindings=False,
+                aid='no',
+            )
+            if self._preview_player is not None:
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "volume", 0)
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "mute", True)
+
+                @self._preview_player.event_callback('end-file')
+                def _on_eof_event(event):
+                    # reason 0 = EOF, reason 2 = Stop command
+                    if event and getattr(event, 'reason', -1) == 0:
+                        MPVSafetyManager.run_on_qt_thread(self._handle_eof_reset)
+        except Exception as exc:
+            self._preview_player = None
+            self._preview_status.setText(f"Preview unavailable: {exc}")
+        if isinstance(layout, QGridLayout):
+            self._preview_panel.setFixedHeight(690)
+            orig_cols = layout.columnCount()
+            target_col = orig_cols
+            
+            # 1. Identify Buttons to move and Inputs to stretch
+            buttons_to_move = []
+            inputs_to_stretch = []
+            
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if not item: continue
+                w = item.widget()
+                r, c, rs, cs = layout.getItemPosition(i)
+                
+                if w == self._preview_panel: continue
+                
+                # Identify buttons (usually in the last column)
+                if isinstance(w, QPushButton) or (w and "Button" in w.metaObject().className()):
+                    if c + cs == orig_cols:
+                        buttons_to_move.append((i, r, c, rs, cs))
+                # Identify inputs and main view (usually starting at col 1)
+                elif c >= 1 and c < orig_cols:
+                    inputs_to_stretch.append((i, r, c, rs, cs))
+
+            # 2. Process removals (Reverse order to maintain indices)
+            all_indices = sorted([x[0] for x in buttons_to_move] + [x[0] for x in inputs_to_stretch], reverse=True)
+            removed_items = {}
+            for idx in all_indices:
+                removed_items[idx] = layout.takeAt(idx)
+
+            # 3. Re-add Inputs with expanded span
+            for idx, r, c, rs, cs in inputs_to_stretch:
+                item = removed_items[idx]
+                w = item.widget()
+                new_cs = target_col - c # Stretch until the new button column
+                if w:
+                    if isinstance(w, (QLineEdit, QComboBox)):
+                        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                        w.setMaximumWidth(16777215)
+                    layout.addWidget(w, r, c, rs, new_cs)
+                elif item.layout():
+                    layout.addLayout(item.layout(), r, c, rs, new_cs)
+                else:
+                    layout.addItem(item, r, c, rs, new_cs)
+
+            # 4. Add Preview Panel to the new column
+            layout.addWidget(self._preview_panel, 0, target_col, 2, 1, Qt.AlignBottom)
+
+            # 5. Re-add Buttons to the new column
+            for idx, r, c, rs, cs in buttons_to_move:
+                item = removed_items[idx]
+                w = item.widget()
+                if w:
+                    layout.addWidget(w, r, target_col, rs, cs)
+                elif item.layout():
+                    layout.addLayout(item.layout(), r, target_col, rs, cs)
+                else:
+                    layout.addItem(item, r, target_col, rs, cs)
+            
+            # 6. Final Stretch Control
+            layout.setColumnStretch(1, 100)
+            layout.setColumnStretch(target_col, 0)
+        else:
+            layout.addWidget(self._preview_panel)
+
+    def _bind_preview_selection(self, view):
+        if view is None:
+            return
+        if getattr(view, "_fvs_preview_bound", False):
+            return
+        setattr(view, "_fvs_preview_bound", True)
+        try:
+            view.clicked.connect(lambda _idx, v=view: self._schedule_preview(v))
+        except Exception:
+            pass
+        try:
+            sm = view.selectionModel()
+            if sm is not None:
+                sm.selectionChanged.connect(lambda _selected, _deselected, v=view: self._schedule_preview(v))
+        except Exception:
+            pass
+
+    def _schedule_preview(self, view):
+        self._preview_source_view = view
+        self._preview_timer.start(150)
+
+    def _preview_current_selection(self):
+        view = self._preview_source_view
+        if view is None:
+            view = getattr(self, "tree_view", None) or getattr(self, "list_view", None)
+        paths = self._selected_paths_from_view(view)
+        if not paths:
+            self._set_preview_idle("Select a video")
+            return
+        path = paths[0]
+        if len(paths) > 1:
+            self._set_preview_idle("Select one video")
+            return
+        if not self._is_video_path(path):
+            self._set_preview_idle("Select a video")
+            return
+        self._preview_video_path(path)
+
+    def _is_video_path(self, path):
+        if not path or not os.path.isfile(path):
+            return False
+        return os.path.splitext(path)[1].lower() in {".mp4", ".mkv", ".mov", ".avi", ".m4v", ".webm"}
+
+    def _seek_preview(self, seconds):
+        if self._preview_player is not None and self._preview_path:
+            try:
+                curr = MPVSafetyManager.safe_mpv_get(self._preview_player, "time-pos") or 0.0
+                target = max(0, curr + seconds)
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "time-pos", target)
+            except Exception:
+                pass
+
+    def _handle_eof_reset(self):
+        if self._preview_player is not None:
+            self._set_preview_idle("Select a video")
+
+    def _launch_default_player(self):
+        if self._preview_path:
+            self._play_video([self._preview_path])
+
+    def _set_preview_idle(self, text):
+        if self._preview_player is not None:
+            try:
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", True)
+                MPVSafetyManager.safe_mpv_command(self._preview_player, "stop")
+            except Exception:
+                pass
+        self._preview_path = None
+        if self._preview_title is not None:
+            self._preview_title.setText("Video Preview")
+        if self._preview_status is not None:
+            self._preview_status.setText(text)
+
+    def _preview_video_path(self, path):
+        if self._preview_player is None:
+            if self._preview_status is not None:
+                self._preview_status.setText("Preview unavailable")
+            return
+        if self._preview_path == path:
+            try:
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", False)
+            except Exception:
+                pass
+            return
+        self._preview_path = path
+        if self._preview_title is not None:
+            self._preview_title.setText(os.path.basename(path))
+        if self._preview_status is not None:
+            self._preview_status.setText("Click To Preview")
+        try:
+            MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", True)
+            ok = MPVSafetyManager.safe_mpv_command(self._preview_player, "loadfile", path, "replace")
+            MPVSafetyManager.safe_mpv_set(self._preview_player, "volume", 0)
+            MPVSafetyManager.safe_mpv_set(self._preview_player, "mute", True)
+            MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", False)
+            if not ok and self._preview_status is not None:
+                self._preview_status.setText("Preview unavailable")
+        except Exception as exc:
+            if self._preview_status is not None:
+                self._preview_status.setText(f"Preview unavailable: {exc}")
+
+    def _stop_embedded_preview(self):
+        try:
+            self._preview_timer.stop()
+        except Exception:
+            pass
+        if self._preview_player is not None:
+            try:
+                MPVSafetyManager.safe_mpv_set(self._preview_player, "pause", True)
+                MPVSafetyManager.safe_mpv_command(self._preview_player, "stop")
+                MPVSafetyManager.safe_mpv_shutdown(self._preview_player, timeout=1.0)
+            except Exception:
+                pass
+        self._preview_player = None
+        self._preview_path = None
 
     def _install_silent_delete(self, view):
         if view is None:
@@ -449,12 +865,28 @@ class CustomFileDialog(QFileDialog):
             self._show_context_menu(view, event.globalPos())
             return True
         if event.type() in (QEvent.KeyPress, QEvent.ShortcutOverride):
-            if hasattr(event, 'key') and event.key() == Qt.Key_Delete:
-                if event.type() == QEvent.ShortcutOverride:
-                    event.accept()
+            if hasattr(event, 'key'):
+                if event.key() == Qt.Key_Delete:
+                    if event.type() == QEvent.ShortcutOverride:
+                        event.accept()
+                        return True
+                    self._delete_selected_files_silent()
                     return True
-                self._delete_selected_files_silent()
-                return True
+                elif event.key() == Qt.Key_F2:
+                    if event.type() == QEvent.ShortcutOverride:
+                        event.accept()
+                        return True
+                    view = obj if isinstance(obj, (QTreeView, QListView)) else None
+                    if not view and getattr(self, "tree_view", None) is not None and self.tree_view.hasFocus():
+                        view = self.tree_view
+                    elif not view and getattr(self, "list_view", None) is not None and self.list_view.hasFocus():
+                        view = self.list_view
+                    if not view:
+                        view = getattr(self, "tree_view", None) or getattr(self, "list_view", None)
+                    paths = self._selected_paths_from_view(view)
+                    if paths and len(paths) == 1:
+                        self._rename_file(paths[0])
+                    return True
         return super().eventFilter(obj, event)
 
     def _show_context_menu(self, view, global_pos):
@@ -593,14 +1025,20 @@ class CustomFileDialog(QFileDialog):
     def _rename_file(self, old_path):
         dirname = os.path.dirname(old_path)
         basename = os.path.basename(old_path)
-        name, ok = QInputDialog.getText(self, "Rename File", "New Name:", text=basename)
-        if ok and name and name != basename:
-            new_path = os.path.join(dirname, name)
-            try:
-                os.rename(old_path, new_path)
-                self.setDirectory(dirname)
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Could not rename file: {e}")
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Rename File")
+        dialog.setLabelText("New Name:")
+        dialog.setTextValue(basename)
+        dialog.resize(400, 150)
+        if dialog.exec_() == QInputDialog.Accepted:
+            name = dialog.textValue()
+            if name and name != basename:
+                new_path = os.path.join(dirname, name)
+                try:
+                    os.rename(old_path, new_path)
+                    self.setDirectory(dirname)
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Could not rename file: {e}")
 
     def _play_video(self, paths):
         if not paths:
@@ -715,7 +1153,7 @@ class CustomFileDialog(QFileDialog):
         for b in buttons:
             raw = (b.text() or "")
             txt = raw.replace("&", "").replace("...", "").strip().lower()
-            if txt in ("open", "ok"):
+            if txt in ("open", "ok", "choose"):
                 b.setObjectName("openButton")
             elif txt == "cancel":
                 b.setObjectName("cancelButton")
@@ -780,29 +1218,33 @@ class CustomFileDialog(QFileDialog):
         self.set_default_column_widths(header)
 
     def set_default_position(self):
+        from PyQt5.QtWidgets import QDesktopWidget
         desktop = QDesktopWidget()
         screen_rect = desktop.screenGeometry()
         self.resize(1400, 800)
         self.move(screen_rect.center() - self.rect().center())
 
     def set_default_column_widths(self, header):
+        from PyQt5.QtWidgets import QHeaderView
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setStretchLastSection(False)
-        header.resizeSection(0, 600)
-        header.resizeSection(1, 200)
-        header.resizeSection(3, 240)
+        header.resizeSection(0, 330) # Name
+        header.resizeSection(1, 95)  # Size
+        header.resizeSection(3, 180) # Date Modified
         header.setSectionHidden(2, True)
 
     def selectedFiles(self):
         return super().selectedFiles()
 
     def done(self, result):
+        self._stop_embedded_preview()
         self.save_state()
         self.hide()
         QApplication.processEvents()
         super().done(result)
 
     def closeEvent(self, event):
+        self._stop_embedded_preview()
         super().closeEvent(event)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
