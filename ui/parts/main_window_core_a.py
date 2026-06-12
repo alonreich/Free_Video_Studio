@@ -208,13 +208,11 @@ class MainWindowCoreAMixin:
         except: pass
         if hasattr(self, 'hardware_status_label'):
             if isolation_active:
-                self.hardware_status_label.setText("🧪 CPU Isolation Mode")
-                self.hardware_status_label.setStyleSheet("color: #ffa500; font-weight: bold;")
+                self._set_right_status_message("🧪 CPU Isolation Mode", 8000, color="#ffa500")
             else:
                 icon = "🚀" if mode in ["NVIDIA", "AMD", "INTEL"] else "⚠️"
-                self.hardware_status_label.setText(f"{icon} {mode} Mode")
-                self.hardware_status_label.setStyleSheet("color: #43b581; font-weight: bold;" if mode != "CPU" else "color: #ffa500; font-weight: bold;")
-            self.hardware_status_label.show()
+                color = "#43b581" if mode != "CPU" else "#ffa500"
+                self._set_right_status_message(f"{icon} {mode} Mode", 8000, color=color)
         if isolation_active:
             self.show_status_warning("🧪 Diagnostic isolation active: software-decoded preview active (hwdec=no) with crash containment enabled.")
             try:
@@ -232,7 +230,6 @@ class MainWindowCoreAMixin:
 
     def show_status_warning(self, message: str):
         try:
-            if not hasattr(self, 'status_bar_warning_label'):
-                self.status_bar_warning_label = QLabel(message); self.status_bar_warning_label.setStyleSheet("color: #f39c12; font-weight: bold; padding-left: 10px;"); self.status_bar.addPermanentWidget(self.status_bar_warning_label)
-            self.status_bar_warning_label.setText(message); self.status_bar_warning_label.show(); QTimer.singleShot(10000, self.status_bar_warning_label.hide)
+            if hasattr(self, "_set_right_status_message"):
+                self._set_right_status_message(message, 10000, color="#f39c12")
         except: pass

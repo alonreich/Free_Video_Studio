@@ -1,4 +1,4 @@
-﻿import math
+import math
 import shutil
 import os
 import subprocess
@@ -256,7 +256,7 @@ class PhaseOverlayMixin:
             current_text = self.process_button.text()
             current_icon = self.process_button.icon()
             self.process_button.setStyleSheet(f"""
-                QPushButton {{ 
+                QPushButton#processButton {{ 
                     background-color: rgb({r},{g},{b});
                     color: #ffffff;
                     font-weight: bold;
@@ -268,8 +268,12 @@ class PhaseOverlayMixin:
                     border-left: 1px solid rgba(255, 255, 255, 0.2);
                     border-bottom: 1px solid rgba(0, 0, 0, 0.6);
                     border-right: 1px solid rgba(0, 0, 0, 0.6);
+                    min-width: 125px;
+                    max-width: 125px;
+                    min-height: 65px;
+                    max-height: 65px;
                 }} 
-                QPushButton:hover {{  background-color: #c8f7c5; }} 
+                QPushButton#processButton:hover {{  background-color: #c8f7c5; }} 
             """)
             self.process_button.setText(current_text)
             self.process_button.setIcon(current_icon)

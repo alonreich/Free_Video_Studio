@@ -1,4 +1,4 @@
-﻿import time
+import time
 import threading
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QStyle
@@ -241,7 +241,7 @@ class PlayerMixin:
             curr_pos = self._safe_mpv_get("time-pos", 0) or 0
             dur = self._safe_mpv_get("duration", 0) or 0
             is_really_at_end = (dur > 0 and curr_pos > (dur - 0.5))
-            if idle_active and (is_really_at_end or curr_pos == 0):
+            if idle_active and (is_really_at_end or (curr_pos == 0 and not getattr(self, "wants_to_play", False))):
                 if getattr(self, "playPauseButton", None):
                     self.playPauseButton.setText("PLAY")
                     self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))

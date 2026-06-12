@@ -158,7 +158,11 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self._init_core_logic(file_path, hardware_strategy)
         self._setup_recovery_manager()
         self.set_style(); self.init_ui(); self._setup_mpv(); self._set_video_controls_enabled(False)
-        self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.restore_geometry()
+        self.setAcceptDrops(True); self.status_bar = self.statusBar(); self.status_bar.hide(); self.restore_geometry()
+        def redirect_show_message(message, timeout=5000):
+            if hasattr(self, "_set_right_status_message"):
+                self._set_right_status_message(message, timeout)
+        self.status_bar.showMessage = redirect_show_message
         if not self._mpv_ready and self.statusBar():
             hint = (self._mpv_error_hint or "MPV playback is unavailable.").strip().replace("\n", " ")
             self.statusBar().showMessage(f"Preview disabled: {hint}", 0)

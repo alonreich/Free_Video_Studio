@@ -343,7 +343,7 @@ if __name__ == "__main__":
         elif hasattr(app, "style"): ex.setWindowIcon(app.style().standardIcon(QStyle.SP_ComputerIcon))
     except: pass
     ex.show(); QTimer.singleShot(100, lambda: ex.set_style())
-    if not file_arg: ex._set_upload_hint_active(True)
+    if not file_arg: QTimer.singleShot(250, lambda: ex._set_upload_hint_active(True))
     try:
         if hasattr(ex, "statusBar") and ex.statusBar(): ex.statusBar().showMessage(tr("ffmpeg_path_message").format(ffmpeg=ffmpeg_path), 8000)
     except: pass

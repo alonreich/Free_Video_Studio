@@ -194,13 +194,16 @@ QCheckBox::indicator:checked {
     border-left: 1px solid #1f3545;
 }
 
-#uploadHintContainer {
-    background-color: rgba(20, 45, 55, 200);
-    border: 2px solid #1f3545;
-    border-radius: 12px;
-}
+
 #uploadHintLabel {
     color: #ecf0f1;
     font-size: 18px;
     font-weight: bold;
+}
+
+#processButton, QPushButton#processButton {
+    min-width: 106px;
+    max-width: 106px;
+    min-height: 54px;
+    max-height: 54px;
 }

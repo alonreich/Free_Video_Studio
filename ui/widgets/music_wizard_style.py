@@ -169,32 +169,29 @@
     """
     SLIDER_VOLUME_VERTICAL_METALLIC = """
         QSlider::groove:vertical {
-            background: #1a1a1a;
+            background: #0f172a;
             width: 6px;
             border-radius: 3px;
         }
+        QSlider::sub-page:vertical {
+            background: #0f172a;
+            border-radius: 3px;
+        }
+        QSlider::add-page:vertical {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3b82f6, stop:1 #06b6d4);
+            border-radius: 3px;
+        }
         QSlider::handle:vertical {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                stop:0 #5a5a5a, 
-                stop:0.35 #9a9a9a, 
-                stop:0.38 #000, stop:0.42 #000,
-                stop:0.45 #9a9a9a,
-                stop:0.48 #000, stop:0.52 #000,
-                stop:0.55 #9a9a9a,
-                stop:0.58 #000, stop:0.62 #000,
-                stop:0.65 #9a9a9a,
-                stop:1 #5a5a5a);
-            border: 1px solid #111;
-            width: 40px;
-            height: 15px;
-            margin: 0 -17px;
-            border-radius: 2px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1e293b, stop:0.45 #1e293b, stop:0.5 #7dd3fc, stop:0.55 #1e293b, stop:1 #1e293b);
+            border: 1px solid #3b82f6;
+            height: 18px;
+            margin: 0 -5px;
+            border-radius: 5px;
         }
         QSlider::handle:vertical:hover {
-            border: 2px solid #7DD3FC;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #334155, stop:0.45 #334155, stop:0.5 #a5f3fc, stop:0.55 #334155, stop:1 #334155);
+            border: 1.5px solid #7dd3fc;
         }
-        QSlider::add-page:vertical { background: #1b6d26; border-radius: 3px; }
-        QSlider::sub-page:vertical { background: #333; border-radius: 3px; }
     """
     SLIDER_MUSIC_VERTICAL_METALLIC = """
         QSlider::groove:vertical {

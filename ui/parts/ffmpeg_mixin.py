@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import time
 import subprocess
@@ -332,13 +332,20 @@ class FfmpegMixin:
         else:
             if "canceled by user" in message.lower(): self._safe_set_phase("Canceled", ok=False)
             else: self._safe_set_phase("Error", ok=False)
-        self.status_update_signal.emit("Ready to process another video.")
+        self.status_update_signal.emit("Ready.")
         if success:
             if hasattr(self, "set_overlays_force_hidden"):
                 self.set_overlays_force_hidden(True)
             output_path = message; self._block_portrait_overlay = True
             if hasattr(self, "_cleanup_staged_input_workspace"):
                 self._cleanup_staged_input_workspace(clear_input=True)
+            try:
+                if hasattr(self, "timer") and self.timer.isActive(): self.timer.stop()
+                if hasattr(self, "_log_flush_timer") and getattr(self, "_log_flush_timer", None) and self._log_flush_timer.isActive(): self._log_flush_timer.stop()
+                if hasattr(self, "_stats_timer") and getattr(self, "_stats_timer", None) and self._stats_timer.isActive(): self._stats_timer.stop()
+                if hasattr(self, "_color_pulse_timer") and getattr(self, "_color_pulse_timer", None) and self._color_pulse_timer.isActive(): self._color_pulse_timer.stop()
+            except Exception:
+                pass
 
             class FinishedDialog(QDialog):
                 def __init__(self, parent=None):

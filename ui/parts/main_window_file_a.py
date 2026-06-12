@@ -143,7 +143,14 @@ class MainWindowFileAMixin:
                     self.player.speed = current_rate
                 except Exception as rate_err:
                     self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
-                self._safe_mpv_set("pause", not is_restoring)
+                self._safe_mpv_set("pause", False)
+                self.is_playing = True
+                self.wants_to_play = True
+                if hasattr(self, "playPauseButton"):
+                    self.playPauseButton.setText("PAUSE")
+                    self.playPauseButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
+                if hasattr(self, "timer") and not self.timer.isActive():
+                    self.timer.start(50)
 
                 if hasattr(self, "apply_master_volume"):
                     self._suspend_volume_sync = False

@@ -4,6 +4,53 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from system import diagnostic_runtime
 
+class HoverButton(QPushButton):
+    def __init__(self, parent_window, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_window = parent_window
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_Hover, True)
+
+    def enterEvent(self, event):
+        self.setCursor(Qt.PointingHandCursor)
+        if self.parent_window:
+            self.parent_window.setCursor(Qt.PointingHandCursor)
+            target = getattr(self.parent_window, "hint_overlay_widget", None)
+            if target:
+                target.setCursor(Qt.PointingHandCursor)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setCursor(Qt.ArrowCursor)
+        if self.parent_window:
+            self.parent_window.unsetCursor()
+            target = getattr(self.parent_window, "hint_overlay_widget", None)
+            if target:
+                target.setCursor(Qt.ArrowCursor)
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        self.setCursor(Qt.PointingHandCursor)
+        super().mouseMoveEvent(event)
+
+    def event(self, event):
+        if event.type() in (QEvent.HoverEnter, QEvent.HoverMove):
+            self.setCursor(Qt.PointingHandCursor)
+            if self.parent_window:
+                self.parent_window.setCursor(Qt.PointingHandCursor)
+                target = getattr(self.parent_window, "hint_overlay_widget", None)
+                if target:
+                    target.setCursor(Qt.PointingHandCursor)
+        elif event.type() == QEvent.HoverLeave:
+            self.setCursor(Qt.ArrowCursor)
+            if self.parent_window:
+                self.parent_window.unsetCursor()
+                target = getattr(self.parent_window, "hint_overlay_widget", None)
+                if target:
+                    target.setCursor(Qt.ArrowCursor)
+        return super().event(event)
+
 class MainWindowUiHelpersBMixin:
     def _has_uploaded_video(self):
         path = getattr(self, 'input_file_path', None)
@@ -36,17 +83,21 @@ class MainWindowUiHelpersBMixin:
             if hasattr(self, 'upload_hint_label'):
                 self.upload_hint_label.show()
             if hasattr(self, 'upload_hint_container'):
-                self.upload_hint_container.setCursor(Qt.PointingHandCursor)
+                self.upload_hint_container.setCursor(Qt.ArrowCursor)
                 self.upload_hint_container.show()
             if hasattr(self, 'upload_hint_arrow'):
                 self.upload_hint_arrow.hide()
             if hint_group_container is not None:
-                hint_group_container.setCursor(Qt.PointingHandCursor)
+                hint_group_container.setCursor(Qt.ArrowCursor)
                 hint_group_container.show()
             target.show(); target.raise_()
             if hint_group_container is not None:
                 hint_group_container.raise_()
             target.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            target.setCursor(Qt.ArrowCursor)
+            target.setMouseTracking(True)
+            if hint_group_container is not None:
+                hint_group_container.setMouseTracking(True)
         else:
             self._hide_upload_hint_group()
             if preview_notice_active:
@@ -107,10 +158,11 @@ class MainWindowUiHelpersBMixin:
 
                     label.setText("Upload Video File to begin!")
 
-                    self.upload_browse_btn = QPushButton("Browse Video")
+                    self.upload_browse_btn = HoverButton(self, "Browse Video")
                     self.upload_browse_btn.setFixedSize(160, 36)
                     self.upload_browse_btn.setObjectName("uploadBrowseBtn")
                     self.upload_browse_btn.setCursor(Qt.PointingHandCursor)
+                    self.upload_browse_btn.setMouseTracking(True)
                     self.upload_browse_btn.setStyleSheet(
                         "QPushButton#uploadBrowseBtn {"
                         "  color: #ffffff;"
@@ -140,6 +192,7 @@ class MainWindowUiHelpersBMixin:
 
                     btn_container = QWidget()
                     btn_container.setCursor(Qt.PointingHandCursor)
+                    btn_container.setMouseTracking(True)
                     btn_container.setStyleSheet("background: transparent; border: none;")
                     btn_layout = QHBoxLayout(btn_container)
                     btn_layout.setContentsMargins(0, 10, 0, 0)
@@ -155,13 +208,21 @@ class MainWindowUiHelpersBMixin:
                     hi_l.addWidget(btn_container)
 
             label.setAlignment(Qt.AlignCenter)
-            label.setCursor(Qt.PointingHandCursor)
+            label.unsetCursor()
             label.setWordWrap(True)
             label.setStyleSheet("font-size: 14px; color: #bdc3c7; background: transparent; border: none; font-weight: 500; font-family: 'Segoe UI', sans-serif;")
             if hasattr(self, 'upload_browse_btn'):
                 self.upload_browse_btn.setCursor(Qt.PointingHandCursor)
-            hint_box.setCursor(Qt.PointingHandCursor)
-            self.hint_group_container.setCursor(Qt.PointingHandCursor)
+            hint_box.setCursor(Qt.ArrowCursor)
+            hint_box.setFrameShape(getattr(QFrame, "NoFrame", 0))
+            hint_box.setFrameShadow(getattr(getattr(QFrame, "Shadow", QFrame), "Plain", 0))
+            hint_box.setLineWidth(0)
+            hint_box.setMidLineWidth(0)
+            self.hint_group_container.setCursor(Qt.ArrowCursor)
+            self.hint_group_container.setStyleSheet('background: transparent; border: none;')
+            if hasattr(self, 'hint_overlay_widget') and self.hint_overlay_widget:
+                self.hint_overlay_widget.setCursor(Qt.ArrowCursor)
+                self.hint_overlay_widget.setStyleSheet('background: transparent; border: none;')
 
             # Use glassmorphism slate background with semi-transparent dashed accent border
             hint_box.setStyleSheet(
@@ -191,6 +252,13 @@ class MainWindowUiHelpersBMixin:
             hint_box.show()
             self.hint_group_container.show()
             self.hint_group_container.raise_()
+            self.hint_group_container.update()
+            target.update()
+            if hasattr(self, 'video_surface') and self.video_surface:
+                self.video_surface.update()
+            if hasattr(self, 'video_frame') and self.video_frame:
+                self.video_frame.update()
+            self.update()
         except: pass
 
     def _update_window_size_in_title(self):

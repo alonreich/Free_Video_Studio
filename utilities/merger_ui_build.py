@@ -1,4 +1,4 @@
-﻿from PyQt5.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
 )
 
@@ -12,7 +12,7 @@ class MergerUIBuildMixin(MergerUIWidgetsMixin):
         self.parent.setCentralWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(40, 15, 40, 15)
-        outer.setSpacing(15)
+        outer.setSpacing(8)
         title = QLabel('Arrange Videos in the Desired Order')
         title.setObjectName("titleLabel")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #7DD3FC;")
@@ -45,12 +45,10 @@ class MergerUIBuildMixin(MergerUIWidgetsMixin):
         action_buttons_row.addSpacing(80)
         outer.addLayout(action_buttons_row, 0)
         outer.addWidget(bottom_band, 0)
-        outer.addStretch(1) # Push status and merge row to a stable bottom position
         self.parent.status_label = QLabel("Ready. Add 1 to 100 videos to begin.")
         self.parent.status_label.setStyleSheet("color: #7289da; font-weight: bold; font-size: 14px;")
         self.parent.status_label.setAlignment(Qt.AlignCenter)
         outer.addWidget(self.parent.status_label, 0)
-        outer.addSpacing(5)
         outer.addWidget(merge_row, 0)
         outer.addSpacing(35) # Leave room for the overlay progress bar at the very bottom
 
@@ -94,7 +92,7 @@ class MergerUIBuildMixin(MergerUIWidgetsMixin):
 
     def create_bottom_band(self):
         band = QHBoxLayout()
-        band.setContentsMargins(0, 10, 0, 10)
+        band.setContentsMargins(0, 0, 0, 0)
         left_wrap = QWidget()
         left_wrap.setLayout(self.create_music_layout())
         center_wrap = QWidget()

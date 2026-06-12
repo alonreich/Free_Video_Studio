@@ -149,13 +149,7 @@ class ProcessThread(QThread):
         return normalized
 
     def _hardware_decode_flags(self, encoder_name: str) -> list[str]:
-        if os.name == 'nt':
-            return ["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"]
-        if "nvenc" in encoder_name.lower():
-            return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-        if "amf" in encoder_name.lower() or "qsv" in encoder_name.lower():
-            return ["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"]
-        return ["-hwaccel", "auto"]
+        return []
 
     def _uses_cuda_frames(self, encoder_name: str) -> bool:
         return "nvenc" in encoder_name.lower()
@@ -312,7 +306,7 @@ class ProcessThread(QThread):
                         intro_abs_sec = (float(self.intro_abs_time_ms) / 1000.0) if self.intro_abs_time_ms is not None else (float(self.start_time_ms) / 1000.0)
                         if source_duration_sec and source_duration_sec > 0.25:
                             intro_abs_sec = min(max(0.0, intro_abs_sec), max(0.0, source_duration_sec - 0.2))
-                        ffmpeg_inputs += ['-ss', f"{intro_abs_sec:.3f}", '-t', f"{max(0.2, intro_duration_sec + 0.1):.3f}", '-i', self.input_path]
+                        ffmpeg_inputs += self._hardware_decode_flags(current_encoder) + ['-ss', f"{intro_abs_sec:.3f}", '-t', f"{max(0.2, intro_duration_sec + 0.1):.3f}", '-i', self.input_path]
                     if text_png_path: ffmpeg_inputs += ['-loop', '1', '-i', text_png_path]
                     ffmpeg_cmd = [self.ffmpeg_path, '-y', '-hide_banner', '-progress', 'pipe:1'] + ffmpeg_inputs + ['-filter_complex_script', filter_script_path, '-map', '[v_render_out]', '-map', attempt_final_a_label, '-c:v', vcodec[1]] + vcodec[2:] + ['-c:a', 'aac', '-b:a', f"{audio_kbps}k", '-t', f"{render_duration_sec:.3f}", '-movflags', '+faststart', core_path]
                     if self.logger:
