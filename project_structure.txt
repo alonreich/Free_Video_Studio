@@ -205,19 +205,19 @@ The suite includes: Video Compressor (Main App), Video Merger, Crop Tool, and Ad
 # GRANULAR SPEED EDITOR: ARCHITECTURAL RULES (AI MANDATE)
 # ==============================================================================
 # 1. SEGMENT LIFECYCLE: 
-#    - 'SET START' initializes a pending segment (Visual: Marching Ants).
-#    - 'SET END' commits the segment and immediately makes it the ACTIVE selection.
-#    - If 'SET END' is pressed without a 'SET START', auto-create a segment starting 1s after the previous segment's end.
+#    - 'MARK START' initializes a pending segment (Visual: Marching Ants).
+#    - 'MARK END' commits the segment and immediately makes it the ACTIVE selection.
+#    - If 'MARK END' is pressed without a 'MARK START', auto-create a segment starting 1s after the previous segment's end.
 # 2. SELECTION BEHAVIOR: 
 #    - Only one segment can be "Active/Highlighted" at a time.
-#    - While a segment is being created (after SET START but before SET END), NO existing segments should be highlighted.
+#    - While a segment is being created (after MARK START but before MARK END), NO existing segments should be highlighted.
 #    - Changing the Speed Spinbox value always affects the currently Active/Pending segment.
 # 3. COLLISION & SOLID OBJECTS:
 #    - Segments are "Solid Objects." Overlapping is strictly prohibited (Collision Protected).
-#    - Manual dragging or 'SET' buttons must be clamped/blocked by the boundaries of neighboring segments.
+#    - Manual dragging or 'MARK' buttons must be clamped/blocked by the boundaries of neighboring segments.
 #    - Minimum segment duration is 10ms.
 # 4. INTERACTION:
-#    - 'SET START' jumps the marker to the current playhead, even if already set.
+#    - 'MARK START' jumps the marker to the current playhead, even if already set.
 #    - 'DELETE' key must immediately remove the currently highlighted/active segment.
 #    - Default state: Start = Frame 0, End = Last Frame.
 # ==============================================================================

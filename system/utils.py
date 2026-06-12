@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import psutil
 import logging
@@ -134,7 +134,7 @@ try:
                         self._pending_seek_target = None
                     return False
 
-            def __clear_seek_guard(reason='unknown'):
+            def __clear_seek_guard(reason='unknown', dispatch_pending=True):
                 with self._seek_state_lock:
                     was_active = self._seeking_active
                     self._seeking_active = False
@@ -146,7 +146,7 @@ try:
                         f"mpv-seek-guard-reset:{id(self)}:{reason}",
                         f"MPV SEEK GUARD RESET | reason={reason} | player_id={id(self)}"
                     )
-                if pending is not None:
+                if dispatch_pending and pending is not None:
                     t, r, p = pending
                     _dispatch_on_qt_thread(lambda: __submit_gated_seek(t, reference=r, precision=p))
 
@@ -154,8 +154,11 @@ try:
                 _dispatch_on_qt_thread(lambda: __clear_seek_guard(reason))
             self._submit_gated_seek = __submit_gated_seek
             self._clear_seek_guard = __clear_seek_guard
+            self._discard_stale_seek_guard = lambda reason='stale': __clear_seek_guard(reason, dispatch_pending=False)
             @self.event_callback('playback-restart')
             def __on_playback_restart(ev):
+                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
+                    return
                 __schedule_clear_seek_guard('playback-restart')
             self._tracked_event_callbacks.append(('playback-restart', __on_playback_restart))
             @self.event_callback('seek')
@@ -163,6 +166,8 @@ try:
                 pass
             @self.property_observer('seeking')
             def __on_seeking_change(_name, value):
+                if getattr(self, '_safe_shutdown_initiated', False) or getattr(self, '_core_shutdown', False):
+                    return
                 if value in (False, None, 0):
                     __schedule_clear_seek_guard('seeking=false')
             self._tracked_property_observers.append(('seeking', __on_seeking_change))
@@ -203,7 +208,7 @@ try:
         else:
             logging.info("GPU RE-INTEGRATION COMPLETE. RTX 4070 OPTIMIZATIONS ACTIVE.")
 except (ImportError, OSError):
-    class MockMPV: 
+    class MockMPV:
         log_path = None
 
         class MPV:
@@ -385,7 +390,7 @@ class ConsoleManager:
                     sc.setFormatter(h.formatter)
                     root.addHandler(sc)
                 except: pass
-        
+
         app_p = logger_name.lower().replace(" ", "_")
         f_l_n = f"{app_p}_{log_filename}" if not log_filename.startswith(app_p) else log_filename
         logger = LogManager.setup_logger(base_dir, f_l_n, logger_name)
@@ -502,9 +507,38 @@ class MPVSafetyManager:
     _mpv_command_lock = threading.RLock()
     _last_creation_time = 0
     _instances = weakref.WeakSet()
+    _stale_seek_timeout_sec = 1.25
     @staticmethod
     def run_on_qt_thread(callback):
         return _dispatch_on_qt_thread(callback)
+    @staticmethod
+    def reset_stale_seek_guard(player, reason="operation"):
+        if not player:
+            return False
+        try:
+            if not getattr(player, '_seeking_active', False):
+                return False
+            started = float(getattr(player, '_seek_guard_start_mono', 0.0) or 0.0)
+            if started <= 0:
+                return False
+            age = time.monotonic() - started
+            if age < MPVSafetyManager._stale_seek_timeout_sec:
+                return False
+            discard = getattr(player, '_discard_stale_seek_guard', None)
+            if callable(discard):
+                discard(f"{reason}-timeout")
+            else:
+                player._seeking_active = False
+                player._seek_guard_start_mono = 0.0
+                player._pending_seek_target = None
+            diagnostic_runtime.append_python_debug_throttled(
+                f"mpv-stale-seek-reset:{id(player)}:{reason}",
+                f"MPV STALE SEEK RESET | reason={reason} | age={age:.2f}s | player_id={id(player)}",
+                min_interval_sec=1.0
+            )
+            return True
+        except Exception:
+            return False
     @staticmethod
     def log_mpv_diagnostics(player, logger, context_tag="GENERAL"):
         if not player or not logger: return
@@ -545,6 +579,7 @@ class MPVSafetyManager:
     @staticmethod
     def safe_mpv_set(player, property_name, value, max_attempts=3, lock=None):
         if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return False
+        MPVSafetyManager.reset_stale_seek_guard(player, f"set:{property_name}")
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
@@ -555,6 +590,7 @@ class MPVSafetyManager:
     @staticmethod
     def safe_mpv_get(player, property_name, default=None, max_attempts=3, lock=None):
         if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return default
+        MPVSafetyManager.reset_stale_seek_guard(player, f"get:{property_name}")
         for i in range(max_attempts):
             try:
                 with MPVSafetyManager._mpv_command_lock:
@@ -565,6 +601,7 @@ class MPVSafetyManager:
     @staticmethod
     def safe_mpv_command(player, command, *args, max_attempts=3, lock=None):
         if not player or getattr(player, '_core_shutdown', False) or getattr(player, '_safe_shutdown_initiated', False): return False
+        MPVSafetyManager.reset_stale_seek_guard(player, f"command:{command}")
         if command == "seek":
             submit_seek = getattr(player, '_submit_gated_seek', None)
             if callable(submit_seek):
@@ -590,7 +627,7 @@ class MPVSafetyManager:
                             player.command(command, *args)
                         return True
                     finally: pass
-            except: 
+            except:
                 if command == "seek":
                     try:
                         clear_seek_guard = getattr(player, '_clear_seek_guard', None)
@@ -728,3 +765,23 @@ class MediaProber:
                 dur = float(fmt.get('duration', 0.0) or 0.0)
             return dur, res
         except: return 0.0, "0x0"
+
+    @staticmethod
+    def probe_volume(bin_dir, path):
+        try:
+            ffp = os.path.join(bin_dir, 'ffmpeg.exe') if sys.platform == 'win32' else 'ffmpeg'
+            cmd = [ffp, "-i", path, "-af", "volumedetect", "-f", "null", "-"]
+            r = subprocess.run(cmd, text=True, capture_output=True, creationflags=0x08000000 if sys.platform == 'win32' else 0)
+            mean_volume = 0.0
+            max_volume = 0.0
+            for line in r.stderr.splitlines():
+                if "mean_volume:" in line:
+                    parts = line.split("mean_volume:")
+                    if len(parts) > 1:
+                        mean_volume = float(parts[1].split("dB")[0].strip())
+                if "max_volume:" in line:
+                    parts = line.split("max_volume:")
+                    if len(parts) > 1:
+                        max_volume = float(parts[1].split("dB")[0].strip())
+            return mean_volume, max_volume
+        except: return 0.0, 0.0

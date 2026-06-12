@@ -251,7 +251,8 @@ class FfmpegMixin:
                 segment_duration = (end_time_ms - start_time_ms) / 1000.0
                 intro_abs_time = (start_time_ms / 1000.0) + (segment_duration * 0.66)
             intro_abs_time_ms = int(intro_abs_time * 1000)
-            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), show_spectating_overlay=is_mobile_format, quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=music_tracks_for_worker, target_mb_override=target_mb)
+            v_norm_db = getattr(self, "volume_normalize_db", 0.0)
+            self.process_thread = ProcessThread(input_path=self.input_file_path, start_time_ms=start_time_ms, end_time_ms=end_time_ms, original_resolution=self.original_resolution, is_mobile_format=is_mobile_format, speed_factor=speed_factor, base_dir=self.base_dir, progress_signal=self.progress_update_signal, status_signal=self.status_update_signal, finished_signal=self.process_finished_signal, logger=self.logger, is_boss_hp=self.boss_hp_checkbox.isChecked(), show_teammates_overlay=(is_mobile_format and self.teammates_checkbox.isChecked()), show_spectating_overlay=is_mobile_format, quality_level=q_level, bg_music_path=music_path, bg_music_volume=music_vol_linear, bg_music_offset_ms=int(music_offset_s * 1000), original_total_duration_ms=self.original_duration_ms, disable_fades=self.no_fade_checkbox.isChecked(), intro_still_sec=0.1, intro_from_midpoint=(intro_abs_time_ms <= 0), intro_abs_time_ms=intro_abs_time_ms if intro_abs_time_ms > 0 else None, portrait_text=p_text, music_config=music_conf, speed_segments=speed_segments_for_worker, hardware_strategy=getattr(self, 'hardware_strategy', 'CPU'), music_tracks=music_tracks_for_worker, target_mb_override=target_mb, volume_normalize_db=v_norm_db)
             self.process_thread.start()
         except Exception as e:
             try:
@@ -471,6 +472,7 @@ class FfmpegMixin:
                 self.trim_start_ms = 0; self.trim_end_ms = duration_ms; self._update_trim_widgets_from_trim_times(); self.positionSlider.set_trim_times(self.trim_start_ms, self.trim_end_ms); self._safe_status("Video loaded.", "white")
                 if hasattr(self, "_maybe_enable_process"):
                     self._maybe_enable_process()
+                QTimer.singleShot(500, self.analyze_volume)
             except Exception as e:
                 try:
                     self.logger.exception(f"Failed to update UI after probe: {e}")
@@ -486,6 +488,46 @@ class FfmpegMixin:
 
         def _thread_target():
             result = _bg_worker(str(self.input_file_path)); self._probe_bridge.done.emit(result)
+        threading.Thread(target=_thread_target, daemon=True).start()
+
+    def analyze_volume(self):
+        if not self.input_file_path or not os.path.exists(self.input_file_path): return
+        self._safe_status("Analyzing audio levels...", "orange")
+
+        def _bg_worker(p):
+            try:
+                mean, max_v = MediaProber.probe_volume(self.bin_dir, p)
+                return True, mean, max_v
+            except Exception: return False, 0.0, 0.0
+
+        def _on_worker_finished(result):
+            success, mean, max_v = result
+            if not success:
+                self._safe_status("Audio analysis failed.", "red")
+                return
+            
+            self._safe_status("Video and audio analyzed.", "white")
+            if mean < -25.0 or mean > -10.0:
+                recommended = -18.0 - mean
+                if abs(recommended) > 1.5:
+                    msg = f"Audio level detected: {mean:.1f} dB (Peak: {max_v:.1f} dB)\n\n" \
+                          f"This seems {'quiet' if recommended > 0 else 'loud'}. " \
+                          f"Would you like to normalize it by {recommended:+.1f} dB for the final export?"
+                    reply = QMessageBox.question(self, "Voice Stabilization", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                    if reply == QMessageBox.Yes:
+                        self.volume_normalize_db = recommended
+                        self._safe_status(f"Normalization active: {recommended:+.1f} dB", "green")
+                    else:
+                        self.volume_normalize_db = 0.0
+            else:
+                self.volume_normalize_db = 0.0
+
+        class _VolumeBridge(QObject):
+            done = pyqtSignal(object)
+        self._volume_bridge = _VolumeBridge(); self._volume_bridge.done.connect(_on_worker_finished)
+
+        def _thread_target():
+            result = _bg_worker(str(self.input_file_path)); self._volume_bridge.done.emit(result)
         threading.Thread(target=_thread_target, daemon=True).start()
 
     def on_progress(self, value: int):

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import tempfile
 import uuid
 import shutil
@@ -30,7 +30,8 @@ class ProcessThread(QThread):
                   portrait_text=None, music_config=None, speed_segments=None,
                   hardware_strategy='CPU', music_tracks=None, script_dir=None,
                   target_mb_override=None,
-                  progress_update_signal=None, status_update_signal=None):
+                  progress_update_signal=None, status_update_signal=None,
+                  volume_normalize_db=0.0):
         super().__init__()
         self.input_path = input_path
         self.start_time_ms = start_time_ms
@@ -60,6 +61,7 @@ class ProcessThread(QThread):
         self.intro_from_midpoint = bool(intro_from_midpoint)
         self.intro_abs_time_ms = int(intro_abs_time_ms) if intro_abs_time_ms is not None else None
         self.speed_segments = self._normalize_speed_segments(speed_segments)
+        self.volume_normalize_db = float(volume_normalize_db or 0.0)
         if self.logger:
             try:
                 self.logger.info(
@@ -147,10 +149,16 @@ class ProcessThread(QThread):
         return normalized
 
     def _hardware_decode_flags(self, encoder_name: str) -> list[str]:
-        return []
+        if os.name == 'nt':
+            return ["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"]
+        if "nvenc" in encoder_name.lower():
+            return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+        if "amf" in encoder_name.lower() or "qsv" in encoder_name.lower():
+            return ["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"]
+        return ["-hwaccel", "auto"]
 
     def _uses_cuda_frames(self, encoder_name: str) -> bool:
-        return False
+        return "nvenc" in encoder_name.lower()
 
     def _target_size_bounds(self):
         if not self.target_mb:
@@ -168,7 +176,9 @@ class ProcessThread(QThread):
 
     def _validate_render_output(self, path, expected_duration_sec, target_fps_expr, monitor_stats):
         if not os.path.exists(path) or os.path.getsize(path) <= 0: return False, "Missing output."
-        if (monitor_stats or {}).get("critical_lines"): return False, "Critical errors in log."
+        critical = (monitor_stats or {}).get("critical_lines", [])
+        if critical:
+            return False, f"Critical errors in log: {critical[0]}"
         out_probe = MediaProber(os.path.join(self.base_dir, 'binaries'), path)
         fps_expr = out_probe.get_video_fps_expr(target_fps_expr)
         try: fps_q = Fraction(str(fps_expr))
@@ -260,10 +270,12 @@ class ProcessThread(QThread):
             render_duration_sec = g_dur + intro_duration_sec
             if self.logger:
                 self.logger.info(f"INTRO_FRAME_STATE: duration={intro_duration_sec:.3f}s input_index={intro_input_index} text_label={text_input_label}")
-            audio_chains, final_a_label = self.filter_builder.build_audio_chain(music_cfg, self.start_time_ms/1000.0, self.end_time_ms/1000.0, self.speed_factor, self.disable_fades, 0.5 if not self.disable_fades else 0, "", 48000, self.music_tracks, 1, g_dur)
+            audio_chains, final_a_label = self.filter_builder.build_audio_chain(music_cfg, self.start_time_ms/1000.0, self.end_time_ms/1000.0, self.speed_factor, self.disable_fades, 0.5 if not self.disable_fades else 0, "", 48000, self.music_tracks, 1, g_dur, volume_normalize_db=self.volume_normalize_db)
             core_path = os.path.normpath(os.path.join(self.temp_job_dir, "core.mp4"))
 
+            last_error = "Render failed."
             def run_ffmpeg(use_cuda, requested_bitrate_kbps):
+                nonlocal last_error
                 current_encoder = self.encoder_mgr.get_initial_encoder() if use_cuda else 'libx264'
                 while True:
                     vcodec, rc_label = self.encoder_mgr.get_codec_flags(current_encoder, requested_bitrate_kbps, g_dur, target_fps_expr, quality_level=self.quality_level, size_locked=bool(self.target_mb))
@@ -276,8 +288,8 @@ class ProcessThread(QThread):
                     if intro_duration_sec > 0.0 and intro_input_index is not None:
                         intro_frames = max(1, int(round(intro_duration_sec * 60.0)))
                         loop_frames = max(0, intro_frames - 1)
-                        attempt_core_filters.append(f"[{intro_input_index}:v]trim=duration={max(0.2, intro_duration_sec + 0.1):.4f},setpts=PTS-STARTPTS,select='eq(n\\,0)',format=yuv420p,setsar=1,loop=loop={loop_frames}:size=1:start=0,fps={target_fps_expr}:round=near,trim=duration={intro_duration_sec:.4f},setpts=PTS-STARTPTS[v_intro_same_frame]")
-                        attempt_core_filters.append(f"{v_stabilized_pad}format=yuv420p,setsar=1[v_main_after_intro]")
+                        attempt_core_filters.append(f"[{intro_input_index}:v]trim=duration={max(0.2, intro_duration_sec + 0.1):.4f},setpts=PTS-STARTPTS,select='eq(n\\,0)',setsar=1,loop=loop={loop_frames}:size=1:start=0,fps={target_fps_expr}:round=near,trim=duration={intro_duration_sec:.4f},setpts=PTS-STARTPTS[v_intro_same_frame]")
+                        attempt_core_filters.append(f"{v_stabilized_pad}setsar=1[v_main_after_intro]")
                         attempt_core_filters.append("[v_intro_same_frame][v_main_after_intro]concat=n=2:v=1:a=0[v_with_intro]")
                         v_stabilized_pad = "[v_with_intro]"
                     if self.is_mobile_format:
@@ -309,12 +321,18 @@ class ProcessThread(QThread):
                     self.current_process = create_subprocess(ffmpeg_cmd)
                     monitor_stats = monitor_ffmpeg_progress(self.current_process, render_duration_sec, scaler_core, self._monitor_disk_space, self.logger)
                     if self.current_process.wait() == 0:
-                        valid, _ = self._validate_render_output(core_path, render_duration_sec, target_fps_expr, monitor_stats)
+                        valid, err_msg = self._validate_render_output(core_path, render_duration_sec, target_fps_expr, monitor_stats)
                         if valid: return True, render_duration_sec, monitor_stats
+                        last_error = err_msg
+                    else:
+                        last_error = f"FFmpeg exited with code {self.current_process.returncode}."
                     if use_cuda and not self.is_canceled:
                         fallbacks = self.encoder_mgr.get_fallback_list(current_encoder, False)
-                        if fallbacks: current_encoder = fallbacks[0]; continue
+                        if fallbacks: 
+                            if self.logger: self.logger.warning(f"FFmpeg failed with {current_encoder}, falling back to {fallbacks[0]}")
+                            current_encoder = fallbacks[0]; continue
                     return False, g_dur, {}
+
             size_bounds = self._target_size_bounds()
             current_bitrate = int(video_bitrate_kbps) if video_bitrate_kbps else None
             for attempt in range(1, 3):
@@ -325,7 +343,7 @@ class ProcessThread(QThread):
                 if size_bounds[0] <= actual <= size_bounds[1]: break
                 current_bitrate = int(current_bitrate * (Fraction(size_bounds[1]) / Fraction(actual)))
             if not success:
-                self._emit_finished(False, "Render failed.")
+                self._emit_finished(False, last_error)
                 return
             final_output = self._resolve_final_output_path()
             shutil.move(core_path, final_output)

@@ -88,4 +88,4 @@ class MainWindowCoreCMixin:
             self.music_timeline_start_ms = 0; self.music_timeline_end_ms = 0
             if hasattr(self, "positionSlider"): self.positionSlider.reset_music_times()
         self._update_trim_widgets_from_trim_times(); self._update_quality_label()
-        if hasattr(self, "_save_recovery_state"): self._save_recovery_state()
+        if hasattr(self, "_trigger_recovery_save"): self._trigger_recovery_save()

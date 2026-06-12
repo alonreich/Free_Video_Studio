@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QHBoxLayout, QLineEdit, QListWidgetItem, QFrame, QPushButton, QStackedLayout, QSizePolicy, QStyle
 from ui.widgets.trimmed_slider import TrimmedSlider
@@ -151,7 +151,7 @@ class MergerMusicWizardStepPagesMixin:
         header_layout.addStretch(1)
         self.select_folder_btn = QPushButton()
         self.select_folder_btn.setObjectName("selectFolderBtn")
-        self.select_folder_btn.setFixedSize(100, 42)
+        self.select_folder_btn.setFixedSize(185, 42)
         self.select_folder_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.select_folder_btn.setCursor(Qt.PointingHandCursor)
         self.select_folder_btn.setStyleSheet(UIStyles.BUTTON_WIZARD_BLUE + " QPushButton#selectFolderBtn { min-width: 185px; }")
@@ -237,21 +237,19 @@ class MergerMusicWizardStepPagesMixin:
             QScrollBar::handle:vertical {
                 min-height: 34px;
                 border-radius: 9px;
-                border: 1px solid #b8c0c8;
+                border: 1px solid #1f3545;
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #c9d0d6,
-                    stop:0.5 #e1e6eb,
-                    stop:1 #b6bec6
+                    stop:0 #3a8db0,
+                    stop:1 #1a5276
                 );
             }
             QScrollBar::handle:vertical:hover {
-                border: 1px solid #d9e0e6;
+                border: 1px solid #7DD3FC;
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #d7dde2,
-                    stop:0.5 #edf1f5,
-                    stop:1 #c6cdd4
+                    stop:0 #2d7da1,
+                    stop:1 #1a5276
                 );
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {

@@ -1,4 +1,4 @@
-﻿try:
+try:
     import mpv
 except Exception:
     mpv = None
@@ -10,10 +10,10 @@ import time as import_time
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QDoubleSpinBox, QWidget, QStyle, QLineEdit,
                              QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox,
-                             QMessageBox, QApplication, QSpinBox, QGridLayout)
+                             QMessageBox, QApplication, QSpinBox, QGridLayout, QFrame)
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint, QSize
-from PyQt5.QtGui import QPainter, QColor, QBrush, QPen, QLinearGradient, QCursor, QIcon, QPixmap
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QRect, QPoint, QSize, QEvent
+from PyQt5.QtGui import QPainter, QColor, QBrush, QPen, QLinearGradient, QCursor, QIcon, QPixmap, QFont
 from ui.widgets.trimmed_slider import TrimmedSlider
 from system.utils import MPVSafetyManager
 from ui.styles import UIStyles
@@ -54,6 +54,100 @@ class GranularTimelineSlider(TrimmedSlider):
         self.pending_speed = 1.1
         self.setMouseTracking(True)
         self._hovering_handle = None
+        self.view_start_ms = None
+        self.view_end_ms = None
+        self._blocked_edge_ms = None
+        self._blocked_flash_timer = QTimer(self)
+        self._blocked_flash_timer.setSingleShot(True)
+        self._blocked_flash_timer.timeout.connect(self._clear_blocked_flash)
+
+    def _visible_range(self):
+        min_v, max_v = int(self.minimum()), int(self.maximum())
+        if self.view_start_ms is None or self.view_end_ms is None:
+            return min_v, max_v
+        start = max(min_v, min(max_v, int(self.view_start_ms)))
+        end = max(start + 1, min(max_v, int(self.view_end_ms)))
+        return start, end
+
+    def is_zoomed(self):
+        return self.view_start_ms is not None and self.view_end_ms is not None
+
+    def set_view_range(self, start, end):
+        min_v, max_v = int(self.minimum()), int(self.maximum())
+        full_span = max(1, max_v - min_v)
+        span = max(1000, int(end) - int(start))
+        if span >= full_span:
+            self.fit_view()
+            return
+        span = min(full_span, span)
+        center = (int(start) + int(end)) // 2
+        new_start = max(min_v, min(max_v - span, center - span // 2))
+        self.view_start_ms = int(new_start)
+        self.view_end_ms = int(new_start + span)
+        self.update()
+
+    def fit_view(self):
+        self.view_start_ms = None
+        self.view_end_ms = None
+        self.update()
+
+    def ensure_value_visible(self, value):
+        if not self.is_zoomed():
+            return
+        start, end = self._visible_range()
+        value = max(self.minimum(), min(self.maximum(), int(value)))
+        if start <= value <= end:
+            return
+        span = end - start
+        self.set_view_range(value - span // 2, value + span // 2)
+
+    def ensure_range_visible(self, start, end):
+        if not self.is_zoomed():
+            return
+        view_start, view_end = self._visible_range()
+        start, end = int(start), int(end)
+        if view_start <= start and end <= view_end:
+            return
+        current_span = view_end - view_start
+        target_span = max(current_span, (end - start) + 500)
+        center = (start + end) // 2
+        self.set_view_range(center - target_span // 2, center + target_span // 2)
+
+    def _map_pos_to_value(self, px):
+        try:
+            groove = self._get_groove_rect()
+            if groove.width() <= 1:
+                return self._visible_range()[0]
+            pos = px - groove.left()
+            ratio = pos / float(groove.width() - 1)
+            min_v, max_v = self._visible_range()
+            val = min_v + ratio * (max_v - min_v)
+            return int(max(min_v, min(max_v, val)))
+        except Exception:
+            return self.minimum()
+
+    def _map_value_to_pos(self, value):
+        try:
+            groove = self._get_groove_rect()
+            if not groove.isValid() or groove.width() <= 1:
+                return groove.left() if groove.isValid() else 8
+            min_v, max_v = self._visible_range()
+            if max_v <= min_v:
+                return groove.left()
+            val = max(min_v, min(max_v, int(value)))
+            pos = ((val - min_v) / float(max_v - min_v)) * (groove.width() - 1)
+            return int(groove.left() + pos)
+        except Exception:
+            return 8
+
+    def flash_blocked_edge(self, value_ms):
+        self._blocked_edge_ms = max(self.minimum(), min(self.maximum(), int(value_ms)))
+        self._blocked_flash_timer.start(650)
+        self.update()
+
+    def _clear_blocked_flash(self):
+        self._blocked_edge_ms = None
+        self.update()
 
     def _update_ants(self):
         self.m_ants_offset = (self.m_ants_offset + 2) % 12
@@ -86,10 +180,15 @@ class GranularTimelineSlider(TrimmedSlider):
                 click_x = e.pos().x()
                 found_seg = -1
                 for i, seg in enumerate(self.segments):
+                    if abs(seg.get('speed', 1.0)) < 0.001:
+                        if self._get_freeze_marker_rect(seg).contains(e.pos()):
+                            found_seg = i
+                            break
+                        continue
                     s_pos = self._map_value_to_pos(seg['start'])
                     e_pos = self._map_value_to_pos(seg['end'])
                     if s_pos > e_pos: s_pos, e_pos = e_pos, s_pos
-                    hit_margin = 10 if abs(seg.get('speed', 1.0)) < 0.001 else 4
+                    hit_margin = 4
                     if s_pos - hit_margin <= click_x <= e_pos + hit_margin:
                         found_seg = i
                         break
@@ -108,10 +207,13 @@ class GranularTimelineSlider(TrimmedSlider):
 
     def mouseMoveEvent(self, e):
         if self._dragging_handle == 'start':
-            val = self._map_pos_to_value(e.pos().x())
+            requested = self._map_pos_to_value(e.pos().x())
+            val = requested
             parent = self.parent()
             if hasattr(parent, "_clamp_selection_start"):
                 val = parent._clamp_selection_start(val, self.trimmed_end_ms, self.active_segment_index)
+                if val != requested:
+                    self.flash_blocked_edge(val)
             else:
                 low = self.minimum()
                 for i, seg in enumerate(self.segments):
@@ -124,10 +226,13 @@ class GranularTimelineSlider(TrimmedSlider):
                 self.update()
             return
         elif self._dragging_handle == 'end':
-            val = self._map_pos_to_value(e.pos().x())
+            requested = self._map_pos_to_value(e.pos().x())
+            val = requested
             parent = self.parent()
             if hasattr(parent, "_clamp_selection_end"):
                 val = parent._clamp_selection_end(val, self.trimmed_start_ms, self.active_segment_index)
+                if val != requested:
+                    self.flash_blocked_edge(val)
             else:
                 high = self.maximum()
                 for i, seg in enumerate(self.segments):
@@ -141,29 +246,53 @@ class GranularTimelineSlider(TrimmedSlider):
             return
         super().mouseMoveEvent(e)
         if not self._dragging_handle and not self._hovering_handle:
+            for seg in self.segments:
+                if abs(seg.get('speed', 1.0)) < 0.001 and self._get_freeze_marker_rect(seg).contains(e.pos()):
+                    self.setCursor(QCursor(Qt.PointingHandCursor))
+                    return
             val = self._map_pos_to_value(e.pos().x())
             for seg in self.segments:
+                if abs(seg.get('speed', 1.0)) < 0.001:
+                    continue
                 if seg['start'] <= val <= seg['end']:
                     self.setCursor(QCursor(Qt.PointingHandCursor))
                     break
 
     def _get_groove_rect(self):
-        h = 4
+        h = 10
         top = (self.height() - h) // 2
         return QRect(8, top, max(1, self.width() - 16), h)
 
     def paintEvent(self, event):
         p = QPainter(self)
+        from developer_tools.config import UI_COLORS
         try:
             p.setRenderHint(QPainter.Antialiasing)
             groove_rect = self._get_groove_rect()
-            p.setPen(Qt.NoPen); p.setBrush(QColor(40, 40, 40)); p.drawRoundedRect(groove_rect, 2, 2)
+            p.setPen(QPen(QColor("#1f3545"), 1))
+            p.setBrush(QColor("#142d37"))
+            p.drawRoundedRect(groove_rect, 4, 4)
+
+            view_start, view_end = self._visible_range()
             for i, seg in enumerate(self.segments):
+                if abs(seg.get('speed', 1.0)) < 0.001:
+                    continue
                 is_active = (i == self.active_segment_index)
-                self._draw_segment_on_groove(p, groove_rect, seg['start'], seg['end'], seg['speed'], is_pending=is_active)
+                if seg['end'] < view_start or seg['start'] > view_end:
+                    continue
+                self._draw_segment_on_groove(p, groove_rect, seg['start'], seg['end'], seg['speed'], is_active=is_active)
+
+            for i, seg in enumerate(self.segments):
+                if abs(seg.get('speed', 1.0)) >= 0.001:
+                    continue
+                if seg['start'] < view_start or seg['start'] > view_end:
+                    continue
+                self._draw_freeze_marker(p, seg, i == self.active_segment_index)
+
             if self.pending_start != -1 and self.pending_end != -1:
                 self._draw_segment_on_groove(p, groove_rect, self.pending_start, self.pending_end, self.pending_speed, is_pending=True)
-            min_v, max_v = self.minimum(), self.maximum()
+
+            min_v, max_v = self._visible_range()
             fm = p.fontMetrics()
             if max_v > min_v:
                 step = 10000 if (max_v - min_v) > 60000 else 5000 if (max_v - min_v) > 30000 else 1000
@@ -172,65 +301,96 @@ class GranularTimelineSlider(TrimmedSlider):
                     x = self._map_value_to_pos(ms)
                     is_obscured = False
                     for seg in self.segments:
+                        if abs(seg.get('speed', 1.0)) < 0.001:
+                            continue
                         if seg['start'] <= ms <= seg['end']: is_obscured = True; break
                     if not is_obscured:
-                        p.setPen(QColor(180, 180, 180))
-                        p.drawLine(x, groove_rect.bottom() + 1, x, groove_rect.bottom() + 6)
+                        p.setPen(QColor("#7f8c8d"))
+                        p.drawLine(x, groove_rect.bottom() + 2, x, groove_rect.bottom() + 6)
+                        p.setFont(QFont("Segoe UI", 8))
                         p.drawText(x - fm.horizontalAdvance(self._fmt(int(ms))) // 2, groove_rect.bottom() + 18, self._fmt(int(ms)))
-            else:
-                p.setPen(QColor(150, 150, 150))
-                p.drawText(groove_rect.left(), groove_rect.bottom() + 18, self._fmt(min_v))
-                p.drawText(groove_rect.right() - 20, groove_rect.bottom() + 18, self._fmt(max_v))
+
             try:
                 playhead_rect = self._get_playhead_rect()
                 if playhead_rect and playhead_rect.isValid():
-                    knob_w, knob_h = 15, 40
+                    knob_w, knob_h = 12, 36
                     cx = playhead_rect.center().x()
                     cy = groove_rect.center().y()
                     knob_rect = QRect(cx - knob_w // 2, cy - knob_h // 2, knob_w, knob_h)
+
                     g = QLinearGradient(knob_rect.left(), knob_rect.top(), knob_rect.left(), knob_rect.bottom())
-                    c1, c2 = QColor("#5a5a5a"), QColor("#9a9a9a")
+                    c1, c2 = QColor("#3a8db0"), QColor("#1a5276")
                     if self._hovering_handle == 'playhead' or self._dragging_handle == 'playhead':
-                        c1, c2 = c1.lighter(110), c2.lighter(110)
-                        p.setPen(QPen(QColor("#7DD3FC"), 2))
-                    else: p.setPen(QPen(QColor("#111111"), 1))
-                    g.setColorAt(0.0, c1); g.setColorAt(0.35, c2); g.setColorAt(0.38, Qt.black); g.setColorAt(0.42, Qt.black); g.setColorAt(0.45, c2); g.setColorAt(0.48, Qt.black); g.setColorAt(0.52, Qt.black); g.setColorAt(0.55, c2); g.setColorAt(0.58, Qt.black); g.setColorAt(0.62, Qt.black); g.setColorAt(0.65, c2); g.setColorAt(1.0, c1)
-                    p.setBrush(QBrush(g)); p.drawRoundedRect(knob_rect, 2, 2)
+                        p.setPen(QPen(QColor(UI_COLORS.BORDER_ACCENT), 2))
+                    else:
+                        p.setPen(QPen(QColor("#111111"), 1))
+
+                    g.setColorAt(0.0, c1); g.setColorAt(0.5, c2); g.setColorAt(1.0, c1)
+                    p.setBrush(QBrush(g))
+                    p.drawRoundedRect(knob_rect, 3, 3)
             except Exception: pass
+
             for handle_type in ['start', 'end']:
                 handle_rect = self._get_handle_rect(handle_type)
                 if not handle_rect.isValid(): continue
-                color = QColor(0, 0, 0, 150)
-                if self._hovering_handle == handle_type or self._dragging_handle == handle_type:
-                    color = QColor(230, 126, 34, 200)
-                p.setPen(Qt.NoPen); p.setBrush(color); p.drawRoundedRect(handle_rect, 4, 4)
+                color = QColor("#e67e22") if self._hovering_handle == handle_type or self._dragging_handle == handle_type else QColor("#d35400")
+                p.setPen(QPen(Qt.black, 1)); p.setBrush(color); p.drawRoundedRect(handle_rect, 3, 3)
+            if self._blocked_edge_ms is not None:
+                x = self._map_value_to_pos(self._blocked_edge_ms)
+                p.setPen(QPen(QColor("#ff4d4d"), 3))
+                p.drawLine(x, groove_rect.top() - 18, x, groove_rect.bottom() + 24)
         finally:
             if p.isActive(): p.end()
 
-    def _draw_segment_on_groove(self, p, groove_rect, start_ms, end_ms, speed, is_pending=False):
+    def _get_freeze_marker_rect(self, seg):
+        try:
+            tx = self._map_value_to_pos(int(seg.get('start', 0)))
+            ty = self._get_groove_rect().center().y()
+            tw, th = 33, 24
+            return QRect(int(tx - tw // 2), int(ty - th // 2), int(tw), int(th))
+        except Exception:
+            return QRect()
+
+    def _draw_freeze_marker(self, p, seg, is_active=False):
+        t_rect = self._get_freeze_marker_rect(seg)
+        if not t_rect.isValid():
+            return
+        border = QColor("#7DD3FC") if is_active else QColor(Qt.black)
+        p.setPen(QPen(border, 2 if is_active else 1.5))
+        p.setBrush(QColor("#9b59b6"))
+        p.drawRoundedRect(t_rect, 3, 3)
+        p.setBrush(Qt.black)
+        p.drawEllipse(t_rect.center(), 6, 6)
+        p.setBrush(QColor("#9b59b6"))
+        p.drawEllipse(t_rect.center(), 3, 3)
+        lens_rect = QRect(int(t_rect.right() - 8), int(t_rect.top() + 3), 5, 4)
+        p.setBrush(Qt.white)
+        p.drawRect(lens_rect)
+
+    def _draw_segment_on_groove(self, p, groove_rect, start_ms, end_ms, speed, is_pending=False, is_active=False):
         if end_ms <= start_ms: return
         is_freeze = abs(speed) < 0.001
         if is_freeze: seg_color = QColor("#9b59b6")
-        else: seg_color = QColor("#2ecc71") if speed > 1.101 else QColor("#e74c3c") if speed < 1.099 else QColor("#95a5a6")
-        alpha = 180 if is_pending else 120
-        seg_color.setAlpha(alpha); p.setBrush(seg_color); p.setPen(Qt.NoPen)
+        else: seg_color = QColor("#2ecc71") if speed > 1.101 else QColor("#e74c3c") if speed < 1.099 else QColor("#7f8c8d")
+
+        alpha = 190 if is_active else 175 if is_pending else 140
+        seg_color.setAlpha(alpha); p.setBrush(seg_color)
+        p.setPen(QPen(QColor("#7DD3FC"), 2) if is_active else QPen(Qt.black, 0.5))
+
         s_pos, e_pos = self._map_value_to_pos(start_ms), self._map_value_to_pos(end_ms)
         if s_pos > e_pos: s_pos, e_pos = e_pos, s_pos
-        h, y = 24, groove_rect.center().y() - 12
-        seg_rect = QRect(s_pos, y, max(1, e_pos - s_pos), h); p.drawRect(seg_rect)
-        if is_freeze:
-            try:
-                cam_icon = self.style().standardIcon(QStyle.SP_DialogHelpButton)
-                icon_size = min(16, seg_rect.height() - 4)
-                icon_rect = QRect(seg_rect.center().x() - icon_size // 2, seg_rect.center().y() - icon_size // 2, icon_size, icon_size)
-                cam_icon.paint(p, icon_rect)
-            except: pass
+
+        h, y = 18, groove_rect.center().y() - 9
+        seg_rect = QRect(s_pos, y, max(1, e_pos - s_pos), h)
+        p.drawRoundedRect(seg_rect, 2, 2)
+
         if is_pending:
             p.setBrush(Qt.NoBrush)
+            pen = QPen(QColor("white"), 1.5, Qt.DashLine)
             if self.m_ants_timer.isActive():
-                pen = QPen(QColor("white"), 2, Qt.DashLine); pen.setDashOffset(self.m_ants_offset); p.setPen(pen)
-            else: p.setPen(QPen(QColor("white"), 1, Qt.DashLine))
-            p.drawRect(seg_rect)
+                pen.setDashOffset(self.m_ants_offset)
+            p.setPen(pen)
+            p.drawRoundedRect(seg_rect.adjusted(-1,-1,1,1), 2, 2)
 
 class GranularSpeedEditor(QDialog):
     BUTTON_BLUE = UIStyles.BUTTON_WIZARD_BLUE
@@ -366,7 +526,11 @@ class GranularSpeedEditor(QDialog):
             except Exception: pass
 
     def _update_clear_all_btn_state(self):
-        has_segments = len(self.speed_segments) > 0; self.clear_all_btn.setEnabled(has_segments); self.clear_all_btn.setStyleSheet(self.BUTTON_DANGER if has_segments else self.BUTTON_STANDARD); self._update_segment_counter()
+        has_segments = len(self.speed_segments) > 0
+        self.clear_all_btn.setEnabled(has_segments)
+        self._set_button_class(self.clear_all_btn, 'danger' if has_segments else 'primary')
+        self._update_segment_counter()
+        self._update_apply_button_label()
 
     def _update_segment_counter(self):
         count = sum(1 for seg in self.speed_segments if abs(seg['speed'] - self.base_speed) > 0.01)
@@ -381,9 +545,12 @@ class GranularSpeedEditor(QDialog):
         self.timeline.set_trim_times(0, int(self.duration))
         self.timeline.set_pending_segment(0, int(self.duration), self.speed_spin.value())
         self.timeline.start_ants()
+        self._update_selection_readout()
+        self._update_apply_button_label()
 
     def _apply_speed_preset(self, value):
         self.speed_spin.setValue(float(value))
+        self._update_preset_button_styles()
 
     def _sorted_segments(self, exclude_idx=-1):
         items = []
@@ -451,44 +618,489 @@ class GranularSpeedEditor(QDialog):
         end = self._clamp_selection_end(end, start)
         return start, end
 
-    def init_ui(self):
-        self.setStyleSheet('''QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: "Helvetica Neue", Arial, sans-serif; } QLabel { font-size: 12px; padding: 5px; } QToolTip { border: 1px solid #ecf0f1; background-color: #34495e; color: white; }''')
-        main_layout = QVBoxLayout(self); main_layout.setContentsMargins(20, 20, 20, 30); main_layout.setSpacing(15)
-        self.video_frame = QWidget(); self.video_frame.setStyleSheet("background-color: black;"); 
-        self.video_frame.setAttribute(Qt.WA_DontCreateNativeAncestors); 
-        self.video_frame.setAttribute(Qt.WA_NativeWindow); 
-        self.video_frame.setAttribute(Qt.WA_OpaquePaintEvent);
-        self.video_frame.setAttribute(Qt.WA_NoSystemBackground);
-        self.video_frame.setAutoFillBackground(False)
-        self.video_frame.setMinimumHeight(320)
-        self.video_frame.setFocusPolicy(Qt.NoFocus)
-        main_layout.addWidget(self.video_frame, stretch=1)
+    def _make_legend_chip(self, label, color, dashed=False, outline=False):
+        chip = QFrame()
+        border_style = "dashed" if dashed else "solid"
+        chip.setStyleSheet("QFrame { background: transparent; border: none; } QLabel { background: transparent; border: none; }")
+        layout = QHBoxLayout(chip)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        swatch = QLabel()
+        swatch.setFixedSize(16, 8)
+        swatch_border = "#7DD3FC" if outline else color
+        swatch.setStyleSheet(f"background: {color}; border: 1px {border_style} {swatch_border}; border-radius: 2px; padding: 0px;")
+        text = QLabel(label)
+        text.setStyleSheet("color: #bdc3c7; font-size: 9px; font-weight: bold; padding: 0px;")
+        layout.addWidget(swatch)
+        layout.addWidget(text)
+        return chip
+
+    def _make_readout_label(self, text):
+        label = QLabel(text)
+        label.setMinimumWidth(100)
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("color: #ecf0f1; font-size: 10px; font-weight: bold; background: #142d37; border: 1px solid #1f3545; border-radius: 4px; padding: 3px 6px;")
+        return label
+
+    def _fmt_duration(self, ms):
+        ms = max(0, int(round(ms)))
+        if ms < 1000:
+            return f"{ms}ms"
+        return f"{ms / 1000.0:.2f}s"
+
+    def _selection_values(self):
+        idx = getattr(self.timeline, "active_segment_index", -1) if hasattr(self, "timeline") else -1
+        if 0 <= idx < len(self.speed_segments):
+            seg = self.speed_segments[idx]
+            return int(seg["start"]), int(seg["end"]), float(seg["speed"])
+        if not hasattr(self, "timeline"):
+            return None
+        if not (getattr(self, "_pending_segment_active", False) or getattr(self, "_start_manually_set", False)):
+            return None
+        s = int(getattr(self.timeline, "trimmed_start_ms", -1))
+        e = int(getattr(self.timeline, "trimmed_end_ms", -1))
+        if s < 0 or e <= s:
+            return None
+        return s, e, float(self.speed_spin.value())
+
+    def _update_selection_readout(self):
+        labels = getattr(self, "readout_labels", None)
+        if not labels:
+            return
+        values = self._selection_values()
+        if not values:
+            labels["start"].setText("START --")
+            labels["end"].setText("END --")
+            labels["duration"].setText("DUR --")
+            labels["speed"].setText("SPEED --")
+            labels["output"].setText("OUT --")
+            return
+        start, end, speed = values
+        duration_ms = max(0, end - start)
+        output_ms = duration_ms if abs(speed) < 0.001 else duration_ms / max(0.001, speed)
+        speed_text = "FREEZE" if abs(speed) < 0.001 else f"{speed:.1f}x"
+        labels["start"].setText(f"START {self._fmt(start)}")
+        labels["end"].setText(f"END {self._fmt(end)}")
+        labels["duration"].setText(f"DUR {self._fmt_duration(duration_ms)}")
+        labels["speed"].setText(f"SPEED {speed_text}")
+        labels["output"].setText(f"OUT {self._fmt_duration(output_ms)}")
+
+    def _segment_counts_for_apply(self):
+        freeze_count = sum(1 for seg in self.speed_segments if abs(float(seg.get("speed", 1.0))) < 0.001)
+        speed_count = max(0, len(self.speed_segments) - freeze_count)
+        values = self._selection_values()
+        active_idx = getattr(getattr(self, "timeline", None), "active_segment_index", -1)
+        if active_idx == -1 and values:
+            _s, _e, speed = values
+            if getattr(self, "_start_manually_set", False) or getattr(self, "selection_modified", False) or abs(speed - self.base_speed) > 0.01:
+                speed_count += 1
+        return freeze_count, speed_count
+
+    def _update_apply_button_label(self):
+        if not hasattr(self, "save_btn"):
+            return
+        freeze_count, speed_count = self._segment_counts_for_apply()
+        parts = []
+        if freeze_count:
+            parts.append(f"{freeze_count} FREEZE" + ("" if freeze_count == 1 else "S"))
+        if speed_count:
+            parts.append(f"{speed_count} SPEED" + ("" if speed_count == 1 else "S"))
+        self.save_btn.setText("APPLY " + " + ".join(parts) if parts else "APPLY")
+
+    def _update_preset_button_styles(self):
+        current = float(self.speed_spin.value()) if hasattr(self, "speed_spin") else self.base_speed
+        for btn, preset_value in getattr(self, "speed_preset_buttons", []):
+            self._set_button_class(btn, 'success' if abs(float(preset_value) - current) < 0.01 else 'primary')
+
+    def _update_zoom_button_state(self):
+        if not hasattr(self, "timeline"):
+            return
+        zoomed = self.timeline.is_zoomed()
+        if hasattr(self, "zoom_fit_btn"):
+            self.zoom_fit_btn.setEnabled(zoomed)
+
+    def _zoom_timeline(self, factor):
+        if not hasattr(self, "timeline"):
+            return
+        if not self.timeline.is_zoomed():
+            start, end = 0, int(self.duration)
+        else:
+            start, end = self.timeline._visible_range()
+        center = int(getattr(self, "last_position_ms", self.timeline.value()) or self.timeline.value())
+        if not (start <= center <= end):
+            center = (start + end) // 2
+        new_span = max(1000, int((end - start) * float(factor)))
+        if new_span >= int(self.duration):
+            self.timeline.fit_view()
+        else:
+            self.timeline.set_view_range(center - new_span // 2, center + new_span // 2)
+        self._update_zoom_button_state()
+
+    def _timeline_zoom_wheel_zone_contains(self, point):
         try:
-            _ = int(self.video_frame.winId())
+            video = getattr(self, "video_frame", None)
+            if video is None or not video.isVisible():
+                return False
+            x = int(point.x())
+            y = int(point.y())
+            if x < 0 or x > self.width():
+                return False
+            video_top = video.mapTo(self, QPoint(0, 0)).y()
+            zone_top = video_top + max(1, video.height() // 2)
+            control_tops = []
+            for attr in ("freeze_group", "trim_group"):
+                widget = getattr(self, attr, None)
+                if widget is not None and widget.isVisible():
+                    control_tops.append(widget.mapTo(self, QPoint(0, 0)).y())
+            if not control_tops:
+                return False
+            zone_bottom = min(control_tops)
+            return zone_top <= y < zone_bottom
+        except Exception:
+            return False
+
+    def _handle_timeline_zoom_wheel(self, event):
+        try:
+            global_pos = event.globalPos() if hasattr(event, "globalPos") else None
+            local_pos = self.mapFromGlobal(global_pos) if global_pos is not None else event.pos()
+            if not self._timeline_zoom_wheel_zone_contains(local_pos):
+                return False
+            delta = event.angleDelta().y()
+            if delta == 0:
+                delta = event.pixelDelta().y()
+            if delta == 0:
+                return False
+            steps = max(1.0, abs(float(delta)) / 120.0)
+            factor = (0.8 ** steps) if delta > 0 else (1.25 ** steps)
+            self._zoom_timeline(factor)
+            event.accept()
+            return True
+        except Exception:
+            return False
+
+    def _install_timeline_zoom_wheel_filters(self):
+        widgets = [
+            getattr(self, "video_frame", None),
+            getattr(self, "timeline", None),
+            getattr(self, "video_legend_overlay", None),
+            getattr(self, "video_zoom_overlay", None),
+            getattr(self, "zoom_out_btn", None),
+            getattr(self, "zoom_fit_btn", None),
+            getattr(self, "zoom_in_btn", None),
+        ]
+        widgets.extend(list(getattr(self, "readout_labels", {}).values()))
+        for widget in widgets:
+            if widget is None:
+                continue
+            try:
+                widget.installEventFilter(self)
+            except Exception:
+                pass
+
+    def _fit_timeline(self):
+        if hasattr(self, "timeline"):
+            self.timeline.fit_view()
+        self._update_zoom_button_state()
+
+    def _set_button_class(self, button, class_name):
+        if not button:
+            return
+        button.setProperty('class', class_name)
+        button.setStyleSheet("")
+        try:
+            button.style().unpolish(button)
+            button.style().polish(button)
         except Exception:
             pass
-        self.timeline = GranularTimelineSlider(self); self.timeline.setRange(0, int(self.duration)); self.timeline.sliderMoved.connect(self._on_timeline_moved); self.timeline.sliderReleased.connect(self._on_timeline_released); self.timeline.trim_times_changed.connect(self.on_trim_changed); main_layout.addWidget(self.timeline)
-        controls_layout = QHBoxLayout(); controls_layout.setSpacing(14)
-        self.freeze_btn = QPushButton("📷  FREEZE  📷"); self.freeze_btn.setStyleSheet(self.BUTTON_BLUE); self.freeze_btn.setFixedSize(170, 35); self.freeze_btn.setCursor(Qt.PointingHandCursor); self.freeze_btn.clicked.connect(self.freeze_image); self.freeze_btn.setFocusPolicy(Qt.NoFocus); self.freeze_btn.setToolTip("Replace the segment after the playhead with a frozen still frame.\nOutput length stays the same; the underlying gameplay is discarded."); controls_layout.addWidget(self.freeze_btn)
-        self.freeze_sec_spin = QDoubleSpinBox(); self.freeze_sec_spin.setRange(FREEZE_MIN_SEC, FREEZE_MAX_SEC); self.freeze_sec_spin.setDecimals(1); self.freeze_sec_spin.setSingleStep(FREEZE_STEP_SEC); self.freeze_sec_spin.setValue(FREEZE_DEFAULT_SEC); self.freeze_sec_spin.setSuffix(" s"); self.freeze_sec_spin.setFixedHeight(35); self.freeze_sec_spin.setFixedWidth(80); self.freeze_sec_spin.setAlignment(Qt.AlignCenter); self.freeze_sec_spin.setCursor(Qt.PointingHandCursor); self.freeze_sec_spin.setStyleSheet(UIStyles.SPINBOX); self.freeze_sec_spin.setToolTip("Freeze duration in seconds (0.5 – 30).\nClamped automatically to remaining clip time."); controls_layout.addWidget(self.freeze_sec_spin)
-        controls_layout.addStretch(1)
-        self.start_trim_button = QPushButton("MARK START"); self.start_trim_button.setStyleSheet(self.BUTTON_BLUE); self.start_trim_button.setFixedSize(150, 35); self.start_trim_button.setCursor(Qt.PointingHandCursor); self.start_trim_button.clicked.connect(self.set_start); self.start_trim_button.setFocusPolicy(Qt.NoFocus); controls_layout.addWidget(self.start_trim_button)
-        self.play_btn = QPushButton("PLAY"); self.play_btn.setStyleSheet(self.BUTTON_GREEN); self.play_btn.setFixedSize(150, 35); self.play_btn.setCursor(Qt.PointingHandCursor); self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.play_btn.clicked.connect(self.toggle_play); self.play_btn.setFocusPolicy(Qt.NoFocus); controls_layout.addWidget(self.play_btn)
-        self.end_trim_button = QPushButton("MARK END"); self.end_trim_button.setStyleSheet(self.BUTTON_BLUE); self.end_trim_button.setFixedSize(150, 35); self.end_trim_button.setCursor(Qt.PointingHandCursor); self.end_trim_button.clicked.connect(self.set_end); self.end_trim_button.setFocusPolicy(Qt.NoFocus); controls_layout.addWidget(self.end_trim_button)
-        controls_layout.addStretch(1); main_layout.addLayout(controls_layout)
-        action_row = QGridLayout(); action_row.setContentsMargins(0, 10, 0, 0); action_row.setHorizontalSpacing(0); action_row.setColumnStretch(0, 1); action_row.setColumnStretch(1, 1); action_row.setColumnStretch(2, 1)
-        left_actions = QHBoxLayout(); left_actions.setSpacing(8); left_actions.setContentsMargins(0, 0, 0, 0); self.clear_all_btn = QPushButton("CLEAR ALL"); self.clear_all_btn.setStyleSheet(self.BUTTON_STANDARD); self.clear_all_btn.clicked.connect(self.clear_all_segments); self.clear_all_btn.setCursor(Qt.PointingHandCursor); self.clear_all_btn.setFocusPolicy(Qt.NoFocus); self.clear_all_btn.setFixedSize(100, 35); left_actions.addWidget(self.clear_all_btn); self.delete_seg_btn = QPushButton("DELETE SPEED SEGMENT"); self.delete_seg_btn.setStyleSheet(self.BUTTON_STANDARD); self.delete_seg_btn.setCursor(Qt.PointingHandCursor); self.delete_seg_btn.clicked.connect(self.delete_current_selected_segment); self.delete_seg_btn.setFocusPolicy(Qt.NoFocus); self.delete_seg_btn.setFixedSize(180, 35); self.delete_seg_btn.setEnabled(False); left_actions.addWidget(self.delete_seg_btn)
-        center_actions = QHBoxLayout(); center_actions.setSpacing(20); center_actions.setContentsMargins(0, 0, 0, 0); self.cancel_btn = QPushButton("CANCEL"); self.cancel_btn.setStyleSheet(self.BUTTON_CANCEL); self.cancel_btn.setFixedSize(105, 35); self.cancel_btn.clicked.connect(self.reject); self.cancel_btn.setCursor(Qt.PointingHandCursor); self.cancel_btn.setFocusPolicy(Qt.NoFocus); center_actions.addWidget(self.cancel_btn); self.save_btn = QPushButton("APPLY"); self.save_btn.setStyleSheet(self.BUTTON_GREEN); self.save_btn.setFixedSize(105, 35); self.save_btn.clicked.connect(self.accept); self.save_btn.setCursor(Qt.PointingHandCursor); self.save_btn.setFocusPolicy(Qt.NoFocus); center_actions.addWidget(self.save_btn)
-        speed_container = QVBoxLayout(); speed_container.setSpacing(3); speed_container.setContentsMargins(0, 0, 0, 0)
-        lbl_speed = QLabel("Segment Speed"); lbl_speed.setStyleSheet("font-size: 11px; font-weight: bold; text-align: right; padding: 0; margin: 0;"); lbl_speed.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.speed_spin = QDoubleSpinBox(); self.speed_spin.setRange(0.1, 4.0); self.speed_spin.setDecimals(1); self.speed_spin.setSingleStep(0.1); self.speed_spin.setValue(self.base_speed); self.speed_spin.setFixedWidth(80); self.speed_spin.setFixedHeight(35); self.speed_spin.setAlignment(Qt.AlignCenter); self.speed_spin.setCursor(Qt.PointingHandCursor); self.speed_spin.setStyleSheet(UIStyles.SPINBOX); self.speed_spin.valueChanged.connect(self.on_speed_changed)
-        speed_container.addWidget(lbl_speed, alignment=Qt.AlignRight); speed_container.addWidget(self.speed_spin, alignment=Qt.AlignRight)
-        preset_grid = QGridLayout(); preset_grid.setHorizontalSpacing(4); preset_grid.setVerticalSpacing(4); preset_grid.setContentsMargins(0, 0, 0, 0)
+        button.update()
+
+    def _build_video_overlays(self):
+        from developer_tools.config import UI_LAYOUT
+        self.video_legend_overlay = QFrame(self)
+        self.video_legend_overlay.setObjectName("granularLegendOverlay")
+        self.video_legend_overlay.setStyleSheet(
+            "QFrame#granularLegendOverlay { background-color: rgba(20, 45, 55, 190); "
+            "border: 1px solid #1f3545; border-radius: 5px; }"
+        )
+        legend_l = QVBoxLayout(self.video_legend_overlay)
+        legend_l.setContentsMargins(7, 7, 7, 7)
+        legend_l.setSpacing(6)
+        for chip in (
+            self._make_legend_chip("FASTER", "#2ecc71"),
+            self._make_legend_chip("SLOWER", "#e74c3c"),
+            self._make_legend_chip("FREEZE", "#9b59b6"),
+            self._make_legend_chip("PENDING", "#34495e", dashed=True),
+            self._make_legend_chip("ACTIVE", "#34495e", outline=True),
+        ):
+            legend_l.addWidget(chip)
+
+        self.video_zoom_overlay = QFrame(self)
+        self.video_zoom_overlay.setObjectName("granularZoomOverlay")
+        self.video_zoom_overlay.setStyleSheet(
+            "QFrame#granularZoomOverlay { background-color: rgba(20, 45, 55, 190); "
+            "border: 1px solid #1f3545; border-radius: 5px; }"
+        )
+        zoom_l = QHBoxLayout(self.video_zoom_overlay)
+        zoom_l.setContentsMargins(5, 4, 5, 4)
+        zoom_l.setSpacing(4)
+        self.zoom_out_btn = QPushButton("-")
+        self.zoom_fit_btn = QPushButton("FIT")
+        self.zoom_in_btn = QPushButton("+")
+        for btn, tip in (
+            (self.zoom_out_btn, "Zoom out on the timeline"),
+            (self.zoom_fit_btn, "Fit the full clip in the timeline"),
+            (self.zoom_in_btn, "Zoom in around the current playhead"),
+        ):
+            btn.setFixedSize(34 if btn is not self.zoom_fit_btn else 42, UI_LAYOUT.BUTTON_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setToolTip(tip)
+            self._set_button_class(btn, 'primary')
+            zoom_l.addWidget(btn)
+        self.zoom_out_btn.clicked.connect(lambda: self._zoom_timeline(2.0))
+        self.zoom_fit_btn.clicked.connect(self._fit_timeline)
+        self.zoom_in_btn.clicked.connect(lambda: self._zoom_timeline(0.5))
+
+    def _update_video_overlays(self):
+        if not hasattr(self, "video_frame"):
+            return
+        for attr in ("video_legend_overlay", "video_zoom_overlay"):
+            overlay = getattr(self, attr, None)
+            if overlay:
+                overlay.adjustSize()
+                overlay.show()
+                overlay.raise_()
+        legend = getattr(self, "video_legend_overlay", None)
+        zoom = getattr(self, "video_zoom_overlay", None)
+        geo = self.video_frame.geometry()
+        if legend:
+            legend.move(geo.left() + 10, geo.top() + 12)
+        if zoom:
+            zoom.move(geo.right() - zoom.width() - 12, geo.bottom() - zoom.height() - 12)
+
+    def init_ui(self):
+        from developer_tools.config import UI_LAYOUT, UI_COLORS
+        self.setStyleSheet(f"QDialog {{ background-color: {UI_COLORS.BACKGROUND_MEDIUM}; color: {UI_COLORS.TEXT_PRIMARY}; font-family: 'Segoe UI', sans-serif; }} QToolTip {{ border: 1px solid {UI_COLORS.BORDER_ACCENT}; background-color: {UI_COLORS.BACKGROUND_DARK}; color: white; }}")
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(16, 16, 16, 20)
+        main_layout.setSpacing(12)
+
+        self.video_frame = QWidget()
+        self.video_frame.setStyleSheet(f"background-color: {UI_COLORS.BACKGROUND_DARK}; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 4px;")
+        self.video_frame.setMinimumHeight(360)
+        self.video_frame.setFocusPolicy(Qt.NoFocus)
+        main_layout.addWidget(self.video_frame, stretch=1)
+        self._build_video_overlays()
+
+        self.timeline = GranularTimelineSlider(self)
+        self.timeline.setRange(0, int(self.duration))
+        self.timeline.setFixedHeight(64)
+        self.timeline.sliderMoved.connect(self._on_timeline_moved)
+        self.timeline.sliderReleased.connect(self._on_timeline_released)
+        self.timeline.trim_times_changed.connect(self.on_trim_changed)
+        self.timeline.setToolTip("Drag the playhead, drag orange handles, click a colored segment to edit it")
+        main_layout.addWidget(self.timeline)
+
+        readout_row = QHBoxLayout()
+        readout_row.setContentsMargins(2, 0, 2, 0)
+        readout_row.setSpacing(8)
+        self.readout_labels = {
+            "start": self._make_readout_label("START --"),
+            "end": self._make_readout_label("END --"),
+            "duration": self._make_readout_label("DUR --"),
+            "speed": self._make_readout_label("SPEED --"),
+            "output": self._make_readout_label("OUT --"),
+        }
+        readout_row.addStretch(1)
+        for label in self.readout_labels.values():
+            readout_row.addWidget(label)
+        readout_row.addStretch(1)
+        main_layout.addLayout(readout_row)
+
+        # Control Cluster
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(8)
+
+        # Freeze Group
+        self.freeze_group = QFrame()
+        self.freeze_group.setStyleSheet(f"QFrame {{ background: {UI_COLORS.BACKGROUND_DARK}; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 6px; padding: 2px; }}")
+        fg_l = QHBoxLayout(self.freeze_group)
+        fg_l.setContentsMargins(6, 2, 6, 2)
+        fg_l.setSpacing(8)
+
+        self.freeze_btn = QPushButton("FREEZE IMAGE")
+        self.freeze_btn.setProperty('class', 'primary')
+        self.freeze_btn.setFixedSize(126, UI_LAYOUT.BUTTON_HEIGHT)
+        self.freeze_btn.setCursor(Qt.PointingHandCursor)
+        self.freeze_btn.setFocusPolicy(Qt.NoFocus)
+        self.freeze_btn.setToolTip("Freeze the current frame for the selected duration")
+        self._set_button_class(self.freeze_btn, 'primary')
+        self.freeze_btn.clicked.connect(self.freeze_image)
+
+        self.freeze_sec_spin = QDoubleSpinBox()
+        self.freeze_sec_spin.setRange(FREEZE_MIN_SEC, FREEZE_MAX_SEC)
+        self.freeze_sec_spin.setSuffix("s")
+        self.freeze_sec_spin.setFixedSize(56, UI_LAYOUT.BUTTON_HEIGHT)
+        self.freeze_sec_spin.setAlignment(Qt.AlignCenter)
+        self.freeze_sec_spin.setStyleSheet(UIStyles.SPINBOX)
+        self.freeze_sec_spin.setToolTip("Duration for the next freeze frame")
+
+        fg_l.addWidget(self.freeze_btn)
+        fg_l.addWidget(self.freeze_sec_spin)
+        controls_row.addWidget(self.freeze_group)
+
+        controls_row.addStretch(1)
+
+        # Trim Group
+        self.trim_group = QFrame()
+        self.trim_group.setStyleSheet(f"QFrame {{ background: {UI_COLORS.BACKGROUND_DARK}; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 6px; padding: 2px; }}")
+        tg_l = QHBoxLayout(self.trim_group)
+        tg_l.setContentsMargins(6, 2, 6, 2)
+        tg_l.setSpacing(6)
+
+        self.start_trim_button = QPushButton("MARK START")
+        self.start_trim_button.setProperty('class', 'primary')
+        self.start_trim_button.setFixedSize(90, UI_LAYOUT.BUTTON_HEIGHT)
+        self.start_trim_button.setCursor(Qt.PointingHandCursor)
+        self.start_trim_button.setFocusPolicy(Qt.NoFocus)
+        self.start_trim_button.setToolTip("Mark the current playhead as the segment start ([)")
+        self._set_button_class(self.start_trim_button, 'primary')
+        self.start_trim_button.clicked.connect(self.set_start)
+
+        self.play_btn = QPushButton("PLAY")
+        self.play_btn.setProperty('class', 'success')
+        self.play_btn.setFixedSize(80, UI_LAYOUT.BUTTON_HEIGHT)
+        self.play_btn.setCursor(Qt.PointingHandCursor)
+        self.play_btn.setFocusPolicy(Qt.NoFocus)
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+        self.play_btn.setToolTip("Play or pause preview (Space)")
+        self._set_button_class(self.play_btn, 'success')
+        self.play_btn.clicked.connect(self.toggle_play)
+
+        self.end_trim_button = QPushButton("MARK END")
+        self.end_trim_button.setProperty('class', 'primary')
+        self.end_trim_button.setFixedSize(90, UI_LAYOUT.BUTTON_HEIGHT)
+        self.end_trim_button.setCursor(Qt.PointingHandCursor)
+        self.end_trim_button.setFocusPolicy(Qt.NoFocus)
+        self.end_trim_button.setToolTip("Mark the current playhead as the segment end (])")
+        self._set_button_class(self.end_trim_button, 'primary')
+        self.end_trim_button.clicked.connect(self.set_end)
+
+        tg_l.addWidget(self.start_trim_button)
+        tg_l.addWidget(self.play_btn)
+        tg_l.addWidget(self.end_trim_button)
+        controls_row.addWidget(self.trim_group)
+
+        controls_row.addStretch(1)
+        main_layout.addLayout(controls_row)
+
+        # Action & Speed Row
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(16)
+
+        # Left Actions
+        left_actions = QHBoxLayout()
+        left_actions.setSpacing(8)
+        self.clear_all_btn = QPushButton("CLEAR ALL")
+        self.clear_all_btn.setFixedSize(90, UI_LAYOUT.BUTTON_HEIGHT)
+        self.clear_all_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_all_btn.setFocusPolicy(Qt.NoFocus)
+        self.clear_all_btn.setToolTip("Remove every speed and freeze segment")
+        self._set_button_class(self.clear_all_btn, 'primary')
+        self.clear_all_btn.clicked.connect(self.clear_all_segments)
+
+        self.delete_seg_btn = QPushButton("DELETE SEGMENT")
+        self.delete_seg_btn.setFixedSize(130, UI_LAYOUT.BUTTON_HEIGHT)
+        self.delete_seg_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_seg_btn.setFocusPolicy(Qt.NoFocus)
+        self.delete_seg_btn.setToolTip("Delete the active segment (Delete)")
+        self.delete_seg_btn.clicked.connect(self.delete_current_selected_segment)
+        self.delete_seg_btn.setEnabled(False)
+        self._set_button_class(self.delete_seg_btn, 'primary')
+
+        left_actions.addWidget(self.clear_all_btn)
+        left_actions.addWidget(self.delete_seg_btn)
+        bottom_row.addLayout(left_actions)
+
+        bottom_row.addStretch(1)
+
+        # Center: Apply/Cancel
+        center_actions = QHBoxLayout()
+        center_actions.setSpacing(12)
+        self.cancel_btn = QPushButton("CANCEL")
+        self.cancel_btn.setProperty('class', 'warning')
+        self.cancel_btn.setFixedSize(90, UI_LAYOUT.BUTTON_HEIGHT)
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setFocusPolicy(Qt.NoFocus)
+        self.cancel_btn.setToolTip("Close without applying changes")
+        self._set_button_class(self.cancel_btn, 'warning')
+        self.cancel_btn.clicked.connect(self.reject)
+
+        self.save_btn = QPushButton("APPLY")
+        self.save_btn.setProperty('class', 'success')
+        self.save_btn.setFixedSize(180, UI_LAYOUT.BUTTON_HEIGHT)
+        self.save_btn.setCursor(Qt.PointingHandCursor)
+        self.save_btn.setFocusPolicy(Qt.NoFocus)
+        self.save_btn.setToolTip("Apply speed and freeze segments to the main timeline")
+        self._set_button_class(self.save_btn, 'success')
+        self.save_btn.clicked.connect(self.accept)
+
+        center_actions.addWidget(self.cancel_btn)
+        center_actions.addWidget(self.save_btn)
+        bottom_row.addLayout(center_actions)
+
+        bottom_row.addStretch(1)
+
+        # Right: Speed Controls
+        speed_panel = QFrame()
+        speed_panel.setStyleSheet(f"QFrame {{ background: {UI_COLORS.BACKGROUND_DARK}; border: 1px solid {UI_COLORS.BORDER_MEDIUM}; border-radius: 6px; padding: 4px; }}")
+        sp_l = QHBoxLayout(speed_panel)
+        sp_l.setContentsMargins(8, 2, 8, 2)
+        sp_l.setSpacing(12)
+
+        # Presets
+        preset_grid = QGridLayout()
+        preset_grid.setSpacing(1)
         self.speed_preset_buttons = []
-        for row, entries in enumerate(((("0.1x", 0.1), ("0.5x", 0.5), ("1.0x", 1.0), ("1.5x", 1.5)), (("2.0x", 2.0), ("2.5x", 2.5), ("3.0x", 3.0), ("3.5x", 3.5), ("4.0x", 4.0)))):
-            for col, (label, value) in enumerate(entries):
-                btn = QPushButton(label); btn.setStyleSheet(self.BUTTON_PRESET); btn.setFixedSize(40, 20); btn.setCursor(Qt.PointingHandCursor); btn.setFocusPolicy(Qt.NoFocus); btn.clicked.connect(lambda _=False, v=value: self._apply_speed_preset(v)); preset_grid.addWidget(btn, row, col); self.speed_preset_buttons.append(btn)
-        speed_and_btn_layout = QHBoxLayout(); speed_and_btn_layout.setSpacing(10); speed_and_btn_layout.setContentsMargins(0, 0, 0, 0); speed_and_btn_layout.addLayout(preset_grid); speed_and_btn_layout.addLayout(speed_container); action_row.addLayout(left_actions, 0, 0, Qt.AlignLeft | Qt.AlignVCenter); action_row.addLayout(center_actions, 0, 1, Qt.AlignCenter); action_row.addLayout(speed_and_btn_layout, 0, 2, Qt.AlignRight | Qt.AlignVCenter); main_layout.addLayout(action_row); self._update_clear_all_btn_state()
+        presets = [("0.5x", 0.5), ("1.0x", 1.0), ("1.5x", 1.5), ("2.0x", 2.0), ("3.0x", 3.0), ("4.0x", 4.0)]
+        for i, (label, val) in enumerate(presets):
+            btn = QPushButton(label)
+            btn.setProperty('class', 'primary')
+            btn.setFixedSize(46, 22)
+            btn.setToolTip(f"Set selected segment speed to {label}")
+            self._set_button_class(btn, 'primary')
+            btn.clicked.connect(lambda _=False, v=val: self._apply_speed_preset(v))
+            preset_grid.addWidget(btn, i // 3, i % 3)
+            self.speed_preset_buttons.append((btn, val))
+        sp_l.addLayout(preset_grid)
+
+        # Precise Speed
+        prec_l = QVBoxLayout()
+        prec_l.setSpacing(2)
+        speed_lbl = QLabel("SEGMENT SPEED")
+        speed_lbl.setStyleSheet(f"color: {UI_COLORS.TEXT_SECONDARY}; font-size: 9px; font-weight: bold;")
+        speed_lbl.setAlignment(Qt.AlignCenter)
+        self.speed_spin = QDoubleSpinBox()
+        self.speed_spin.setRange(0.1, 4.0)
+        self.speed_spin.setSingleStep(0.1)
+        self.speed_spin.setDecimals(1)
+        self.speed_spin.setFixedSize(64, UI_LAYOUT.BUTTON_HEIGHT)
+        self.speed_spin.setAlignment(Qt.AlignCenter)
+        self.speed_spin.setStyleSheet(UIStyles.SPINBOX)
+        self.speed_spin.setToolTip("Precise speed for the active or pending segment")
+        self.speed_spin.valueChanged.connect(self.on_speed_changed)
+        prec_l.addWidget(speed_lbl)
+        prec_l.addWidget(self.speed_spin)
+        sp_l.addLayout(prec_l)
+
+        bottom_row.addWidget(speed_panel)
+        main_layout.addLayout(bottom_row)
+        self._update_preset_button_styles()
+        self._update_selection_readout()
+        self._update_zoom_button_state()
+        self._update_clear_all_btn_state()
+        self._install_timeline_zoom_wheel_filters()
+        QTimer.singleShot(0, self._update_video_overlays)
 
     def setup_player(self, attempt=0):
         if not self.input_file_path: return
@@ -533,6 +1145,8 @@ class GranularSpeedEditor(QDialog):
                     else:
                         self._set_default_pending_range()
                     self.selection_modified = False
+                    self._update_selection_readout()
+                    self._update_apply_button_label()
                     QTimer.singleShot(250, self._finalize_startup)
                 elif bind_attempt < 40:
                     QTimer.singleShot(100, lambda: _get_dur(bind_attempt + 1))
@@ -549,7 +1163,9 @@ class GranularSpeedEditor(QDialog):
         self._pending_seek = None
         self._stop_seek_timer()
         self._issue_seek_now(self.last_position_ms, True)
+        self.timeline.ensure_value_visible(int(self.start_time_ms))
         self.timeline.setValue(int(self.start_time_ms)); self.play_btn.setText("PLAY"); self.play_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay)); self.is_playing = False
+        self._update_selection_readout()
 
     def _preview_wid(self):
         try:
@@ -578,7 +1194,8 @@ class GranularSpeedEditor(QDialog):
         self._safe_mpv_set("force_window", "no")
         if wid_changed:
             try:
-                self.player.command("video-reload")
+                if self._safe_mpv_get("path", ""):
+                    self._safe_mpv_command("video-reload")
             except Exception:
                 pass
         return True
@@ -608,6 +1225,16 @@ class GranularSpeedEditor(QDialog):
             else: self.delete_current_selected_segment()
             event.accept()
         else: super().keyPressEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and self._handle_timeline_zoom_wheel(event):
+            return True
+        return super().eventFilter(obj, event)
+
+    def wheelEvent(self, event):
+        if self._handle_timeline_zoom_wheel(event):
+            return
+        super().wheelEvent(event)
 
     def seek_relative(self, ms):
         if not self.player: return
@@ -639,6 +1266,7 @@ class GranularSpeedEditor(QDialog):
         else:
             e = self._clamp_selection_end(e, s)
         if e - s < MIN_SEGMENT_MS:
+            self.timeline.flash_blocked_edge(e)
             self._emit_error("Segment too short or blocked by a neighboring segment.")
             return False
         speed = float(self.speed_spin.value())
@@ -648,6 +1276,7 @@ class GranularSpeedEditor(QDialog):
             self.timeline.stop_ants()
             return True
         if self._check_collision(s, e):
+            self.timeline.flash_blocked_edge(s)
             self._emit_error("Collision: segment overlaps another segment.")
             return False
         new_seg = {'start': s, 'end': e, 'speed': speed}
@@ -708,9 +1337,11 @@ class GranularSpeedEditor(QDialog):
                     end = min(end, seg['start'])
                     break
             if end - start < MIN_SEGMENT_MS:
+                self.timeline.flash_blocked_edge(start)
                 self._emit_error("Collision: this freeze overlaps an existing speed segment.")
                 return
             if self._check_collision(start, end):
+                self.timeline.flash_blocked_edge(end)
                 self._emit_error("Collision: this freeze overlaps an existing speed segment.")
                 return
             shrunk = True
@@ -723,9 +1354,9 @@ class GranularSpeedEditor(QDialog):
         self.list_modified = True; self._update_clear_all_btn_state()
         actual_dur_sec = (end - start) / 1000.0
         if shrunk:
-            self._emit_info(f"Frame frozen for {actual_dur_sec:.1f}s at {self._fmt(start)} (shrunk to fit; gameplay in this range is replaced).")
+            self._emit_info(f"Frame frozen for {actual_dur_sec:.1f}s at {self._fmt(start)} (shrunk to fit; no frames skipped).")
         else:
-            self._emit_info(f"Frame frozen for {actual_dur_sec:.1f}s at {self._fmt(start)} (gameplay in this range is replaced).")
+            self._emit_info(f"Frame frozen for {actual_dur_sec:.1f}s at {self._fmt(start)} (no frames skipped).")
 
     def _fmt(self, ms: int) -> str:
         s = max(0, int(ms) // 1000); h, s = divmod(s, 3600); m, s = divmod(s, 60)
@@ -823,6 +1454,11 @@ class GranularSpeedEditor(QDialog):
         if not self.player: return
         rel_pos = self._normalize_seek_position(pos)
         self.last_position_ms = rel_pos
+        try:
+            self.timeline.ensure_value_visible(rel_pos)
+            self._update_zoom_button_state()
+        except Exception:
+            pass
         self.update_playback_speed(rel_pos)
         if exact:
             self._pending_seek = None
@@ -857,6 +1493,7 @@ class GranularSpeedEditor(QDialog):
                     self._safe_mpv_command("seek", (self.abs_trim_start + resume_rel) / 1000.0, "absolute", "exact")
                     self.update_playback_speed(resume_rel)
                     self._safe_mpv_set("pause", False)
+                    self.timeline.ensure_value_visible(resume_rel)
                     self.timeline.blockSignals(True); self.timeline.setValue(resume_rel); self.timeline.blockSignals(False); self.timeline.update()
                     self.last_position_ms = resume_rel
                 return
@@ -867,12 +1504,12 @@ class GranularSpeedEditor(QDialog):
                 self.timeline.set_trim_times(start, end)
                 self.update_pending_visualization()
             if not self.timeline.isSliderDown():
-                if curr_rel >= self.duration: 
+                if curr_rel >= self.duration:
                     self.pause_video()
                     curr_rel = self.duration
                     self.seek_video(self.duration, exact=True)
                 elif curr_rel < 0: curr_rel = 0
-                t_i = int(round(curr_rel)); self.timeline.blockSignals(True); self.timeline.setValue(t_i); self.timeline.blockSignals(False); self.timeline.update()
+                t_i = int(round(curr_rel)); self.timeline.ensure_value_visible(t_i); self.timeline.blockSignals(True); self.timeline.setValue(t_i); self.timeline.blockSignals(False); self.timeline.update()
                 self.update_playback_speed(t_i); self.last_position_ms = t_i
         finally: self._updating_ui = False
 
@@ -903,6 +1540,7 @@ class GranularSpeedEditor(QDialog):
     def on_speed_changed(self, val):
         if getattr(self, "_suppress_speed_change_flag", False):
             self.update_pending_visualization()
+            self._update_preset_button_styles()
             self.update_playback_speed(self.last_position_ms)
             return
         idx = self.timeline.active_segment_index
@@ -915,6 +1553,7 @@ class GranularSpeedEditor(QDialog):
         elif self.timeline.trimmed_start_ms >= 0 and self.timeline.trimmed_end_ms > self.timeline.trimmed_start_ms:
             self.selection_modified = True
         self.update_pending_visualization()
+        self._update_preset_button_styles()
         self.update_playback_speed(self.last_position_ms)
 
     def on_trim_changed(self, s, e):
@@ -925,10 +1564,12 @@ class GranularSpeedEditor(QDialog):
             new_end = int(e)
             if new_end - new_start < MIN_SEGMENT_MS:
                 self.timeline.set_trim_times(seg['start'], seg['end'])
+                self.timeline.flash_blocked_edge(new_end)
                 self.update_pending_visualization()
                 return
             if self._check_collision(new_start, new_end, exclude_idx=idx):
                 self.timeline.set_trim_times(seg['start'], seg['end'])
+                self.timeline.flash_blocked_edge(new_start if abs(new_start - seg['start']) > abs(new_end - seg['end']) else new_end)
                 self._emit_error("Collision: segment overlaps another segment.")
                 self.update_pending_visualization()
                 return
@@ -946,14 +1587,22 @@ class GranularSpeedEditor(QDialog):
         s, e = self.timeline.trimmed_start_ms, self.timeline.trimmed_end_ms
         if self.timeline.active_segment_index != -1:
             self.timeline.set_pending_segment(-1, -1, self.speed_spin.value())
+            self._update_selection_readout()
+            self._update_apply_button_label()
             return
         if s < 0 or e <= s:
             self.timeline.set_pending_segment(-1, -1, self.speed_spin.value())
+            self._update_selection_readout()
+            self._update_apply_button_label()
             return
         if not (getattr(self, "_pending_segment_active", False) or getattr(self, "_start_manually_set", False)):
             self.timeline.set_pending_segment(-1, -1, self.speed_spin.value())
+            self._update_selection_readout()
+            self._update_apply_button_label()
             return
         self.timeline.set_pending_segment(s, e, self.speed_spin.value())
+        self._update_selection_readout()
+        self._update_apply_button_label()
 
     def _update_delete_button_label(self, idx):
         if not hasattr(self, "delete_seg_btn"): return
@@ -967,7 +1616,7 @@ class GranularSpeedEditor(QDialog):
         self._pending_segment_active = False
         self._start_manually_set = False
         self.delete_seg_btn.setEnabled(False)
-        self.delete_seg_btn.setStyleSheet(self.BUTTON_STANDARD)
+        self._set_button_class(self.delete_seg_btn, 'primary')
         self._update_delete_button_label(-1)
         self._suppress_speed_change_flag = True
         try:
@@ -977,6 +1626,7 @@ class GranularSpeedEditor(QDialog):
         self.timeline.set_trim_times(-1, -1)
         self.update_pending_visualization()
         self.timeline.stop_ants()
+        self._update_preset_button_styles()
 
     def edit_segment(self, idx):
         if 0 <= idx < len(self.speed_segments):
@@ -985,16 +1635,18 @@ class GranularSpeedEditor(QDialog):
             self._start_manually_set = False
             self.timeline.active_segment_index = idx
             self.timeline.set_trim_times(seg['start'], seg['end'])
+            self.timeline.ensure_range_visible(seg['start'], seg['end'])
             self._suppress_speed_change_flag = True
             try:
                 self.speed_spin.setValue(seg['speed'])
             finally:
                 self._suppress_speed_change_flag = False
             self.delete_seg_btn.setEnabled(True)
-            self.delete_seg_btn.setStyleSheet(self.BUTTON_DANGER)
+            self._set_button_class(self.delete_seg_btn, 'danger')
             self._update_delete_button_label(idx)
             self.update_pending_visualization()
-            self.timeline.start_ants()
+            self.timeline.stop_ants()
+            self._update_preset_button_styles()
 
     def add_segment(self):
         self._commit_pending_segment()
@@ -1038,6 +1690,7 @@ class GranularSpeedEditor(QDialog):
         preview_end = max(preview_end, anchor + MIN_SEGMENT_MS)
         preview_end = min(preview_end, high)
         self.timeline.set_trim_times(anchor, preview_end)
+        self.timeline.ensure_range_visible(anchor, preview_end)
         self._start_manually_set = True
         self._pending_segment_active = True
         self.timeline.start_ants()
@@ -1053,6 +1706,7 @@ class GranularSpeedEditor(QDialog):
             s, e = self._auto_range_ending_at(e)
         self.timeline.active_segment_index = -1
         self.timeline.set_trim_times(s, e)
+        self.timeline.ensure_range_visible(s, e)
         self._pending_segment_active = True
         created = False
         if e - s >= MIN_SEGMENT_MS:
@@ -1091,7 +1745,8 @@ class GranularSpeedEditor(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         QTimer.singleShot(0, lambda: self._bind_player_to_preview(True))
-        if self.timeline.active_segment_index != -1 or getattr(self, "_start_manually_set", False):
+        QTimer.singleShot(0, self._update_video_overlays)
+        if getattr(self, "_pending_segment_active", False) or getattr(self, "_start_manually_set", False):
             self.timeline.start_ants()
 
     def hideEvent(self, event):
@@ -1102,6 +1757,7 @@ class GranularSpeedEditor(QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         QTimer.singleShot(0, lambda: self._bind_player_to_preview(True))
+        QTimer.singleShot(0, self._update_video_overlays)
 
     def closeEvent(self, event):
         self.reject()

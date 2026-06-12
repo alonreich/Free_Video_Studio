@@ -2,6 +2,7 @@ import sys
 import os
 import struct
 import platform
+import faulthandler
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +18,14 @@ logger = ConsoleManager.initialize(BASE_DIR, "main_app.log", "Main_App")
 import traceback
 import threading
 import subprocess, ctypes
+NATIVE_FAULT_LOG_HANDLE = None
+try:
+    os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
+    NATIVE_FAULT_LOG_HANDLE = open(os.path.join(BASE_DIR, "logs", "native_fault.log"), "a", encoding="utf-8")
+    faulthandler.enable(file=NATIVE_FAULT_LOG_HANDLE, all_threads=True)
+    logger.info("NATIVE FAULT LOG ACTIVE -> %s", os.path.join(BASE_DIR, "logs", "native_fault.log"))
+except Exception as fault_log_err:
+    logger.warning("NATIVE FAULT LOG unavailable: %s", fault_log_err)
 PID_APP_NAME = "fortnite_video_software_main"
 ORIGINAL_PATH = os.environ.get("PATH", "")
 DEBUG_ENABLED = "--debug" in sys.argv or os.environ.get("FVS_DEBUG") == "1"
@@ -173,8 +182,15 @@ def show_startup_warning(app: QApplication, title: str, text: str):
             try: window.statusBar().showMessage(text, 8000); return
             except Exception: pass
     msg = QMessageBox(); msg.setIcon(QMessageBox.Warning); msg.setWindowTitle(title); msg.setText(text); msg.exec_()
+RECOVERY_INSTANCE = None
+
 def exception_hook(exctype, value, tb):
     error_text = "".join(traceback.format_exception(exctype, value, tb)); logger.critical(f"FATAL: Uncaught exception: {error_text}")
+
+    global RECOVERY_INSTANCE
+    if RECOVERY_INSTANCE:
+        RECOVERY_INSTANCE._skip_cleanup = True
+
     try:
         app = QCoreApplication.instance()
         if app is not None:
@@ -217,23 +233,34 @@ if __name__ == "__main__":
     else: logger.error(f"FILES: FFmpeg core verification failed: {dep_error}")
     app = QCoreApplication.instance()
     if app is None: app = QApplication(sys.argv)
-    
+
     class GlobalKeyboardFilter(QObject):
         def eventFilter(self, obj, event):
             if event.type() == QEvent.KeyPress:
+                # Comprehensive list of input widgets where global shortcuts should be disabled
+                from PyQt5.QtWidgets import QPushButton
+                input_widgets = (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QPushButton)
+                fw = QApplication.focusWidget()
+
+                if isinstance(fw, input_widgets):
+                    return False
+
                 key = event.key()
-                if key in (Qt.Key_Space, Qt.Key_BracketLeft, Qt.Key_BracketRight, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus, Qt.Key_F12, Qt.Key_Return, Qt.Key_Enter):
-                    fw = QApplication.focusWidget()
-                    if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
-                        return False
+                # Mapping of keys to global actions
+                if key in (Qt.Key_Space, Qt.Key_BracketLeft, Qt.Key_BracketRight,
+                          Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down,
+                          Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus, Qt.Key_F12,
+                          Qt.Key_Return, Qt.Key_Enter, Qt.Key_Z, Qt.Key_Y):
+
                     mw = QApplication.activeWindow()
                     if mw and hasattr(mw, "handle_global_key_press"):
+                        # Only intercept if the window explicitly handles and accepts the event
                         if mw.handle_global_key_press(event):
                             return True
             return False
     kb_filter = GlobalKeyboardFilter(app)
     app.installEventFilter(kb_filter)
-    
+
     app.setStyleSheet(UIStyles.GLOBAL_STYLE); app.setApplicationName(tr("app_name")); QCoreApplication.setOrganizationName("FortniteVideoSoftware"); sys.excepthook = exception_hook; import time; pid_retries = 3; success = False; pid_handle = None
     for attempt in range(pid_retries):
         success, pid_handle = ProcessManager.acquire_pid_lock(PID_APP_NAME)
@@ -247,17 +274,34 @@ if __name__ == "__main__":
         notify_mpv_probe_failure(mpv_hint)
     from system.recovery_manager import RecoveryManager
     recovery = RecoveryManager("main_app", logger)
+    RECOVERY_INSTANCE = recovery
+
+    logger.info(f"BOOT: Checking recovery fault state... (State file: {recovery.state_file.exists()}, Lock file: {recovery.lock_file.exists()})")
+    for h in logger.handlers: h.flush()
     if recovery.check_fault():
+        logger.info("BOOT: Recovery fault detected. Showing dialog.")
+        for h in logger.handlers: h.flush()
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Question)
         msg_box.setWindowTitle(tr("app_name"))
         msg_box.setText("The application crashed last time. Would you like to restore your previous session?")
         msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        for button_role in (QMessageBox.Yes, QMessageBox.No):
+            button = msg_box.button(button_role)
+            if button is not None:
+                button.setMinimumWidth(120)
+                button.setCursor(Qt.PointingHandCursor)
         if msg_box.exec_() == QMessageBox.Yes:
+            logger.info("BOOT: User chose to RESTORE session.")
             os.environ["FVS_RESTORE_SESSION"] = "1"
             recovery.activate_safe_mode()
         else:
+            logger.info("BOOT: User chose NOT to restore session.")
             recovery.clear_state()
+        for h in logger.handlers: h.flush()
+    else:
+        logger.info("BOOT: No recovery fault detected.")
+        for h in logger.handlers: h.flush()
     recovery.acquire_lock()
     app.aboutToQuit.connect(recovery.cleanup_lock)
 

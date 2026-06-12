@@ -1,7 +1,7 @@
-﻿import faulthandler, logging, os, signal, subprocess, sys, time, threading, traceback, weakref
+import faulthandler, logging, os, signal, subprocess, sys, time, threading, traceback, weakref
 from PyQt5.QtCore import (Qt, QTimer, pyqtSignal, QEvent, QRect, QPoint, QSize, QCoreApplication, QThread)
 from PyQt5.QtGui import (QIcon, QPixmap, QColor, QFont, QPainter)
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStyle, QApplication, QLabel, QFrame, QSizePolicy, QProgressBar, QStackedLayout, QPushButton, QCheckBox, QSpinBox, QDoubleSpinBox, QGridLayout)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStyle, QApplication, QLabel, QFrame, QSizePolicy, QProgressBar, QStackedLayout, QPushButton, QCheckBox, QSpinBox, QDoubleSpinBox, QGridLayout, QLineEdit, QSlider, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
 from system.utils import MPVSafetyManager
 from ui.parts.player_mixin import PlayerMixin
 from ui.parts.ui_builder_mixin import UiBuilderMixin
@@ -192,12 +192,6 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self._bind_main_player_output()
         self._restore_recovery_state()
         try:
-            p = getattr(self, "player", None)
-            if p and getattr(self, "input_file_path", None):
-                p.command("video-reload")
-        except Exception:
-            pass
-        try:
             if os.environ.get("FVS_RESTORE_SESSION") == "1":
                 os.environ.pop("FVS_RESTORE_SESSION", None)
         except Exception:
@@ -208,6 +202,7 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
             self._append_live_log(msg)
 
     def _init_core_logic(self, file_path, hardware_strategy):
+        self._restoring_recovery_state = False
         self.input_file_path = None; self.original_duration_ms = 0; self.original_resolution = ""; self.trim_start_ms = 0; self.trim_end_ms = 0
         self.is_playing = False; self.wants_to_play = False; self.playback_rate = 1.1; self.hardware_strategy = hardware_strategy
         self.scan_complete = (hardware_strategy != "Scanning..."); self.speed_segments = []
@@ -220,18 +215,75 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         self.recovery_manager = RecoveryManager("main_app", self.logger)
         self.recovery_timer = QTimer(self)
         self.recovery_timer.timeout.connect(self._save_recovery_state)
-        self.recovery_timer.start(5000)
+        self.recovery_timer.start(10000)
 
-    def _save_recovery_state(self):
+        self.recovery_debounce_timer = QTimer(self)
+        self.recovery_debounce_timer.setSingleShot(True)
+        self.recovery_debounce_timer.timeout.connect(self._save_recovery_state)
+
+        QTimer.singleShot(1000, self._connect_recovery_signals)
+
+    def _trigger_recovery_save(self):
+        if not hasattr(self, "recovery_debounce_timer"): return
+        self.recovery_debounce_timer.start(500)
+
+    def _immediate_recovery_save(self):
+        self._save_recovery_state(sync=True)
+
+    def _connect_recovery_signals(self):
+        try:
+            # Immediate save for these (user likely to crash after manual action)
+            immediate_widgets = [
+                self.start_trim_button, self.end_trim_button, self.thumb_pick_btn,
+                self.music_button, self.granular_button, getattr(self, "granular_clear_button", None)
+            ]
+            for b in immediate_widgets:
+                if b is not None:
+                    try: b.clicked.connect(self._immediate_recovery_save)
+                    except: pass
+
+            # Debounced save for these (continuous adjustments)
+            debounced_widgets = [
+                self.mobile_checkbox, self.teammates_checkbox, self.boss_hp_checkbox,
+                self.granular_checkbox, getattr(self, "no_fade_checkbox", None),
+                self.quality_slider, self.speed_spinbox, self.volume_slider,
+                self.portrait_text_input, self.start_minute_input, self.start_second_input,
+                self.start_ms_input, self.end_minute_input, self.end_second_input, self.end_ms_input
+            ]
+            for w in debounced_widgets:
+                if w is None: continue
+                try:
+                    if hasattr(w, "toggled"): w.toggled.connect(self._trigger_recovery_save)
+                    elif hasattr(w, "valueChanged"): w.valueChanged.connect(self._trigger_recovery_save)
+                    elif hasattr(w, "textChanged"): w.textChanged.connect(self._trigger_recovery_save)
+                except: pass
+
+            if hasattr(self, "positionSlider"):
+                self.positionSlider.valueChanged.connect(self._trigger_recovery_save)
+                if hasattr(self.positionSlider, "trim_times_changed"):
+                    self.positionSlider.trim_times_changed.connect(self._immediate_recovery_save)
+                if hasattr(self.positionSlider, "music_trim_changed"):
+                    self.positionSlider.music_trim_changed.connect(self._immediate_recovery_save)
+        except Exception as e:
+            self.logger.debug(f"RECOVERY: Signal binding error: {e}")
+
+    def _save_recovery_state(self, sync=False):
         if not hasattr(self, "recovery_manager"): return
         if getattr(self, "_restoring_recovery_state", False): return
+
+        input_path = getattr(self, "source_file_path", None) or self.input_file_path
+        if not input_path:
+            return
+
         music_tracks = _serialize_recovery_music_tracks(getattr(self, "_wizard_tracks", []))
         has_music = bool(music_tracks)
         music_start_ms = _recovery_int(getattr(self, "music_timeline_start_ms", 0), 0)
         music_end_ms = _recovery_int(getattr(self, "music_timeline_end_ms", 0), 0)
         if has_music and music_end_ms <= music_start_ms:
             music_start_ms = _recovery_int(getattr(self, "trim_start_ms", 0), 0)
-            track_duration_ms = int(round(float(music_tracks[0].get("duration_sec", 0.0) or 0.0) * 1000.0))
+            try:
+                track_duration_ms = int(round(float(music_tracks[0].get("duration_sec", 0.0) or 0.0) * 1000.0))
+            except: track_duration_ms = 0
             trim_end_ms = _recovery_int(getattr(self, "trim_end_ms", 0), 0)
             music_end_ms = trim_end_ms if trim_end_ms > music_start_ms else music_start_ms + max(0, track_duration_ms)
         speed_value = _recovery_float(self.speed_spinbox.value() if hasattr(self, "speed_spinbox") else getattr(self, "playback_rate", 1.1), 1.1)
@@ -241,9 +293,11 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
             selected_intro_sec = _recovery_float(thumbnail_ms, 0.0) / 1000.0
         state = {
             "assets": {
-                "input_file_path": getattr(self, "source_file_path", None) or self.input_file_path,
+                "input_file_path": input_path,
                 "wizard_tracks": music_tracks,
-                "current_music_path": getattr(self, "_current_music_path", None)
+                "current_music_path": getattr(self, "_current_music_path", None),
+                "original_resolution": getattr(self, "original_resolution", None),
+                "original_duration_ms": getattr(self, "original_duration_ms", 0)
             },
             "volatile_settings": {
                 "trim_start_ms": self.trim_start_ms,
@@ -259,12 +313,13 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
                 "music_timeline_end_ms": music_end_ms,
                 "thumbnail_pos_ms": thumbnail_ms,
                 "selected_intro_abs_time_sec": selected_intro_sec,
-                "hardware_strategy": self.hardware_strategy
+                "hardware_strategy": self.hardware_strategy,
+                "target_mb_override": getattr(self, "target_mb_override", None)
             },
             "ui_dynamics": {
                 "mobile_checked": self.mobile_checkbox.isChecked() if hasattr(self, "mobile_checkbox") else False,
                 "teammates_checked": self.teammates_checkbox.isChecked() if hasattr(self, "teammates_checkbox") else False,
-                "boss_hp_checked": self.boss_hp_checkbox.isChecked() if hasattr(self, "boss_hp_checkbox") else False,
+                "boss_hp_checked": self.boss_hp_checkbox.isChecked() if hasattr(self, "boss_hp_checked") else False,
                 "granular_checked": self.granular_checkbox.isChecked() if hasattr(self, "granular_checkbox") else False,
                 "no_fade_checked": getattr(self, "no_fade_checkbox", None).isChecked() if getattr(self, "no_fade_checkbox", None) else False,
                 "portrait_text": self.portrait_text_input.text() if hasattr(self, "portrait_text_input") else "",
@@ -275,7 +330,11 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
                 "slider_value_ms": self.positionSlider.value() if hasattr(self, "positionSlider") else 0
             }
         }
-        self.recovery_manager.save_state_async(state)
+        self.logger.info(f"RECOVERY: Saving state (Sync={sync}). File: {input_path}")
+        if sync:
+            self.recovery_manager.save_state(state)
+        else:
+            self.recovery_manager.save_state_async(state)
 
     def _restore_recovery_state(self):
         if os.environ.get("FVS_RESTORE_SESSION") != "1": return
@@ -289,10 +348,15 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         f = a.get("input_file_path")
         if f and os.path.exists(f):
             self.handle_file_selection(f)
+            self.original_resolution = a.get("original_resolution", self.original_resolution)
+            self.original_duration_ms = a.get("original_duration_ms", self.original_duration_ms)
             self.trim_start_ms = _recovery_int(v.get("trim_start_ms", 0), 0)
             self.trim_end_ms = _recovery_int(v.get("trim_end_ms", self.trim_end_ms), self.trim_end_ms)
             self.playback_rate = _recovery_float(v.get("playback_rate", 1.1), 1.1)
             self.speed_segments = _normalize_recovery_speed_segments(v.get("speed_segments", []))
+            self.hardware_strategy = v.get("hardware_strategy", self.hardware_strategy)
+            self.target_mb_override = v.get("target_mb_override", None)
+
             if hasattr(self, "speed_spinbox"): self.speed_spinbox.setValue(self.playback_rate)
             if hasattr(self, "volume_slider"): self.volume_slider.setValue(v.get("video_mix_volume", 100))
             if hasattr(self, "quality_slider"): self.quality_slider.setValue(v.get("quality_slider_index", 7))
@@ -334,10 +398,10 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
                 self._safe_mpv_command("loadfile", self._current_music_path, "replace", target_player=self._music_preview_player)
                 self._safe_mpv_set("volume", self._music_volume_pct, target_player=self._music_preview_player)
             self.logger.info(
-                "RECOVERY: Restored trim=%s-%sms speed=%.3fx music=%s tracks=%d quality=%s thumbnail=%s granular=%d",
+                "RECOVERY: Restored trim=%s-%sms speed=%.3fx music=%s tracks=%d quality=%s thumbnail=%s granular=%d hw=%s",
                 self.trim_start_ms, self.trim_end_ms, self.playback_rate, bool(self._wizard_tracks),
                 len(self._wizard_tracks), v.get("quality_slider_index", 7), v.get("thumbnail_pos_ms", 0),
-                len(self.speed_segments),
+                len(self.speed_segments), self.hardware_strategy
             )
             _safe_single_shot(1000, lambda: self._apply_restored_slider_state(v, u))
         else:
@@ -448,10 +512,39 @@ class FortniteVideoSoftware(QMainWindow, PlayerMixin, UiBuilderMixin, VolumeMixi
         except: pass
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls(): event.accept()
-        else: event.ignore()
+        if event.mimeData().hasUrls():
+            event.accept()
+            if hasattr(self, "upload_hint_container") and self.upload_hint_container and getattr(self, "_upload_hint_active", False):
+                self.upload_hint_container.setStyleSheet(
+                    'QFrame#uploadHintContainer {'
+                    '  background-color: rgba(15, 23, 42, 0.92);'
+                    '  border: 2px solid #7DD3FC;'
+                    '  border-radius: 20px;'
+                    '}'
+                )
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        if hasattr(self, "upload_hint_container") and self.upload_hint_container and getattr(self, "_upload_hint_active", False):
+            self.upload_hint_container.setStyleSheet(
+                'QFrame#uploadHintContainer {'
+                '  background-color: rgba(15, 23, 42, 0.82);'
+                '  border: 2px dashed rgba(125, 211, 252, 0.4);'
+                '  border-radius: 20px;'
+                '}'
+            )
+        event.accept()
 
     def dropEvent(self, event):
+        if hasattr(self, "upload_hint_container") and self.upload_hint_container and getattr(self, "_upload_hint_active", False):
+            self.upload_hint_container.setStyleSheet(
+                'QFrame#uploadHintContainer {'
+                '  background-color: rgba(15, 23, 42, 0.82);'
+                '  border: 2px dashed rgba(125, 211, 252, 0.4);'
+                '  border-radius: 20px;'
+                '}'
+            )
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         if files: self.handle_file_selection(files[0])
 

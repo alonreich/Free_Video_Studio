@@ -1,4 +1,4 @@
-﻿import subprocess
+import subprocess
 import shutil
 import os
 import sys
@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QSizePolicy,
     QGridLayout,
+    QSplitter,
 )
 
 from system.utils import MPVSafetyManager
@@ -62,7 +63,10 @@ class _CenteredTextDelegate(QStyledItemDelegate):
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
-        option.displayAlignment = Qt.AlignCenter
+        if index.column() == 0:
+            option.displayAlignment = Qt.AlignLeft | Qt.AlignVCenter
+        else:
+            option.displayAlignment = Qt.AlignCenter
         if self._fvs_dialog is None:
             dlg = self.parent()
             while dlg and not hasattr(dlg, "_cut_file_paths"):
@@ -335,11 +339,12 @@ class SVGSeekButton(QPushButton):
         painter.setRenderHint(QPainter.Antialiasing)
         
         # Define color based on state
-        color_hex = "#E74C3C"
+        from developer_tools.config import UI_COLORS
+        color_hex = UI_COLORS.PRIMARY
         if self._pressed:
-            color_hex = "#C0392B"
+            color_hex = UI_COLORS.PRIMARY_PRESSED
         elif self._hover:
-            color_hex = "#F1948A"
+            color_hex = UI_COLORS.BORDER_ACCENT
         
         if self.renderer and self.renderer.isValid():
             from PyQt5.QtGui import QImage
@@ -403,6 +408,7 @@ class CustomFileDialog(QFileDialog):
         self._apply_styles()
         self._bind_tree_view()
         self._setup_preview_panel()
+        self._restructure_bottom_layout()
         self._setup_lookin_width()
         self._setup_sidebar()
         self._tune_buttons()
@@ -417,149 +423,227 @@ class CustomFileDialog(QFileDialog):
         self.setWindowTitle("Select Video File(s)")
 
     def _apply_styles(self):
+        from developer_tools.config import UI_COLORS, UI_LAYOUT
         self.setStyleSheet(
-            """
-            QFileDialog#CustomFileDialog {
-                background-color: #212f3d;
-                color: #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QWidget {
-                background-color: #212f3d;
-                color: #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QLabel {
-                color: #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QHeaderView::section {
-                background-color: #2a3c4d;
-                color: #ecf0f1;
+            f"""
+            QFileDialog#CustomFileDialog {{
+                background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+                color: {UI_COLORS.TEXT_PRIMARY};
+            }}
+            QFileDialog#CustomFileDialog QWidget {{
+                background-color: {UI_COLORS.BACKGROUND_MEDIUM};
+                color: {UI_COLORS.TEXT_PRIMARY};
+            }}
+            QFileDialog#CustomFileDialog QLabel {{
+                color: {UI_COLORS.TEXT_PRIMARY};
+            }}
+            QFileDialog#CustomFileDialog QHeaderView::section {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                color: {UI_COLORS.TEXT_PRIMARY};
                 padding: 4px;
                 padding-right: 24px;
-                border: 1px solid #1f2a36;
-            }
-            QFileDialog#CustomFileDialog QTreeView {
-                background-color: #2a3c4d;
-                border: 1px solid #1f2a36;
-            }
-            QFileDialog#CustomFileDialog QListView {
-                background-color: #2a3c4d;
-                border: 1px solid #1f2a36;
-            }
-            QFileDialog#CustomFileDialog QPushButton {
-                background-color: #4fa3e3;
+                border: 1px solid {UI_COLORS.BORDER_DARK};
+            }}
+            QFileDialog#CustomFileDialog QTreeView {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_DARK};
+            }}
+            QFileDialog#CustomFileDialog QListView {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_DARK};
+            }}
+            QFileDialog#CustomFileDialog QPushButton {{
                 color: #ffffff;
-                border: 2px solid #1b4f72;
-                padding: 10px 18px;
-                border-radius: 8px;
+                border-style: solid;
+                border-radius: 4px;
                 font-weight: bold;
-            }
-            QFileDialog#CustomFileDialog QPushButton:hover {
-                background-color: #6bb8f0;
-                border: 2px solid #ecf0f1;
-                cursor: pointer;
-            }
-            QFileDialog#CustomFileDialog QPushButton#openButton {
-                background-color: #336b70;
-                border: 2px solid #1b4f72;
-            }
-            QFileDialog#CustomFileDialog QPushButton#openButton:hover {
-                background-color: #6aa1c5;
-                border: 2px solid #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QPushButton#cancelButton {
-                background-color: #336b70;
-                border: 2px solid #1b4f72;
-            }
-            QFileDialog#CustomFileDialog QPushButton#cancelButton:hover {
-                background-color: #6aa1c5;
-                border: 2px solid #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QFrame#filePreviewPanel {
-                background-color: #18232e;
-                border: 1px solid #31495f;
+                font-size: 10px;
+                padding: 4px 8px;
+                height: 32px;
+                min-height: 32px;
+                max-height: 32px;
+                min-width: 110px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 2px solid rgba(0, 0, 0, 0.6);
+                border-right: 2px solid rgba(0, 0, 0, 0.6);
+                qproperty-cursor: "PointingHandCursor";
+            }}
+            QFileDialog#CustomFileDialog QPushButton:hover {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QFileDialog#CustomFileDialog QPushButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+                border-top: 2px solid rgba(0, 0, 0, 0.7);
+                border-left: 2px solid rgba(0, 0, 0, 0.7);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 6px;
+                padding-left: 10px;
+                padding-bottom: 2px;
+                padding-right: 6px;
+            }}
+            QFileDialog#CustomFileDialog QPushButton#openButton {{
+                color: #ffffff;
+                border-style: solid;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 10px;
+                padding: 4px 8px;
+                height: 32px;
+                min-height: 32px;
+                max-height: 32px;
+                min-width: 110px;
+                max-width: 110px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3a8db0, stop:0.1 #2d7da1, stop:1 #1a5276);
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 2px solid rgba(0, 0, 0, 0.6);
+                border-right: 2px solid rgba(0, 0, 0, 0.6);
+                qproperty-cursor: "PointingHandCursor";
+            }}
+            QFileDialog#CustomFileDialog QPushButton#openButton:hover {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QFileDialog#CustomFileDialog QPushButton#openButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0d2c3d, stop:1 #1a5276);
+                border-top: 2px solid rgba(0, 0, 0, 0.7);
+                border-left: 2px solid rgba(0, 0, 0, 0.7);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 6px;
+                padding-left: 10px;
+                padding-bottom: 2px;
+                padding-right: 6px;
+            }}
+            QFileDialog#CustomFileDialog QPushButton#cancelButton {{
+                color: #ffffff;
+                border-style: solid;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 10px;
+                padding: 4px 8px;
+                height: 32px;
+                min-height: 32px;
+                max-height: 32px;
+                min-width: 110px;
+                max-width: 110px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #a94a4a, stop:0.1 #963d3d, stop:1 #782b2b);
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 2px solid rgba(0, 0, 0, 0.6);
+                border-right: 2px solid rgba(0, 0, 0, 0.6);
+                qproperty-cursor: "PointingHandCursor";
+            }}
+            QFileDialog#CustomFileDialog QPushButton#cancelButton:hover {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QFileDialog#CustomFileDialog QPushButton#cancelButton:pressed {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4d1515, stop:1 #782b2b);
+                border-top: 2px solid rgba(0, 0, 0, 0.7);
+                border-left: 2px solid rgba(0, 0, 0, 0.7);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 6px;
+                padding-left: 10px;
+                padding-bottom: 2px;
+                padding-right: 6px;
+            }}
+            QFileDialog#CustomFileDialog QFrame#filePreviewPanel {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_DARK};
                 border-radius: 8px;
-            }
-            QFileDialog#CustomFileDialog QLabel#filePreviewTitle {
-                color: #FF8800;
+            }}
+            QFileDialog#CustomFileDialog QLabel#filePreviewTitle {{
+                color: {UI_COLORS.BORDER_ACCENT};
                 font-size: 12px;
                 font-weight: bold;
                 padding: 4px;
-                text-decoration: underline;
-            }
-            QFileDialog#CustomFileDialog QLabel#filePreviewStatus {
-                color: #FF8800;
+            }}
+            QFileDialog#CustomFileDialog QLabel#filePreviewStatus {{
+                color: {UI_COLORS.BORDER_ACCENT};
                 font-size: 11px;
                 padding: 4px;
-                text-decoration: underline;
-            }
+            }}
             QFileDialog#CustomFileDialog QLabel#filePreviewTitle:hover,
-            QFileDialog#CustomFileDialog QLabel#filePreviewStatus:hover {
-                color: #FFAA33;
-            }
-            QFileDialog#CustomFileDialog QFrame#filePreviewVideo {
+            QFileDialog#CustomFileDialog QLabel#filePreviewStatus:hover {{
+                color: #9cdffa;
+            }}
+            QFileDialog#CustomFileDialog QFrame#filePreviewVideo {{
                 background-color: #05080c;
-                border: 1px solid #0d141b;
-            }
-            QFileDialog#CustomFileDialog QRubberBand {
-                border: 1px solid #5dade2;
+                border: 1px solid {UI_COLORS.BORDER_DARK};
+            }}
+            QFileDialog#CustomFileDialog QRubberBand {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
                 background-color: transparent;
-            }
+            }}
             QFileDialog#CustomFileDialog QTreeView::item:selected,
-            QFileDialog#CustomFileDialog QListView::item:selected {
-                background-color: #2a5949;
-                color: #ffffff;
-                border: 1px solid #143d5c;
-            }
+            QFileDialog#CustomFileDialog QListView::item:selected {{
+                background-color: {UI_COLORS.PRIMARY_PRESSED};
+                color: {UI_COLORS.TEXT_PRIMARY};
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
             QFileDialog#CustomFileDialog QTreeView::item:hover,
-            QFileDialog#CustomFileDialog QListView::item:hover {
-                background-color: #2c3e50;
-                border: 1px solid #5dade2;
-            }
-            QLineEdit {
-                background-color: #34495e;
-                border: 1px solid #2980b9;
-                border-radius: 4px;
-                padding: 2px 4px;
-                color: #ecf0f1;
-                font-size: 13px;
-                min-height: 20px;
-            }
-            QComboBox {
-                background-color: #34495e;
-                border: 1px solid #2980b9;
+            QFileDialog#CustomFileDialog QListView::item:hover {{
+                background-color: {UI_COLORS.BACKGROUND_LIGHT};
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QLineEdit {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_MEDIUM};
                 border-radius: 4px;
                 padding: 4px 8px;
-                color: #ecf0f1;
-                font-size: 13px;
-                min-height: 22px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #34495e;
-                color: #ecf0f1;
-            }
-            QFileDialog#CustomFileDialog QMenu {
-                background-color: #212f3d;
-                color: #ecf0f1;
-                border: 1px solid #5dade2;
-            }
-            QFileDialog#CustomFileDialog QMenu::item {
+                color: {UI_COLORS.TEXT_PRIMARY};
+                font-size: 12px;
+                height: 28px;
+                min-height: 28px;
+                max-height: 28px;
+            }}
+            QLineEdit:hover, QLineEdit:focus {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QComboBox {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                border: 1px solid {UI_COLORS.BORDER_MEDIUM};
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: {UI_COLORS.TEXT_PRIMARY};
+                font-size: 12px;
+                height: 28px;
+                min-height: 28px;
+                max-height: 28px;
+            }}
+            QComboBox:hover, QComboBox:focus {{
+                border: 1px solid {UI_COLORS.BORDER_ACCENT};
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                color: {UI_COLORS.TEXT_PRIMARY};
+            }}
+            QFileDialog#CustomFileDialog QMenu {{
+                background-color: {UI_COLORS.BACKGROUND_DARK};
+                color: {UI_COLORS.TEXT_PRIMARY};
+                border: 1px solid {UI_COLORS.BORDER_DARK};
+            }}
+            QFileDialog#CustomFileDialog QMenu::item {{
                 padding: 10px 25px;
                 margin: 2px 0px;
-            }
-            QFileDialog#CustomFileDialog QMenu::item:selected {
-                background-color: #2a5949;
-            }
-            QFileDialog#CustomFileDialog QMenu::separator {
+            }}
+            QFileDialog#CustomFileDialog QMenu::item:selected {{
+                background-color: {UI_COLORS.PRIMARY_PRESSED};
+            }}
+            QFileDialog#CustomFileDialog QMenu::separator {{
                 height: 2px;
-                background: #5dade2;
+                background: {UI_COLORS.BORDER_DARK};
                 margin: 2px 0px;
-            }
+            }}
             QFileDialog#CustomFileDialog QLabel#backButton,
             QFileDialog#CustomFileDialog QLabel#forwardButton,
             QFileDialog#CustomFileDialog QLabel#parentDirButton,
-            QFileDialog#CustomFileDialog QLabel#newFolderButton {
+            QFileDialog#CustomFileDialog QLabel#newFolderButton {{
                 min-width: 50px;
-            }
+            }}
             """
         )
 
@@ -609,8 +693,8 @@ class CustomFileDialog(QFileDialog):
             return
         self._preview_panel = QFrame(self)
         self._preview_panel.setObjectName("filePreviewPanel")
-        self._preview_panel.setMinimumWidth(360)
-        self._preview_panel.setMaximumWidth(460)
+        self._preview_panel.setMinimumWidth(320)
+        self._preview_panel.setMaximumWidth(800)
         self._preview_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         preview_layout = QVBoxLayout(self._preview_panel)
         preview_layout.setContentsMargins(10, 10, 10, 10)
@@ -690,74 +774,128 @@ class CustomFileDialog(QFileDialog):
         except Exception as exc:
             self._preview_player = None
             self._preview_status.setText(f"Preview unavailable: {exc}")
-        if isinstance(layout, QGridLayout):
-            try:
-                self._preview_panel.setFixedHeight(690)
-                orig_cols = layout.columnCount()
-                target_col = orig_cols
-                
-                # 1. Identify Buttons to move and Inputs to stretch
-                buttons_to_move = []
-                inputs_to_stretch = []
-                
-                for i in range(layout.count()):
-                    item = layout.itemAt(i)
-                    if not item: continue
-                    w = item.widget()
-                    r, c, rs, cs = layout.getItemPosition(i)
-                    
-                    if w == self._preview_panel: continue
-                    
-                    # Identify buttons (usually in the last column)
-                    if isinstance(w, QPushButton) or (w and "Button" in w.metaObject().className()):
-                        if c + cs == orig_cols:
-                            buttons_to_move.append((i, r, c, rs, cs))
-                    # Identify inputs and main view (usually starting at col 1)
-                    elif c >= 1 and c < orig_cols:
-                        inputs_to_stretch.append((i, r, c, rs, cs))
 
-                # 2. Process removals (Reverse order to maintain indices)
-                all_indices = sorted([x[0] for x in buttons_to_move] + [x[0] for x in inputs_to_stretch], reverse=True)
-                removed_items = {}
-                for idx in all_indices:
-                    removed_items[idx] = layout.takeAt(idx)
-
-                # 3. Re-add Inputs with expanded span
-                for idx, r, c, rs, cs in inputs_to_stretch:
-                    item = removed_items[idx]
-                    w = item.widget()
-                    new_cs = target_col - c # Stretch until the new button column
-                    if w:
-                        if isinstance(w, (QLineEdit, QComboBox)):
-                            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                            w.setMaximumWidth(16777215)
-                        layout.addWidget(w, r, c, rs, new_cs)
-                    elif item.layout():
-                        layout.addLayout(item.layout(), r, c, rs, new_cs)
-                    else:
-                        layout.addItem(item, r, c, rs, new_cs)
-
-                # 4. Add Preview Panel to the new column
-                layout.addWidget(self._preview_panel, 0, target_col, 2, 1, Qt.AlignBottom)
-
-                # 5. Re-add Buttons to the new column
-                for idx, r, c, rs, cs in buttons_to_move:
-                    item = removed_items[idx]
-                    w = item.widget()
-                    if w:
-                        layout.addWidget(w, r, target_col, rs, cs)
-                    elif item.layout():
-                        layout.addLayout(item.layout(), r, target_col, rs, cs)
-                    else:
-                        layout.addItem(item, r, target_col, rs, cs)
-                
-                # 6. Final Stretch Control
-                layout.setColumnStretch(1, 100)
-                layout.setColumnStretch(target_col, 0)
-            except Exception:
-                layout.addWidget(self._preview_panel)
+        # Find the splitter to add the preview panel to
+        splitter = self.findChild(QSplitter, "splitter")
+        if splitter:
+            splitter.addWidget(self._preview_panel)
+            splitter.setStretchFactor(0, 0)
+            splitter.setStretchFactor(1, 3)
+            splitter.setStretchFactor(2, 2)
+            
+            # Try to restore saved splitter state first
+            restored = False
+            if self.config:
+                splitter_state_b64 = self.config.config.get("file_dialog_splitter_state")
+                if splitter_state_b64:
+                    try:
+                        restored = splitter.restoreState(QByteArray.fromBase64(splitter_state_b64.encode()))
+                    except Exception:
+                        pass
+            
+            # If not restored, apply default sizes (e.g. 500px wide preview)
+            if not restored:
+                w_total = self.width() if self.width() > 0 else 1400
+                splitter.setSizes([250, w_total - 250 - 500, 500])
         else:
-            layout.addWidget(self._preview_panel)
+            if isinstance(layout, QGridLayout):
+                layout.addWidget(self._preview_panel, 0, layout.columnCount(), layout.rowCount(), 1)
+            else:
+                layout.addWidget(self._preview_panel)
+
+    def _restructure_bottom_layout(self):
+        layout = self.layout()
+        if not isinstance(layout, QGridLayout):
+            return
+            
+        file_name_label = self.findChild(QLabel, "fileNameLabel")
+        file_name_edit = self.findChild(QLineEdit, "fileNameEdit")
+        file_type_label = self.findChild(QLabel, "fileTypeLabel")
+        file_type_combo = self.findChild(QComboBox, "fileTypeCombo")
+        button_box = self.findChild(QWidget, "buttonBox")
+        
+        # Find open and cancel buttons from QPushButton children to style and layout them
+        buttons = self.findChildren(QPushButton)
+        open_button = None
+        cancel_button = None
+        for b in buttons:
+            raw = (b.text() or "")
+            txt = raw.replace("&", "").replace("...", "").strip().lower()
+            if txt in ("open", "ok", "choose"):
+                open_button = b
+                b.setObjectName("openButton")
+                b.setFixedSize(110, 32)
+            elif txt == "cancel":
+                cancel_button = b
+                b.setObjectName("cancelButton")
+                b.setFixedSize(110, 32)
+        
+        if all([file_name_label, file_name_edit, file_type_label, file_type_combo, button_box]):
+            # Remove from grid layout
+            layout.removeWidget(file_name_label)
+            layout.removeWidget(file_name_edit)
+            layout.removeWidget(file_type_label)
+            layout.removeWidget(file_type_combo)
+            layout.removeWidget(button_box)
+            
+            # Replace default buttonBox layout with a tight custom QHBoxLayout to ensure
+            # both Open and Cancel buttons are displayed side-by-side without extra spacers
+            temp_widget = QWidget()
+            if button_box.layout():
+                temp_widget.setLayout(button_box.layout())
+                
+            btn_layout = QHBoxLayout(button_box)
+            btn_layout.setContentsMargins(0, 0, 0, 0)
+            btn_layout.setSpacing(8)
+            btn_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            
+            if open_button:
+                btn_layout.addWidget(open_button)
+            if cancel_button:
+                btn_layout.addWidget(cancel_button)
+            
+            # Constrain buttonBox size tightly to match both 110px buttons and 8px spacing
+            button_box.setFixedSize(228, 32)
+            
+            # Create horizontal layout for bottom inputs and button box container
+            bottom_inputs_layout = QHBoxLayout()
+            bottom_inputs_layout.setContentsMargins(0, 0, 0, 0)
+            bottom_inputs_layout.setSpacing(8)
+            
+            # Set size policies
+            file_name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            file_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            
+            # Constrain File Name edit box width
+            file_name_edit.setMinimumWidth(100)
+            file_name_edit.setMaximumWidth(350)
+            
+            # Add inputs and buttonBox to the horizontal layout in the requested order:
+            # File name label -> File name edit -> buttonBox (Open + Cancel) -> File type label -> File type combo
+            bottom_inputs_layout.addWidget(file_name_label)
+            bottom_inputs_layout.addWidget(file_name_edit, 2)
+            bottom_inputs_layout.addWidget(button_box)
+            bottom_inputs_layout.addWidget(file_type_label)
+            bottom_inputs_layout.addWidget(file_type_combo, 1)
+            
+            # Add bottom inputs layout to Row 2, Col 0, Span 1x3 (spanning all 3 columns)
+            layout.addLayout(bottom_inputs_layout, 2, 0, 1, 3)
+            
+            # Set grid column stretch factors:
+            # Col 0 (lookInLabel / left side) -> 0 (do not stretch)
+            # Col 1 (lookInCombo and navigation buttons / middle) -> 1 (absorbs expansion)
+            # Col 2 (preview panel / right side) -> 0 (do not stretch extra)
+            layout.setColumnStretch(0, 0)
+            layout.setColumnStretch(1, 1)
+            layout.setColumnStretch(2, 0)
+            
+            # Distribute stretches so the splitter row (Row 1) expands vertically
+            # and other rows remain compact.
+            for r in range(layout.rowCount()):
+                if r == 1:
+                    layout.setRowStretch(r, 1)
+                else:
+                    layout.setRowStretch(r, 0)
 
     def _bind_preview_selection(self, view):
         if view is None:
@@ -800,7 +938,13 @@ class CustomFileDialog(QFileDialog):
     def _is_video_path(self, path):
         if not path or not os.path.isfile(path):
             return False
-        return os.path.splitext(path)[1].lower() in {".mp4", ".mkv", ".mov", ".avi", ".m4v", ".webm"}
+        ext = os.path.splitext(path)[1].lower()
+        return ext in {
+            ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".wmv",
+            ".3gp", ".mpeg", ".mpg", ".asf", ".ogg", ".ogv", ".vob", ".qt",
+            ".ts", ".mts", ".m2ts", ".yuv", ".rm", ".rmvb", ".amv", ".mp2",
+            ".mpe", ".mpv", ".m2v", ".m4p"
+        }
 
     def _seek_preview(self, seconds):
         if self._preview_player is not None and self._preview_path:
@@ -1206,7 +1350,36 @@ class CustomFileDialog(QFileDialog):
     def _setup_lookin_width(self):
         look_in_combobox = self.findChild(QComboBox, "lookInCombo")
         if look_in_combobox:
-            look_in_combobox.setMinimumWidth(450)
+            look_in_combobox.setMaximumWidth(450)
+            look_in_combobox.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
+            look_in_combobox.currentTextChanged.connect(self._adjust_lookin_width)
+            self._adjust_lookin_width()
+            
+        layout = self.layout()
+        if isinstance(layout, QGridLayout):
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                r, c, rs, cs = layout.getItemPosition(i)
+                if r == 0 and c == 1 and item.layout():
+                    h_layout = item.layout()
+                    if isinstance(h_layout, QHBoxLayout):
+                        has_stretch = False
+                        for j in range(h_layout.count()):
+                            if h_layout.itemAt(j).spacerItem():
+                                has_stretch = True
+                                break
+                        if not has_stretch:
+                            h_layout.addStretch(1)
+
+    def _adjust_lookin_width(self):
+        look_in_combobox = self.findChild(QComboBox, "lookInCombo")
+        if look_in_combobox:
+            text = look_in_combobox.currentText()
+            fm = look_in_combobox.fontMetrics()
+            text_width = fm.boundingRect(text).width()
+            total_w = text_width + 55
+            min_w = max(150, min(450, total_w))
+            look_in_combobox.setMinimumWidth(min_w)
 
     def _setup_sidebar(self):
         sidebar = self.findChild(QListView, "sidebar")
@@ -1231,8 +1404,10 @@ class CustomFileDialog(QFileDialog):
             txt = raw.replace("&", "").replace("...", "").strip().lower()
             if txt in ("open", "ok", "choose"):
                 b.setObjectName("openButton")
+                b.setFixedSize(110, 32)
             elif txt == "cancel":
                 b.setObjectName("cancelButton")
+                b.setFixedSize(110, 32)
         self.update()
 
     def _save_sort_state(self, logicalIndex: int, order: Qt.SortOrder):
@@ -1259,6 +1434,11 @@ class CustomFileDialog(QFileDialog):
         if not self.config:
             return
         self.config.config["file_dialog_geometry"] = (self.saveGeometry().toBase64().data().decode())
+        
+        splitter = self.findChild(QSplitter, "splitter")
+        if splitter:
+            self.config.config["file_dialog_splitter_state"] = (splitter.saveState().toBase64().data().decode())
+            
         if self.tree_view:
             header = self.tree_view.header()
             self.config.config["file_dialog_header_state"] = (header.saveState().toBase64().data().decode())

@@ -1,4 +1,4 @@
-﻿from PyQt5.QtWidgets import (
+from PyQt5.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
 )
 
@@ -50,7 +50,7 @@ class MergerUIWidgetsMixin:
 
     def create_merge_row(self):
         self.parent.btn_back = QPushButton("RETURN TO MAIN APP")
-        self.parent.btn_back.setFixedSize(135, 40)
+        self.parent.btn_back.setFixedSize(135, 42)
         self.parent.btn_back.setObjectName("returnButton")
         self.parent.btn_back.clicked.connect(self.parent.return_to_main_app)
         self.parent.btn_back.setCursor(Qt.PointingHandCursor)
@@ -65,7 +65,7 @@ class MergerUIWidgetsMixin:
         
         self.parent.btn_merge = QPushButton("MERGE VIDEOS")
         self.parent.btn_merge.setObjectName("mergeButton")
-        self.parent.btn_merge.setFixedSize(210, 50)
+        self.parent.btn_merge.setFixedSize(210, 42)
         self.parent.btn_merge.setCursor(Qt.PointingHandCursor)
         self.parent.btn_merge.clicked.connect(self.parent.on_merge_clicked)
         self.parent.btn_merge.setToolTip("Start merging the video list (Ctrl+Enter)")
@@ -73,18 +73,18 @@ class MergerUIWidgetsMixin:
         # Dual-button cluster matching Main App
         from ui.styles import UIStyles
         self.parent.btn_cancel = QPushButton("CANCEL")
-        self.parent.btn_cancel.setFixedSize(140, 50)
+        self.parent.btn_cancel.setFixedSize(140, 42)
         self.parent.btn_cancel.setCursor(Qt.PointingHandCursor)
         self.parent.btn_cancel.setStyleSheet(UIStyles.BUTTON_CANCEL)
         self.parent.btn_cancel.clicked.connect(self.parent.cancel_processing)
         self.parent.btn_cancel.hide()
-
+ 
         self.parent.btn_processing = QPushButton("PROCESSING")
-        self.parent.btn_processing.setFixedSize(140, 50)
+        self.parent.btn_processing.setFixedSize(140, 42)
         self.parent.btn_processing.setCursor(Qt.PointingHandCursor)
         self.parent.btn_processing.setStyleSheet(UIStyles.BUTTON_WIZARD_GREEN)
         self.parent.btn_processing.hide()
-
+ 
         self.parent.merge_row.addStretch(1)
         self.parent.merge_row.addWidget(self.parent.btn_merge)
         self.parent.merge_row.addWidget(self.parent.btn_cancel)

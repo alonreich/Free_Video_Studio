@@ -1,4 +1,4 @@
-﻿import os
+import os
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -27,7 +27,7 @@ class MainWindowFileAMixin:
             None, 
             "Select Video File(s)",
             self.last_dir,
-            "Video Files (*.mp4 *.mkv *.mov *.avi)",
+            "Video Files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.flv *.wmv *.3gp *.mpeg *.mpg *.asf);;All Files (*.*)",
             config=self.config_manager,
         )
         dialog.setWindowModality(Qt.ApplicationModal)
@@ -145,14 +145,6 @@ class MainWindowFileAMixin:
                     self.logger.debug(f"FILE: speed apply skipped: {rate_err}")
                 self._safe_mpv_set("pause", not is_restoring)
 
-                def _poll_dur():
-                    if not self.player: return
-                    dur = getattr(self.player, 'duration', 0)
-                    if dur and dur > 0:
-                        self.duration_changed_signal.emit(int(dur * 1000))
-                    else:
-                        QTimer.singleShot(500, _poll_dur)
-                QTimer.singleShot(500, _poll_dur)
                 if hasattr(self, "apply_master_volume"):
                     self._suspend_volume_sync = False
                     self.apply_master_volume()

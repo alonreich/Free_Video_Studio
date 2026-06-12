@@ -27,53 +27,73 @@ class RecoveryManager:
         self._save_counter_lock = threading.Lock()
         self._save_counter = 0
         self._latest_committed_save = 0
+        self._skip_cleanup = False
 
     def check_fault(self) -> bool:
         """
         Determines if the previous session ended unexpectedly.
         Returns True if a crash is detected and restoration is possible.
+        The existence of the state file is the primary indicator, as it is 
+        explicitly removed during a clean shutdown.
         """
-        if not self.lock_file.exists():
+        self.logger.info(f"CRP: Checking fault. State file: {self.state_file.absolute()}")
+        if not self.state_file.exists():
+            self.logger.info("CRP: No state file found. Normal startup.")
             return False
-        try:
-            with open(self.lock_file, "r") as f:
-                content = f.read().strip()
-                if not content:
-                    return True
-                old_pid = int(content)
-            if psutil.pid_exists(old_pid):
-                try:
-                    proc = psutil.Process(old_pid)
-                    if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
-                        return False 
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            if self.is_safe_mode_active():
-                self.logger.warning(f"CRP: Safe Mode active for {self.app_id}. Bypassing recovery to prevent loop.")
-                return False
-            return self.state_file.exists()
-        except (ValueError, OSError) as e:
-            self.logger.error(f"CRP: Error checking fault state: {e}")
-            return True
+            
+        if self.is_safe_mode_active():
+            self.logger.warning(f"CRP: Safe Mode active for {self.app_id}. Bypassing recovery to prevent loop.")
+            return False
+
+        # If the state file exists, it's a strong indicator of an unclean exit.
+        # We only return False if we can positively identify that the OLD process 
+        # is still running and is actually OUR app.
+        if self.lock_file.exists():
+            try:
+                with open(self.lock_file, "r") as f:
+                    content = f.read().strip()
+                    if content:
+                        old_pid = int(content)
+                        self.logger.info(f"CRP: Found lock file with PID {old_pid}. My PID is {os.getpid()}.")
+                        if old_pid != os.getpid() and psutil.pid_exists(old_pid):
+                            try:
+                                proc = psutil.Process(old_pid)
+                                if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                                    cmd = " ".join(proc.cmdline()).lower()
+                                    if "python" in cmd or self.app_id in cmd:
+                                        self.logger.info(f"CRP: Old process {old_pid} still running. Not a crash.")
+                                        return False
+                                    else:
+                                        self.logger.info(f"CRP: PID {old_pid} exists but is not us ({cmd}).")
+                            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                self.logger.info(f"CRP: Could not inspect PID {old_pid}: {e}")
+            except (ValueError, OSError) as e:
+                self.logger.info(f"CRP: Error reading lock file: {e}")
+
+        self.logger.info("CRP: Fault detected! State file exists and no active process found.")
+        return True
 
     def is_safe_mode_active(self) -> bool:
         """Checks if a recovery attempt crashed within the threshold period."""
         if self.safe_mode_file.exists():
             try:
                 mtime = self.safe_mode_file.stat().st_mtime
-                if time.time() - mtime < self._safe_mode_threshold:
+                elapsed = time.time() - mtime
+                self.logger.info(f"CRP: Safe mode sentinel found. Age: {elapsed:.1f}s (Threshold: {self._safe_mode_threshold}s)")
+                if elapsed < self._safe_mode_threshold:
                     return True
                 else:
+                    self.logger.info("CRP: Safe mode sentinel expired. Removing.")
                     self.safe_mode_file.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.error(f"CRP: Error checking safe mode: {e}")
         return False
 
     def activate_safe_mode(self):
         """Creates a sentinel to detect rapid consecutive crashes during recovery."""
         try:
             self.safe_mode_file.touch()
-            self.logger.info(f"CRP: Safe Mode sentinel created for {self.app_id}.")
+            self.logger.info(f"CRP: Safe Mode sentinel created for {self.app_id} at {self.safe_mode_file.absolute()}")
         except Exception as e:
             self.logger.error(f"CRP: Failed to create safe mode sentinel: {e}")
 
@@ -82,17 +102,24 @@ class RecoveryManager:
         try:
             with open(self.lock_file, "w") as f:
                 f.write(str(os.getpid()))
+            self.logger.info(f"CRP: Lock acquired for PID {os.getpid()} at {self.lock_file.absolute()}")
         except Exception as e:
             self.logger.error(f"CRP: Failed to acquire lock: {e}")
 
     def cleanup_lock(self):
-        """Removes session locks upon clean exit."""
+        """Removes session locks and clears state upon clean exit."""
+        if getattr(self, "_skip_cleanup", False):
+            self.logger.info(f"CRP: Cleanup skipped for {self.app_id} (Fault/Crash detected).")
+            return
         try:
             if self.lock_file.exists():
                 self.lock_file.unlink()
+                self.logger.info(f"CRP: Lock file removed: {self.lock_file.absolute()}")
             if self.safe_mode_file.exists():
                 self.safe_mode_file.unlink()
-            self.logger.info(f"CRP: Clean exit for {self.app_id}, locks removed.")
+                self.logger.info(f"CRP: Safe mode sentinel removed.")
+            self.clear_state()
+            self.logger.info(f"CRP: Clean exit for {self.app_id}, state cleared.")
         except Exception as e:
             self.logger.error(f"CRP: Cleanup error: {e}")
 
@@ -101,6 +128,7 @@ class RecoveryManager:
         with self._save_counter_lock:
             self._save_counter += 1
             sequence = self._save_counter
+        self.logger.debug(f"CRP: Scheduling async save #{sequence}")
         thread = threading.Thread(target=self.save_state, args=(state, sequence), daemon=True)
         thread.start()
 
@@ -112,6 +140,7 @@ class RecoveryManager:
         try:
             with self._save_lock:
                 if sequence is not None and sequence < self._latest_committed_save:
+                    self.logger.debug(f"CRP: Skipping stale save #{sequence} (Latest: {self._latest_committed_save})")
                     return
                 state["_recovery_meta"] = {
                     "timestamp": time.time(),
@@ -128,6 +157,7 @@ class RecoveryManager:
                     os.replace(temp_path, str(self.state_file))
                     if sequence is not None:
                         self._latest_committed_save = sequence
+                    self.logger.info(f"CRP: State saved successfully to {self.state_file.absolute()} (Seq: {sequence})")
                 except Exception as e:
                     if os.path.exists(temp_path):
                         os.remove(temp_path)

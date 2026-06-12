@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
@@ -15,41 +15,35 @@ class RoleToolbar(QFrame):
     role_selected = pyqtSignal(str)
 
     def __init__(self, parent=None):
-        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
         self.setLayout(QVBoxLayout())
         self.layout().setContentsMargins(6, 6, 6, 6)
         self.layout().setSpacing(8)
         self.setObjectName("roleToolbar")
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFocusPolicy(Qt.NoFocus)
         self.setStyleSheet("""
-            #roleToolbar {
-                background-color: rgba(31, 41, 55, 0.98);
-                border: 2px solid #60A5FA;
+            QFrame#roleToolbar {
+                background-color: #1a252f;
+                border: 2px solid #1f3545;
                 border-radius: 8px;
             }
             QPushButton {
-                background-color: #266B89;
-                color: #FFFFFF;
-                border: 1px solid #4B5563;
+                background-color: #2c3e50;
+                color: #ecf0f1;
+                border: 1px solid #34495e;
                 border-radius: 4px;
-                padding: 4px 12px;
+                padding: 4px 8px;
+                font-size: 10px;
                 font-weight: bold;
-                font-size: 11px;
-                min-height: 34px;
-                max-height: 34px;
-                text-align: left;
+                min-height: 24px;
+                max-height: 24px;
             }
             QPushButton:hover {
-                background-color: #3182A8;
-                border-color: #FFFFFF;
-            }
-            QPushButton:pressed {
-                background-color: #1A4D64;
-                padding-top: 2px;
-                padding-left: 14px;
+                background-color: #34495e;
+                border-color: #7DD3FC;
             }
         """)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def set_roles(self, roles, configured_roles, primary_role=None):
         while self.layout().count():
@@ -773,128 +767,100 @@ class DrawWidget(QWidget):
         if not event.isAccepted(): super().keyPressEvent(event)
 
 class UploadOverlay(QWidget):
-    """Truly top-level pulsing overlay that floats at the absolute top of the Z-order."""
+    """Integrated pulsing overlay that follows parent geometry without separate window overhead."""
     
     def __init__(self, target_button=None, video_widget=None, parent=None, text="Please Upload Video to Begin!"):
         super().__init__(parent)
         self.target_button = target_button
         self.video_widget = video_widget
-        self.app_window = parent
         self.text = text
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | 
-            Qt.WindowStaysOnTopHint |
-            Qt.Tool |
-            Qt.WindowTransparentForInput |
-            Qt.WindowDoesNotAcceptFocus |
-            Qt.NoDropShadowWindowHint
-        )
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_TransparentForInput)
         self.opacity = 1.0
         self.fade_direction = -1
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_pulse)
-        self.timer.start(50) 
+        self.timer.start(100) # [ISSUE 7] Slower pulsing (100ms interval)
         self.hide()
 
-    def sync_with_window(self):
-        """Force the overlay window to match the main application geometry exactly."""
-        if self.app_window:
-            self.setGeometry(self.app_window.geometry())
-
     def _update_pulse(self):
-        self.opacity += self.fade_direction * 0.036
-        if self.opacity <= 0.1:
-            self.opacity = 0.1
+        # [ISSUE 7] Subtle, low-frequency transition (0.02 step)
+        self.opacity += self.fade_direction * 0.02
+        if self.opacity <= 0.4: # Higher floor for better legibility
+            self.opacity = 0.4
             self.fade_direction = 1
         elif self.opacity >= 1.0:
             self.opacity = 1.0
             self.fade_direction = -1
-        self.sync_with_window()
+        if self.parentWidget():
+            self.setGeometry(self.parentWidget().rect())
         self.raise_()
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        ref_w, ref_h = 1780.0, 898.0
-        scale = min(self.width() / ref_w, self.height() / ref_h)
-
+        
+        # Scale relative to current widget size
+        scale = min(self.width() / 1780.0, self.height() / 898.0)
         def s(val): return val * scale
+
         painter.setOpacity(self.opacity)
-        text = self.text
-        font = QFont("Sans Serif", int(s(32)), QFont.Bold)
+        font = QFont("Sans Serif", int(max(12, s(32))), QFont.Bold)
         painter.setFont(font)
         fm = painter.fontMetrics()
+        
         max_text_width = s(500)
-        text_rect = fm.boundingRect(QRect(0, 0, int(max_text_width), 1000), Qt.AlignCenter | Qt.TextWordWrap, text)
-        padding_h = s(80)
-        padding_v = s(30)
-        box_w = text_rect.width() + padding_h * 2
-        box_h = text_rect.height() + padding_v * 2
-        if self.video_widget:
-            video_global = self.video_widget.mapToGlobal(QPoint(0, 0))
-            video_local = self.mapFromGlobal(video_global)
-            center_x = (video_local.x() + self.video_widget.width() // 2) + s(40)
-            center_y = video_local.y() + self.video_widget.height() // 2
-        else:
-            center_x = (self.width() // 2) + s(40)
-            center_y = self.height() // 2
+        text_rect = fm.boundingRect(QRect(0, 0, int(max_text_width), 1000), Qt.AlignCenter | Qt.TextWordWrap, self.text)
+        
+        padding_h, padding_v = s(80), s(30)
+        box_w, box_h = text_rect.width() + padding_h * 2, text_rect.height() + padding_v * 2
+        
+        # Center in the overlay (which covers video_frame)
+        center_x, center_y = self.width() // 2, self.height() // 2
         rect = QRectF(center_x - box_w / 2, center_y - box_h / 2, box_w, box_h)
-        painter.setBrush(QBrush(Qt.black))
-        pen = QPen(QColor("#7DD3FC"), max(1, s(3)))
-        painter.setPen(pen)
+        
+        painter.setBrush(QBrush(QColor(0, 0, 0, 220)))
+        painter.setPen(QPen(QColor("#7DD3FC"), max(1, s(3))))
         painter.drawRoundedRect(rect, s(20), s(20))
+        
         painter.setPen(QColor(Qt.white))
-        painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, text)
-        if self.target_button:
-            btn_global = self.target_button.mapToGlobal(QPoint(0, 0))
-            btn_local = self.mapFromGlobal(btn_global)
-            arrow_start_x = (rect.left() + (2 * rect.width() / 3)) - s(330)
-            arrow_start_y = rect.bottom() + s(10)
-            target_x = btn_local.x() + (2 * self.target_button.width() / 3) + s(20)
-            target_y = btn_local.y() - s(15)
-            p1 = QPointF(arrow_start_x, arrow_start_y)
-            p2 = QPointF(target_x, target_y)
-            angle = math.atan2(p2.y() - p1.y(), p2.x() - p1.x())
-            perp_angle = angle + math.pi / 2
-            head_size = s(42)
-            shaft_width = s(10.8)
-            half_width = shaft_width / 2.0
-            junction_dist = head_size * 0.85
-            p_base = QPointF(
-                p2.x() - junction_dist * math.cos(angle),
-                p2.y() - junction_dist * math.sin(angle)
-            )
-            arrow_path = QPainterPath()
-            arrow_path.addEllipse(p1, half_width, half_width)
-            s1 = QPointF(p1.x() + half_width * math.cos(perp_angle), p1.y() + half_width * math.sin(perp_angle))
-            s2 = QPointF(p_base.x() + half_width * math.cos(perp_angle), p_base.y() + half_width * math.sin(perp_angle))
-            s3 = QPointF(p_base.x() - half_width * math.cos(perp_angle), p_base.y() - half_width * math.sin(perp_angle))
-            s4 = QPointF(p1.x() - half_width * math.cos(perp_angle), p1.y() - half_width * math.sin(perp_angle))
-            shaft_path = QPainterPath()
-            shaft_path.moveTo(s1)
-            shaft_path.lineTo(s2)
-            shaft_path.lineTo(s3)
-            shaft_path.lineTo(s4)
-            shaft_path.closeSubpath()
-            arrow_path = arrow_path.united(shaft_path)
-            head_p1 = QPointF(
-                p2.x() - head_size * math.cos(angle - math.pi / 6.3),
-                p2.y() - head_size * math.sin(angle - math.pi / 6.3)
-            )
-            head_p2 = QPointF(
-                p2.x() - head_size * math.cos(angle + math.pi / 6.3),
-                p2.y() - head_size * math.sin(angle + math.pi / 6.3)
-            )
-            head_path = QPainterPath()
-            head_path.moveTo(p2)
-            head_path.lineTo(head_p1)
-            head_path.lineTo(head_p2)
-            head_path.closeSubpath()
-            arrow_path = arrow_path.united(head_path)
-            arrow_color = QColor("#7DD3FC")
-            painter.setBrush(QBrush(arrow_color))
-            painter.setPen(Qt.NoPen)
-            painter.drawPath(arrow_path)
+        painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, self.text)
+        
+        if self.target_button and self.parentWidget():
+            # Map button center to this widget's coordinates
+            btn_center = self.target_button.rect().center()
+            btn_pos_global = self.target_button.mapToGlobal(btn_center)
+            target_p = self.mapFromGlobal(btn_pos_global)
+            
+            # Start arrow from box bottom
+            start_p = QPointF(rect.center().x(), rect.bottom() + s(10))
+            
+            # Draw standard UI arrow
+            self._draw_pointer_arrow(painter, start_p, target_p, s)
+
+    def _draw_pointer_arrow(self, painter, p1, p2, s_func):
+        angle = math.atan2(p2.y() - p1.y(), p2.x() - p1.x())
+        head_size = s_func(40)
+        shaft_width = s_func(10)
+        
+        # Simple path-based arrow
+        path = QPainterPath()
+        path.moveTo(p1)
+        path.lineTo(p2)
+        
+        pen = QPen(QColor("#7DD3FC"), shaft_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPath(path)
+        
+        # Arrow head
+        head = QPainterPath()
+        head.moveTo(p2)
+        head.lineTo(p2.x() - head_size * math.cos(angle - math.pi/6),
+                    p2.y() - head_size * math.sin(angle - math.pi/6))
+        head.lineTo(p2.x() - head_size * math.cos(angle + math.pi/6),
+                    p2.y() - head_size * math.sin(angle + math.pi/6))
+        head.closeSubpath()
+        painter.setBrush(QBrush(QColor("#7DD3FC")))
+        painter.setPen(Qt.NoPen)
+        painter.drawPath(head)

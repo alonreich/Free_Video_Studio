@@ -22,9 +22,6 @@ class MainWindowEventsMixin:
                 self.logger.error("MousePress error: %s", e)
         QMainWindow.mousePressEvent(self, event)
 
-    def eventFilter(self, obj, event):
-        return False
-
     def moveEvent(self, event):
         if hasattr(self, 'handle_persistence_event'):
             self.handle_persistence_event()

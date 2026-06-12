@@ -1,4 +1,4 @@
-﻿import time
+import time
 import os
 import sys
 import threading
@@ -54,13 +54,14 @@ class MergerMusicWizard(
         self.setModal(True)
         self.setStyleSheet('''
             QDialog { background-color: #2c3e50; color: #ecf0f1; }
-            QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: "Helvetica Neue", Arial, sans-serif; }
+            QWidget { background-color: #2c3e50; color: #ecf0f1; font-family: 'Segoe UI', 'Roboto', 'Inter', -apple-system, sans-serif; }
             QLabel { background: transparent; }
             QLineEdit { background: #0b141d; border: 2px solid #1f3545; border-radius: 8px; padding: 8px 12px; color: #ecf0f1; }
             QListWidget { background-color: #142d37; border: 2px solid #1f3545; border-radius: 12px; outline: none; padding: 2px; color: white; }
             QListWidget::item:selected { background: #1a5276; border-radius: 4px; }
             QScrollBar:vertical { width: 22px; background: #142d37; border: 1px solid #1f3545; border-radius: 10px; margin: 2px; }
-            QScrollBar::handle:vertical { min-height: 34px; border-radius: 9px; border: 1px solid #b8c0c8; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #c9d0d6, stop:0.5 #e1e6eb, stop:1 #b6bec6); }
+            QScrollBar::handle:vertical { min-height: 34px; border-radius: 9px; border: 1px solid #1f3545; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a8db0, stop:1 #1a5276); }
+            QScrollBar::handle:vertical:hover { border: 1px solid #7DD3FC; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2d7da1, stop:1 #1a5276); }
         ''')
         self.current_track_path = None
         self.current_track_dur = 0.0

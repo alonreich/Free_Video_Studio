@@ -114,7 +114,7 @@ class EncoderManager:
         keyint_min = str(int(fps_value + Fraction(1, 2)))
         vcodec.extend(['-g', gop, '-keyint_min', keyint_min])
         if encoder_name == 'h264_nvenc':
-            nv_preset, multipass, lookahead, aq_strength = ('p7', 'fullres', '64', '10') if quality_level >= 2 else ('p6', 'fullres', '48', '9')
+            nv_preset, multipass, lookahead, aq_strength = ('p7', 'fullres', '32', '10') if quality_level >= 2 else ('p6', 'fullres', '24', '9')
             target_kbps = int(video_bitrate_kbps) if video_bitrate_kbps else 0
             vcodec.extend([
                 '-pix_fmt', 'yuv420p', '-preset', nv_preset, '-tune', 'hq',

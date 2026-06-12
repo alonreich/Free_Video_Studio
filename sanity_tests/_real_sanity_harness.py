@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass
 import types
 from typing import Any
@@ -385,6 +385,7 @@ def install_qt_mpv_stubs():
     qtcore.Qt.WA_TransparentForMouseEvents = 121
     qtcore.Qt.WA_StaticContents = 122
     qtcore.Qt.WA_NoSystemBackground = 123
+    qtcore.Qt.WA_OpaquePaintEvent = 125
     qtcore.Qt.Tool = 0x00000005
     qtcore.Qt.FramelessWindowHint = 0x00000800
     qtcore.Qt.WA_ShowWithoutActivating = 124
@@ -515,10 +516,41 @@ def install_qt_mpv_stubs():
                 MockObject._app_instance = self
 
         def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
             if name.endswith("_signal") or name in ["valueChanged", "toggled", "clicked", "sliderPressed", "sliderReleased", "sliderMoved", "rangeChanged", "trim_times_changed", "currentTextChanged", "editingFinished", "progress", "finished", "error", "level_signal", "recording_started", "recording_finished", "playhead_updated", "time_updated", "state_updated", "data_changed", "file_dropped", "clip_selected", "seek_request", "clip_split_requested", "param_changed", "play_requested", "interaction_started", "interaction_ended", "audio_analysis_finished", "progress_started", "progress_updated", "progress_finished", "waveform_ready", "thumbnail_ready", "timeout", "triggered", "sortIndicatorChanged"]:
                 if name not in self._signals: self._signals[name] = DummySignal()
                 return self._signals[name]
-            return _generic_void
+            numeric_methods = {
+                "value": 0, "minimum": 0, "maximum": 100, 
+                "width": 100, "height": 100, "x": 0, "y": 0, 
+                "left": 0, "top": 0, "right": 100, "bottom": 100, 
+                "progress": 0, "volume": 100, "playbackRate": 1, 
+                "get_thumbnail_pos_ms": 0, "duration": 100
+            }
+            if name in numeric_methods:
+                val = numeric_methods[name]
+                return lambda *a, **kw: val
+            allowed_prefixes = ("set", "add", "insert", "clear", "get", "has", "is", "map", "selected", "mime")
+            allowed_names = {
+                "show", "hide", "update", "repaint", "close", "raise_", "lower", 
+                "rect", "width", "height", "size", "geometry", "sizeHint", "minimumSizeHint", 
+                "move", "resize", "layout", "parent", "parentWidget", "window", 
+                "findChildren", "findChild", "winId", "value", "minimum", "maximum", 
+                "text", "isChecked", "isEnabled", "style", "unpolish", "polish", 
+                "count", "takeAt", "objectName", "connect", "disconnect", "emit", 
+                "adjustSize", "activate", "ensurePolished", "exec_", "exec", 
+                "itemAt", "indexOf", "widget", "takeWidget", "setCurrentIndex", 
+                "currentIndex", "setCurrentWidget", "currentWidget",
+                "x", "y", "left", "top", "right", "bottom", "center",
+                "viewport", "model", "header", "selectionModel",
+                "horizontalHeader", "verticalHeader", "horizontalScrollBar", "verticalScrollBar",
+                "start", "stop", "pause", "resume", "kill", "terminate", "wait", "sleep", "singleShot",
+                "invertedAppearance", "invertedControls", "orientation", "state", "blockSignals", "signalsBlocked", "sender", "focusWidget"
+            }
+            if name.startswith(allowed_prefixes) or name in allowed_names:
+                return _generic_void
+            raise AttributeError(name)
 
         def __call__(self, *args, **kwargs): return MockObject()
 
@@ -840,7 +872,7 @@ def install_qt_mpv_stubs():
     qtcore.QSize = _Size
     qtcore.QRect = _Rect
     qtcore.QThreadPool = MockObject
-    core_list = ["QObject", "QThread", "QTimer", "QThreadPool", "QPropertyAnimation", "QUrl", "QRunnable", "QPointF", "QRectF", "QLineF", "QProcess", "QBuffer", "QIODevice", "QMimeData", "QModelIndex", "QAbstractListModel", "QAbstractItemModel", "QVariant", "QTranslator", "QLibraryInfo", "QEasingCurve", "QParallelAnimationGroup", "QSequentialAnimationGroup", "QVariantAnimation", "QWaitCondition", "QMutex", "QMutexLocker", "QSemaphore", "QReadWriteLock", "QReadLocker", "QMetaObject", "QSizeF", "QLocale", "QRegularExpression", "QRegularExpressionValidator", "QStandardPaths", "QStorageInfo", "QFileSystemWatcher", "QMimeDatabase", "QMimeType", "QCommandLineParser"]
+    core_list = ["QObject", "QThread", "QTimer", "QThreadPool", "QPropertyAnimation", "QUrl", "QRunnable", "QPointF", "QRectF", "QLineF", "QProcess", "QBuffer", "QIODevice", "QMimeData", "QModelIndex", "QAbstractListModel", "QAbstractItemModel", "QVariant", "QTranslator", "QLibraryInfo", "QEasingCurve", "QParallelAnimationGroup", "QSequentialAnimationGroup", "QVariantAnimation", "QWaitCondition", "QMutex", "QMutexLocker", "QSemaphore", "QReadWriteLock", "QReadLocker", "QMetaObject", "QSizeF", "QLocale", "QRegularExpression", "QRegularExpressionValidator", "QStandardPaths", "QStorageInfo", "QFileSystemWatcher", "QMimeDatabase", "QMimeType", "QCommandLineParser", "QAbstractAnimation"]
     for n in core_list:
         if n == "QTimer":
             continue
@@ -851,6 +883,11 @@ def install_qt_mpv_stubs():
             continue
         setattr(qtcore, n, type(n, (MockObject,), {"system": MockObject.system}))
     qtcore.Q_ARG = lambda *a: None
+    qtcore.QAbstractAnimation.Stopped = 0
+    qtcore.QAbstractAnimation.Paused = 1
+    qtcore.QAbstractAnimation.Running = 2
+    qtcore.QAbstractAnimation.Forward = 0
+    qtcore.QAbstractAnimation.Backward = 1
     
     class MockProperty:
         def __init__(self, *args, **kwargs): pass
@@ -908,6 +945,9 @@ def install_qt_mpv_stubs():
         def pointSize(self) -> int: return 10
     qtgui.QFont = QFont
     qtgui.QFontMetrics = QFontMetrics
+    qtsvg = types.ModuleType("PyQt5.QtSvg")
+    qtsvg.QSvgRenderer = type("QSvgRenderer", (MockObject,), {})
+    sys.modules["PyQt5.QtSvg"] = qtsvg
     sys.modules["PyQt5"] = pyqt5
     sys.modules["PyQt5.QtCore"] = qtcore
     sys.modules["PyQt5.QtWidgets"] = qtwidgets

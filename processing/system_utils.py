@@ -187,6 +187,9 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
         "queue input is backward in time",
         "application provided invalid",
     )
+    ignored_signatures = (
+        "exceeds max (3; probably corrupt input)",
+    )
 
     def reader():
         try:
@@ -208,7 +211,9 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
             except Exception:
                 pass
         low = s.lower()
-        if on_error_line and any(sig in low for sig in critical_signatures):
+        is_critical = any(sig in low for sig in critical_signatures) and not any(ign in low for ign in ignored_signatures)
+
+        if on_error_line and is_critical:
             on_error_line(s)
             stats["critical_lines"].append(s)
         if '=' in s:
@@ -241,7 +246,7 @@ def monitor_ffmpeg_progress(proc, duration_sec, progress_signal, check_disk_spac
                  logger.error(f"FFmpeg reported error: {val}")
                  stats["critical_lines"].append(s)
         else:
-            if any(sig in low for sig in critical_signatures):
+            if is_critical:
                 logger.error(f"FFmpeg Output: {s}")
                 stats["critical_lines"].append(s)
     last_active_time = time.time()

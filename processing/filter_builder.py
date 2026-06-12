@@ -7,7 +7,7 @@ class FilterResult(tuple):
         return any(item in str(x) for x in self)
 
 class AudioFilterMixin:
-    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, sample_rate=48000, music_tracks=None, music_start_index=1, total_project_duration=None, main_audio_label="[0:a]"):
+    def build_audio_chain(self, music_config, video_start_time, video_end_time, speed_factor, disable_fades, vfade_in_d, audio_filter_cmd, sample_rate=48000, music_tracks=None, music_start_index=1, total_project_duration=None, main_audio_label="[0:a]", volume_normalize_db=0.0):
         chain = []
         music_config = music_config if isinstance(music_config, dict) else {}
         target_sample_rate = sample_rate or 48000
@@ -89,7 +89,10 @@ class AudioFilterMixin:
                 if remaining <= 0.001: break
             tracks = clipped_tracks
         if not tracks:
-            chain.append(f"[a_main_raw]aresample={target_sample_rate}:async=1[a_main_prepared]")
+            v_vol_single = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
+            if volume_normalize_db != 0.0:
+                v_vol_single *= (10**(volume_normalize_db / 20.0))
+            chain.append(f"[a_main_raw]volume={v_vol_single:.4f},aresample={target_sample_rate}:async=1[a_main_prepared]")
             return chain, "[a_main_prepared]"
         initial_delay_sec = 0.0
         if music_config:
@@ -120,6 +123,8 @@ class AudioFilterMixin:
             bg_music_label = "[a_bg_music]"
         else: bg_music_label = prepared_music_labels[0]
         v_vol = float(music_config.get('main_vol', music_config.get('video_volume', 0.8))) if music_config else 0.8
+        if volume_normalize_db != 0.0:
+            v_vol *= (10**(volume_normalize_db / 20.0))
         chain.append(f"[a_main_raw]volume={v_vol:.4f}[game_scaled]")
         chain.append(f"[game_scaled]asplit=2[game_out_pre][game_trig]")
         chain.append("[game_trig]highpass=f=200,lowpass=f=3500,agate=threshold=0.05:attack=5:release=100[trig_cleaned]")

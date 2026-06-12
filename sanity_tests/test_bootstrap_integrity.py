@@ -1,4 +1,4 @@
-﻿import os, sys, pytest, inspect
+import os, sys, pytest, inspect
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -41,7 +41,7 @@ def test_recursive_import_integrity():
     This catches 'ImportError: cannot import name ...' automatically.
     """
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    ignored_folders = {'.git', 'venv', '__pycache__', 'binaries'}
+    ignored_folders = {'.git', 'venv', '__pycache__', 'binaries', 'scratch'}
     for root, dirs, files in os.walk(base_dir):
         dirs[:] = [d for d in dirs if d not in ignored_folders]
         for file in files:
