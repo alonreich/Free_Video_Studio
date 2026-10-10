@@ -1,56 +1,47 @@
-# ==============================================================================
-# Application Builds / Artifacts
-# ==============================================================================
-compiled/
-temp_staging/
-*.exe
-!binaries/*.exe
-!binaries/*.dll
 !binaries/*.com
-
-# ==============================================================================
-# .NET / C# Project Ignores
-# ==============================================================================
-[Bb]in/
-[Oo]bj/
-TestResults/
-packages/
+!binaries/*.dll
+!binaries/*.exe
+*$py.class
+*.binlog
+*.coverage
+*.coveragexml
+*.exe
+*.log
 *.nupkg
-
-# IDEs & Editor
+*.py[cod]
+*.sln.docstates
+*.snupkg
+*.suo
+*.temp
+*.tmp
+*.trx
 *.user
 *.userosscache
-*.sln.docstates
-*.suo
 *.userprefs
-.vs/
-.idea/
-.vscode/
-
-# Local settings
-appsettings.Local.json
-appsettings.Development.json
-.env
-
-
-# ==============================================================================
-# Logs & OS generated
-# ==============================================================================
-*.log
 .DS_Store
-Thumbs.db
-# Ignore old code
-old_code/*
-Old_Code/*
-developer_tools/redundant_code_report.html_to_delete/
-
-# Python bytecode — the developer_tools scripts all guard against writing it and sweep it on
-# every run, but an editor, a `py_compile`, or one script importing another can still create it.
-# This is the last line of defence: it must never reach the repository.
-__pycache__/
-*.py[cod]
-*$py.class
-
-# dev.cmd trace mode (SYS-DEVBUILD): in-repo diagnostic logs, never committed.
-.devlogs/
 .Old_FreeVideoStudio/
+.devlogs/
+.env
+.env.*
+.fvs_xfer/
+.idea/
+.vs/
+.vscode/
+Old_Code/
+TestResults/
+Thumbs.db
+[Bb]in/
+[Oo]bj/
+__pycache__/
+appsettings.Development.json
+appsettings.Local.json
+compiled/
+desktop.ini
+developer_tools/redundant_code_report*.html
+developer_tools/redundant_code_report.html_to_delete/
+developer_tools/validation-logs/
+old_code/
+packages/
+src/FreeVideoStudio.App/payload.zip
+temp_staging/
+tests/MediaPipelineChecks/artifacts/

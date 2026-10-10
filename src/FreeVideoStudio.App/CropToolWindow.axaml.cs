@@ -11,9 +11,11 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using FreeVideoStudio.Core.Editing;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
+using FreeVideoStudio.Core.Undo;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -25,13 +27,14 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using IOPath = System.IO.Path;
+using SourceRect = FreeVideoStudio.Core.Editing.CropSourceRect;   // EDITSTATE_01 — the logical types live in Core
+using HudRole = FreeVideoStudio.Core.Editing.CropHudRole;
 
 // COLORMATH_01 / CROPJSON_01 / CROPGEOM_01 / BINPATH_01 — these four helper types hold methods
 // extracted verbatim from this class. Imported with `using static` on purpose: every one of the
 // ~60 call sites below keeps the exact unqualified spelling it already had, so the extraction
 // cannot change a single statement inside this file.
 using static FreeVideoStudio.App.Infrastructure.ColorMath;
-using static FreeVideoStudio.App.Infrastructure.CropConfigJson;
 using static FreeVideoStudio.App.Infrastructure.CropGeometry;
 
 namespace FreeVideoStudio.App;
@@ -103,53 +106,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     }
 
     /// <summary>
-    /// The single source of truth for "is this a usable new profile name". Returns null when the
-    /// name is fine, or the message the user should read when it is not.
-    ///
-    /// An EMPTY box is not an error: the box starts empty and SAVE AS NEW simply stays disabled.
-    /// Painting a red border round a field the user has not touched yet is noise, and it would be
-    /// on screen from the moment the window opens.
+    /// The single source of truth for "is this a usable new profile name" (EDITSTATE_01 — the rule
+    /// is the session's, NOMASK_01 included). Null when fine, else the message the user reads.
     /// </summary>
-    private string? ValidateNewMaskOverlayName()
-    {
-        string raw = NewMaskOverlayName ?? string.Empty;
-        if (raw.Length == 0) return null;
-
-        string name = raw.Trim();
-
-        if (name.Length == 0)
-            return "Enter a name — spaces alone will not do.";
-
-        if (name.Length > MaxMaskOverlayNameLength)
-            return $"Too long. Keep it under {MaxMaskOverlayNameLength} characters.";
-
-        // The name becomes a file name on disk (MaskOverlayManager writes one profile per file),
-        // so anything the file system rejects has to be rejected here, in words, rather than as a
-        // failed save after the click.
-        char[] invalid = IOPath.GetInvalidFileNameChars();
-        if (name.IndexOfAny(invalid) >= 0)
-            return "Remove these characters: \\ / : * ? \" < > |";
-
-        // MaskOverlayManager.SanitizeProfileName rejects an all-dots name (it would resolve to "."
-        // or ".." on disk) by returning null, which the click handler reports as a generic
-        // "invalid profile name" AFTER the click. Saying it here, while they type, is better.
-        if (name.All(ch => ch == '.'))
-            return "A name made only of dots will not work. Use some letters.";
-
-        // NOMASK_01 — the reserved built-in. CreateNewProfile refuses it, but it refuses AFTER the
-        // click and without a word; saying so in the field is the whole point of this method.
-        if (FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(name))
-            return $"\"{name}\" is a reserved built-in profile. Choose another name.";
-
-        // NOT a nicety. MaskOverlayManager.CreateNewProfile writes with AtomicJsonFile.WriteObject
-        // to <name>.json and does NOT check for an existing file, so SAVE AS NEW onto a name that
-        // is already taken silently OVERWROTE that profile with the live config. The button said
-        // "SAVE AS NEW"; the behaviour was "replace". This is the stop.
-        if (_existingMaskOverlayNames.Contains(name))
-            return $"\"{name}\" already exists. Pick another name — SAVE AS NEW never replaces a profile.";
-
-        return null;
-    }
+    private string? ValidateNewMaskOverlayName() => _edit.ValidateNewProfileName(NewMaskOverlayName);
 
     /// <summary>
     /// ISSUE_01 — keeps SAVE AS NEW and the inline validation message telling the same story.
@@ -164,7 +124,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     {
         bool hasText = !string.IsNullOrWhiteSpace(NewMaskOverlayName);
         SetEnabled("CreateMaskOverlayBtn",
-            _gateUnlocked && _activeProfile != null && hasText && ValidateNewMaskOverlayName() == null);
+            _edit.GateUnlocked && _edit.ActiveProfile != null && hasText && ValidateNewMaskOverlayName() == null);
     }
 
     /// <summary>
@@ -174,11 +134,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// </summary>
     private void RefreshMaskOverlayNameCache(IEnumerable<string> profiles)
     {
-        _existingMaskOverlayNames.Clear();
-        foreach (string profile in profiles)
-        {
-            if (!string.IsNullOrWhiteSpace(profile)) _existingMaskOverlayNames.Add(profile.Trim());
-        }
+        _edit.RefreshExistingProfileNames(profiles);
 
         // Re-run validation against the new set: a name typed before the list refreshed may have
         // just become a duplicate, or stopped being one.
@@ -186,21 +142,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         RefreshCreateMaskOverlayButton();
     }
 
-    /// <summary>
-    /// ISSUE_01 / ISSUE_02 — mirrors the profile gate for code that has to ask about it without
-    /// reading a control's IsEnabled back out of the visual tree.
-    /// </summary>
-    private bool _gateUnlocked;
 
-    /// <summary>Upper bound on a profile name. Well short of MAX_PATH once the profile directory
-    /// and the extension are added, and long enough for any real game name.</summary>
-    private const int MaxMaskOverlayNameLength = 64;
 
-    /// <summary>
-    /// Profile names already on disk, refreshed by <see cref="BuildMaskOverlayUi"/>. Case-insensitive
-    /// because the file system this writes to is.
-    /// </summary>
-    private readonly HashSet<string> _existingMaskOverlayNames = new(StringComparer.OrdinalIgnoreCase);
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -224,20 +167,29 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private const double ContentTop = CoordinateConstants.UIPaddingTop;
     private const double ContentBottom = CoordinateConstants.PortraitH - CoordinateConstants.UIPaddingBottom;
     private const double MinSelectionSize = 10;
-    private const double MinItemSize = 20;
+    private const double MinItemSize = CropEditSession.MinItemSize;
     private const double HandleSize = 24;
     // CROPGEOM_01 — SnapThreshold moved to CropGeometry alongside SnapAxis, its only consumer.
 
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
     private readonly FreeVideoStudio.Core.Infrastructure.RecoveryManager _recovery = new FreeVideoStudio.Core.Infrastructure.RecoveryManager(ApplicationPaths.CreateDefault());
     private readonly string? _initialVideoPath;
+    /// <summary>
+    /// EDITSTATE_01 — THE EDIT ITSELF: placed layers (source rect, layout, z), the selection by role
+    /// KEY, tombstones, the active profile and its name rules, the element catalogue, the capture
+    /// resolution, dirty and the UNDO_27 history (Core/Editing/CropEditSession). This window keeps
+    /// the view: canvases, element visuals, adorners, handles, hit testing, pointer capture, the
+    /// frozen-frame zoom, and the Magic Wand's transient scan and candidates.
+    /// </summary>
+    private readonly CropEditSession _edit = new(Infrastructure.MaskOverlayManager.IsNoMask);
+
     private readonly ObservableCollection<LayerEntry> _layers = new();
+
+    /// <summary>The VISUALS of the placed layers, one per <see cref="CropEditSession.Layers"/> entry.</summary>
     private readonly List<CropEditorItem> _items = new();
     private readonly List<Control> _candidateControls = new();
     private readonly List<Control> _guideControls = new();
     private readonly List<string> _tempFiles = new();
-    private readonly Stack<EditorSnapshot> _undoStack = new();
-    private readonly Stack<EditorSnapshot> _redoStack = new();
 
     private MpvVideoView? _videoHost;
     private Canvas? _sourceCanvas;
@@ -281,7 +233,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private Point _sourceSelectionStart;
     private bool _isDrawingSourceSelection;
 
-    private CropEditorItem? _selectedItem;
     private CropEditorItem? _activeEditItem;
     private ComposerEditMode _composerEditMode = ComposerEditMode.None;
     private Point _editPointerStart;
@@ -300,33 +251,17 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// resize starts from the last one's rounding error instead of from the truth.
     /// </summary>
     private double _editSourceAspect = 1.0;
-    private EditorSnapshot? _editStartSnapshot;
+    private CropLayoutSnapshot? _editStartSnapshot;
 
     private string? _videoPath;
     private string? _snapshotPath;
-    /// <summary>
-    /// RESGUESS_01 — these three are a PLACEHOLDER, not a fact, until <see cref="_captureResolutionKnown"/>
-    /// turns true. A profile can be opened before any video is loaded (the profile combo is live from
-    /// the moment the window opens), and every coordinate routine in this file takes the capture
-    /// resolution as an argument. Clamping or transforming a 1440p or 2160p profile's rectangles
-    /// against this 1920x1080 guess silently truncates them, and the truncated values then get
-    /// written back on the next save — a permanent corruption of a document the user never edited.
-    /// Anything that can corrupt stored geometry must check the flag first.
-    /// </summary>
-    private string _originalResolution = "1920x1080";
-    private int _snapshotWidth = 1920;
-    private int _snapshotHeight = 1080;
 
-    /// <summary>RESGUESS_01 — true once a real video or snapshot has reported its dimensions.</summary>
-    private bool _captureResolutionKnown;
     private double _durationMs;
     private bool _isTimerUpdatingSlider;
     private bool _isSeeking;
     private double? _nextSeekTarget;
     private Avalonia.Threading.DispatcherTimer? _playheadBadgeTimer;
     private bool _isMpvStarted;
-    private bool _dirty;
-    private bool _restoringSnapshot;
     private bool _suppressLayerSelection;
     private bool _isSafeToClose;
     private bool _changingProfile;
@@ -335,16 +270,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private bool _closeInProgress;
     private DispatcherTimer? _timelineTimer;
 
-    /// <summary>
-    /// GATE_01 (F3) — the profile this session is editing, or null when none has been chosen yet.
-    /// Null is the START state and it is load-bearing: while it is null nothing may be loaded,
-    /// edited or saved, because SaveConfigAsync ends in
-    /// MaskOverlayManager.SyncActiveProfileFromCurrentConfig(), which writes the live crop config
-    /// straight over SettingsManager.ActiveMaskOverlay's file. Before this field existed the window
-    /// opened already pointed at whatever profile was last active and one click on FINISH &amp; SAVE
-    /// overwrote a shipped preset.
-    /// </summary>
-    private string? _activeProfile;
 
     /// <summary>GATE_01 — the initial video is held until a profile exists to load it against.</summary>
     private string? _pendingInitialVideoPath;
@@ -368,114 +293,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// </summary>
     private bool _userZoomed;
 
-    private static readonly HudRole[] Roles =
-    [
-        new("loot", "Loot Area", 10, 680, 1370),
-        new("stats", "Mini Map + Stats", 30, 730, 150),
-        new("normal_hp", "Own Health Bar (HP)", 20, 30, 1620),
-        new("team", "Teammates health Bars (HP)", 40, 30, 250),
-        new("spectating", "Spectating Eye", 100, 30, 1300),
-    ];
+    // ROLEPOPUP_01 / NODUPES_02 — the element catalogue (built-ins + this profile's custom elements),
+    // its key/display-name rules and the quadrant guess live in the edit session (EDITSTATE_01).
 
-    private static readonly Dictionary<string, HudRole> RoleByKey = Roles.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// ROLEPOPUP_01 - elements beyond the five built-ins: the ones "+ New element" creates, plus any
-    /// key found in a profile that this build does not have a built-in for.
-    ///
-    /// <see cref="Roles"/> is a hardcoded Fortnite array and cannot grow, which used to mean a
-    /// custom element could be SAVED and then never loaded back, because every read path iterated
-    /// that array. Anything that enumerates elements must go through <see cref="AllRoles"/>.
-    /// </summary>
-    private readonly List<HudRole> _customRoles = new();
-
-    private IEnumerable<HudRole> AllRoles => Roles.Concat(_customRoles);
-
-    private bool TryGetRole(string key, out HudRole role)
+    /// <summary>EDITSTATE_01 — the selected element's visuals, resolved from the session's selection BY KEY.</summary>
+    private CropEditorItem? SelectedView
     {
-        if (RoleByKey.TryGetValue(key, out role!)) return true;
-        foreach (HudRole custom in _customRoles)
-        {
-            if (string.Equals(custom.Key, key, StringComparison.OrdinalIgnoreCase))
-            {
-                role = custom;
-                return true;
-            }
-        }
-        role = default!;
-        return false;
-    }
-
-    /// <summary>
-    /// ROLEPOPUP_01 - adds an element name to this session's list, once.
-    /// DefaultX/Y of -1 means "no preferred portrait position", so AddCurrentSelection places it
-    /// where the geometry says rather than at a made-up spot.
-    /// </summary>
-    /// <summary>
-    /// ROLEPOPUP_01 / A3 - teaches this session every element key a profile document contains.
-    ///
-    /// Keys are stored as `own_ammo`; the popup shows `Own Ammo`. RegisterCustomRole derives the
-    /// key back from the display name with the same lowercase+underscore rule, so the round trip
-    /// is stable and a profile can be opened, edited and saved without renaming anything.
-    /// Entries with no usable rectangle are skipped - a key zeroed by a delete
-    /// (crops[key] = [0,0,0,0], see DELETESET_01) is a tombstone, not an element.
-    /// </summary>
-    private void AdoptRolesFromConfig(JsonObject section)
-    {
-        foreach (var pair in section)
-        {
-            if (string.IsNullOrWhiteSpace(pair.Key) || HudConfig.IsRetiredRole(pair.Key)) continue;
-            if (TryGetRole(pair.Key, out _)) continue;
-            if (pair.Value is not JsonArray arr || arr.Count < 4) continue;
-            if (ReadInt(arr[0], 0) <= 1 || ReadInt(arr[1], 0) <= 1) continue;
-
-            RegisterCustomRole(PrettifyRoleKey(pair.Key));
-        }
-    }
-
-    /// <summary>ROLEPOPUP_01 - `own_ammo` -&gt; `Own Ammo`, for display in the chooser.</summary>
-    private static string PrettifyRoleKey(string key)
-    {
-        string[] words = key.Replace('_', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return string.Join(' ', words.Select(w => char.ToUpperInvariant(w[0]) + w.Substring(1)));
-    }
-
-    /// <summary>
-    /// ROLEPOPUP_01 — mints (or returns) the element behind a typed name.
-    ///
-    /// NODUPES_02 — THE DISPLAY-NAME CHECK BELOW IS THE SECOND DOOR.
-    ///
-    /// The key-derivation rule here (<c>lowercase, spaces to underscores</c>) is correct for a name
-    /// a user invents, because that name IS the key's origin. It is wrong for a name that already
-    /// belongs to something: typing "Loot Area" into "+ New element" derives <c>loot_area</c>, and
-    /// the built-in it plainly means is <c>loot</c>. Without this check the user gets a second
-    /// element wearing the first one's exact label — the same duplicate ConfirmSelectionAsAsync
-    /// describes, arriving by a different route — and it saves under a key the exporter ignores.
-    ///
-    /// So the lookup happens twice: by derived key first (catches an exact repeat, and every custom
-    /// name), then by display name (catches a built-in whose label does not derive back to its own
-    /// key — which, for this suite's six built-ins, is all of them).
-    /// </summary>
-    private HudRole RegisterCustomRole(string displayName)
-    {
-        string trimmed = displayName.Trim();
-        string key = trimmed.ToLowerInvariant().Replace(" ", "_");
-
-        if (TryGetRole(key, out HudRole existing)) return existing;
-
-        HudRole? byName = AllRoles.FirstOrDefault(r =>
-            string.Equals(r.DisplayName, trimmed, StringComparison.OrdinalIgnoreCase));
-        if (byName != null)
-        {
-            RuntimeLog.Info("CROP",
-                $"'{trimmed}' is the existing element '{byName.Key}'. Reusing it instead of creating '{key}'.");
-            return byName;
-        }
-
-        var role = new HudRole(key, trimmed, 50, -1, -1);
-        _customRoles.Add(role);
-        RuntimeLog.Info("CROP", $"New HUD element registered for this profile: '{trimmed}' (key={key}).");
-        return role;
+        get => _edit.Selected is { } layer ? _items.FirstOrDefault(i => ReferenceEquals(i.Model, layer)) : null;
+        set => _edit.SelectedRoleKey = value?.RoleKey;
     }
 
     public CropToolWindow() : this((string?)null)
@@ -640,7 +465,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ButtonClick("WandCancelButton", (_, _) =>
         {
             RuntimeLog.Info("CROP", "Magic Wand cancelled by the user.");
-            try { _wandCts?.Cancel(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            _wandStopRequested = true;
+            CancelMagicWand();   // AIHUD_03 - also invalidates any late AI answer
         });
 
         // MAGICWAND_02 — the wand is wired to a real detector now, so the button is live again.
@@ -803,7 +629,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // the narrowest pane in the window to do it.
         //
         // Saved elements are now always drawn, always at full opacity and always interactive.
-        // CropEditorItem.FromSavedConfig survives purely as provenance (it is what SaveConfigAsync
+        // CropLayer.FromSavedConfig (EDITSTATE_01) survives purely as provenance (it is what SaveConfigAsync
         // uses to tell a re-saved element from a new one); nothing reads it for visibility any
         // more, so there is nothing left to toggle. See ApplySavedCropVisibility's removal.
 
@@ -924,11 +750,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 if (_changingProfile) return;
                 if (combo.SelectedItem is not string selected) return;
 
-                // Compare against _activeProfile - what is really LOADED - not against
+                // Compare against _edit.ActiveProfile - what is really LOADED - not against
                 // SettingsManager.ActiveMaskOverlay, which is global state the Main App also
                 // writes. This equality guard is also what absorbs the re-entrant pass caused by
-                // the two `combo.SelectedItem = _activeProfile` rollbacks below.
-                if (string.Equals(selected, _activeProfile, StringComparison.OrdinalIgnoreCase)) return;
+                // the two `combo.SelectedItem = _edit.ActiveProfile` rollbacks below.
+                if (string.Equals(selected, _edit.ActiveProfile, StringComparison.OrdinalIgnoreCase)) return;
 
                 // NOMASK_02 — unreachable by construction now (the reserved profile is filtered
                 // out of ItemsSource above), and kept anyway as a last line of defence. A future
@@ -939,7 +765,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 if (FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(selected))
                 {
                     RuntimeLog.Fail("CROP", "The reserved profile reached the Crop Tools picker — NOMASK_02's filter has been bypassed.");
-                    combo.SelectedItem = _activeProfile;
+                    combo.SelectedItem = _edit.ActiveProfile;
                     return;
                 }
 
@@ -947,11 +773,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 try
                 {
                     // Keep the picker on the loaded profile until the user has chosen an action.
-                    combo.SelectedItem = _activeProfile;
+                    combo.SelectedItem = _edit.ActiveProfile;
                     if (_returningToMainApp || _closeInProgress ||
                         !await ConfirmUnsavedChangesAsync($"switching to \"{selected}\"")) return;
                     await OnProfileChosenAsync(selected);
-                    combo.SelectedItem = _activeProfile;
+                    combo.SelectedItem = _edit.ActiveProfile;
                 }
                 finally { _changingProfile = false; }
             };
@@ -982,7 +808,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 // crop config happens to hold - the last profile the MAIN APP applied, which the
                 // user never chose here and probably cannot name. The button is disabled in that
                 // state (SetProfileGate); this is the matching guard for a programmatic click.
-                if (_activeProfile == null)
+                if (_edit.ActiveProfile == null)
                 {
                     SetStatus("Choose the profile you want to copy first.");
                     return;
@@ -1053,7 +879,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// </summary>
     private void SetProfileGate(bool unlocked)
     {
-        _gateUnlocked = unlocked;
+        _edit.GateUnlocked = unlocked;
 
         if (_profileGate != null)
         {
@@ -1109,7 +935,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         if (_profileStateLabel != null)
         {
             _profileStateLabel.Text = unlocked
-                ? "Editing: " + (_activeProfile ?? "")
+                ? "Editing: " + (_edit.ActiveProfile ?? "")
                 : "No profile selected";
         }
 
@@ -1132,7 +958,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         try
         {
             FreeVideoStudio.App.Infrastructure.MaskOverlayManager.ApplyProfile(profileName);
-            _activeProfile = profileName;
+            _edit.ActiveProfile = profileName;
 
             ResetWorkingState();
             SetProfileGate(unlocked: true);
@@ -1265,6 +1091,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         foreach (Control control in _candidateControls)
         {
             if (control is Rectangle candidate) candidate.StrokeThickness = 3.0 / scale;
+            else if (control is TextBlock caption) caption.FontSize = WandCaptionFontSize / scale;   // AIHUD_01
         }
 
         if (_zoomLabel != null)
@@ -1285,15 +1112,15 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     {
         double viewportW = _snapshotScroll?.Bounds.Width ?? 0;
         double viewportH = _snapshotScroll?.Bounds.Height ?? 0;
-        if (viewportW < 20 || viewportH < 20 || _snapshotWidth <= 0 || _snapshotHeight <= 0)
+        if (viewportW < 20 || viewportH < 20 || _edit.SnapshotWidth <= 0 || _edit.SnapshotHeight <= 0)
         {
             return _snapshotZoomFactor > 0 ? _snapshotZoomFactor : 1.0;
         }
 
         const double Margin = 16;
         double fit = Math.Min(
-            (viewportW - Margin) / _snapshotWidth,
-            (viewportH - Margin) / _snapshotHeight);
+            (viewportW - Margin) / _edit.SnapshotWidth,
+            (viewportH - Margin) / _edit.SnapshotHeight);
 
         return Math.Clamp(fit, MinZoom, 1.0);
     }
@@ -1311,9 +1138,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // MAGICWAND_02 — cancel any detection still running. It owns an ffmpeg child process and
         // up to ~90 MB of sampled frames; leaving it to finish against a closed window would keep
         // both alive for as long as the analysis takes.
-        try { _wandCts?.Cancel(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-        _wandCts?.Dispose();
-        _wandCts = null;
+        DisposeMagicWand();   // AIHUD_03 - cancels the run and invalidates any late AI answer
 
         base.OnClosed(e);
     }
@@ -1325,14 +1150,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         {
             button.Click += handler;
         }
-    }
-
-    private void InitializeHistory()
-    {
-        _undoStack.Clear();
-        _redoStack.Clear();
-        _undoStack.Push(CaptureSnapshot());
-        RefreshUndoRedoButtons();
     }
 
     private async Task InitializeMpvAsync()
@@ -1491,8 +1308,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _snapshotPath = null;
         _durationMs = 0;
         // MAGICWAND_02 — a new clip invalidates everything the wand learned from the old one.
-        _wandCandidates = null;
-        _wandPreviewIndex = -1;
+        ResetMagicWandForNewClip();
         ClearSourceSelection();
         ClearMagicWandCandidates();
         UpdateComposerEmptyState();   // ISSUE_07 - the empty-state copy changes once a clip is open
@@ -1527,11 +1343,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         {
             var prober = new MediaProber(ResolveBinaryPath("ffprobe.exe", "backend"), path);
             _durationMs = Math.Max(0, await prober.GetDurationAsync() * 1000.0);
-            _originalResolution = await prober.GetResolutionStringAsync();
-            var (w, h) = CoordinateMath.GetResolutionInts(_originalResolution);
-            _snapshotWidth = w;
-            _snapshotHeight = h;
-            _captureResolutionKnown = w > 0 && h > 0;   // RESGUESS_01
+            _edit.OriginalResolution = await prober.GetResolutionStringAsync();
+            var (w, h) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
+            _edit.SnapshotWidth = w;
+            _edit.SnapshotHeight = h;
+            _edit.CaptureResolutionKnown = w > 0 && h > 0;   // RESGUESS_01
 
             double aspectRatio = h > 0 ? (double)w / h : 1.777;
             if (Math.Abs(aspectRatio - (16.0 / 9.0)) > 0.05)
@@ -1548,10 +1364,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 _timelineSlider.Value = 0;
             }
 
-            RuntimeLog.Info("CROP", $"Video loaded: {System.IO.Path.GetFileName(path)} | Resolution: {_originalResolution} | Duration: {_durationMs:F0}ms");
+            RuntimeLog.Info("CROP", $"Video loaded: {System.IO.Path.GetFileName(path)} | Resolution: {_edit.OriginalResolution} | Duration: {_durationMs:F0}ms");
             RuntimeLog.Debug("CROP", $"Full path: {path}");
             SetEnabled("SnapshotButton", true);
-            SetWizardState(2, "Find HUD Frame", $"Frame ready ({_originalResolution}).");
+            SetWizardState(2, "Find HUD Frame", $"Frame ready ({_edit.OriginalResolution}).");
         }
         catch (Exception ex)
         {
@@ -1680,10 +1496,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         {
             using (SKBitmap bitmap = SKBitmap.Decode(path) ?? throw new IOException("Could not decode snapshot."))
             {
-                _snapshotWidth = bitmap.Width;
-                _snapshotHeight = bitmap.Height;
-                _originalResolution = $"{_snapshotWidth}x{_snapshotHeight}";
-                _captureResolutionKnown = _snapshotWidth > 0 && _snapshotHeight > 0;   // RESGUESS_01
+                _edit.SnapshotWidth = bitmap.Width;
+                _edit.SnapshotHeight = bitmap.Height;
+                _edit.OriginalResolution = $"{_edit.SnapshotWidth}x{_edit.SnapshotHeight}";
+                _edit.CaptureResolutionKnown = _edit.SnapshotWidth > 0 && _edit.SnapshotHeight > 0;   // RESGUESS_01
                 BuildContrastSampler(bitmap);                                          // BANDCONTRAST_01
             }
 
@@ -1715,14 +1531,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 oldBitmap.Dispose();
             }
             _snapshotImage.Source = snapshotBitmap;
-            _snapshotImage.Width = _snapshotWidth;
-            _snapshotImage.Height = _snapshotHeight;
+            _snapshotImage.Width = _edit.SnapshotWidth;
+            _snapshotImage.Height = _edit.SnapshotHeight;
         }
 
         if (_sourceCanvas != null)
         {
-            _sourceCanvas.Width = _snapshotWidth;
-            _sourceCanvas.Height = _snapshotHeight;
+            _sourceCanvas.Width = _edit.SnapshotWidth;
+            _sourceCanvas.Height = _edit.SnapshotHeight;
         }
 
         if (composerBitmap != null && _composerBackgroundImage != null)
@@ -1733,7 +1549,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ClearSourceSelection();
         ClearMagicWandCandidates();
         // MAGICWAND_02 — a new frozen frame wipes the DRAWN candidates but not the cached ones:
-        // they are in source-pixel space and describe the CLIP, which has not changed. Rewinding
+        // they are in source-pixel space and describe the CLIP, which has not changed (AI boxes
+        // describe a FRAME and are re-asked or dropped on the next press - AIHUD_04). Rewinding
         // the step cursor means the next press shows the whole set again rather than resuming
         // halfway through a walk the user has forgotten about.
         _wandPreviewIndex = -1;
@@ -1745,7 +1562,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // 100% is one click away for pixel-exact work.
         ApplySnapshotZoom(null);
 
-        SetWizardState(3, "Refine Box", $"Draw a HUD box on the {_originalResolution} snapshot.");
+        SetWizardState(3, "Refine Box", $"Draw a HUD box on the {_edit.OriginalResolution} snapshot.");
     }
 
     private async Task CaptureCurrentPreviewFrameAsync(string outputPath)
@@ -2109,8 +1926,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 // edge slides along it instead of shrinking the box.
                 double nx = _sourceDragOrigin.X + (p.X - _sourceDragAnchor.X);
                 double ny = _sourceDragOrigin.Y + (p.Y - _sourceDragAnchor.Y);
-                nx = Math.Clamp(nx, 0, Math.Max(0, _snapshotWidth - _sourceDragOrigin.Width));
-                ny = Math.Clamp(ny, 0, Math.Max(0, _snapshotHeight - _sourceDragOrigin.Height));
+                nx = Math.Clamp(nx, 0, Math.Max(0, _edit.SnapshotWidth - _sourceDragOrigin.Width));
+                ny = Math.Clamp(ny, 0, Math.Max(0, _edit.SnapshotHeight - _sourceDragOrigin.Height));
                 SetSourceSelection(
                     new SourceRect((int)Math.Round(nx), (int)Math.Round(ny),
                                    _sourceDragOrigin.Width, _sourceDragOrigin.Height),
@@ -2493,7 +2310,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// <summary>
     /// CROPCANVAS_01 — arrow-key nudge for the SOURCE selection.
     ///
-    /// The window already nudged _selectedItem, which is a PORTRAIT item, so on the frozen frame
+    /// The window already nudged SelectedView, which is a PORTRAIT item, so on the frozen frame
     /// the arrow keys did nothing at all. Getting the last two or three pixels of a HUD box right
     /// with a mouse is unreasonable; this is how that is meant to be done.
     /// Plain arrows move the box, Ctrl+arrows resize its bottom-right corner, Shift multiplies
@@ -2521,12 +2338,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         else
         {
             next = new SourceRect(
-                (int)Math.Clamp(r.X + dx, 0, Math.Max(0, _snapshotWidth - r.Width)),
-                (int)Math.Clamp(r.Y + dy, 0, Math.Max(0, _snapshotHeight - r.Height)),
+                (int)Math.Clamp(r.X + dx, 0, Math.Max(0, _edit.SnapshotWidth - r.Width)),
+                (int)Math.Clamp(r.Y + dy, 0, Math.Max(0, _edit.SnapshotHeight - r.Height)),
                 r.Width, r.Height);
         }
 
-        SetSourceSelection(ClampSourceRect(next), keepRoleName: true);
+        SetSourceSelection(_edit.ClampSourceRect(next), keepRoleName: true);
         return true;
     }
 
@@ -2791,7 +2608,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     {
         byte[] samples = _contrastSamples ?? Array.Empty<byte>();
         if (samples.Length == 0 || _contrastSampleW <= 0 || _contrastSampleH <= 0 ||
-            _snapshotWidth <= 0 || _snapshotHeight <= 0)
+            _edit.SnapshotWidth <= 0 || _edit.SnapshotHeight <= 0)
         {
             return BandDefaultColour;
         }
@@ -2805,8 +2622,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return _bandColour;
         }
 
-        double fx = _contrastSampleW / (double)_snapshotWidth;
-        double fy = _contrastSampleH / (double)_snapshotHeight;
+        double fx = _contrastSampleW / (double)_edit.SnapshotWidth;
+        double fy = _contrastSampleH / (double)_edit.SnapshotHeight;
 
         int left = Math.Clamp((int)Math.Round(rect.X * fx), 0, _contrastSampleW - 1);
         int top = Math.Clamp((int)Math.Round(rect.Y * fy), 0, _contrastSampleH - 1);
@@ -3019,8 +2836,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         double scale = Math.Max(0.01, CurrentZoom());
         double gap = CrosshairGapPx / scale;
-        double w = _snapshotWidth;
-        double h = _snapshotHeight;
+        double w = _edit.SnapshotWidth;
+        double h = _edit.SnapshotHeight;
 
         // Thickness only. StrokeDashArray is in UNITS OF StrokeThickness, so the dash rescales
         // itself and is set once in EnsureCrosshair - rebuilding four AvaloniaLists on every
@@ -3062,7 +2879,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return;
         }
 
-        rect = rect.Intersect(new Rect(0, 0, _snapshotWidth, _snapshotHeight));
+        rect = rect.Intersect(new Rect(0, 0, _edit.SnapshotWidth, _edit.SnapshotHeight));
         Canvas.SetLeft(_selectionRect, rect.X);
         Canvas.SetTop(_selectionRect, rect.Y);
         _selectionRect.Width = Math.Max(1, rect.Width);
@@ -3140,7 +2957,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return;
         }
 
-        HudRole role = roleKey != null && TryGetRole(roleKey, out HudRole found)
+        HudRole role = roleKey != null && _edit.TryGetRole(roleKey, out HudRole found)
             ? found
             : SuggestRole(rect);
         RoleName = role.DisplayName;
@@ -3215,10 +3032,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         CloseRolePopupNewRow();
         list.Children.Clear();
 
-        string? primary = QuadrantGuess(sel).Key;
+        string? primary = _edit.QuadrantGuess(sel).Key;
         var placed = _items.Select(i => i.RoleKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var ordered = AllRoles
+        var ordered = _edit.AllRoles
             .OrderBy(r => placed.Contains(r.Key) ? 1 : 0)
             .ThenBy(r => string.Equals(r.Key, primary, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ToList();
@@ -3608,7 +3425,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // NODUPES_02 — RegisterCustomRole already returns the role, and it returns the EXISTING one
         // when the name matches something known, so typing "Loot Area" into "+ New element" now
         // lands on the built-in `loot` instead of minting a second element that merely looks like it.
-        HudRole role = RegisterCustomRole(name);
+        HudRole role = _edit.RegisterCustomRole(name);
         CloseRolePopupNewRow();
         await ConfirmSelectionAsAsync(role);
     }
@@ -3657,26 +3474,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         await AddCurrentSelection(role);
     }
 
-    /// <summary>
-    /// ROLEPOPUP_01 — which element the box is MOST LIKELY to be, from where it sits on the frame.
-    /// Ported from the Python tool's _apply_role_priority. Purely an ordering hint for the popup;
-    /// it never assigns anything on its own.
-    /// </summary>
-    private HudRole QuadrantGuess(SourceRect rect)
-    {
-        bool right = rect.X + rect.Width / 2.0 > _snapshotWidth / 2.0;
-        bool bottom = rect.Y + rect.Height / 2.0 > _snapshotHeight / 2.0;
-
-        string key = (bottom, right) switch
-        {
-            (false, false) => "team",
-            (false, true) => "stats",
-            (true, true) => "loot",
-            (true, false) => "normal_hp",
-        };
-
-        return TryGetRole(key, out HudRole role) ? role : Roles[0];
-    }
     /// <param name="role">
     /// NODUPES_02 — the element this box IS, handed in by the chooser that owns the decision.
     ///
@@ -3699,7 +3496,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return;
         }
 
-        SourceRect sourceRect = ClampSourceRect(_sourceSelection.Value);
+        SourceRect sourceRect = _edit.ClampSourceRect(_sourceSelection.Value);
         if (sourceRect.Width < MinSelectionSize || sourceRect.Height < MinSelectionSize)
         {
             SetStatus("Selection is too small.");
@@ -3710,7 +3507,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         {
             var contentRect = CoordinateMath.TransformToContentAreaInt(
                 (sourceRect.X, sourceRect.Y, sourceRect.Width, sourceRect.Height),
-                _originalResolution);
+                _edit.OriginalResolution);
             if (contentRect.w < 2 || contentRect.h < 2)
             {
                 SetStatus("Selection does not map to a visible portrait area.");
@@ -3721,73 +3518,23 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             string cropPath = await CropSnapshotRegionForExportPreviewAsync(snapshotPath, sourceRect, role.Key);
             _tempFiles.Add(cropPath);
 
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // NODUPES_01 — one element, one entry, always. Picking an element that is already on
-            // the composer REPLACES it head to head rather than adding a second copy.
-            //
-            // The key comparison is OrdinalIgnoreCase, not ==. Keys are lowercased when they are
-            // minted from a display name, but keys ADOPTED from a profile document
-            // (AdoptRolesFromConfig) are whatever that file contains, and a hand-edited or older
-            // config can hold "Loot" or "LOOT". Case-sensitive == would miss those and quietly
-            // leave two items writing to one config key, where the last one to save wins and the
-            // other silently disappears.
-            //
-            // NODUPES_02 — AND BY DISPLAY NAME, WHICH IS NOT BELT-AND-BRACES. It is the repair for
-            // profiles the key-mangling bug has already damaged.
-            //
-            // A profile saved by the broken build can hold BOTH `loot` and `loot_area`. Those are
-            // two different keys, so a key-only check leaves both on the composer — and
-            // AdoptRolesFromConfig turns `loot_area` back into the display name "Loot Area", which
-            // is character-for-character what the built-in `loot` already calls itself. The user
-            // then sees exactly what was reported: two layers, same words on both labels, and no
-            // way to tell which one the export will use.
-            //
-            // Matching the label as well means the first time such a profile is re-saved through
-            // this window, the stale twin is removed and the survivor carries the correct key. The
-            // bug cleans up after itself instead of needing a migration.
-            // ══════════════════════════════════════════════════════════════════════════════════
-            foreach (CropEditorItem duplicate in _items
-                         .Where(i => string.Equals(i.RoleKey, role.Key, StringComparison.OrdinalIgnoreCase)
-                                  || string.Equals(i.DisplayName, role.DisplayName, StringComparison.OrdinalIgnoreCase))
-                         .ToList())
+            // NODUPES_01 / NODUPES_02 / DELETESET_01 — one element, one entry, always: an element
+            // already placed (by key OR by label) is REPLACED, and a twin under another key is
+            // tombstoned. EDITSTATE_01 — the rule, the default placement and the z collision are
+            // the session's; this releases the replaced visuals and builds the new one.
+            CropLayer layer = _edit.AddLayer(role, sourceRect, cropPath, contentRect, out var replaced);
+            foreach (CropLayer old in replaced)
             {
-                RuntimeLog.Info("CROP",
-                    $"Replacing existing '{duplicate.DisplayName}' (key={duplicate.RoleKey}) with the new selection for '{role.DisplayName}' (key={role.Key}).");
-
-                // DELETESET_01 — a twin under a DIFFERENT key is not being replaced, it is being
-                // retired, and the config still holds its entry. Tombstone it or SaveConfigAsync's
-                // merge would faithfully preserve the duplicate it was just asked to remove.
-                if (!string.Equals(duplicate.RoleKey, role.Key, StringComparison.OrdinalIgnoreCase))
-                {
-                    _deletedRoleKeys.Add(duplicate.RoleKey);
-                    RuntimeLog.Info("CROP", $"Stale duplicate key '{duplicate.RoleKey}' tombstoned so the save does not keep it.");
-                }
-
-                RemoveItem(duplicate);
+                if (_items.FirstOrDefault(i => ReferenceEquals(i.Model, old)) is { } oldView) RemoveItem(oldView);
             }
 
-            var initialSize = QuantizeItemSize(sourceRect, contentRect.w, role.Key);
-            int width = initialSize.width;
-            int height = initialSize.height;
-
-            int initialX = role.DefaultX >= 0 ? (int)role.DefaultX : contentRect.x;
-            int initialY = role.DefaultY >= 0 ? (int)role.DefaultY : contentRect.y + CoordinateConstants.UIPaddingTop;
-
-            (int x, int y) = ClampOverlay(initialX, initialY, width, height);
-
-            int z = role.DefaultZ;
-            if (_items.Any(i => i.Z == z))
-            {
-                z = _items.Max(i => i.Z) + 1;
-            }
-
-            var item = CreateItem(new ItemSnapshot(role.Key, role.DisplayName, sourceRect, cropPath, x, y, width, height, z));
+            int z = layer.Z;
+            var item = CreateItem(layer);
             _items.Add(item);
-            _deletedRoleKeys.Remove(role.Key);
             SelectItem(item);
             RefreshLayerList();
-            MarkDirty();
-            PushHistory();
+            RefreshActionButtons();
+            PushHistory(CropHistoryLabels.AddElement);
             RuntimeLog.Info("CROP", $"Added HUD element: {role.DisplayName} (role={role.Key}, source={sourceRect.Width}x{sourceRect.Height} at ({sourceRect.X},{sourceRect.Y}), z={z})");
             ClearSourceSelection();
             ClearMagicWandCandidates();
@@ -3808,11 +3555,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     {
         var contentRect = CoordinateMath.TransformToContentAreaInt(
             (sourceRect.X, sourceRect.Y, sourceRect.Width, sourceRect.Height),
-            _originalResolution,
+            _edit.OriginalResolution,
             HudConfig.CropDriftType(roleKey));
         var exportRect = CoordinateMath.InverseTransformFromContentAreaInt(
             (contentRect.x, contentRect.y, contentRect.w, contentRect.h),
-            _originalResolution,
+            _edit.OriginalResolution,
             HudConfig.CropDriftType(roleKey));
         return await CropSnapshotRegionAsync(snapshotPath, new SourceRect(exportRect.x, exportRect.y, exportRect.w, exportRect.h)).ConfigureAwait(false);
     }
@@ -3825,7 +3572,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         using var data = await Task.Run(() =>
         {
             using SKBitmap source = SKBitmap.Decode(snapshotPath) ?? throw new IOException("Could not decode snapshot.");
-            SourceRect clamped = ClampSourceRect(rect, source.Width, source.Height);
+            SourceRect clamped = CropEditSession.ClampSourceRect(rect, source.Width, source.Height);
 
             using var target = new SKBitmap(clamped.Width, clamped.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(target);
@@ -3849,7 +3596,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return output;
     }
 
-    private CropEditorItem CreateItem(ItemSnapshot snapshot)
+    /// <summary>Builds the VISUALS for one layer of the edit and mounts them on the composer.</summary>
+    private CropEditorItem CreateItem(CropLayer snapshot)
     {
         var root = new Canvas
         {
@@ -3940,15 +3688,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         var item = new CropEditorItem
         {
-            RoleKey = snapshot.RoleKey,
-            DisplayName = snapshot.DisplayName,
-            SourceRect = snapshot.SourceRect,
-            CropImagePath = snapshot.CropImagePath,
-            X = snapshot.X,
-            Y = snapshot.Y,
-            Width = snapshot.Width,
-            Height = snapshot.Height,
-            Z = snapshot.Z,
+            Model = snapshot,
             Root = root,
             Image = image,
             Border = border,
@@ -3987,7 +3727,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     ///
     /// Built fresh per item rather than shared, because Avalonia's ContextMenu carries its own
     /// placement target: one instance attached to several items would open against whichever it
-    /// was last attached to. The commands act on _selectedItem, and opening the menu selects the
+    /// was last attached to. The commands act on SelectedView, and opening the menu selects the
     /// item first (the right-click is routed through Item_PointerPressed), so "the one I
     /// right-clicked" and "the selected one" are always the same element.
     /// </summary>
@@ -4082,7 +3822,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             double x = _editStartX + dx;
             double y = _editStartY + dy;
             (x, y) = SnapPosition(_activeEditItem, x, y, _activeEditItem.Width, _activeEditItem.Height);
-            (int ix, int iy) = ClampOverlay(x, y, _activeEditItem.Width, _activeEditItem.Height);
+            (int ix, int iy) = CropEditSession.ClampOverlay(x, y, _activeEditItem.Width, _activeEditItem.Height);
             _activeEditItem.X = ix;
             _activeEditItem.Y = iy;
         }
@@ -4096,7 +3836,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
 
         ApplyItemLayout(_activeEditItem);
-        _dirty = true;
+        _edit.Dirty = true;
         RefreshActionButtons();
         e.Handled = true;
     }
@@ -4114,11 +3854,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         if (this.FindControl<Grid>("RuleOfThirdsGrid") is Grid grid)
             grid.Opacity = 0;
 
-        EditorSnapshot current = CaptureSnapshot();
-        if (_editStartSnapshot != null && !SnapshotsEqual(_editStartSnapshot, current))
+        CropLayoutSnapshot current = CaptureSnapshot();
+        if (_editStartSnapshot != null && !_editStartSnapshot.Equals(current))
         {
             MarkDirty();
-            PushHistory(current);
+            PushHistory(current, CropHistoryLabels.ForPointerGesture(_composerEditMode != ComposerEditMode.Drag));   // UNDO_27 — one gesture, one step
             RefreshLayerList();
         }
 
@@ -4128,24 +3868,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         e.Handled = true;
     }
 
-    /// <summary>
-    /// RESIZEFEEL_01 — the ratio a HUD element must keep, taken from the SOURCE crop.
-    ///
-    /// This is the shape the user drew on the frozen frame, converted into content space by the
-    /// same transform the composer and the exporter both use. It is the only ratio that means
-    /// anything: everything else in the chain is a rounded copy of it.
-    /// </summary>
-    private double SourceAspectOf(CropEditorItem item)
-    {
-        var contentRect = CoordinateMath.TransformToContentAreaInt(
-            (item.SourceRect.X, item.SourceRect.Y, item.SourceRect.Width, item.SourceRect.Height),
-            _originalResolution,
-            HudConfig.CropDriftType(item.RoleKey));
-
-        int w = Math.Max(1, contentRect.w);
-        int h = Math.Max(1, contentRect.h);
-        return h / (double)w;
-    }
+    /// <summary>RESIZEFEEL_01 — the ratio a HUD element must keep, taken from the SOURCE crop (the session's rule).</summary>
+    private double SourceAspectOf(CropEditorItem item) => _edit.SourceAspectOf(item.Model);
 
     // CROPGEOM_01 — DiagonalWidthDelta moved verbatim; see the extracted type.
 
@@ -4176,10 +3900,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             width = aspect > 1e-6 ? height / aspect : width;
         }
 
-        var quantized = QuantizeItemSize(item.SourceRect, Math.Max(MinItemSize, width), item.RoleKey);
+        var quantized = _edit.QuantizeLayerSize(item.SourceRect, Math.Max(MinItemSize, width), item.RoleKey);
         item.Width = quantized.width;
         item.Height = quantized.height;
-        (item.X, item.Y) = ClampOverlay(anchorX, anchorY, item.Width, item.Height);
+        (item.X, item.Y) = CropEditSession.ClampOverlay(anchorX, anchorY, item.Width, item.Height);
     }
 
     private void ResizeFromBottomRight(CropEditorItem item, double dx, double dy)
@@ -4242,21 +3966,24 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             width = aspect > 1e-6 ? height / aspect : width;
         }
 
-        var quantized = QuantizeItemSize(item.SourceRect, Math.Max(MinItemSize, width), item.RoleKey);
+        var quantized = _edit.QuantizeLayerSize(item.SourceRect, Math.Max(MinItemSize, width), item.RoleKey);
         item.Width = quantized.width;
         item.Height = quantized.height;
         item.X = Math.Max(0, anchorRight - item.Width);
         item.Y = Math.Max((int)ContentTop, anchorBottom - item.Height);
-        (item.X, item.Y) = ClampOverlay(item.X, item.Y, item.Width, item.Height);
+        (item.X, item.Y) = CropEditSession.ClampOverlay(item.X, item.Y, item.Width, item.Height);
     }
 
+    /// <summary>Normalises the layer's layout (the session's rule) and places its visuals to match.</summary>
     private void ApplyItemLayout(CropEditorItem item)
     {
-        var quantized = QuantizeItemSize(item.SourceRect, item.Width, item.RoleKey);
-        item.Width = quantized.width;
-        item.Height = quantized.height;
-        (item.X, item.Y) = ClampOverlay(item.X, item.Y, item.Width, item.Height);
+        _edit.NormalizeLayout(item.Model);   // EDITSTATE_01 — quantised size, kept on the canvas
+        RenderItemLayout(item);
+    }
 
+    /// <summary>Places an element's VISUALS at its layer's layout. No logic: geometry is already settled.</summary>
+    private void RenderItemLayout(CropEditorItem item)
+    {
         item.Root.Width = item.Width;
         item.Root.Height = item.Height;
         item.Root.ZIndex = item.Z;
@@ -4284,27 +4011,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         item.LabelText.Text = item.DisplayName.ToUpperInvariant();
     }
 
-    private (int width, int height, Frac scale) QuantizeItemSize(SourceRect sourceRect, double desiredWidth, string? roleKey = null)
-    {
-        var contentRect = CoordinateMath.TransformToContentAreaInt(
-            (sourceRect.X, sourceRect.Y, sourceRect.Width, sourceRect.Height),
-            _originalResolution,
-            HudConfig.CropDriftType(roleKey ?? ""));
-
-        int contentW = Math.Max(2, contentRect.w);
-        int contentH = Math.Max(2, contentRect.h);
-
-        long maxDesW = (long)Math.Round(Math.Max(MinItemSize, desiredWidth));
-        var quantizedScale = new Frac(maxDesW, contentW);
-
-        var (width, height) = CoordinateMath.QuantizeBackendSize(contentW, contentH, quantizedScale);
-
-        return (width, height, quantizedScale);
-    }
 
     private void SelectItem(CropEditorItem? item, bool updateLayerList = true)
     {
-        _selectedItem = item;
+        SelectedView = item;
         foreach (CropEditorItem editorItem in _items)
         {
             UpdateItemVisual(editorItem);
@@ -4322,7 +4032,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private void UpdateItemVisual(CropEditorItem item)
     {
-        bool selected = ReferenceEquals(item, _selectedItem);
+        bool selected = ReferenceEquals(item, SelectedView);
         item.Border.Stroke = selected ? Brushes.Gold : Brushes.Black;
         item.Border.StrokeThickness = 2;
         item.TopLeftHandle.IsVisible = selected;
@@ -4332,40 +4042,22 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             : new SolidColorBrush(Color.FromArgb(210, 0, 0, 0));
     }
 
-    /// <summary>
-    /// ISSUE_2 — role keys the user explicitly deleted this session.
-    ///
-    /// SaveConfig MERGES into the config on disk rather than replacing it, and that must stay that
-    /// way: the document can hold elements this session never touched, and pruning every key not in
-    /// _items would wipe them. This set is therefore the only signal that a removal was deliberate
-    /// rather than merely absent.
-    ///
-    /// DELETESET_01 — it is cleared by ResetWorkingState, which is what runs on a profile switch.
-    /// A tombstone belongs to the profile that created it.
-    /// </summary>
-    /// <remarks>
-    /// KEYCASE_01 — OrdinalIgnoreCase, not Ordinal. RoleByKey is built with OrdinalIgnoreCase, so
-    /// "Loot" and "loot" are the SAME role everywhere else in this window; with an Ordinal set they
-    /// were two different tombstones, and a config written with a different capitalisation than the
-    /// role table uses would never be matched by the delete path at all.
-    /// </remarks>
-    private readonly HashSet<string> _deletedRoleKeys = new(StringComparer.OrdinalIgnoreCase);
+    // ISSUE_2 / DELETESET_01 / KEYCASE_01 — the tombstones of deliberately deleted elements are the
+    // session's (CropEditSession.DeletedRoleKeys): a save merges, so they are the only proof of intent.
+
 
     private void DeleteSelectedItem()
     {
-        if (_selectedItem == null)
-        {
-            return;
-        }
-
-        _deletedRoleKeys.Add(_selectedItem.RoleKey);
-        RemoveItem(_selectedItem);
+        CropEditorItem? view = SelectedView;
+        if (_edit.DeleteSelected() == null) return;   // EDITSTATE_01 — tombstones the key (ISSUE_2), marks dirty
+        if (view != null) RemoveItem(view);
         SelectItem(null);
         RefreshLayerList();
-        MarkDirty();
-        PushHistory();
+        RefreshActionButtons();
+        PushHistory(CropHistoryLabels.DeleteElement);
     }
 
+    /// <summary>Releases an element's VISUALS. The layer itself is the session's to remove.</summary>
     private void RemoveItem(CropEditorItem item)
     {
         if (_portraitCanvas != null)
@@ -4383,87 +4075,34 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _items.Remove(item);
     }
 
-    /// <summary>
-    /// ZCOLLIDE_01 - normalises every placed element onto a dense, strictly increasing z sequence
-    /// starting at 1, preserving the current paint order.
-    ///
-    /// Two elements holding the same Z is not a cosmetic problem: Avalonia leaves the draw order of
-    /// equal ZIndex siblings to Children order, the layer list sorts equal Z by DisplayName, and
-    /// MobileFilterBuilder sorts equal Z by its own rule - three different answers for the same
-    /// document, so the composer, the preview and the exported video can each stack the pair
-    /// differently. Keeping the values distinct is what makes those three agree.
-    ///
-    /// The tie-break here matches the shared rule used by the layer list and the exporter:
-    /// ascending Z, then RoleKey (OrdinalIgnoreCase).
-    /// </summary>
-    private void NormalizeZOrder()
-    {
-        int next = 1;
-        foreach (CropEditorItem item in _items
-            .OrderBy(i => i.Z)
-            .ThenBy(i => i.RoleKey, StringComparer.OrdinalIgnoreCase))
-        {
-            item.Z = next++;
-        }
-    }
 
+    /// <summary>
+    /// ZCOLLIDE_01 — one press moves the element exactly one place, by swapping with its neighbour
+    /// (the rule is the session's; this repaints the two layers that changed).
+    /// </summary>
     private void MoveSelectedLayer(int delta)
     {
-        if (_selectedItem == null || delta == 0)
-        {
-            return;
-        }
+        if (_edit.MoveSelectedLayer(delta) is not { } swapped) return;
 
-        // ZCOLLIDE_01 - the old code did `_selectedItem.Z += delta`, which walks the raw z value by
-        // one with no collision check. Because placed elements normally sit on consecutive z values,
-        // a single press landed the moved element exactly ON its neighbour's z instead of past it:
-        // nothing visibly moved, and the document was left holding a duplicate z. Pressing again
-        // then jumped two places at once. Swapping with the neighbour makes one press always move
-        // the element exactly one place, and never produces a duplicate.
-        NormalizeZOrder();
-
-        List<CropEditorItem> ordered = _items
-            .OrderBy(i => i.Z)
-            .ThenBy(i => i.RoleKey, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        int index = ordered.IndexOf(_selectedItem);
-        if (index < 0)
-        {
-            return;
-        }
-
-        int target = index + Math.Sign(delta);
-        if (target < 0 || target >= ordered.Count)
-        {
-            // Already at the top or the bottom of the stack - nothing to swap with.
-            return;
-        }
-
-        CropEditorItem neighbour = ordered[target];
-        (_selectedItem.Z, neighbour.Z) = (neighbour.Z, _selectedItem.Z);
-
-        ApplyItemLayout(_selectedItem);
-        ApplyItemLayout(neighbour);
+        foreach (CropEditorItem view in _items.Where(i => ReferenceEquals(i.Model, swapped.Moved) || ReferenceEquals(i.Model, swapped.Neighbour)))
+            ApplyItemLayout(view);
         RefreshLayerList();
-        MarkDirty();
-        PushHistory();
+        RefreshActionButtons();
+        PushHistory(CropHistoryLabels.ChangeLayerOrder);
     }
 
     private void RefreshLayerList()
     {
-        string? selectedKey = _selectedItem?.RoleKey;
+        string? selectedKey = SelectedView?.RoleKey;
         _layers.Clear();
         // ZTIEBREAK_01 - the list paints top-of-stack first, so it is the reverse of the shared
         // rule (ascending Z, then RoleKey OrdinalIgnoreCase) used by the composer and by
         // MobileFilterBuilder. DisplayName was the old tie-break here and RoleKey is the
         // exporter's; two elements on the same z could therefore be listed in one order and
         // rendered in the other. RoleKey is unique per element, so this is now total.
-        foreach (CropEditorItem item in _items
-            .OrderByDescending(i => i.Z)
-            .ThenByDescending(i => i.RoleKey, StringComparer.OrdinalIgnoreCase))
+        foreach (CropLayer layer in _edit.ListOrder)
         {
-            _layers.Add(new LayerEntry(item.RoleKey, item.DisplayName, item.Z));
+            _layers.Add(new LayerEntry(layer.RoleKey, layer.DisplayName, layer.Z));
         }
 
         if (_layerList != null && selectedKey != null)
@@ -4484,21 +4123,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     }
 
     /// <summary>
-    /// IDEA_1 — turns previously saved layers back into REAL, draggable items.
-    ///
-    /// Before this existed the editor was write-only: saved layers appeared as read-only green
-    /// ghosts and the only way to change one was to delete it and redraw the whole box. _items was
-    /// filled solely by AddSelection and by undo restore.
-    ///
-    /// THE DRIFT TRAP THIS AVOIDS. The saved "crops_1080p" rect is content-space. Converting it
-    /// back to source pixels uses CoordinateMath.InverseTransformFromContentAreaInt, and saving
-    /// converts forward again with TransformToContentAreaInt — and BOTH round strictly outward by
-    /// design, so composing them grows the box up to 2px per axis, every single cycle. That is why
-    /// the source rect is now persisted separately (crops_source) and read back verbatim here.
-    /// The inverse transform is used ONLY as the one-time migration for a pre-v4 file, which costs
-    /// exactly the single outward snap that already happens today.
-    ///
-    /// Safe to call more than once: a role already present in _items is skipped.
+    /// IDEA_1 — turns previously saved layers back into REAL, draggable items. EDITSTATE_01 — what
+    /// the document says (and the DRIFT TRAP / RESGUESS_01 rules for reading it) is
+    /// <see cref="CropProfileCodec.ReadSavedLayers"/>; this window loads the file, cuts each
+    /// thumbnail and builds the visuals. Safe to call more than once: a placed role is skipped.
     /// </summary>
     private async Task RehydrateSavedLayersAsync()
     {
@@ -4507,86 +4135,18 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         try
         {
             JsonObject config = HudConfig.Sanitize(await new CropConfigStore(_paths).LoadAsync());
-            JsonObject crops = EnsureObject(config, "crops_1080p");
-            JsonObject scales = EnsureObject(config, "scales");
-            JsonObject overlays = EnsureObject(config, "overlays");
-            JsonObject zOrders = EnsureObject(config, "z_orders");
-            JsonObject sourceCrops = EnsureObject(config, CropConfigDefaults.SourceCropsSection);
 
-            // ROLEPOPUP_01 / A3 - register every element key the PROFILE knows about before
-            // iterating. This loop used to be `foreach (HudRole role in Roles)` over the six
-            // hardcoded Fortnite names, which meant an element the user had named themselves was
-            // written to the config on save and then silently invisible on every later open: the
-            // reader simply never asked about that key. Anything enumerating elements goes through
-            // AllRoles, and AllRoles only knows what has been registered.
-            AdoptRolesFromConfig(crops);
-            AdoptRolesFromConfig(sourceCrops);
-
-            foreach (HudRole role in AllRoles.ToList())
+            foreach (CropLayer layer in CropProfileCodec.ReadSavedLayers(config, _edit))
             {
-                if (_items.Any(i => string.Equals(i.RoleKey, role.Key, StringComparison.OrdinalIgnoreCase))) continue;
-                if (_deletedRoleKeys.Contains(role.Key)) continue;
-
-                if (ReadSectionNode(crops, role.Key) is not JsonArray crop || crop.Count < 4) continue;
-
-                int cropW = ReadInt(crop[0], 0);
-                int cropH = ReadInt(crop[1], 0);
-                if (cropW <= 1 || cropH <= 1) continue;
-
-                SourceRect sourceRect;
-                if (ReadSectionNode(sourceCrops, role.Key) is JsonArray src && src.Count >= 4)
-                {
-                    sourceRect = new SourceRect(
-                        ReadInt(src[2], 0), ReadInt(src[3], 0),
-                        Math.Max(2, ReadInt(src[0], 2)), Math.Max(2, ReadInt(src[1], 2)));
-                }
-                else
-                {
-                    var derived = CoordinateMath.InverseTransformFromContentAreaInt(
-                        (ReadInt(crop[2], 0), ReadInt(crop[3], 0), cropW, cropH),
-                        _originalResolution,
-                        HudConfig.CropDriftType(role.Key));
-                    sourceRect = new SourceRect(derived.x, derived.y, derived.w, derived.h);
-                    RuntimeLog.Info("CROP", $"Migrated '{role.Key}' to a stored source rect (pre-v4 config).");
-                }
-
-                // RESGUESS_01 — clamping is only meaningful against the REAL capture size. With no
-                // video loaded _snapshotWidth/_snapshotHeight are still the 1920x1080 placeholder,
-                // so clamping a 2560x1440 profile here chopped every rectangle that crossed x=1920
-                // or y=1080 and the chopped values were then written back on the next save.
-                bool geometryVerified = _captureResolutionKnown;
-                if (geometryVerified)
-                {
-                    sourceRect = ClampSourceRect(sourceRect);
-                }
-
-                Frac scale = ReadFrac(ReadSectionNode(scales, role.Key), Frac.One);
-                var (w, h) = CoordinateMath.QuantizeBackendSize(cropW, cropH, scale);
-
-                double ox = role.DefaultX, oy = role.DefaultY;
-                if (ReadSectionNode(overlays, role.Key) is JsonObject ov)
-                {
-                    ox = ReadDouble(ov["x"], role.DefaultX);
-                    oy = ReadDouble(ov["y"], role.DefaultY);
-                }
-
-                int z = ReadInt(ReadSectionNode(zOrders, role.Key), role.DefaultZ);
-
-                string cropImagePath = string.Empty;
                 if (_snapshotPath != null)
                 {
-                    try { cropImagePath = await CropSnapshotRegionAsync(_snapshotPath, sourceRect); }
-                    catch (Exception ex) { RuntimeLog.Info("CROP", $"Thumbnail for '{role.Key}' could not be built: {ex.Message}"); }
-                    if (!string.IsNullOrEmpty(cropImagePath)) _tempFiles.Add(cropImagePath);
+                    try { layer.CropImagePath = await CropSnapshotRegionAsync(_snapshotPath, layer.SourceRect); }
+                    catch (Exception ex) { RuntimeLog.Info("CROP", $"Thumbnail for '{layer.RoleKey}' could not be built: {ex.Message}"); }
+                    if (!string.IsNullOrEmpty(layer.CropImagePath)) _tempFiles.Add(layer.CropImagePath);
                 }
 
-                var item = CreateItem(new ItemSnapshot(
-                    role.Key, role.DisplayName, sourceRect, cropImagePath,
-                    (int)Math.Round(ox), (int)Math.Round(oy), w, h, z));
-
-                item.FromSavedConfig = true;   // GHOSTKILL_01
-                item.GeometryVerified = geometryVerified;   // RESGUESS_01
-                _items.Add(item);
+                _edit.AdoptSavedLayer(layer);   // GHOSTKILL_01 / RESGUESS_01 flags set by the codec
+                _items.Add(CreateItem(layer));
             }
 
             RefreshLayerList();
@@ -4612,26 +4172,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             // without one can finally be checked against it. This is the only place an unverified
             // element becomes verified, and it is also the only place it becomes safe for
             // SaveConfigAsync to rewrite that element's crop rectangle.
-            if (!item.GeometryVerified && _captureResolutionKnown)
-            {
-                SourceRect clamped = ClampSourceRect(item.SourceRect);
-                if (clamped.Width >= 2 && clamped.Height >= 2)
-                {
-                    if (clamped.X != item.SourceRect.X || clamped.Y != item.SourceRect.Y ||
-                        clamped.Width != item.SourceRect.Width || clamped.Height != item.SourceRect.Height)
-                    {
-                        RuntimeLog.Info("CROP", $"'{item.RoleKey}' source rect clamped to the loaded {_originalResolution} frame.");
-                    }
-
-                    item.SourceRect = clamped;
-                    item.GeometryVerified = true;
-                    ApplyItemLayout(item);
-                }
-                else
-                {
-                    RuntimeLog.Info("CROP", $"'{item.RoleKey}' does not fit the loaded {_originalResolution} frame; its stored crop is left untouched.");
-                }
-            }
+            if (_edit.TryVerifyGeometry(item.Model)) ApplyItemLayout(item);
 
             if (!string.IsNullOrEmpty(item.CropImagePath) && File.Exists(item.CropImagePath)) continue;
 
@@ -4706,358 +4247,15 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // MAGICWAND_02 — AUTOMATIC HUD DETECTION.
-    //
-    // WHAT WAS HERE BEFORE. ShowMagicWandCandidates() built six CandidateSpecs from hardcoded
-    // fractions of the frame — CandidateFromRatio("stats", 0.65, 0.02, 0.32, 0.28) and five more —
-    // drew them as pink rectangles and told the user they had been "detected". Nothing in that
-    // method ever looked at a pixel. On the one capture whose HUD happened to sit at those exact
-    // fractions it looked brilliant; on every other one it was confidently, silently wrong, which
-    // is why MAGICWAND_01 hid the button rather than ship it. Both methods are deleted.
-    //
-    // WHAT REPLACED IT. FreeVideoStudio.Core.Media.HudAutoDetector, the C# port of the old
-    // Python tool's developer_tools/magic_wand.py. It samples frames across the WHOLE clip, takes
-    // the temporal median and the temporal standard deviation, and scores real contours per HUD
-    // role. See that file for the algorithm; this section is only the UI around it.
-    //
-    // THE INTERACTION, which is the old Python tool's (app_handlers.on_magic_wand_clicked) because
-    // it was right: the FIRST press runs the analysis and shows every candidate at once. Each press
-    // after that steps through them one at a time as a live selection, so the user can tab through
-    // the wand's suggestions and press Enter on the one they want; after the last one it wraps back
-    // to showing them all. The candidates are cached until the clip or the frozen frame changes,
-    // so stepping is instant and the expensive part happens exactly once.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Candidates from the last successful run, or null if the wand has not run against the current
-    /// clip yet. Cleared ONLY by LoadVideoAsync, because the clip is the only thing that can
-    /// invalidate them: they are in source-pixel space, so freezing a different frame, committing
-    /// an element or resetting the working state all leave them perfectly valid. Those three paths
-    /// rewind <see cref="_wandPreviewIndex"/> instead, so the next press re-shows the whole set.
-    /// </summary>
-    private List<CandidateSpec>? _wandCandidates;
-
-    /// <summary>Where the "press again to step through them" cursor is. -1 means "showing all of
-    /// them", which is both the state after a fresh run and the state after wrapping past the end.</summary>
-    private int _wandPreviewIndex = -1;
-
-    /// <summary>Guards against a second press while the analysis is still running. The button is
-    /// disabled too; this is the guard for the keyboard and for a double-click that beats the
-    /// disable to the message queue.</summary>
-    private bool _wandRunning;
-
-    /// <summary>Cancels an in-flight run when the window closes or the clip changes.</summary>
-    private CancellationTokenSource? _wandCts;
-
-    private async Task RunMagicWandAsync()
-    {
-        if (_wandRunning) return;
-
-        if (_snapshotPath == null || _sourceCanvas == null)
-        {
-            SetStatus("Freeze a frame first — press START CROPPING.");
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_videoPath) || !File.Exists(_videoPath))
-        {
-            SetStatus("Open a video first.");
-            return;
-        }
-
-        // ── Already analysed: this press steps the preview rather than re-running anything.
-        if (_wandCandidates is { Count: > 0 } cached)
-        {
-            // Nothing currently drawn — because a new frame was frozen, an element was committed,
-            // or the working state was reset. Put the full set back before stepping, exactly as
-            // app_handlers.on_magic_wand_clicked did when draw_widget._candidates_img was empty.
-            // Re-running the detector here would cost the user twenty seconds to rebuild an answer
-            // that has not changed: the clip is the same clip.
-            if (_candidateControls.Count == 0 && _wandPreviewIndex < 0)
-            {
-                ClearSourceSelection();
-                ShowMagicWandCandidates();
-                SetWizardState(3, "Refine Box", $"{cached.Count} pieces found. Click one to label it.");
-                return;
-            }
-
-            StepMagicWandPreview();
-            return;
-        }
-
-        _wandRunning = true;
-        _wandCts?.Cancel();
-        _wandCts?.Dispose();
-        _wandCts = new CancellationTokenSource();
-
-        SetEnabled("MagicWandButton", false);
-        SetContent("MagicWandButton", "ANALYSING\u2026");
-        SetWizardState(3, "Refine Box", "Looking through the clip for HUD pieces.");
-
-        // WANDPROGRESS_01 — raise the progress panel BEFORE the first await, so there is never a
-        // frame where the button is grey and nothing else has changed.
-        ShowWandOverlay();
-
-        try
-        {
-            string ffmpeg = ResolveBinaryPath("ffmpeg.exe", "backend");
-            string video = _videoPath!;   // File.Exists checked above
-            int sourceW = _snapshotWidth;
-            int sourceH = _snapshotHeight;
-            double totalMs = _durationMs;
-            CancellationToken token = _wandCts.Token;
-
-            // WANDPROGRESS_01 — Progress<T> captures the synchronisation context it is CONSTRUCTED
-            // on, so building it here (on the UI thread) is what makes every callback arrive on the
-            // UI thread. Constructing it inside the Task.Run below would post the callbacks back to
-            // the thread pool and the very first control write would throw.
-            var wandProgress = new Progress<HudAutoDetector.DetectionProgress>(ReportWandProgress);
-
-            IReadOnlyList<HudAutoDetector.DetectionRect> found = await Task.Run(
-                () => HudAutoDetector.DetectAsync(ffmpeg, video, sourceW, sourceH, totalMs, token, wandProgress),
-                token).ConfigureAwait(true);
-
-            // The window may have been closed, the clip swapped, or the frame unfrozen while the
-            // detector was working. Any of those makes the result meaningless.
-            if (token.IsCancellationRequested || _sourceCanvas == null || _snapshotPath == null)
-            {
-                return;
-            }
-
-            var candidates = new List<CandidateSpec>();
-            foreach (HudAutoDetector.DetectionRect rect in found)
-            {
-                SourceRect clamped = ClampSourceRect(new SourceRect(rect.X, rect.Y, rect.Width, rect.Height));
-                if (clamped.Width < 4 || clamped.Height < 4) continue;
-
-                // A null RoleKey means the generic or circle fallback found this and genuinely does
-                // not know what it is. QuadrantGuess is the same position heuristic the manual path
-                // uses when the user draws a box by hand, so the chooser opens on the same
-                // suggestion either way.
-                string roleKey = rect.RoleKey is { Length: > 0 } key && TryGetRole(key, out _)
-                    ? key
-                    : QuadrantGuess(clamped).Key;
-
-                candidates.Add(new CandidateSpec(roleKey, clamped));
-            }
-
-            if (candidates.Count == 0)
-            {
-                RuntimeLog.Info("CROP", "Magic Wand found nothing in this clip.");
-                SetWizardState(3, "Refine Box",
-                    "The Magic Wand could not find anything it was sure about. Drag a box round a HUD piece yourself.");
-                return;
-            }
-
-            _wandCandidates = candidates;
-            _wandPreviewIndex = -1;
-            ShowMagicWandCandidates();
-
-            RuntimeLog.Info("CROP", $"Magic Wand found {candidates.Count} candidate region(s).");
-            SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}. " +
-                             "Click a pink box to label it, or press MAGIC WAND again to step through them.");
-        }
-        catch (OperationCanceledException swallowed2)
-        {
-            // Three ways to land here and they deserve different sentences: the user pressed STOP,
-            // the run hit HudAutoDetector.MaxSeconds, or the window is closing. Telling someone who
-            // just cancelled that "it took too long and gave up" blames the tool for their decision
-            // and makes them wonder whether the button worked.
-            bool elapsedPastCeiling = (DateTime.UtcNow - _wandStartedUtc).TotalSeconds
-            >= FreeVideoStudio.Core.Media.HudAutoDetector.MaxSeconds - 1;
-
-            SetWizardState(3, "Refine Box", elapsedPastCeiling
-            ? "The Magic Wand ran out of time on this clip. Drag a box round a HUD piece yourself."
-            : "Magic Wand stopped. Drag a box round a HUD piece yourself.");
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Fail("CROP", $"Magic Wand failed: {ex.Message}");
-            SetWizardState(3, "Refine Box", "The Magic Wand could not read this clip. Drag a box yourself.");
-        }
-        finally
-        {
-            HideWandOverlay();
-            _wandRunning = false;
-            SetEnabled("MagicWandButton", true);
-            SetContent("MagicWandButton", "\U0001FA84 MAGIC WAND");
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // WANDPROGRESS_01 — THE PANEL THAT SAYS WHAT THE WAND IS DOING.
-    //
-    // The reported defect was not "it is slow", it was "it keeps end users confused in the dark
-    // wondering if it is doing something or completely non functional and broken" — which is a
-    // FEEDBACK defect, not a performance one. Three things fix it, and all three are needed:
-    //   • a bar that MOVES, which is the only proof a user accepts that something is happening;
-    //   • a percentage, which turns "is this stuck?" into "how much longer?";
-    //   • a sentence naming what is being looked at, which is what makes the wait feel like work
-    //     rather than like a hang.
-    // Plus the fourth thing, which is not feedback but is the same problem: a way to STOP. A user
-    // who has decided to draw the boxes by hand should not have to sit through the analysis first.
-    //
-    // The elapsed clock exists for the honest case where the detector is genuinely slow on a long
-    // clip: seeing "18s" tick up next to a bar at 40% is the difference between waiting and giving
-    // up. It also makes HudAutoDetector.MaxSeconds visible — at 60s the run is abandoned, and the
-    // user can watch that coming rather than be surprised by it.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-
-    private DispatcherTimer? _wandElapsedTimer;
-    private DateTime _wandStartedUtc;
-
-    /// <summary>
-    /// Highest percentage reported so far. The bar is clamped to it, because a progress bar that
-    /// goes BACKWARDS reads as a fault even when the underlying job is fine — and the sampling
-    /// stage can legitimately report a lower number than a later stage if a clip finishes early.
-    /// </summary>
-    private int _wandHighWaterPercent;
-
-    private void ShowWandOverlay()
-    {
-        _wandHighWaterPercent = 0;
-        _wandStartedUtc = DateTime.UtcNow;
-
-        if (this.FindControl<ProgressBar>("WandProgressBar") is { } bar) bar.Value = 0;
-        if (this.FindControl<TextBlock>("WandPercentText") is { } pct) pct.Text = "0%";
-        if (this.FindControl<TextBlock>("WandStageText") is { } stage) stage.Text = "Starting\u2026";
-        if (this.FindControl<TextBlock>("WandElapsedText") is { } elapsed) elapsed.Text = "";
-
-        SetVisible("WandOverlay", true);
-
-        _wandElapsedTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _wandElapsedTimer.Tick -= WandElapsedTimer_Tick;
-        _wandElapsedTimer.Tick += WandElapsedTimer_Tick;
-        _wandElapsedTimer.Start();
-    }
-
-    private void HideWandOverlay()
-    {
-        _wandElapsedTimer?.Stop();
-        SetVisible("WandOverlay", false);
-    }
-
-    private void WandElapsedTimer_Tick(object? sender, EventArgs e)
-    {
-        if (this.FindControl<TextBlock>("WandElapsedText") is not { } elapsed) return;
-
-        int seconds = (int)Math.Max(0, (DateTime.UtcNow - _wandStartedUtc).TotalSeconds);
-        int ceiling = FreeVideoStudio.Core.Media.HudAutoDetector.MaxSeconds;
-
-        // Stays quiet for the first couple of seconds: a timer that appears instantly on a job that
-        // finishes in three seconds is itself a small alarm.
-        elapsed.Text = seconds < 2 ? "" : $"{seconds}s of up to {ceiling}s";
-    }
-
-    /// <summary>
-    /// WANDPROGRESS_01 — one beat from <see cref="HudAutoDetector"/>. Always on the UI thread; see
-    /// where the Progress&lt;T&gt; is constructed in <see cref="RunMagicWandAsync"/> for why.
-    /// </summary>
-    private void ReportWandProgress(HudAutoDetector.DetectionProgress beat)
-    {
-        _wandHighWaterPercent = Math.Clamp(Math.Max(_wandHighWaterPercent, beat.Percent), 0, 100);
-
-        if (this.FindControl<ProgressBar>("WandProgressBar") is { } bar) bar.Value = _wandHighWaterPercent;
-        if (this.FindControl<TextBlock>("WandPercentText") is { } pct) pct.Text = _wandHighWaterPercent + "%";
-        if (this.FindControl<TextBlock>("WandStageText") is { } stage) stage.Text = beat.Stage;
-
-        // The wizard status line under the profile picker mirrors it, so the answer is also where
-        // this window puts every other answer — and it survives after the overlay closes.
-        SetStatus(beat.Stage);
-    }
-
-    /// <summary>
-    /// MAGICWAND_02 — the "press again" behaviour, ported from app_handlers.on_magic_wand_clicked.
-    ///
-    /// Cycles: all candidates shown -> candidate 1 selected -> candidate 2 selected -> ... -> all
-    /// shown again. Selecting one hides the rest, because a live selection plus five pink ghosts is
-    /// unreadable, and because the selection is the thing Enter acts on.
-    /// </summary>
-    private void StepMagicWandPreview()
-    {
-        if (_wandCandidates is not { Count: > 0 } candidates) return;
-
-        _wandPreviewIndex++;
-        if (_wandPreviewIndex >= candidates.Count)
-        {
-            _wandPreviewIndex = -1;
-            ClearSourceSelection();
-            ShowMagicWandCandidates();
-            SetWizardState(3, "Refine Box",
-                $"{candidates.Count} pieces found. Click one to label it.");
-            return;
-        }
-
-        CandidateSpec candidate = candidates[_wandPreviewIndex];
-        ClearMagicWandCandidates();
-        SetSourceSelection(candidate.Rect, candidate.RoleKey);
-        AutoZoomToSelection();
-
-        SetWizardState(3, "Refine Box",
-            $"Piece {_wandPreviewIndex + 1} of {candidates.Count}. Press Enter to label it, or MAGIC WAND again for the next one.");
-    }
-
-    /// <summary>
-    /// Draws the cached candidates onto the frozen frame. Pure rendering — it never decides WHAT
-    /// the candidates are, which is the whole difference between this and the method it replaced.
-    ///
-    /// The rectangles carry their CandidateSpec in Tag, which is what SourceCanvas_PointerPressed's
-    /// branch 3 reads to turn a click into a selection with the role already chosen.
-    /// </summary>
-    private void ShowMagicWandCandidates()
-    {
-        if (_sourceCanvas == null || _wandCandidates == null) return;
-
-        ClearMagicWandCandidates();
-
-        // Stroke is divided by the zoom for the same reason the selection rectangle's is
-        // (CROPCANVAS_01): at Fit on a 4K capture an unscaled 3px stroke is a hairline.
-        double stroke = 3.0 / Math.Max(0.01, CurrentZoom());
-
-        foreach (CandidateSpec candidate in _wandCandidates)
-        {
-            var rect = new Rectangle
-            {
-                Width = candidate.Rect.Width,
-                Height = candidate.Rect.Height,
-                Stroke = new SolidColorBrush(Color.Parse("#e91e63")),
-                StrokeThickness = stroke,
-                Fill = new SolidColorBrush(Color.FromArgb(24, 233, 30, 99)),
-                Tag = candidate,
-                Cursor = new Cursor(StandardCursorType.Hand),
-                ZIndex = 450
-            };
-
-            Canvas.SetLeft(rect, candidate.Rect.X);
-            Canvas.SetTop(rect, candidate.Rect.Y);
-            _sourceCanvas.Children.Add(rect);
-            _candidateControls.Add(rect);
-        }
-    }
-
-    private void ClearMagicWandCandidates()
-    {
-        if (_sourceCanvas == null)
-        {
-            _candidateControls.Clear();
-            return;
-        }
-
-        foreach (Control control in _candidateControls)
-        {
-            _sourceCanvas.Children.Remove(control);
-        }
-        _candidateControls.Clear();
-    }
+    // MAGICWAND_02 / AIHUD_01 — the Magic Wand (local detector + optional AI assistance) lives in
+    // CropToolWindow.MagicWand.cs, moved out so this code-behind can shrink under MVVM_02.
 
     private async Task SaveAndReturnAsync(object? sender)
     {
         // GATE_01 (F3): the save path ends in SyncActiveProfileFromCurrentConfig(), which writes
         // over a profile FILE. Reaching it with no chosen profile means overwriting whichever
         // profile some other part of the suite left active.
-        if (_activeProfile == null)
+        if (_edit.ActiveProfile == null)
         {
             SetStatus("Choose a profile before saving.");
             return;
@@ -5068,7 +4266,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // "KEEP IT" was ambiguous about whether it kept the saved profile or the new work.
         bool confirmed = await Controls.ConfirmDialogWindow.AskAsync(
             this,
-            $"Save this layout to \"{_activeProfile}\" and return to the main app?\n\n" +
+            $"Save this layout to \"{_edit.ActiveProfile}\" and return to the main app?\n\n" +
             "This updates the saved layout for this profile.",
             "Save your changes?",
             yesText: "Save changes",
@@ -5113,7 +4311,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                     }
                     
                     var existingKeys = _items.Select(x => x.RoleKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    var untouched = AllRoles.Where(r => !existingKeys.Contains(r.Key)).ToList();
+                    var untouched = _edit.AllRoles.Where(r => !existingKeys.Contains(r.Key)).ToList();
                     
                     if (untouched.Count > 0)
                     {
@@ -5176,13 +4374,13 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private async Task<bool> SaveConfigAsync()
     {
         // EMPTYSAVE_01 — this used to be a bare `if (_items.Count == 0) return false;`, which made
-        // "delete the last element and save" impossible: the tombstones in _deletedRoleKeys are
+        // "delete the last element and save" impossible: the tombstones in _edit.DeletedRoleKeys are
         // written INSIDE this method, below, so the early return threw away the very record that
         // says the removal was deliberate. The user deleted an element, pressed SAVE, got
         // "No HUD elements are currently placed.", and the element came straight back on reload.
         // An empty profile is a legitimate document; a save with nothing placed AND nothing deleted
         // is the only genuinely empty gesture.
-        if (_items.Count == 0 && _deletedRoleKeys.Count == 0)
+        if (_edit.Layers.Count == 0 && _edit.DeletedRoleKeys.Count == 0)
         {
             SetStatus("No HUD elements are currently placed.");
             return false;
@@ -5196,73 +4394,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             // Recover before changing backups. SaveAsync owns the single, locked rotation.
             JsonObject config = await store.LoadAsync();
 
-            JsonObject crops = EnsureObject(config, "crops_1080p");
-            JsonObject scales = EnsureObject(config, "scales");
-            JsonObject overlays = EnsureObject(config, "overlays");
-            JsonObject zOrders = EnsureObject(config, "z_orders");
+            // EDITSTATE_01 — the layers, the RESGUESS_01 position-only rule and the DELETESET_01 /
+            // KEYCASE_01 tombstones are written by the codec, MERGED into the document on disk.
+            int unverifiedCount = CropProfileCodec.WriteLayers(config, _edit);
+            foreach (CropEditorItem item in _items) RenderItemLayout(item);   // the codec re-quantised them
 
-            JsonObject sourceCrops = EnsureObject(config, CropConfigDefaults.SourceCropsSection);
-
-            int unverifiedCount = 0;
-
-            foreach (CropEditorItem item in _items)
-            {
-                // RESGUESS_01 — this element was read from the profile while the capture resolution
-                // was still unknown, so its SourceRect has never been checked against a real frame.
-                // Re-deriving crops_1080p / crops_source / scales from it would write a guess over
-                // known-good stored geometry. Position and stacking are content-space values that do
-                // not depend on the capture resolution, so those are still safe to persist.
-                if (!item.GeometryVerified)
-                {
-                    (int uox, int uoy) = ClampOverlay(item.X, item.Y, item.Width, item.Height);
-                    WriteSectionNode(overlays, item.RoleKey, new JsonObject { ["x"] = uox, ["y"] = uoy });
-                    WriteSectionNode(zOrders, item.RoleKey, item.Z);
-                    unverifiedCount++;
-                    RuntimeLog.Info("CROP", $"  Save item: {item.RoleKey} position/z only (no video loaded, stored crop preserved).");
-                    continue;
-                }
-
-                var quantized = QuantizeItemSize(item.SourceRect, item.Width, item.RoleKey);
-                item.Width = quantized.width;
-                item.Height = quantized.height;
-                ApplyItemLayout(item);
-
-                var transformed = CoordinateMath.TransformToContentAreaInt(
-                    (item.SourceRect.X, item.SourceRect.Y, item.SourceRect.Width, item.SourceRect.Height),
-                    _originalResolution,
-                    HudConfig.CropDriftType(item.RoleKey));
-
-                var clampedCrop = CoordinateMath.ClampContentCrop((Math.Max(2, transformed.w), Math.Max(2, transformed.h), transformed.x, transformed.y));
-                int cropW = clampedCrop.w;
-                int cropH = clampedCrop.h;
-                Frac scale = quantized.scale;
-                (int ox, int oy) = ClampOverlay(item.X, item.Y, item.Width, item.Height);
-
-                WriteSectionNode(crops, item.RoleKey, new JsonArray(cropW, cropH, clampedCrop.x, clampedCrop.y));
-                WriteSectionNode(sourceCrops, item.RoleKey, new JsonArray(
-                    item.SourceRect.Width, item.SourceRect.Height, item.SourceRect.X, item.SourceRect.Y));
-                WriteSectionNode(scales, item.RoleKey, scale.ToString());
-                WriteSectionNode(overlays, item.RoleKey, new JsonObject
-                {
-                    ["x"] = ox,
-                    ["y"] = oy
-                });
-                WriteSectionNode(zOrders, item.RoleKey, item.Z);
-                RuntimeLog.Info("CROP", $"  Save item: {item.RoleKey} crop=[{cropW}x{cropH}+{clampedCrop.x}+{clampedCrop.y}] scale={scale} overlay=({ox},{oy}) z={item.Z}");
-            }
-
-            foreach (string deletedKey in _deletedRoleKeys)
-            {
-                // KEYCASE_01 — the items list and the tombstone set must agree on what "same key"
-                // means; an ordinal == here defeated the OrdinalIgnoreCase set above.
-                if (_items.Any(i => string.Equals(i.RoleKey, deletedKey, StringComparison.OrdinalIgnoreCase))) continue;
-                if (ReadSectionNode(crops, deletedKey) is null) continue;
-
-                WriteSectionNode(crops, deletedKey, new JsonArray(0, 0, 0, 0));
-                RuntimeLog.Info("CROP", $"  Save item: {deletedKey} removed (crop cleared to 0x0).");
-            }
-
-            RuntimeLog.Info("CROP", $"Saving {_items.Count} item(s) to config (schema v{CropConfigDefaults.SchemaVersion}).");
             if (unverifiedCount > 0)
             {
                 // RESGUESS_01 — say so out loud. A silent partial save is how a user ends up
@@ -5271,8 +4407,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                     ? "Saved position and layer order only. Load the video to edit the crop rectangles."
                     : $"Saved. {unverifiedCount} element(s) kept their stored crop rectangles — load the video to edit those.");
             }
-            config["schema_version"] = CropConfigDefaults.SchemaVersion;
-            config["coordinate_space"] = CropConfigDefaults.CoordinateSpace;
 
             config = HudConfig.Sanitize(config);
             await store.SaveAsync(config);
@@ -5284,7 +4418,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 return false;
             }
 
-            _dirty = false;
+            _edit.Dirty = false;
             RefreshActionButtons();
             RuntimeLog.Success("CROP", "Saved crop coordinates successfully.");
             return true;
@@ -5312,12 +4446,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private async Task<bool> ConfirmUnsavedChangesAsync(string destination)
     {
         if (_unsavedPromptOpen) return false;
-        if (!_dirty) return true;
+        if (!_edit.Dirty) return true;
         _unsavedPromptOpen = true;
         try
         {
             var choice = await Controls.ConfirmDialogWindow.AskSaveChangesAsync(
-                this, _activeProfile ?? "this profile", destination);
+                this, _edit.ActiveProfile ?? "this profile", destination);
             return choice switch
             {
                 Controls.ConfirmDialogWindow.SaveChangesChoice.Save => await SaveConfigAsync(),
@@ -5417,162 +4551,33 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ClearMagicWandCandidates();
         _wandPreviewIndex = -1;   // MAGICWAND_02
 
-        List<string> clearedKeys = _items.Select(i => i.RoleKey).ToList();
-
+        // DELETESET_01 — the tombstones die with the working state (a tombstone belongs to the
+        // profile that created it: a profile SWITCH runs this). EMPTYSAVE_01 — RESET tombstones what
+        // it removed and stays dirty so SAVE can empty the profile on disk. Both are the session's.
+        _edit.ResetWorking(tombstonePlacedElements);
         foreach (CropEditorItem item in _items.ToList())
         {
             RemoveItem(item);
         }
 
-        // DELETESET_01 - the tombstone list has to die with the working state.
-        // _deletedRoleKeys is not a UI nicety: RehydrateSavedLayersAsync SKIPS any role in it, and
-        // SaveConfigAsync writes crops[key] = [0,0,0,0] for every role in it. It was never cleared
-        // here, and ResetWorkingState is what runs on a PROFILE SWITCH (see OnProfileChosenAsync),
-        // so deleting "loot" while editing Fortnite and then switching to Battlefield meant
-        // Battlefield's loot box was hidden on load and then ZEROED on the next save - a silent
-        // cross-profile deletion of data the user never touched. Tombstones belong to the profile
-        // that created them and must not outlive it.
-        _deletedRoleKeys.Clear();
-
-        if (tombstonePlacedElements)
-        {
-            foreach (string key in clearedKeys)
-            {
-                _deletedRoleKeys.Add(key);
-            }
-        }
-
         SelectItem(null);
         RefreshLayerList();
-
-        // EMPTYSAVE_01 — RESET that actually removed something leaves unsaved work behind; marking
-        // it clean would grey SAVE out and strand the user with an on-screen empty composer and an
-        // unchanged file on disk.
-        _dirty = tombstonePlacedElements && clearedKeys.Count > 0;
-
-        InitializeHistory();
+        RefreshUndoRedoButtons();
         RefreshActionButtons();
-        SetStatus(_dirty
+        SetStatus(_edit.Dirty
             ? "Working crop items cleared. Press SAVE to apply the empty layout to this profile."
             : "Working crop items cleared.");
     }
 
-    private void Undo()
-    {
-        if (_undoStack.Count <= 1)
-        {
-            return;
-        }
-
-        EditorSnapshot current = _undoStack.Pop();
-        _redoStack.Push(current);
-        RestoreSnapshot(_undoStack.Peek());
-        _dirty = true;
-        RefreshUndoRedoButtons();
-    }
-
-    private void Redo()
-    {
-        if (_redoStack.Count == 0)
-        {
-            return;
-        }
-
-        EditorSnapshot snapshot = _redoStack.Pop();
-        _undoStack.Push(snapshot);
-        RestoreSnapshot(snapshot);
-        _dirty = true;
-        RefreshUndoRedoButtons();
-    }
-
-    private void PushHistory()
-    {
-        PushHistory(CaptureSnapshot());
-    }
-
-    private void PushHistory(EditorSnapshot snapshot)
-    {
-        if (_restoringSnapshot)
-        {
-            return;
-        }
-
-        if (_undoStack.Count == 0 || !SnapshotsEqual(_undoStack.Peek(), snapshot))
-        {
-            _undoStack.Push(snapshot);
-            _redoStack.Clear();
-        }
-
-        RefreshUndoRedoButtons();
-    }
-
-    private EditorSnapshot CaptureSnapshot()
-    {
-        return new EditorSnapshot(_items
-            .OrderBy(i => i.RoleKey, StringComparer.Ordinal)
-            .Select(i => new ItemSnapshot(i.RoleKey, i.DisplayName, i.SourceRect, i.CropImagePath, i.X, i.Y, i.Width, i.Height, i.Z))
-            .ToList());
-    }
-
-    private void RestoreSnapshot(EditorSnapshot snapshot)
-    {
-        _restoringSnapshot = true;
-        try
-        {
-            foreach (CropEditorItem item in _items.ToList())
-            {
-                RemoveItem(item);
-            }
-
-            foreach (ItemSnapshot itemSnapshot in snapshot.Items)
-            {
-                _items.Add(CreateItem(itemSnapshot));
-                _deletedRoleKeys.Remove(itemSnapshot.RoleKey);
-            }
-
-            SelectItem(null);
-            RefreshLayerList();
-            MarkDirty(pushHistory: false);
-        }
-        finally
-        {
-            _restoringSnapshot = false;
-        }
-    }
-
-    private static bool SnapshotsEqual(EditorSnapshot a, EditorSnapshot b)
-    {
-        if (a.Items.Count != b.Items.Count)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < a.Items.Count; i++)
-        {
-            ItemSnapshot x = a.Items[i];
-            ItemSnapshot y = b.Items[i];
-            if (x.RoleKey != y.RoleKey ||
-                x.CropImagePath != y.CropImagePath ||
-                !x.SourceRect.Equals(y.SourceRect) ||
-                x.X != y.X ||
-                x.Y != y.Y ||
-                x.Width != y.Width ||
-                x.Height != y.Height ||
-                x.Z != y.Z)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    // UNDO_27 — Undo / Redo / PushHistory / CaptureSnapshot / RestoreSnapshot live in
+    // CropToolWindow.History.cs, on the shared UndoStack<T> (docs/07_UNDO_AND_HISTORY.md).
 
     private void MarkDirty(bool pushHistory = false)
     {
-        _dirty = true;
+        _edit.Dirty = true;
         if (pushHistory)
         {
-            PushHistory();
+            PushHistory("edit crop layout");
         }
         RefreshActionButtons();
     }
@@ -5583,12 +4588,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // whatever the item state says. This is the second lock on the same door - SetProfileGate
         // disables the button too - because RefreshActionButtons is called from a dozen places and
         // any one of them re-enabling SAVE would re-open the overwrite hole.
-        bool profileChosen = _activeProfile != null;
+        bool profileChosen = _edit.ActiveProfile != null;
 
         // EMPTYSAVE_01 — `_items.Count > 0` alone kept SAVE greyed out after the last element was
         // deleted, so the deletion could never be committed. Pending tombstones are unsaved work
         // exactly like a placed element is.
-        SetEnabled("SaveButton", profileChosen && _dirty && (_items.Count > 0 || _deletedRoleKeys.Count > 0));
+        SetEnabled("SaveButton", _edit.CanSave);
 
         // DELETEBTN_01: this line used to read SetEnabled("DeleteSelectedButton", ...). There has
         // never been a control by that name in CropToolWindow.axaml - the button is DeleteMenuButton
@@ -5597,17 +4602,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         // is declared with, and the only way to remove a layer was RESET (which wipes all of them).
         // It failed silently in exactly the way 04_UI_UX_AVALONIA_SPEC.md#UI-THEME describes for
         // the QualityLabel dead readout: the feature looked MISSING rather than broken.
-        SetEnabled("DeleteMenuButton", profileChosen && _selectedItem != null);
+        SetEnabled("DeleteMenuButton", profileChosen && SelectedView != null);
 
-        SetEnabled("RaiseButton", profileChosen && _selectedItem != null);
-        SetEnabled("LowerButton", profileChosen && _selectedItem != null);
+        SetEnabled("RaiseButton", profileChosen && SelectedView != null);
+        SetEnabled("LowerButton", profileChosen && SelectedView != null);
         RefreshUndoRedoButtons();
-    }
-
-    private void RefreshUndoRedoButtons()
-    {
-        SetEnabled("UndoButton", _undoStack.Count > 1);
-        SetEnabled("RedoButton", _redoStack.Count > 0);
     }
 
     private async Task SeekInternal(double time)
@@ -5928,16 +4927,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _guideControls.Clear();
     }
 
-    private (int x, int y) ClampOverlay(double x, double y, double width, double height)
-    {
-        return CoordinateMath.ClampOverlayPosition(x, y, width, height);
-    }
-
     private Point ClampToSnapshot(Point point)
     {
         return new Point(
-            Math.Max(0, Math.Min(point.X, _snapshotWidth)),
-            Math.Max(0, Math.Min(point.Y, _snapshotHeight)));
+            Math.Max(0, Math.Min(point.X, _edit.SnapshotWidth)),
+            Math.Max(0, Math.Min(point.Y, _edit.SnapshotHeight)));
     }
 
     // CROPGEOM_01 — NormalizeRect moved verbatim; see the extracted type.
@@ -5948,29 +4942,17 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         int y = CoordinateMath.ScaleRound(Frac.FromDouble(rect.Y));
         int right = CoordinateMath.ScaleRound(Frac.FromDouble(rect.Right));
         int bottom = CoordinateMath.ScaleRound(Frac.FromDouble(rect.Bottom));
-        return ClampSourceRect(new SourceRect(x, y, Math.Max(1, right - x), Math.Max(1, bottom - y)));
+        return _edit.ClampSourceRect(new SourceRect(x, y, Math.Max(1, right - x), Math.Max(1, bottom - y)));
     }
 
-    private SourceRect ClampSourceRect(SourceRect rect)
-    {
-        return ClampSourceRect(rect, _snapshotWidth, _snapshotHeight);
-    }
 
-    private static SourceRect ClampSourceRect(SourceRect rect, int width, int height)
-    {
-        int x = Math.Max(0, Math.Min(rect.X, Math.Max(0, width - 1)));
-        int y = Math.Max(0, Math.Min(rect.Y, Math.Max(0, height - 1)));
-        int w = Math.Max(1, Math.Min(rect.Width, width - x));
-        int h = Math.Max(1, Math.Min(rect.Height, height - y));
-        return new SourceRect(x, y, w, h);
-    }
 
     private HudRole SuggestRole(SourceRect rect)
     {
         double cx = rect.X + rect.Width / 2.0;
         double cy = rect.Y + rect.Height / 2.0;
-        bool right = cx > _snapshotWidth / 2.0;
-        bool bottom = cy > _snapshotHeight / 2.0;
+        bool right = cx > _edit.SnapshotWidth / 2.0;
+        bool bottom = cy > _edit.SnapshotHeight / 2.0;
 
         return new HudRole("custom_element", "Custom Element", 50, -1, -1);
     }
@@ -6116,11 +5098,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         Controls.FloatingNotice.Success(this, text);
     }
 
-    private void SetEnabled(string name, bool enabled)
+    private void SetEnabled(string name, bool enabled, string? tip = null)
     {
         if (this.FindControl<Control>(name) is { } control)
         {
             control.IsEnabled = enabled;
+            if (tip != null) ToolTip.SetTip(control, tip);   // UNDO_27 — name what Undo/Redo would do
         }
     }
 
@@ -6222,17 +5205,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return;
         }
 
-        if ((e.Key == Key.Y && e.KeyModifiers.HasFlag(KeyModifiers.Control)) ||
-            (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        // UNDO_27 — Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z, decided by the shared HistoryShortcut.
+        if (HistoryShortcutFor(e) is var command && command != HistoryCommand.None)
         {
-            Redo();
-            e.Handled = true;
-            return;
-        }
-
-        if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Control))
-        {
-            Undo();
+            if (command == HistoryCommand.Redo) Redo(); else Undo();
             e.Handled = true;
             return;
         }
@@ -6256,16 +5232,16 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             }
         }
 
-        if (_selectedItem != null && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        if (SelectedView != null && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 double resizeStep = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 10 : 2;
                 double delta = e.Key is Key.Left or Key.Up ? -resizeStep : resizeStep;
-                NudgeSelectedItemSize(_selectedItem, delta);   // RESIZEFEEL_01
-                ApplyItemLayout(_selectedItem);
+                NudgeSelectedItemSize(SelectedView, delta);   // RESIZEFEEL_01
+                ApplyItemLayout(SelectedView);
                 MarkDirty();
-                PushHistory();
+                PushHistory(CropHistoryLabels.ResizeHud);
                 e.Handled = true;
                 return;
             }
@@ -6273,10 +5249,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             double step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 5 : 1;
             double dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
             double dy = e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0;
-            (_selectedItem.X, _selectedItem.Y) = ClampOverlay(_selectedItem.X + dx, _selectedItem.Y + dy, _selectedItem.Width, _selectedItem.Height);
-            ApplyItemLayout(_selectedItem);
+            (SelectedView.X, SelectedView.Y) = CropEditSession.ClampOverlay(SelectedView.X + dx, SelectedView.Y + dy, SelectedView.Width, SelectedView.Height);
+            ApplyItemLayout(SelectedView);
             MarkDirty();
-            PushHistory();
+            PushHistory(CropHistoryLabels.MoveCrop);
             e.Handled = true;
             return;
         }
@@ -6374,61 +5350,34 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    private sealed class HudRole
-    {
-        public HudRole(string key, string displayName, int defaultZ, double defaultX, double defaultY)
-        {
-            Key = key;
-            DisplayName = displayName;
-            DefaultZ = defaultZ;
-            DefaultX = defaultX;
-            DefaultY = defaultY;
-        }
-
-        public string Key { get; }
-        public string DisplayName { get; }
-        public int DefaultZ { get; }
-        public double DefaultX { get; }
-        public double DefaultY { get; }
-
-        public override string ToString() => DisplayName;
-    }
-
     private sealed record LayerEntry(string RoleKey, string DisplayName, int Z)
     {
         public override string ToString() => $"{DisplayName}  z:{Z}";
     }
 
-    private readonly record struct SourceRect(int X, int Y, int Width, int Height);
+    private sealed record CandidateSpec(string RoleKey, SourceRect Rect, string Label = "", HudCandidateSource Source = HudCandidateSource.Local);
 
-    private sealed record CandidateSpec(string RoleKey, SourceRect Rect);
-
-    private sealed record ItemSnapshot(
-        string RoleKey,
-        string DisplayName,
-        SourceRect SourceRect,
-        string CropImagePath,
-        int X,
-        int Y,
-        int Width,
-        int Height,
-        int Z);
-
-    private sealed record EditorSnapshot(List<ItemSnapshot> Items);
-
+    /// <summary>
+    /// EDITSTATE_01 — a placed element's VISUALS, pointed at its logical <see cref="CropLayer"/> in
+    /// the edit session. The geometry, provenance and identity are the model's; the properties below
+    /// only forward to it so the view code reads naturally. Nothing here is history or persistence.
+    /// </summary>
     private sealed class CropEditorItem
     {
-        public required string RoleKey { get; init; }
-        public required string DisplayName { get; init; }
-        public required SourceRect SourceRect { get; set; }
-        /// <summary>IDEA_1: settable so RefreshRehydratedThumbnailsAsync can fill in the picture for
-        /// a layer that was reopened for editing before any video had been loaded.</summary>
-        public required string CropImagePath { get; set; }
-        public required int X { get; set; }
-        public required int Y { get; set; }
-        public required int Width { get; set; }
-        public required int Height { get; set; }
-        public required int Z { get; set; }
+        public required CropLayer Model { get; init; }
+        public string RoleKey => Model.RoleKey;
+        public string DisplayName => Model.DisplayName;
+        public SourceRect SourceRect { get => Model.SourceRect; set => Model.SourceRect = value; }
+        public string CropImagePath { get => Model.CropImagePath; set => Model.CropImagePath = value; }
+        public int X { get => Model.X; set => Model.X = value; }
+        public int Y { get => Model.Y; set => Model.Y = value; }
+        public int Width { get => Model.Width; set => Model.Width = value; }
+        public int Height { get => Model.Height; set => Model.Height = value; }
+        public int Z { get => Model.Z; set => Model.Z = value; }
+
+        /// <summary>GHOSTKILL_01 / RESGUESS_01 — provenance lives on the model (see <see cref="CropLayer"/>).</summary>
+        public bool GeometryVerified { get => Model.GeometryVerified; set => Model.GeometryVerified = value; }
+
         public required Canvas Root { get; init; }
         public required Image Image { get; init; }
         public required Rectangle Border { get; init; }
@@ -6436,27 +5385,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         public required Rectangle BottomRightHandle { get; init; }
         public required Border LabelHost { get; init; }
         public required TextBlock LabelText { get; init; }
-
-        /// <summary>
-        /// GHOSTKILL_01 - true when this element was loaded from the profile rather than drawn in
-        /// this session. The only thing it changes is whether "Show Saved Crops" and the opacity
-        /// slider apply to it; it is otherwise a completely ordinary, fully editable item. It is
-        /// deliberately NOT part of ItemSnapshot: undo/redo restores geometry, and where an element
-        /// originally came from is not geometry - round-tripping it through a snapshot would let an
-        /// undo quietly re-flag a saved element as new, or the reverse.
-        /// </summary>
-        public bool FromSavedConfig { get; set; }
-
-        /// <summary>
-        /// RESGUESS_01 — false when this element was rehydrated from the profile while the capture
-        /// resolution was still unknown (no video loaded). Its SourceRect is then whatever the file
-        /// said, untested against any real frame, so SaveConfigAsync must not re-derive and rewrite
-        /// crops_1080p / crops_source / scales from it — it writes only the overlay position and the
-        /// z order, which are content-space values and do not depend on the capture resolution.
-        /// Defaults to true: an element the user drew in this session was, by definition, drawn on
-        /// a real frame.
-        /// </summary>
-        public bool GeometryVerified { get; set; } = true;
     }
 
     private enum ComposerEditMode

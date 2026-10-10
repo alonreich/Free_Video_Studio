@@ -3,19 +3,21 @@
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Text.Json.Nodes;
+using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;   // Frac, CoordinateMath
 
-namespace FreeVideoStudio.App.Infrastructure;
+namespace FreeVideoStudio.Core.Editing;
 
 /// <summary>
 /// ══════════════════════════════════════════════════════════════════════════════════════════════
 /// CROPJSON_01 — the typed accessors over the crop-tool config document.
 ///
 /// Extracted from <c>CropToolWindow</c>, where they were private statics among 172 methods. They
-/// touch no window state, and between them they have FORTY call sites in that file — which is
+/// touch no window state, and between them they had FORTY call sites in that file — which is
 /// exactly why they were invisible there: the reading and writing rules for a cross-process
-/// config file were buried inside a UI class.
+/// config file were buried inside a UI class. EDITSTATE_01 moved them to Core beside their only
+/// consumer, <see cref="CropProfileCodec"/>.
 ///
 /// ⚠️ THIS DOCUMENT IS A CROSS-PROCESS, CROSS-VERSION CONTRACT. <c>CropConfigStore</c> is read
 /// back by the Main App after the Crop Tool hands off. A config written by a new build must still
@@ -81,7 +83,7 @@ internal static class CropConfigJson
         foreach (string variant in variants)
         {
             section.Remove(variant);
-            RuntimeLog.Info("CROP", $"  Removed duplicate config key '{variant}' (same element as '{key}').");
+            CoreLogger.Info("CROP", $"  Removed duplicate config key '{variant}' (same element as '{key}').");
         }
 
         section[key] = value;
@@ -95,7 +97,7 @@ internal static class CropConfigJson
         }
         catch (Exception ex)
         {
-            RuntimeLog.Info("CROP", $"JSON int parse fallback to {fallback}: {ex.Message}");
+            CoreLogger.Info("CROP", $"JSON int parse fallback to {fallback}: {ex.Message}");
             return fallback;
         }
     }
@@ -108,7 +110,7 @@ internal static class CropConfigJson
         }
         catch (Exception ex)
         {
-            RuntimeLog.Info("CROP", $"JSON double parse fallback to {fallback}: {ex.Message}");
+            CoreLogger.Info("CROP", $"JSON double parse fallback to {fallback}: {ex.Message}");
             return fallback;
         }
     }
@@ -126,7 +128,7 @@ internal static class CropConfigJson
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
             return fallback;
         }
     }

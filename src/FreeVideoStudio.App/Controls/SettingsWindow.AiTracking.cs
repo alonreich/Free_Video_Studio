@@ -178,6 +178,13 @@ public partial class SettingsWindow : Window
 
         var statusText = this.FindNameScope()?.Find("UpdateStatusText") as TextBlock;
         var checkBtn = this.FindNameScope()?.Find("CheckUpdatesNowBtn") as Button;
+        // UPDATEUX_06 — "Last checked 5 minutes ago: You have the latest version (…)".
+        var lastCheckText = this.FindNameScope()?.Find("UpdateLastCheckText") as TextBlock;
+        void RefreshLastCheck()
+        {
+            if (lastCheckText != null) lastCheckText.Text = UpdateService.DescribeLastCheck();
+        }
+        RefreshLastCheck();
         var autoCheckCb = this.FindNameScope()?.Find("AutoUpdateChecksCheckbox") as CheckBox;
         if (autoCheckCb != null)
         {
@@ -235,6 +242,7 @@ public partial class SettingsWindow : Window
                 {
                     checkBtn.IsEnabled = true;
                     RefreshSkippedBorder();
+                    RefreshLastCheck();
                 }
             };
         }

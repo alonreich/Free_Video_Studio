@@ -32,9 +32,17 @@
 | `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `GranularSpeedEditorWindow` | `OnClosing`, `OnClosed`, `_isSafeToClose`, `ResultSegments` | Deferred-close dispatcher contract governing dialog resolution and edit hand-off. **⚠ CO-GOVERNED BY: 01, 04**|
 | `src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs` | `MaskOverlayManager` | `ApplyProfile`, `EnsureDefaults`, `IsNoMask`, `SanitizeProfileName` | HUD profile configuration and first-run crop defaults. |
 | `src/FreeVideoStudio.Core/Ipc/CropConfigStore.cs` | `CropConfigStore` | `LoadAsync`, `SaveAsync`, `RotateBackupsUnlocked`, `IsUsableConfig` | Crop configuration persistence and the 5-tier `.bak` rotation cascade. |
+| `src/FreeVideoStudio.Core/Editing/CropProfileCodec.cs` | `CropProfileCodec`, `CropConfigJson` | `ReadSavedLayers`, `WriteLayers` (crops_source drift trap, RESGUESS_01 position-only, DELETESET_01 tombstones) | The Crop Tool's layers as the crop-config document and back; pure, the window keeps the store I/O (EDITSTATE_01). **⚠ CO-GOVERNED BY: 01**|
+| `src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs` | `GranularRecoveryCodec`, `GranularJsonRead` | `Build`, `TryApply`, `Key = "granular_session"`, `SchemaVersion = 1` | RECOVERY_03 values of the Granular editor's live session; identity = video path + trim window; merge mode never restores (EDITSTATE_01). |
 | `src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs` | `ProjectRecoveryService`, `RecoverySnapshot` | `WireDocumentSource`, `SaveState` (canonical `ProjectDocument` + transient), `SaveCurrentState`, `LoadSnapshot`, `HasUnsavedWork`, `ClearState` | Recovery BRIDGE over the canonical document (RECOVERYDOC): one envelope, no parallel project schema. |
 | `src/FreeVideoStudio.App/Services/LatestEstimateWorker.cs` | `LatestEstimateWorker` | `Request`, `RunAsync`, `Dispose`, `Completion` | Bounded background estimates, cancellation and stale UI result rejection. |
-| `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `RunStartupCheckAsync`, `CheckManualAsync`, `GetSkippedVersion`, `ClearSkippedVersion` | Background GitHub release query, 24h throttle, SHA-256 verification, and quiet updater. |
+| `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `RunStartupCheckAsync`, `CheckManualAsync`, `GetSkippedVersion`, `ClearSkippedVersion`, `DescribeLastCheck`, `DescribeDownloadProgress`, `RestartToUpdate`, `UPDATEUX_01`..`06` | Background GitHub release query, 15-minute startup throttle, SHA-256 verification, and quiet updater. |
+| `src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs` | `UpgradeBrokerHost` | `RunAsync`, `Attach`, `IsActive`, `UPGRADEUX_01` | Runs the upgrade broker with a progress window; headless message-box fallback. |
+| `src/FreeVideoStudio.App/Services/UpgradeProgress.cs` | `IUpgradeProgress`, `HeadlessUpgradeProgress`, `UpgradeText`, `UpgradeStep`, `UpgradeKind` | `Step`, `AskToCloseRunningAppAsync`, `Succeeded`, `FailedAsync` | Display-only progress contract of the install/update broker and all its wording. |
+| `src/FreeVideoStudio.App/UpgradeProgressWindow.axaml.cs` | `UpgradeProgressWindow` | `AllowClose`, `OnClosing` | The install/update checklist window (UPGRADEUX_01). |
+| `src/FreeVideoStudio.App/ViewModels/UpgradeProgressViewModel.cs` | `UpgradeProgressViewModel`, `UpgradeStepItem` | `SetSteps`, `MoveTo`, `Ask`, `Succeed`, `Fail` | State of the checklist window. |
+| `src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs` | `UpgradeFinishedNotice` | `Attach`, `Describe`, `KindArgument`, `FromArgument`, `UPGRADEUX_05` | First launch after install/update: "Finishing…" then "Updated from X to Y". |
+| `src/FreeVideoStudio.App/ViewModels/UpdatePromptViewModels.cs` | `UpdateAvailableViewModel`, `UpdateDownloadViewModel` | `LaterCommand`, `Stage`, `Ready`, `RestartNowCommand` | Bound state of the update question and download windows. **⚠ CO-GOVERNED BY: 04** |
 | `build/FvsBuild/Program.cs` | `Program` | `SynchronizeVersionFiles`, `RunPipeline` | Unified build pipeline synchronizing version.txt, Directory.Build.props, and project files. |
 | `build/FvsBuild/Staging.cs` | `Staging` | `Publish`, `RunPublish`, `StageDependencies` | Build output staging, packaging, and publish validation. |
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `FVS_SIGN_PFX`, `FVS_SIGN_PASS`, `FVS_ALLOW_UNSIGNED` | Mandatory Authenticode digital signing of the release executable. **⚠ CO-GOVERNED BY: 08**|
@@ -97,7 +105,7 @@
   * **The historic defect this encodes:** the Granular Speed Editor was the one sibling that never re-posted. `await editor.ShowDialog(this)` therefore never returned, the `MainWindow` continuation that copies `editor.ResultSegments` into `_speedSegments` never ran, and **EVERY granular edit — speed segments, freezes AND zooms — was silently discarded at export**, with FFmpeg receiving a uniform base-speed graph. Nothing failed loudly; the feature simply did nothing.
   * **Required chain:** `OnClosing` (`_isSafeToClose = true` + re-post `Close`) → `ShowDialog` resolves → `ResultSegments` → `_speedSegments` → `BuildExportSpeedSegments()` → `worker.SpeedSegments` → `GranularSpeedBuilder` split/concat graph.
   * **Teardown ordering:** re-posting also lets `OnClosed` actually run, which disposes the editor's mpv preview host instead of leaking it on every open. The preview is shut down BEFORE the window is hidden, and every render-thread/UI-thread hand-off is bounded by a timeout with a defined give-up behaviour — this is what closes the OpenGL teardown deadlock window.
-  * **MPVSHUTDOWN_01 — preview teardown is two-phase, awaitable, and cannot lie (2026-09-29).**
+  * **MPVSHUTDOWN_01 / VOAPPLY_01 — preview teardown is two-phase, awaitable, non-blocking, and cannot lie (2026-09-29, updated 2026-10-07).**
     `MpvVideoView.Dispose()` was a UI-thread call that `Thread.Join`-ed the render/software workers
     (seconds of frozen UI per tool switch) and, when a worker would not stop, ABANDONED the render
     context / WGL+D3D / GCHandle / `mpv_terminate_destroy` — then the still-living process built a
@@ -106,18 +114,23 @@
     `Task<PreviewShutdownResult>` (`App/PreviewShutdown.cs`):
     1. **Phase A — async quiescence:** stop signals are synchronous and immediate; PROOF of worker
        exit is awaited via completion tasks the loops set in their `finally` blocks, bounded by
-       `Task.WhenAny` (5 s). No `Thread.Join` from the UI thread, ever.
-    2. **Phase B — thread-affine finalization:** only after every worker (and an in-flight startup)
-       is proven stopped, the UI thread runs the ordered native release (slots → render context →
-       GL/WGL/D3D → IPC → `mpv_terminate_destroy` → GCHandle), each resource exactly once.
-    3. **Failure is a result, not a silence:** a timeout returns `FailedWorkerDidNotStop` and frees
-       NOTHING; it is logged, sets `MpvVideoView.HasUnverifiedTeardown`, and the callers obey it —
+       `Task.WhenAny` (5 s). No `Thread.Join` from the UI thread, ever. Phase A additionally requires
+       presentation permit quiescence across all 16 swap-chain slots (`QuiescePresentGatesAsync`)
+       proving the compositor has finished presenting before any shared textures or mutexes are unmapped.
+    2. **Phase B — two-stage teardown: UI detachment (Phase B1) and detached worker native release (Phase B2) (VOAPPLY_06):**
+       - **Phase B1 (UI thread):** Driver interop work (render texture release, `wglDXUnregisterObjectNV`, `glDeleteFramebuffers`, D3D textures and mutexes) is completely removed from the UI dispatcher. The UI thread awaits compositor image disposal (`CompositorDisposalBatch` reuses pending `AsyncTask` promises to prevent double `DisposeAsync` invocations across timeouts), unbinds the UI WGL context (`wglMakeCurrent(0, 0)`), releases presentation permits (`ReleasePresentGates`), and packages all driver and native handles into `NativeDetachedResources` (`DxInteropObjects`, `GlFramebuffers`, `SharedTextures`, `SharedTextureMutexes`, `_renderContext`, `_hglrc`, `_dummyHdc`, `_dummyHwnd`, `_dxInteropDevice`, `IpcClient`, `_mpvHandle`, `_d3d11Context`, `_d3d11Device`, `_gcHandle`) to be torn down off the UI thread.
+       - **Phase B2 (Detached background worker):** The background worker binds the GL context afresh on its executing thread (`wglMakeCurrent(dummyHdc, hglrc)`), unregisters DX interop objects (`wglDXUnregisterObjectNV` with return value verification), deletes FBOs (`glDeleteFramebuffers`), releases shared D3D textures and mutexes, and calls `mpv_render_context_free` and `glDeleteTextures`. Because WGL contexts are thread-local, binding cannot rely on a sticky flag: each attempt requiring GL operations establishes thread-local binding, and a `try ... finally` block guarantees that `wglMakeCurrent(0, 0)` is invoked on exit, resetting `ContextBound = false` prior to closing the DX device (`wglDXCloseDeviceNV`) and deleting the WGL context (`wglDeleteContext`). Win32 `ReleaseDC` and dummy HWND destruction are marshaled to the UI thread via `Dispatcher.UIThread.InvokeAsync` to guarantee Win32 thread affinity. It disposes IPC, validates that the handle was not abandoned, and calls `mpv_terminate_destroy`. Only when all prerequisites succeed are dependent resources (`FreeNativeLibrary`, D3D device disposal, and `GCHandle.Free`) executed. On any step failure (such as failed interop unregister), teardown returns `Failed` truthfully, retains failed handles in `_activeTeardownOperation`, and halts dependent frees.
+       - **Retry & Permit Ownership:** If the caller times out or cancels while the background worker is in flight, the detached task is preserved in `_activeNativeReleaseTask`. Subsequent retry calls distinguish between an active in-flight worker (`!_activeNativeReleaseTask.IsCompleted`) and a completed failure: an active worker is attached to and awaited without re-entering Phase A or re-acquiring presentation gates; a completed failure reaches `_activeTeardownOperation` and initiates a fresh background retry worker instead of returning the stale failure.
+    3. **Failure is a result, not a silence:** a timeout returns `FailedWorkerDidNotStop` or `Failed`
+       and frees NOTHING; it is logged, sets `MpvVideoView.HasUnverifiedTeardown`, and the callers obey it —
        `ToolNavigator.OpenAsync` cancels the navigation instead of opening a second preview stack,
        and `RestoreVideoPipelineAfterTool` refuses to build a replacement until restart.
-    4. **Idempotent:** repeated calls attach to the same operation or report `AlreadyStopped`.
+    4. **Idempotent and retryable:** repeated calls attach to the same in-flight operation or report `AlreadyStopped`.
+       Synchronously completed failures clear `_pending` so subsequent attempts can be retried cleanly (`VOAPPLY_05`).
     5. `Dispose()` remains ONLY as the process-final fallback (callers are immediately followed by
        `Environment.Exit`); its bounded joins are annotated `SHUTDOWNFALLBACK_01`, and
-       `PreviewShutdownTests` fails the build if a blocking join appears anywhere else.
+       `PreviewShutdownTests` fails the build if a blocking join appears anywhere else. Handles detached
+       by an async shutdown are zeroed so the fallback never races or double-frees them.
 
 * **Tool return (TOOLRETURN_01):** opening Video Merger / Crop Tools disposes the Main App preview (TOOLNAV_02). A disposed `MpvVideoView` cannot restart, so on the tool's close `MainWindow.RestoreVideoPipelineAfterTool` swaps a NEW `MpvVideoView` into the old slot, starts it off the UI thread and reloads the open clip paused at MARK START. Passing `restoreVideoPipeline: null` left the player dead (Upload did nothing). The software-fallback badge is bound in code, never by `#VideoHost`.
 * **Persistent Directory Memory:**
@@ -220,6 +233,30 @@
     both were retired with it (SYS-VERIFYTOOL). `DevCmdDelegatesTheSentinelCheckRatherThanParsingIt`
     now fails if the list ever moves back into the script.
 * **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Where a rule can be asserted, prefer `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` (`08_APPLICATION_COMPOSITION.md` §3). `EveryFixSentinelStillResolves` re-checks every `build/sentinels.txt` entry from CI, on any platform, naming the file and tag. It is the authority on the current count, not this paragraph.
+* **DEVDATA_01 — the dev sandbox keeps your settings and AI keys.** `FVS_PROGRAMDATA_ROOT` is
+  `%LOCALAPPDATA%\FreeVideoStudio_DEV\data`, no longer `%TMP%\FreeVideoStudio_DEV\.dev_data`:
+  Windows Storage Sense and Disk Cleanup empty `%TMP%`, which silently reset the dev settings and the
+  Gemini key. `build\DevSandbox.ps1` (called by `dev.cmd` after KILL_STALE, and again after the
+  `dev fresh` wipe) moves the old `%TMP%` sandbox across once (`keep\moved_from_tmp.txt`), remembers
+  the AI settings (`GeminiApiKey`, `GeminiModelName`, `AiMagicWandCloudConsent`, `AiZoom*`) in
+  `keep\ai_settings.json` OUTSIDE the wiped folder, and puts them back when `settings.json` is missing
+  or has no key. With nothing remembered, the key is borrowed once from the installed app's settings
+  (`%LOCALAPPDATA%\FreeVideoStudio`). A missing settings file is recreated with only `SchemaVersion` and
+  the AI fields; every other setting takes the app's default, so `dev fresh` is still a fresh boot. The
+  script never deletes anything and never fails the run. Logs stay in `%TMP%` and are still cleared.
+* **DEVUPDATE_01 — dev updates come from `.\compiled`, through the production flow.** `dev.cmd` sets
+  `FVS_DEV_UPDATE_SOURCE` (the repo root) and the documented developer override
+  `FVS_ALLOW_UNSIGNED_UPDATE=1` (the dev app is unsigned, UPDATETRUST_02). With both
+  `FVS_DEV_LOG_DIR` and `FVS_DEV_UPDATE_SOURCE` set, `UpdateService.QueryLocalDevReleaseAsync` treats
+  `.\compiled\FreeVideoStudio.exe` as the latest release (version from its file version, size, SHA-256
+  taken like GitHub's digest) and compares it with the copy INSTALLED in Program Files (nothing
+  installed = 0.0), because the dev app is stamped by the same `dev_build.cmd` run and would always be
+  "up to date". Everything after that is the production flow: question, download window (read from disk
+  with the same loop, hash and publisher check), Restart & update, installer window, first-launch
+  notice. The startup check runs on every dev launch (no throttle). The installer is started WITHOUT
+  the dev variables (`FVS_DEV_LOG_DIR`, `FVS_PROGRAMDATA_ROOT`, `FVS_DEV_UPDATE_SOURCE`,
+  `FVS_ALLOW_UNSIGNED_UPDATE`), so it really installs to Program Files and the installed app opens
+  with the real settings. A `file://` download URL is refused unless both dev variables are set.
 * **`dev.cmd trace` — a log that can leave the machine (TRANSPORT_TRACE_01).** Identical to the default watch mode except `FVS_DEV_LOG_DIR` points at `.devlogs\` inside the repo instead of `%TMP%`. The rule that dev logs never land in the project tree exists so an ordinary run cannot litter it and so a log can never be committed; this mode is opt-in, announces itself, and `.devlogs/` is gitignored, so neither risk applies.
   It exists because **a log nobody can reach is a log nobody can read.** A fault that cannot be reproduced from source is diagnosed from a log, and a log sitting in a temp folder on one machine is unavailable to whoever is helping.
 * **Instrument before the third guess.** The main window writes one `TRANSPORT` line for every play and pause it issues — who issued it, and the player state at that instant (`t`, `dur`, `eof`, `pausedBefore`, `frozen`, `freezeAt`, `freezeArmed`, `endParked`, `seeking`). It is per transport change, not per tick, so it is cheap enough to leave in permanently. A transport fault that survives two source-level fixes is not a reading problem; ship the trace and let the log name the line.
@@ -301,6 +338,22 @@
   * Worst case is therefore bounded at one write per 3 s during sustained editing, and coalescing is
     preserved everywhere else. Write amplification is the reason the debounce exists; do not remove
     either half.
+* **`WIZVOLDEBOUNCE_01` — UI controls never touch the disk.** The Music Wizard VIDEO/MUSIC faders
+  used to call `StateTransferStore.UpdatePropertiesSync` from every `Slider.ValueProperty` change,
+  i.e. acquire `Global\FvsStateTransferMutex_<SID>` and run `AtomicJsonFile.WriteText` with
+  `Flush(flushToDisk: true)` **on the UI dispatcher, per pointer-move**. The drag now updates only
+  the in-memory slider value and the player gains; persistence is a **600 ms trailing-edge
+  debounce** (`App/Infrastructure/DebouncedStateWriter`, `DefaultDebounceMs`) that hands the latest payload to
+  `UpdatePropertiesAsync` on the thread pool. Writes are chained (never reordered on disk), the
+  pending payload is a field (the LAST value persists, not the first), and the owner window's
+  `Closed` event flushes a pending payload without awaiting it.
+* **`AUTOSAVEBG_01` — project autosave is write-behind.** `ProjectSession.AutosaveTick` captures the
+  document (in-memory projection) and copies the undo/redo branches on the UI thread, then runs
+  `IProjectStore.Save` and `UndoSidecarStore.Save` on the thread pool. Only the dirty-flag update /
+  Fatal report is marshalled back, and dirty is cleared only if no edit landed during the write
+  (`_editGeneration`). One autosave in flight at a time. Every project write — background or
+  explicit — passes one ordered gate (`_ioGate` + write sequence), so a stale autosave is skipped
+  rather than landing on top of a newer Ctrl+S; no `Task.Wait` on the UI thread (ASYNCUI_01).
 * **`IPCLEASE_01` — the single-server lease is a mutex that is NEVER OWNED.**
   A Win32 mutex is thread-affine: only the thread that acquired it may release it. The lease was
   taken on the startup thread and released in `Dispose` on another, so `ReleaseMutex` threw
@@ -389,17 +442,26 @@
   * `AiZoomMinScale` (double, default `1.3`): minimum wide camera scale during high-velocity gameplay ($v \ge v_{\text{fast}}$).
   * `AiZoomAvoidHud` (bool, default `true`): steers camera crop bounds away from game HUD regions.
   * `AiZoomDeadbandPercent` (double, default `2.0`): suppresses micro-jitter below $2\%$ of frame dimensions.
+  * `AiMagicWandCloudConsent` (bool, default `false`, `AIHUD_05`): the user's yes to the Crop Tool Magic Wand sending ONE frozen frame to the configured AI provider. Additive (missing reads as false), so no schema bump. Holds no credential.
+* **Magic Wand AI key handling (`AIHUD_01`, `GeminiHudDetectionService`):** the key is read from settings at call time and sent ONLY in the `x-goog-api-key` header — never in a URL — so no URL it builds, logs or reports is secret-bearing. Every log line, fault detail and result detail passes through `GeminiHudDetectionService.Redact`. The key is never cached (`AiHudResultCache` keys are source/frame/model hashes) and never written to project (`.fvsproj`), recovery or crop-config files; `GeminiHudDetectionServiceTests.ApiKey_*` enforce this.
   * **Migration Invariant:** Upgrading from schema v9 or older preserves all existing preferences and initializes AI tracking fields to defaults. Files from a higher schema version are loaded best-effort without destructive rewrites.
 * **API Key Redaction & Transient Network Retries (`PostWithRetryAsync`):**
   * HTTP request URLs containing API keys are redacted before writing to log sinks (`Regex.Replace(url, @"key=[^&]+", "key=REDACTED")`).
   * Network drops and transient HTTP status codes (`429`, `500`, `503`, `504`) execute up to 3 automatic retries with exponential backoff delays ($2\,\text{s}, 4\,\text{s}, 6\,\text{s}$). Terminal failures log full HTTP response bodies to `RuntimeLog.Fail("GEMINI_API", ...)` and `CoreLogger.Warn` for rapid diagnostics.
 * **Schema v9 (REMOVEUX_01):** upgrading from v8 or older sets `ConfirmVideoMergerRemove = false` once (product decision 2026-09-27: removal is instant and undoable); a v9 file keeps the user's choice. `ApplicationPaths.LaneCacheDirectory` (`ProgramDataRoot/cache/lanes`) holds the Merger's per-clip filmstrip PNGs and waveform peaks (LANECACHE_02), best-effort, pruned to 800 files.
 * **Schema v7 Migration Invariant:** When upgrading from older application installations lacking update checking (or whenever `settings.json` lacks an explicit `AutoUpdateChecks` configuration), `SettingsManager` automatically initializes and persists `AutoUpdateChecks = true`. On fresh installs without an existing config file, default settings with `AutoUpdateChecks = true` are saved immediately to disk, ensuring new releases are never silently missed.
-* **Network Stall Guard:** `UpdateService.DownloadVerifyLaunchAsync` wraps chunk stream reads in a 45-second stall cancellation timeout (`CancellationTokenSource.CreateLinkedTokenSource`). A frozen HTTP pipe cancels cleanly rather than leaving the download modal hanging indefinitely.
+* **Network Stall Guard:** `UpdateService.DownloadVerifyLaunchAsync` wraps chunk stream reads in a 45-second stall cancellation timeout (`CancellationTokenSource.CreateLinkedTokenSource`). A frozen HTTP pipe stops the download and is REPORTED as a failure ("stopped receiving data for 45 seconds"); it is never treated as the user's own Cancel (UPDATEUX_03 — it used to close the window silently).
 * **Release Notes Preview:** GitHub release `body` markdown content is extracted during probe and rendered in a scrollable expander within `UpdateAvailableWindow.axaml`.
 * **State Persistence Protocol:**
-  * Last startup probe timestamp is recorded in `update_last_check_utc.txt` under `UiStateStore` enforcing a 24-hour rate limit.
+  * Last startup probe timestamp is recorded in `update_last_check_utc.txt` under `UiStateStore` enforcing a 15-minute rate limit (`MinimumIntervalBetweenChecks`) between startup probes.
+  * UPDATEUX_06 — the time and plain-English result of every check, startup or manual (up to date / version X available / skipped / could not reach GitHub, and why), is written to `update_last_result.txt` and shown in Settings › About as "Last checked 5 minutes ago: …". The startup check still never interrupts the user over its own problems; it is no longer invisible.
   * Explicit version skips write the release tag to `update_skipped_tag.txt`. Users can inspect or clear this filter at any time via the About tab in Settings.
+* **No silent moment in the in-app updater (UPDATEUX_01..05).**
+  * UPDATEUX_01 — the question has a real "Remind me later" button (`UpdateChoice.NotNow`, also Escape). Nothing is stored; the release is offered again on a later start. Before, "not now" existed only as Escape/X, and users picked "Never" by mistake.
+  * UPDATEUX_02 — the question states the download size and a rough time ("Download size: 322 MB — about 3 minutes on a typical home connection", `TypicalBytesPerSecond` = 2.5 MB/s). The size comes from `RuntimeAlreadyMatchesAsync(verifyInstalledBytes: false)`: fingerprints only, no hashing. The download itself always re-decides with `verifyInstalledBytes: true` (DIST-SPLIT), so the estimate can never choose the package that is fetched.
+  * UPDATEUX_03 — `UpdateDownloadWindow` opens the instant the user says yes and names every stage: "Checking which parts of the update you need…" (installed-file hashing, cancellable), the download ("43% · 140 of 322 MB · 1.0 MB/s · about 4 min left", 5-second moving average), then "Checking the download is safe…" (SHA-256 twice + Authenticode; Cancel is disabled because it cannot act there). The title-bar X means Cancel while working. A cancel says "Update cancelled — nothing was changed."
+  * UPDATEUX_04 — when the verified installer is launched (`--wait-pid`), the window ends with a choice: **Restart & update now** closes the app through its NORMAL close path (unsaved work is still asked about; nothing is killed, SYS-UPGRADE) and the installer starts when the process exits; **Update when I close the app** keeps working and installs on exit. If the user keeps working after "Restart now", a notice says the update is still waiting. This replaces "Close the app when you have finished", after which nothing visible happened.
+  * UPDATEUX_05 — `AuthenticodeVerifier.CanVerifyUpdates` runs BEFORE the question. A copy that has no publisher anchor (UPDATETRUST_02 would refuse the download after fetching it) is told so in the question, and the green button opens the release page instead of downloading hundreds of MB that would be deleted.
 
 ---
 
@@ -505,6 +567,66 @@ settings initialization. The install entry point always uses this flow; uninstal
   transactions are never automatically pruned. Conflicts in the active tree survive backup expiry.
   Machine maintenance is serialized with installation; user maintenance runs under that user.
 
+### No silent moment during install or update  {#SYS-UPGRADEUX}
+
+Every bullet below is display-only. None of them changes the protocol, the journals, the order of
+steps, the gates, or whether a failure rolls back.
+
+* **UPGRADEUX_01 — the broker has a window.** `--upgrade-broker` runs through `UpgradeBrokerHost`,
+  which starts Avalonia (styles only: `AvaloniaApp` returns before `SettingsManager.Load`, theme and
+  UI sounds when `UpgradeBrokerHost.IsActive`) and shows `UpgradeProgressWindow`: a checklist —
+  Closing the old version → Making sure Free Video Studio is closed → Asking Windows for permission →
+  Keeping your settings → Unpacking → Installing files → Testing that it works → Updating shortcuts →
+  Opening the new version — with a live bar. The window stays hidden while the user is still working
+  (`--wait-pid`) and appears the moment the app closes. The elevated worker reports
+  `progress` messages ("phase|fraction", `UpgradeChannel.ProgressKind`) through `ProgressRelay`;
+  `UpgradeChannel.ExpectAsync` hands them to `Progress` and never lets one satisfy or break an
+  expected reply. `InstallPayload.Extract`/`Verify` and `DirectoryUpgrade.Prepare` take optional,
+  monotonic progress callbacks. `LaunchAsync` stages `libSkiaSharp.dll`/`libHarfBuzzSharp.dll`
+  beside the broker (from beside the executable, the embedded payload, or the installed folder for
+  a compact installer); if they cannot be found or the window cannot start, the broker runs
+  headless with native message boxes (`HeadlessUpgradeProgress`). Fresh installs use the same window.
+  The per-user gate is taken AFTER the wait for the old app, so a Merger or Crop Tool started while
+  an update waits no longer fails with "An update is finishing for this Windows account".
+* **UPGRADEUX_02 — Windows' permission prompt is announced first.** Before `Verb = "runas"` the
+  window says what Windows will ask and to click Yes. Clicking No (`ERROR_CANCELLED`, 1223) is
+  reported as "Update cancelled … nothing was changed", not as a failure.
+* **UPGRADEUX_03 — an open app is a question, not an error after UAC.** Before UAC the broker runs
+  `InstallDiscovery.FindOpenApps` (non-elevated twin of `EnsureIdle`). If a copy is open:
+  "CLOSE IT AND CONTINUE" (sends a normal close, so the app's own save question still appears;
+  nothing is killed) or "CANCEL". A copy in another Windows account offers "TRY AGAIN". `EnsureIdle`
+  in the worker remains the authority.
+* **UPGRADEUX_04 — failures are plain and put the user back.** Every failure ends in the window with
+  a title, a reason and what to do next. When nothing changed and no recovery is pending, the version
+  the user was using is opened again ("Your previous version has been opened again"); never while a
+  rollback is pending, because that would start recovery and a second UAC prompt at once. A second
+  broker started while one runs says "Another update is already running" instead of exiting silently.
+* **UPGRADEUX_05 — the first launch explains itself.** The new app still opens disabled until commit;
+  `UpgradeFinishedNotice` shows "Finishing the update…" over it, then "✓ Update complete — updated
+  from version X to version Y" (`--upgrade-kind`, `--upgrade-from`, passed by the broker), or
+  "✓ Free Video Studio is installed". The broker's own window shows "✓ All done" and closes itself
+  after three seconds.
+* **UPGRADEUX_06 — no silent copy before the window.** The launcher used to copy its whole
+  executable (322 MB for the full installer) into `%TEMP%\FVS_Upgrade\<id>` and verify it before
+  starting the broker, so a double-clicked installer showed nothing for seconds. Now, when the
+  executable is NOT inside a folder the update replaces (`RunsFromAnInstallRoot`: the install path,
+  any discovered root, the legacy spaced folder; any doubt counts as inside), the launcher stages only
+  the two window libraries and starts the broker straight from the original file with
+  `--upgrade-stage <folder>`. The broker sets `SetDllDirectory` to it, shows its window, and copies the
+  installer there IN THE BACKGROUND (`PrepareWorkerCopy`, started at once — during the wait for the
+  old app in an in-app update). The elevated worker is still started only from that fresh staging
+  copy, never from Downloads, so no planted DLL beside a downloaded file can reach an administrator
+  process. `StageFromArgs` accepts the folder only as an existing direct child of
+  `%TEMP%\FVS_Upgrade`. If the copy is still running when Windows is about to be asked, the window says
+  "Getting the installer ready…". Recovery and installs from inside a program folder keep the old
+  staged-broker path (a running executable cannot be moved).
+
+Local regression coverage for this section: `VersionAndUpdaterTests` (UPDATEUX/UPGRADEUX section: wording, view-model state machines,
+progress messages never satisfying a reply) and `UpgradeProgressReportingTests` (monotonic progress,
+verification unchanged). Real-Windows verification still required: UAC Yes/No, close-it-for-me with
+unsaved work, compact and full installer windows, first-launch notice, a double-clicked
+installer from Downloads (window within a second, worker from `%TEMP%\FVS_Upgrade`).
+
 Local regression coverage: `UpgradeTransactionTests` injects failure at each directory rename,
 checks source precedence, retention, conflicting files, journal traversal and compact runtime
 corruption. `CompactUpdateTests` rejects unexpected archive entries and checks settings preservation.
@@ -521,6 +643,7 @@ signed releases in disposable Windows installations. Unit tests do not establish
 ## SYS-WRITEORDER — Persistence Never Goes Backwards  {#SYS-WRITEORDER}
 * **WRITEORDER_01 (`RecoveryManager`):** every whole-file save and clear takes a version from a STATIC counter at call time and applies only if it is newer than the last one applied to that file. Before, a `SaveStateAsync` queued before `ClearState()` (undo-to-empty, clean shutdown) could resurrect the file, and ordering was per instance. `UpdateGranularSession` is a serialised sub-key merge and is not versioned.
 * **WRITEORDER_02 (`NamedPipeStateServer`):** `_flushGate` is held from snapshot to rename, `_stateVersion` makes writes monotonic, and a failed write re-arms `_isDirty`.
+* **WRITEORDER_03 (`VoiceOverRecoveryManager`, VORECOVERY_01):** voiceover recovery indexes are per (canonical video, session) `voiceover_recovery_{videoKey}_{sessionId}.json`, written off the UI thread, process-serialized, merged by take id (records another owner holds are preserved), via a unique `{path}.{guid}.tmp` + write-through flush + atomic replace; an unreadable existing index is never overwritten or deleted. Uncommitted takes remain durable across unexpected close or crash until an explicit Apply commit (`CommitTakesAsync`, committed ids only) or a proven operator Discard. A file is deleted only when no durable record — this manager's or anyone else's — remains in it. Full contract: [AUD-VOICEOVER](02_AUDIO_ENGINE_MASTERING.md#AUD-VOICEOVER).
 
 ## SYS-USERSCOPE — Mutable State Is Per Windows User  {#SYS-USERSCOPE}
 * **USERSCOPE_01:** the default root is `%LOCALAPPDATA%\FreeVideoStudio` (`ApplicationPaths.DefaultUserRoot`). The old `%ProgramData%` root was shared by every account, while the single-instance guard is per user.

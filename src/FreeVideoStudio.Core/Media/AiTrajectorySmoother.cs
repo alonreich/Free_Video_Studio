@@ -158,29 +158,104 @@ public static class AiTrajectorySmoother
             }
         }
 
+        /// <summary>True when the keyframes change the zoom scale (the export then uses the scale+crop form).</summary>
+        private bool IsScaleDynamic()
+        {
+            if (Keyframes.Count <= 1) return false;
+            double firstScale = Keyframes[0].Scale;
+            for (int i = 1; i < Keyframes.Count; i++)
+                if (Math.Abs(Keyframes[i].Scale - firstScale) > 0.01) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// AIPARITY_01 — the SOURCE-pixel region the EXPORT's crop expression (<see cref="ToFfmpegCropFilter"/>)
+        /// selects at <paramref name="relSec"/> seconds after the zoom's own start, on an input frame of
+        /// <paramref name="inW"/> x <paramref name="inH"/> (the zoom's resolution after the pre-scale).
+        ///
+        /// <para>This is the expression evaluated in C#, term for term: the same 2-decimal rounding of
+        /// every keyframe value and time, the same LINEAR piecewise interpolation (the export never used
+        /// <see cref="EvaluateAt"/>'s smoothstep), the same even truncation and the same
+        /// <c>min(in-out, max(0, v))</c> clamp. The live preview (<see cref="ZoomPreviewSimulator"/>) uses
+        /// THIS, so preview and export frame the same region by construction.</para>
+        /// </summary>
+        public (double X, double Y, double W, double H) EvaluateExportCrop(double relSec, int inW, int inH)
+        {
+            if (Keyframes.Count == 0) return (0, 0, inW, inH);
+            double t = relSec;
+
+            if (!IsScaleDynamic())
+            {
+                int w = Math.Max(2, ((int)Math.Round(Keyframes[0].CropW) / 2) * 2);
+                int h = Math.Max(2, ((int)Math.Round(Keyframes[0].CropH) / 2) * 2);
+                if (SourceW > 0) w = Math.Min(w, (SourceW / 2) * 2);
+                if (SourceH > 0) h = Math.Min(h, (SourceH / 2) * 2);
+
+                if (Keyframes.Count == 1)
+                {
+                    int maxX = SourceW > 0 ? Math.Max(0, SourceW - w) : int.MaxValue;
+                    int maxY = SourceH > 0 ? Math.Max(0, SourceH - h) : int.MaxValue;
+                    int x0 = Math.Clamp(((int)Math.Round(Keyframes[0].CropX) / 2) * 2, 0, maxX);
+                    int y0 = Math.Clamp(((int)Math.Round(Keyframes[0].CropY) / 2) * 2, 0, maxY);
+                    return (x0, y0, w, h);
+                }
+
+                double x = Math.Min(inW - w, Math.Max(0, 2 * Math.Truncate(Piecewise(Keyframes, k => k.CropX, t) / 2)));
+                double y = Math.Min(inH - h, Math.Max(0, 2 * Math.Truncate(Piecewise(Keyframes, k => k.CropY, t) / 2)));
+                return (x, y, w, h);
+            }
+            else
+            {
+                double s = Piecewise(Keyframes, k => k.Scale, t);
+                double scaledW = 2 * Math.Truncate(inW * s / 2);
+                double scaledH = 2 * Math.Truncate(inH * s / 2);
+                int baseW = SourceW > 0 ? (SourceW / 2) * 2 : 1920;
+                int baseH = SourceH > 0 ? (SourceH / 2) * 2 : 1080;
+                double sx = Math.Min(scaledW - baseW, Math.Max(0, 2 * Math.Truncate(Piecewise(Keyframes, k => k.CropX * k.Scale, t) / 2)));
+                double sy = Math.Min(scaledH - baseH, Math.Max(0, 2 * Math.Truncate(Piecewise(Keyframes, k => k.CropY * k.Scale, t) / 2)));
+                double kx = scaledW > 0 ? inW / scaledW : 1.0;
+                double ky = scaledH > 0 ? inH / scaledH : 1.0;
+                return (sx * kx, sy * ky, baseW * kx, baseH * ky);
+            }
+        }
+
+        /// <summary>The value <see cref="BuildPiecewiseExpr"/>'s expression evaluates to at time <paramref name="t"/>.</summary>
+        private static double Piecewise(List<AiTrackingKeyframe> kfs, Func<AiTrackingKeyframe, double> selector, double t)
+        {
+            for (int i = 0; i < kfs.Count - 1; i++)
+            {
+                double vA = Round2(Math.Round(selector(kfs[i]), 2));
+                double vB = Round2(Math.Round(selector(kfs[i + 1]), 2));
+                double tA = Round2(Math.Round(kfs[i].TimeSec, 2));
+                double tB = Round2(Math.Round(kfs[i + 1].TimeSec, 2));
+                double dt = Round2(Math.Max(0.01, tB - tA));
+                double dv = Round2(vB - vA);
+                if (t <= tB) return vA + dv * (t - tA) / dt;
+            }
+            return Round2(Math.Round(selector(kfs[^1]), 2));
+        }
+
+        /// <summary>What a "0.00"-formatted number reads back as.</summary>
+        private static double Round2(double v) =>
+            double.Parse(v.ToString("0.00", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
         /// <summary>
         /// Formulates an FFmpeg piecewise-lerp crop filter expression across keyframes:
         /// crop=w='W(t)':h='H(t)':x='X(t)':y='Y(t)':eval=frame
+        ///
+        /// <para>AIPARITY_01 — <paramref name="timeOffsetSec"/> is how far into the zoom the CHUNK this filter
+        /// runs in starts. Every export chunk restarts its own clock at 0 (<c>setpts=PTS-STARTPTS</c>), so a
+        /// zoom split into several chunks (a cut or a freeze inside it) used to restart the trajectory from
+        /// its first keyframe at every split. 0 (the default) emits exactly the previous expression.</para>
         /// </summary>
-        public string ToFfmpegCropFilter()
+        public string ToFfmpegCropFilter(double timeOffsetSec = 0)
         {
             if (Keyframes.Count == 0) return string.Empty;
 
             var ci = CultureInfo.InvariantCulture;
+            string tVar = Math.Abs(timeOffsetSec) < 0.0005 ? "t" : $"(t+{timeOffsetSec.ToString("0.000", ci)})";
 
-            bool isScaleDynamic = false;
-            if (Keyframes.Count > 1)
-            {
-                double firstScale = Keyframes[0].Scale;
-                for (int i = 1; i < Keyframes.Count; i++)
-                {
-                    if (Math.Abs(Keyframes[i].Scale - firstScale) > 0.01)
-                    {
-                        isScaleDynamic = true;
-                        break;
-                    }
-                }
-            }
+            bool isScaleDynamic = IsScaleDynamic();
 
             if (!isScaleDynamic)
             {
@@ -200,8 +275,8 @@ public static class AiTrajectorySmoother
 
                 var sbX = new StringBuilder();
                 var sbY = new StringBuilder();
-                BuildPiecewiseExpr(sbX, Keyframes, k => k.CropX);
-                BuildPiecewiseExpr(sbY, Keyframes, k => k.CropY);
+                BuildPiecewiseExpr(sbX, Keyframes, k => k.CropX, tVar);
+                BuildPiecewiseExpr(sbY, Keyframes, k => k.CropY, tVar);
 
                 return $"crop=w={w.ToString(ci)}:h={h.ToString(ci)}:x='min(in_w-out_w,max(0,2*trunc(({sbX})/2)))':y='min(in_h-out_h,max(0,2*trunc(({sbY})/2)))'";
             }
@@ -211,9 +286,9 @@ public static class AiTrajectorySmoother
                 var sbScaledX = new StringBuilder();
                 var sbScaledY = new StringBuilder();
 
-                BuildPiecewiseExpr(sbScale, Keyframes, k => k.Scale);
-                BuildPiecewiseExpr(sbScaledX, Keyframes, k => k.CropX * k.Scale);
-                BuildPiecewiseExpr(sbScaledY, Keyframes, k => k.CropY * k.Scale);
+                BuildPiecewiseExpr(sbScale, Keyframes, k => k.Scale, tVar);
+                BuildPiecewiseExpr(sbScaledX, Keyframes, k => k.CropX * k.Scale, tVar);
+                BuildPiecewiseExpr(sbScaledY, Keyframes, k => k.CropY * k.Scale, tVar);
 
                 int baseW = SourceW > 0 ? (SourceW / 2) * 2 : 1920;
                 int baseH = SourceH > 0 ? (SourceH / 2) * 2 : 1080;
@@ -222,7 +297,7 @@ public static class AiTrajectorySmoother
             }
         }
 
-        private static void BuildPiecewiseExpr(StringBuilder sb, List<AiTrackingKeyframe> kfs, Func<AiTrackingKeyframe, double> selector)
+        private static void BuildPiecewiseExpr(StringBuilder sb, List<AiTrackingKeyframe> kfs, Func<AiTrackingKeyframe, double> selector, string tVar = "t")
         {
             var ci = CultureInfo.InvariantCulture;
             int count = kfs.Count;
@@ -238,13 +313,13 @@ public static class AiTrajectorySmoother
                 double tB = Math.Round(kB.TimeSec, 2);
                 double dt = Math.Max(0.01, tB - tA);
 
-                sb.Append("if(lte(t,");
+                sb.Append("if(lte(").Append(tVar).Append(",");
                 sb.Append(tB.ToString("0.00", ci));
                 sb.Append("),");
                 sb.Append(vA.ToString("0.00", ci));
                 sb.Append("+(");
                 sb.Append((vB - vA).ToString("0.00", ci));
-                sb.Append(")*(t-");
+                sb.Append(")*(").Append(tVar).Append("-");
                 sb.Append(tA.ToString("0.00", ci));
                 sb.Append(")/");
                 sb.Append(dt.ToString("0.00", ci));

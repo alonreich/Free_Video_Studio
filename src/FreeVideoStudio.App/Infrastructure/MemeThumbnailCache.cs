@@ -8,8 +8,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
@@ -20,9 +23,12 @@ namespace FreeVideoStudio.App.Infrastructure;
 /// <list type="bullet">
 /// <item>Pictures are decoded straight to <see cref="ThumbWidth"/> pixels wide (never the full
 /// 8-megapixel bitmap).</item>
-/// <item>Videos get ONE frame from ffmpeg, piped as PNG on stdout — nothing is written to disk.
-/// The process is owned by <see cref="ChildProcessTracker"/>, runs below normal priority and is
-/// killed after <see cref="FrameTimeout"/>.</item>
+/// <item>Videos get ONE frame. LIBAVFRAME_04: decoded in-process by native libav
+/// (<see cref="VideoFrameGrabber"/>: the frame ffmpeg <c>-ss T -frames:v 1 -vf scale=160:-2</c> would
+/// output, scaled straight to 160 px by swscale, BGRA → Bitmap), with the ORIGINAL ffmpeg
+/// subprocess (PNG piped on stdout, owned by <see cref="ChildProcessTracker"/>, below normal
+/// priority, killed after <see cref="FrameTimeout"/>) kept as the one-shot fallback. Nothing is
+/// written to disk on either path. <c>FVS_FRAME_DECODE=ffmpeg|native</c> forces one path.</item>
 /// <item>At most <see cref="MaxConcurrent"/> decodes run at once so a large library cannot flood
 /// the machine with ffmpeg processes while the user is editing.</item>
 /// <item>Results are kept for the life of the process, keyed by path + size + last-write time, so
@@ -75,26 +81,65 @@ public static class MemeThumbnailCache
         return Bitmap.DecodeToWidth(fs, ThumbWidth, BitmapInterpolationMode.MediumQuality);
     }
 
-    private static async Task<Bitmap?> GrabVideoFrameAsync(string path, CancellationToken ct)
+    private static Task<Bitmap?> GrabVideoFrameAsync(string path, CancellationToken ct)
+        => GrabVideoFrameAsync(BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"), path, ct);
+
+    /// <summary>Uncached grab with an explicit ffmpeg (tests). Same rules as <see cref="GetAsync"/>'s video branch.</summary>
+    internal static async Task<Bitmap?> GrabVideoFrameAsync(string ffmpeg, string path, CancellationToken ct)
     {
-        string ffmpeg = BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
         if (string.IsNullOrWhiteSpace(ffmpeg) || !File.Exists(ffmpeg)) return null;
 
         // Half a second in skips the black first frame most clips open with; a clip shorter than
         // that falls back to its very first frame.
         foreach (string seek in new[] { "0.5", "0" })
         {
-            byte[]? png = await RunFrameAsync(ffmpeg, path, seek, ct).ConfigureAwait(false);
-            if (png is { Length: > 0 })
-            {
-                using var ms = new MemoryStream(png);
-                return new Bitmap(ms);
-            }
+            Bitmap? frame = await GrabFrameAsync(ffmpeg, path, seek, ct).ConfigureAwait(false);
+            if (frame != null) return frame;
         }
         return null;
     }
 
-    private static async Task<byte[]?> RunFrameAsync(string ffmpeg, string path, string seek, CancellationToken ct)
+    /// <summary>
+    /// LIBAVFRAME_04 — one attempt at <paramref name="seek"/>: native first, the unchanged ffmpeg
+    /// subprocess once if native cannot answer (VideoFrameGrabber's LIBAVFRAME_03 rule). Same
+    /// contract as before: null = no picture at this timestamp; our own timeout = null; the
+    /// caller's cancellation is re-thrown.
+    /// </summary>
+    private static async Task<Bitmap?> GrabFrameAsync(string ffmpeg, string path, string seek, CancellationToken ct)
+    {
+        try
+        {
+            return await VideoFrameGrabber.GrabAsync(
+                ffmpeg, path,
+                VideoFrameRequest.AtFfmpegSeek(seek, ThumbWidth, evenHeight: true),   // == -ss {seek} … scale={ThumbWidth}:-2
+                FrameTimeout,
+                ToBitmap,
+                async (budget, token) =>
+                {
+                    byte[]? png = await RunFrameAsync(ffmpeg, path, seek, token, budget).ConfigureAwait(false);
+                    if (png is not { Length: > 0 }) return null;
+                    using var ms = new MemoryStream(png);
+                    return new Bitmap(ms);
+                },
+                ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;   // our own timeout (native deadline or exhausted budget): no picture, not an error — as before
+        }
+    }
+
+    /// <summary>Managed BGRA (alpha 255) → an Avalonia Bitmap that owns a COPY of the pixels. No native pointer is kept.</summary>
+    private static unsafe Bitmap ToBitmap(DecodedVideoFrame frame)
+    {
+        fixed (byte* p = frame.Pixels)
+        {
+            return new Bitmap(PixelFormat.Bgra8888, AlphaFormat.Opaque, (IntPtr)p,
+                new PixelSize(frame.Width, frame.Height), new Vector(96, 96), frame.Stride);
+        }
+    }
+
+    private static async Task<byte[]?> RunFrameAsync(string ffmpeg, string path, string seek, CancellationToken ct, TimeSpan budget)
     {
         var psi = new ProcessStartInfo
         {
@@ -117,7 +162,7 @@ public static class MemeThumbnailCache
         try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(FrameTimeout);
+        timeout.CancelAfter(budget);   // FrameTimeout, minus whatever a native attempt already spent
         try
         {
             using var ms = new MemoryStream();

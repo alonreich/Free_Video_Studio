@@ -212,6 +212,29 @@ internal static unsafe partial class AuthenticodeVerifier
     }
 
     /// <summary>
+    /// UPDATEUX_05 — asked BEFORE anything is downloaded: can this running copy verify an update
+    /// at all? Same anchor test as <see cref="EvaluateUpdateCandidate"/>, so the answer can never
+    /// disagree with the check that runs before launch. The developer override
+    /// <c>FVS_ALLOW_UNSIGNED_UPDATE=1</c> (UPDATETRUST_02, environment only) counts as yes.
+    /// </summary>
+    internal static bool CanVerifyUpdates(string? anchorPath, out string detail)
+    {
+        if (string.Equals(Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED_UPDATE"), "1", StringComparison.Ordinal))
+        {
+            detail = "Developer override FVS_ALLOW_UNSIGNED_UPDATE=1 is set.";
+            return true;
+        }
+        if (string.IsNullOrWhiteSpace(anchorPath))
+        {
+            detail = "The running executable's path is unknown.";
+            return false;
+        }
+        SignatureInfo anchor = Inspect(anchorPath!);
+        detail = anchor.Detail;
+        return anchor.ChainValid && !string.IsNullOrWhiteSpace(anchor.Subject);
+    }
+
+    /// <summary>
     /// UPDATETRUST_01 — the decision <c>UpdateService</c> asks for immediately before
     /// <c>Process.Start</c>. <paramref name="anchorPath"/> is the currently running executable.
     /// </summary>

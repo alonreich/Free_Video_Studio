@@ -35,7 +35,16 @@ public partial class MainWindow
         _cornerMemes.Attach(host);
         bool portrait = PortraitModeCheckboxCtl?.IsChecked ?? true;
         if (portrait) _cornerMemes.SetFrameSize(CoordinateConstants.PortraitW, CoordinateConstants.PortraitH);
-        else _cornerMemes.SetFrameSize(16, 9);
+        else
+        {
+            // CORNERPARITY_01 — the export overlays onto the EVEN SOURCE size (ProcessWorker), and the box,
+            // the margin and the even rounding are pixel quantities of THAT frame. A 16x9 stand-in made the
+            // margin round to 0 and the box to whole ninths of the height (measured on 1920x1080, Medium:
+            // preview box 4/9 = 480 px with no margin vs. export 454 px inset 32 px).
+            int w = host.IpcClient.VideoWidth, h = host.IpcClient.VideoHeight;
+            if (w > 1 && h > 1) _cornerMemes.SetFrameSize(w - w % 2, h - h % 2);
+            else _cornerMemes.SetFrameSize(1920, 1080);
+        }
 
         var tl = _viewModel.Timeline;
         double startMs = tl.IsTrimStartSet ? tl.TrimStartMs : 0.0;
@@ -54,6 +63,9 @@ public partial class MainWindow
         string k = key.ToString();
         if (k != _cornerMemeKey) { _cornerMemeKey = k; _cornerMemes.SetSpans(spans); }
 
-        _cornerMemes.Update(tl.PreviewSourceToOutputSeconds(host.IpcClient.CurrentTime * 1000.0));
+        // CORNERPARITY_01 — the FREEZE-AWARE gameplay clock: during a held freeze the export's corner meme
+        // keeps playing over the held frame (it is overlaid on the rendered stream), so its clock must keep
+        // running here too instead of stopping with the paused player.
+        _cornerMemes.Update(PreviewOutputSeconds(host.IpcClient.CurrentTime));
     }
 }

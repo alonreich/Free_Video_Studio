@@ -14,6 +14,10 @@ public partial class AvaloniaApp : Application
     {
         AvaloniaXamlLoader.Load(this);
 
+        // UPGRADEUX_01 — the update window needs styles only. No sounds: they read settings, and
+        // the broker must not touch settings while user data may be mid-migration.
+        if (Services.UpgradeBrokerHost.IsActive) return;
+
         Avalonia.Controls.Button.ClickEvent.AddClassHandler<Avalonia.Controls.Button>(
             (sender, e) => DispatchUiSound(sender),
             Avalonia.Interactivity.RoutingStrategies.Bubble, true);
@@ -65,6 +69,16 @@ public partial class AvaloniaApp : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // UPGRADEUX_01 — the upgrade broker shows its progress window and nothing else. It returns
+        // BEFORE SettingsManager.Load: 05 SYS-UPGRADE dispatches deployment helpers before any
+        // settings initialization, and loading them here could write a settings file mid-migration.
+        if (Services.UpgradeBrokerHost.IsActive && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime broker)
+        {
+            Services.UpgradeBrokerHost.Attach(broker);
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
         FreeVideoStudio.Core.Media.VideoRenderMode.Initialize();
         Infrastructure.SettingsManager.Load();
         Infrastructure.ThemeManager.ApplyFromSettings();
@@ -146,21 +160,8 @@ public partial class AvaloniaApp : Application
                 desktop.MainWindow = new MainWindow();
                 if (argsList.Contains("--upgrade-health"))
                 {
-                    var window = desktop.MainWindow;
-                    window.IsEnabled = false;
-                    window.Loaded += async (_, _) =>
-                    {
-                        try
-                        {
-                            await Services.UpgradeCoordinator.ConfirmWindowAsync(argsList);
-                            window.IsEnabled = true;
-                        }
-                        catch (System.Exception ex)
-                        {
-                            RuntimeLog.Fail("Upgrade first launch", ex.ToString());
-                            desktop.Shutdown(1);
-                        }
-                    };
+                    // UPGRADEUX_05 — editing stays disabled until the commit, and now the user is told why.
+                    Services.UpgradeFinishedNotice.Attach(desktop, desktop.MainWindow, argsList);
                 }
             }
         }

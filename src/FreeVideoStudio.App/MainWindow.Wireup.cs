@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -680,6 +680,7 @@ public partial class MainWindow
                 try
                 {
                     await dialog.ShowDialog(this);
+                    RuntimeLog.Info("VoiceOver", "[Stage: OwnerReturn] Returned to main window, applying VoiceOver state...");
                     ReturnToTrimStartPaused();
 
                     if (HasVoiceOverEffect(dialog.Result))

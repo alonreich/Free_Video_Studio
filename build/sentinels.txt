@@ -1,4 +1,4 @@
-﻿# ══════════════════════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════════════════════
 # FIX SENTINELS — THE LIST OF FIXES THAT MUST STILL BE IN THE SOURCE.
 #
 # SYS-DEVBUILD / VERIFYHALT_01. Each entry names a comment tag that sits next to a specific fix and
@@ -58,6 +58,11 @@ TRANSPORT_TRACE_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
 MPVEOF_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
 VOEND_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
 VOMON_02=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+MICHEALTH_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+MICHEALTH_01=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
+MICHEALTH_02=tests/FreeVideoStudio.App.Tests/AotSafetyRuleTests.cs
+MICSMOKE_01=tests/VoiceOverNativeSmoke/Program.cs
+MICSMOKE_01=tests/VoiceOverNativeSmoke/VoiceOverNativeSmoke.csproj
 LIST_05=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 LIST_06=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 P3ASYNC_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
@@ -556,3 +561,119 @@ MEMEMODE_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
 MEMEMODE_01=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
 MEMEMODE_01=src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs
 MEMEMODE_01=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml
+
+# PREVIEWMIX_02 — 02 AUD-PREVIEWMIX: one gate decides which rendered mix may be heard (fresh-signature
+# completion, newest ticket only, overwritten slot invalidated, failure latched); tempo triggers the mix.
+PREVIEWMIX_02=src/FreeVideoStudio.Core/Media/RenderedMixGate.cs
+PREVIEWMIX_02=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
+PREVIEWMIX_02=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
+# VOPREVIEW_02 — 02 AUD-PREVIEWMIX: live voice-protection pulse = the export's summed expression; Voice Over studio dip.
+VOPREVIEW_02=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
+VOPREVIEW_02=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
+VOPREVIEW_02=src/FreeVideoStudio.App/VoiceOverWindow.PreviewProtection.cs
+# AIPARITY_01 — 03 FFM-ZOOMGRAPH: preview evaluates the export's AI crop expression; chunk clock offset.
+AIPARITY_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
+AIPARITY_01=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
+AIPARITY_01=src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs
+# CORNERPARITY_01 — 03 FFM-MEMECORNER: corner preview on the export's frame, all overlays, freeze-aware clock.
+CORNERPARITY_01=src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs
+CORNERPARITY_01=src/FreeVideoStudio.App/MainWindow.CornerMemes.cs
+CORNERPARITY_01=src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs
+# PREVIEWFIDELITY_01 — 04 UI-PREVIEWFIDELITY: the preview says when it is not the export.
+PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/PreviewFidelity.cs
+PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs
+PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+PREVIEWFIDELITY_01=src/FreeVideoStudio.App/Infrastructure/PreviewFidelityBadge.cs
+PREVIEWFIDELITY_01=src/FreeVideoStudio.App/MainWindow.PreviewFidelity.cs
+
+# ── 2026-10-03 native libav metadata probe (03 FFM-LIBAVPROBE) ───────────────────────────────
+LIBAVPROBE_01=src/FreeVideoStudio.Core/Media/Native/LibAvInterop.cs
+LIBAVPROBE_01=src/FreeVideoStudio.Core/Media/Native/LibAvMediaBackend.cs
+LIBAVPROBE_02=src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs
+LIBAVPROBE_03=src/FreeVideoStudio.Core/Media/MediaMetadataProbe.cs
+LIBAVPROBE_03=src/FreeVideoStudio.Core/Media/MediaProber.cs
+LIBAVPROBE_03=src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs
+
+# ── 2026-10-04 native libav single-frame decode (03 FFM-LIBAVFRAME) ───────────────────────────
+LIBAVFRAME_01=src/FreeVideoStudio.Core/Media/Native/LibAvInterop.cs
+LIBAVFRAME_01=src/FreeVideoStudio.Core/Media/Native/LibAvFrameDecoder.cs
+LIBAVFRAME_02=src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs
+LIBAVFRAME_03=src/FreeVideoStudio.Core/Media/VideoFrameGrabber.cs
+LIBAVFRAME_04=src/FreeVideoStudio.App/Infrastructure/MemeThumbnailCache.cs
+LIBAVFRAME_05=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
+
+# ── 2026-10-07 VoiceOver Apply and Preview Shutdown resilience (05 SYS-WINSTATE / 02 AUD-VOICEOVER) ──
+VOAPPLY_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+VOAPPLY_02=src/FreeVideoStudio.App/MpvVideoView.cs
+VOAPPLY_03=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
+VOAPPLY_04=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
+VOAPPLY_05=src/FreeVideoStudio.App/PreviewShutdown.cs
+VOAPPLY_06=src/FreeVideoStudio.App/MpvVideoView.cs
+# ── 2026-10-09 VoiceOver failed-take recovery transaction (02 AUD-VOICEOVER / 05 WRITEORDER_03) ──
+VORECOVERY_01=src/FreeVideoStudio.App/Services/VoiceOverRecoveryManager.cs
+VORECOVERY_01=src/FreeVideoStudio.App/VoiceOverWindow.Apply.cs
+VORECOVERY_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+VORECOVERY_02=src/FreeVideoStudio.App/Services/VoiceOverRecoveryManager.cs
+SESSIONOWNER_01=src/FreeVideoStudio.App/VoiceOverWindow.Apply.cs
+SESSIONOWNER_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+MICSMOKE_02=tests/VoiceOverNativeSmoke/Program.cs
+# ── 2026-10-09 Voice Over microphone frequency spectrum (02 AUD-VOICEOVER SPECTRUM_01..04) ──
+SPECTRUM_01=src/FreeVideoStudio.Core/Media/MicrophoneSpectrumAnalyzer.cs
+SPECTRUM_01=src/FreeVideoStudio.Core/Media/MicLevelMonitor.cs
+SPECTRUM_01=src/FreeVideoStudio.Core/Media/VoiceRecorder.cs
+SPECTRUM_02=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
+SPECTRUM_03=src/FreeVideoStudio.App/Controls/MicrophoneSpectrumControl.cs
+SPECTRUM_03=src/FreeVideoStudio.App/AvaloniaApp.axaml
+SPECTRUM_04=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+SPECTRUM_04=src/FreeVideoStudio.App/VoiceOverWindow.axaml
+# 2026-10-09 audit: first in-flight spectrum published after stop/fault (02 AUD-VOICEOVER SPECTRUM_05)
+SPECTRUM_05=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
+SPECTRUM_05=tests/FreeVideoStudio.App.Tests/VoiceCaptureSessionTests.cs
+# ── 2026-10-09 Voice Over recording state + live timeline (02 AUD-VOICEOVER VOREC_01/03, VOLIVE_01; 01 TL-OUTPUTTIMELINE VOREC_02) ──
+# VOREC_01: one writer of the recording state; RECORDING only after delivered buffers; pulse bounded.
+VOREC_01=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
+VOREC_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+VOREC_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml
+VOREC_01=src/FreeVideoStudio.App/AvaloniaApp.axaml
+VOREC_01=tests/FreeVideoStudio.App.Tests/VoiceOverRecordingUiTests.cs
+# VOREC_02: a take's end is mapped through OutputTimeline, not StartSec + wavSeconds.
+VOREC_02=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
+VOREC_02=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+VOREC_02=tests/FreeVideoStudio.App.Tests/VoiceOverTimelineTests.cs
+# VOREC_03: live block painted above the thumbnail-loading scrim (declaration order).
+VOREC_03=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
+VOREC_03=src/FreeVideoStudio.App/VoiceOverWindow.axaml
+VOREC_03=tests/FreeVideoStudio.App.Tests/VoiceOverRecordingUiTests.cs
+# VOLIVE_01: bounded live take meter fed by the recorder's own PCM.
+VOLIVE_01=src/FreeVideoStudio.App/Services/LiveTakeMeter.cs
+VOLIVE_01=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
+VOLIVE_01=tests/FreeVideoStudio.App.Tests/VoiceOverTimelineTests.cs
+
+# UPDATEUX_01..06 (05 SYS-AUTOUPDATE): the in-app updater never has a silent moment.
+UPDATEUX_01=src/FreeVideoStudio.App/ViewModels/UpdatePromptViewModels.cs
+UPDATEUX_01=src/FreeVideoStudio.App/Controls/UpdateAvailableWindow.axaml
+UPDATEUX_02=src/FreeVideoStudio.App/Services/UpdateService.cs
+UPDATEUX_03=src/FreeVideoStudio.App/Services/UpdateService.cs
+UPDATEUX_03=src/FreeVideoStudio.App/Controls/UpdateDownloadWindow.axaml.cs
+UPDATEUX_04=src/FreeVideoStudio.App/Services/UpdateService.cs
+UPDATEUX_05=src/FreeVideoStudio.App/Services/AuthenticodeVerifier.cs
+UPDATEUX_06=src/FreeVideoStudio.App/Services/UpdateService.cs
+UPDATEUX_06=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# UPGRADEUX_01..05 (05 SYS-UPGRADEUX): install/update broker shows every step.
+UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs
+UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeChannel.cs
+UPGRADEUX_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+UPGRADEUX_01=src/FreeVideoStudio.Core/Infrastructure/InstallPayload.cs
+UPGRADEUX_02=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+UPGRADEUX_03=src/FreeVideoStudio.App/Services/InstallDiscovery.cs
+UPGRADEUX_04=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+UPGRADEUX_05=src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs
+UPGRADEUX_05=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+UPGRADEUX_06=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+UPGRADEUX_06=src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs
+# DEVDATA_01 / DEVUPDATE_01 (05 SYS-DEVBUILD): dev sandbox outside %TMP%, AI keys kept; dev updates from .\compiled.
+DEVDATA_01=dev.cmd
+DEVDATA_01=build/DevSandbox.ps1
+DEVUPDATE_01=dev.cmd
+DEVUPDATE_01=src/FreeVideoStudio.App/Services/UpdateService.cs

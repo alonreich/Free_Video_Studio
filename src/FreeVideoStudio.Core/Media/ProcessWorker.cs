@@ -520,7 +520,10 @@ public class ProcessWorker : IDisposable
                     && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "tonemap");
                 string? colorChain = ExportColorPolicy.BuildConversionChain(sourceColor, canToneMap, out string colorDescription, out string? colorDegraded);
                 CoreLogger.Info("COLOR", $"Source {sourceColor}. {colorDescription}");
-                if (colorDegraded != null)
+                // PREVIEWFIDELITY_01 — a background preview-mix render is not an export: it renders no
+                // picture, and raising this notice from it re-showed "the export may look washed out"
+                // after every edit. The preview's own fidelity marker reports HDR instead.
+                if (colorDegraded != null && string.IsNullOrEmpty(AudioPreviewOutputPath))
                 {
                     FreeVideoStudio.Core.Abstractions.Faults.Degraded("EXPORT", colorDegraded, technicalDetail: colorDescription);
                 }

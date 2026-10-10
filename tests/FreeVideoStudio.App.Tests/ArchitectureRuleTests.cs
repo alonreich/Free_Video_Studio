@@ -566,7 +566,7 @@ public sealed class ArchitectureRuleTests
         // single behaviour change, and it is a step toward this rule's actual destination rather
         // than a substitute for it: a binding now replaces ONE accessor instead of fifteen call
         // sites. The remaining 683 are genuine single-use lookups, which need the view-model.
-        const int Baseline = 700;
+        const int Baseline = 686;   // UPDATEUX_01/03: the two update windows now bind to view-models (was 698; SPECTRUM_04 took it from 699, UNDO_28 from 700)
 
         int count = 0;
         var perFile = new List<string>();
@@ -632,10 +632,10 @@ public sealed class ArchitectureRuleTests
         // is for converting existing catch blocks. It is not a budget.
         var ceilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            ["GranularSpeedEditorWindow.axaml.cs"] = 8075,
-            ["CropToolWindow.axaml.cs"]            = 6490,
-            ["MusicWizardWindow.axaml.cs"]         = 5545,
-            ["VoiceOverWindow.axaml.cs"]           = 3427,   // VOCAPTURE_01: capture lifecycle moved to Services/VoiceCaptureSession.cs (was 3645)
+            ["GranularSpeedEditorWindow.axaml.cs"] = 6587,   // EDITSTATE_01: durable edit state moved to Core/Editing/GranularEditSession (was 7537; UNDO_26 took it from 8075)
+            ["CropToolWindow.axaml.cs"]            = 5403,   // EDITSTATE_01: durable edit state moved to Core/Editing/CropEditSession (was 6002; UNDO_27 took it from 6132)
+            ["MusicWizardWindow.axaml.cs"]         = 5422,   // UNDO_28: history lives in MusicWizardWindow.History.cs (was 5545)
+            ["VoiceOverWindow.axaml.cs"]           = 3194,   // VOREC_01: recording-state writer + live block moved to VoiceOverWindow.RecordingState.cs (was 3341; SPECTRUM_04 took it from 3427)
             ["MainWindow.axaml.cs"]                = 3144,   // EXPORTSESSION_02: export lifecycle moved to Services/ExportCoordinator.cs (was 3260)
             ["VideoMergerWindow.axaml.cs"]         = 2240,
             ["PhaseOverlayControl.axaml.cs"]       = 2425,

@@ -1,0 +1,113 @@
+<!-- UPGRADEUX_01 — the install / update progress window shown by the upgrade broker.
+     Transient, non-persisted, standalone (no owner: the app is closed while it runs), so it is not
+     in WindowBoundsHelper. It never shows while the user is still working; it appears the moment
+     the old app has closed and stays until the new one is open (05 SYS-UPGRADE, UPGRADEUX_01). -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
+        x:DataType="vm:UpgradeProgressViewModel"
+        x:Class="FreeVideoStudio.App.UpgradeProgressWindow"
+        Title="{Binding Title}"
+        Width="560" SizeToContent="Height"
+        Background="{DynamicResource AppSurfaceBrush}"
+        CanResize="False"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="30">
+
+    <Border Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
+        <Grid RowDefinitions="30, Auto, Auto, Auto, Auto">
+            <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                <TextBlock Text="{Binding Title}" Classes="WindowTitleText"
+                           Foreground="{DynamicResource TitleBarForeground}"/>
+            </Border>
+
+            <!-- The checklist: every step the user will go through, ticked as it finishes. -->
+            <ItemsControl Grid.Row="1" Margin="25,18,25,6" ItemsSource="{Binding Steps}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:UpgradeStepItem">
+                        <Grid ColumnDefinitions="26,*" Margin="0,3">
+                            <TextBlock Grid.Column="0" Text="{Binding Mark}" FontWeight="Bold"
+                                       Foreground="{DynamicResource AppTextMutedBrush}"
+                                       Classes.Done="{Binding IsDone}" Classes.Active="{Binding IsActive}"
+                                       Classes.Failed="{Binding IsFailed}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap"
+                                       FontSize="{DynamicResource AppFontSize13}"
+                                       Foreground="{DynamicResource AppTextMutedBrush}"
+                                       Classes.Done="{Binding IsDone}" Classes.Active="{Binding IsActive}"
+                                       Classes.Failed="{Binding IsFailed}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+                <ItemsControl.Styles>
+                    <Style Selector="TextBlock.Done">
+                        <Setter Property="Foreground" Value="{DynamicResource AppSuccessBrush}"/>
+                    </Style>
+                    <Style Selector="TextBlock.Active">
+                        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                    </Style>
+                    <Style Selector="TextBlock.Failed">
+                        <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                    </Style>
+                </ItemsControl.Styles>
+            </ItemsControl>
+
+            <!-- What is happening right now, with a live bar. Visible while working. -->
+            <StackPanel Grid.Row="2" Margin="25,8,25,20" Spacing="8" IsVisible="{Binding IsWorking}">
+                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"
+                           FontSize="{DynamicResource AppFontSize13}"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <ProgressBar Grid.Column="0" Height="14" Minimum="0" Maximum="100"
+                                 Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}"
+                                 Foreground="{DynamicResource AppInfoBrush}"
+                                 Background="{DynamicResource AppPanelBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding PercentText}" Margin="10,0,0,0" MinWidth="40"
+                               TextAlignment="Right" VerticalAlignment="Center" FontWeight="Bold"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                </Grid>
+                <TextBlock Text="Please keep this window open. It closes by itself when everything is done."
+                           TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}"
+                           FontSize="{DynamicResource AppFontSize11}"/>
+            </StackPanel>
+
+            <!-- UPGRADEUX_03 — the app is still open: ask before Windows is asked. -->
+            <StackPanel Grid.Row="3" Margin="25,8,25,22" Spacing="14" IsVisible="{Binding IsAsking}">
+                <TextBlock Text="{Binding Question}" TextWrapping="Wrap" FontWeight="SemiBold"
+                           Foreground="{DynamicResource AppWarningBrush}"
+                           FontSize="{DynamicResource AppFontSize13}"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14">
+                    <Button Classes="Success" Content="{Binding ContinueText}" MinWidth="200" Cursor="Hand"
+                            IsDefault="True" Command="{Binding ContinueCommand}"
+                            AutomationProperties.Name="Close Free Video Studio and continue"/>
+                    <Button Classes="Secondary" Content="CANCEL" MinWidth="120" Cursor="Hand"
+                            IsCancel="True" Command="{Binding CancelCommand}"
+                            AutomationProperties.Name="Cancel and change nothing"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Finished: green tick, or a plain-English reason and a Close button. -->
+            <StackPanel Grid.Row="4" Margin="25,8,25,22" Spacing="12" IsVisible="{Binding IsFinished}">
+                <TextBlock Text="{Binding ResultTitle}" TextWrapping="Wrap" FontWeight="Bold"
+                           FontSize="{DynamicResource AppFontSize16}"
+                           Foreground="{DynamicResource AppSuccessBrush}"
+                           IsVisible="{Binding IsSucceeded}"/>
+                <TextBlock Text="{Binding ResultTitle}" TextWrapping="Wrap" FontWeight="Bold"
+                           FontSize="{DynamicResource AppFontSize16}"
+                           Foreground="{DynamicResource AppDangerBrush}"
+                           IsVisible="{Binding IsFailed}"/>
+                <TextBlock Text="{Binding ResultMessage}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"
+                           FontSize="{DynamicResource AppFontSize13}"/>
+                <Button Classes="Secondary" Content="CLOSE" MinWidth="120" Cursor="Hand"
+                        HorizontalAlignment="Center" IsDefault="True"
+                        Command="{Binding CloseCommand}"
+                        AutomationProperties.Name="Close this window"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

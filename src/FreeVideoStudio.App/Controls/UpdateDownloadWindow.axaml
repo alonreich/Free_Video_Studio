@@ -1,10 +1,15 @@
 <!-- AUTO-UPDATE — transient, non-persisted modal progress window for the in-app updater.
-     Same CenterOwner exemption as ConfirmDialogWindow (ISSUE_06 note there). -->
+     Same CenterOwner exemption as ConfirmDialogWindow (ISSUE_06 note there).
+     UPDATEUX_03/04 — every stage is shown (what to download, download with speed and time left,
+     safety check, ready) and it ends with a choice, not with "close the app yourself".
+     All state is bound to UpdateDownloadViewModel (MVVM_01). -->
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
+        x:DataType="vm:UpdateDownloadViewModel"
         x:Class="FreeVideoStudio.App.Controls.UpdateDownloadWindow"
         Title="Updating"
-        Width="520" SizeToContent="Height"
+        Width="560" SizeToContent="Height"
         Background="{DynamicResource AppSurfaceBrush}"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
@@ -16,29 +21,49 @@
                 BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, *, Auto">
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Name="DialogTitle" Text="Updating" Classes="WindowTitleText"
+                    <TextBlock Text="Updating Free Video Studio" Classes="WindowTitleText"
                                Foreground="{DynamicResource TitleBarForeground}"/>
                 </Border>
 
                 <StackPanel Grid.Row="1" Margin="25,20,25,10" Spacing="12">
-                    <TextBlock Name="HeadlineText" Text="Downloading the new version…"
+                    <TextBlock Text="{Binding Headline}"
                                Foreground="{DynamicResource AppTextPrimaryBrush}"
                                FontSize="{DynamicResource AppFontSize14}" FontWeight="SemiBold"
                                TextAlignment="Center" TextWrapping="Wrap"/>
-                    <ProgressBar Name="Progress" Minimum="0" Maximum="100" Height="14"
-                                 HorizontalAlignment="Stretch"/>
-                    <TextBlock Name="StatusText" Text="Starting…"
+                    <ProgressBar Minimum="0" Maximum="100" Height="14" HorizontalAlignment="Stretch"
+                                 Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}"
+                                 IsVisible="{Binding IsWorking}"/>
+                    <TextBlock Text="{Binding Status}"
                                Foreground="{DynamicResource AppTextMutedBrush}"
                                FontSize="{DynamicResource AppFontSize12}"
                                TextAlignment="Center" TextWrapping="Wrap"/>
                 </StackPanel>
 
+                <!-- While working: Cancel (disabled during the safety check, when it cannot act). -->
                 <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
-                            Spacing="15" Margin="0,5,0,25">
-                    <Button Name="CancelBtn" Classes="Secondary" Content="CANCEL DOWNLOAD" MinWidth="130"
-                            Cursor="Hand" IsCancel="True"
+                            Spacing="15" Margin="0,5,0,25" IsVisible="{Binding IsWorking}">
+                    <Button Classes="Secondary" Content="CANCEL DOWNLOAD" MinWidth="130"
+                            Cursor="Hand" IsCancel="True" Command="{Binding CancelCommand}"
                             AutomationProperties.Name="Cancel the update download"
                             ToolTip.Tip="Stops the download. Your current version is not changed."/>
+                </StackPanel>
+
+                <!-- UPDATEUX_04 — ready: restart now, or install when the app is closed. -->
+                <StackPanel Grid.Row="2" Margin="25,5,25,25" Spacing="10" IsVisible="{Binding IsReady}">
+                    <Button Classes="Success" Cursor="Hand" IsDefault="True"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding RestartNowCommand}"
+                            AutomationProperties.Name="Restart and update now"
+                            ToolTip.Tip="Closes Free Video Studio (asking you to save first if needed), installs the update and opens it again.">
+                        <TextBlock Text="RESTART &amp; UPDATE NOW" TextAlignment="Center"/>
+                    </Button>
+                    <Button Classes="Secondary" Cursor="Hand"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding LaterCommand}"
+                            AutomationProperties.Name="Update when I close the app"
+                            ToolTip.Tip="Keep working. The update installs by itself as soon as you close Free Video Studio.">
+                        <TextBlock Text="UPDATE WHEN I CLOSE THE APP" TextAlignment="Center"/>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>

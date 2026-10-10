@@ -48,23 +48,26 @@ Route by FILE (below) or by SYMBOL (`INDEX.md`). Full paths live in each spec's 
 ```
 CanvasMath.cs  ⚠CompositeTimeline.cs  CoordinateMath.cs  ⚠GranularSpeedEditorWindow.axaml.cs
 ⚠GranularSpeedEditorWindow.Merge.cs  HudAutoDetector.cs  HudConfig.cs  HudImageOps.cs  KineticScrubController.cs
+AiHudDetection.cs  AiHudResponseParser.cs  AiHudResultCache.cs  HudCandidateFusion.cs  ⚠HudDetectionCoordinator.cs
+⚠GeminiHudDetectionService.cs  AiHudFrameBuilder.cs  ⚠CropToolWindow.MagicWand.cs
 ⚠MainWindow.axaml.cs  MainWindow.Canvas.cs  ⚠MainWindow.Controls.cs  MainWindow.Shortcuts.cs
 MainWindow.Wireup.cs  ⚠MergeClipGraph.cs  ⚠MergedTimeline.cs  ⚠MergeEditorBridge.cs
 ⚠MergeEdl.cs  ⚠MergerPreviewPlan.cs  ⚠MergerSession.cs  ⚠MusicPadAlignment.cs
 ⚠MemePlacement.cs  ⚠MusicWizardWindow.axaml.cs  ⚠OutputTimeline.cs  ⚠PhoneFrameMockup.axaml.cs  TimelineKnob.cs
 TimelineLanesControl.axaml.cs  TimelineViewModel.cs  ⚠VideoMergerWindow.EdlPreview.cs
+⚠GranularEditSession.Segments.cs  ⚠GranularEditSession.Memes.cs  ⚠CropEditSession.cs  ⚠CropProfileCodec.cs
 ⚠VideoMergerWindow.History.cs  ⚠VideoMergerWindow.Lanes.cs  ⚠VideoMergerWindow.Session.cs
-⚠VideoMergerWindow.Timeline.cs  ⚠VideoMergerWindow.TimelineSelect.cs  ⚠VoiceOverWindow.axaml.cs
+⚠VideoMergerWindow.Timeline.cs  ⚠VideoMergerWindow.TimelineSelect.cs  ⚠VoiceOverWindow.axaml.cs  ⚠VoiceOverWindow.RecordingState.cs
 ```
 
 **[`02_AUDIO_ENGINE_MASTERING.md`](02_AUDIO_ENGINE_MASTERING.md)** — Audio engine & mastering — PID preview volume, LUFS targets, sidechain ducking, Voice Over Studio, WASAPI threading, music bed fades.
 
 ```
 AudioFilterChain.cs  AudioLoudnessProbe.cs  ⚠FluidVolumeSlider.cs  ⚠MainWindow.axaml.cs
-⚠MainWindow.Controls.cs  ⚠MemeLoudness.cs  MicLevelMonitor.cs  MpvIpcClient.cs
+⚠MainWindow.Controls.cs  ⚠MemeLoudness.cs  MicLevelMonitor.cs  MicrophoneSpectrumAnalyzer.cs  ⚠MicrophoneSpectrumControl.cs  MpvIpcClient.cs
 ⚠MusicPadAlignment.cs  ⚠MusicWizardWindow.axaml.cs  VoiceOverPreviewPlayer.cs
-⚠VoiceOverWindow.axaml.cs  VoiceRecorder.cs  VoiceCaptureSession.cs  WavAudioReader.cs
-WaveformGenerator.cs
+⚠VoiceOverWindow.axaml.cs  ⚠VoiceOverWindow.RecordingState.cs  VoiceRecorder.cs  VoiceCaptureSession.cs  LiveTakeMeter.cs  WavAudioReader.cs
+WaveformGenerator.cs  RenderedMixGate.cs  ⚠VoiceOverWindow.PreviewProtection.cs
 ```
 
 **[`03_FFMPEG_EXPORT_PIPELINE.md`](03_FFMPEG_EXPORT_PIPELINE.md)** — FFmpeg export pipeline — encoder discovery, zoom filtergraph, concat/bitrate, meme concat & cutaway preview, fades, progress, binary paths, meme library.
@@ -78,7 +81,7 @@ MergeClipAnalyzer.cs  ⚠MergeClipGraph.cs  ⚠MergedTimeline.cs  ⚠MergeEditor
 ⚠MergeEdl.cs  ⚠MergerPreviewPlan.cs  MergerWorker.cs  MobileFilterBuilder.cs
 ⚠MusicPadAlignment.cs  OutputFileSize.cs  OutputSizeEstimator.cs  ProcessWorker.cs
 QualityLadder.cs  TextOverlayGenerator.cs  TwoPassEncoding.cs  ⚠VideoMergerWindow.EdlPreview.cs
-⚠VideoMergerWindow.Timeline.cs  ZoomPreviewSimulator.cs
+⚠VideoMergerWindow.Timeline.cs  ZoomPreviewSimulator.cs  ⚠PreviewFidelity.cs  ⚠MainWindow.PreviewFidelity.cs
 ```
 
 **[`04_UI_UX_AVALONIA_SPEC.md`](04_UI_UX_AVALONIA_SPEC.md)** — UI/UX & Avalonia — design tokens, high-DPI layout, tooltips, confirmations, coach tours, granular editor layout, undo/redo, detachable previews, merger queue.
@@ -89,11 +92,11 @@ FloatingNotice.cs  ⚠FluidVolumeSlider.cs  GrabCursors.cs  ⚠GranularSpeedEdit
 ⚠GranularSpeedEditorWindow.History.cs  ⚠GranularSpeedEditorWindow.Merge.cs  ⚠IUserNotifier.cs
 ⚠LaneDiskCache.cs  MainViewModel.cs  ⚠MainWindow.axaml.cs  ⚠MainWindow.Controls.cs  MemePickerWindow.axaml
 MemeThumbnailCache.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
-⚠MainWindow.CornerMemes.cs  ⚠VideoMergerWindow.CornerMemes.cs  ⚠PhoneFrameMockup.axaml.cs  PreviewDetachController.cs  PreviewMonitorWindow.axaml
+⚠MainWindow.CornerMemes.cs  ⚠VideoMergerWindow.CornerMemes.cs  ⚠MicrophoneSpectrumControl.cs  PreviewFidelityBadge.cs  ⚠PreviewFidelity.cs  ⚠MainWindow.PreviewFidelity.cs  ⚠PhoneFrameMockup.axaml.cs  PreviewDetachController.cs  PreviewMonitorWindow.axaml
 ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SpinningWheelSlider.cs  UpdateAvailableWindow.axaml.cs
 ⚠VideoMergerWindow.EdlPreview.cs  ⚠VideoMergerWindow.Lanes.cs  VideoMergerWindow.Playhead.cs
 ⚠VideoMergerWindow.Session.cs  ⚠VideoMergerWindow.TimelineSelect.cs  ViewModelBase.cs  WaveformPeaks.cs
-⚠WindowBoundsHelper.cs  WindowResizeGrip.cs
+⚠WindowBoundsHelper.cs  WindowResizeGrip.cs  ⚠GranularEditSession.cs  ⚠CropEditSession.cs  CropLayer.cs
 ```
 
 **[`05_SYSTEM_LIFECYCLE_STORAGE.md`](05_SYSTEM_LIFECYCLE_STORAGE.md)** — System lifecycle & storage — mutexes, logging pipeline, window bounds, deferred-close contract, crash recovery, atomic writes, dev build harness & fix sentinels, signing.
@@ -108,6 +111,7 @@ MaskOverlayManager.cs  MergerAutosaveStore.cs  ⚠MergerSession.cs  NamedPipeSta
 NamedPipeStateServer.cs  ProjectRecoveryService.cs  ⚠RecoveryManager.cs  RuntimeLog.cs
 SettingsManager.cs  SingleInstanceGuard.cs  StateTransferStore.cs  ⚠StorageProviderFilePicker.cs  ⚠ToolNavigator.cs
 UiStateStore.cs  ⚠UpdateService.cs  ⚠VideoMergerWindow.Session.cs  ⚠WindowBoundsHelper.cs
+GranularRecoveryCodec.cs  GranularJsonRead.cs  ⚠CropProfileCodec.cs  ⚠CropEditSession.cs
 ```
 
 **[`06_PROJECT_DOCUMENT_MODEL.md`](06_PROJECT_DOCUMENT_MODEL.md)** — Project document model — the saveable `.fvsproj`, schema versioning & the amputation rule, AOT-safe JSON, atomic persistence & backup, source integrity, recent projects, trim/AOT analyser policy.
@@ -123,6 +127,7 @@ AotJson.cs  ⚠AtomicJsonFile.cs  FreeVideoStudio.App.csproj  ⚠IProjectStore.c
 ```
 ⚠GranularSpeedEditorWindow.axaml.cs  ⚠GranularSpeedEditorWindow.History.cs  ⚠MainWindow.Project.cs
 ⚠ProjectDocument.cs  ⚠ProjectSession.cs  UndoSidecarStore.cs  UndoStack.cs
+⚠GranularEditSession.cs  GranularEditSession.History.cs  ⚠CropEditSession.cs  CropLayer.cs
 ```
 
 **[`08_APPLICATION_COMPOSITION.md`](08_APPLICATION_COMPOSITION.md)** — Application composition, seams & fault reporting — the composition root, the service interfaces, fault tiers (Recoverable/Degraded/Fatal), and the architecture tests that enforce the other specs' rules.
@@ -132,7 +137,7 @@ AppServices.cs  ArchitectureRuleTests.cs  ⚠CodeSigning.cs  ⚠dev.cmd  Fault.c
 ⚠ExportCoordinator.cs  Faults.cs  ⚠FfmpegJobLifetime.cs  ⚠.github/workflows/ci.yml  IClock.cs  IFaultSink.cs
 IFilePickerService.cs  ⚠IProjectStore.cs  ⚠IUserNotifier.cs  ⚠MainWindow.Project.cs
 ⚠MainWindow.ToolReturn.cs  ⚠ProjectSession.cs  ⚠StorageProviderFilePicker.cs  ⚠ToolNavigator.cs
-UserFacingFaultSink.cs  WindowsOnlyFactAttribute.cs
+UserFacingFaultSink.cs  WindowsOnlyFactAttribute.cs  ⚠GranularEditSession.cs
 ```
 
 **[`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md)** — Distribution, update size & repository weight — the 322MB installer, the runtime/app package split, the fingerprint that decides which one a patch downloads, LFS enforcement and the history-rewrite runbook.

@@ -30,6 +30,10 @@ public partial class VideoMergerWindow
 
         _cornerMemes ??= new Infrastructure.CornerMemeOverlayPresenter();
         _cornerMemes.Attach(_videoHost);
+        // CORNERPARITY_01 — geometry on the frame actually on screen (even, like every export canvas). The
+        // presenter's old 16x9 stand-in rounded the margin to 0 and the box to ninths of the height.
+        int fw = _videoHost.IpcClient.VideoWidth, fh = _videoHost.IpcClient.VideoHeight;
+        if (fw > 1 && fh > 1) _cornerMemes.SetFrameSize(fw - fw % 2, fh - fh % 2);
         if (!ReferenceEquals(_cornerMemePlan, plan))
         {
             _cornerMemePlan = plan;

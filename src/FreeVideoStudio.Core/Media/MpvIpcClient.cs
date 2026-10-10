@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
@@ -123,6 +123,13 @@ public class MpvIpcClient : IDisposable
 
     public double CurrentTime { get; private set; }
     public double Duration { get; private set; }
+    private readonly object _seekGate = new();
+    private volatile bool _seekInProgress;
+    private bool _seekObserved;
+    private string? _pendingSeekCommand;
+
+    /// <summary>True from seek submission until mpv has finished seeking, including paused seeks.</summary>
+    public bool IsSeeking => _seekInProgress;
     /// <summary>Thread-safe pause state (updated by event loop, read by UI).</summary>
     public bool IsPaused { get => _isPaused; private set => _isPaused = value; }
     /// <summary>Thread-safe EOF state (updated by event loop, read by UI).</summary>
@@ -180,7 +187,9 @@ public class MpvIpcClient : IDisposable
     public event Action<double>? TimePosChanged;
 
     /// <summary>
-    /// Fires synchronously after a <c>seek</c> command is issued.
+    /// Fires after mpv's playback-restart confirms a seek has landed, or when a seek
+    /// is abandoned by an end-file/rejected command. May run on the mpv event thread.
+    /// The position cache is refreshed before a successful completion is published.
     /// </summary>
     public event Action? SeekCompleted;
 
@@ -306,6 +315,22 @@ public class MpvIpcClient : IDisposable
                             HandlePropertyChange(ev);
                             break;
 
+                        case MpvWrapper.MpvEventId.Seek:
+                            lock (_seekGate)
+                            {
+                                _seekInProgress = true;
+                                _seekObserved = true;
+                            }
+                            break;
+
+                        case MpvWrapper.MpvEventId.PlaybackRestart:
+                            CompleteSeek(cancelled: false);
+                            break;
+
+                        case MpvWrapper.MpvEventId.EndFile:
+                            CompleteSeek(cancelled: true);
+                            break;
+
                         case MpvWrapper.MpvEventId.Shutdown:
                             return;
                     }
@@ -326,6 +351,32 @@ public class MpvIpcClient : IDisposable
         {
             _eventLoopExited = true;
         }
+    }
+
+    // SEEKSETTLE_01 — accepting a command is not completing its decode. In particular a
+    // paused high-resolution seek may take many UI ticks. Reissuing it on those ticks
+    // keeps throwing away the decoder's progress and can trap both picture and audio.
+    private void CompleteSeek(bool cancelled)
+    {
+        bool notify;
+        lock (_seekGate)
+        {
+            if (!_seekInProgress) return;
+            if (!cancelled)
+            {
+                // Initial loads also emit playback-restart. A queued older restart must
+                // not complete a newer seek that mpv is still decoding.
+                if (!_seekObserved || GetPropertyString("seeking") != "no") return;
+                if (double.TryParse(GetPropertyString("time-pos"), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out double position))
+                    CurrentTime = Math.Max(0, position);
+            }
+            notify = _seekInProgress;
+            _pendingSeekCommand = null;
+            _seekObserved = false;
+            _seekInProgress = false;
+        }
+        if (notify) SeekCompleted?.Invoke();
     }
 
     /// <summary>
@@ -450,17 +501,31 @@ public class MpvIpcClient : IDisposable
             }
         }
 
-        MpvWrapper.mpv_command_string(_mpvHandle, sb.ToString());
-
+        string command = sb.ToString();
         if (args[0].ToString() == "seek")
         {
-            // MPVEOF_01 — a seek moves the playhead, so the cached "we are sitting on the last
-            // frame" answer is stale from this instant. Same reasoning as SetPropertyAsync: the
-            // observer is asynchronous, and every caller that seeks and then immediately checks
-            // IsEof would otherwise act on the previous file position.
-            IsEof = false;
-            SeekCompleted?.Invoke();
+            int result;
+            lock (_seekGate)
+            {
+                // Cut skipping can ask for the same endpoint on every playback tick.
+                // Let the outstanding seek land instead of restarting it indefinitely.
+                bool absolute = args.Length > 2 && args[2].ToString()!.Contains("absolute", StringComparison.Ordinal);
+                if (absolute && _seekInProgress && _pendingSeekCommand == command)
+                    return Task.CompletedTask;
+                _pendingSeekCommand = command;
+                _seekInProgress = true;
+                _seekObserved = false;
+                // MPVEOF_01 — the old end-of-file answer is invalid as soon as we seek.
+                IsEof = false;
+                result = MpvWrapper.mpv_command_string(_mpvHandle, command);
+            }
+            if (result < 0)
+            {
+                CompleteSeek(cancelled: true);
+                CoreLogger.Warn("MPV", $"Seek command rejected ({result}).");
+            }
         }
+        else MpvWrapper.mpv_command_string(_mpvHandle, command);
 
         return Task.CompletedTask;
     }
@@ -594,6 +659,7 @@ public class MpvIpcClient : IDisposable
     /// signal that the background thread has genuinely stopped touching <c>_mpvHandle</c>.
     /// </summary>
     private volatile bool _eventLoopExited;
+    public bool IsHandleAbandoned { get; private set; }
 
     public void Dispose()
     {
@@ -636,6 +702,7 @@ public class MpvIpcClient : IDisposable
         {
             CoreLogger.Fail("MPV",
                 "The mpv event loop did not stop in time — abandoning the player handle instead of destroying it underneath a live thread.");
+            IsHandleAbandoned = true; // VOAPPLY_04 — mark handle abandoned
             _mpvHandle = nint.Zero;
             return;
         }

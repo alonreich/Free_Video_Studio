@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
@@ -110,7 +110,7 @@ public static class UiSoundEffect
 
 
     private static readonly object _engineLock = new();
-    private static WaveOutEvent? _output;
+    private static WaveOut? _output;
     private static MixingSampleProvider? _mixer;
     private static VolumeSampleProvider? _volume;
     private static bool _engineFailed;
@@ -311,7 +311,7 @@ public static class UiSoundEffect
 
         try
         {
-            if (WaveInterop.waveOutGetNumDevs() <= 0)   // AOTCLEAN_02 — WaveOut (umbrella package) is gone; same winmm call
+            if (WaveOut.DeviceCount <= 0)   // AOTCLEAN_02 — WaveOut (umbrella package) is gone; same winmm call
             {
                 _engineFailed = true;
                 SafeLog("No audio output device present - UI sounds disabled for this session.");
@@ -324,7 +324,7 @@ public static class UiSoundEffect
             _volume = new VolumeSampleProvider(_mixer) { Volume = 1f };
 
             // UISND_02 — 50 ms (3 x ~17 ms buffers) instead of 150 ms: a click is heard WITH the press.
-            _output = new WaveOutEvent { DesiredLatency = 50, NumberOfBuffers = 3 };
+            _output = new WaveOut { BufferMilliseconds = 17, NumberOfBuffers = 3 };
             _output.Init(_volume);
             _output.Play();
             return true;
@@ -435,7 +435,7 @@ public static class UiSoundEffect
             while (true)
             {
                 if (total == data.Length) Array.Resize(ref data, data.Length * 2);
-                int read = source.Read(data, total, data.Length - total);
+                int read = source.Read(data.AsSpan(total, data.Length - total));
                 if (read <= 0) break;
                 total += read;
             }
@@ -459,16 +459,21 @@ public static class UiSoundEffect
 
         public WaveFormat WaveFormat => _sound.WaveFormat;
 
-        public int Read(float[] buffer, int offset, int count)
+        public int Read(Span<float> buffer)
         {
             int available = _sound.AudioData.Length - _position;
-            int n = Math.Min(available, count);
+            int n = Math.Min(available, buffer.Length);
             if (n > 0)
             {
-                Array.Copy(_sound.AudioData, _position, buffer, offset, n);
+                _sound.AudioData.AsSpan(_position, n).CopyTo(buffer);
                 _position += n;
             }
             return n < 0 ? 0 : n;
+        }
+
+        public int Read(float[] buffer, int offset, int count)
+        {
+            return Read(buffer.AsSpan(offset, count));
         }
     }
 }

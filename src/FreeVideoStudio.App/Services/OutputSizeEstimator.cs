@@ -1,7 +1,6 @@
 ﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App.ViewModels;
@@ -66,17 +65,11 @@ public sealed class OutputSizeEstimator
                 return cached.Media;
             long bytes = file.Length;
             DateTime modified = file.LastWriteTimeUtc;
-            var start = new ProcessStartInfo(_probePath())
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            foreach (var arg in new[] { "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path })
-                start.ArgumentList.Add(arg);
-            var output = await AsyncProcessRunner.RunAsync(start, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
+            // LIBAVPROBE_03 — native libav metadata, ffprobe subprocess as the bounded fallback.
+            var probe = await MediaMetadataProbe.ProbeAsync(_probePath(), path, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            if (output.ExitCode != 0) return null;
-            var json = JsonNode.Parse(output.StandardOutput);
+            if (!probe.Ok) return null;
+            JsonNode? json = probe.Data;
             var streams = json?["streams"] as JsonArray;
             var video = streams?.FirstOrDefault(s => s?["codec_type"]?.ToString() == "video");
             var audio = streams?.FirstOrDefault(s => s?["codec_type"]?.ToString() == "audio");

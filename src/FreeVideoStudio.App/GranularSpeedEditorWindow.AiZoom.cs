@@ -80,9 +80,9 @@ public partial class GranularSpeedEditorWindow
         var btn = AiSmartZoomBtnCtl;
         if (btn == null) return;
 
-        bool hasAiZoom = _selectedSegmentIndex >= 0 &&
-                         _selectedSegmentIndex < _segments.Count &&
-                         !string.IsNullOrEmpty(_segments[_selectedSegmentIndex].AiTrackingTrajectory);
+        bool hasAiZoom = _edit.SelectedSegmentIndex >= 0 &&
+                         _edit.SelectedSegmentIndex < _edit.Segments.Count &&
+                         !string.IsNullOrEmpty(_edit.Segments[_edit.SelectedSegmentIndex].AiTrackingTrajectory);
 
         if (hasAiZoom)
         {
@@ -112,11 +112,11 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private void OnAiTrackingPlaybackTick()
     {
-        if (!_isAiPreviewLooping || _aiPreviewSegmentIndex < 0 || _aiPreviewSegmentIndex >= _segments.Count) return;
+        if (!_isAiPreviewLooping || _aiPreviewSegmentIndex < 0 || _aiPreviewSegmentIndex >= _edit.Segments.Count) return;
         if (_videoHost?.IpcClient == null) return;
 
-        double curPlaybackRelMs = Math.Max(0, (_videoHost.IpcClient.CurrentTime * 1000.0) - _trimStartMs);
-        var seg = _segments[_aiPreviewSegmentIndex];
+        double curPlaybackRelMs = Math.Max(0, (_videoHost.IpcClient.CurrentTime * 1000.0) - _edit.TrimStartMs);
+        var seg = _edit.Segments[_aiPreviewSegmentIndex];
         if (curPlaybackRelMs >= seg.EndMs || curPlaybackRelMs < seg.StartMs - 50)
         {
             SetPlayheadFromScrub(seg.StartMs);
@@ -140,10 +140,10 @@ public partial class GranularSpeedEditorWindow
 
         if (accept)
         {
-            if (_aiPreviewCandidateSegment != null && _aiPreviewSegmentIndex >= 0 && _aiPreviewSegmentIndex < _segments.Count)
+            if (_aiPreviewCandidateSegment != null && _aiPreviewSegmentIndex >= 0 && _aiPreviewSegmentIndex < _edit.Segments.Count)
             {
                 PushUndo("apply AI smart zoom");
-                _segments[_aiPreviewSegmentIndex] = _aiPreviewCandidateSegment;
+                _edit.Segments[_aiPreviewSegmentIndex] = _aiPreviewCandidateSegment;
                 RefreshSegmentList();
                 RedrawTimeline();
                 UpdateDeleteButtonVisibility();
@@ -153,9 +153,9 @@ public partial class GranularSpeedEditorWindow
         }
         else
         {
-            if (_aiPreviewOriginalSegment != null && _aiPreviewSegmentIndex >= 0 && _aiPreviewSegmentIndex < _segments.Count)
+            if (_aiPreviewOriginalSegment != null && _aiPreviewSegmentIndex >= 0 && _aiPreviewSegmentIndex < _edit.Segments.Count)
             {
-                _segments[_aiPreviewSegmentIndex] = _aiPreviewOriginalSegment;
+                _edit.Segments[_aiPreviewSegmentIndex] = _aiPreviewOriginalSegment;
                 RefreshSegmentList();
                 RedrawTimeline();
                 UpdateDeleteButtonVisibility();
@@ -195,16 +195,16 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
-        if (_selectedSegmentIndex < 0 || _selectedSegmentIndex >= _segments.Count)
+        if (_edit.SelectedSegmentIndex < 0 || _edit.SelectedSegmentIndex >= _edit.Segments.Count)
         {
             if (!EnsureZoomTargetSegment()) return;
         }
 
-        if (_selectedSegmentIndex < 0 || _selectedSegmentIndex >= _segments.Count) return;
-        var seg = _segments[_selectedSegmentIndex];
+        if (_edit.SelectedSegmentIndex < 0 || _edit.SelectedSegmentIndex >= _edit.Segments.Count) return;
+        var seg = _edit.Segments[_edit.SelectedSegmentIndex];
 
         var canvas = ZoomOverlayCanvasCtl;
-        var (sw, sh) = CoordinateMath.GetResolutionInts(_originalResolution);
+        var (sw, sh) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
         if (sw <= 0 || sh <= 0) { sw = 1920; sh = 1080; }
 
         int ymin = 0, xmin = 0, ymax = 1000, xmax = 1000;
@@ -250,10 +250,10 @@ public partial class GranularSpeedEditorWindow
         double minScale = settings.AiZoomMinScale > 0 ? settings.AiZoomMinScale : 1.3;
         double deadbandPercent = settings.AiZoomDeadbandPercent > 0 ? settings.AiZoomDeadbandPercent : 2.0;
         bool avoidHud = settings.AiZoomAvoidHud;
-        bool portraitMode = _isMobileFormat;
+        bool portraitMode = _edit.IsMobileFormat;
 
-        string targetVideoPath = _videoPath;
-        double sourceStartSec = (_trimStartMs + seg.StartMs) / 1000.0;
+        string targetVideoPath = _edit.VideoPath;
+        double sourceStartSec = (_edit.TrimStartMs + seg.StartMs) / 1000.0;
         double sourceDurationSec = (seg.EndMs - seg.StartMs) / 1000.0;
 
         if (IsMergeMode && _mergeSource != null)
@@ -402,7 +402,7 @@ public partial class GranularSpeedEditorWindow
                 int kh = Even(Math.Clamp((int)Math.Round(first.CropH), 2, sh - ky));
 
                 _aiPreviewOriginalSegment = seg;
-                _aiPreviewSegmentIndex = _selectedSegmentIndex;
+                _aiPreviewSegmentIndex = _edit.SelectedSegmentIndex;
                 _aiPreviewCandidateSegment = seg with
                 {
                     ZoomX = kx,
@@ -416,7 +416,7 @@ public partial class GranularSpeedEditorWindow
                     AiTrackingTrajectory = trajectory.ToJson()
                 };
 
-                _segments[_selectedSegmentIndex] = _aiPreviewCandidateSegment;
+                _edit.Segments[_edit.SelectedSegmentIndex] = _aiPreviewCandidateSegment;
                 _isAiPreviewLooping = true;
 
                 if (AiTrackingPreviewBarCtl != null) AiTrackingPreviewBarCtl.IsVisible = true;

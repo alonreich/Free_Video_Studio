@@ -89,6 +89,7 @@ public partial class VideoMergerWindow
             return;
         }
 
+        if (_videoHost?.IpcClient?.IsSeeking == true) return;   // SEEKSETTLE_01 — pausing above still stops audio
         if (_mergerMusicStarting) return;
         if (!_mergerMusicPlaying || !string.Equals(w.Path, _mergerMusicPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -96,7 +97,7 @@ public partial class VideoMergerWindow
             return;
         }
 
-        if (Environment.TickCount64 < _mergerMusicHoldUntil || _mergerMusicClient == null) return;
+        if (Environment.TickCount64 < _mergerMusicHoldUntil || _mergerMusicClient == null || _mergerMusicClient.IsSeeking) return;
         if (Math.Abs(_mergerMusicClient.CurrentTime - w.PositionSec) <= Infrastructure.PreviewAudioSync.DriftToleranceSec)
         {
             _mergerMusicStrikes = 0;

@@ -207,6 +207,18 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   that ships a broken editor. The numbers may only fall; lower the baseline in the same change
   that lowers the count.
 
+* **`EDITSTATE_01` — the first two extractions, and what they did NOT do.** The Granular editor's and
+  the Crop Tool's DURABLE edit state moved to `Core/Editing/GranularEditSession` and
+  `Core/Editing/CropEditSession` (plus the pure codecs `GranularRecoveryCodec` / `CropProfileCodec`).
+  Constructible with no window (`new GranularEditSession(path, trimStart, trimEnd, parking)`,
+  `new CropEditSession(isReservedProfileName)`): every dependency is a constructor argument, none reads
+  `AppServices.Current`, and Core cannot reference Avalonia. They are state owners with logical
+  commands, NOT view-models and not "editor services": canvas geometry, pointer capture, drag deltas,
+  hit testing, timers, mpv, bitmaps, the timeline caches and the Magic Wand's transient AI state stay in
+  the windows, per THE LINE above. Ceilings lowered to the measured counts:
+  `GranularSpeedEditorWindow.axaml.cs` 7537 → 6587, `CropToolWindow.axaml.cs` 6002 → 5403.
+  `FindControl` (699) and `AppServices.Current` (3) counts are unchanged — no binding was introduced yet.
+
 * **`COMPOSITION_02` is the finish line.** Each window that gains a real view-model takes its
   collaborators as constructor parameters and stops reading `AppServices.Current`. When the
   service-locator ratchet reaches zero, the shim is deleted.

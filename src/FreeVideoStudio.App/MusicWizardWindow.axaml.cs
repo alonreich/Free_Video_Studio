@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
 // Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
 // Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
@@ -641,7 +641,7 @@ public partial class MusicWizardWindow : Window
 
         // EDIT3_01 — resuming has to wait for the window to exist: it writes to sliders and
         // checkboxes that FindControl cannot reach until the visual tree is up.
-        this.Loaded += async (_, _) => await ResumeFromInitialStateAsync();
+        this.Loaded += async (_, _) => { await ResumeFromInitialStateAsync(); ResetWizardHistory(); };   // UNDO_28
     }
 
     /// <summary>
@@ -715,7 +715,7 @@ public partial class MusicWizardWindow : Window
                 if (autoFillBtn != null) autoFillBtn.Content = $"Auto-Filled {_pendingAutoFillMusicPaths.Count} Songs";
             }
 
-            var selectedLabel = this.FindControl<TextBlock>("SelectedTrackLabel");
+            var selectedLabel = SelectedTrackLabelCtl;
             if (selectedLabel != null) selectedLabel.Text = track.Name;
             var offsetLabel = OffsetLabelCtl;
             if (offsetLabel != null) offsetLabel.Text = $"Song begins at {FormatSeconds(_songStartSeconds)}";
@@ -1044,6 +1044,7 @@ public partial class MusicWizardWindow : Window
         // KEYS_01 — tunnel, so it is seen before the song list eats the arrow keys.
         AddHandler(Avalonia.Input.InputElement.KeyDownEvent, OnWizardKeyDown,
                    Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        WireWizardHistory();   // UNDO_28 — Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z over the export-affecting state
 
         // COVER_01 — the coverage warning on the last screen is now something you can press.
         var problemPanel = this.FindControl<Border>("ProblemFlagsPanel");
@@ -1170,6 +1171,7 @@ public partial class MusicWizardWindow : Window
             timelineMarkersCanvas.PointerReleased += (s, e) => {
                 isScrubbingTimeline = false;
                 e.Pointer.Capture(null);
+                EndWizardGesture();   // UNDO_28
             };
 
             timelineMarkersCanvas.KeyDown += (s, e) => HandleSongOffsetKeyDown(e);
@@ -1199,6 +1201,7 @@ public partial class MusicWizardWindow : Window
             canvas.PointerReleased += (s, e) => {
                 isScrubbingWaveform = false;
                 e.Pointer.Capture(null);
+                EndWizardGesture();   // UNDO_28
             };
 
             canvas.KeyDown += (s, e) => HandleSongOffsetKeyDown(e);
@@ -1526,6 +1529,7 @@ public partial class MusicWizardWindow : Window
         UpdateCoverageBar();
         UpdateProblemFlags();
         SetSmartFitStatus("");
+        RecordWizardEdit();   // UNDO_28
     }
 
     private void OnMusicSearchKeyDown(object? sender, KeyEventArgs e)
@@ -2046,6 +2050,7 @@ public partial class MusicWizardWindow : Window
 
         if (wasPlaying)
             StartPreviewInternal(_previewCurrentOffset);
+        RecordWizardEdit();   // UNDO_28
     }
 
     private async Task SnapSongStartToBeatAsync(Button button)
@@ -2699,6 +2704,7 @@ public partial class MusicWizardWindow : Window
         if (autoFillBtn != null)
             autoFillBtn.Content = $"Auto-Filled {_pendingAutoFillMusicPaths.Count} Songs";
         ShowToastSuccess($"Auto-filled {_pendingAutoFillMusicPaths.Count} songs.");
+        RecordWizardEdit();   // UNDO_28
     }
 
     private void ResetAutoFillQueueState()
@@ -2783,6 +2789,7 @@ public partial class MusicWizardWindow : Window
         UpdateFinalPlacementSummary();
         UpdateProblemFlags();
         DrawPhase3TimelineScale();
+        RecordWizardEdit();   // UNDO_28
     }
 
     private void RemoveSelectedQueuedTrack()
@@ -2803,6 +2810,7 @@ public partial class MusicWizardWindow : Window
         UpdateFinalPlacementSummary();
         UpdateProblemFlags();
         DrawPhase3TimelineScale();
+        RecordWizardEdit();   // UNDO_28
     }
 
     private MusicTrackItem? FindTrackByPath(string path)
@@ -2892,6 +2900,7 @@ public partial class MusicWizardWindow : Window
         UpdateAutoFillQueuePreview();
         UpdateCoverageBar();
         UpdateProblemFlags();
+        RecordWizardEdit();   // UNDO_28
         e.Handled = true;
     }
 
@@ -3017,6 +3026,7 @@ public partial class MusicWizardWindow : Window
             _previewCurrentOffset = _songStartSeconds;
             var lbl = OffsetLabelCtl;
             if (lbl != null) lbl.Text = $"Song begins at {FormatSeconds(_songStartSeconds)}";
+            SyncWizardHistoryBaseline();   // UNDO_28 — the new song's start reset is part of "choose song"
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() => {
 
@@ -3025,7 +3035,7 @@ public partial class MusicWizardWindow : Window
                 UpdatePlayhead();
             });
 
-            var selectedLabel = this.FindControl<TextBlock>("SelectedTrackLabel");
+            var selectedLabel = SelectedTrackLabelCtl;
 
             if (selectedLabel != null) selectedLabel.Text = _selectedTrack.Name;
 
@@ -3849,17 +3859,17 @@ public partial class MusicWizardWindow : Window
         UpdatePlayhead();
     }
 
+    private FreeVideoStudio.App.Infrastructure.DebouncedStateWriter? _volumeWriter;   // WIZVOLDEBOUNCE_01 — 600 ms write-behind, off the UI thread.
+
     private void SaveWizardVolumes()
     {
         if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes) return;
         try
         {
-            var videoVolSlider = this.FindControl<Avalonia.Controls.Slider>("VideoVolSlider");
-            var musicVolSlider = this.FindControl<Avalonia.Controls.Slider>("MusicVolSlider");
             var updates = new System.Text.Json.Nodes.JsonObject();
-            if (videoVolSlider != null) updates["WizardVideoVolume"] = videoVolSlider.Value;
-            if (musicVolSlider != null) updates["WizardMusicVolume"] = musicVolSlider.Value;
-            new FreeVideoStudio.Core.Ipc.StateTransferStore(_paths).UpdatePropertiesSync(updates);
+            if (VideoVolSliderCtl is { } videoVolSlider) updates["WizardVideoVolume"] = videoVolSlider.Value;
+            if (MusicVolSliderCtl is { } musicVolSlider) updates["WizardMusicVolume"] = musicVolSlider.Value;
+            (_volumeWriter ??= new FreeVideoStudio.App.Infrastructure.DebouncedStateWriter(_paths, owner: this)).Queue(updates);
         }
         catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
     }
@@ -4943,6 +4953,7 @@ public partial class MusicWizardWindow : Window
             UpdateProblemFlags();
             UpdatePlayhead();
         }
+        RecordWizardEdit();   // UNDO_28 — one scrub = one step (EndWizardGesture on release)
     }
 
     private async Task OnBackClickedAsync(object? sender, RoutedEventArgs e)

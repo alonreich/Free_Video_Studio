@@ -153,7 +153,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public async Task AddingHudRestoresTemporaryZoomAndPreservesManualZoom(bool temporaryZoom)
     {
         var window = new CropToolWindow(); // Never shown: no native video player is started.
-        var source = Nested("SourceRect", 1500, 900, 160, 80);
+        var source = new FreeVideoStudio.Core.Editing.CropSourceRect(1500, 900, 160, 80);   // EDITSTATE_01 — a Core type now
         Set(window, "_sourceSelection", source);
         string snapshot = Path.Combine(_root, "frame.png");
         using (var bitmap = new SKBitmap(1920, 1080))
@@ -162,15 +162,18 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         Set(window, "_snapshotPath", snapshot);
         Invoke(window, "ApplySnapshotZoomInternal", 2.0, false, true);
         if (temporaryZoom) Set(window, "_preZoomState", Nested("PreZoomState", 0.5, true, false, new Vector()));
-        var role = ((Array)typeof(CropToolWindow).GetField("Roles", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!).GetValue(0)!;
+        var role = FreeVideoStudio.Core.Editing.CropEditSession.BuiltInRoles[0];
         await (Task)Invoke(window, "AddCurrentSelection", role)!;
-        Assert.True((bool)Get(window, "_dirty")!);
+        var edit = (FreeVideoStudio.Core.Editing.CropEditSession)Get(window, "_edit")!;
+        Assert.True(edit.Dirty);
+        Assert.Single(edit.Layers);                       // the commit reached the logical state
+        Assert.Equal(role.Key, edit.SelectedRoleKey);     // selected by identity
         Assert.Null(Get(window, "_sourceSelection"));
         Assert.Null(Get(window, "_preZoomState"));
         Assert.Equal(temporaryZoom ? 0.5 : 2.0, (double)Invoke(window, "CurrentZoom")!);
         Assert.Equal(temporaryZoom, Get(window, "_snapshotFitMode"));
         Assert.Equal(!temporaryZoom, Get(window, "_userZoomed"));
-        Set(window, "_dirty", false);
+        edit.Dirty = false;
         window.Close();
         Dispatcher.UIThread.RunJobs();
     }

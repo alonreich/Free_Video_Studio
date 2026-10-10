@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NuGetAudit>false</NuGetAudit>
+    <!-- MICSMOKE_01: opt-in hardware smoke. PublishAot applies to `dotnet publish` only, so the
+         published exe exercises the production capture classes under NativeAOT - the failure mode
+         (WaveHeaderUnprepared) disappears under JIT. Never run in CI. -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj" />
+  </ItemGroup>
+</Project>

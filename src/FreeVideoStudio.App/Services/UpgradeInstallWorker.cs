@@ -59,6 +59,11 @@ internal static class UpgradeInstallWorker
                 ["roots"] = new JsonArray(roots.Select(p => (JsonNode?)JsonValue.Create(p)).ToArray())
             }.ToJsonString()).ConfigureAwait(false);
             await channel.ExpectAsync("begin").ConfigureAwait(false);
+            // UPGRADEUX_01 — every long step below reports "phase|fraction" to the broker, which
+            // shows it to the user. Before this, extraction, copying and hashing ran for a minute
+            // or more with nothing on screen.
+            var relay = new ProgressRelay(channel);
+            await relay.StepAsync("unpack").ConfigureAwait(false);
             using Stream payload = typeof(UpgradeInstallWorker).Assembly.GetManifestResourceStream("FreeVideoStudio.App.payload.zip")
                 ?? throw new IOException("This file does not contain a full installation payload. Download the full installer.");
             long unpacked;
@@ -66,17 +71,26 @@ internal static class UpgradeInstallWorker
             payload.Position = 0;
             InstallDiscovery.EnsureSpace(InstallDiscovery.Destination, roots, checked(unpacked * 2));
             string extracted = Path.Combine(transaction.DirectoryPath, "payload");
-            InstallPayload.Extract(payload, extracted, InstallDiscovery.ReuseRoot(roots));   // NOSPACE_01
-            transaction.Prepare(candidate =>
+            string? reuseRoot = InstallDiscovery.ReuseRoot(roots);   // NOSPACE_01
+            await relay.RunAsync("unpack", report => InstallPayload.Extract(payload, extracted, reuseRoot, report)).ConfigureAwait(false);
+            await relay.RunAsync("install", report => transaction.Prepare(candidate =>
             {
-                foreach (string file in UpgradeFiles.Files(extracted))
-                    UpgradeFiles.CopyVerified(file, Path.Combine(candidate, Path.GetRelativePath(extracted, file)), overwrite: true);
+                string[] newFiles = UpgradeFiles.Files(extracted).ToArray();
+                for (int i = 0; i < newFiles.Length; i++)
+                {
+                    UpgradeFiles.CopyVerified(newFiles[i], Path.Combine(candidate, Path.GetRelativePath(extracted, newFiles[i])), overwrite: true);
+                    report(0.6 + 0.2 * (i + 1) / newFiles.Length);
+                }
                 UpgradeFiles.CopyVerified(Path.Combine(candidate, InstallPayload.ExecutableName), Path.Combine(candidate, "Uninstall.exe"), overwrite: true);
-                InstallPayload.Verify(candidate);
-            }, relative => !LegacyProductIdentity.ExecutableNames.Contains(relative, StringComparer.OrdinalIgnoreCase));
+                InstallPayload.Verify(candidate, f => report(0.8 + 0.2 * f));
+            }, relative => !LegacyProductIdentity.ExecutableNames.Contains(relative, StringComparer.OrdinalIgnoreCase),
+               f => report(0.6 * f))).ConfigureAwait(false);
             InstallDiscovery.EnsureIdle(roots, Environment.ProcessId);
+            await relay.StepAsync("switch").ConfigureAwait(false);
             transaction.Activate();
+            await relay.StepAsync("test").ConfigureAwait(false);
             await RunProbeAsync().ConfigureAwait(false);
+            await relay.StepAsync("shortcuts").ConfigureAwait(false);
             await registration.ApplyAsync().ConfigureAwait(false);
             await channel.SendAsync("installed").ConfigureAwait(false);
             string pidText = await channel.ExpectAsync("healthy", TimeSpan.FromMinutes(3)).ConfigureAwait(false);
@@ -117,6 +131,53 @@ internal static class UpgradeInstallWorker
         {
             if (ownsLegacy) legacyGate.Release();
             if (ownsGate) gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// UPGRADEUX_01 — relays "phase|fraction" to the broker while synchronous file work runs on the
+    /// thread pool. Only this flow writes to the channel, so progress can never interleave with a
+    /// protocol message. Reporting is best-effort display data; a lost line changes nothing.
+    /// </summary>
+    private sealed class ProgressRelay(UpgradeChannel channel)
+    {
+        private readonly object _gate = new();
+        private string _phase = string.Empty, _sent = string.Empty;
+        private double _fraction;
+
+        private void Set(string phase, double fraction)
+        {
+            lock (_gate) { _phase = phase; _fraction = Math.Clamp(fraction, 0, 1); }
+        }
+
+        public async Task StepAsync(string phase)
+        {
+            Set(phase, 0);
+            await FlushAsync().ConfigureAwait(false);
+        }
+
+        public async Task RunAsync(string phase, Action<Action<double>> work)
+        {
+            Set(phase, 0);
+            await FlushAsync().ConfigureAwait(false);
+            Task task = Task.Run(() => work(fraction => Set(phase, fraction)));
+            while (!task.IsCompleted)
+            {
+                await Task.WhenAny(task, Task.Delay(300)).ConfigureAwait(false);
+                await FlushAsync().ConfigureAwait(false);
+            }
+            await task.ConfigureAwait(false);
+            Set(phase, 1);
+            await FlushAsync().ConfigureAwait(false);
+        }
+
+        private async Task FlushAsync()
+        {
+            string text;
+            lock (_gate) text = _phase + "|" + _fraction.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+            if (text == _sent) return;
+            _sent = text;
+            await channel.SendAsync(UpgradeChannel.ProgressKind, text).ConfigureAwait(false);
         }
     }
 

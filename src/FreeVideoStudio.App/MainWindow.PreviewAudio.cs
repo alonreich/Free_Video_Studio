@@ -120,6 +120,8 @@ public partial class MainWindow
     private void UpdateMusicPreview(double sourceTimeSec, bool videoEnded)
     {
         // PREVIEWMIX_01 — the rendered mix already contains the music bed (ducked and carved).
+        // PREVIEWMIX_02 — re-observe the edit FIRST: this follower runs before UpdatePreviewMix on the tick.
+        RefreshPreviewMixState();
         if (PreviewMixActive)
         {
             if (_isMusicPreviewPlaying) StopMusicPreview();
@@ -149,6 +151,7 @@ public partial class MainWindow
             return;
         }
 
+        if (ipc?.IsSeeking == true) return;   // SEEKSETTLE_01 — after the pause/stop branch
         if (!_isMusicPreviewPlaying)
         {
             if (!isDraggingAnyMarker) StartMusicPreview(want.Path, want.PositionSec);
@@ -162,7 +165,7 @@ public partial class MainWindow
             return;
         }
 
-        if (Environment.TickCount64 < _musicSyncHoldUntilTicks || _musicPreviewIpcClient == null) return;
+        if (Environment.TickCount64 < _musicSyncHoldUntilTicks || _musicPreviewIpcClient == null || _musicPreviewIpcClient.IsSeeking) return;
 
         double actual = _musicPreviewIpcClient.CurrentTime;
         if (Math.Abs(actual - want.PositionSec) <= Infrastructure.PreviewAudioSync.DriftToleranceSec)
@@ -227,6 +230,9 @@ public partial class MainWindow
         var ipc = ActiveVideoHost?.IpcClient;
         bool isPaused = ipc?.IsPaused ?? true;
         if (_isCurrentlyFrozen) isPaused = false;
+
+        // Continue through the stop path when paused, even if the new frame is still decoding.
+        if (!isPaused && !videoEnded && ipc?.IsSeeking == true) return;   // SEEKSETTLE_01
 
         double editedTime = PreviewOutputSeconds(sourceTimeSec);
         var timeline = _viewModel.Timeline;

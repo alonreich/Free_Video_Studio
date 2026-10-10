@@ -4,11 +4,12 @@
 using System;
 using System.Text.Json.Nodes;
 
-namespace FreeVideoStudio.App.Infrastructure;
+namespace FreeVideoStudio.Core.Editing;
 
 /// <summary>
 /// GRANJSON_01 — tolerant readers for the granular editor's recovery payload, lifted out of
-/// <c>GranularSpeedEditorWindow</c> (8,122 lines, 181 fields, one class).
+/// <c>GranularSpeedEditorWindow</c> (8,122 lines, 181 fields, one class). EDITSTATE_01 moved them
+/// to Core beside their only consumer, <see cref="GranularRecoveryCodec"/>.
 ///
 /// ⚠️ TOLERANCE IS THE CONTRACT. Every one of these returns a caller-supplied fallback rather than
 /// throwing, because they parse a RECOVERY FILE written by a possibly older build after a possibly

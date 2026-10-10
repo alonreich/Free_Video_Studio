@@ -81,10 +81,20 @@ public sealed class DirectoryUpgrade
     }
 
     /// <summary>Existing destination wins; conflicting legacy files are permanently preserved.</summary>
-    public void Prepare(Action<string>? completeCandidate = null, Func<string, bool>? include = null)
+    /// <param name="progress">UPGRADEUX_01 — fraction (0..1) of the existing files already carried
+    /// into the candidate. Reporting only; it never changes what is copied.</param>
+    public void Prepare(Action<string>? completeCandidate = null, Func<string, bool>? include = null, Action<double>? progress = null)
     {
         if (Phase != "Preparing") throw new InvalidOperationException("Upgrade was already prepared.");
         Directory.CreateDirectory(Candidate);
+        long total = 1, copied = 0;
+        if (progress != null)
+        {
+            foreach (UpgradeOriginal original in _journal.Originals)
+                foreach (string file in UpgradeFiles.Files(original.Path))
+                    if (include == null || include(Path.GetRelativePath(original.Path, file)))
+                        total += new FileInfo(file).Length;
+        }
         for (int index = 0; index < _journal.Originals.Count; index++)
         {
             string source = _journal.Originals[index].Path;
@@ -103,6 +113,11 @@ public sealed class DirectoryUpgrade
                     _journal.Mappings.Add(new(file, Path.Combine(Destination, conflict)));
                 }
                 UpgradeFiles.CopyVerified(file, target);
+                if (progress != null)
+                {
+                    copied += new FileInfo(file).Length;
+                    progress(Math.Min(1.0, (double)copied / total));
+                }
             }
         }
         completeCandidate?.Invoke(Candidate);

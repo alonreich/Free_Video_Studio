@@ -1,4 +1,4 @@
-﻿# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
+# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
 
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
@@ -122,6 +122,11 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   `05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-ATOMICWRITE` ("not optional, and it is not per-caller"):
   GUID temp file in the target directory, `FileOptions.WriteThrough`, `Flush(flushToDisk: true)`,
   atomic `File.Move(overwrite: true)`. Never `File.WriteAllText`.
+* **AUTOSAVEBG_01 - Autosave disk I/O is non-blocking.** `ProjectSession.AutosaveTick` captures an
+  immutable snapshot on the UI thread and performs the atomic write (WriteThrough + hardware flush)
+  and the history sidecar on the thread pool. Dirty clears only if no edit landed mid-write; a
+  failure is still Fatal. Explicit saves remain synchronous and share one ordered write gate with
+  autosave, so an older autosave can never overwrite a newer save. See `05` §4d.
 * **One generation of backup.** The previous file becomes `<name>.fvsproj.bak` BEFORE the new bytes
   are written — taken afterwards it would back up the save that just happened. The crop config keeps
   a five-tier cascade because it is machine state the user never sees; a project is different, and a
@@ -293,7 +298,7 @@ The model and its persistence exist and are unit-tested
   |---|---|---|
   | IL2026 ×2, IL3050 ×3 | Avalonia 11.0.10 (`ObservableStreamPlugin`, `MethodAccessorPlugin`, composition `Expression`, `SkiaMetalApi`) | Avalonia **11.3.22** (same major) |
   | IL2091 ×2 | SkiaSharp 2.88 (`SKObject.PtrToStructure<T>`) | SkiaSharp **3.119.2** with native-asset overrides (supported on Avalonia ≥ 11.3.6). `TextOverlayGenerator` moved to `SKFont` (AOTCLEAN_04) |
-  | IL2050 ×2, IL2070 | NAudio umbrella → NAudio.Wasapi `MediaFoundationReader` (classic COM interop: unsupported by NativeAOT, would throw) | **NAudio.Core + NAudio.WinMM only**; `AudioFileReader` replaced by `Core/Media/WavAudioReader` (AOTCLEAN_02) |
+  | IL2050 ×2, IL2070, WaveHeaderUnprepared | NAudio umbrella → NAudio.Wasapi `MediaFoundationReader` (classic COM interop: unsupported by NativeAOT, would throw); WinMM 2.3.0 WAVEHDR marshaling under NativeAOT | **NAudio.Core + NAudio.WinMM 3.1.0 only** (native unmanaged structs for WaveIn/WaveOut, AOT compatible); `AudioFileReader` replaced by `Core/Media/WavAudioReader` (AOTCLEAN_02, MICHEALTH_01) |
   | IL2067, IL2072 | Vortice 3.8.3 → SharpGen.Runtime reflection vtable registry | Vortice removed; `App/Interop/D3D11Interop.cs` makes the six D3D11/DXGI calls through verified vtable slots (AOTCLEAN_03) |
 * Side effect: the NAudio umbrella's WinForms dependency is gone, so the App no longer needs `Microsoft.WindowsDesktop.App`.
 * Avalonia 11.3 obsoletions migrated (no suppression): `DragEventArgs.Data` → `DataTransfer`, `DataFormats.Files` → `DataFormat.File`, `DoDragDrop` → `DoDragDropAsync` with an application-private `DataFormat<string>`, `RadialGradientBrush.Radius` → `RadiusX/RadiusY` (same relative value).
