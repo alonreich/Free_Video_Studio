@@ -85,13 +85,22 @@ public sealed class UndoStack<T> where T : class
     private long _gestureAtMs;
     private bool _restoring;
 
-    public UndoStack(T initial, int maxDepth = DefaultMaxDepth)
+    public UndoStack(T initial, int maxDepth = DefaultMaxDepth, int gestureIdleMs = GestureIdleMs)
     {
         Current = initial ?? throw new ArgumentNullException(nameof(initial));
         MaxDepth = maxDepth > 0 ? maxDepth : DefaultMaxDepth;
+        GestureIdle = gestureIdleMs > 0 ? gestureIdleMs : GestureIdleMs;
     }
 
     public int MaxDepth { get; }
+
+    /// <summary>
+    /// UNDO_26 — the U1 idle window THIS stack uses. Defaults to <see cref="GestureIdleMs"/>, so
+    /// every existing caller keeps 900ms. The Granular editor passes its own long-standing 700ms
+    /// (<c>UndoGestureIdleMs</c>) so moving it onto this type does not change how a drag feels.
+    /// Per instance, never global: one editor's tuning must not leak into another's.
+    /// </summary>
+    public int GestureIdle { get; }
 
     /// <summary>The live state. Only <see cref="Apply"/>, <see cref="Undo"/> and <see cref="Redo"/> move it.</summary>
     public T Current { get; private set; }
@@ -148,7 +157,7 @@ public sealed class UndoStack<T> where T : class
         bool sameGesture = false;
         if (gestureKey != null)
         {
-            sameGesture = _gestureKey == gestureKey && (nowMs - _gestureAtMs) < GestureIdleMs;
+            sameGesture = _gestureKey == gestureKey && (nowMs - _gestureAtMs) < GestureIdle;
             _gestureAtMs = nowMs;          // U1 — refresh even when dropping; track the LAST movement.
             _gestureKey = gestureKey;
         }
@@ -188,6 +197,20 @@ public sealed class UndoStack<T> where T : class
     {
         _gestureKey = null;
         _gestureAtMs = 0;
+    }
+
+    /// <summary>
+    /// UNDO_26 — U1's "the idle clock is refreshed even when the push is dropped", for a caller
+    /// whose push turned out to be a no-op (U4 returns before the gesture bookkeeping in
+    /// <see cref="Apply"/>, by design). Refreshes the clock ONLY if <paramref name="gestureKey"/> is
+    /// the gesture already open: it can extend a live gesture, never open one, so it cannot make a
+    /// no-op swallow the user's next real edit.
+    /// </summary>
+    public void TouchGesture(string gestureKey)
+    {
+        if (_restoring || gestureKey == null || _gestureKey != gestureKey) return;
+        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if ((nowMs - _gestureAtMs) < GestureIdle) _gestureAtMs = nowMs;
     }
 
     /// <summary>Steps back one entry. Returns the restored state, or <see langword="null"/> if there is nothing to undo.</summary>

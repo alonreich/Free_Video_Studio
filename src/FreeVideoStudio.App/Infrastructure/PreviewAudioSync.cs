@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -39,16 +39,16 @@ internal static class PreviewAudioSync
     public const int VoiceBuffers = 3;
     public const double VoiceReaderLeadSec = VoiceLatencyMs / 1000.0;
 
-    /// <summary>A WaveOutEvent configured for picture-locked preview.</summary>
-    public static WaveOutEvent CreateVoicePlayer()
-        => new() { DesiredLatency = VoiceLatencyMs, NumberOfBuffers = VoiceBuffers };
+    /// <summary>A WaveOut configured for picture-locked preview.</summary>
+    public static WaveOut CreateVoicePlayer()
+        => new() { BufferMilliseconds = VoiceLatencyMs / VoiceBuffers, NumberOfBuffers = VoiceBuffers };
 
     /// <summary>
     /// Drives one voice-over take toward <paramref name="voiceTimeSec"/> (seconds into the take that
     /// should be AUDIBLE now). <paramref name="strikes"/> is per-take state owned by the caller.
     /// Call from the one thread that owns the player (the UI tick, or VoiceOverPreviewPlayer's worker).
     /// </summary>
-    public static void SyncVoiceTake(WavAudioReader reader, WaveOutEvent player, bool shouldPlay, double voiceTimeSec, ref int strikes)
+    public static void SyncVoiceTake(WavAudioReader reader, WaveOut player, bool shouldPlay, double voiceTimeSec, ref int strikes)
     {
         bool playing = player.PlaybackState == PlaybackState.Playing;
         double total = reader.TotalTime.TotalSeconds;

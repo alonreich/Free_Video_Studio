@@ -113,6 +113,49 @@ internal static class InstallDiscovery
         }
     }
 
+    /// <summary>
+    /// UPGRADEUX_03 — the NON-throwing, non-elevated twin of <see cref="EnsureIdle"/>, used by the
+    /// broker BEFORE Windows is asked for permission, so "close the app first" is a question the user
+    /// can answer instead of an error after the UAC prompt. <see cref="EnsureIdle"/> in the elevated
+    /// worker stays the authority; this only makes the common case friendly.
+    /// Processes we may close are returned (caller disposes them); a process this account cannot
+    /// inspect (another Windows user) only sets <c>OtherAccount</c>.
+    /// </summary>
+    public static (List<Process> Mine, bool OtherAccount) FindOpenApps(IEnumerable<string> roots, params int[] excludedPids)
+    {
+        var mine = new List<Process>();
+        bool other = false;
+        string[] rootList = roots.ToArray();
+        foreach (string name in Executables.Select(x => Path.GetFileNameWithoutExtension(x)!).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (Process process in Process.GetProcessesByName(name))
+            {
+                bool keep = false;
+                try
+                {
+                    if (excludedPids.Contains(process.Id) || process.HasExited) continue;
+                    string? executable = process.MainModule?.FileName;
+                    keep = executable != null && rootList.Any(root => UpgradeFiles.IsWithin(executable, root));
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    RuntimeLog.Info("Upgrade", $"An app process belongs to another account: {ex.Message}");
+                    other = true;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    RuntimeLog.Info("Upgrade", $"Process exited during the open-app check: {ex.Message}");
+                }
+                finally
+                {
+                    if (keep) mine.Add(process);
+                    else process.Dispose();
+                }
+            }
+        }
+        return (mine, other);
+    }
+
     public static void EnsureSpace(string root, IEnumerable<string> sourceRoots, long payloadBytes)
     {
         long bytes = payloadBytes;

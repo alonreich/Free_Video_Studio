@@ -444,6 +444,11 @@
                                             <TextBlock Name="UpdateStatusText" VerticalAlignment="Center" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" MaxWidth="400"/>
                                         </StackPanel>
 
+                                        <!-- UPDATEUX_06 — when the last check ran and what it found, so a quiet
+                                             startup check is never an invisible one. -->
+                                        <TextBlock Name="UpdateLastCheckText" Foreground="{DynamicResource AppTextMutedBrush}"
+                                                   FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+
                                         <!-- Skipped Releases Reset -->
                                         <Border Name="SkippedReleaseBorder" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,6,0,0" IsVisible="False">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">

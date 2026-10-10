@@ -18,10 +18,9 @@ namespace FreeVideoStudio.App.Infrastructure;
 /// Measured by identifier reference count, that one class carries Zoom 1016, Segment 667, Drag 576,
 /// Meme 502, Undo 207 — twelve concerns over a single 181-field bag. These members touch none of it.
 ///
-/// ⚠️ <c>SurvivingMsAfterCuts</c> IS TIMELINE MATHS, GOVERNED BY
-/// <c>docs/01_TIMELINE_COORDINATE_MATH.md</c> (CUT_01). It decides how much footage is left once
-/// the cuts are removed, which feeds the export duration and the progress bar. Body moved verbatim;
-/// it must keep delegating to the Core primitives rather than re-deriving them.
+/// EDITSTATE_01 — <c>SurvivingMsAfterCuts</c> (timeline maths, CUT_01) moved to Core with the cut
+/// rules it serves: <c>GranularEditSession.SurvivingMsAfterCuts</c>. It still only delegates to
+/// <c>OutputTimeline.NormalizeCuts</c>.
 ///
 /// ⚠️ The zoom tutorial counter persists through <c>UiStateStore</c>, which is now an atomic writer
 /// (ATOMICSTATE_01). Keep it going through that store, never a raw file write.
@@ -134,11 +133,7 @@ internal static class GranularEditorVisuals
             : $"{ts.Minutes:D2}:{ts.Seconds:D2}";
     }
 
-    internal static string FormatMs(double ms)
-    {
-        var ts = TimeSpan.FromMilliseconds(ms < 0 ? 0 : ms);
-        return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
-    }
+    internal static string FormatMs(double ms) => FreeVideoStudio.Core.Editing.GranularEditSession.FormatMs(ms);   // EDITSTATE_01 — one formatter
 
     internal static int Even(int v) => v % 2 == 0 ? v : v - 1;
 
@@ -166,18 +161,6 @@ internal static class GranularEditorVisuals
     internal static bool IsVideoRectUsable(Avalonia.Rect vid)
         => vid.Width >= 4 && vid.Height >= 4;
 
-    internal static double SurvivingMsAfterCuts(
-        IReadOnlyList<FreeVideoStudio.Core.Media.CutRange> cuts, double durMs)
-    {
-        var rel = cuts
-            .Select(c => new FreeVideoStudio.Core.Media.OutputTimeline.Cut(c.StartMs / 1000.0, c.EndMs / 1000.0))
-            .ToList();
-        var norm = FreeVideoStudio.Core.Media.OutputTimeline.NormalizeCuts(rel, durMs / 1000.0);
-
-        double removed = 0;
-        foreach (var c in norm) removed += c.LengthSec * 1000.0;
-        return Math.Max(0, durMs - removed);
-    }
 
     /// <summary>Executes a transport command from the global gesture dispatcher (KeyBinding.TryHandle semantics).</summary>
     internal static void ExecuteTransportCommand(FreeVideoStudio.App.ViewModels.RelayCommand? command, Avalonia.Input.KeyEventArgs e)

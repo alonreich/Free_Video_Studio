@@ -1,9 +1,12 @@
 <!-- AUTO-UPDATE — transient, non-persisted modal, so it takes the same CenterOwner exemption
      as ConfirmDialogWindow (see the ISSUE_06 note there). Do NOT add it to WindowBoundsHelper.
      The four answers are stacked vertically in importance order: the recommended action first,
-     "not now" second, and the two quieter long-term choices below a separator. -->
+     "Remind me later" second (UPDATEUX_01), and the two quieter long-term choices below a
+     separator. All state is bound to UpdateAvailableViewModel (MVVM_01). -->
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
+        x:DataType="vm:UpdateAvailableViewModel"
         x:Class="FreeVideoStudio.App.Controls.UpdateAvailableWindow"
         Title="Update Available"
         Width="580" SizeToContent="Height"
@@ -28,20 +31,31 @@
                                Foreground="{DynamicResource AppTextPrimaryBrush}"
                                FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold"
                                TextAlignment="Center" TextWrapping="Wrap"/>
-                    <TextBlock Text="Would you like to download and install it?"
+                    <TextBlock Text="Would you like to download and install it?" IsVisible="{Binding CanInstallItself}"
                                Foreground="{DynamicResource AppTextMutedBrush}"
                                FontSize="{DynamicResource AppFontSize13}"
                                TextAlignment="Center" TextWrapping="Wrap"/>
                     <StackPanel HorizontalAlignment="Center" Margin="0,6,0,4" Spacing="3">
-                        <TextBlock Name="YourVersionText" Foreground="{DynamicResource AppTextMutedBrush}"
+                        <TextBlock Text="{Binding YourVersion}" Foreground="{DynamicResource AppTextMutedBrush}"
                                    FontSize="{DynamicResource AppFontSize12}" TextAlignment="Center"/>
-                        <TextBlock Name="NewVersionText" Foreground="{DynamicResource AppTextPrimaryBrush}"
+                        <TextBlock Text="{Binding NewVersion}" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                    FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" TextAlignment="Center"/>
                     </StackPanel>
 
+                    <!-- UPDATEUX_02 — size and rough time, before the user agrees. UPDATEUX_05 — or why
+                         this copy cannot install the update itself. -->
+                    <TextBlock Text="{Binding DownloadSizeText}" IsVisible="{Binding CanInstallItself}"
+                               Foreground="{DynamicResource AppTextMutedBrush}"
+                               FontSize="{DynamicResource AppFontSize12}"
+                               TextAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DownloadSizeText}" IsVisible="{Binding CannotInstallItself}"
+                               Foreground="{DynamicResource AppWarningBrush}"
+                               FontSize="{DynamicResource AppFontSize12}"
+                               TextAlignment="Center" TextWrapping="Wrap"/>
+
                     <!-- Scrollable release notes fetched from GitHub release notes / body -->
-                    <Expander Name="ReleaseNotesExpander" Header="What's New in this Release"
-                              IsExpanded="False" MaxHeight="240" Margin="0,5,0,0"
+                    <Expander Header="What's New in this Release"
+                              IsExpanded="{Binding HasNotes, Mode=OneTime}" MaxHeight="240" Margin="0,5,0,0"
                               Background="{DynamicResource AppPanelBrush}"
                               Foreground="{DynamicResource AppTextPrimaryBrush}"
                               BorderBrush="{DynamicResource AppBorderBrush}"
@@ -74,7 +88,7 @@
                                 Padding="12,10"
                                 Margin="4,2,4,4">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="160">
-                                <TextBlock Name="ReleaseNotesText"
+                                <TextBlock Text="{Binding ReleaseNotes}"
                                            TextWrapping="Wrap"
                                            FontSize="{DynamicResource AppFontSize12}"
                                            Foreground="{DynamicResource AppTextPrimaryBrush}"
@@ -85,26 +99,38 @@
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="25,5,25,25" Spacing="10">
-                    <Button Name="UpdateNowBtn" Classes="Success" Cursor="Hand" IsDefault="True"
+                    <Button Classes="Success" Cursor="Hand" IsDefault="True"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding UpdateNowCommand}"
                             AutomationProperties.Name="Download and install the new version now"
                             ToolTip.Tip="Downloads the new version, keeps every setting exactly as it is, installs it and reopens the app. Windows will still ask once for Administrator permission.">
-                        <TextBlock Text="Yes. Please download and upgrade to the latest released version now."
+                        <TextBlock Text="{Binding UpdateButtonText}"
                                    TextWrapping="Wrap" TextAlignment="Center"/>
+                    </Button>
+
+                    <!-- UPDATEUX_01 — "not now" is a button, not a hidden Escape key. -->
+                    <Button Classes="Secondary" Cursor="Hand" IsCancel="True"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding LaterCommand}"
+                            AutomationProperties.Name="Remind me later"
+                            ToolTip.Tip="Nothing is downloaded now. The app will offer this update again the next time it starts.">
+                        <TextBlock Text="Remind me later." TextWrapping="Wrap" TextAlignment="Center"/>
                     </Button>
 
                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,5,0,0"/>
 
-                    <Button Name="SkipBtn" Classes="Secondary" Cursor="Hand"
+                    <Button Classes="Secondary" Cursor="Hand"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding SkipCommand}"
                             AutomationProperties.Name="Skip this version"
                             ToolTip.Tip="Stays quiet about this particular version from now on. Any newer version will be announced normally.">
                         <TextBlock Text="Skip this version — only tell me when an even newer one comes out."
                                    TextWrapping="Wrap" TextAlignment="Center"/>
                     </Button>
 
-                    <Button Name="NeverBtn" Classes="Secondary" Cursor="Hand"
+                    <Button Classes="Secondary" Cursor="Hand"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding NeverCommand}"
                             AutomationProperties.Name="Never tell me about updates again"
                             ToolTip.Tip="Turns update checking off completely. You can turn it back on any time in Settings.">
                         <TextBlock Text="Never tell me about updates again."

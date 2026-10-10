@@ -36,14 +36,48 @@ namespace FreeVideoStudio.Core.Media;
 /// picture. So a zoom box pushed hard against an edge previews very slightly differently from the
 /// rendered file. Documented in project_structure.txt; do not "fix" it by letting the crop leave
 /// the frame — mpv rejects an out-of-bounds crop and the preview would simply stop updating.
+/// PREVIEWFIDELITY_01 — the difference is no longer silent: <see cref="Result.EdgeClamped"/> and
+/// <see cref="AnyEdgePadding"/> report a material clamp so the window can say the preview is not the export.
 /// </summary>
 public static class ZoomPreviewSimulator
 {
     /// <summary>Result of a simulation tick. <see cref="Crop"/> is empty when no crop applies.</summary>
-    public readonly record struct Result(string Crop, double Progress)
+    /// <param name="EdgeClamped">
+    /// PREVIEWFIDELITY_01 — true when the export's window runs past the frame edge here (the export
+    /// PADS with black, this preview had to CLAMP), by more than <see cref="MaterialEdgeFraction"/> of the
+    /// window. The preview is then not what the file will show, and the caller says so.
+    /// </param>
+    public readonly record struct Result(string Crop, double Progress, bool EdgeClamped = false)
     {
         public static readonly Result None = new(string.Empty, 0.0);
         public bool HasCrop => !string.IsNullOrEmpty(Crop);
+    }
+
+    /// <summary>
+    /// PREVIEWFIDELITY_01 — a clamp that moves the window by more than this fraction of its own size is
+    /// a visible difference (a black band in the export); anything smaller is sub-pixel noise.
+    /// </summary>
+    public const double MaterialEdgeFraction = 0.01;
+
+    /// <summary>
+    /// PREVIEWFIDELITY_01 — true when ANY box zoom in <paramref name="segments"/> would, at some point of
+    /// its glide or hold, show black padding in the export that this clamping preview cannot show.
+    /// Checked at the held zoom and at quarter points of a slow glide. AI-tracked zooms clamp in the
+    /// export too (their crop expression is <c>min/max</c>-bounded), so they never pad.
+    /// </summary>
+    public static bool AnyEdgePadding(IReadOnlyList<SpeedSegment>? segments, bool portraitMode = false)
+    {
+        if (segments == null) return false;
+        foreach (var s in segments)
+        {
+            if (!s.ZoomW.HasValue || !s.ZoomH.HasValue || !s.ZoomX.HasValue || !s.ZoomY.HasValue) continue;
+            if (string.IsNullOrEmpty(s.ZoomOrigRes) || !string.IsNullOrEmpty(s.AiTrackingTrajectory)) continue;
+            var (sw, sh) = CoordinateMath.GetResolutionInts(s.ZoomOrigRes!);
+            if (sw <= 0 || sh <= 0) continue;
+            foreach (double p in s.ZoomSlow ? new[] { 0.25, 0.5, 0.75, 1.0 } : new[] { 1.0 })
+                if (BoxWindow(s, p, sw, sh, portraitMode).EdgeClamped) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -159,14 +193,18 @@ public static class ZoomPreviewSimulator
         var (sw, sh) = CoordinateMath.GetResolutionInts(active.ZoomOrigRes!);
         if (sw <= 0 || sh <= 0) return Result.None;
 
-        if (!string.IsNullOrEmpty(active.AiTrackingTrajectory))
+        // AIPARITY_01 — the export runs the trajectory only where the zoom is HELD (instant zooms and the
+        // body of a slow zoom: BuildConstantZoomFilter); a slow glide in/out ramps the static box. The
+        // preview used to run the trajectory everywhere (ignoring the glide) and with a smoothstep the
+        // export never had. It now evaluates the export's own crop expression.
+        if (!string.IsNullOrEmpty(active.AiTrackingTrajectory) && p >= 0.999)
         {
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(active.AiTrackingTrajectory);
-            if (traj != null)
+            if (traj != null && traj.Keyframes.Count > 0)
             {
                 double segStart = ((active.ZoomStartMs ?? active.StartMs) / 1000.0) - trimStartSec;
                 double relSec = Math.Max(0.0, tSec - segStart);
-                var (aiX, aiY, aiW, aiH, _) = traj.EvaluateAt(relSec);
+                var (aiX, aiY, aiW, aiH) = traj.EvaluateExportCrop(relSec, sw, sh);
 
                 if (portraitMode)
                 {
@@ -190,6 +228,17 @@ public static class ZoomPreviewSimulator
             }
         }
 
+        var win = BoxWindow(active, p, sw, sh, portraitMode);
+        return new Result($"{win.W}x{win.H}+{win.X}+{win.Y}", p, win.EdgeClamped);
+    }
+
+    /// <summary>
+    /// The box zoom's visible window at progress <paramref name="p"/>: the export's centre lerp and zoom
+    /// ramp (<c>GranularSpeedBuilder.BuildConstantZoomFilter</c>), then — because mpv rejects an
+    /// out-of-bounds crop — clamped into the picture. <c>EdgeClamped</c> reports a material clamp.
+    /// </summary>
+    private static (int W, int H, int X, int Y, bool EdgeClamped) BoxWindow(SpeedSegment active, double p, int sw, int sh, bool portraitMode)
+    {
         double targetZ = Math.Min((double)sw / active.ZoomW!.Value, (double)sh / active.ZoomH!.Value);
         double zVal = 1.0 + (targetZ - 1.0) * p;
         if (zVal < 1.0) zVal = 1.0;
@@ -209,15 +258,17 @@ public static class ZoomPreviewSimulator
             visW = survW * k;
         }
 
+        double rawX = x, rawY = y;
         x = Math.Clamp(x, 0, Math.Max(0, sw - visW));
         y = Math.Clamp(y, 0, Math.Max(0, sh - visH));
+        bool clamped = Math.Abs(x - rawX) > MaterialEdgeFraction * visW || Math.Abs(y - rawY) > MaterialEdgeFraction * visH;
 
         int iw = Math.Max(2, (int)Math.Round(visW / 2.0) * 2);
         int ih = Math.Max(2, (int)Math.Round(visH / 2.0) * 2);
         int ix = Math.Max(0, Math.Min(sw - iw, (int)Math.Round(x)));
         int iy = Math.Max(0, Math.Min(sh - ih, (int)Math.Round(y)));
 
-        return new Result($"{iw}x{ih}+{ix}+{iy}", p);
+        return (iw, ih, ix, iy, clamped);
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
@@ -14,11 +14,13 @@ namespace FreeVideoStudio.Core.Media;
 
 public class VoiceRecorder : IDisposable
 {
-    private WaveInEvent? _waveIn;
+    private WaveIn? _waveIn;
     private WaveFileWriter? _writer;
     private string _outputPath;
     private readonly int _deviceNumber;
     private volatile bool _isRecording;
+    private volatile bool _intentionalStop;
+    private Exception? _lastError;
 
     private readonly object _writerLock = new object();
     private volatile bool _stopping;
@@ -43,7 +45,32 @@ public class VoiceRecorder : IDisposable
     /// <summary>Number of DataAvailable callbacks received. Zero means the device never delivered.</summary>
     public int BuffersSeen => _buffersSeen;
 
+    /// <summary>True while capture is actively running.</summary>
+    public bool IsRecording => _isRecording;
+
+    /// <summary>Last fault seen on this recorder instance, if any.</summary>
+    public Exception? LastError => _lastError;
+
+    /// <summary>Runtime capture fault during active recording (unexpected driver stop, buffer failure).</summary>
+    public Exception? CaptureError { get; private set; }
+
+    /// <summary>Endpoint stop or disposal failure when closing waveIn.</summary>
+    public Exception? ReleaseError { get; private set; }
+
+    /// <summary>File stream flush or close failure in the WAV writer.</summary>
+    public Exception? FileFinalizationError { get; private set; }
+
     public event EventHandler<float>? VolumeChanged;
+
+    /// <summary>
+    /// SPECTRUM_01 — the raw PCM of every recorded buffer, in the format the device was opened
+    /// with, for the frequency-spectrum meter. Raised on NAudio's capture thread after the bytes
+    /// were written to the take. ⚠️ Only valid during the event; consume synchronously.
+    /// </summary>
+    public event EventHandler<PcmBuffer>? PcmAvailable;
+
+    /// <summary>MICHEALTH_01 — Raised when capture stops unexpectedly with a hardware or driver fault.</summary>
+    public event EventHandler<Exception?>? Stopped;
 
     public VoiceRecorder(string outputPath, int deviceNumber = 0)
     {
@@ -51,14 +78,41 @@ public class VoiceRecorder : IDisposable
         _deviceNumber = Math.Max(0, deviceNumber);
     }
 
+    public static Func<int>? DeviceCountProvider { get; set; }
+    public static Func<IReadOnlyList<string>>? DeviceNamesProvider { get; set; }
+
+    public static int DeviceCount
+    {
+        get
+        {
+            if (DeviceCountProvider != null)
+            {
+                return DeviceCountProvider();
+            }
+            try
+            {
+                return WaveIn.DeviceCount;
+            }
+            catch (System.Exception ex)
+            {
+                CoreLogger.Swallowed(ex);
+                return 0;
+            }
+        }
+    }
+
     public static IReadOnlyList<string> GetInputDeviceNames()
     {
+        if (DeviceNamesProvider != null)
+        {
+            return DeviceNamesProvider();
+        }
         var devices = new List<string>();
         try
         {
-            for (int i = 0; i < WaveInEvent.DeviceCount; i++)
+            for (int i = 0; i < WaveIn.DeviceCount; i++)
             {
-                var caps = WaveInEvent.GetCapabilities(i);
+                var caps = WaveIn.GetCapabilities(i);
                 string name = string.IsNullOrWhiteSpace(caps.ProductName)
                     ? $"Microphone {i + 1}"
                     : caps.ProductName;
@@ -70,21 +124,7 @@ public class VoiceRecorder : IDisposable
         return devices;
     }
 
-    public static bool HasInputDevice
-    {
-        get
-        {
-            try
-            {
-                return WaveInEvent.DeviceCount > 0;
-            }
-            catch (System.Exception swallowed3)
-            {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
-                return false;
-            }
-        }
-    }
+    public static bool HasInputDevice => DeviceCount > 0;
 
     public void StartRecording()
     {
@@ -95,32 +135,48 @@ public class VoiceRecorder : IDisposable
             throw new InvalidOperationException("No microphone input device is available.");
         }
 
+        WaveIn? waveIn = null;
         try
         {
+            _intentionalStop = false;
             _stopping = false;
             _recordingStopped = new ManualResetEventSlim(false);
+            _lastError = null;
+            CaptureError = null;
+            ReleaseError = null;
+            FileFinalizationError = null;
 
-            _waveIn = new WaveInEvent
+            int devIndex = Math.Min(_deviceNumber, Math.Max(0, WaveIn.DeviceCount - 1));
+            waveIn = new WaveIn
             {
-                DeviceNumber = Math.Min(_deviceNumber, Math.Max(0, WaveInEvent.DeviceCount - 1)),
-                WaveFormat = new WaveFormat(44100, 1)
+                DeviceNumber = devIndex,
+                WaveFormat = new WaveFormat(44100, 1),
+                BufferMilliseconds = 50
             };
 
-            _writer = new WaveFileWriter(_outputPath, _waveIn.WaveFormat);
+            _writer = new WaveFileWriter(_outputPath, waveIn.WaveFormat);
 
-            _waveIn.DataAvailable += OnDataAvailable;
+            waveIn.DataAvailable += OnDataAvailable;
+            waveIn.RecordingStopped += OnRecordingStopped;
 
-            _waveIn.RecordingStopped += OnRecordingStopped;
+            _waveIn = waveIn;
 
             _bytesCaptured = 0;
             _peakSeen = 0;
             _buffersSeen = 0;
 
-            _waveIn.StartRecording();
+            waveIn.StartRecording();
+
+            if (_lastError != null)
+            {
+                var err = _lastError;
+                throw err;
+            }
+
             _isRecording = true;
 
             string deviceLabel;
-            try { deviceLabel = WaveInEvent.GetCapabilities(_waveIn.DeviceNumber).ProductName; }
+            try { deviceLabel = WaveIn.GetCapabilities(_waveIn.DeviceNumber).ProductName; }
             catch (System.Exception swallowed)
             {
                 deviceLabel = "(name unavailable)";
@@ -129,8 +185,17 @@ public class VoiceRecorder : IDisposable
             CoreLogger.Info("VoiceRecorder",
                 $"Capture started on device {_waveIn.DeviceNumber} '{deviceLabel}' at {_waveIn.WaveFormat.SampleRate}Hz/{_waveIn.WaveFormat.Channels}ch -> '{Path.GetFileName(_outputPath)}'.");
         }
-        catch
+        catch (Exception ex)
         {
+            _isRecording = false;
+            CaptureError = ex;
+            _lastError = ex;
+            if (waveIn != null)
+            {
+                try { waveIn.DataAvailable -= OnDataAvailable; } catch (Exception dex) { CoreLogger.Swallowed(dex); }
+                try { waveIn.RecordingStopped -= OnRecordingStopped; } catch (Exception dex) { CoreLogger.Swallowed(dex); }
+                try { waveIn.Dispose(); } catch (Exception dex) { CoreLogger.Swallowed(dex); }
+            }
             StopRecording();
             TryDeletePartialOutput();
             throw;
@@ -139,6 +204,9 @@ public class VoiceRecorder : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs a)
     {
+        // MICHEALTH_01 — Ignore stale callbacks from replaced devices
+        if (sender != _waveIn) return;
+
         try
         {
             lock (_writerLock)
@@ -166,6 +234,10 @@ public class VoiceRecorder : IDisposable
             }
             if (max > _peakSeen) _peakSeen = max;
             VolumeChanged?.Invoke(this, max);
+
+            // SPECTRUM_01 — same data path as the idle monitor: real samples, real format.
+            if (PcmAvailable is { } pcm && sender is WaveIn source)
+                pcm.Invoke(this, new PcmBuffer(a.Buffer, a.BytesRecorded, MicLevelMonitor.ToCaptureFormat(source.WaveFormat)));
         }
         catch (ObjectDisposedException swallowed2)
         {
@@ -179,16 +251,32 @@ public class VoiceRecorder : IDisposable
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
-        if (e.Exception != null)
-        {
-            CoreLogger.Fail("VoiceRecorder", $"Capture stopped with an error: {e.Exception.Message}");
-        }
-        try { _recordingStopped?.Set(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-    }
+        // MICHEALTH_01 — Ignore stale callbacks from replaced devices
+        if (sender != _waveIn) return;
 
+        _isRecording = false;
+        Exception? errorToPublish = null;
+
+        if (!_intentionalStop || e.Exception != null)
+        {
+            var err = e.Exception ?? new InvalidOperationException("Capture stopped unexpectedly.");
+            CaptureError = err;
+            _lastError = err;
+            CoreLogger.Fail("VoiceRecorder", $"Capture stopped with an error: {err.Message}");
+            errorToPublish = err;
+        }
+
+        try { _recordingStopped?.Set(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
+
+        if (errorToPublish != null)
+        {
+            Stopped?.Invoke(this, errorToPublish);
+        }
+    }
 
     public void StopRecording()
     {
+        _intentionalStop = true;
         var waveIn = _waveIn;
         bool wasRecording = _isRecording;
         _isRecording = false;
@@ -196,22 +284,50 @@ public class VoiceRecorder : IDisposable
         if (waveIn != null)
         {
             try { waveIn.StopRecording(); }
-            catch (Exception ex) { CoreLogger.Warn("VoiceRecorder", $"StopRecording threw: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                ReleaseError = ex;
+                _lastError ??= ex;
+                CoreLogger.Warn("VoiceRecorder", $"StopRecording threw: {ex.Message}");
+            }
 
             if (wasRecording)
             {
-                try { _recordingStopped?.Wait(StopDrainTimeoutMs); }
-                catch (Exception ex) { CoreLogger.Warn("VoiceRecorder", $"Wait for RecordingStopped failed: {ex.Message}"); }
+                try
+                {
+                    bool drained = _recordingStopped?.Wait(StopDrainTimeoutMs) ?? true;
+                    if (!drained)
+                    {
+                        var drainEx = new TimeoutException($"Audio capture drain timed out after {StopDrainTimeoutMs}ms.");
+                        CaptureError ??= drainEx;
+                        _lastError ??= drainEx;
+                        CoreLogger.Warn("VoiceRecorder", drainEx.Message);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    CaptureError ??= ex;
+                    _lastError ??= ex;
+                    CoreLogger.Warn("VoiceRecorder", $"Wait for RecordingStopped failed: {ex.Message}");
+                }
             }
 
             _stopping = true;
 
             try { waveIn.DataAvailable -= OnDataAvailable; } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
             try { waveIn.RecordingStopped -= OnRecordingStopped; } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-            try { waveIn.Dispose(); }
-            catch (Exception ex) { CoreLogger.Warn("VoiceRecorder", $"Disposing the capture device threw: {ex.Message}"); }
-
-            _waveIn = null;
+            try
+            {
+                waveIn.Dispose();
+                _waveIn = null;
+                ReleaseError = null;
+            }
+            catch (Exception ex)
+            {
+                ReleaseError = ex;
+                _lastError ??= ex;
+                CoreLogger.Warn("VoiceRecorder", $"Disposing the capture device threw: {ex.Message}");
+            }
         }
         else
         {
@@ -222,10 +338,24 @@ public class VoiceRecorder : IDisposable
         {
             if (_writer != null)
             {
-                try { _writer.Flush(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-                try { _writer.Dispose(); }
-                catch (Exception ex) { CoreLogger.Warn("VoiceRecorder", $"Closing the WAV writer threw: {ex.Message}"); }
-                _writer = null;
+                try { _writer.Flush(); }
+                catch (System.Exception ex)
+                {
+                    FileFinalizationError = ex;
+                    _lastError ??= ex;
+                    CoreLogger.Swallowed(ex);
+                }
+                try
+                {
+                    _writer.Dispose();
+                    _writer = null;
+                }
+                catch (Exception ex)
+                {
+                    FileFinalizationError = ex;
+                    _lastError ??= ex;
+                    CoreLogger.Warn("VoiceRecorder", $"Closing the WAV writer threw: {ex.Message}");
+                }
             }
         }
 
@@ -267,5 +397,21 @@ public class VoiceRecorder : IDisposable
     public void Dispose()
     {
         StopRecording();
+        var waveIn = _waveIn;
+        if (waveIn != null)
+        {
+            try
+            {
+                waveIn.Dispose();
+                _waveIn = null;
+                ReleaseError = null;
+            }
+            catch (Exception ex)
+            {
+                CoreLogger.Swallowed(ex);
+                ReleaseError = ex;
+                _lastError ??= ex;
+            }
+        }
     }
 }

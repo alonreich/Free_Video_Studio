@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
 // Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
 // Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
@@ -54,9 +54,10 @@ namespace FreeVideoStudio.App.Services;
 ///
 /// <para>
 /// <b>THREADING.</b> UI thread only. It reads and writes view-model properties bound to controls.
-/// The one exception is <see cref="AutosaveTick"/>, which is invoked from a dispatcher timer and is
-/// therefore also on the UI thread; the actual disk write inside `ProjectStore` is synchronous and
-/// atomic, and is fast enough at document size (kilobytes) not to warrant a worker.
+/// The one exception is <see cref="AutosaveTick"/>: it is invoked from a dispatcher timer and
+/// captures its snapshot on the UI thread, but (AUTOSAVEBG_01) the atomic write, the hardware
+/// flush and the history sidecar run on the thread pool, and only the dirty-flag update is
+/// marshalled back. Explicit saves stay synchronous and share an ordered write gate with it.
 /// </para>
 /// </summary>
 public sealed class ProjectSession
@@ -130,6 +131,28 @@ public sealed class ProjectSession
 
     private UndoStack<ProjectDocument>? _history;
     private DateTimeOffset _lastAutosaveUtc;
+
+    /// <summary>
+    /// AUTOSAVEBG_01 — bumped on every transition that dirties the document. A background autosave
+    /// records the value it snapshotted and clears <see cref="_dirty"/> only if it is unchanged.
+    /// </summary>
+    private long _editGeneration;
+
+    /// <summary>AUTOSAVEBG_01 — the disk half of the in-flight autosave (store + sidecar), or null.</summary>
+    private Task? _autosaveIo;
+
+    /// <summary>AUTOSAVEBG_01 — completes after the UI half of the last autosave has run.</summary>
+    private Task? _autosaveCompletion;
+
+    /// <summary>
+    /// AUTOSAVEBG_01 — serialises every project write (explicit or background) and orders them.
+    /// Each write takes a sequence number on the UI thread when it is ISSUED; under the gate, a
+    /// write older than the last committed one is skipped. An autosave issued before a Ctrl+S
+    /// therefore cannot land on top of it, and the UI never waits on a Task to guarantee that.
+    /// </summary>
+    private readonly object _ioGate = new();
+    private long _writeSequence;
+    private long _committedSequence;
 
     /// <summary>
     /// UNDO_21 — re-entrancy guard. Applying an undone document writes ~20 view-model properties,
@@ -241,6 +264,7 @@ public sealed class ProjectSession
         if (_history.Apply(Capture(), label, gestureKey))
         {
             _dirty = true;
+            _editGeneration++;   // AUTOSAVEBG_01
             Raise();
         }
     }
@@ -394,15 +418,123 @@ public sealed class ProjectSession
     /// PROJSESSION_03 — called from the window's existing dispatcher timer. Writes only when there
     /// is something to write AND somewhere to write it; a never-saved project has no path to
     /// autosave to and is covered by the crash-recovery snapshot instead.
+    ///
+    /// <para>
+    /// AUTOSAVEBG_01 — WRITE-BEHIND. The UI thread does only the in-memory work: capture the
+    /// document (in-memory projection, EDITHOT_01) and copy the two history branches. The atomic
+    /// write (<c>FileOptions.WriteThrough</c> + <c>Flush(flushToDisk: true)</c>) and the sidecar
+    /// serialisation of up to <see cref="UndoSidecarStore.MaxEntries"/> snapshots run on the
+    /// thread pool. The result is marshalled back to the captured synchronisation context, where
+    /// <c>_dirty</c> is cleared ONLY if no edit landed while the write was in flight.
+    /// </para>
+    ///
+    /// <para>
+    /// ⚠️ ONE WRITE IN FLIGHT. A tick that finds the previous write unfinished skips; the next
+    /// interval retries. Every write (this one and <see cref="WriteTo"/>) passes the ordered
+    /// <see cref="_ioGate"/>, so an older autosave can never land on top of a newer explicit save.
+    /// </para>
     /// </summary>
     public void AutosaveTick()
     {
         if (!IsDirty || string.IsNullOrWhiteSpace(CurrentPath)) return;
         if ((_clock.UtcNow - _lastAutosaveUtc).TotalSeconds < AutosaveIntervalSeconds) return;
+        if (_autosaveIo is { IsCompleted: false }) return;
 
         _lastAutosaveUtc = _clock.UtcNow;
-        WriteTo(CurrentPath!, announce: false, explicitSave: false);   // EDITHOT_01 — autosave is not a click.
+
+        string savePath = CurrentPath!;
+        long generation = _editGeneration;
+        ProjectDocument snapshot = Capture(forExplicitSave: false);   // EDITHOT_01 — autosave is not a click.
+
+        // UNDO_24 — fingerprinted against history.Current, exactly as WriteTo does; that is what
+        // OpenAsync compares against on the way back in.
+        string? fingerprint = null;
+        UndoEntry<ProjectDocument>[]? undo = null;
+        UndoEntry<ProjectDocument>[]? redo = null;
+        if (_history is { } history)
+        {
+            fingerprint = HistoryFingerprint(history.Current);
+            undo = history.UndoEntries.ToArray();
+            redo = history.RedoEntries.ToArray();
+        }
+
+        SynchronizationContext? ui = SynchronizationContext.Current;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _autosaveCompletion = completion.Task;
+        long sequence = ++_writeSequence;
+
+        Task<ProjectIoResult> io = Task.Run(() =>
+        {
+            lock (_ioGate)
+            {
+                // A newer explicit save already committed: this snapshot is stale, writing it
+                // would roll the file back. Nothing to do and nothing failed.
+                if (sequence < _committedSequence) return ProjectIoResult.Ok(savePath);
+
+                ProjectIoResult result;
+                try
+                {
+                    result = _store.Save(snapshot, savePath);
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    result = ProjectIoResult.Fail(ex.Message);
+                }
+
+                if (result.Success)
+                {
+                    _committedSequence = sequence;
+                    if (fingerprint is not null) _sidecar.Save(savePath, fingerprint, undo!, redo!);
+                }
+
+                return result;
+            }
+        });
+        _autosaveIo = io;
+
+        io.ContinueWith(t =>
+        {
+            ProjectIoResult result = t.Status == TaskStatus.RanToCompletion
+                ? t.Result
+                : ProjectIoResult.Fail(t.Exception?.GetBaseException().Message ?? "The autosave was interrupted.");
+
+            void Finish()
+            {
+                try { CompleteAutosave(result, savePath, generation); }
+                catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                finally { completion.TrySetResult(); }
+            }
+
+            if (ui is null) Finish();
+            else ui.Post(static state => ((Action)state!)(), (Action)Finish);
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
+
+    /// <summary>
+    /// AUTOSAVEBG_01 — the UI-thread half of a background autosave. A failure is Fatal, as it was
+    /// when the write was synchronous: the user believes their work is on disk and it is not.
+    /// </summary>
+    private void CompleteAutosave(ProjectIoResult result, string savePath, long generation)
+    {
+        if (!result.Success)
+        {
+            _faults.Fatal("PROJECT",
+                "Your project could not be autosaved, so nothing was written." + Environment.NewLine +
+                Environment.NewLine + (result.Error ?? "The file could not be written."));
+            return;
+        }
+
+        // An edit during the write means the file on disk is already behind the screen.
+        if (generation != _editGeneration) return;
+        if (!string.Equals(CurrentPath, savePath, StringComparison.OrdinalIgnoreCase)) return;
+
+        _dirty = false;
+        Raise();
+    }
+
+    /// <summary>AUTOSAVEBG_01 — completes when the last background autosave has fully settled (tests, shutdown).</summary>
+    internal Task PendingAutosave => _autosaveCompletion ?? Task.CompletedTask;
 
     /// <summary>
     /// RECOVERYDOC_09 — THE CANONICAL DOCUMENT-APPLICATION PATH, shared with crash recovery.
@@ -696,6 +828,7 @@ public sealed class ProjectSession
         ReportMaskDriftIfAny(document);
 
         _dirty = true;
+        _editGeneration++;   // AUTOSAVEBG_01
         DocumentApplied?.Invoke(this, document);
         Raise();
     }
@@ -784,7 +917,27 @@ public sealed class ProjectSession
 
     private bool WriteTo(string path, bool announce, bool explicitSave = true)
     {
-        ProjectIoResult result = _store.Save(Capture(forExplicitSave: explicitSave), path);
+        ProjectDocument document = Capture(forExplicitSave: explicitSave);
+
+        // AUTOSAVEBG_01 — same gate as the background autosave. Issued now, so any autosave still
+        // queued behind us carries an older sequence and is skipped instead of rolling this back.
+        long sequence = ++_writeSequence;
+        ProjectIoResult result;
+        lock (_ioGate)
+        {
+            result = _store.Save(document, path);
+
+            if (result.Success)
+            {
+                _committedSequence = sequence;
+
+                // UNDO_24 — the history is written WITH the save, and fingerprinted against what was just
+                // written. Saving is the moment the two are known to agree; writing the sidecar at any
+                // other time risks a history that describes a document the file does not contain.
+                if (_history is { } history)
+                    _sidecar.Save(path, HistoryFingerprint(history.Current), history);
+            }
+        }
 
         if (!result.Success)
         {
@@ -798,12 +951,6 @@ public sealed class ProjectSession
         CurrentPath = path;
         _dirty = false;
         _lastAutosaveUtc = _clock.UtcNow;
-
-        // UNDO_24 — the history is written WITH the save, and fingerprinted against what was just
-        // written. Saving is the moment the two are known to agree; writing the sidecar at any
-        // other time risks a history that describes a document the file does not contain.
-        if (_history is { } history)
-            _sidecar.Save(path, HistoryFingerprint(history.Current), history);
 
         Raise();
 

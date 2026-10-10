@@ -35,8 +35,8 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.2" />
-    <PackageReference Include="NAudio.Core" Version="2.3.0" />
-    <PackageReference Include="NAudio.WinMM" Version="2.3.0" />
+    <PackageReference Include="NAudio.Core" Version="3.1.0" />
+    <PackageReference Include="NAudio.WinMM" Version="3.1.0" />
 
     <!-- AOTCLEAN_03: Vortice.Direct3D11 / Vortice.DXGI removed. They brought SharpGen.Runtime,
          whose reflection-based vtable registry is not trim-safe (IL2067/IL2072). The preview's
@@ -160,10 +160,10 @@
           InformationalVersion carry the real number that users and bug reports see.
        ══════════════════════════════════════════════════════════════════════════════════════════ -->
   <PropertyGroup>
-    <Version>2026.10.03.1237</Version>
-    <AssemblyVersion>2026.10.03.1237</AssemblyVersion>
-    <FileVersion>2026.10.03.1237</FileVersion>
-    <InformationalVersion>2026.10.03.1237</InformationalVersion>
+    <Version>2026.10.10.0926</Version>
+    <AssemblyVersion>2026.10.10.0926</AssemblyVersion>
+    <FileVersion>2026.10.10.0926</FileVersion>
+    <InformationalVersion>2026.10.10.0926</InformationalVersion>
     <Company>Alon Reich</Company>
     <Authors>Alon Reich</Authors>
     <Product>Free Video Studio</Product>

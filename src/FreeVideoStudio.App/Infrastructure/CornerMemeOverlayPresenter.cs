@@ -42,15 +42,13 @@ public sealed record CornerMemeSpan(CoreMeme Meme, double GameStartSec, double G
 public sealed class CornerMemeOverlayPresenter
 {
     private readonly Canvas _layer = new() { IsHitTestVisible = false, ZIndex = 50, ClipToBounds = true };
-    private readonly Image _image = new() { Stretch = Avalonia.Media.Stretch.Fill, IsVisible = false };
+    // CORNERPARITY_01 — one Image per simultaneously visible overlay, in export z-order (the export chains
+    // one `overlay` per corner meme, so a later meme paints over an earlier one). One Image used to show
+    // only the FIRST active meme while the export showed all of them.
+    private readonly List<Image> _images = new();
     private IReadOnlyList<CornerMemeSpan> _spans = Array.Empty<CornerMemeSpan>();
     private Control? _videoHost;
-    private (int W, int H) _frame = (16, 9);
-
-    public CornerMemeOverlayPresenter()
-    {
-        _layer.Children.Add(_image);
-    }
+    private (int W, int H) _frame = (1920, 1080);
 
     /// <summary>
     /// Lays the overlay over <paramref name="videoHost"/>: added to the nearest ancestor panel and
@@ -88,21 +86,29 @@ public sealed class CornerMemeOverlayPresenter
         if (_spans.Count == 0) Hide();
     }
 
-    public void Hide() => _image.IsVisible = false;
+    public void Hide()
+    {
+        foreach (var img in _images) img.IsVisible = false;
+    }
 
-    /// <summary>Shows the frame due at <paramref name="gameplaySec"/>, or nothing.</summary>
+    /// <summary>
+    /// CORNERPARITY_01 — every overlay visible at <paramref name="gameplaySec"/>, in export z-order (list
+    /// order: the export overlays them one after another, so the LAST one is on top). Half-open
+    /// [start, end), exactly the export's <c>between(t,S,E)</c> window less its closing instant.
+    /// </summary>
+    public static List<CornerMemeSpan> ActiveAt(IReadOnlyList<CornerMemeSpan> spans, double gameplaySec)
+    {
+        var active = new List<CornerMemeSpan>();
+        foreach (var s in spans)
+            if (gameplaySec >= s.GameStartSec && gameplaySec < s.GameEndSec) active.Add(s);
+        return active;
+    }
+
+    /// <summary>Shows the frames due at <paramref name="gameplaySec"/>, or nothing.</summary>
     public void Update(double gameplaySec)
     {
-        CornerMemeSpan? active = null;
-        foreach (var s in _spans)
-            if (gameplaySec >= s.GameStartSec && gameplaySec < s.GameEndSec) { active = s; break; }
-        if (active == null || _videoHost == null) { Hide(); return; }
-
-        var frames = CornerMemeFrames.TryGet(active.Meme.FilePath);
-        if (frames == null || frames.Frames.Count == 0) { Hide(); return; }
-
-        int index = (int)Math.Floor((gameplaySec - active.GameStartSec) * frames.Fps);
-        var bmp = frames.Frames[Math.Clamp(index, 0, frames.Frames.Count - 1)];
+        var active = ActiveAt(_spans, gameplaySec);
+        if (active.Count == 0 || _videoHost == null) { Hide(); return; }
 
         // The letterboxed video rectangle inside the host, then the export's box inside it.
         var host = _videoHost.Bounds;
@@ -111,15 +117,34 @@ public sealed class CornerMemeOverlayPresenter
         double scale = Math.Min(host.Width / _frame.W, host.Height / _frame.H);
         double vw = _frame.W * scale, vh = _frame.H * scale;
         double ox = origin.X + (host.Width - vw) / 2, oy = origin.Y + (host.Height - vh) / 2;
-        var (x, y, w, h) = MemeOverlayLayout.Place(_frame.W, _frame.H, bmp.PixelSize.Width, bmp.PixelSize.Height,
-            active.Meme.Corner, active.Meme.Size);
 
-        _image.Source = bmp;
-        _image.Width = w * scale;
-        _image.Height = h * scale;
-        Canvas.SetLeft(_image, ox + x * scale);
-        Canvas.SetTop(_image, oy + y * scale);
-        _image.IsVisible = true;
+        while (_images.Count < active.Count)
+        {
+            var img = new Image { Stretch = Avalonia.Media.Stretch.Fill, IsVisible = false };
+            _images.Add(img);
+            _layer.Children.Add(img);   // added later = painted later = on top, like the export's chain
+        }
+
+        int shown = 0;
+        foreach (var span in active)
+        {
+            var frames = CornerMemeFrames.TryGet(span.Meme.FilePath);
+            if (frames == null || frames.Frames.Count == 0) continue;
+
+            int index = (int)Math.Floor((gameplaySec - span.GameStartSec) * frames.Fps);
+            var bmp = frames.Frames[Math.Clamp(index, 0, frames.Frames.Count - 1)];
+            var (x, y, w, h) = MemeOverlayLayout.Place(_frame.W, _frame.H, bmp.PixelSize.Width, bmp.PixelSize.Height,
+                span.Meme.Corner, span.Meme.Size);
+
+            var image = _images[shown++];
+            image.Source = bmp;
+            image.Width = w * scale;
+            image.Height = h * scale;
+            Canvas.SetLeft(image, ox + x * scale);
+            Canvas.SetTop(image, oy + y * scale);
+            image.IsVisible = true;
+        }
+        for (int i = shown; i < _images.Count; i++) _images[i].IsVisible = false;
     }
 }
 

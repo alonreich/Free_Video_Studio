@@ -213,9 +213,55 @@ public static class GeminiTrackingService
         return (f1Path, f2Path, f3Path, t1, t2, t3);
     }
 
+    /// <summary>
+    /// LIBAVFRAME_05 — one candidate still at <paramref name="sec"/>, written to <paramref name="outPath"/> as JPEG.
+    /// Native libav first (<see cref="VideoFrameGrabber"/>: the frame <c>ffmpeg -ss {sec:0.000} -i … -frames:v 1</c>
+    /// would output, full size, encoded with SkiaSharp at <see cref="CandidateJpegQuality"/>), the ORIGINAL
+    /// ffmpeg subprocess below once if native cannot answer. Timestamps, file names, the 10 s budget,
+    /// cancellation and "no frame → no file" are unchanged; FVS_FRAME_DECODE=ffmpeg|native forces one path.
+    /// </summary>
     private static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
     {
         string ffmpeg = BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
+        string seek = sec.ToString("0.000", CultureInfo.InvariantCulture);   // the exact -ss text both paths use
+        await VideoFrameGrabber.GrabAsync<string>(
+            ffmpeg, videoPath, VideoFrameRequest.AtFfmpegSeek(seek), StillTimeout,
+            frame =>
+            {
+                File.WriteAllBytes(outPath, EncodeCandidateJpeg(frame));
+                return outPath;
+            },
+            async (budget, ct) =>
+            {
+                await ExtractStillWithFfmpegAsync(ffmpeg, videoPath, seek, outPath, budget, ct).ConfigureAwait(false);
+                return outPath;
+            },
+            token).ConfigureAwait(false);
+    }
+
+    private static readonly TimeSpan StillTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// ffmpeg's mjpeg encoder at <c>-q:v 2</c> is close to the top of the JPEG quality scale; 95 is the
+    /// SkiaSharp setting that matches it within the parity tolerance (docs/03 FFM-LIBAVFRAME).
+    /// </summary>
+    internal const int CandidateJpegQuality = 95;
+
+    /// <summary>Managed BGRA frame → JPEG bytes (SkiaSharp, the app's existing imaging library). Copies the pixels.</summary>
+    internal static byte[] EncodeCandidateJpeg(DecodedVideoFrame frame)
+    {
+        var info = new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
+        using SKData pixels = SKData.CreateCopy(frame.Pixels);
+        using SKImage image = SKImage.FromPixels(info, pixels, frame.Stride)
+                              ?? throw new IOException("Could not wrap the decoded frame.");
+        using SKData jpeg = image.Encode(SKEncodedImageFormat.Jpeg, CandidateJpegQuality)
+                            ?? throw new IOException("Could not encode the decoded frame.");
+        return jpeg.ToArray();
+    }
+
+    /// <summary>The pre-LIBAVFRAME subprocess path, unchanged: ffmpeg -y -ss T -i video -frames:v 1 -q:v 2 out.jpg.</summary>
+    private static async Task ExtractStillWithFfmpegAsync(string ffmpeg, string videoPath, string seek, string outPath, TimeSpan budget, CancellationToken token)
+    {
         var psi = new ProcessStartInfo
         {
             FileName = ffmpeg,
@@ -226,7 +272,7 @@ public static class GeminiTrackingService
         };
         psi.ArgumentList.Add("-y");
         psi.ArgumentList.Add("-ss");
-        psi.ArgumentList.Add(sec.ToString("0.000", CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add(seek);
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(videoPath);
         psi.ArgumentList.Add("-frames:v");
@@ -235,7 +281,7 @@ public static class GeminiTrackingService
         psi.ArgumentList.Add("2");
         psi.ArgumentList.Add(outPath);
 
-        await AsyncProcessRunner.RunAsync(psi, TimeSpan.FromSeconds(10), token).ConfigureAwait(false);
+        await AsyncProcessRunner.RunAsync(psi, budget, token).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -1,0 +1,47 @@
+<!-- UPGRADEUX_05 — first launch after an install/update: "Finishing…" then "✓ Updated".
+     Transient and non-persisted (CenterOwner exemption, like UpdateAvailableWindow); not in
+     WindowBoundsHelper. Non-modal and owned by the main window. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
+        x:DataType="vm:UpdateFinishedViewModel"
+        x:Class="FreeVideoStudio.App.Controls.UpdateFinishedWindow"
+        Title="Free Video Studio"
+        Width="460" SizeToContent="Height"
+        Background="{DynamicResource AppSurfaceBrush}"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="30">
+
+    <Border Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
+        <Grid RowDefinitions="30, Auto">
+            <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                <TextBlock Text="Free Video Studio" Classes="WindowTitleText"
+                           Foreground="{DynamicResource TitleBarForeground}"/>
+            </Border>
+            <StackPanel Grid.Row="1" Margin="25,18,25,22" Spacing="12">
+                <TextBlock Text="{Binding Headline}" TextWrapping="Wrap" FontWeight="Bold"
+                           FontSize="{DynamicResource AppFontSize16}"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"
+                           IsVisible="{Binding IsFinishing}"/>
+                <TextBlock Text="{Binding Headline}" TextWrapping="Wrap" FontWeight="Bold"
+                           FontSize="{DynamicResource AppFontSize16}"
+                           Foreground="{DynamicResource AppSuccessBrush}"
+                           IsVisible="{Binding IsDone}"/>
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                           FontSize="{DynamicResource AppFontSize13}"
+                           Foreground="{DynamicResource AppTextMutedBrush}"/>
+                <ProgressBar IsIndeterminate="True" Height="8" IsVisible="{Binding IsFinishing}"
+                             Foreground="{DynamicResource AppInfoBrush}"
+                             Background="{DynamicResource AppPanelBrush}"/>
+                <Button Classes="Success" Content="OK" MinWidth="120" Cursor="Hand"
+                        HorizontalAlignment="Center" IsDefault="True" IsCancel="True"
+                        IsVisible="{Binding IsDone}" Command="{Binding OkCommand}"
+                        AutomationProperties.Name="Close this message"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

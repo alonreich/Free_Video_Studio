@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using FreeVideoStudio.Core.Editing;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
@@ -21,7 +22,7 @@ namespace FreeVideoStudio.App;
 ///
 /// <para><b>Two modes, two frames of reference.</b> A FULL SCREEN meme is an insertion: it occupies
 /// its whole length on the OUTPUT ruler and obeys D7/D8 (snapped off speed blocks and freezes, never
-/// two at one point, kept apart by <see cref="MemeMinSeparationOutSec"/>). A CORNER OVERLAY occupies
+/// two at one point, kept apart by <see cref="GranularEditSession.MemeMinSeparationOutSec"/>). A CORNER OVERLAY occupies
 /// ZERO output seconds: it is drawn as a thin strip over the gameplay it covers, sits exactly where the
 /// playhead was (only pushed out of deleted footage), may overlap anything, and never moves anything
 /// after it.</para>
@@ -38,9 +39,9 @@ public partial class GranularSpeedEditorWindow
 
     /// <summary>The finished video WITHOUT full-screen memes — the clock corner overlays run on.</summary>
     private OutputTimeline GameplayTimeline()
-        => _gameplayTimelineCache.Get(Math.Max(0.001, GetDuration()) * 1000, _segments, _cuts, Array.Empty<MemePlacement>(),
-            freezeStartMs: _freezeTimeMs >= 0 ? _freezeTimeMs - _trimStartMs : -1,
-            freezeDurationSeconds: _freezeDurationS);
+        => _gameplayTimelineCache.Get(Math.Max(0.001, GetDuration()) * 1000, _edit.Segments, _edit.Cuts, Array.Empty<MemePlacement>(),
+            freezeStartMs: _edit.FreezeTimeMs >= 0 ? _edit.FreezeTimeMs - _edit.TrimStartMs : -1,
+            freezeDurationSeconds: _edit.FreezeDurationS);
 
     private async void OnAddMemeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -50,11 +51,11 @@ public partial class GranularSpeedEditorWindow
 
     private async Task AddMemeAsync()
     {
-        if (string.IsNullOrWhiteSpace(_videoPath)) return;
+        if (string.IsNullOrWhiteSpace(_edit.VideoPath)) return;
 
         // MEMEPICK_01/02 + MEMEMODE_01 — one modal screen: choose the meme, then FULL SCREEN or
         // CORNER OVERLAY (corner, size, sound).
-        var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _isMobileFormat,
+        var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _edit.IsMobileFormat,
             latest => AvailableMemes = latest);
         if (pick == null) return;
         var picked = pick.Item;
@@ -66,29 +67,14 @@ public partial class GranularSpeedEditorWindow
         }
 
         double rawSourceRelSec = Math.Max(0, _playheadMs / 1000.0);
-        var tl = OutTimeline();
         bool corner = pick.Mode == MemePresentationMode.CornerOverlay;
 
-        double at;
-        if (corner)
+        // MEMEMODE_01 — corner: anywhere the gameplay survives; full screen: D8 / D7 / separation.
+        var anchor = _edit.ResolveNewMemeAnchor(OutTimeline(), rawSourceRelSec, pick.Mode, out double at);
+        if (!anchor.Ok)
         {
-            // A corner overlay may sit anywhere the gameplay survives.
-            at = tl.IsCutAtSource(rawSourceRelSec) ? tl.NextSurvivingSource(rawSourceRelSec) : rawSourceRelSec;
-        }
-        else
-        {
-            // D8 / D7 / separation — exactly the rules a full-screen cutaway always had.
-            at = tl.SnapInsertionPoint(rawSourceRelSec);
-            if (tl.HasInsertionAtSource(at))
-            {
-                NotifyError("A full-screen meme already sits at that exact point. Move the playhead a little.");
-                return;
-            }
-            if (!MemeSeparationIsSafe(at, null, out string? clash))
-            {
-                NotifyError(clash!);
-                return;
-            }
+            NotifyError(anchor.Error!);
+            return;
         }
 
         double duration = pick.DurationSec is double d && d > 0.01 ? d : await ResolveMemeDurationAsync(picked);
@@ -98,14 +84,8 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
-        PushUndo("add meme");   // UNDO_02
-
-        // ⚠️ Ids become FFmpeg filter labels: unique for the life of this editor (MEME_05).
-        string id = MemePlacement.NewId(_nextMemeIdIndex++);
-        while (_memes.Any(m => m.Id == id))
-            id = MemePlacement.NewId(_nextMemeIdIndex++);
-        _memes.Add(new MemePlacement(picked.FullPath, at, duration, id, pick.Mode, pick.Corner, pick.Size, pick.PlaySound));
-        _selectedMemeId = id;
+        var placed = _edit.AddMeme(picked.FullPath, at, duration, pick.Mode, pick.Corner, pick.Size, pick.PlaySound);   // UNDO_02 inside
+        string id = placed.Id;
 
         bool moved = Math.Abs(at - rawSourceRelSec) > 0.01;
         RuntimeLog.Info("MEME",
@@ -135,14 +115,14 @@ public partial class GranularSpeedEditorWindow
     {
         try
         {
-            int idx = _memes.FindIndex(m => m.Id == memeId);
+            int idx = _edit.Memes.FindIndex(m => m.Id == memeId);
             if (idx < 0) return;
-            var old = _memes[idx];
+            var old = _edit.Memes[idx];
 
-            var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _isMobileFormat,
+            var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _edit.IsMobileFormat,
                 latest => AvailableMemes = latest, existing: old);
             if (pick == null) return;
-            idx = _memes.FindIndex(m => m.Id == memeId);
+            idx = _edit.Memes.FindIndex(m => m.Id == memeId);
             if (idx < 0) return;
 
             double duration = old.DurationSec;
@@ -152,36 +132,12 @@ public partial class GranularSpeedEditorWindow
                 if (duration <= 0.01) { NotifyError("That meme's length could not be read, so nothing changed."); return; }
             }
 
-            bool toInline = pick.Mode == MemePresentationMode.InlineFullScreen;
-            double at = old.AtSourceSecRelative;
-            if (toInline)
-            {
-                // Re-apply D7/D8 against every OTHER full-screen meme.
-                var others = _memes.Where(m => m.Id != memeId).ToList();
-                var tlOthers = OutputTimeline.Create(Math.Max(0.001, GetDuration()) * 1000,
-                    _segments.Concat(_freezeTimeMs >= 0 && _freezeDurationS > 0
-                        ? new[] { new SpeedSegment(_freezeTimeMs - _trimStartMs, _freezeTimeMs - _trimStartMs + _freezeDurationS * 1000, 0) }
-                        : Array.Empty<SpeedSegment>()).ToList(),
-                    1.0, 0, MemePlacement.ToInsertions(others), CutRange.ToClipRelative(_cuts, 0));
-                at = tlOthers.SnapInsertionPoint(at);
-                if (tlOthers.HasInsertionAtSource(at))
-                {
-                    NotifyError("Another full-screen meme already sits at that point, so this one cannot go full screen there.");
-                    return;
-                }
-                if (!MemeSeparationIsSafe(at, memeId, out string? clash))
-                {
-                    NotifyError(clash!);
-                    return;
-                }
-            }
-
-            var updated = new MemePlacement(pick.Item.FullPath, at, duration, old.Id, pick.Mode, pick.Corner, pick.Size, pick.PlaySound);
-            if (updated == old) return;   // U4 — nothing changed, nothing recorded
-
-            PushUndo("change meme");   // UNDO_02 — one step for every property that changed
-            _memes[idx] = updated;
-            _selectedMemeId = memeId;
+            // EDITSTATE_01 — going full screen re-applies D7/D8 against every OTHER full-screen meme;
+            // one undo step for every property that changed, none when nothing did (U4).
+            var changed = _edit.UpdateMeme(memeId, pick.Item.FullPath, duration, pick.Mode, pick.Corner, pick.Size,
+                pick.PlaySound, Math.Max(0.001, GetDuration()) * 1000, out var before, out var updated);
+            if (!changed.Ok) { NotifyError(changed.Error!); return; }
+            if (updated == null || updated == before) return;
 
             double delta = updated.OutputDurationSec - old.OutputDurationSec;
             RuntimeLog.Info("MEME",
@@ -211,7 +167,7 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private void DrawCornerMemeBands(Canvas canvas, double w, double h)
     {
-        var corners = MemePlacement.CornerOnly(_memes);
+        var corners = MemePlacement.CornerOnly(_edit.Memes);
         if (corners.Count == 0 || w <= 0) return;
         double outDur = OutDurationSec();
         if (outDur <= 0.0001) return;
@@ -229,7 +185,7 @@ public partial class GranularSpeedEditorWindow
             if (MemePlacement.VisibleInterval(start, m.DurationSec, outDur) is not { } v) continue;
             double x1 = Math.Clamp(v.StartSec / outDur * w, 0, w);
             double x2 = Math.Clamp(v.EndSec / outDur * w, 0, w);
-            bool selected = _selectedMemeId == m.Id;
+            bool selected = _edit.SelectedMemeId == m.Id;
             double stripW = Math.Max(MemeGrabMinWidthPx, x2 - x1);
 
             var strip = new Avalonia.Controls.Shapes.Rectangle
@@ -253,8 +209,8 @@ public partial class GranularSpeedEditorWindow
             strip.PointerPressed += (_, e) =>
             {
                 if (!e.GetCurrentPoint(strip).Properties.IsLeftButtonPressed) return;
-                _selectedMemeId = id;
-                _selectedSegmentIndex = -1;
+                _edit.SelectedMemeId = id;
+                _edit.SelectedSegmentIndex = -1;
                 _isFreezeCameraSelected = false;
                 UpdateDeleteButtonVisibility();
                 UpdateMemeButtonsState();
@@ -269,15 +225,15 @@ public partial class GranularSpeedEditorWindow
     /// <summary>MEMEMODE_01 — the editor preview's corner overlays, on the gameplay clock.</summary>
     private void UpdateEditorCornerMemes(double playheadRelMs)
     {
-        var corners = MemePlacement.CornerOnly(_memes);
+        var corners = MemePlacement.CornerOnly(_edit.Memes);
         if (corners.Count == 0 || _videoHost == null) { _cornerMemes?.Hide(); return; }
 
         _cornerMemes ??= new Infrastructure.CornerMemeOverlayPresenter();
         _cornerMemes.Attach(_videoHost);
-        if (_isMobileFormat) _cornerMemes.SetFrameSize(CoordinateConstants.PortraitW, CoordinateConstants.PortraitH);
+        if (_edit.IsMobileFormat) _cornerMemes.SetFrameSize(CoordinateConstants.PortraitW, CoordinateConstants.PortraitH);
         else
         {
-            var (rw, rh) = CoordinateMath.GetResolutionInts(_originalResolution);
+            var (rw, rh) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
             _cornerMemes.SetFrameSize(rw, rh);
         }
 

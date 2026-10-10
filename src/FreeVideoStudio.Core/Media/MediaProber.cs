@@ -3,10 +3,8 @@
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
 
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Threading;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -16,15 +14,32 @@ public class MediaProber
 {
     private readonly string _ffprobePath;
     private readonly string _videoPath;
+    private readonly MediaProbeBackend _backend;
     private JsonObject? _probeData;
     private readonly SemaphoreSlim _probeLock = new(1, 1);
 
     public MediaProber(string ffprobePath, string videoPath)
+        : this(ffprobePath, videoPath, MediaProbeBackend.Auto)
+    {
+    }
+
+    /// <summary>LIBAVPROBE_03 — <paramref name="backend"/> pins the metadata source (tests, parity, benchmarks).</summary>
+    public MediaProber(string ffprobePath, string videoPath, MediaProbeBackend backend)
     {
         _ffprobePath = ffprobePath;
         _videoPath = videoPath;
+        _backend = backend;
     }
 
+    /// <summary>"libav" or "ffprobe" — which backend produced the cached data; null before a successful probe.</summary>
+    public string? AnsweredBy { get; private set; }
+
+    /// <summary>
+    /// ffprobe-shaped <c>-show_format -show_streams</c> JSON, memoised on success.
+    /// LIBAVPROBE_03: served by <see cref="MediaMetadataProbe"/> (native libav, ffprobe fallback).
+    /// The caching contract is unchanged: a failed probe or a timeout returns an empty object and
+    /// is NOT cached (the next call retries); an unexpected exception caches the empty object.
+    /// </summary>
     public async Task<JsonObject> ProbeAsync()
     {
         if (_probeData != null) return _probeData;
@@ -33,36 +48,17 @@ public class MediaProber
         {
             if (_probeData != null) return _probeData;
 
-            var probeArgs = new[]
-            {
-                "-v", "quiet",
-                "-print_format", "json",
-                "-show_format", "-show_streams",
-                _videoPath
-            };
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = _ffprobePath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            foreach (string arg in probeArgs) psi.ArgumentList.Add(arg);
-
-            CoreLogger.Debug("FFprobe", $"Command: {_ffprobePath} {ProcessArgs.FormatForLog(probeArgs)}");
-
             try
             {
-                var result = await AsyncProcessRunner.RunAsync(psi, timeout: TimeSpan.FromSeconds(15));
-                if (result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StandardOutput))
+                var result = await MediaMetadataProbe.ProbeAsync(_ffprobePath, _videoPath, TimeSpan.FromSeconds(15), CancellationToken.None, _backend);
+                if (result.Ok)
                 {
-                    _probeData = JsonNode.Parse(result.StandardOutput)?.AsObject() ?? new JsonObject();
+                    _probeData = result.Data;
+                    AnsweredBy = result.Backend;
                     return _probeData ?? new JsonObject();
                 }
-                
-                CoreLogger.Fail("FFprobe", $"Exit code {result.ExitCode}. Stderr: {result.StandardError}");
+
+                CoreLogger.Fail("FFprobe", $"{result.Backend}: {result.Error}");
                 return new JsonObject();
             }
             catch (OperationCanceledException)

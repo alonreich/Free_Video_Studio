@@ -13,7 +13,8 @@ try
 {
     RuntimeLog.SetDeploymentPhase(true);
     if (args.FirstOrDefault() == "--upgrade-worker") return await UpgradeInstallWorker.RunAsync(args);
-    if (args.FirstOrDefault() == "--upgrade-broker") return await UpgradeCoordinator.RunAsync(args);
+    // UPGRADEUX_01 — the broker now shows a progress window (headless fallback inside).
+    if (args.FirstOrDefault() == "--upgrade-broker") return await UpgradeBrokerHost.RunAsync(args);
     if (args.FirstOrDefault() == "--upgrade-probe") return UpgradeInstallWorker.Probe();
     if (args.FirstOrDefault() == "--upgrade-maintenance") return await UpgradeInstallWorker.MaintainAsync();
     if (args.FirstOrDefault() == "--complete-user-migration")

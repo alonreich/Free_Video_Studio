@@ -73,6 +73,11 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   PeakSafety.cs                              02
   WindowsAudioSessionSync.cs                 02
 ⚠ MainWindow.PreviewMix.cs                   01 02
+  RenderedMixGate.cs                         02
+⚠ VoiceOverWindow.PreviewProtection.cs       01 02
+⚠ PreviewFidelity.cs                         03 04
+  PreviewFidelityBadge.cs                    04
+⚠ MainWindow.PreviewFidelity.cs              03 04
   MemePreviewDirector.cs                     03
 ⚠ MemePlacement.cs                           01 03
   MemePresentationJson.cs                    06
@@ -89,6 +94,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ MergerSession.cs                           01 05
   MergerWorker.cs                            03
   MicLevelMonitor.cs                         02
+  MicrophoneSpectrumAnalyzer.cs              02 AUD-VOICEOVER (SPECTRUM_01)
+⚠ MicrophoneSpectrumControl.cs               02 04 (SPECTRUM_03)
   MobileFilterBuilder.cs                     03
   IpcProtocol.cs                             05
   MpvIpcClient.cs                            02
@@ -99,6 +106,16 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   OutputFileSize.cs                          03
   OutputFileNaming.cs                        03 FFM-OUTNAME
   OutputSizeEstimator.cs                     03
+  MediaProber.cs                             03 FFM-LIBAVPROBE
+  MediaMetadataProbe.cs                      03 FFM-LIBAVPROBE
+  LibAvMediaBackend.cs                       03 FFM-LIBAVPROBE
+  LibAvLibrary.cs                            03 FFM-LIBAVPROBE
+  LibAvInterop.cs                            03 FFM-LIBAVPROBE
+  LibAvMetadataProbeTests.cs                 03 FFM-LIBAVPROBE
+  VideoFrameGrabber.cs                       03 FFM-LIBAVFRAME
+  LibAvFrameDecoder.cs                       03 FFM-LIBAVFRAME
+  LibAvFrameDecodeTests.cs                   03 FFM-LIBAVFRAME
+  NativeFrameCallerTests.cs                  03 04
 ⚠ PhoneFrameMockup.axaml.cs                  01 04
   ExportViewModel.cs                         03
   ProcessWorker.cs                           03
@@ -127,8 +144,12 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   WindowResizeGrip.cs                        04
   VoiceOverPreviewPlayer.cs                  02
 ⚠ VoiceOverWindow.axaml.cs                   01 02
+⚠ VoiceOverWindow.RecordingState.cs          01 02 04 (VOREC_01..03)
+  LiveTakeMeter.cs                           02 (VOLIVE_01)
   VoiceRecorder.cs                           02
   VoiceCaptureSession.cs                     02
+⚠ VoiceOverRecoveryManager.cs                02 05
+⚠ VoiceOverWindow.Apply.cs                   01 02 05
 ⚠ WindowBoundsHelper.cs                      04 05
   ZoomPreviewSimulator.cs                    03
   FvsBuild Program.cs                        05
@@ -138,6 +159,23 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   RecentProjects.cs                          06
   AotJson.cs                                 06
   UndoStack.cs                               07
+  GranularEditHistory.cs                     07 §7 UNDO-MIGRATION | 04 §6 UI-GRANULAR
+  CropLayoutSnapshot.cs                      07 §7 UNDO-MIGRATION
+  MusicWizardSnapshot.cs                     07 §7 UNDO-MIGRATION
+  CropToolWindow.History.cs                  07 04
+⚠ GranularEditSession.cs                     01 04 07 08 §3a COMP-MVVM | 07 §8 UNDO-EDITSTATE (EDITSTATE_01)
+  GranularEditSession.History.cs             07 §8 UNDO-EDITSTATE | 07 §7 UNDO-MIGRATION
+⚠ GranularEditSession.Segments.cs            01 04 07
+⚠ GranularEditSession.Memes.cs               01 04 07 (MEMEMODE_01)
+  GranularRecoveryCodec.cs                   05 (RECOVERY_03)
+  GranularJsonRead.cs                        05 (GRANJSON_01)
+⚠ CropEditSession.cs                         01 04 05 07 | 08 §3a COMP-MVVM (EDITSTATE_01)
+  CropLayer.cs                               04 07 §8 UNDO-EDITSTATE
+⚠ CropProfileCodec.cs                        01 05
+  CropConfigJson.cs                          04 05 (CROPJSON_01)
+  EditStateExtractionTests.cs                08 §3a COMP-MVVM | 07 §8 UNDO-EDITSTATE
+  MusicWizardWindow.History.cs               07 04
+  GranularSpeedEditorWindow.History.cs       07 04
 ⚠ ProjectSession.cs                          06 07 08
 ⚠ MainWindow.Project.cs                      06 07 08
 ⚠ ToolNavigator.cs                           05 08
@@ -168,6 +206,23 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ .github/workflows/ci.yml                   08 09
   .github/workflows/lfs-guard.yml            09
 ⚠ UpdateService.cs                           05 09
+  DevSandbox.ps1                             05 SYS-DEVBUILD
+  UpgradeCoordinator.cs                      05 SYS-UPGRADE | SYS-UPGRADEUX
+  UpgradeInstallWorker.cs                    05 SYS-UPGRADE | SYS-UPGRADEUX
+  UpgradeChannel.cs                          05 SYS-UPGRADE | SYS-UPGRADEUX
+  InstallDiscovery.cs                        05 SYS-UPGRADE | SYS-UPGRADEUX
+  UpgradeProgress.cs                         05 SYS-UPGRADEUX
+  UpgradeBrokerHost.cs                       05 SYS-UPGRADEUX
+  UpgradeFinishedNotice.cs                   05 SYS-UPGRADEUX
+  UpgradeProgressWindow.axaml(.cs)           05 SYS-UPGRADEUX
+  UpgradeProgressViewModel.cs                05 SYS-UPGRADEUX
+  UpdateFinishedViewModel.cs                 05 SYS-UPGRADEUX
+  UpdateFinishedWindow.axaml(.cs)            04 UI-SETTINGS-ABOUT | 05 SYS-UPGRADEUX
+⚠ UpdatePromptViewModels.cs                  04 05 SYS-AUTOUPDATE
+  UpdateAvailableWindow.axaml(.cs)           04 UI-SETTINGS-ABOUT
+  UpdateDownloadWindow.axaml(.cs)            04 UI-SETTINGS-ABOUT
+  VersionAndUpdaterTests.cs                  05 SYS-AUTOUPDATE | SYS-UPGRADEUX
+  UpgradeProgressReportingTests.cs           05 SYS-UPGRADEUX
   Staging.cs                                 09
   GitHubReleasePublisher.cs                  09 DIST-SPLIT
 ⚠ GranularSpeedEditorWindow.History.cs       04 07
@@ -206,6 +261,14 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   HudAutoDetector.cs                         01
   HudConfig.cs                               01
   HudImageOps.cs                             01
+  AiHudDetection.cs                          01
+  AiHudResponseParser.cs                     01
+  AiHudResultCache.cs                        01
+  HudCandidateFusion.cs                      01
+⚠ HudDetectionCoordinator.cs                 01 08
+⚠ GeminiHudDetectionService.cs               01 05 08
+  AiHudFrameBuilder.cs                       01
+⚠ CropToolWindow.MagicWand.cs                04 01 08
   MainViewModel.cs                           04 08
   MemeAssets.cs                              03
   MemeCatalog.cs                             03
@@ -366,6 +429,20 @@ GRIP_01                                      04 §7a UI-RESIZEGRIP
 HardwareScanner                              03 §1 FFM-HWENC
 HasUnsavedWork                               05 (mini-map only)
 HudAutoDetector                              01 §12 TL-HUDSTREAMING
+HudDetectionCoordinator                      01 §12a TL-AIHUD | 08 §2 COMP-FAULTS
+HudCandidateFusion                           01 §12a TL-AIHUD
+AiHudResponseParser                          01 §12a TL-AIHUD
+AiHudGeometry                                01 §12a TL-AIHUD
+IAiHudDetectionService                       01 §12a TL-AIHUD
+GeminiHudDetectionService                    01 §12a TL-AIHUD | 05 §6 SYS-AISETTINGS
+AiHudFrameBuilder                            01 §12a TL-AIHUD
+AiHudResultCache                             01 §12a TL-AIHUD
+AiMagicWandCloudConsent                      05 §6 SYS-AISETTINGS | 04 §13a UI-AIHUDWAND
+AIHUD_01                                     01 §12a TL-AIHUD | 04 §13a UI-AIHUDWAND
+AIHUD_02                                     01 §12a TL-AIHUD
+AIHUD_03                                     01 §12a TL-AIHUD
+AIHUD_04                                     01 §12a TL-AIHUD
+AIHUD_05                                     04 §13a UI-AIHUDWAND | 05 §6 SYS-AISETTINGS
 InsertionAt                                  01 (mini-map only)
 IsActive                                     02 §4 AUD-VOICEOVER | 03 §5 FFM-MEMEPREVIEW
 IsEof                                        02 §2a AUD-IPCSTATE
@@ -383,7 +460,7 @@ MAINEND_01                                   01 §8 TL-ENDSTOP
 MainTimelineEndSeconds                       01 §8 TL-ENDSTOP
 MainWindow                                   01 §2 TL-OUTPUTTIMELINE | 02 (mini-map only) | 04 (mini-map only) | 05 §3 SYS-WINSTATE
 MaskOverlayManager                           05 (mini-map only)
-MaxUndoDepth                                 04 §6 UI-GRANULAR  [= 40]
+MaxUndoDepth                                 RETIRED by UNDO_26 -> GranularEditHistory.MaxDepth [= 40] (07 §7 UNDO-MIGRATION)
 MEME_06                                      01 §7 TL-MEME
 MEME_07                                      02 §4 AUD-VOICEOVER | 03 §5 FFM-MEMEPREVIEW
 MemePreviewDirector                          02 §4 AUD-VOICEOVER | 03 §5 FFM-MEMEPREVIEW
@@ -391,11 +468,45 @@ MemeRebuildOverlay                           03 §5 FFM-MEMEPREVIEW
 MemeSwapOverlay                              03 §5 FFM-MEMEPREVIEW
 MergerWorker                                 03 (mini-map only)
 MicLevelMonitor                              02 §4 AUD-VOICEOVER
+MicrophoneSpectrumAnalyzer                   02 §4 AUD-VOICEOVER
+MicrophoneSpectrumSnapshot                   02 §4 AUD-VOICEOVER
+MicrophoneSpectrumControl                    02 §4 AUD-VOICEOVER | 04 (mini-map only)
+SpectrumMeterBallistics                      02 §4 AUD-VOICEOVER
+SpectrumBand                                 02 §4 AUD-VOICEOVER
+PcmCaptureFormat                             02 §4 AUD-VOICEOVER
+PcmBuffer                                    02 §4 AUD-VOICEOVER
+PcmAvailable                                 02 §4 AUD-VOICEOVER
+LatestSpectrum                               02 §4 AUD-VOICEOVER
+UpdateSpectrumMeter                          02 §4 AUD-VOICEOVER
+AppMeterNormalBrush                          02 §4 AUD-VOICEOVER | 04 (mini-map only)
+SPECTRUM_01                                  02 §4 AUD-VOICEOVER
+SPECTRUM_02                                  02 §4 AUD-VOICEOVER
+SPECTRUM_03                                  02 §4 AUD-VOICEOVER | 04 (mini-map only)
+SPECTRUM_04                                  02 §4 AUD-VOICEOVER
+SPECTRUM_05                                  02 §4 AUD-VOICEOVER
+IsSpectrumSourceEligibleLocked               02 §4 AUD-VOICEOVER
+SpectrumAdmittedForTesting                   02 §4 AUD-VOICEOVER
+VOREC_01                                     02 §4 AUD-VOICEOVER | 04 §1 UI-THEME
+VOREC_02                                     01 §2 TL-OUTPUTTIMELINE | 02 §4 AUD-VOICEOVER
+VOREC_03                                     02 §4 AUD-VOICEOVER
+VOLIVE_01                                    02 §4 AUD-VOICEOVER
+RefreshRecordingIndicator                    02 §4 AUD-VOICEOVER
+ResolveRecordingIndicator                    02 §4 AUD-VOICEOVER
+RecordingPhase                               02 §4 AUD-VOICEOVER
+RecordingPulseLimit                          02 §4 AUD-VOICEOVER | 04 §1 UI-THEME
+SourceEndForCapturedAudio                    01 §2 TL-OUTPUTTIMELINE
+BuildStudioTimeline                          01 §2 TL-OUTPUTTIMELINE
+LiveRecordingCanvas                          02 §4 AUD-VOICEOVER | 04 §1 UI-THEME
+LiveTakeMeter                                02 §4 AUD-VOICEOVER
+LiveTakeSnapshot                             02 §4 AUD-VOICEOVER
+LiveTake                                     02 §4 AUD-VOICEOVER
 MinHeight                                    04 §2 UI-DPI | 05 §3 SYS-WINSTATE
 MinWidth                                     04 §2 UI-DPI | 05 §3 SYS-WINSTATE
 MixFader                                     04 §1 UI-THEME
 MobileFilterBuilder                          01 §1 TL-PORTRAIT | 03 (mini-map only)
 MPVEOF_01                                    02 §2a AUD-IPCSTATE
+SEEKSETTLE_01                                02 §2a AUD-IPCSTATE
+IsSeeking                                   02 §2a AUD-IPCSTATE
 MPVSHUTDOWN_01                               05 §3 SYS-WINSTATE
 MpvIpcClient                                 02 §1 AUD-MASTERVOL | 03 §9 FFM-BINPATH
 MusicVolSlider                               02 §6 AUD-DIALOGS
@@ -412,7 +523,6 @@ OnPointerReleased                            02 | 04   [code-only: FluidVolumeSl
 OnPointerWheelChanged                        04 (mini-map only)
 OnTick                                       01 (mini-map only)
 OnTrackSelected                              02 §6 AUD-DIALOGS
-OnVolumeChanged                              02   [code-only: VoiceOverWindow.axaml.cs]
 OnlineFrameAccumulator                       01 §12 TL-HUDSTREAMING
 OutputTimeline                               01 §2 TL-OUTPUTTIMELINE | 02 §6 AUD-DIALOGS
 OverlayCanvas                                04 §5 UI-COACH
@@ -516,6 +626,14 @@ IVoiceCaptureSession                         02 §4 AUD-VOICEOVER
 VOCAPTURE_01                                 02 §4 AUD-VOICEOVER
 VOCAPTURE_02                                 02 §4 AUD-VOICEOVER
 VOASYNC_02                                   02 §4 AUD-VOICEOVER
+VORECOVERY_01                                02 §4 AUD-VOICEOVER | 05 §5 WRITEORDER_03
+MICHEALTH_02                                 02 §4 AUD-VOICEOVER | 06 PROJ-AOTPOLICY
+MICSMOKE_01                                  02 §4 AUD-VOICEOVER
+MICSMOKE_02                                  02 §4 AUD-VOICEOVER
+VORECOVERY_02                                02 §4 AUD-VOICEOVER
+SESSIONOWNER_01                              02 §4 AUD-VOICEOVER
+VoiceOverRecoveryManager                     02 §4 AUD-VOICEOVER
+IVoiceOverRecoveryStore                      02 §4 AUD-VOICEOVER
 VolumeChanged                                02   [code-only: VoiceRecorder.cs, VoiceCaptureSession.cs]
 VolumeSlider                                 02 (mini-map only)
 VOMON_02                                     02 §4 AUD-VOICEOVER
@@ -545,7 +663,24 @@ ZoomPreviewSimulator                         02 §4 AUD-VOICEOVER | 03 (mini-map
 ZoomRampSeconds                              03  [= 0.5]   [code-only: GranularSpeedBuilder.cs, ZoomPreviewSimulator.cs]
 AOTSAFETY_01                                 06 §4 PROJ-AOT
 EndGesture                                   07 §2 UNDO-RULES
-GestureIdleMs                                07 §2 UNDO-RULES  [= 900]
+GestureIdleMs                                07 §2 UNDO-RULES  [= 900; GranularEditHistory.GestureIdleMs = 700]
+GestureIdle                                  07 §2 UNDO-RULES   (per-instance U1 window, UNDO_26)
+TouchGesture                                 07 §2 UNDO-RULES   (UNDO_26)
+UNDO_26                                      07 §7 UNDO-MIGRATION | 04 §6 UI-GRANULAR
+UNDO_27                                      07 §7 UNDO-MIGRATION
+UNDO_28                                      07 §7 UNDO-MIGRATION
+GranularEditHistory                          07 §7 UNDO-MIGRATION
+GranularEditSession                          07 §8 UNDO-EDITSTATE | 08 §3a COMP-MVVM (EDITSTATE_01)
+GranularHistoryParking                       07 §8 UNDO-EDITSTATE (UNDO_25 slot)
+CropEditSession                              07 §8 UNDO-EDITSTATE | 08 §3a COMP-MVVM (EDITSTATE_01)
+CropLayer                                    07 §8 UNDO-EDITSTATE
+EDITSTATE_01                                 07 §8 UNDO-EDITSTATE | 08 §3a COMP-MVVM
+GranularEditorSnapshot                       07 §7 UNDO-MIGRATION
+ParkedGranularHistory                        07 §7 UNDO-MIGRATION
+CropLayoutSnapshot                           07 §7 UNDO-MIGRATION
+CropHistoryLabels                            07 §7 UNDO-MIGRATION
+MusicWizardSnapshot                          07 §7 UNDO-MIGRATION
+HistoryShortcut                              07 §7 UNDO-MIGRATION
 U1                                           07 §2 UNDO-RULES
 U2                                           07 §2 UNDO-RULES
 U3                                           07 §2 UNDO-RULES
@@ -621,6 +756,20 @@ UNDO_20                                      07 §2 UNDO-RULES
 UNDO_21                                      07 §3 UNDO-STATE   [code-only: ProjectSession.cs]
 UNDO_22                                      04 §6 UI-GRANULAR   [code-only: MainWindow.Project.cs]
 UPDATETRUST_02                               05 §5 SYS-SIGNING
+UPDATEUX_01                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (Remind me later)
+UPDATEUX_02                                  05 §6 SYS-AUTOUPDATE   (size + time in the prompt)
+UPDATEUX_03                                  05 §6 SYS-AUTOUPDATE   (download window stages, speed, safety check)
+UPDATEUX_04                                  05 §6 SYS-AUTOUPDATE   (Restart & update now)
+UPDATEUX_05                                  05 §6 SYS-AUTOUPDATE   (unsigned copy told before download)
+UPDATEUX_06                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (Last checked)
+UPGRADEUX_01                                 05 SYS-UPGRADEUX   (broker progress window, worker progress)
+UPGRADEUX_02                                 05 SYS-UPGRADEUX   (UAC explained first)
+UPGRADEUX_03                                 05 SYS-UPGRADEUX   (close open app before UAC)
+UPGRADEUX_04                                 05 SYS-UPGRADEUX   (plain failures, previous version reopened)
+UPGRADEUX_05                                 05 SYS-UPGRADEUX   (first-launch "Finishing… / Updated")
+UPGRADEUX_06                                 05 SYS-UPGRADEUX   (installer window first, worker copy in background)
+DEVDATA_01                                   05 §4a SYS-DEVBUILD   (dev sandbox in %LOCALAPPDATA%, AI keys kept)
+DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (dev updates from .\compiled)
 VERIFYHALT_01                                05 §4a SYS-DEVBUILD
 SYS-VERIFYTOOL                               05 SYS-VERIFYTOOL
 SYS-CI                                       08 COMP-CI | 09 §5 DIST-CIWATCH
@@ -688,6 +837,18 @@ FRAMESNAP_01                                 03 §12 FFM-SCRAPER
 ExportTimingTag                              03 §12 FFM-SCRAPER
 SCRAPER_02                                   03 §12 FFM-SCRAPER
 SCRAPER_03                                   03 §12 FFM-SCRAPER
+LIBAVPROBE_01                                03 §13 FFM-LIBAVPROBE
+LIBAVPROBE_02                                03 §13 FFM-LIBAVPROBE
+LIBAVPROBE_03                                03 §13 FFM-LIBAVPROBE
+MediaMetadataProbe                           03 §13 FFM-LIBAVPROBE
+FVS_MEDIA_PROBE                              03 §13 FFM-LIBAVPROBE
+LIBAVFRAME_01                                03 §14 FFM-LIBAVFRAME
+LIBAVFRAME_02                                03 §14 FFM-LIBAVFRAME
+LIBAVFRAME_03                                03 §14 FFM-LIBAVFRAME
+LIBAVFRAME_04                                03 §14 FFM-LIBAVFRAME
+LIBAVFRAME_05                                03 §14 FFM-LIBAVFRAME
+VideoFrameGrabber                            03 §14 FFM-LIBAVFRAME
+FVS_FRAME_DECODE                             03 §14 FFM-LIBAVFRAME
 SCRAPER_04                                   03 §12 FFM-SCRAPER
 SCRAPER_05                                   03 §12 FFM-SCRAPER
 IntroTag                                     03 §12 FFM-SCRAPER
@@ -771,6 +932,24 @@ VOPREVIEW_01                                 02 §2b AUD-PREVIEWMIX
 AudioGraphPruner                             02 §2b AUD-PREVIEWMIX
 AudioPreviewMap                              02 §2b AUD-PREVIEWMIX
 AudioPreviewOutputPath                       02 §2b AUD-PREVIEWMIX
+PREVIEWMIX_02                                02 §2b AUD-PREVIEWMIX
+THUMBAUDIO_01                                02 §2b AUD-PREVIEWMIX
+RenderedMixGate                              02 §2b AUD-PREVIEWMIX
+PreviewMixPolicy                             02 §2b AUD-PREVIEWMIX | 03 §3a FFM-TEMPO
+RefreshPreviewMixState                       02 §2b AUD-PREVIEWMIX
+VOPREVIEW_02                                 02 §2b AUD-PREVIEWMIX
+VoiceProtectionPulseAt                       02 §2b AUD-PREVIEWMIX
+UpdatePreviewVoiceProtection                 02 §2b AUD-PREVIEWMIX
+AIPARITY_01                                  03 §2 FFM-ZOOMGRAPH | 01 §6 TL-ZOOM
+EvaluateExportCrop                           03 §2 FFM-ZOOMGRAPH
+AiOriginSec                                  03 §2 FFM-ZOOMGRAPH  [code-only: GranularSpeedBuilder.cs]
+CORNERPARITY_01                              03 §4a FFM-MEMECORNER | 01 §7 TL-MEME | 04 §10 UI-MEMESELECT
+PREVIEWFIDELITY_01                           04 §14 UI-PREVIEWFIDELITY | 03 §2 FFM-ZOOMGRAPH | 03 §11 FFM-COLOR
+PreviewFidelity                              04 §14 UI-PREVIEWFIDELITY
+PreviewFidelityBadge                         04 §14 UI-PREVIEWFIDELITY
+EdgeClamped                                  03 §2 FFM-ZOOMGRAPH
+AnyEdgePadding                               03 §2 FFM-ZOOMGRAPH
+MaterialEdgeFraction                         03 §2 FFM-ZOOMGRAPH  [= 0.01]
 VOLSHARED_01                                 02 §1 AUD-MASTERVOL
 VOLMUTE_01                                   02 §1 AUD-MASTERVOL
 VOLCURVE_01                                  02 §1 AUD-MASTERVOL
@@ -824,7 +1003,7 @@ CROPFALLBACK_02                              05 §4 SYS-RECOVERY
 SPECTATINGDEFAULT_01                         04 §4 UI-SAFEGUARDS
 NO_BOSS_HP_01                                04 §4 UI-SAFEGUARDS
 SAVECONFIRM_01                               04   [code-only: CropToolWindow.axaml.cs]
-MAGICWAND_01                                 04   [code-only: CropToolWindow.axaml.cs]
+MAGICWAND_01                                 04 §13a UI-AIHUDWAND   [code-only: CropToolWindow.MagicWand.cs]
 DELETEBTN_01                                 04   [code-only: CropToolWindow.axaml.cs]
 DELETESET_01                                 04   [code-only: CropToolWindow.axaml.cs]
 CROPCANVAS_01                                04   [code-only: CropToolWindow.axaml.cs]

@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
@@ -74,24 +74,35 @@
                                            RecordingLight (left, red)  — lit ONLY while capture is live.
                                            ReadyLamp      (right, green) — lit when a microphone is
                                                                            present and the preview is up.
+                                         VOREC_01 — the left lamp is a SHAPE as well as a colour (dot =
+                                         live, ring = starting/saving, two bars = paused, triangle =
+                                         failed, tick = saved) and RecordingBadgeText says it in words
+                                         with the CAPTURED-audio time ("REC 0:07.3"). Both, plus the
+                                         status word on the right, are written by ONE method:
+                                         VoiceOverWindow.RefreshRecordingIndicator.
                                          ⚠️ Avalonia Grid has NO ColumnSpacing (that is WinUI/WPF and it
                                          fails the WHOLE file with AVLN:0004). Gaps are Margins.
                                          ════════════════════════════════════════════════════════════ -->
                                     <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" VerticalAlignment="Center">
 
                                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,10,0">
-                                            <Ellipse Name="RecordingLight" Width="14" Height="14" Opacity="0.18"
-                                                     Fill="{DynamicResource AppDangerBrush}"
-                                                     ToolTip.Tip="Lit and pulsing only while your microphone is actually capturing"/>
-                                            <TextBlock Text="REC" VerticalAlignment="Center" FontWeight="Bold"
+                                            <Path Name="RecordingLight" Width="14" Height="14" Opacity="0.18" Stretch="Uniform"
+                                                  Data="M7,1 A6,6 0 1 1 6.99,1 Z"
+                                                  Fill="{DynamicResource AppDangerBrush}" VerticalAlignment="Center"
+                                                  ToolTip.Tip="Solid red only while audio is actually arriving from your microphone"/>
+                                            <TextBlock Name="RecordingBadgeText" Text="REC" VerticalAlignment="Center" FontWeight="Bold"
+                                                       MinWidth="104" Padding="6,3" TextAlignment="Center"
                                                        FontSize="{DynamicResource AppFontSize12}"
-                                                       Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                                       Foreground="{DynamicResource AppTextMutedBrush}"
+                                                       AutomationProperties.Name="Recording state and captured audio time"/>
                                         </StackPanel>
 
                                         <!-- Realistic Mic Button -->
                                         <Button Grid.Column="1" Name="MicRecordButton" Classes="Danger" MinWidth="70" MinHeight="50" Margin="0,0,10,0" ToolTip.Tip="Start or stop voiceover recording (V)" AutomationProperties.Name="Start or stop voiceover recording" IsEnabled="False">
                                             <Panel Width="{DynamicResource AppFontSize16}" Height="{DynamicResource AppFontSize16}">
                                                 <Path Name="MicIcon" Fill="{DynamicResource AppOnAccentTextBrush}" Stretch="Uniform" Data="M12,14c1.66,0,3-1.34,3-3V5c0-1.66-1.34-3-3-3S9,3.34,9,5v6C9,12.66,10.34,14,12,14z M17,11c0,2.76-2.24,5-5,5s-5-2.24-5-5H5c0,3.53,2.61,6.43,6,6.92V21h2v-3.08c3.39-0.49,6-3.39,6-6.92H17z" />
+                                                <!-- VOREC_01 — while a take is running the same button STOPS it, so it shows a stop square. -->
+                                                <Path Name="MicStopIcon" Fill="{DynamicResource AppOnAccentTextBrush}" Stretch="Uniform" IsVisible="False" Data="M6,6 H18 V18 H6 Z" />
                                             </Panel>
                                         </Button>
 
@@ -111,11 +122,17 @@
                                             </Panel>
                                         </Button>
 
-                                        <!-- EQ meter — live from the moment a microphone is selected,
-                                             not only while recording (MicLevelMonitor). -->
-                                        <Border Grid.Column="3" Name="EqMeterTrack" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" MinWidth="140" Height="34" Margin="0,0,10,0" ClipToBounds="True"
-                                                ToolTip.Tip="Live input level from the selected microphone. Speak — it should move even before you press record.">
-                                            <Canvas Name="EqMeterCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                                        <!-- SPECTRUM_03 / SPECTRUM_04 — the microphone's REAL frequency spectrum,
+                                             live from the moment a microphone is selected, not only while
+                                             recording. One narrow bar per band, 60 Hz (left) to 16 kHz
+                                             (right); height = band level (-60..0 dBFS); green / amber / red =
+                                             level zone. 68px tall (was a 34px strip): the bars need the height
+                                             to be legible, and the transport buttons are 50px so the row grows
+                                             by 18px out of the video's star row, not out of the timeline. -->
+                                        <Border Grid.Column="3" Name="EqMeterTrack" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" Background="{DynamicResource AppMeterBackgroundBrush}" CornerRadius="4" MinWidth="140" Height="68" Margin="0,0,10,0" ClipToBounds="True"
+                                                ToolTip.Tip="Live microphone frequency spectrum. Each bar is one frequency band, from low (60 Hz, left) to high (16 kHz, right); bars rise with the sound in that band. Green is a normal level, amber is getting loud (above -18 dBFS), red is close to clipping (above -6 dBFS). Silence shows empty bars. The analyzer resolves about 11 Hz, so the lowest bars are each a single analysis bin."
+                                                AutomationProperties.Name="Microphone frequency spectrum meter, low frequencies on the left, high frequencies on the right">
+                                            <controls:MicrophoneSpectrumControl Name="SpectrumMeter" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" />
                                         </Border>
 
                                         <!-- Play Pause -->
@@ -130,7 +147,7 @@
                                             <Ellipse Name="ReadyLamp" Width="14" Height="14" Opacity="0.18"
                                                      Fill="{DynamicResource AppSuccessBrush}"
                                                      ToolTip.Tip="Green when a microphone is connected and the studio is ready to record"/>
-                                            <TextBlock Name="RecordingStatusText" Text="READY" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold"/>
+                                            <TextBlock Name="RecordingStatusText" Text="LOADING PREVIEW" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold"/>
                                         </StackPanel>
                                     </Grid>
 
@@ -168,7 +185,6 @@
                                                      strip of tick marks. They belong over the picture they were
                                                      recorded against. The voice waveform is drawn INSIDE each
                                                      red block by a background worker (see EnsureTakePeaksAsync). -->
-                                                <Canvas Name="TakeOverlayCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ClipToBounds="True"/>
                                                 <Border Name="ThumbLoadingOverlay" Background="{DynamicResource AppOverlayBrush}" IsHitTestVisible="False" IsVisible="False">
                                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="5">
                                                         <ProgressBar IsIndeterminate="True" Width="60" Height="3" Foreground="{DynamicResource AppWarningBrush}" Background="{DynamicResource AppControlTrackBrush}"/>
@@ -176,6 +192,14 @@
                                                     </StackPanel>
                                                 </Border>
                                                 <TextBlock Name="ThumbFallbackText" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False" IsVisible="False"/>
+                                                <!-- ⚠️ VOREC_03 / SLIDER_09 — DECLARATION ORDER IS THE PAINT ORDER. The take canvas
+                                                     and the live recording canvas are declared AFTER ThumbLoadingOverlay so that a
+                                                     take (and above all the take being recorded) is drawn ON TOP of the "Generating
+                                                     Frames..." scrim instead of being hidden by it while frames are still loading.
+                                                     The overlay is IsHitTestVisible="False", so the take blocks stay clickable.
+                                                     Do not "tidy" these back above the overlay. -->
+                                                <Canvas Name="TakeOverlayCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ClipToBounds="True"/>
+                                                <Canvas Name="LiveRecordingCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ClipToBounds="True" IsHitTestVisible="False"/>
                                                 <Border Name="ThumbPlayheadLine" Width="2" Background="{DynamicResource AppDangerBrush}" HorizontalAlignment="Left" VerticalAlignment="Stretch" IsHitTestVisible="False"/>
                                             </Grid>
 
@@ -246,6 +270,8 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Name="VoiceOverHintText" Grid.Column="0" Text="Record a take before applying. Cancel discards unapplied takes." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,15,0"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Right">
+                                <Button Name="RecoverFailedTakesButton" Classes="Secondary" Content="RECOVER AUDIO" MinWidth="130" IsVisible="False" ToolTip.Tip="Recover and accept audio from unfinalized take into session" />
+                                <Button Name="DiscardFailedTakesButton" Classes="Warning" Content="DISCARD FAILED TAKE" MinWidth="160" IsVisible="False" ToolTip.Tip="Discard unresolved failed take to allow applying valid takes" />
                                 <!-- ISSUE_04: the permanent, always-available way back into this screen's walkthrough.
                                      The walkthrough auto-plays only on the first few opens; this button is
                                      how a returning user gets it again. Every screen in the suite has one. -->

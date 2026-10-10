@@ -68,6 +68,14 @@ public class AppSettings
     /// <summary>AI SMART ZOOM — Gemini vision model name (default "gemini-2.5-flash").</summary>
     public string GeminiModelName { get; set; } = "gemini-2.5-flash";
 
+    /// <summary>
+    /// AIHUD_05 — true once the user has agreed, in the Crop Tool, that the Magic Wand may send ONE
+    /// frozen frame to the configured AI provider. Default false: until then the wand runs offline
+    /// only. Additive field (missing on disk reads as false), so no schema bump is required.
+    /// Holds a yes/no only — never a credential.
+    /// </summary>
+    public bool AiMagicWandCloudConsent { get; set; }
+
     /// <summary>AI SMART ZOOM — Base tight zoom multiplier (default 2.2x, range 1.5x - 4.0x).</summary>
     public double AiZoomBaseScale { get; set; } = 2.2;
 

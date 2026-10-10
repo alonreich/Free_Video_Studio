@@ -1,102 +1,50 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
 using System;
+using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>The four answers the update prompt can give, in importance order.</summary>
 public enum UpdateChoice
 {
-    /// <summary>Closed via the title bar without picking; treated as "not now" with no state change.</summary>
+    /// <summary>Closed with the title-bar X. Nothing is stored; offered again on a later start.</summary>
     Dismissed,
 
-    /// <summary>"Yes. Please download and upgrade to the latest released version now."</summary>
     UpdateNow,
 
-    /// <summary>"No. I like this version." — nothing stored; may be asked again on a later start.</summary>
+    /// <summary>UPDATEUX_01 — "Remind me later". Nothing is stored; offered again on a later start.</summary>
     NotNow,
 
-    /// <summary>"Skip this version…" — this exact release is never offered again; newer ones are.</summary>
     SkipThisVersion,
 
-    /// <summary>"Never tell me about updates again." — flips AutoUpdateChecks to false in Settings.</summary>
     NeverTellMeAgain
 }
 
+/// <summary>The update suggestion modal. All state lives in <see cref="UpdateAvailableViewModel"/>.</summary>
 public partial class UpdateAvailableWindow : Window
 {
-    public UpdateChoice Choice { get; private set; } = UpdateChoice.Dismissed;
-
     public UpdateAvailableWindow()
     {
-        InitializeComponent();
-
-        Wire("UpdateNowBtn", UpdateChoice.UpdateNow);
-        Wire("SkipBtn", UpdateChoice.SkipThisVersion);
-        Wire("NeverBtn", UpdateChoice.NeverTellMeAgain);
-
-        AddHandler(InputElement.KeyDownEvent, (s, e) =>
-        {
-            if (e.Key == Key.Escape)
-            {
-                Choice = UpdateChoice.Dismissed;
-                Close();
-            }
-        }, RoutingStrategies.Tunnel);
+        AvaloniaXamlLoader.Load(this);
     }
 
-    private void Wire(string buttonName, UpdateChoice choice)
-    {
-        var button = this.FindControl<Button>(buttonName);
-        if (button != null)
-            button.Click += (s, e) => { Choice = choice; Close(); };
-    }
-
-    public void SetVersions(Version local, string remoteTag, string? releaseNotes = null)
-    {
-        string remote = remoteTag.TrimStart('v', 'V');
-        var yourVersion = this.FindControl<TextBlock>("YourVersionText");
-        var newVersion = this.FindControl<TextBlock>("NewVersionText");
-        if (yourVersion != null) yourVersion.Text = $"Your version:  {local}";
-        if (newVersion != null) newVersion.Text = $"New version:  {remote}";
-
-        var notesExpander = this.FindControl<Expander>("ReleaseNotesExpander");
-        var notesText = this.FindControl<TextBlock>("ReleaseNotesText");
-        if (notesExpander != null && notesText != null)
-        {
-            if (!string.IsNullOrWhiteSpace(releaseNotes))
-            {
-                notesText.Text = releaseNotes.Trim();
-                notesExpander.IsVisible = true;
-                notesExpander.IsExpanded = true;
-            }
-            else
-            {
-                notesText.Text = "No release notes were provided for this release.";
-                notesExpander.IsVisible = true;
-                notesExpander.IsExpanded = false;
-            }
-        }
-    }
-
-    /// <summary>
-    /// AUTO-UPDATE — shows the four-way update prompt. A prompt that cannot be shown must never
-    /// be interpreted as consent, so any failure collapses to <see cref="UpdateChoice.NotNow"/>.
-    /// </summary>
-    public static async Task<UpdateChoice> AskAsync(Window owner, Version localVersion, string remoteTag, string? releaseNotes = null)
+    /// <param name="downloadSizeText">UPDATEUX_02 — e.g. "Download size: 18 MB (about a minute)".</param>
+    /// <param name="canInstallItself">UPDATEUX_05 — false when this copy cannot verify an update.</param>
+    public static async Task<UpdateChoice> AskAsync(Window owner, Version localVersion, string remoteTag,
+        string? releaseNotes = null, string? downloadSizeText = null, bool canInstallItself = true)
     {
         try
         {
-            var dlg = new UpdateAvailableWindow();
-            dlg.SetVersions(localVersion, remoteTag, releaseNotes);
+            var vm = new UpdateAvailableViewModel(localVersion, remoteTag, releaseNotes, downloadSizeText, canInstallItself);
+            var dlg = new UpdateAvailableWindow { DataContext = vm };
+            vm.CloseRequested += dlg.Close;
             await dlg.ShowDialog(owner);
-            return dlg.Choice;
+            return vm.Choice;
         }
         catch (Exception ex)
         {
@@ -104,6 +52,4 @@ public partial class UpdateAvailableWindow : Window
             return UpdateChoice.NotNow;
         }
     }
-
-    private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
 }

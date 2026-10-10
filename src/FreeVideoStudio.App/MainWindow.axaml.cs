@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/SPEC_GOVERNANCE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using Avalonia.Platform.Storage;
@@ -97,14 +97,14 @@ public partial class MainWindow : Window
     /// </summary>
     private double _loadedVideoDurationMs = 0;
 
-    private NAudio.Wave.WaveOutEvent? _voiceOverPlayer;
+    private NAudio.Wave.WaveOut? _voiceOverPlayer;
     private FreeVideoStudio.Core.Media.WavAudioReader? _voiceOverReader;
     private readonly List<VoiceOverPreviewTake> _voiceOverPreviewTakes = new();
 
     private sealed class VoiceOverPreviewTake
     {
         public required VoiceOverTake Take { get; init; }
-        public required NAudio.Wave.WaveOutEvent Player { get; init; }
+        public required NAudio.Wave.WaveOut Player { get; init; }
         public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
         public double StartProjectSec { get; set; }
         /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>

@@ -9,7 +9,17 @@ set "DOTNET_WATCH_SUPPRESS_EMOJIS=1"
 set "REPO_ROOT=%CD%"
 
 REM Sandbox the developer config to prevent corrupting the real installed app settings.
-set "FVS_PROGRAMDATA_ROOT=%TMP%\FreeVideoStudio_DEV\.dev_data"
+REM DEVDATA_01 - the sandbox lives in %LOCALAPPDATA%, NOT in %TMP%. Windows Storage Sense and
+REM Disk Cleanup empty %TMP%, which silently threw away the dev settings and the Gemini key.
+REM build\DevSandbox.ps1 moves the old %TMP% sandbox across once and keeps the AI settings.
+set "FVS_DEV_HOME=%LOCALAPPDATA%\FreeVideoStudio_DEV"
+set "FVS_PROGRAMDATA_ROOT=%FVS_DEV_HOME%\data"
+
+REM DEVUPDATE_01 - in dev the updater looks for a newer build in .\compiled (made by
+REM dev_build.cmd) instead of GitHub, then runs the same download, check and install flow.
+REM The dev app is unsigned, so the documented developer override lets it accept that build.
+set "FVS_DEV_UPDATE_SOURCE=%REPO_ROOT%"
+set "FVS_ALLOW_UNSIGNED_UPDATE=1"
 
 REM ----------------------------------------------------------------------
 REM DEV LOG DIRECTORY: All dev-mode logs go EXCLUSIVELY to
@@ -24,6 +34,7 @@ REM STALE-STATE PURGE. Runs before EVERY mode, no exceptions.
 REM ======================================================================
 call :KILL_STALE
 call :WIPE_DEV_CONFIG
+call :DEV_SANDBOX
 call :VERIFY_PATCHES
 REM VERIFYHALT_01 - `exit /b` inside a CALLed subroutine returns from the SUBROUTINE, not
 REM from the script. Without this line the halt above would set an errorlevel nobody reads
@@ -45,8 +56,9 @@ echo Usage:
 echo   dev          Hot reload mode. App stays open, UI updates on save. (Performs clean first)
 echo   dev run      Single Debug launch. (Incremental, fast)
 echo   dev build    Build only, no run. (Incremental, fast)
-echo   dev fresh    Like 'dev', but ALSO wipes the sandboxed config/state (.dev_data)
-echo                so the app boots as if freshly installed.
+echo   dev fresh    Like 'dev', but ALSO wipes the sandboxed config/state
+echo                so the app boots as if freshly installed. The Gemini key and
+echo                AI settings are kept.
 echo   dev restore  Restore NuGet packages after project/package changes.
 echo   dev clean    Clean Debug output.
 echo   dev trace    Like 'dev', but writes the log to .devlogs\ INSIDE the repo so
@@ -72,6 +84,7 @@ goto WATCH
 
 :FRESH
 call :WIPE_DEV_DATA
+call :DEV_SANDBOX
 goto WATCH
 
 :WATCH
@@ -190,8 +203,16 @@ if exist "%FVS_DEV_LOG_DIR%" (
 goto :EOF
 
 REM ======================================================================
+REM Subroutine: DEV_SANDBOX - DEVDATA_01. Keeps settings and AI keys between runs.
+REM Never fails the run; problems print a warning. See build\DevSandbox.ps1.
+REM ======================================================================
+:DEV_SANDBOX
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\build\DevSandbox.ps1" -DevData "%FVS_PROGRAMDATA_ROOT%" -OldDevData "%TMP%\FreeVideoStudio_DEV\.dev_data" -KeepDir "%FVS_DEV_HOME%\keep" -ProdData "%LOCALAPPDATA%\FreeVideoStudio"
+goto :EOF
+
+REM ======================================================================
 REM Subroutine: wipe the sandboxed config/state (OPT-IN via 'dev fresh').
-REM Deletes .dev_data entirely so the app re-creates defaults on next boot:
+REM Deletes the sandbox data folder so the app re-creates defaults on next boot:
 REM session_state.json, recovery sentinels, window bounds, settings.
 REM NOT part of the default run - a plain 'dev.cmd' keeps your settings.
 REM ======================================================================

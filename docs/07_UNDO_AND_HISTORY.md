@@ -3,10 +3,17 @@
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
-| `src/FreeVideoStudio.Core/Undo/UndoStack.cs` | `UndoStack<T>`, `UndoEntry<T>` | `Apply`, `Undo`, `Redo`, `Reset`, `Restore`, `ReplaceCurrent`, `EndGesture`, `NextUndoLabel`, `NextRedoLabel`, `DefaultMaxDepth`, `GestureIdleMs` | Application-wide history |
+| `src/FreeVideoStudio.Core/Undo/UndoStack.cs` | `UndoStack<T>`, `UndoEntry<T>` | `Apply`, `Undo`, `Redo`, `Reset`, `Restore`, `ReplaceCurrent`, `EndGesture`, `TouchGesture`, `NextUndoLabel`, `NextRedoLabel`, `DefaultMaxDepth`, `GestureIdleMs`, `GestureIdle` | Application-wide history |
 | ⚠ `src/FreeVideoStudio.Core/Project/ProjectDocument.cs` | `ProjectDocument` | immutable state carried by the stack | CO-GOVERNED by `06_PROJECT_DOCUMENT_MODEL.md` |
-| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `PushUndo`, `CaptureSnapshot`, `_undoStack` | the ORIGIN of U1–U4; to be migrated onto `UndoStack<T>` | CO-GOVERNED by `01`, `04`, `05` |
-| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs` | `GranularSpeedEditorWindow` (Partial) | `ParkHistoryForReopen`, `AdoptParkedHistory`, `_parkedHistory`, `HistoryKey` | CO-GOVERNED by `04` |
+| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `PushUndo` / `EndUndoGesture` call sites, `ClearUndoHistory("changes applied")` | the ORIGIN of U1–U4; migrated onto `UndoStack<T>` (UNDO_26) | CO-GOVERNED by `01`, `04`, `05` |
+| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs` | `GranularSpeedEditorWindow` (Partial) | `PushUndo`, `CaptureSnapshot`, `PerformUndo`, `PerformRedo`, `RestoreSnapshot`, `ClearUndoHistory`, `ParkHistoryForReopen`, `AdoptParkedHistory`, `_parkedHistory`, `_historyBaseline`, `HistoryKey` | CO-GOVERNED by `04` |
+| `src/FreeVideoStudio.Core/Undo/GranularEditHistory.cs` | `GranularEditHistory`, `GranularEditorSnapshot`, `ParkedGranularHistory` | `Checkpoint`, `EndGesture`, `Undo`, `Redo`, `Clear`, `Park`, `BelongsTo`, `TryAdopt`, `MaxDepth = 40`, `GestureIdleMs = 700` | Granular adapter onto `UndoStack<T>` (UNDO_26) |
+| `src/FreeVideoStudio.Core/Undo/CropLayoutSnapshot.cs` | `CropLayoutSnapshot`, `CropItemState`, `CropHistoryLabels` | `Create`, `ForPointerGesture` | Crop Tool history state (UNDO_27) |
+| `src/FreeVideoStudio.Core/Undo/MusicWizardSnapshot.cs` | `MusicWizardSnapshot`, `HistoryShortcut`, `HistoryCommand` | `DescribeChange`, `Classify` | Music wizard history state + shared shortcut table (UNDO_28) |
+| `src/FreeVideoStudio.App/CropToolWindow.History.cs` | `CropToolWindow` (Partial) | `InitializeHistory`, `Undo`, `Redo`, `StepHistory`, `PushHistory`, `RebuildLayerVisuals`, `RefreshUndoRedoButtons` | Crop Tool undo/redo — the window's half (UNDO_27, EDITSTATE_01) |
+| ⚠ `src/FreeVideoStudio.Core/Editing/GranularEditSession*.cs` | `GranularEditSession`, `GranularHistoryParking`, `GranularRestoreStep`, `EditOutcome` | `Capture`, `ApplySnapshot`, `Checkpoint`, `Checkpointed`, `EndGesture`, `Undo`, `Redo`, `BeginRestore`, `ClearHistory`, `AdoptParkedHistory`, `ParkHistory`, `DescribeRestore` | Granular durable edit state + history owner (EDITSTATE_01). **⚠ CO-GOVERNED BY: 01, 04, 08** |
+| ⚠ `src/FreeVideoStudio.Core/Editing/CropEditSession.cs` | `CropEditSession`, `CropLayer`, `CropHudRole`, `CropSourceRect` | `History`, `Capture`, `Record`, `Step`, `ApplySnapshot`, `ResetHistory`, `IsRestoring`, `SelectedRoleKey` | Crop durable edit state + history owner (EDITSTATE_01). **⚠ CO-GOVERNED BY: 01, 04, 05** |
+| `src/FreeVideoStudio.App/MusicWizardWindow.History.cs` | `MusicWizardWindow` (Partial) | `_history`, `RecordWizardEdit`, `EndWizardGesture`, `SyncWizardHistoryBaseline`, `ResetWizardHistory`, `StepWizardHistoryAsync`, `ApplyWizardSnapshotAsync` | Music wizard undo/redo (UNDO_28) |
 | `src/FreeVideoStudio.Core/Undo/UndoSidecarStore.cs` | `UndoSidecarStore`, `UndoSidecar` | `Save`, `Load`, `Delete`, `PathFor`, `MaxEntries`, `SchemaVersion` | Per-machine history sidecar (UNDO_24) |
 | ⚠ `src/FreeVideoStudio.App/Services/ProjectSession.cs` | `ProjectSession` | `BeginHistory`, `PushEdit`, `EndGesture`, `Undo`, `Redo`, `NextUndoLabel`, `NextRedoLabel` | CO-GOVERNED by `06`, `08` |
 | ⚠ `src/FreeVideoStudio.App/MainWindow.Project.cs` | `MainWindow` (Partial) | `PushProjectEdit`, `EndProjectGesture`, `BeginProjectHistory`, `OnProjectDocumentApplied` | CO-GOVERNED by `06`, `08` |
@@ -36,6 +43,11 @@ These come from the editor's `PushUndo`. They were paid for in bug reports. Do n
   ⚠ The idle clock is refreshed **even when the push is dropped**, so the window tracks the LAST
   movement and a slow drag never splits in two. `EndGesture()` on pointer-release is what keeps two
   successive drags of the same handle separately undoable.
+  ⚠ **`UNDO_26` — the window is PER INSTANCE.** `new UndoStack<T>(initial, maxDepth, gestureIdleMs)`;
+  the default stays `GestureIdleMs = 900` for every existing caller. The Granular editor passes its own
+  long-standing 700ms so the migration did not change how a drag feels; no editor's tuning is global.
+  `TouchGesture(key)` refreshes the clock of the gesture ALREADY OPEN under that key when a push turned
+  out to be a no-op (U4 returns before the bookkeeping) — it can extend a gesture, never open one.
 * **U2 — CEILING ON PUSH.** `MaxDepth = 40` (the editor's `MaxUndoDepth`) is applied as the entry
   goes on, never afterwards. Trimming later leaves a window where a large snapshot is alive for
   nothing.
@@ -82,6 +94,12 @@ defect to fix. `Restore` trims from the OLDEST end, matching U2.
 a file that is meant to be portable and shareable — sending a colleague a montage should not send
 them forty snapshots of how it was made. It belongs in a sidecar keyed to the project.
 
+**AUTOSAVEBG_01 — sidecar writes from autosave are off the UI thread.** Autosave copies
+`UndoEntries` / `RedoEntries` to arrays on the UI thread (entries are immutable, so the copy is a
+snapshot) and serialises them via the `UndoSidecarStore.Save(path, fingerprint, undo, redo)`
+overload on the thread pool — never the live `UndoStack`. The fingerprint is still taken from
+`history.Current`, matching the explicit-save path and the check `OpenAsync` performs.
+
 ---
 
 ## 5. Open Work Bound To This Spec  {#UNDO-TODO}
@@ -115,17 +133,17 @@ covering U1–U4, re-entrancy, reset and restore).
    Main App records the returned memes with `PushProjectEdit` and the Merger with `RecordHistory`
    (`MemePresentationModeTests.EveryPropertyChange_IsAnUndoableStep`).
 
+6. **`UNDO_26` — the Granular editor is on `UndoStack<T>`** (over `GranularEditorSnapshot`, not
+   `ProjectDocument`: the editor's state carries the freeze and the selection, which `ProjectDocument`
+   does not model). One implementation remains. See §7.
+7. **`UNDO_27` — the Crop Tool is on `UndoStack<CropLayoutSnapshot>`.** See §7.
+8. **`UNDO_28` — the Music wizard has undo/redo**, on `UndoStack<MusicWizardSnapshot>`. See §7.
+
 **Still not done:**
 
-1. Migrating `GranularSpeedEditorWindow.PushUndo` onto `UndoStack<ProjectDocument>`. The editor
-   keeps its own stack over `EditorSnapshot`, which carries editor-local state (the freeze, the
-   selected segment) that `ProjectDocument` does not model. `UNDO_25` closes the user-visible half
-   of this — history no longer dies with the window — but there are still two implementations.
-2. Undo/Redo in the Music Wizard. It has none. (The Video Merger has it — `MERGEUNDO_01`, `docs/06`
-   item 5. The Crop Tool keeps its own `Stack<EditorSnapshot>` undo/redo — Undo/Redo buttons,
-   Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z — not yet on `UndoStack<T>`.)
-3. Undo/Redo menu labels driven by `NextUndoLabel` / `NextRedoLabel` in the main window. The
-   Granular editor already does this.
+1. Undo/Redo menu labels driven by `NextUndoLabel` / `NextRedoLabel` in the main window. The
+   Granular editor, the Crop Tool (button tooltips) and the Music wizard (the undo notice) already
+   do this.
 
 ---
 
@@ -133,3 +151,70 @@ covering U1–U4, re-entrancy, reset and restore).
 * **UNDOEQ_01:** `ProjectDocument` overrides `Equals`/`GetHashCode`. Lists are compared element-wise, the mask by `ProfileName`+`Fingerprint`, and `Merge` element-wise. `CreatedUtc`, `ModifiedUtc`, `Title` and `UnknownFields` are excluded. The compiler default compared the per-capture arrays BY REFERENCE and included `UtcNow` stamps, so U4 never fired in production.
 * **UNDOEQ_02:** `SaveRecoveryState(label:, gestureKey:)`. Continuous controls pass a key (`speed-dial`, `quality-dial`, `music-nudge`) and call `EndProjectGesture()` on `ValueChangeCompleted`. Every call site names its action.
 * Tests: `ProjectDocumentTests.UndoEq_*`.
+
+---
+
+## 7. Mission 8 — Every Editor On The Shared Stack (UNDO_26 / UNDO_27 / UNDO_28)  {#UNDO-MIGRATION}
+There is ONE history engine: `UndoStack<T>`. No window owns a private stack, coalescer or ceiling.
+Every snapshot type lives in **Core** (`src/FreeVideoStudio.Core/Undo/`), which does not reference
+Avalonia — so a snapshot *cannot* hold a `Control`, `Canvas`, `Bitmap`, `PointerEventArgs`, native
+handle, network request, AI `Task` or preview/cache resource. `SharedHistoryMigrationTests` checks the
+types by reflection as well.
+
+| Editor | State `T` | Labels | Gestures |
+| :--- | :--- | :--- | :--- |
+| Granular | `GranularEditorSnapshot` (segments, cuts, memes, base speed, freeze; selection carried, NOT compared) | the call sites' own (`add segment`, `change speed`, `move meme`, `delete parts`…) | every existing coalesce key; **700ms** window; `EndUndoGesture` on release |
+| Crop Tool | `CropLayoutSnapshot` (committed crops + layout; `DisplayName` carried, not compared) | `CropHistoryLabels`: `move crop`, `resize HUD`, `add HUD element`, `delete HUD element`, `change layer order` | a pointer drag/resize is recorded ONCE, on release, only if it changed something |
+| Music wizard | `MusicWizardSnapshot` (song, auto-fill queue in order, song start, video/music balance, ducking, smooth blend, loop) | `MusicWizardSnapshot.DescribeChange` (`choose song`, `move song start`, `change music balance`…) | fader sweeps, wheel spins, scrubs and keyboard nudges coalesce (900ms default); pointer release ends them |
+
+* **Granular call convention (UNDO_26).** The editor's ~40 call sites record the state BEFORE a change
+  (`PushUndo` at the top of a handler); `UndoStack.Apply` takes the state AFTER. `GranularEditHistory`
+  translates once instead of rewriting forty handlers: `Checkpoint(before)` leaves the action PENDING and
+  it is committed (`Apply(after, label, key)`) at the next sighting of the live state — the next
+  checkpoint, a pointer release, an undo, a redo or parking. U4 became exact: an action that changed
+  nothing records nothing (the old stack stored its before-state anyway → a Ctrl+Z that did nothing).
+* **Magic Wand (UNDO_27).** Scanning, AI/local candidate publication and browsing candidates are NOT
+  history — none of it is in `CropLayoutSnapshot`, and `CropToolWindow.MagicWand.cs` never touches
+  `_history`. Committing a candidate (`AddCurrentSelection`) is exactly one step.
+* **Shortcuts (UNDO_28).** `HistoryShortcut.Classify`: Ctrl+Z undo; Ctrl+Y, Ctrl+Shift+Z (and
+  Ctrl+Shift+Y) redo. A focused text input (`KeyboardFocusPolicy.IsTextInputFocused`) returns `None`
+  and the key is NOT handled, so the text box keeps its own undo. The Granular editor's own handler
+  (Ctrl+Z / Ctrl+Y, always handled) is unchanged.
+* **Restore never records itself.** `UndoStack`'s re-entrancy guard plus each owner's own flag
+  (`GranularEditSession.BeginRestore` / `CropEditSession.IsRestoring` — EDITSTATE_01 — and the Music
+  wizard's `_restoringHistory`); after re-reading, `ReplaceCurrent` (never `Apply`) so normalisation
+  cannot burn the redo branch. The Crop Tool's window rebuild runs INSIDE the guard
+  (`CropEditSession.Step(undo, rebuild)`), before the re-read.
+
+### 7.1 Granular APPLY / Reopen Policy  {#UNDO-GRANULAR-APPLY}
+* ⚠ **THE APPLY BOUNDARY IS KEPT.** `ClearUndoHistory("changes applied")` still runs on ACCEPT. History
+  could survive APPLY only if every snapshot were provably the exact accepted revision the Main App now
+  holds — and the Main App rewrites what it receives (cut normalisation, trim offsets, meme re-timing),
+  so that cannot be proven. Correctness beats deeper undo history; the Main App's own history
+  (`PROJSESSION`) records the APPLY as one step.
+* **UNDO_25 park/reopen is kept, and tightened.** A parked history (`ParkedGranularHistory`) records the
+  clip key, the state its session OPENED on (`Baseline`) and the state it closed on (`Final`). It is
+  replayed only when the reopening editor is for the same clip AND opens on exactly `Baseline` or
+  `Final` (`GranularEditHistory.BelongsTo`). A different clip, a different project using the same
+  file, or any APPLY / main-window edit since, opens on another state: the history is discarded, never
+  replayed. Merge mode (`edl://`) has no clip identity and never parks.
+
+## 8. EDITSTATE_01 — Who Owns The State The History Snapshots  {#UNDO-EDITSTATE}
+The history was already shared (§7); the STATE it snapshots still lived in window fields beside
+canvases and timers. It now lives in Core, in types that cannot reference Avalonia:
+
+| Editor | State owner | History it owns | The window keeps |
+| :--- | :--- | :--- | :--- |
+| Granular | `Core/Editing/GranularEditSession` (segments, cuts, memes in both presentation modes, base speed, freeze, zoom on each segment, selection, MARK START/END, dirty, results, recovery values via `GranularRecoveryCodec`) | `GranularEditHistory` (UNDO_26), the parking slot (`GranularHistoryParking`, UNDO_25) | canvases, drags, pointer capture, timers, mpv, filmstrip, timeline CACHES, the AI tracking preview |
+| Crop Tool | `Core/Editing/CropEditSession` (layers = `CropLayer`, layer order, selection by role KEY, tombstones, active profile + name rules, element catalogue, capture resolution, dirty; config values via `CropProfileCodec`) | `UndoStack<CropLayoutSnapshot>` (UNDO_27) | element visuals, adorners, handles, hit testing, frozen-frame zoom, the Magic Wand's scan/AI request/candidates |
+
+* **Calling convention is unchanged.** Window gesture handlers still `PushUndo` / `PushHistory` with
+  their own labels and coalesce keys; session COMMANDS (`AddPendingSegment`, `DeleteRange`,
+  `AddMeme`, `MoveMemeTo`, `AddLayer`…) checkpoint themselves. Granular checkpoints of either origin
+  raise `GranularEditSession.Checkpointed`, which is where the window refreshes its buttons and arms
+  RECOVERY_03 — exactly where the old `PushUndo` did.
+* **Snapshots stay the §7 types.** `CropLayer.ToState()` projects the mutable layer onto the immutable
+  `CropItemState`; no second snapshot model exists.
+* **Crop selection is identity.** `SelectedRoleKey` survives a restore that rebuilds every layer object
+  when that element still exists; the window still clears it after Undo/Redo, as it always did.
+* Tests: `GranularEditSessionTests`, `CropEditSessionTests` (Core), `EditStateExtractionTests` (App).

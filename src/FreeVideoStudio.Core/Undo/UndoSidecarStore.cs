@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
@@ -113,8 +113,29 @@ public sealed class UndoSidecarStore
     /// <returns><see langword="true"/> when the file was written.</returns>
     public bool Save(string projectPath, string sourceFingerprint, UndoStack<ProjectDocument> history)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
         ArgumentNullException.ThrowIfNull(history);
+        return Save(projectPath, sourceFingerprint, history.UndoEntries, history.RedoEntries);
+    }
+
+    /// <summary>
+    /// AUTOSAVEBG_01 — the same write, from a SNAPSHOT of the branches rather than the live stack.
+    ///
+    /// <para>
+    /// ⚠️ <see cref="UndoStack{T}.UndoEntries"/> exposes the stack's own list. Handing that to a
+    /// worker thread while the UI keeps pushing edits is a torn read. The background autosave
+    /// copies both branches on the UI thread (entries are immutable records holding immutable
+    /// documents, so a shallow array copy IS a snapshot) and calls this overload off-thread.
+    /// </para>
+    /// </summary>
+    public bool Save(
+        string projectPath,
+        string sourceFingerprint,
+        IReadOnlyList<UndoEntry<ProjectDocument>> undoEntries,
+        IReadOnlyList<UndoEntry<ProjectDocument>> redoEntries)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
+        ArgumentNullException.ThrowIfNull(undoEntries);
+        ArgumentNullException.ThrowIfNull(redoEntries);
 
         try
         {
@@ -126,8 +147,8 @@ public sealed class UndoSidecarStore
                 ["project_path"] = Path.GetFullPath(projectPath),
                 ["source_fingerprint"] = sourceFingerprint ?? string.Empty,
                 ["saved_utc"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["undo"] = WriteEntries(history.UndoEntries),
-                ["redo"] = WriteEntries(history.RedoEntries),
+                ["undo"] = WriteEntries(undoEntries),
+                ["redo"] = WriteEntries(redoEntries),
             };
 
             // The same atomic write the project itself uses (05 §4c SYS-ATOMICWRITE). A half-written

@@ -4,7 +4,7 @@
     <AssemblyName>FreeVideoStudio.Core</AssemblyName>
     <PackageId>FreeVideoStudio.Core</PackageId>
     <RootNamespace>FreeVideoStudio.Core</RootNamespace>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
@@ -16,8 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio.Core" Version="2.3.0" />
-    <PackageReference Include="NAudio.WinMM" Version="2.3.0" />
+    <PackageReference Include="NAudio.Core" Version="3.1.0" />
+    <PackageReference Include="NAudio.WinMM" Version="3.1.0" />
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.2" />
   </ItemGroup>
@@ -28,10 +28,10 @@
        satellite assembly is exactly the kind of detail a security reviewer flags. Keep in step
        with FreeVideoStudio.App.csproj on every release. -->
   <PropertyGroup>
-    <Version>2026.10.03.1237</Version>
-    <AssemblyVersion>2026.10.03.1237</AssemblyVersion>
-    <FileVersion>2026.10.03.1237</FileVersion>
-    <InformationalVersion>2026.10.03.1237</InformationalVersion>
+    <Version>2026.10.10.0926</Version>
+    <AssemblyVersion>2026.10.10.0926</AssemblyVersion>
+    <FileVersion>2026.10.10.0926</FileVersion>
+    <InformationalVersion>2026.10.10.0926</InformationalVersion>
     <Company>Alon Reich</Company>
     <Authors>Alon Reich</Authors>
     <Product>Free Video Studio</Product>

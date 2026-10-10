@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -50,7 +50,7 @@ public sealed class MpvVideoView : Control, IDisposable
     private nint _hglrc;
     private nint _dxInteropDevice;
 
-    private const int SwapChainSize = 16;
+    internal const int SwapChainSize = 16;
     private const ulong ProducerKey = 0;
     private const ulong ConsumerKey = 1;
     private const int KeyedMutexWaitMs = 0;
@@ -70,7 +70,7 @@ public sealed class MpvVideoView : Control, IDisposable
     /// compares the slot it was handed against the slot that is there NOW, and if they differ it
     /// knows a newer import has already replaced it and does nothing.
     /// </summary>
-    private sealed class ImportedImageSlot
+    internal sealed class ImportedImageSlot
     {
         public ImportedImageSlot(ICompositionImportedGpuImage image, long generation)
         {
@@ -740,6 +740,52 @@ public sealed class MpvVideoView : Control, IDisposable
     }
 
     private Task? _initializationTask;
+    private Task<PreviewShutdownResult>? _activeNativeReleaseTask;
+    private Task? _activeCompositorDisposalTask;
+    private CompositorDisposalBatch? _compositorDisposalBatch;
+    private NativeTeardownOperation? _activeTeardownOperation;
+
+    internal INativeTeardownInvoker NativeTeardownInvoker { get; set; } = DefaultNativeTeardownInvoker.Instance;
+    internal Task<PreviewShutdownResult>? ActiveNativeReleaseTask { get => _activeNativeReleaseTask; set => _activeNativeReleaseTask = value; }
+    internal Task? ActiveCompositorDisposalTask { get => _activeCompositorDisposalTask; set => _activeCompositorDisposalTask = value; }
+    internal CompositorDisposalBatch? CompositorBatch => _compositorDisposalBatch;
+    internal CompositorDisposalBatch? CompositorDisposalBatchForTesting { get => _compositorDisposalBatch; set => _compositorDisposalBatch = value; }
+    internal NativeTeardownOperation? ActiveTeardownOperation { get => _activeTeardownOperation; set => _activeTeardownOperation = value; }
+    internal System.Threading.SemaphoreSlim[] PresentGates => _presentGates;
+    internal ImportedImageSlot?[] ImportedImages => _importedImages;
+    internal Task<NativeDetachedResources> FinalizeUiResourcesOnUiThreadForTesting() => FinalizeUiResourcesOnUiThreadAsync();
+
+    internal NativeDetachedResources CreateNativeDetachedResourcesForTesting(
+        nint renderContext = 0,
+        nint hglrc = 0,
+        nint dummyHdc = 0,
+        nint dummyHwnd = 0,
+        nint dxInterop = 0,
+        nint mpvHandle = 0,
+        nint openglLibrary = 0,
+        GCHandle gcHandle = default,
+        nint[]? dxInteropObjects = null,
+        uint[]? glFramebuffers = null,
+        ID3D11Texture2D?[]? sharedTextures = null,
+        IDXGIKeyedMutex?[]? sharedTextureMutexes = null,
+        uint[]? glTextures = null)
+    {
+        return new NativeDetachedResources(
+            true, null, null, mpvHandle, renderContext, hglrc, dummyHdc, dummyHwnd, dxInterop, glTextures, openglLibrary, null, null, gcHandle,
+            dxInteropObjects, glFramebuffers, sharedTextures, sharedTextureMutexes);
+    }
+
+    internal Task<PreviewShutdownResult> ExecuteDetachedNativeTeardownForTesting(NativeDetachedResources detached)
+    {
+        _activeTeardownOperation = new NativeTeardownOperation(detached);
+        return ExecuteDetachedNativeTeardown(_activeTeardownOperation);
+    }
+
+    internal Task<PreviewShutdownResult> RetryDetachedNativeTeardownForTesting()
+    {
+        if (_activeTeardownOperation == null) return Task.FromResult(PreviewShutdownResult.Ok);
+        return ExecuteDetachedNativeTeardown(_activeTeardownOperation);
+    }
 
     public Task StartMpvProcessAsync(string mpvPath)
     {
@@ -769,6 +815,84 @@ public sealed class MpvVideoView : Control, IDisposable
     {
         if (_isDisposed) return PreviewShutdownResult.AlreadyStopped;
 
+        // VOAPPLY_06 — If native release was already detached and launched in a prior attempt that timed out for the caller,
+        // do NOT repeat Phase A or re-acquire presentation gates. Simply await the existing worker task if still running.
+        if (_activeNativeReleaseTask != null && !_activeNativeReleaseTask.IsCompleted)
+        {
+            var timeoutTask = Task.Delay(WorkerQuiescenceTimeoutMs, cancellationToken);
+            var completed = await Task.WhenAny(_activeNativeReleaseTask, timeoutTask).ConfigureAwait(true);
+
+            if (completed != _activeNativeReleaseTask)
+            {
+                MarkUnverifiedTeardown("Phase B native release worker timed out");
+                return PreviewShutdownResult.Failed("Native player termination timed out");
+            }
+
+            var releaseResult = await _activeNativeReleaseTask;
+            if (!releaseResult.Succeeded)
+            {
+                MarkUnverifiedTeardown(releaseResult.Reason ?? "Native release failed");
+                return releaseResult;
+            }
+
+            _isDisposed = true;
+            _shutdownCoordinator.MarkCompleted();
+            return PreviewShutdownResult.Ok;
+        }
+
+        if (_activeTeardownOperation != null && !_activeTeardownOperation.IsCompletedSuccessfully)
+        {
+            if (_activeTeardownOperation.IsTerminalFailure)
+            {
+                MarkUnverifiedTeardown(_activeTeardownOperation.FailureReason ?? "Terminal native teardown failure");
+                return PreviewShutdownResult.Failed($"Teardown is in terminal failed state: {_activeTeardownOperation.FailureReason}");
+            }
+
+            // Prior teardown had unreleased resources retained in the host ledger; retry stage-aware release
+            try
+            {
+                _activeNativeReleaseTask = Task.Run(() => ExecuteDetachedNativeTeardown(_activeTeardownOperation));
+                var timeoutTask = Task.Delay(WorkerQuiescenceTimeoutMs, cancellationToken);
+                var completed = await Task.WhenAny(_activeNativeReleaseTask, timeoutTask).ConfigureAwait(true);
+
+                if (completed != _activeNativeReleaseTask)
+                {
+                    MarkUnverifiedTeardown("Phase B native release worker timed out on retry");
+                    return PreviewShutdownResult.Failed("Native player termination timed out");
+                }
+
+                var releaseResult = await _activeNativeReleaseTask;
+                if (!releaseResult.Succeeded)
+                {
+                    MarkUnverifiedTeardown(releaseResult.Reason ?? "Native release retry failed");
+                    return releaseResult;
+                }
+
+                _isDisposed = true;
+                _shutdownCoordinator.MarkCompleted();
+                return PreviewShutdownResult.Ok;
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"Preview teardown retry failed: {ex.Message}");
+                MarkUnverifiedTeardown("Phase B retry background native finalization");
+                return PreviewShutdownResult.Failed(ex.Message);
+            }
+        }
+        else if (_activeNativeReleaseTask != null && _activeNativeReleaseTask.IsCompleted)
+        {
+            var releaseResult = await _activeNativeReleaseTask;
+            if (!releaseResult.Succeeded)
+            {
+                MarkUnverifiedTeardown(releaseResult.Reason ?? "Native release failed");
+                return releaseResult;
+            }
+
+            _isDisposed = true;
+            _shutdownCoordinator.MarkCompleted();
+            return PreviewShutdownResult.Ok;
+        }
+
         Task? init = _initializationTask;
         var gpuCompletion = _renderThreadCompletion?.Task;
         var swCompletion = _swThreadCompletion?.Task;
@@ -789,15 +913,64 @@ public sealed class MpvVideoView : Control, IDisposable
             return phaseA;
         }
 
+        // VOAPPLY_02 / UI-GPUPRESENT2 — Phase A presentation permit quiescence across all slots
+        var presentQuiesced = await PreviewShutdownCoordinator.QuiescePresentGatesAsync(
+            _presentGates, WorkerQuiescenceTimeoutMs, cancellationToken).ConfigureAwait(true);
+        if (!presentQuiesced.Succeeded)
+        {
+            MarkUnverifiedTeardown("Phase A presentation quiescence");
+            return presentQuiesced;
+        }
+
+        NativeDetachedResources detached;
         try
         {
-            var phaseB = await Dispatcher.UIThread.InvokeAsync(FinalizeNativeResourcesOnUiThread).GetTask();
-            return phaseB;
+            detached = await Dispatcher.UIThread.InvokeAsync(FinalizeUiResourcesOnUiThreadAsync);
         }
         catch (Exception ex)
         {
-            RuntimeLog.Fail(InteropLogStep, $"Preview teardown failed during native finalization: {ex.Message}");
-            MarkUnverifiedTeardown("Phase B native finalization");
+            RuntimeLog.Fail(InteropLogStep, $"Preview teardown failed during UI native finalization: {ex.Message}");
+            MarkUnverifiedTeardown("Phase B native UI finalization");
+            ReleasePresentGates();
+            return PreviewShutdownResult.Failed(ex.Message);
+        }
+
+        if (!detached.Success)
+        {
+            MarkUnverifiedTeardown(detached.ErrorMessage ?? "Phase B UI gates acquisition failed");
+            ReleasePresentGates();
+            return PreviewShutdownResult.Failed(detached.ErrorMessage ?? "Teardown locks still held");
+        }
+
+        _activeTeardownOperation = new NativeTeardownOperation(detached);
+
+        try
+        {
+            _activeNativeReleaseTask = Task.Run(() => ExecuteDetachedNativeTeardown(_activeTeardownOperation));
+            var timeoutTask = Task.Delay(WorkerQuiescenceTimeoutMs, cancellationToken);
+            var completed = await Task.WhenAny(_activeNativeReleaseTask, timeoutTask).ConfigureAwait(true);
+
+            if (completed != _activeNativeReleaseTask)
+            {
+                MarkUnverifiedTeardown("Phase B native release worker timed out");
+                return PreviewShutdownResult.Failed("Native player termination timed out");
+            }
+
+            var releaseResult = await _activeNativeReleaseTask;
+            if (!releaseResult.Succeeded)
+            {
+                MarkUnverifiedTeardown(releaseResult.Reason ?? "Native release failed");
+                return releaseResult;
+            }
+
+            _isDisposed = true;
+            _shutdownCoordinator.MarkCompleted();
+            return PreviewShutdownResult.Ok;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail(InteropLogStep, $"Preview teardown background worker failed: {ex.Message}");
+            MarkUnverifiedTeardown("Phase B background native finalization");
             return PreviewShutdownResult.Failed(ex.Message);
         }
     }
@@ -808,9 +981,40 @@ public sealed class MpvVideoView : Control, IDisposable
     /// defensive backstop, not the correctness argument). Frees each native resource exactly once
     /// in the documented order and reports the outcome to the caller.
     /// </summary>
-    private PreviewShutdownResult FinalizeNativeResourcesOnUiThread()
+    internal sealed record NativeDetachedResources(
+        bool Success,
+        string? ErrorMessage,
+        MpvIpcClient? Ipc,
+        nint MpvHandle,
+        nint RenderContext,
+        nint Hglrc,
+        nint DummyHdc,
+        nint DummyHwnd,
+        nint DxInteropDevice,
+        uint[]? GlTextures,
+        nint OpenglLibrary,
+        ID3D11DeviceContext? D3DContext,
+        ID3D11Device? D3DDevice,
+        GCHandle GcHandle,
+        nint[]? DxInteropObjects = null,
+        uint[]? GlFramebuffers = null,
+        ID3D11Texture2D?[]? SharedTextures = null,
+        IDXGIKeyedMutex?[]? SharedTextureMutexes = null);
+
+    /// <summary>
+    /// MPVSHUTDOWN_01 / VOAPPLY_02 — PHASE B1: UI thread only.
+    /// Releases genuinely thread-affine resources: Win32 HWND, WGL context unbind,
+    /// Avalonia compositor images. Detaches non-UI resources and driver interop objects
+    /// (render context, WGL context, DirectX interop objects, framebuffers, textures,
+    /// MpvIpcClient, libmpv handle, D3D device) to be torn down off the UI thread.
+    /// </summary>
+    private async Task<NativeDetachedResources> FinalizeUiResourcesOnUiThreadAsync()
     {
-        if (_isDisposed) return PreviewShutdownResult.AlreadyStopped;
+        if (_isDisposed)
+        {
+            ReleasePresentGates();
+            return new NativeDetachedResources(true, null, null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
+        }
 
         _swMode = false;
         try { _swBitmap?.Dispose(); } catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
@@ -818,29 +1022,185 @@ public sealed class MpvVideoView : Control, IDisposable
         _swRenderBuffer = null;
         _swPresentBuffer = null;
 
-        bool renderGateAcquired = false;
-        try { renderGateAcquired = System.Threading.Monitor.TryEnter(_swRenderGate, TimeSpan.FromSeconds(2)); }
-        catch (System.Exception swallowed3) { renderGateAcquired = false; global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3); }
-
-        bool renderLockAcquired = false;
-        try { renderLockAcquired = System.Threading.Monitor.TryEnter(_renderLock, TimeSpan.FromSeconds(2)); }
-        catch (System.Exception swallowed6) { renderLockAcquired = false; global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6); }
-
-        if (!renderGateAcquired || !renderLockAcquired)
+        // Step 1: Claim imported images under short synchronous locks without holding locks across async awaits
+        List<object>? imagesToDispose = null;
+        if (_activeCompositorDisposalTask == null)
         {
-            if (renderGateAcquired) System.Threading.Monitor.Exit(_swRenderGate);
-            if (renderLockAcquired) System.Threading.Monitor.Exit(_renderLock);
-            MarkUnverifiedTeardown($"Phase B gates (sw gate acquired: {renderGateAcquired}, render lock acquired: {renderLockAcquired})");
-            return PreviewShutdownResult.Failed(
-                $"A teardown lock was still held after quiescence (sw gate: {renderGateAcquired}, render lock: {renderLockAcquired}).");
+            bool renderGateAcquired = false;
+            try { renderGateAcquired = System.Threading.Monitor.TryEnter(_swRenderGate, TimeSpan.FromSeconds(2)); }
+            catch (System.Exception swallowed3) { renderGateAcquired = false; RuntimeLog.Swallowed(swallowed3); }
+
+            bool renderLockAcquired = false;
+            try { renderLockAcquired = System.Threading.Monitor.TryEnter(_renderLock, TimeSpan.FromSeconds(2)); }
+            catch (System.Exception swallowed6) { renderLockAcquired = false; RuntimeLog.Swallowed(swallowed6); }
+
+            if (!renderGateAcquired || !renderLockAcquired)
+            {
+                if (renderGateAcquired) System.Threading.Monitor.Exit(_swRenderGate);
+                if (renderLockAcquired) System.Threading.Monitor.Exit(_renderLock);
+                return new NativeDetachedResources(false,
+                    $"A teardown lock was still held after quiescence (sw gate: {renderGateAcquired}, render lock: {renderLockAcquired}).",
+                    null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
+            }
+
+            try
+            {
+                imagesToDispose = new List<object>();
+                for (int i = 0; i < SwapChainSize; i++)
+                {
+                    _renderTexturePtrs[i] = nint.Zero;
+                    _sharedTextureHandles[i] = nint.Zero;
+
+                    ImportedImageSlot? claimed = System.Threading.Interlocked.Exchange(ref _importedImages[i], null);
+                    if (claimed?.Image != null)
+                    {
+                        imagesToDispose.Add(claimed.Image);
+                    }
+                }
+            }
+            finally
+            {
+                System.Threading.Monitor.Exit(_renderLock);
+                System.Threading.Monitor.Exit(_swRenderGate);
+            }
+
+            _compositorDisposalBatch = new CompositorDisposalBatch(imagesToDispose);
+            _activeCompositorDisposalTask = _compositorDisposalBatch.ExecuteAsync();
+        }
+        else if ((_activeCompositorDisposalTask == null || _activeCompositorDisposalTask.IsCompleted) && _compositorDisposalBatch?.HasUnresolved == true)
+        {
+            _activeCompositorDisposalTask = _compositorDisposalBatch.ExecuteAsync();
+        }
+
+        // Step 2: Await compositor image disposal without holding ANY thread-affine locks
+        if (_activeCompositorDisposalTask != null)
+        {
+            try
+            {
+                await _activeCompositorDisposalTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"Compositor image disposal failed: {ex.Message}");
+                return new NativeDetachedResources(false,
+                    $"Compositor image disposal failed: {ex.Message}",
+                    null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
+            }
+        }
+
+        if (_compositorDisposalBatch?.HasUnresolved == true)
+        {
+            return new NativeDetachedResources(false,
+                "One or more compositor images failed disposal or remain unresolved.",
+                null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
+        }
+
+        // Step 3: Now that compositor disposal succeeded, detach and extract native handles under locks
+        bool renderGateAcquiredFinal = false;
+        try { renderGateAcquiredFinal = System.Threading.Monitor.TryEnter(_swRenderGate, TimeSpan.FromSeconds(2)); }
+        catch (System.Exception swallowed3) { renderGateAcquiredFinal = false; RuntimeLog.Swallowed(swallowed3); }
+
+        bool renderLockAcquiredFinal = false;
+        try { renderLockAcquiredFinal = System.Threading.Monitor.TryEnter(_renderLock, TimeSpan.FromSeconds(2)); }
+        catch (System.Exception swallowed6) { renderLockAcquiredFinal = false; RuntimeLog.Swallowed(swallowed6); }
+
+        if (!renderGateAcquiredFinal || !renderLockAcquiredFinal)
+        {
+            if (renderGateAcquiredFinal) System.Threading.Monitor.Exit(_swRenderGate);
+            if (renderLockAcquiredFinal) System.Threading.Monitor.Exit(_renderLock);
+            return new NativeDetachedResources(false,
+                $"A teardown lock was still held after compositor disposal (sw gate: {renderGateAcquiredFinal}, render lock: {renderLockAcquiredFinal}).",
+                null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
         }
 
         try
         {
-            ReleaseNativeResourcesQuiesced();
-            _isDisposed = true;
-            _shutdownCoordinator.MarkCompleted();
-            return PreviewShutdownResult.Ok;
+            if (_hglrc != nint.Zero && !NativeTeardownInvoker.WglMakeCurrent(nint.Zero, nint.Zero))
+            {
+                int err = Marshal.GetLastWin32Error();
+                RuntimeLog.Fail(InteropLogStep, $"UI-thread WGL unbind failed (error: {err}); retaining handles on UI thread.");
+                return new NativeDetachedResources(false,
+                    $"Failed to unbind WGL context on UI thread (error: {err}); transfer halted to prevent threading conflict.",
+                    null, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, nint.Zero, null, nint.Zero, null, null, default);
+            }
+
+            nint renderContext = _renderContext;
+            _renderContext = nint.Zero;
+
+            nint hglrc = _hglrc;
+            _hglrc = nint.Zero;
+
+            nint dummyHdc = _dummyHdc;
+            _dummyHdc = nint.Zero;
+
+            nint dummyHwnd = _dummyHwnd;
+            _dummyHwnd = nint.Zero;
+
+            nint dxInterop = _dxInteropDevice;
+            _dxInteropDevice = nint.Zero;
+
+            nint[]? dxInteropObjects = null;
+            if (Array.Exists(_dxInteropObjects, o => o != nint.Zero))
+            {
+                dxInteropObjects = (nint[])_dxInteropObjects.Clone();
+                Array.Clear(_dxInteropObjects, 0, SwapChainSize);
+            }
+
+            uint[]? glFramebuffers = null;
+            if (Array.Exists(_glFramebuffers, fb => fb != 0))
+            {
+                glFramebuffers = (uint[])_glFramebuffers.Clone();
+                Array.Clear(_glFramebuffers, 0, SwapChainSize);
+            }
+
+            ID3D11Texture2D?[]? sharedTextures = null;
+            if (Array.Exists(_sharedTextures, tex => tex != null))
+            {
+                sharedTextures = (ID3D11Texture2D?[])_sharedTextures.Clone();
+                Array.Clear(_sharedTextures, 0, SwapChainSize);
+            }
+
+            IDXGIKeyedMutex?[]? sharedTextureMutexes = null;
+            if (Array.Exists(_sharedTextureMutexes, m => m != null))
+            {
+                sharedTextureMutexes = (IDXGIKeyedMutex?[])_sharedTextureMutexes.Clone();
+                Array.Clear(_sharedTextureMutexes, 0, SwapChainSize);
+            }
+
+            uint[]? glTextures = null;
+            if (Array.Exists(_glTextures, t => t != 0))
+            {
+                glTextures = (uint[])_glTextures.Clone();
+                Array.Clear(_glTextures, 0, SwapChainSize);
+            }
+
+            // Release present gates now that render textures and FBOs are unmapped and detached
+            ReleasePresentGates();
+
+            // Detach non-UI thread resources to pass to background worker
+            var ipc = IpcClient;
+            IpcClient = null;
+
+            nint mpv = _mpvHandle;
+            _mpvHandle = nint.Zero;
+
+            nint glLib = _openglLibrary;
+            _openglLibrary = nint.Zero;
+
+            var d3dCtx = _d3d11Context;
+            _d3d11Context = null;
+
+            var d3dDev = _d3d11Device;
+            _d3d11Device = null;
+
+            var gcH = _gcHandle;
+            if (_gcHandle.IsAllocated) _gcHandle = default;
+
+            _gpuInterop = null;
+
+            return new NativeDetachedResources(
+                true, null, ipc, mpv, renderContext, hglrc, dummyHdc, dummyHwnd, dxInterop, glTextures, glLib, d3dCtx, d3dDev, gcH,
+                dxInteropObjects, glFramebuffers, sharedTextures, sharedTextureMutexes);
         }
         finally
         {
@@ -849,92 +1209,639 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — the ordered native release for a quiesced preview stack. Caller holds
-    /// _renderLock. The zero/null guards make this safe for a PARTIALLY initialized view (startup
-    /// failure, or shutdown racing initialization): only resources that actually exist are freed,
-    /// each exactly once.
-    /// </summary>
-    private void ReleaseNativeResourcesQuiesced()
+    internal static async Task DisposeCompositorImagesCoreAsync(List<object> images)
     {
-        ReleaseRenderTexture();
+        var batch = new CompositorDisposalBatch(images);
+        await batch.ExecuteAsync().ConfigureAwait(false);
+    }
 
-        if (_renderContext != nint.Zero)
+    /// <summary>
+    /// MPVSHUTDOWN_01 / VOAPPLY_02 / VOAPPLY_06 — PHASE B2: Worker thread only.
+    /// Runs potentially blocking native teardown (render context free, mpv event loop join, mpv_terminate_destroy)
+    /// completely off the UI thread so the Avalonia dispatcher is never stalled. Validates return codes and
+    /// halts dependent frees if an earlier prerequisite failed.
+    /// </summary>
+    private async Task<PreviewShutdownResult> ExecuteDetachedNativeTeardown(NativeDetachedResources detached)
+    {
+        _activeTeardownOperation ??= new NativeTeardownOperation(detached);
+        return await ExecuteDetachedNativeTeardown(_activeTeardownOperation).ConfigureAwait(false);
+    }
+
+    private async Task<PreviewShutdownResult> ExecuteDetachedNativeTeardown(NativeTeardownOperation op)
+    {
+        var detached = op.Resources;
+
+        if (detached.DummyHdc != nint.Zero && detached.Hglrc != nint.Zero)
         {
-            if (_hglrc != nint.Zero) WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-            LibMpvInterop.mpv_render_context_free(_renderContext);
-            _renderContext = nint.Zero;
+            if (!op.HglrcDeleted)
+            {
+                bool requiresGlContext = !op.AllDxInteropObjectsUnregistered ||
+                                         (!op.GlFramebuffersDeleted && detached.GlFramebuffers != null && Array.Exists(detached.GlFramebuffers, fb => fb != 0)) ||
+                                         (!op.GlTexturesDeleted && detached.GlTextures != null && Array.Exists(detached.GlTextures, t => t != 0)) ||
+                                         (!op.RenderContextFreed && detached.RenderContext != nint.Zero);
+
+                if (requiresGlContext)
+                {
+                    if (op.IsTerminalFailure)
+                    {
+                        return PreviewShutdownResult.Failed(op.FailureReason ?? "Terminal native teardown failure");
+                    }
+
+                    bool contextBoundOnCurrentThread = false;
+                    bool glOpsFailed = false;
+                    string? glOpsError = null;
+
+                    try
+                    {
+                        if (!NativeTeardownInvoker.WglMakeCurrent(detached.DummyHdc, detached.Hglrc))
+                        {
+                            int err = Marshal.GetLastWin32Error();
+                            RuntimeLog.Fail(InteropLogStep, $"wglMakeCurrent failed to bind render context: error {err}");
+                            op.FailureReason = $"wglMakeCurrent bind failed: {err}";
+                            return PreviewShutdownResult.Failed(op.FailureReason);
+                        }
+                        contextBoundOnCurrentThread = true;
+                        op.ContextBound = true;
+
+                        // 1. Unregister DX interop objects FIRST before deleting GL framebuffers or textures
+                        if (detached.DxInteropObjects != null && detached.DxInteropDevice != nint.Zero)
+                        {
+                            for (int i = 0; i < SwapChainSize; i++)
+                            {
+                                if (!op.DxInteropObjectsUnregistered[i] && detached.DxInteropObjects[i] != nint.Zero)
+                                {
+                                    bool unreg = false;
+                                    try
+                                    {
+                                        unreg = NativeTeardownInvoker.WglDXUnregisterObjectNV(detached.DxInteropDevice, detached.DxInteropObjects[i]);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        RuntimeLog.Fail(InteropLogStep, $"wglDXUnregisterObjectNV threw exception: {ex.Message}");
+                                        glOpsFailed = true;
+                                        glOpsError = $"wglDXUnregisterObjectNV failed: {ex.Message}";
+                                        break;
+                                    }
+
+                                    if (!unreg)
+                                    {
+                                        int err = Marshal.GetLastWin32Error();
+                                        RuntimeLog.Fail(InteropLogStep, $"wglDXUnregisterObjectNV returned false for object {i}: error {err}");
+                                        glOpsFailed = true;
+                                        glOpsError = $"wglDXUnregisterObjectNV failed: {err}";
+                                        break;
+                                    }
+
+                                    op.DxInteropObjectsUnregistered[i] = true;
+                                    detached.DxInteropObjects[i] = nint.Zero;
+                                }
+                            }
+                        }
+
+                        // 2. Delete GL framebuffers across all 16 slots (only if interop unregister succeeded)
+                        if (!glOpsFailed && !op.GlFramebuffersDeleted && detached.GlFramebuffers != null && Array.Exists(detached.GlFramebuffers, fb => fb != 0))
+                        {
+                            try
+                            {
+                                NativeTeardownInvoker.GlDeleteFramebuffers(SwapChainSize, detached.GlFramebuffers);
+                                op.GlFramebuffersDeleted = true;
+                                Array.Clear(detached.GlFramebuffers, 0, SwapChainSize);
+                            }
+                            catch (Exception ex)
+                            {
+                                RuntimeLog.Fail(InteropLogStep, $"glDeleteFramebuffers failed: {ex.Message}");
+                                glOpsFailed = true;
+                                glOpsError = $"glDeleteFramebuffers failed: {ex.Message}";
+                            }
+                        }
+
+                        // 3. Delete GL textures across all 16 slots (only if interop unregister succeeded)
+                        if (!glOpsFailed && !op.GlTexturesDeleted && detached.GlTextures != null && Array.Exists(detached.GlTextures, t => t != 0))
+                        {
+                            try
+                            {
+                                NativeTeardownInvoker.GlDeleteTextures(SwapChainSize, detached.GlTextures);
+                                op.GlTexturesDeleted = true;
+                                Array.Clear(detached.GlTextures, 0, SwapChainSize);
+                            }
+                            catch (Exception ex)
+                            {
+                                RuntimeLog.Fail(InteropLogStep, $"glDeleteTextures failed: {ex.Message}");
+                                glOpsFailed = true;
+                                glOpsError = $"glDeleteTextures failed: {ex.Message}";
+                            }
+                        }
+
+                        // 4. Free hardware mpv render context
+                        if (!glOpsFailed && !op.RenderContextFreed && detached.RenderContext != nint.Zero)
+                        {
+                            try { NativeTeardownInvoker.MpvRenderContextSetUpdateCallback(detached.RenderContext); }
+                            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+
+                            try
+                            {
+                                NativeTeardownInvoker.MpvRenderContextFree(detached.RenderContext);
+                                op.RenderContextFreed = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                RuntimeLog.Fail(InteropLogStep, $"mpv_render_context_free failed: {ex.Message}");
+                                glOpsFailed = true;
+                                glOpsError = $"mpv_render_context_free failed: {ex.Message}";
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (contextBoundOnCurrentThread)
+                        {
+                            bool unbindSuccess = false;
+                            try { unbindSuccess = NativeTeardownInvoker.WglMakeCurrent(nint.Zero, nint.Zero); }
+                            catch (Exception ex)
+                            {
+                                RuntimeLog.Fail(InteropLogStep, $"wglMakeCurrent unbind threw exception: {ex.Message}");
+                                if (!glOpsFailed)
+                                {
+                                    glOpsFailed = true;
+                                    glOpsError = $"wglMakeCurrent unbind failed: {ex.Message}";
+                                }
+                            }
+
+                            if (!unbindSuccess)
+                            {
+                                int err = Marshal.GetLastWin32Error();
+                                RuntimeLog.Fail(InteropLogStep, $"wglMakeCurrent unbind returned false: error {err}");
+                                if (!glOpsFailed)
+                                {
+                                    glOpsFailed = true;
+                                    glOpsError = $"wglMakeCurrent unbind failed: {err}";
+                                }
+                                op.IsTerminalFailure = true;
+                                op.FailureReason = "wglMakeCurrent unbind failed; context quarantine active.";
+                            }
+                            else
+                            {
+                                contextBoundOnCurrentThread = false;
+                                op.ContextBound = false;
+                                op.ContextUnbound = true;
+                            }
+                        }
+                    }
+
+                    if (glOpsFailed)
+                    {
+                        op.FailureReason = glOpsError ?? "GL operations failed during teardown";
+                        return PreviewShutdownResult.Failed(op.FailureReason);
+                    }
+                }
+            }
+        }
+        else if (!op.RenderContextFreed && detached.RenderContext != nint.Zero)
+        {
+            // Software render context teardown (no GL context)
+            try
+            {
+                NativeTeardownInvoker.MpvRenderContextSetUpdateCallback(detached.RenderContext);
+            }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+
+            try
+            {
+                NativeTeardownInvoker.MpvRenderContextFree(detached.RenderContext);
+                op.RenderContextFreed = true;
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"mpv_render_context_free failed (software): {ex.Message}");
+                op.FailureReason = $"mpv_render_context_free failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
         }
 
-        if (_glFramebuffers[0] != 0)
+        string? sharedResourceDisposalError = null;
+
+        if (detached.SharedTextureMutexes != null)
         {
-            WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-            WglInterop.glDeleteFramebuffers!(SwapChainSize, _glFramebuffers);
-            Array.Clear(_glFramebuffers, 0, SwapChainSize);
+            for (int i = 0; i < SwapChainSize; i++)
+            {
+                if (!op.SharedTextureMutexesDisposed[i] && detached.SharedTextureMutexes[i] != null)
+                {
+                    try
+                    {
+                        detached.SharedTextureMutexes[i]!.Dispose();
+                        op.SharedTextureMutexesDisposed[i] = true;
+                        detached.SharedTextureMutexes[i] = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        RuntimeLog.Fail(InteropLogStep, $"SharedTextureMutex {i} disposal failed: {ex.Message}");
+                        sharedResourceDisposalError ??= $"SharedTextureMutex {i} disposal failed: {ex.Message}";
+                    }
+                }
+            }
         }
 
-        if (_glTextures[0] != 0 || _glTextures[1] != 0)
+        if (detached.SharedTextures != null)
         {
-            WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-            WglInterop.glDeleteTextures(SwapChainSize, _glTextures);
-            Array.Clear(_glTextures, 0, SwapChainSize);
+            for (int i = 0; i < SwapChainSize; i++)
+            {
+                if (!op.SharedTexturesDisposed[i] && detached.SharedTextures[i] != null)
+                {
+                    try
+                    {
+                        detached.SharedTextures[i]!.Dispose();
+                        op.SharedTexturesDisposed[i] = true;
+                        detached.SharedTextures[i] = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        RuntimeLog.Fail(InteropLogStep, $"SharedTexture {i} disposal failed: {ex.Message}");
+                        sharedResourceDisposalError ??= $"SharedTexture {i} disposal failed: {ex.Message}";
+                    }
+                }
+            }
         }
 
-        if (_dxInteropDevice != nint.Zero)
+        if (sharedResourceDisposalError != null)
         {
-            WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
-            WglInterop.wglDXCloseDeviceNV!(_dxInteropDevice);
-            _dxInteropDevice = nint.Zero;
+            op.FailureReason = sharedResourceDisposalError;
+            return PreviewShutdownResult.Failed(sharedResourceDisposalError);
         }
 
-        if (_hglrc != nint.Zero)
+        if (!op.DxDeviceClosed && detached.DxInteropDevice != nint.Zero)
         {
-            WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
-            WglInterop.wglDeleteContext(_hglrc);
-            _hglrc = nint.Zero;
+            bool dxClosed = false;
+            try { dxClosed = NativeTeardownInvoker.WglDXCloseDeviceNV(detached.DxInteropDevice); }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"wglDXCloseDeviceNV threw exception: {ex.Message}");
+                op.FailureReason = $"wglDXCloseDeviceNV failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            if (!dxClosed)
+            {
+                int err = Marshal.GetLastWin32Error();
+                RuntimeLog.Fail(InteropLogStep, $"wglDXCloseDeviceNV returned false: error {err}");
+                op.FailureReason = $"wglDXCloseDeviceNV failed: {err}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            op.DxDeviceClosed = true;
         }
 
-        if (_dummyHdc != nint.Zero && _dummyHwnd != nint.Zero)
+        if (!op.HglrcDeleted && detached.Hglrc != nint.Zero)
         {
-            WglInterop.ReleaseDC(_dummyHwnd, _dummyHdc);
-            _dummyHdc = nint.Zero;
+            bool glrcDeleted = false;
+            try { glrcDeleted = NativeTeardownInvoker.WglDeleteContext(detached.Hglrc); }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"wglDeleteContext threw exception: {ex.Message}");
+                op.FailureReason = $"wglDeleteContext failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            if (!glrcDeleted)
+            {
+                int err = Marshal.GetLastWin32Error();
+                RuntimeLog.Fail(InteropLogStep, $"wglDeleteContext returned false: error {err}");
+                op.FailureReason = $"wglDeleteContext failed: {err}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            op.HglrcDeleted = true;
         }
 
-        if (_dummyHwnd != nint.Zero)
+        if (!op.DcReleased && detached.DummyHdc != nint.Zero && detached.DummyHwnd != nint.Zero)
         {
-            WglInterop.DestroyWindow(_dummyHwnd);
-            _dummyHwnd = nint.Zero;
+            nint dummyHwnd = detached.DummyHwnd;
+            nint dummyHdc = detached.DummyHdc;
+            int dcReleased = 0;
+            try
+            {
+                dcReleased = await Dispatcher.UIThread.InvokeAsync(() => NativeTeardownInvoker.ReleaseDC(dummyHwnd, dummyHdc)).GetTask().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"ReleaseDC threw exception: {ex.Message}");
+                op.FailureReason = $"ReleaseDC failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            if (dcReleased == 0)
+            {
+                int err = Marshal.GetLastWin32Error();
+                RuntimeLog.Fail(InteropLogStep, $"ReleaseDC returned 0: error {err}");
+                op.FailureReason = $"ReleaseDC failed: {err}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            op.DcReleased = true;
         }
 
-        IpcClient?.Dispose();
-        IpcClient = null;
-
-        if (_mpvHandle != nint.Zero)
+        if (!op.HwndDestroyed && detached.DummyHwnd != nint.Zero)
         {
-            MpvWrapper.mpv_terminate_destroy(_mpvHandle);
-            _mpvHandle = nint.Zero;
+            nint hwnd = detached.DummyHwnd;
+            bool destroyed = false;
+            try
+            {
+                destroyed = await Dispatcher.UIThread.InvokeAsync(() => NativeTeardownInvoker.DestroyWindow(hwnd)).GetTask().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"DestroyWindow threw exception: {ex.Message}");
+                op.FailureReason = $"DestroyWindow failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            if (!destroyed)
+            {
+                int err = Marshal.GetLastWin32Error();
+                RuntimeLog.Fail(InteropLogStep, $"DestroyWindow returned false: error {err}");
+                op.FailureReason = $"DestroyWindow failed: {err}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+            op.HwndDestroyed = true;
         }
 
-        if (_openglLibrary != nint.Zero)
+        if (!op.IpcDisposed && detached.Ipc != null)
         {
-            NativeLibrary.Free(_openglLibrary);
-            _openglLibrary = nint.Zero;
+            try { detached.Ipc.Dispose(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            op.IpcDisposed = true;
         }
 
-        _d3d11Context?.Dispose();
-        _d3d11Context = null;
-
-        _d3d11Device?.Dispose();
-        _d3d11Device = null;
-
-        _gpuInterop = null;
-
-        if (_gcHandle.IsAllocated)
+        if (detached.Ipc?.IsHandleAbandoned == true)
         {
-            _gcHandle.Free();
+            RuntimeLog.Fail(InteropLogStep, "MpvIpcClient abandoned handle because event loop did not stop; skipping mpv_terminate_destroy.");
+            op.FailureReason = "Mpv event loop did not exit; handle abandoned";
+            return PreviewShutdownResult.Failed(op.FailureReason);
         }
 
-        try { _renderSignal.Dispose(); } catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
+        if (detached.RenderContext != nint.Zero && !op.RenderContextFreed)
+        {
+            RuntimeLog.Fail(InteropLogStep, "Render context was not freed; refusing to terminate mpv player.");
+            op.FailureReason = "Render context was not freed before player termination";
+            return PreviewShutdownResult.Failed(op.FailureReason);
+        }
+
+        if (!op.MpvTerminated && detached.MpvHandle != nint.Zero)
+        {
+            try { NativeTeardownInvoker.MpvTerminateDestroy(detached.MpvHandle); op.MpvTerminated = true; }
+            catch (System.Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"mpv_terminate_destroy failed: {ex.Message}");
+                op.FailureReason = $"mpv_terminate_destroy failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+        }
+
+        if (!op.OpenglLibraryFreed && detached.OpenglLibrary != nint.Zero)
+        {
+            try
+            {
+                NativeTeardownInvoker.FreeNativeLibrary(detached.OpenglLibrary);
+                op.OpenglLibraryFreed = true;
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"FreeNativeLibrary failed: {ex.Message}");
+                op.FailureReason = $"FreeNativeLibrary failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+        }
+
+        if (!op.D3DContextDisposed && detached.D3DContext != null)
+        {
+            try { detached.D3DContext.Dispose(); op.D3DContextDisposed = true; }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"D3DContext disposal failed: {ex.Message}");
+                op.FailureReason = $"D3DContext disposal failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+        }
+
+        if (!op.D3DDeviceDisposed && detached.D3DDevice != null)
+        {
+            try { detached.D3DDevice.Dispose(); op.D3DDeviceDisposed = true; }
+            catch (Exception ex)
+            {
+                RuntimeLog.Fail(InteropLogStep, $"D3DDevice disposal failed: {ex.Message}");
+                op.FailureReason = $"D3DDevice disposal failed: {ex.Message}";
+                return PreviewShutdownResult.Failed(op.FailureReason);
+            }
+        }
+
+        if (!op.GcHandleFreed && detached.GcHandle.IsAllocated)
+        {
+            try { detached.GcHandle.Free(); op.GcHandleFreed = true; } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        }
+
+        if (!op.RenderSignalDisposed)
+        {
+            try { _renderSignal.Dispose(); op.RenderSignalDisposed = true; } catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
+        }
+
+        op.IsCompletedSuccessfully = true;
+        return PreviewShutdownResult.Ok;
+    }
+
+    internal sealed class CompositorDisposalEntry
+    {
+        public object Image { get; }
+        public bool Disposed { get; set; }
+        public Task? AsyncTask { get; set; }
+        public Task? TrackedTask { get; set; }
+        public Exception? Error { get; set; }
+
+        public CompositorDisposalEntry(object image)
+        {
+            Image = image;
+        }
+    }
+
+    internal sealed class CompositorDisposalBatch
+    {
+        private readonly object _gate = new();
+        private Task? _activeExecutionTask;
+
+        public List<CompositorDisposalEntry> Entries { get; } = new();
+        public bool AllSucceeded => Entries.Count == 0 || Entries.TrueForAll(e => e.Disposed && e.Error == null);
+        public bool HasUnresolved => Entries.Exists(e => !e.Disposed || e.Error != null);
+
+        public CompositorDisposalBatch(IEnumerable<object> images)
+        {
+            foreach (var img in images)
+            {
+                if (img != null) Entries.Add(new CompositorDisposalEntry(img));
+            }
+        }
+
+        public Task ExecuteAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (_activeExecutionTask != null && !_activeExecutionTask.IsCompleted)
+                {
+                    return _activeExecutionTask;
+                }
+
+                _activeExecutionTask = ExecuteCoreAsync(cancellationToken);
+                return _activeExecutionTask;
+            }
+        }
+
+        private async Task ExecuteCoreAsync(CancellationToken cancellationToken = default)
+        {
+            var asyncTasks = new List<Task>();
+            var exceptions = new List<Exception>();
+
+            foreach (var entry in Entries)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    var cancelEx = new OperationCanceledException(cancellationToken);
+                    entry.Error = cancelEx;
+                    exceptions.Add(cancelEx);
+                    break;
+                }
+
+                if (entry.Disposed && entry.Error == null) continue;
+
+                // If an async disposal is already in flight for this entry, reuse its tracked task!
+                if (entry.TrackedTask != null && !entry.TrackedTask.IsCompleted)
+                {
+                    asyncTasks.Add(entry.TrackedTask);
+                    continue;
+                }
+
+                try
+                {
+                    if (entry.Image is IAsyncDisposable ad)
+                    {
+                        entry.Error = null;
+                        var task = ad.DisposeAsync().AsTask();
+                        entry.AsyncTask = task;
+                        var tracked = TrackAsyncEntry(entry, task);
+                        entry.TrackedTask = tracked;
+                        asyncTasks.Add(tracked);
+                    }
+                    else if (entry.Image is IDisposable d)
+                    {
+                        entry.Error = null;
+                        d.Dispose();
+                        entry.Disposed = true;
+                    }
+                    else
+                    {
+                        entry.Error = null;
+                        entry.Disposed = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    entry.Error = ex;
+                    exceptions.Add(ex);
+                }
+            }
+
+            if (asyncTasks.Count > 0)
+            {
+                try
+                {
+                    await Task.WhenAll(asyncTasks).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    // Exceptions are already captured in TrackAsyncEntry
+                }
+            }
+
+            foreach (var entry in Entries)
+            {
+                if (entry.Error != null && !exceptions.Contains(entry.Error))
+                {
+                    exceptions.Add(entry.Error);
+                }
+            }
+
+            if (exceptions.Count > 0)
+            {
+                throw new AggregateException("One or more compositor images failed disposal.", exceptions);
+            }
+        }
+
+        private static async Task TrackAsyncEntry(CompositorDisposalEntry entry, Task task)
+        {
+            try
+            {
+                await task.ConfigureAwait(false);
+                entry.Disposed = true;
+                entry.Error = null;
+            }
+            catch (Exception ex)
+            {
+                entry.Error = ex;
+                throw;
+            }
+        }
+    }
+
+    internal sealed class NativeTeardownOperation
+    {
+        public NativeDetachedResources Resources { get; }
+        public bool ContextBound { get; set; }
+        public bool ContextUnbound { get; set; }
+        public bool[] DxInteropObjectsUnregistered { get; } = new bool[SwapChainSize];
+        public bool GlFramebuffersDeleted { get; set; }
+        public bool GlTexturesDeleted { get; set; }
+        public bool RenderContextFreed { get; set; }
+        public bool[] SharedTextureMutexesDisposed { get; } = new bool[SwapChainSize];
+        public bool[] SharedTexturesDisposed { get; } = new bool[SwapChainSize];
+        public bool DxDeviceClosed { get; set; }
+        public bool HglrcDeleted { get; set; }
+        public bool DcReleased { get; set; }
+        public bool HwndDestroyed { get; set; }
+        public bool IpcDisposed { get; set; }
+        public bool MpvTerminated { get; set; }
+        public bool OpenglLibraryFreed { get; set; }
+        public bool D3DContextDisposed { get; set; }
+        public bool D3DDeviceDisposed { get; set; }
+        public bool GcHandleFreed { get; set; }
+        public bool RenderSignalDisposed { get; set; }
+
+        public bool IsCompletedSuccessfully { get; set; }
+        public string? FailureReason { get; set; }
+        public bool IsTerminalFailure { get; set; }
+
+        public bool AllDxInteropObjectsUnregistered
+        {
+            get
+            {
+                if (Resources.DxInteropObjects == null) return true;
+                for (int i = 0; i < SwapChainSize; i++)
+                {
+                    if (Resources.DxInteropObjects[i] != nint.Zero && !DxInteropObjectsUnregistered[i])
+                        return false;
+                }
+                return true;
+            }
+        }
+
+        public NativeTeardownOperation(NativeDetachedResources resources)
+        {
+            Resources = resources;
+        }
+    }
+
+    private void ReleasePresentGates()
+    {
+        for (int i = 0; i < SwapChainSize; i++)
+        {
+            try
+            {
+                if (_presentGates[i].CurrentCount == 0)
+                {
+                    _presentGates[i].Release();
+                }
+            }
+            catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
+        }
     }
 
     protected override async void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1857,7 +2764,7 @@ public sealed class MpvVideoView : Control, IDisposable
     /// </summary>
     private void Dispose(bool disposing)
     {
-        var inFlight = _shutdownCoordinator.Pending;
+        var inFlight = _shutdownCoordinator.Pending ?? _activeNativeReleaseTask;
         if (inFlight != null)
         {
             inFlight.Wait(WorkerQuiescenceTimeoutMs + 2000);

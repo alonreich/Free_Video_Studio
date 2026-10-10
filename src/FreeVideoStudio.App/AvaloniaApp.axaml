@@ -385,6 +385,15 @@
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#ffffff" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#b6c2d0" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#222222" />
+                <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Dark). The face stays DARK in
+                     both themes (unlit space is "blank/dark", like a hardware meter); zone colours are
+                     green (below -18 dBFS), amber (-18..-6 dBFS) and red (above -6 dBFS). -->
+                <SolidColorBrush x:Key="AppMeterBackgroundBrush" Color="#0b1220" />
+                <SolidColorBrush x:Key="AppMeterUnlitBrush" Color="#162033" />
+                <SolidColorBrush x:Key="AppMeterNormalBrush" Color="#22c55e" />
+                <SolidColorBrush x:Key="AppMeterWarningBrush" Color="#f59e0b" />
+                <SolidColorBrush x:Key="AppMeterPeakBrush" Color="#ef4444" />
+                <SolidColorBrush x:Key="AppMeterLabelBrush" Color="#94a3b8" />
                 <SolidColorBrush x:Key="AppVideoRailBrush" Color="#15202b" />
                 <!-- Ambient bubble background. The layer used to hardcode pure white, which is
                      effectively INVISIBLE on the light surface (#f8fafc) — the feature simply did
@@ -501,6 +510,15 @@
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#0f172a" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#475569" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#e2e8f0" />
+                <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Light). The face stays DARK in
+                     both themes (unlit space is "blank/dark", like a hardware meter); zone colours are
+                     green (below -18 dBFS), amber (-18..-6 dBFS) and red (above -6 dBFS). -->
+                <SolidColorBrush x:Key="AppMeterBackgroundBrush" Color="#111827" />
+                <SolidColorBrush x:Key="AppMeterUnlitBrush" Color="#1f2937" />
+                <SolidColorBrush x:Key="AppMeterNormalBrush" Color="#16a34a" />
+                <SolidColorBrush x:Key="AppMeterWarningBrush" Color="#f59e0b" />
+                <SolidColorBrush x:Key="AppMeterPeakBrush" Color="#dc2626" />
+                <SolidColorBrush x:Key="AppMeterLabelBrush" Color="#cbd5e1" />
                 <SolidColorBrush x:Key="AppVideoRailBrush" Color="#cbd5e1" />
                 <Color x:Key="AppAmbientBubbleColor">#0284c7</Color>
                 <sys:Double x:Key="AppAmbientBubbleOpacityScale">2.4</sys:Double>
@@ -1007,8 +1025,12 @@
              added and removed the class `recording` since the screen shipped, and NO selector
              for it has ever existed: the mic button looked identical whether or not the
              microphone was open. Both selectors below are that missing half. Do not delete one
-             without deleting its Classes.Add/Remove call in VoiceOverWindow.axaml.cs. -->
-        <Style Selector="Button.recording">
+             without deleting its SetClass call in VoiceOverWindow.RecordingState.cs. -->
+        <!-- VOREC_01 — the pulse is a SHORT "capture just started" cue: code adds `pulse` beside
+             `recording` only for the first RecordingPulseLimit (10 s) of each live segment, and
+             removes both on pause, stop, fault and close. The glow and the solid red lamp stay
+             while capture is live; nothing animates after it ends. -->
+        <Style Selector="Button.recording.pulse">
             <Style.Animations>
                 <Animation Duration="0:0:0.9" IterationCount="INFINITE">
                     <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1.0"/></KeyFrame>
@@ -1020,7 +1042,7 @@
         <Style Selector="Button.recording /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="BoxShadow" Value="{DynamicResource AppRecordingGlowShadow}"/>
         </Style>
-        <Style Selector="Ellipse.recording">
+        <Style Selector="Path.recording.pulse">
             <Style.Animations>
                 <Animation Duration="0:0:0.9" IterationCount="INFINITE">
                     <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1.0"/></KeyFrame>

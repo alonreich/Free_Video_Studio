@@ -63,8 +63,11 @@ public static partial class MpvWrapper
     public enum MpvEventId : int
     {
         None = 0,
-        Shutdown = 9,
-        LogMessage = 11,
+        Shutdown = 1,
+        LogMessage = 2,
+        EndFile = 7,
+        Seek = 20,
+        PlaybackRestart = 21,
         PropertyChange = 22,
     }
 

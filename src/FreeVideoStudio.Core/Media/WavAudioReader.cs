@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -72,14 +72,20 @@ public sealed class WavAudioReader : WaveStream, ISampleProvider
 
     public override int Read(byte[] buffer, int offset, int count)
     {
-        var waveBuffer = new WaveBuffer(buffer);
-        int samplesRead = Read(waveBuffer.FloatBuffer, offset / 4, count / 4);
+        Span<byte> byteSpan = buffer.AsSpan(offset, count);
+        Span<float> floatSpan = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(byteSpan);
+        int samplesRead = Read(floatSpan);
         return samplesRead * 4;
+    }
+
+    public int Read(Span<float> buffer)
+    {
+        lock (_lock) { return _channel.Read(buffer); }
     }
 
     public int Read(float[] buffer, int offset, int count)
     {
-        lock (_lock) { return _channel.Read(buffer, offset, count); }
+        return Read(buffer.AsSpan(offset, count));
     }
 
     private long SourceToDest(long sourceBytes) => _destBytesPerSample * (sourceBytes / _sourceBytesPerSample);

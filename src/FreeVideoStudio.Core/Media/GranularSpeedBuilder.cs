@@ -53,7 +53,8 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
-    private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null);
+    // AIPARITY_01 — AiOriginSec is the zoom's UNCLAMPED clip-relative start: the trajectory's t = 0.
+    private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
 
@@ -280,7 +281,8 @@ public class GranularSpeedBuilder
                     double zEnd = ToClipRelative((seg.ZoomEndMs ?? seg.EndMs) / 1000.0);
                     if (zEnd > zStart + 0.001)
                     {
-                        zooms.Add(new ZoomConfig(zStart, zEnd, seg.ZoomX.Value, seg.ZoomY.Value, seg.ZoomW.Value, seg.ZoomH.Value, seg.ZoomOrigRes, seg.ZoomSlow, seg.AiTrackingTrajectory));
+                        zooms.Add(new ZoomConfig(zStart, zEnd, seg.ZoomX.Value, seg.ZoomY.Value, seg.ZoomW.Value, seg.ZoomH.Value, seg.ZoomOrigRes, seg.ZoomSlow, seg.AiTrackingTrajectory,
+                            (seg.ZoomStartMs ?? seg.StartMs) / 1000.0 - timelineOriginSec));
                     }
                 }
             }
@@ -552,22 +554,22 @@ public class GranularSpeedBuilder
                 {
                     if (p1 >= 0.999 && !zc.Slow)
                     {
-                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, 1.0);
+                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, 1.0, chunk.Start);
                     }
                     else
                     {
-                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, p1);
+                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, p1, chunk.Start);
                     }
                 }
                 else
                 {
                     if (!zc.Slow)
                     {
-                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, 1.0);
+                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, 1.0, chunk.Start);
                     }
                     else if (Math.Abs(p1 - p2) < 0.001)
                     {
-                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, p1);
+                        zoomFilter = BuildConstantZoomFilter(preScale, zc, resW, resH, outW, outH, p1, chunk.Start);
                     }
                     else
                     {
@@ -767,14 +769,15 @@ public class GranularSpeedBuilder
     /// in this branch the padding costs nothing meaningful.
     /// </summary>
     private static string BuildConstantZoomFilter(
-        string preScale, ZoomConfig zc, double resW, double resH, int outW, int outH, double p)
+        string preScale, ZoomConfig zc, double resW, double resH, int outW, int outH, double p, double chunkStartSec = 0)
     {
         if (!string.IsNullOrEmpty(zc.AiTrackingTrajectory))
         {
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(zc.AiTrackingTrajectory);
             if (traj != null)
             {
-                string cropFilter = traj.ToFfmpegCropFilter();
+                // AIPARITY_01 — the chunk's clock starts at 0; the trajectory's clock started at AiOriginSec.
+                string cropFilter = traj.ToFfmpegCropFilter(Math.Max(0, chunkStartSec - zc.AiOriginSec));
                 if (!string.IsNullOrEmpty(cropFilter))
                 {
                     return new FilterChain()

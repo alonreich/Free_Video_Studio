@@ -63,4 +63,6 @@ public partial class MusicWizardWindow
     private Button? PlayBtnCtl => _cPlayBtn ??= this.FindControl<Button>("PlayBtn");
     private Button? _cNextBtn;
     private Button? NextBtnCtl => _cNextBtn ??= this.FindControl<Button>("NextBtn");
+    private TextBlock? _cSelectedTrackLabel;
+    private TextBlock? SelectedTrackLabelCtl => _cSelectedTrackLabel ??= this.FindControl<TextBlock>("SelectedTrackLabel");
 }

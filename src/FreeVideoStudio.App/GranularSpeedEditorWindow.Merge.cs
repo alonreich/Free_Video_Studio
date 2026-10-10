@@ -41,7 +41,7 @@ public partial class GranularSpeedEditorWindow
     private bool _mergeDividersQueued;
 
     /// <summary>True when this editor edits a merge (its source is an inline mpv EDL).</summary>
-    private bool IsMergeMode => _videoPath.StartsWith("edl://", StringComparison.Ordinal);
+    private bool IsMergeMode => _edit.IsMergeMode;
 
     /// <summary>The merge being edited. Set before ShowDialog; null in the Main App.</summary>
     public MergeEditorSource? MergeSource

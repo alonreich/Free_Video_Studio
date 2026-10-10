@@ -37,22 +37,36 @@ public static class InstallPayload
         return manifest;
     }
 
-    public static void Verify(string directory)
+    /// <summary>
+    /// UPGRADEUX_01 — <paramref name="progress"/> receives the fraction (0..1) of manifest bytes
+    /// already checked, so a caller can show the user that hashing hundreds of MB is moving.
+    /// It never changes what is verified.
+    /// </summary>
+    public static void Verify(string directory, Action<double>? progress = null)
     {
-        foreach (InstallFile entry in ReadManifest(directory).Files)
+        List<InstallFile> files = ReadManifest(directory).Files;
+        long total = Math.Max(1, files.Sum(x => x.Length)), done = 0;
+        foreach (InstallFile entry in files)
         {
             string file = EntryPath(directory, entry.Path);
             if (!File.Exists(file) || new FileInfo(file).Length != entry.Length || UpgradeFiles.Hash(file) != entry.Sha256)
                 throw new IOException($"Installation payload verification failed: {entry.Path}");
+            done += entry.Length;
+            progress?.Invoke((double)done / total);
         }
     }
 
-    public static void Extract(Stream embeddedZip, string destination, string? reuseRoot = null)
+    /// <summary>
+    /// UPGRADEUX_01 — <paramref name="progress"/> receives 0..1 across unpacking (first 70 %),
+    /// reusing installed runtime files (next 15 %) and the final verification (last 15 %).
+    /// </summary>
+    public static void Extract(Stream embeddedZip, string destination, string? reuseRoot = null, Action<double>? progress = null)
     {
         UpgradeFiles.RequirePlainPath(destination);
         Directory.CreateDirectory(destination);
         using var archive = new ZipArchive(embeddedZip, ZipArchiveMode.Read, leaveOpen: true);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long unpackTotal = Math.Max(1, archive.Entries.Sum(x => x.Length)), unpacked = 0;
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
             if (entry.FullName.EndsWith('/')) continue;
@@ -62,22 +76,30 @@ public static class InstallPayload
                 throw new IOException("Linked payload entries are not supported.");
             UpgradeFiles.RequirePlainPath(path);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using var input = entry.Open();
-            using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            input.CopyTo(output);
-            output.Flush(flushToDisk: true);
+            using (var input = entry.Open())
+            using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(flushToDisk: true);
+            }
+            unpacked += entry.Length;
+            progress?.Invoke(0.70 * unpacked / unpackTotal);
         }
-        foreach (InstallFile entry in ReadManifest(destination).Files)
+        List<InstallFile> missing = ReadManifest(destination).Files
+            .Where(entry => !File.Exists(EntryPath(destination, entry.Path))).ToList();
+        long reuseTotal = Math.Max(1, missing.Sum(x => x.Length)), reused = 0;
+        foreach (InstallFile entry in missing)
         {
             string target = EntryPath(destination, entry.Path);
-            if (File.Exists(target)) continue;
             if (reuseRoot == null) throw new IOException("A full installer is required for this installation.");
             string source = EntryPath(reuseRoot, entry.Path);
             if (!File.Exists(source) || new FileInfo(source).Length != entry.Length || HashMismatch(source, entry))
                 throw new IOException("Installed runtime files have changed. Download the full installer.");
             UpgradeFiles.CopyVerified(source, target);
+            reused += entry.Length;
+            progress?.Invoke(0.70 + 0.15 * reused / reuseTotal);
         }
-        Verify(destination);
+        Verify(destination, progress == null ? null : f => progress(0.85 + 0.15 * f));
     }
 
     private static bool HashMismatch(string path, InstallFile entry) => UpgradeFiles.Hash(path) != entry.Sha256;

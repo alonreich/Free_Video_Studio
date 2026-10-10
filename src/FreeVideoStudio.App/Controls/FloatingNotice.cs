@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 
@@ -92,6 +92,7 @@ public static class FloatingNotice
 
     private static readonly ConditionalWeakTable<Window, HostState> Hosts = new();
 
+    internal static Action<Window, string, NoticeKind>? NoticeHookForTesting { get; set; }
 
     /// <summary>
     /// Floats a short message up over the window and fades it out. Safe to call from any thread and
@@ -172,6 +173,7 @@ public static class FloatingNotice
             if (string.Equals(st.LastText, text, StringComparison.Ordinal) && now - st.LastShown < DedupeWindow) return;
             st.LastText = text;
             st.LastShown = now;
+            NoticeHookForTesting?.Invoke(window, text, kind);
 
             Canvas? host = EnsureHost(window, st);
             if (host == null) return;

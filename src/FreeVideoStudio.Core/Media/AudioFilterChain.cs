@@ -399,6 +399,27 @@ public class AudioFilterChain
 
     /// <summary>VOPROT_01 — the voice protection's level dip (85%) and speech-band carve.</summary>
     public const double VoiceDuckDepth = 0.85;
+
+    /// <summary>VOPROT_01 — the pulse's ramp either side of every take, seconds (the export's <c>0.3</c>).</summary>
+    public const double VoiceRampSec = 0.3;
+
+    /// <summary>
+    /// VOPREVIEW_02 — the export's voice-protection pulse evaluated at output second <paramref name="t"/>:
+    /// <c>clip(Σ clip((t-(s-0.3))/0.3,0,1)·clip(((e+0.3)-t)/0.3,0,1), 0, 1)</c> over the takes (ProcessWorker).
+    /// The SUM matters: two takes closer than 0.6 s overlap their ramps and the export adds them; the live
+    /// preview used to take the MAXIMUM and dipped less there. Every live preview uses this.
+    /// </summary>
+    public static double VoiceProtectionPulseAt(double t, IEnumerable<(double StartSec, double EndSec)> takes)
+    {
+        double sum = 0;
+        foreach (var (s, e) in takes)
+        {
+            double up = Math.Clamp((t - (s - VoiceRampSec)) / VoiceRampSec, 0, 1);
+            double down = Math.Clamp(((e + VoiceRampSec) - t) / VoiceRampSec, 0, 1);
+            sum += up * down;
+        }
+        return Math.Clamp(sum, 0, 1);
+    }
     public const string VoiceCarveEq = "equalizer=f=2500:width_type=h:width=2200:g=-3";
 
     /// <summary>

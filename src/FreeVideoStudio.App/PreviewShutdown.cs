@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -86,8 +86,12 @@ internal sealed class PreviewShutdownCoordinator
         {
             if (_completed) return Task.FromResult(PreviewShutdownResult.AlreadyStopped);
             if (_pending != null) return _pending;
-            _pending = RunCoreAsync(core, cancellationToken);
-            return _pending;
+            var task = RunCoreAsync(core, cancellationToken);
+            if (!task.IsCompleted)
+            {
+                _pending = task; // VOAPPLY_05 — only retain in-flight tasks so synchronous failures remain retryable
+            }
+            return task;
         }
     }
 
@@ -140,5 +144,59 @@ internal sealed class PreviewShutdownCoordinator
 
         return PreviewShutdownResult.WorkerDidNotStop(
             $"{live.Count} preview worker(s) did not stop within {timeoutMs}ms.");
+    }
+
+    /// <summary>
+    /// VOAPPLY_05 / UI-GPUPRESENT2 — Awaits quiescence of swap-chain presentation gates.
+    /// Acquiring each permit proves the compositor has completed updating the corresponding slot.
+    /// </summary>
+    public static async Task<PreviewShutdownResult> QuiescePresentGatesAsync(
+        IReadOnlyList<SemaphoreSlim> gates,
+        int timeoutMs,
+        CancellationToken cancellationToken)
+    {
+        var acquired = new List<SemaphoreSlim>();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeoutMs);
+
+        int currentSlot = -1;
+        try
+        {
+            for (int i = 0; i < gates.Count; i++)
+            {
+                currentSlot = i;
+                bool ok = await gates[i].WaitAsync(timeoutMs, cts.Token).ConfigureAwait(true);
+                if (!ok)
+                {
+                    return PreviewShutdownResult.Failed($"Present gate for slot {i} did not quiesce within {timeoutMs}ms.");
+                }
+                acquired.Add(gates[i]);
+            }
+            return PreviewShutdownResult.Ok;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return PreviewShutdownResult.Failed($"Present gate for slot {currentSlot} did not quiesce within {timeoutMs}ms.");
+        }
+        catch (OperationCanceledException)
+        {
+            return PreviewShutdownResult.Failed("Present permit quiescence was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("MPV-Interop", $"Present permits did not quiesce: {ex.Message}");
+            return PreviewShutdownResult.Failed($"Present permits did not quiesce: {ex.Message}");
+        }
+        finally
+        {
+            if (acquired.Count < gates.Count)
+            {
+                foreach (var gate in acquired)
+                {
+                    try { gate.Release(); }
+                    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
+            }
+        }
     }
 }

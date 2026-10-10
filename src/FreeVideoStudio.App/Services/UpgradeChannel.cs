@@ -40,12 +40,31 @@ internal sealed class UpgradeChannel(TcpClient client) : IDisposable
         return (kind, detail);
     }
 
+    /// <summary>
+    /// UPGRADEUX_01 — called for every <c>progress</c> message the elevated worker sends while the
+    /// broker is waiting for its next real reply. Progress is display-only: it never satisfies an
+    /// <see cref="ExpectAsync"/> and never changes the protocol's order.
+    /// </summary>
+    public Action<string>? Progress { get; set; }
+
     public async Task<string> ExpectAsync(string kind, TimeSpan? wait = null)
     {
-        var message = await ReadAsync(wait).ConfigureAwait(false);
-        if (message.Kind != kind) throw new IOException($"Upgrade stopped before {kind} ({message.Kind}).");
-        return message.Detail;
+        while (true)
+        {
+            var message = await ReadAsync(wait).ConfigureAwait(false);
+            if (message.Kind == ProgressKind && kind != ProgressKind)
+            {
+                try { Progress?.Invoke(message.Detail); }
+                catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                continue;
+            }
+            if (message.Kind != kind) throw new IOException($"Upgrade stopped before {kind} ({message.Kind}).");
+            return message.Detail;
+        }
     }
+
+    /// <summary>UPGRADEUX_01 — the message kind for "phase|fraction" status lines.</summary>
+    public const string ProgressKind = "progress";
 
     public void Dispose() => client.Dispose();
 }

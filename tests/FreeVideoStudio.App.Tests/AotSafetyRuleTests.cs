@@ -93,6 +93,32 @@ public sealed class AotSafetyRuleTests
         }
     }
 
+    /// <summary>MICHEALTH_02 — NAudio.WinMM below 3.1.0 marshals WAVEHDR as a class; under NativeAOT
+    /// each P/Invoke gets a temporary copy, the driver's header updates are lost, and capture dies
+    /// with "WaveHeaderUnprepared calling waveInAddBuffer" (field log 2026-10-05) while JIT tests stay
+    /// green. Both projects must reference Core and WinMM at the SAME version, never below 3.1.0.
+    /// A version check does not prove capture works — the opt-in NativeAOT smoke does (MICSMOKE_01).</summary>
+    [Fact]
+    public void NAudioWinMmStaysAtTheNativeAotFixedRelease()
+    {
+        var minimum = new System.Version(3, 1, 0);
+        var versions = new System.Collections.Generic.List<string>();
+        foreach (string project in new[] { "FreeVideoStudio.App", "FreeVideoStudio.Core" })
+        {
+            var doc = XDocument.Load(Path.Combine(RepoRoot.Path, "src", project, project + ".csproj"));
+            foreach (string package in new[] { "NAudio.Core", "NAudio.WinMM" })
+            {
+                var reference = doc.Descendants("PackageReference").SingleOrDefault(e => (string?)e.Attribute("Include") == package);
+                Assert.True(reference != null, $"{project} must reference {package} directly.");
+                string version = (string?)reference!.Attribute("Version") ?? "";
+                Assert.True(System.Version.TryParse(version, out var parsed) && parsed >= minimum,
+                    $"{project} references {package} {version}; NativeAOT microphone capture needs >= {minimum}.");
+                versions.Add(version);
+            }
+        }
+        Assert.Single(versions.Distinct());
+    }
+
     [Fact]
     public void UnusedAvaloniaControlPackagesStayOutOfRelease()
     {
