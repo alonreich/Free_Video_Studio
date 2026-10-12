@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -187,7 +184,6 @@ public sealed record ProjectDocument
     /// </summary>
     public OutputTimeline BuildTimeline()
     {
-        // MEMEMODE_01 — only full-screen memes are insertions; a corner overlay adds zero seconds.
         var insertions = MemePlacement.ToInsertions(Memes);
 
         return OutputTimeline.Create(
@@ -225,16 +221,10 @@ public sealed record ProjectDocument
             return SourceIntegrity.Missing;
         }
 
-        // A zero fingerprint means the project predates fingerprinting, or the probe failed when it
-        // was saved. Reporting Changed there would nag the user about every older project, so an
-        // absent fingerprint is treated as "cannot tell", which is the honest answer.
         if (Source.SizeBytes <= 0) return SourceIntegrity.Unknown;
 
         if (info.Length != Source.SizeBytes) return SourceIntegrity.Changed;
 
-        // Modification time is compared at whole-second resolution. Copying a file between
-        // filesystems routinely perturbs the sub-second part without the bytes differing, and a
-        // false "your video changed" warning teaches users to dismiss the real one.
         long stored = Source.ModifiedUtcSeconds;
         if (stored > 0)
         {
@@ -327,7 +317,7 @@ public sealed record ProjectDocument
         }
         catch (ArgumentException swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return "Untitled";
         }
     }
@@ -433,10 +423,9 @@ public sealed record ProjectMask(string ProfileName, string Fingerprint, JsonObj
     {
         if (config is null) return string.Empty;
 
-        // Serialise with a canonical key order so a reordered-but-identical document matches.
         string canonical = Canonicalise(config);
         byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexString(hash, 0, 8);   // 16 hex chars: plenty to notice an edit, short enough to print.
+        return Convert.ToHexString(hash, 0, 8);
     }
 
     private static string Canonicalise(JsonNode? node)

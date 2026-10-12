@@ -1,9 +1,9 @@
 <Project>
   <PropertyGroup>
-    <Version>2026.10.10.0926</Version>
-    <AssemblyVersion>2026.10.10.0926</AssemblyVersion>
-    <FileVersion>2026.10.10.0926</FileVersion>
-    <InformationalVersion>2026.10.10.0926</InformationalVersion>
-    <ProductVersion>2026.10.10.0926</ProductVersion>
+    <Version>2026.10.12.0921</Version>
+    <AssemblyVersion>2026.10.12.0921</AssemblyVersion>
+    <FileVersion>2026.10.12.0921</FileVersion>
+    <InformationalVersion>2026.10.12.0921</InformationalVersion>
+    <ProductVersion>2026.10.12.0921</ProductVersion>
   </PropertyGroup>
 </Project>

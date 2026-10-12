@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 
 using System.Globalization;
 using System.Text;
@@ -53,7 +50,6 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
-    // AIPARITY_01 — AiOriginSec is the zoom's UNCLAMPED clip-relative start: the trajectory's t = 0.
     private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
@@ -75,10 +71,6 @@ public class GranularSpeedBuilder
         double sourceCutStartMs = 0,
         IReadOnlyList<OutputTimeline.Cut>? cuts = null)
     {
-        // CUT_01 — cuts ride the SAME mapper every other feature already uses. This is the whole
-        // reason voice-overs, memes and the music timeline need no changes to survive a cut: they
-        // are all stored in SOURCE time and converted through here, so removing footage slides
-        // them exactly as slow-motion and freezes already do.
         return OutputTimeline.Create(totalDurationMs, segments, baseSpeed, sourceCutStartMs, null, cuts)
                              .SourceToOutput;
     }
@@ -109,10 +101,6 @@ public class GranularSpeedBuilder
     {
         if (chunkDurationSec <= SpliceFadeSec * 3) return string.Empty;
 
-        // SPLICE_02 — the fade is now capped at 2% of the chunk at each end. 8ms was sized for
-        // joins about a second apart; with the neighbour gap lifted, blocks can touch and a run of
-        // short blocks put 16ms of ramp on a 200ms chunk (8% of it), which reads as a gargle rather
-        // than a de-click. Chunks of 400ms and up are unaffected and still get the full 8ms.
         double fade = Math.Min(SpliceFadeSec, chunkDurationSec / 50.0);
         string f = fade.ToString("F4", CultureInfo.InvariantCulture);
 
@@ -235,8 +223,6 @@ public class GranularSpeedBuilder
         double timelineOriginSec = sourceCutStartMs / 1000.0;
         var preChainParts = new List<string>();
 
-        // CUT_01 — normalised through the SAME method OutputTimeline uses, so the graph this
-        // builds and the timeline the UI draws can never disagree about where the holes are.
         var activeCuts = OutputTimeline.NormalizeCuts(cuts, totalDurationSec);
 
         bool InsideCut(double at)
@@ -354,11 +340,6 @@ public class GranularSpeedBuilder
                 if (sp.start > rangeStart && sp.start < rangeEnd) subBounds.Add(sp.start);
                 if (sp.end > rangeStart && sp.end < rangeEnd) subBounds.Add(sp.end);
             }
-            // CUT_01 — a cut edge is a subdivision boundary exactly like a speed or zoom edge.
-            // Adding them here means the existing boundary machinery does the splitting, and the
-            // only extra work below is DROPPING the sub-ranges that fall inside a hole. This is
-            // also what makes "a cut through the middle of a slow-mo + zoom block" fall out for
-            // free: the block was already going to be subdivided at those boundaries.
             foreach (var c in activeCuts)
             {
                 if (c.StartSec > rangeStart && c.StartSec < rangeEnd) subBounds.Add(c.StartSec);
@@ -379,11 +360,6 @@ public class GranularSpeedBuilder
                 if (cEnd <= cStart + 0.001) continue;
                 double mid = (cStart + cEnd) / 2.0;
 
-                // CUT_01 — THE ENTIRE REMOVAL, RIGHT HERE. A sub-range whose midpoint is inside a
-                // cut never becomes a chunk, so it is never trimmed, never decoded, never handed to
-                // concat, and never reaches the output file. Testing the MIDPOINT rather than an
-                // edge is deliberate: edges are shared with the neighbouring surviving range, and
-                // an edge test would drop the wrong side.
                 if (InsideCut(mid)) continue;
 
                 double cSpeed = baseSpeed;
@@ -408,9 +384,6 @@ public class GranularSpeedBuilder
             double fEnd = Math.Max(fStart, f.end);
             if (fEnd <= sourceCursor + 0.001) continue;
 
-            // CUT_01 — must match OutputTimeline.Create exactly: a freeze whose held frame was
-            // deleted is dropped. If these two ever disagree the exported length and the length the
-            // UI predicts drift apart, which is the class of bug OutputTimeline was created to end.
             if (InsideCut(fStart)) continue;
 
             if (fStart > sourceCursor + 0.001)
@@ -433,10 +406,6 @@ public class GranularSpeedBuilder
 
         int nChunks = chunks.Count;
 
-        // CUT_01 — a cut list that removes every surviving frame would fall through to the
-        // "no chunks" fast path below and silently export the WHOLE clip, cuts ignored — the worst
-        // possible failure, because it looks like the feature simply did not work. The UI refuses
-        // to leave less than one frame, so reaching here means a bad saved state; fail loudly.
         if (nChunks == 0 && activeCuts.Count > 0)
         {
             CoreLogger.Fail("GranularSpeed",
@@ -457,9 +426,7 @@ public class GranularSpeedBuilder
 
         if (nChunks == 0)
         {
-            // TEMPO_01 — the ONE tempo policy (AudioTempoFilterBuilder). AVSYNC_01: "" at 1.0x, and
-            // the leading comma lives in the segment so it disappears with it.
-            string baseAtempoSegment = AudioTempoFilterBuilder.Segment(baseSpeed, leadingComma: true);
+            string baseAtempoSegment = AudioTempoFilterBuilder.Segment(baseSpeed, leadingComma: true, totalDurationSec);
             string aChain = !string.IsNullOrEmpty(inputAudioLabel)
                 ? $"{inputAudioLabel}aresample=48000:async=1,asetpts=PTS-STARTPTS{baseAtempoSegment}[a_speed_out]"
                 : $"anullsrc=r=48000:cl=stereo,atrim=duration={(totalDurationSec / baseSpeed).ToString("F4", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS[a_speed_out]";
@@ -700,18 +667,9 @@ public class GranularSpeedBuilder
 
                 if (!string.IsNullOrEmpty(aSrc))
                 {
-                    // CUT_01 / SPLICE_01 — a few milliseconds of fade on each end of every audio
-                    // chunk. `concat` butt-joins waveforms, and a butt-join between two unrelated
-                    // instants is a step discontinuity, which is heard as a click or pop. This has
-                    // ALWAYS been true at speed-change and freeze boundaries; cuts just make it far
-                    // more likely, because the two sides of a cut are arbitrarily far apart.
-                    // Deliberately shorter than one frame at 60fps, so it cannot be heard as a dip.
                     string spliceFade = BuildSpliceFade(quantizedDur);
 
-                    // TEMPO_01 — the ONE tempo policy, BEFORE the apad/atrim bound and the splice
-                    // fade, so the chunk keeps its exact length and its de-click whichever engine
-                    // runs. AVSYNC_01: "" at 1.0x — no dangling comma.
-                    string atempoSegment = AudioTempoFilterBuilder.Segment(chunk.Speed, leadingComma: false);
+                    string atempoSegment = AudioTempoFilterBuilder.Segment(chunk.Speed, leadingComma: false, chunk.End - chunk.Start);
                     fullParts.Add(
                         $"{aSrc}atrim=start={chunk.Start.ToString("F4", CultureInfo.InvariantCulture)}:end={chunk.End.ToString("F4", CultureInfo.InvariantCulture)}," +
                         $"aresample=48000:async=1:min_comp=0.001," +
@@ -776,7 +734,6 @@ public class GranularSpeedBuilder
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(zc.AiTrackingTrajectory);
             if (traj != null)
             {
-                // AIPARITY_01 — the chunk's clock starts at 0; the trajectory's clock started at AiOriginSec.
                 string cropFilter = traj.ToFfmpegCropFilter(Math.Max(0, chunkStartSec - zc.AiOriginSec));
                 if (!string.IsNullOrEmpty(cropFilter))
                 {
@@ -829,7 +786,7 @@ public class GranularSpeedBuilder
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return 60.0;
         }
     }

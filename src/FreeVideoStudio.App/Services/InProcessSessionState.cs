@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 
@@ -25,36 +22,25 @@ namespace FreeVideoStudio.App.Services;
 /// <see cref="NamedPipeStateServer"/> holding it in memory. When that server is running,
 /// <see cref="ReadSnapshot"/> is a lock + deep clone — pure memory, no pipe, no mutex, no I/O.</item>
 /// <item><b>Real cross-process case.</b> No in-process server means this is a standalone tool
-/// process next to a running main app; a 30 ms fast client probe fetches the LIVE state from
-/// that other process. Bounded, and only reached when the cross-process case is genuine.</item>
-/// <item><b>Last resort.</b> One unlocked direct file read of <c>session_state.json</c>.</item>
+/// process next to a running main app. Bootstrap has already loaded that LIVE state asynchronously
+/// (bounded pipe exchange, IPCDEADLINE_01) and primed <see cref="SessionStateWriter"/> with it, so
+/// this is still a memory read.</item>
+/// <item><b>Never blocks.</b> UIIPC_01: no pipe, no mutex, no disk on this path. If nothing was primed
+/// yet the result is the not-yet-acknowledged updates alone, and an asynchronous prime is started
+/// for the next read. (This used to fall back to <c>NamedPipeStateClient.GetStateSync</c>, whose
+/// <c>ReadFrame</c> had no deadline: a peer that connected and never answered froze the window.)</item>
 /// </list>
 ///
-/// This is a read path only. Writes (bounds, preferences) stay debounced/asynchronous through
-/// <c>StateTransferStore</c>, which keeps the server's in-memory state — and therefore this
-/// snapshot — current. This class holds NO state of its own; it is a pure function.
+/// This is a read path only. Writes (bounds, preferences) go through <see cref="SessionStateWriter.Enqueue"/>,
+/// whose pending values are overlaid on every snapshot, so a read always sees the latest write.
 /// </para>
 /// </summary>
 public static class InProcessSessionState
 {
     /// <summary>
     /// UISTATE_01 — a read-only snapshot of the session state, safe to call from UI construction.
-    /// Never starts a server, never waits on the IPC ready event, never takes the named mutex.
+    /// Never starts a server, never waits on the IPC ready event, never takes the named mutex, never
+    /// touches the pipe or the disk (UIIPC_01).
     /// </summary>
-    public static JsonObject ReadSnapshot()
-    {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            return server.GetState();
-        }
-
-        var ipcState = NamedPipeStateClient.GetStateSync(NamedPipeStateClient.FastProbeTimeout, System.Threading.CancellationToken.None);
-        if (ipcState != null)
-        {
-            return ipcState;
-        }
-
-        return StateTransferStore.LoadFromDiskDirect(ApplicationPaths.CreateDefault());
-    }
+    public static JsonObject ReadSnapshot() => SessionStateWriter.For().ReadSnapshot();
 }

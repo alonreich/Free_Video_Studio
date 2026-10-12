@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,7 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-// Audit regressions retained for implementation. Store is entirely in memory; no file cleanup.
 public sealed class VoiceOverTenthAuditTests
 {
     private static VoiceCaptureSession Capture() => new(new VoiceOverApplyTests.TestDevices(), a => a());

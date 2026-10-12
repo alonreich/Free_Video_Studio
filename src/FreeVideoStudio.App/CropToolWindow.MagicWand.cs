@@ -1,8 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/01_TIMELINE_COORDINATE_MATH.md, docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -10,7 +6,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
-using SourceRect = FreeVideoStudio.Core.Editing.CropSourceRect;   // EDITSTATE_01
+using SourceRect = FreeVideoStudio.Core.Editing.CropSourceRect;
 using HudRole = FreeVideoStudio.Core.Editing.CropHudRole;
 using FreeVideoStudio.Core.Abstractions;
 using FreeVideoStudio.Core.Media;
@@ -23,31 +19,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// MAGICWAND_02 — AUTOMATIC HUD DETECTION.  (Moved verbatim in intent from CropToolWindow.axaml.cs
-// by AIHUD_01 so the window code-behind can SHRINK under MVVM_02 while the wand gains AI help.)
-//
-// WHAT WAS HERE BEFORE. ShowMagicWandCandidates() built six CandidateSpecs from hardcoded
-// fractions of the frame — CandidateFromRatio("stats", 0.65, 0.02, 0.32, 0.28) and five more —
-// drew them as pink rectangles and told the user they had been "detected". Nothing in that
-// method ever looked at a pixel. MAGICWAND_01 hid the button rather than ship it.
-//
-// WHAT REPLACED IT. FreeVideoStudio.Core.Media.HudAutoDetector, the C# port of the old Python
-// tool's developer_tools/magic_wand.py. It samples frames across the WHOLE clip, takes the temporal
-// median and the temporal standard deviation, and scores real contours per HUD role.
-//
-// AIHUD_01 — OPTIONAL AI ASSISTANCE. When a Gemini key is configured AND the user has agreed to it,
-// ONE frozen frame is also sent to the AI provider, and its validated suggestions are fused with
-// the local ones by HudDetectionCoordinator (Core). The local detector is unchanged and always
-// runs; with no key, no consent, no network, a timeout, a 429 or a bad answer, the user gets the
-// local result exactly as before. NOTHING here commits a crop: every candidate is a suggestion the
-// user clicks, moves/resizes as a normal selection, and confirms themselves.
-//
-// THE INTERACTION, which is the old Python tool's (app_handlers.on_magic_wand_clicked) because it
-// was right: the FIRST press runs the analysis and shows every candidate at once. Each press after
-// that steps through them one at a time as a live selection; after the last one it wraps back to
-// showing them all.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 public partial class CropToolWindow
 {
     /// <summary>
@@ -186,8 +157,6 @@ public partial class CropToolWindow
         string? frameIdentity = CurrentWandFrameIdentity();
         bool aiAvailable = WandAiAvailable();
 
-        // AIHUD_04 — AI boxes describe ONE frame. A different frame with no AI to ask again falls
-        // back to the clip's local candidates rather than reusing another frame's AI answer.
         if (_wandCandidates != null && _wandCandidatesFrame != null && _wandCandidatesFrame != frameIdentity && !aiAvailable)
         {
             _wandCandidates = _wandLocalCandidates is { } localOnly ? ToCandidateSpecs(localOnly) : null;
@@ -195,7 +164,6 @@ public partial class CropToolWindow
             _wandPreviewIndex = -1;
         }
 
-        // ── Already analysed for this clip (and, if AI is on, for this frame): step the preview.
         bool cacheCoversFrame = !aiAvailable || _wandCandidatesFrame == frameIdentity;
         if (_wandCandidates is { Count: > 0 } cached && cacheCoversFrame)
         {
@@ -224,17 +192,15 @@ public partial class CropToolWindow
                 ? "Looking through the clip for HUD pieces, and asking the AI about this frame."
                 : "Looking through the clip for HUD pieces.");
 
-            // WANDPROGRESS_01 — raise the progress panel BEFORE the next await.
             ShowWandOverlay();
 
             string ffmpeg = ResolveBinaryPath("ffmpeg.exe", "backend");
-            string video = _videoPath!;   // File.Exists checked above
+            string video = _videoPath!;
             string snapshot = _snapshotPath!;
             int sourceW = _edit.SnapshotWidth;
             int sourceH = _edit.SnapshotHeight;
             double totalMs = _durationMs;
 
-            // WANDPROGRESS_01 — Progress<T> captures the UI synchronisation context it is CONSTRUCTED on.
             var wandProgress = new Progress<HudAutoDetector.DetectionProgress>(ReportWandProgress);
 
             List<HudCandidate>? cachedLocal = _wandLocalCandidates;
@@ -259,7 +225,6 @@ public partial class CropToolWindow
                 }
                 catch (Exception ex)
                 {
-                    // Any failure here costs only the AI half; the offline wand still runs below.
                     Faults.Degraded("CROP", "The frozen frame could not be prepared for AI suggestions. The offline Magic Wand still runs.", ex);
                 }
             }
@@ -267,7 +232,6 @@ public partial class CropToolWindow
             HudDetectionResult? result = await WandDetection.RunAsync(
                 new HudDetectionRequest(localDetect, frame, sourceW, sourceH), wandProgress);
 
-            // AIHUD_03 — cancelled, superseded, window closed, clip swapped or frame unfrozen: publish NOTHING.
             if (result == null || _wandDetection == null || !_wandDetection.IsCurrent(result.Generation)
              || _sourceCanvas == null || _snapshotPath == null || !string.Equals(_videoPath, video, StringComparison.Ordinal))
             {
@@ -309,7 +273,7 @@ public partial class CropToolWindow
         catch (OperationCanceledException swallowed2)
         {
             SetWizardState(3, "Refine Box", "Magic Wand stopped. Drag a box round a HUD piece yourself.");
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
         }
         catch (Exception ex)
         {
@@ -338,8 +302,6 @@ public partial class CropToolWindow
             SourceRect clamped = _edit.ClampSourceRect(new SourceRect(c.X, c.Y, c.Width, c.Height));
             if (clamped.Width < HudDetectionCoordinator.MinSourcePixels || clamped.Height < HudDetectionCoordinator.MinSourcePixels) continue;
 
-            // A null RoleKey means the generic/circle fallback (or an AI label with no built-in
-            // role) found this. QuadrantGuess is the same position heuristic the manual path uses.
             string roleKey = c.RoleKey is { Length: > 0 } key && _edit.TryGetRole(key, out _)
                 ? key
                 : _edit.QuadrantGuess(clamped).Key;
@@ -349,11 +311,6 @@ public partial class CropToolWindow
         return specs;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // WANDPROGRESS_01 — THE PANEL THAT SAYS WHAT THE WAND IS DOING.
-    // A bar that MOVES, a percentage, a sentence naming what is being looked at, and a way to STOP.
-    // The elapsed clock makes HudAutoDetector.MaxSeconds visible.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
 
     private DispatcherTimer? _wandElapsedTimer;
     private DateTime _wandStartedUtc;
@@ -392,8 +349,6 @@ public partial class CropToolWindow
         int seconds = (int)Math.Max(0, (DateTime.UtcNow - _wandStartedUtc).TotalSeconds);
         int ceiling = HudAutoDetector.MaxSeconds;
 
-        // Stays quiet for the first couple of seconds: a timer that appears instantly on a job that
-        // finishes in three seconds is itself a small alarm.
         elapsed.Text = seconds < 2 ? "" : $"{seconds}s of up to {ceiling}s";
     }
 
@@ -401,7 +356,7 @@ public partial class CropToolWindow
     /// AI" beat). Always on the UI thread; see where the Progress&lt;T&gt; is constructed.</summary>
     private void ReportWandProgress(HudAutoDetector.DetectionProgress beat)
     {
-        if (!_wandRunning) return;   // a beat that lands after the run ended must not repaint the status
+        if (!_wandRunning) return;
         _wandHighWaterPercent = Math.Clamp(Math.Max(_wandHighWaterPercent, beat.Percent), 0, 100);
 
         if (this.FindControl<ProgressBar>("WandProgressBar") is { } bar) bar.Value = _wandHighWaterPercent;
@@ -466,8 +421,6 @@ public partial class CropToolWindow
 
         ClearMagicWandCandidates();
 
-        // Stroke and caption are divided by the zoom for the same reason the selection rectangle's
-        // is (CROPCANVAS_01): at Fit on a 4K capture an unscaled 3px stroke is a hairline.
         double zoom = Math.Max(0.01, CurrentZoom());
         double stroke = 3.0 / zoom;
 

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +17,6 @@ namespace FreeVideoStudio.Core.Tests;
 /// </summary>
 public sealed class AiHudDetectionTests
 {
-    // ── 1. valid structured result parses ───────────────────────────────────────────────────
 
     [Fact]
     public void ValidStructuredResult_Parses()
@@ -55,7 +51,6 @@ public sealed class AiHudDetectionTests
         Assert.Single(result.Candidates);
     }
 
-    // ── 2. malformed result rejected ────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData("")]
@@ -90,7 +85,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal("ammo", Assert.Single(result.Candidates).Label);
     }
 
-    // ── 3. invalid geometry rejected ────────────────────────────────────────────────────────
 
     public static IEnumerable<object[]> InvalidGeometry() => new[]
     {
@@ -137,7 +131,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(4, result.Rejected);
     }
 
-    // ── 4 / 13 / 14. normalized -> source coordinates ───────────────────────────────────────
 
     [Fact]
     public void NormalizedToSource_IsExact()
@@ -147,9 +140,9 @@ public sealed class AiHudDetectionTests
     }
 
     [Theory]
-    [InlineData(1920, 1080, 1574, 32, 288, 281)]   // 1080p landscape
-    [InlineData(2560, 1440, 2099, 43, 384, 375)]   // 1440p landscape
-    [InlineData(3840, 2160, 3149, 65, 576, 561)]   // 4K landscape
+    [InlineData(1920, 1080, 1574, 32, 288, 281)]
+    [InlineData(2560, 1440, 2099, 43, 384, 375)]
+    [InlineData(3840, 2160, 3149, 65, 576, 561)]
     public void LandscapeConversion_UsesSourceFrameNotDisplay(int w, int h, int ex, int ey, int ew, int eh)
     {
         var minimap = new AiHudCandidate("minimap", 0.82, 0.03, 0.15, 0.26, 0.9);
@@ -176,7 +169,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(1080, r.Y + r.Height);
     }
 
-    // ── 10. overlapping local / AI candidates deduplicate ───────────────────────────────────
 
     private static HudCandidate Local(int x, int y, int w, int h, string? role)
         => new(x, y, w, h, role, string.Empty, 0.0, HudCandidateSource.Local);
@@ -231,17 +223,14 @@ public sealed class AiHudDetectionTests
         var local = new[] { Local(1570, 30, 290, 280, "stats") };
         var ai = new[]
         {
-            Ai(1575, 32, 285, 278, "team status", 0.9),     // overlaps but role 'team' != 'stats'
+            Ai(1575, 32, 285, 278, "team status", 0.9),
             Ai(100, 100, 200, 100, "ammo", 0.8),
-            Ai(105, 102, 198, 98, "ammo counter", 0.7),     // duplicate of the previous AI box
-            Ai(600, 600, 100, 100, "score", 0.2),           // AI-only, too unsure
+            Ai(105, 102, 198, 98, "ammo counter", 0.7),
+            Ai(600, 600, 100, 100, "score", 0.2),
         };
 
         IReadOnlyList<HudCandidate> fused = HudCandidateFusion.Fuse(local, ai);
 
-        // 'team status' overlaps the local box but its role is incompatible, so it does not MERGE;
-        // as an AI-only box it then duplicates an already-kept region and is dropped. The two ammo
-        // boxes collapse to one, and the unsure 'score' box is below the AI-only floor.
         Assert.Equal(2, fused.Count);
         Assert.Equal(HudCandidateSource.Local, fused[0].Source);
         Assert.Equal("stats", fused[0].RoleKey);
@@ -260,10 +249,9 @@ public sealed class AiHudDetectionTests
 
         Assert.Equal(a, b);
         Assert.Equal(HudCandidateFusion.MaxCandidates, a.Count);
-        Assert.Equal(5, a.Count(c => c.Source == HudCandidateSource.Local));   // the cap never drops a local result
+        Assert.Equal(5, a.Count(c => c.Source == HudCandidateSource.Local));
     }
 
-    // ── coordinator: 5 / 6 / 7 / 8 / 9 / 11 ─────────────────────────────────────────────────
 
     private sealed class RecordingFaultSink : IFaultSink
     {
@@ -310,7 +298,7 @@ public sealed class AiHudDetectionTests
         Assert.Equal(LocalSet, result.Candidates);
         Assert.Equal(AiHudOutcome.NotConfigured, result.AiOutcome);
         Assert.Equal(0, ai.Calls);
-        Assert.DoesNotContain(faults.Faults, f => f.Tier != FaultTier.Recoverable);   // no key is the normal offline state
+        Assert.DoesNotContain(faults.Faults, f => f.Tier != FaultTier.Recoverable);
     }
 
     [Fact]
@@ -359,9 +347,9 @@ public sealed class AiHudDetectionTests
     {
         var aiAnswer = new AiHudDetectionResult(AiHudOutcome.Success, new[]
         {
-            new AiHudCandidate("minimap", 0.82, 0.03, 0.15, 0.26, 0.95),     // agrees with local 'stats'
+            new AiHudCandidate("minimap", 0.82, 0.03, 0.15, 0.26, 0.95),
             new AiHudCandidate("ability cooldowns", 0.40, 0.90, 0.20, 0.06, 0.8),
-            new AiHudCandidate("junk", 0, 0, 1, 1, 0.99),                      // invalid: never reaches pixels
+            new AiHudCandidate("junk", 0, 0, 1, 1, 0.99),
         }, null);
         var ai = new FakeAi(true, _ => Task.FromResult(aiAnswer));
         using var coordinator = new HudDetectionCoordinator(ai, new RecordingFaultSink());
@@ -376,14 +364,14 @@ public sealed class AiHudDetectionTests
         Assert.Equal(HudCandidateSource.Local, result.Candidates[1].Source);
         Assert.Equal(HudCandidateSource.Ai, result.Candidates[2].Source);
         Assert.Equal((768, 972, 384, 65), (result.Candidates[2].X, result.Candidates[2].Y, result.Candidates[2].Width, result.Candidates[2].Height));
-        Assert.Equal(LocalSet, result.LocalCandidates);   // the local answer is preserved separately
+        Assert.Equal(LocalSet, result.LocalCandidates);
     }
 
     [Fact]
     public async Task Cancellation_PreventsStalePublication()
     {
         var gate = new TaskCompletionSource<AiHudDetectionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var ai = new FakeAi(true, _ => gate.Task);   // deliberately ignores the token: a slow, rude provider
+        var ai = new FakeAi(true, _ => gate.Task);
         using var coordinator = new HudDetectionCoordinator(ai, new RecordingFaultSink());
 
         Task<HudDetectionResult?> run = coordinator.RunAsync(Request(Frame()));
@@ -437,8 +425,6 @@ public sealed class AiHudDetectionTests
     [Fact]
     public void Result_IsSuggestionDataOnly_NothingCanCommit()
     {
-        // AIHUD_01 — "AI NEVER commits automatically." The coordinator's whole output surface is
-        // immutable data; there is no callback, event or delegate through which it could apply a crop.
         foreach (Type t in new[] { typeof(HudDetectionResult), typeof(HudCandidate), typeof(AiHudCandidate), typeof(AiHudDetectionResult) })
         {
             Assert.All(t.GetProperties(), p =>
@@ -447,7 +433,6 @@ public sealed class AiHudDetectionTests
         }
     }
 
-    // ── cache (AIHUD_04) ───────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Cache_IsKeyedBySourceFrameAndModel_AndStoresSuccessOnly()
@@ -465,13 +450,13 @@ public sealed class AiHudDetectionTests
         cache.Store(key with { FrameKey = "sha256:9" }, AiHudDetectionResult.Failed(AiHudOutcome.Timeout, null));
         Assert.False(cache.TryGet(key with { FrameKey = "sha256:9" }, out _));
 
-        cache.Store(key with { FrameKey = "" }, ok);   // incomplete key: never stored
+        cache.Store(key with { FrameKey = "" }, ok);
         Assert.Equal(1, cache.Count);
 
         cache.Store(key with { FrameKey = "sha256:3" }, ok);
         cache.Store(key with { FrameKey = "sha256:4" }, ok);
         Assert.Equal(2, cache.Count);
-        Assert.False(cache.TryGet(key, out _));   // oldest evicted
+        Assert.False(cache.TryGet(key, out _));
     }
 
     [Theory]

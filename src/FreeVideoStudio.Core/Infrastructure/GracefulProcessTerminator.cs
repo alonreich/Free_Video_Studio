@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -153,7 +150,6 @@ public static class GracefulProcessTerminator
     {
         try
         {
-            // StandardInput throws when stdin was not redirected — check the start info first.
             if (!process.StartInfo.RedirectStandardInput) return false;
             if (HasExitedSafe(process)) return false;
 
@@ -182,14 +178,13 @@ public static class GracefulProcessTerminator
         }
         catch (OperationCanceledException swallowed5)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);
             return false;
         }
         catch (Exception swallowed4)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);
             return true;
-            // disposed / handle gone — nothing left to wait for
         }
     }
 
@@ -201,9 +196,8 @@ public static class GracefulProcessTerminator
         }
         catch (Exception swallowed3)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
             return true;
-            // disposed / handle gone — nothing left to wait for
         }
     }
 
@@ -218,7 +212,7 @@ public static class GracefulProcessTerminator
         }
         catch (InvalidOperationException swallowed6)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);
         }
         catch (Exception ex)
         {
@@ -234,9 +228,8 @@ public static class GracefulProcessTerminator
         }
         catch (Exception swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return true;
-            // disposed / no handle — treat as gone
         }
     }
 }

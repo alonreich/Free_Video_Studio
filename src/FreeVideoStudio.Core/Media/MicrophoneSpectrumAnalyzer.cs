@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -10,33 +7,6 @@ using System.Globalization;
 
 namespace FreeVideoStudio.Core.Media;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// SPECTRUM_01 — THE STUDIO METER SHOWS WHAT THE MICROPHONE HEARS, BAND BY BAND.
-//
-// The Voice Over studio meter used to draw every bar as a RANDOM fraction of one overall peak
-// (`targetAmp * (0.3 + <random draw> * 0.7)`), so no bar meant any frequency and a silent but
-// "ready" device could still look alive. This type is the real thing: a Hann-windowed FFT over
-// complete windows of the actual PCM the device delivered, mapped into ascending logarithmic bands
-// with a defined Hz range each, expressed in dBFS (docs/02 §4 AUD-VOICEOVER, SPECTRUM_01).
-//
-//   window      4096 samples, periodic Hann (93 ms at 44.1 kHz), bin width = SampleRate / 4096
-//               (10.77 Hz at 44.1 kHz). This is the resolution — no bar is finer than one bin.
-//   hop         1024 samples (23 ms): a new spectrum every 23 ms of audio, independent of how the
-//               driver chunks its callbacks. The ring buffer carries samples (and partial frames)
-//               across callbacks, so splitting the same PCM differently yields the same spectra.
-//   bands       40, log-spaced 60 Hz .. 16 kHz (upper edge clamped below Nyquist). A band narrower
-//               than one bin is widened to exactly one bin and the remaining range re-spaced, so
-//               every band owns >= 1 distinct bin and no bin is counted in two bands.
-//   level       band POWER = sum of |X_k|^2 over the band's bins, normalised by N·Σw²/4, so a
-//               full-scale sine whose energy falls inside one band reads 0 dBFS regardless of where
-//               it sits between bins (power sum, not peak pick — no scalloping). Halving the
-//               amplitude reads -6.02 dB. Silence floors at -120 dBFS (no log(0), no NaN).
-//   display     Level = clamp((dBFS - (-60)) / 60, 0, 1). Values above 0 dBFS (e.g. square-wave
-//               harmonics of a clipped signal) clamp at 1.
-//
-// Thread model: one instance is NOT thread-safe; the owner (VoiceCaptureSession, SPECTRUM_02)
-// serialises calls. Storage is fixed at construction/configuration: nothing grows per callback.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Sample encoding of a capture buffer.</summary>
 public enum PcmSampleEncoding
@@ -149,7 +119,7 @@ public sealed class MicrophoneSpectrumAnalyzer
 
     /// <summary>Floor of the dBFS scale. Digital silence reads exactly this, never -∞.</summary>
     public const double SilenceDb = -120.0;
-    private const double SilencePower = 1e-12;   // 10^(SilenceDb / 10)
+    private const double SilencePower = 1e-12;
 
     private readonly int _fftSize;
     private readonly int _hopSize;
@@ -157,7 +127,6 @@ public sealed class MicrophoneSpectrumAnalyzer
     private readonly double _minHz;
     private readonly double _maxHz;
 
-    // Fixed storage — sized once, reused for every window (bounded by construction).
     private readonly float[] _ring;
     private readonly double[] _window;
     private readonly double[] _re;
@@ -221,12 +190,10 @@ public sealed class MicrophoneSpectrumAnalyzer
         double sumSquares = 0;
         for (int n = 0; n < fftSize; n++)
         {
-            // Periodic Hann: the DFT-even form, exact for spectral analysis.
             double w = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * n / fftSize);
             _window[n] = w;
             sumSquares += w * w;
         }
-        // One-sided power of a unit-amplitude sine through this window: N·Σw²/4 (Parseval).
         _powerReference = fftSize * sumSquares / 4.0;
 
         for (int k = 0; k < fftSize / 2; k++)
@@ -435,7 +402,6 @@ public sealed class MicrophoneSpectrumAnalyzer
 
     private void Analyze()
     {
-        // Oldest sample is at _writeIndex (the ring is full).
         for (int n = 0; n < _fftSize; n++)
         {
             int src = (_writeIndex + n) % _fftSize;
@@ -513,8 +479,8 @@ public sealed class MicrophoneSpectrumAnalyzer
     {
         double bin = (double)sampleRate / _fftSize;
         double nyquist = sampleRate / 2.0;
-        double lo = Math.Max(_minHz, 1.5 * bin);              // never the DC bin
-        double hi = Math.Min(_maxHz, nyquist - 2.0 * bin);    // strictly below Nyquist
+        double lo = Math.Max(_minHz, 1.5 * bin);
+        double hi = Math.Min(_maxHz, nyquist - 2.0 * bin);
         if (hi - lo < _bandCount * bin)
             throw new NotSupportedException(
                 $"{_bandCount} bands of >= {bin:0.##} Hz do not fit {lo:0.#}..{hi:0.#} Hz at {sampleRate} Hz.");
@@ -531,8 +497,6 @@ public sealed class MicrophoneSpectrumAnalyzer
         var result = ImmutableArray.CreateBuilder<SpectrumBand>(_bandCount);
         for (int i = 0; i < _bandCount; i++)
         {
-            // Bin k (centre k·bin) belongs to the band whose [low, high) contains it; the top band
-            // is closed. A band >= one bin wide always contains at least one bin centre.
             int first = (int)Math.Ceiling(edges[i] / bin - 1e-9);
             int last = i == _bandCount - 1
                 ? (int)Math.Floor(edges[i + 1] / bin + 1e-9)

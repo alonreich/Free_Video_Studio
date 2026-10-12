@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Editing;
@@ -45,7 +45,6 @@ public class GranularEditSessionTests
         OutputTimeline.Create((s.TrimEndMs - s.TrimStartMs), s.Segments, 1.0, 0,
             MemePlacement.ToInsertions(s.Memes), s.CutsForTimeline()).TotalOutputSeconds;
 
-    // ── 1 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T01_ConstructibleWithoutAWindow()
@@ -61,7 +60,6 @@ public class GranularEditSessionTests
         Assert.False(s.IsDirty);
     }
 
-    // ── 2 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T02_CaptureApplyRoundtrip()
@@ -81,8 +79,8 @@ public class GranularEditSessionTests
         s.ApplySnapshot(snap);
 
         Assert.Equal(snap, s.Capture());
-        Assert.Equal(1, s.SelectedSegmentIndex);   // the selection is carried and restored
-        Assert.Equal(-1, s.PendingStartMs);         // a restore spends the marks
+        Assert.Equal(1, s.SelectedSegmentIndex);
+        Assert.Equal(-1, s.PendingStartMs);
     }
 
     [Fact]
@@ -96,7 +94,6 @@ public class GranularEditSessionTests
         Assert.Null(s.SelectedMemeId);
     }
 
-    // ── 3 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T03_SpeedCutMemeFreezeZoom_SurviveRecoveryAndReachTheMainAppAbsolute()
@@ -112,11 +109,9 @@ public class GranularEditSessionTests
         Assert.Equal(16000, restored.FreezeTimeMs);
         Assert.Equal(1.5, restored.FreezeDurationS);
 
-        // Zoom configuration rides on the block.
         var z = restored.Segments[0];
         Assert.Equal((10, 20, 640, 360, true), (z.ZoomX!.Value, z.ZoomY!.Value, z.ZoomW!.Value, z.ZoomH!.Value, z.ZoomSlow));
 
-        // The Main App reads ABSOLUTE segments/cuts and CLIP-RELATIVE memes.
         Assert.Equal(3000, restored.ResultSegments[0].StartMs);
         Assert.Equal(3500, restored.ResultSegments[0].ZoomStartMs);
         Assert.Equal(new CutRange(21000, 23000), restored.ResultCuts.Single());
@@ -131,14 +126,13 @@ public class GranularEditSessionTests
         var s = New(trimStart: 1000, trimEnd: 5000);
         s.SeedSegmentsFromAbsolute(new[]
         {
-            new SpeedSegment(0, 2000, 0.5),     // straddles the start
-            new SpeedSegment(4500, 9000, 2.0),  // straddles the end
-            new SpeedSegment(6000, 7000, 3.0),  // wholly outside
+            new SpeedSegment(0, 2000, 0.5),
+            new SpeedSegment(4500, 9000, 2.0),
+            new SpeedSegment(6000, 7000, 3.0),
         });
         Assert.Equal(new[] { (0.0, 1000.0), (3500.0, 4000.0) }, s.Segments.Select(x => (x.StartMs, x.EndMs)));
     }
 
-    // ── 4 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T04_InlineAndCornerMemeSemanticsAreNotCollapsed()
@@ -148,20 +142,17 @@ public class GranularEditSessionTests
         var live = OutputTimeline.Create(60000, s.Segments, 1.0, 0, null, s.CutsForTimeline());
         double before = live.TotalOutputSeconds;
 
-        // A full-screen meme cannot interrupt a speed block: it is snapped out of it.
         Assert.True(s.ResolveNewMemeAnchor(live, 15.0, MemePresentationMode.InlineFullScreen, out double inlineAt).Ok);
         Assert.Equal(20.0, inlineAt, 3);
-        // A corner overlay sits exactly where the playhead was.
         Assert.True(s.ResolveNewMemeAnchor(live, 15.0, MemePresentationMode.CornerOverlay, out double cornerAt).Ok);
         Assert.Equal(15.0, cornerAt, 3);
 
         s.AddMeme("corner.png", cornerAt, 4.0, MemePresentationMode.CornerOverlay, MemeOverlayCorner.BottomRight, MemeOverlaySize.Small, false);
-        Assert.Equal(before, OutputSeconds(s), 3);                 // zero output-duration extension
+        Assert.Equal(before, OutputSeconds(s), 3);
 
         var inline = s.AddMeme("inline.mp4", inlineAt, 3.0, MemePresentationMode.InlineFullScreen, MemeOverlayCorner.BottomRight, MemeOverlaySize.Medium, true);
-        Assert.Equal(before + 3.0, OutputSeconds(s), 3);           // a real output insertion
+        Assert.Equal(before + 3.0, OutputSeconds(s), 3);
 
-        // Inline → corner removes the length again; following edits are not shifted.
         Assert.True(s.UpdateMeme(inline.Id, inline.FilePath, inline.DurationSec, MemePresentationMode.CornerOverlay,
             MemeOverlayCorner.TopRight, MemeOverlaySize.Medium, true, 60000, out _, out var after).Ok);
         Assert.Equal(MemePresentationMode.CornerOverlay, after!.Mode);
@@ -180,7 +171,6 @@ public class GranularEditSessionTests
         Assert.True(s.ResolveNewMemeAnchor(live, 5.0, MemePresentationMode.CornerOverlay, out _).Ok);
     }
 
-    // ── 5 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T05_CommandsRecordOneLabelledStepEach_AndUndoRestoresThem()
@@ -253,9 +243,9 @@ public class GranularEditSessionTests
         var s = New(trimStart: 0, trimEnd: 60000);
         s.Segments.AddRange(new[]
         {
-            new SpeedSegment(1000, 2000, 2.0),   // fully inside -> removed
-            new SpeedSegment(500, 1500, 2.0),    // ends inside, sliver 500ms -> kept truncated
-            new SpeedSegment(2500, 4000, 2.0),   // starts inside -> moved
+            new SpeedSegment(1000, 2000, 2.0),
+            new SpeedSegment(500, 1500, 2.0),
+            new SpeedSegment(2500, 4000, 2.0),
         });
         s.FreezeTimeMs = 1800;
         Assert.True(s.CanDeleteRange(900, 3000, 60000, out _));
@@ -268,7 +258,6 @@ public class GranularEditSessionTests
         Assert.Equal(1, s.History.UndoCount);
     }
 
-    // ── 6 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T06_ParkedHistoryNeverLeaksIntoAnotherClipOrRevision()
@@ -283,19 +272,16 @@ public class GranularEditSessionTests
         a.ParkHistory();
         Assert.NotNull(parking.Slot);
 
-        // Another clip: not adopted, and the slot is left for clip A.
         var b = New(path: "clipB.mp4", parking: parking);
         Assert.False(b.AdoptParkedHistory());
         Assert.False(b.History.CanUndo);
         Assert.NotNull(parking.Slot);
 
-        // Same clip, reopened on the state it closed on: adopted.
         var a2 = New(parking: parking);
         a2.Segments.AddRange(a.Segments);
         Assert.True(a2.AdoptParkedHistory());
         Assert.True(a2.History.CanUndo);
 
-        // Same clip, a DIFFERENT accepted revision: discarded for good.
         var a3 = New(parking: parking);
         a3.Segments.Add(new SpeedSegment(7000, 9000, 3.0));
         Assert.False(a3.AdoptParkedHistory());
@@ -321,7 +307,7 @@ public class GranularEditSessionTests
         m.Checkpoint("add segment");
         m.Segments.Add(new SpeedSegment(0, 1000, 2));
         m.ParkHistory();
-        Assert.Null(parking.Slot);   // a merge never parks
+        Assert.Null(parking.Slot);
     }
 
     [Fact]
@@ -338,7 +324,6 @@ public class GranularEditSessionTests
         Assert.True(s.IsDirty);
     }
 
-    // ── MARK START / END, zoom, freeze rules ──────────────────────────────────────────────────
 
     [Fact]
     public void MarkEndInfersTheStartAndRefusesInsideABlock()
@@ -346,12 +331,12 @@ public class GranularEditSessionTests
         var s = New(trimStart: 0, trimEnd: 60000);
         s.Segments.Add(new SpeedSegment(1000, 3000, 2.0));
 
-        Assert.Equal(0, s.MarkStart(2000));                          // inside block #1
+        Assert.Equal(0, s.MarkStart(2000));
         Assert.False(s.MarkEnd(2000, out int? overlap).Ok);
         Assert.Equal(0, overlap);
 
         Assert.True(s.MarkEnd(9000, out _).Ok);
-        Assert.Equal(4000, s.PendingStartMs);                          // previous end + 1s
+        Assert.Equal(4000, s.PendingStartMs);
         Assert.Equal(9000, s.PendingEndMs);
     }
 
@@ -368,7 +353,7 @@ public class GranularEditSessionTests
         Assert.Null(s.Segments[idx].ZoomW);
 
         s.SetFreezeAt(-50, 2.0);
-        Assert.Equal(0, s.FreezeTimeMs);                               // clamped into the window
+        Assert.Equal(0, s.FreezeTimeMs);
         s.FreezeDurationS = 99;
         s.ClampFreezeIntoClip(60);
         Assert.Equal(GranularEditSession.MaxFreezeDurationS, s.FreezeDurationS);

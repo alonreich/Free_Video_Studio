@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Linq;
@@ -42,7 +39,7 @@ public sealed class MemeLibraryTests
     public void EveryStarterMemeExistsInTheRepository()
     {
         string folder = Path.Combine(RepoRoot.Path, "meme");
-        if (!Directory.Exists(folder)) return;   // media is not part of every checkout (CI without LFS)
+        if (!Directory.Exists(folder)) return;
         string[] missing = MemeAssets.StarterFiles[MemeAssets.MemeCategoryFolder]
             .Where(n => !File.Exists(Path.Combine(folder, n))).ToArray();
         Assert.True(missing.Length == 0, "Missing starter memes: " + string.Join(", ", missing));

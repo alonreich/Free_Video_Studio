@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -18,7 +15,7 @@ namespace FreeVideoStudio.App.ViewModels;
 
 public sealed class ExportViewModel : ViewModelBase
 {
-    private int _qualitySliderValue = QualityLadder.DefaultIndex;   // QUALITY_01
+    private int _qualitySliderValue = QualityLadder.DefaultIndex;
     private double? _targetMbOverride;
     private string _hardwareMode = "Auto";
     private string _hardwareStatusText = "HW: Detecting…";
@@ -49,9 +46,6 @@ public sealed class ExportViewModel : ViewModelBase
     public int QualitySliderValue
     {
         get => _qualitySliderValue;
-        // QUALITY_01 — the dial is a TIER index now, not a 0-20 megabyte step. An index restored
-        // from an older session is clamped rather than rejected; the top stop still means
-        // "no size limit", so the one setting anybody deliberately chose survives the change.
         set => SetProperty(ref _qualitySliderValue, QualityLadder.ClampIndex(value));
     }
 
@@ -185,7 +179,7 @@ public sealed class ExportViewModel : ViewModelBase
             _hardwareMode = HardwareScanner.ScanFailed;
             HardwareStatusText = "HW: Detecting…";
             HardwareStatusColor = "#daa520";
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
         }
     }
 
@@ -218,28 +212,76 @@ public sealed class ExportViewModel : ViewModelBase
         }
         catch (System.Exception swallowed2)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
             return true;
         }
         return false;
     }
 
+    /// <summary>NOPOWERSHELL_02 — the one argument that makes this executable apply the RDP GPU policy and exit.</summary>
+    public const string ApplyRdpGpuPolicyArgument = "--apply-rdp-gpu-policy";
+
+    private const string RdpPolicyKeyPath = @"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services";
+
+    /// <summary>
+    /// NOPOWERSHELL_02 — the Auto-Fix starts THIS signed executable elevated (Windows asks the user)
+    /// with <see cref="ApplyRdpGpuPolicyArgument"/>, and that copy writes the two DWORDs through the
+    /// .NET registry API (<see cref="ApplyRdpGpuPolicyElevated"/>). It used to start a hidden
+    /// <c>powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden</c> as administrator to edit
+    /// machine policy — a combination antivirus heuristics treat as an attack (MITRE T1059.001,
+    /// T1112) and one of the reasons new releases were reported as a trojan. Same values, same UAC
+    /// prompt, no script host.
+    /// </summary>
     public async Task<bool> AutoFixRdpGpuPolicyAsync()
     {
-        var psi = new ProcessStartInfo
+        string? self = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(self) || !File.Exists(self)) return false;
+        try
         {
-            FileName = "powershell.exe",
-            Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"$path = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'fEnableWddmDriver' -Value 1 -Type DWord; Set-ItemProperty -Path $path -Name 'fEnableAVC444ModeOnHWEncoder' -Value 1 -Type DWord;\"",
-            UseShellExecute = true,
-            Verb = "runas"
-        };
-
-        using var proc = Process.Start(psi);
-        if (proc != null)
-        {
+            using var proc = Process.Start(new ProcessStartInfo
+            {
+                FileName = self,
+                Arguments = ApplyRdpGpuPolicyArgument,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+            if (proc == null) return false;
             await proc.WaitForExitAsync();
             return proc.ExitCode == 0;
         }
-        return false;
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// NOPOWERSHELL_02 — runs in the elevated copy only (dispatched first thing by <c>Program</c>).
+    /// Fixed action, no parameters: nothing on the command line can choose a different key or value.
+    /// Returns 0 on success, 2 when not elevated, 1 on failure.
+    /// </summary>
+    public static int ApplyRdpGpuPolicyElevated()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return 1;
+        try
+        {
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+            {
+                if (!new System.Security.Principal.WindowsPrincipal(identity)
+                        .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)) return 2;
+            }
+
+            using var root = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64);
+            using var key = root.CreateSubKey(RdpPolicyKeyPath, writable: true);
+            key.SetValue("fEnableWddmDriver", 1, Microsoft.Win32.RegistryValueKind.DWord);
+            key.SetValue("fEnableAVC444ModeOnHWEncoder", 1, Microsoft.Win32.RegistryValueKind.DWord);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("RDP policy", ex.ToString());
+            return 1;
+        }
     }
 }

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -10,21 +7,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// VOCAPTURE_01 — THE MICROPHONE HAS ONE OWNER, AND IT IS NOT THE WINDOW.
-//
-// VoiceOverWindow used to hold the VoiceRecorder, the MicLevelMonitor, the VOASYNC_02 device
-// chain and the list of in-flight take drains as loose fields beside its canvases and lamps. That
-// made the single most dangerous rule in the studio — the monitor and the recorder must never hold
-// the capture device at the same time — impossible to test without a live window and a real
-// microphone. The resource lifecycle now lives here; the window keeps pixels, dialogs and pointer
-// handling (docs/02 §4 AUD-VOICEOVER, VOCAPTURE_01).
-//
-// ⚠️ This type must never reference Window, Control, Canvas or the Avalonia Dispatcher. Results go
-//    back to the caller through the injected `post` delegate (the window passes
-//    Dispatcher.UIThread.Post), which keeps the class testable headless and bit-for-bit faithful to
-//    the old "drain on the chain, then Post the verdict" order.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>VOCAPTURE_01 — lifecycle states of the capture device owner.</summary>
 public enum VoiceCaptureState
@@ -282,22 +264,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     private readonly Action<Action> _post;
     private readonly object _gate = new();
 
-    // ══════════════════════════════════════════════════════════════════════════════
-    // VOASYNC_02 — THE AUDIO DEVICE CHAIN. (Moved here verbatim in intent from VoiceOverWindow.)
-    //
-    // Four operations touch the capture device, and EVERY one of them blocks:
-    //   opening the recorder      waveInOpen + creating the WAV file
-    //   draining the recorder     waits on RecordingStopped, up to 2 s
-    //   stopping the monitor      waveInReset + waveInClose, joins the capture thread
-    //   starting the monitor      waveInOpen
-    // Run inline they froze the window on every press of record. Run on separate tasks they would
-    // race: the recorder could try to open the device before the monitor had let go of it, which
-    // on many drivers simply fails and loses the take.
-    //
-    // So they are queued onto ONE chain. Order is preserved exactly as the caller issued it,
-    // nothing runs on the caller's thread, and the device is never held by two objects at once.
-    // ⚠️ Do NOT replace this with independent Task.Run calls.
-    // ══════════════════════════════════════════════════════════════════════════════
     private Task _chain = Task.CompletedTask;
 
     private VoiceCaptureState _state = VoiceCaptureState.Idle;
@@ -319,18 +285,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     private bool _hasUnreleasedDevice;
     private IDisposable? _unreleasedOwner;
 
-    // ══════════════════════════════════════════════════════════════════════════════
-    // SPECTRUM_02 — ONE ANALYZER, FED ONLY BY THE ACTIVE SOURCE.
-    //
-    // Idle monitoring and recording share this single analyzer (one data path, so the meter
-    // cannot look different before and during a take). Every change of source — monitor (re)open,
-    // device switch, recorder take-over, stop, fault, dispose — bumps `_spectrumEpoch` and clears
-    // `_latestSpectrum` under `_gate`. A buffer is analysed only if its sender is the current
-    // source in a state that may publish, and its result is published only if the epoch it was
-    // admitted under is still current, so a stale device can never paint into the display.
-    // The FFT runs on the capture thread under `_spectrumGate` (never `_gate`, never the UI);
-    // publication is a single reference write — no per-buffer dispatch, no backlog.
-    // ══════════════════════════════════════════════════════════════════════════════
     private readonly object _spectrumGate = new();
     private MicrophoneSpectrumAnalyzer? _spectrumAnalyzer;
     private object? _spectrumSource;
@@ -370,7 +324,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     /// <summary>VOLIVE_01 — newest view of the take in progress, or null when none is opening or live.</summary>
     public LiveTakeSnapshot? LiveTake { get { lock (_gate) return _liveTake?.Snapshot(); } }
 
-    // MICHEALTH_01 — Truthful microphone health event
     public event EventHandler<MicrophoneHealth>? HealthChanged;
 
     public VoiceCaptureState State { get { lock (_gate) return _state; } }
@@ -400,7 +353,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             if (_state == VoiceCaptureState.Connecting) return _chain;
 
             _state = VoiceCaptureState.Connecting;
-            ResetSpectrumLocked();   // SPECTRUM_02 — a (re)open may be a different device
+            ResetSpectrumLocked();
             UpdateHealthLocked();
 
             return Enqueue(() =>
@@ -515,7 +468,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 _state = VoiceCaptureState.Idle;
                 UpdateHealthLocked();
             }
-            ResetSpectrumLocked();   // SPECTRUM_02
+            ResetSpectrumLocked();
             var monitor = _monitor;
             return monitor == null ? _chain : Enqueue(monitor.Stop);
         }
@@ -539,8 +492,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             _openAttempt = attempt;
             _state = VoiceCaptureState.StartingRecording;
             RetireLiveTakeLocked();
-            _liveTake = new LiveTakeMeter();   // VOLIVE_01 — counts only what this take's recorder delivers
-            ResetSpectrumLocked();   // SPECTRUM_02 — the monitor's spectrum ends here
+            _liveTake = new LiveTakeMeter();
+            ResetSpectrumLocked();
             _lastFault = null;
             _buffersDelivered = 0;
             _lastBufferReceivedUtc = null;
@@ -609,7 +562,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 {
                     try
                     {
-                        // VOAPPLY_03 / Section 7: Resolve the current monitor owner on the chain immediately before handoff
                         if (monitorToStop != null)
                         {
                             try
@@ -668,7 +620,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                             _state = VoiceCaptureState.Faulted;
                             _lastFault = failure;
                             UpdateHealthLocked();
-                            RetireLiveTakeLocked();   // VOLIVE_01
+                            RetireLiveTakeLocked();
                         }
                         result = new RecordingOpenResult(current ? RecordingOpenOutcome.Failed : RecordingOpenOutcome.Cancelled, failure);
                     }
@@ -708,9 +660,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 }
                 else if (orphan && recorder != null)
                 {
-                    // The stop arrived while the driver was still opening. Close the device, then
-                    // delete the WAV it just created — after the dispose, because the file is still
-                    // open until then.
                     recorder.VolumeChanged -= OnRecordingLevel;
                     recorder.Stopped -= OnRecorderStopped;
                     recorder.PcmAvailable -= OnRecorderPcm;
@@ -731,8 +680,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                     FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools.TryDeleteFile(takePath);
                 }
 
-                // VOCAPTURE_02 — publish THEN complete: the returned Task completes only after
-                // onSettled has run (on the post target), so an awaiting caller always sees it.
                 PostThenComplete(() => onSettled(result), () => done.TrySetResult(result));
             });
 
@@ -753,7 +700,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             _openAttempt = null;
             var recorder = _recorder;
             _recorder = null;
-            RetireLiveTakeLocked();   // VOLIVE_01 — the segment's envelope stops here
+            RetireLiveTakeLocked();
 
             if (recorder == null)
             {
@@ -762,14 +709,14 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                     _state = VoiceCaptureState.Idle;
                     UpdateHealthLocked();
                 }
-                ResetSpectrumLocked();   // SPECTRUM_02
+                ResetSpectrumLocked();
                 return null;
             }
 
             recorder.VolumeChanged -= OnRecordingLevel;
             recorder.Stopped -= OnRecorderStopped;
             recorder.PcmAvailable -= OnRecorderPcm;
-            ResetSpectrumLocked();   // SPECTRUM_02
+            ResetSpectrumLocked();
 
             bool wasFaulted = _state == VoiceCaptureState.Faulted;
             if (_state != VoiceCaptureState.Disposed && !wasFaulted)
@@ -861,7 +808,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         }
                     }
 
-                    // VOAPPLY_03 — VOCAPTURE_02: verdict first, then settle and the returned Task.
                     bool isSafe = !releaseFailed && fileErr == null && captureErr == null && stopEx == null;
                     var baseTake = captured ?? new CapturedTake(0, 0, 0);
                     var finalTake = new CapturedTake(
@@ -903,8 +849,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 _state = VoiceCaptureState.Idle;
                 UpdateHealthLocked();
             }
-            ResetSpectrumLocked();   // SPECTRUM_02
-            RetireLiveTakeLocked();   // VOLIVE_01
+            ResetSpectrumLocked();
+            RetireLiveTakeLocked();
             return RetireRecorderLocked();
         }
     }
@@ -942,8 +888,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             RecordingLevel = null;
             HealthChanged = null;
             SpectrumAvailable = null;
-            ResetSpectrumLocked();   // SPECTRUM_02
-            RetireLiveTakeLocked();   // VOLIVE_01
+            ResetSpectrumLocked();
+            RetireLiveTakeLocked();
 
             RetireRecorderLocked();
 
@@ -1050,8 +996,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
         catch (Exception ex)
         {
-            // Either the post target refused the work (callback never ran) or an inline post target
-            // rethrew the callback's exception (callback ran once; completion already happened).
             RuntimeLog.Swallowed(ex);
             CompleteOnce();
         }
@@ -1101,7 +1045,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             _lastFault = fault;
             _state = VoiceCaptureState.Faulted;
             UpdateHealthLocked();
-            _liveTake?.Freeze();   // VOLIVE_01 — a faulted take stops counting at once (kept for the drain)
+            _liveTake?.Freeze();
         }
     }
 
@@ -1130,24 +1074,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         MonitorLevel?.Invoke(this, level);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════
-    // SPECTRUM_05 — A RETIRED SOURCE CAN NEVER PUBLISH, EVEN ITS FIRST SPECTRUM.
-    //
-    // Found by audit: the first buffer of a fresh monitor was admitted (epoch captured), the
-    // monitor then stopped or faulted while that buffer was still being analysed, and because no
-    // snapshot existed yet the retirement path did not bump the epoch ("reset only if a snapshot
-    // is held") — so the in-flight FFT published into a stopped / faulted session. Snapshot
-    // presence is not evidence that nothing is in flight. Three rules now hold:
-    //   1. Every transition into Idle / Faulted / Disposed retires the epoch UNCONDITIONALLY
-    //      (UpdateHealthLocked), as do all explicit source changes (ResetSpectrumLocked callers).
-    //   2. Publication re-validates BOTH the admission epoch AND that the source is still the
-    //      eligible active source in a publishing state (IsSpectrumSourceEligibleLocked), under
-    //      `_gate` — the same predicate admission uses.
-    //   3. A buffer whose epoch is already stale when it reaches the analyzer is dropped before it
-    //      can touch (and reset) the analyzer of the source that replaced it.
-    // Lock order is unchanged: `_gate` and `_spectrumGate` are never held together. The FFT runs
-    // under `_spectrumGate` only; SpectrumAvailable subscribers run with neither lock held.
-    // ══════════════════════════════════════════════════════════════════════════════
 
     /// <summary>SPECTRUM_05 — the one admission/publication predicate. Caller holds <see cref="_gate"/>.</summary>
     private bool IsSpectrumSourceEligibleLocked(object source)
@@ -1181,13 +1107,11 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         lock (_gate)
         {
             if (sender == null) return;
-            // VOLIVE_01 — every buffer THIS take's recorder writes counts, including those that arrive
-            // while the open is still settling (`_openingRecorder`): they are in the WAV too.
             if (ReferenceEquals(sender, _recorder) || ReferenceEquals(sender, _openingRecorder)) liveTake = _liveTake;
             analyse = ReferenceEquals(sender, _recorder) && IsSpectrumSourceEligibleLocked(sender);
             epoch = _spectrumEpoch;
         }
-        liveTake?.Append(pcm);   // own lock; never under _gate (the buffer is only valid during this event)
+        liveTake?.Append(pcm);
         if (analyse) AnalyzeAndPublish(sender, epoch, pcm);
     }
 
@@ -1205,8 +1129,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         MicrophoneSpectrumSnapshot? snapshot = null;
         lock (_spectrumGate)
         {
-            // SPECTRUM_05 rule 3 — advisory early-out (the authoritative check is at publication):
-            // a buffer retired while it waited must not reset the analyzer its successor is filling.
             if (epoch != Volatile.Read(ref _spectrumEpoch)) return;
             try
             {
@@ -1223,7 +1145,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             }
             catch (NotSupportedException ex)
             {
-                // An explicit refusal, never garbage bars. Logged once per format.
                 if (_rejectedSpectrumFormat != pcm.Format)
                 {
                     _rejectedSpectrumFormat = pcm.Format;
@@ -1237,7 +1158,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
 
         lock (_gate)
         {
-            // SPECTRUM_05 rule 2 — the generation AND the source's current eligibility.
             if (epoch != _spectrumEpoch || !IsSpectrumSourceEligibleLocked(source)) return;
             _latestSpectrum = snapshot;
         }
@@ -1278,9 +1198,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
 
     private void UpdateHealthLocked()
     {
-        // SPECTRUM_02 / SPECTRUM_05 rule 1 — a stopped, faulted or disposed session has no live
-        // spectrum AND no admitted work may still publish. Retire unconditionally: whether a
-        // snapshot is held says nothing about a first FFT still in flight.
         if (_state is VoiceCaptureState.Idle or VoiceCaptureState.Faulted or VoiceCaptureState.Disposed)
             ResetSpectrumLocked();
 
@@ -1306,11 +1223,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         if (_state is VoiceCaptureState.Disposed or VoiceCaptureState.Idle) return MicrophoneHealth.Idle;
         if (_state is VoiceCaptureState.Connecting or VoiceCaptureState.StartingRecording) return MicrophoneHealth.Connecting;
 
-        // Monitoring, Recording, StoppingRecording:
         if (_buffersDelivered == 0) return MicrophoneHealth.ZeroBuffers;
 
-        // Starvation watchdog: if buffers were previously received but none received within starvation timeout,
-        // transition to ZeroBuffers (stalled delivery).
         if (_lastBufferReceivedUtc.HasValue && (DateTime.UtcNow - _lastBufferReceivedUtc.Value) > BufferStarvationTimeout)
         {
             return MicrophoneHealth.ZeroBuffers;

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
@@ -46,8 +43,16 @@ namespace FreeVideoStudio.Core.Media;
 /// </summary>
 public static class AudioTempoFilterBuilder
 {
-    /// <summary>The Rubber Band options appended to every slowdown filter. Verified against the bundled option table.</summary>
-    public const string RubberbandOptions = "transients=mixed";
+    /// <summary>
+    /// The Rubber Band options appended to every slowdown filter. Verified against the bundled option table.
+    /// AVSYNC_02 — <c>window=short</c>: the standard analysis window smears a burst's onset across
+    /// tens of milliseconds and a slow segment's first event lands late. Measured with the bundled
+    /// FFmpeg (1 kHz burst, 48 kHz): onset on a segment's first sample +8.1/+8.7/+8.7 ms → +4.2/+4.2/+4.2 ms,
+    /// mid-segment onset error -59…-40/-35…-29/-11…-10 ms → -27…-26/-16…-14/-5…-4 ms at 0.25/0.5/0.75x;
+    /// a steady 440 Hz tone stays 440.00 Hz at every rate and its off-band floor improves
+    /// (-37.3/-37.7/-41.7 dB → -40.1/-40.1/-44.1 dB).
+    /// </summary>
+    public const string RubberbandOptions = "transients=mixed:window=short";
 
     /// <summary>Rubber Band and atempo both accept 0.01..100; the chain is clamped to the same range as before.</summary>
     public const double MinTempo = 0.01;
@@ -61,8 +66,7 @@ public static class AudioTempoFilterBuilder
 
     private static readonly AsyncLocal<bool?> ScopedOverride = new();
 
-    // volatile: written on the export thread by the probe, read by any graph builder.
-    private static volatile int _probed = -1;   // -1 unknown, 0 absent, 1 present
+    private static volatile int _probed = -1;
 
     /// <summary>The capability the builders currently use (a test scope wins over the probe).</summary>
     public static bool RubberbandAvailable => ScopedOverride.Value ?? (_probed == 1);
@@ -117,14 +121,55 @@ public static class AudioTempoFilterBuilder
     /// The chain as a graph segment: "" at 1.0x (AVSYNC_01 — no dangling comma), otherwise the
     /// filters joined by commas with ONE comma on the requested side.
     /// </summary>
-    public static string Segment(double speed, bool leadingComma) => Segment(speed, leadingComma, RubberbandAvailable);
+    public static string Segment(double speed, bool leadingComma) => Segment(speed, leadingComma, RubberbandAvailable, null);
 
-    public static string Segment(double speed, bool leadingComma, bool rubberbandAvailable)
+    /// <summary>As <see cref="Segment(double, bool)"/>, with the input length that bounds the compensated Rubber Band output.</summary>
+    public static string Segment(double speed, bool leadingComma, double? inputDurationSec) =>
+        Segment(speed, leadingComma, RubberbandAvailable, inputDurationSec);
+
+    public static string Segment(double speed, bool leadingComma, bool rubberbandAvailable) =>
+        Segment(speed, leadingComma, rubberbandAvailable, null);
+
+    public static string Segment(double speed, bool leadingComma, bool rubberbandAvailable, double? inputDurationSec)
     {
         var filters = Build(speed, rubberbandAvailable);
         if (filters.Count == 0) return "";
+        if (EngineFor(speed, rubberbandAvailable) == AudioTempoEngine.Rubberband)
+            filters = WithStartCompensation(filters, speed, inputDurationSec);
         string joined = string.Join(",", filters);
         return leadingComma ? "," + joined : joined + ",";
+    }
+
+    /// <summary>
+    /// AVSYNC_04 — Rubber Band's documented start compensation, which FFmpeg's <c>rubberband</c> filter
+    /// does not perform (it runs the realtime stretcher and passes its output straight through).
+    /// The library asks for <c>getPreferredStartPad()</c> samples of silence before the audio and for
+    /// <c>getStartDelay()</c> samples to be dropped from the start of the output; with the short window
+    /// at 48 kHz both are 512 for every ratio (Rubber Band 3 API, queried at 0.1-0.99x). Without it,
+    /// a slow segment's first event lands +4.2 ms late and events inside it -27…-4 ms early.
+    /// Measured with the bundled FFmpeg (1 kHz burst, 48 kHz, 0.25/0.5/0.75x): segment start
+    /// +4.2 → +0.06 ms at every rate; inside the segment -27…-26 → +6…+14, -16…-14 → -4.1…-3.7,
+    /// -4.8…-4.2 → -2.3…-0.5 ms; 440 Hz stays 440.00 Hz.
+    /// The padding makes the stretcher's flushed tail longer by 512/tempo - 512 samples, so when the
+    /// caller knows its input length the output is cut to exactly input / tempo, as before.
+    /// </summary>
+    public const int RubberbandStartPadSamples = 512;
+    public const int RubberbandStartDelaySamples = 512;
+    private const int TempoSampleRate = 48000;
+
+    private static List<string> WithStartCompensation(List<string> tempo, double speed, double? inputDurationSec)
+    {
+        double rate = Math.Round(Normalise(speed, log: false), 4);
+        string trim = $"atrim=start_sample={RubberbandStartDelaySamples.ToString(CultureInfo.InvariantCulture)}";
+        if (inputDurationSec is double d && double.IsFinite(d) && d > 0)
+        {
+            long outSamples = (long)Math.Round(d * TempoSampleRate / rate);
+            trim += $":end_sample={(RubberbandStartDelaySamples + outSamples).ToString(CultureInfo.InvariantCulture)}";
+        }
+        var list = new List<string> { $"adelay=delays={RubberbandStartPadSamples.ToString(CultureInfo.InvariantCulture)}S:all=1" };
+        list.AddRange(tempo);
+        list.AddRange(["asetpts=PTS-STARTPTS", trim, "asetpts=PTS-STARTPTS"]);
+        return list;
     }
 
     /// <summary>
@@ -154,7 +199,6 @@ public static class AudioTempoFilterBuilder
     {
         var filters = new List<string>();
 
-        // AVSYNC_01 — 1.0x is a TRUE no-op (see the class summary).
         if (Math.Abs(speed - 1.0) < UnityEpsilon) return filters;
 
         double tmp = speed;
@@ -164,7 +208,6 @@ public static class AudioTempoFilterBuilder
         return filters;
     }
 
-    // ── capability probe ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Probes <paramref name="ffmpegPath"/> once (cached per path for the process lifetime) and
@@ -203,7 +246,7 @@ public static class AudioTempoFilterBuilder
         if (helpText.Contains("Unknown filter", StringComparison.OrdinalIgnoreCase)) return false;
         if (!helpText.Contains("rubberband AVOptions", StringComparison.Ordinal)) return false;
 
-        bool tempo = false, transients = false, mixed = false;
+        bool tempo = false, transients = false, mixed = false, window = false, shortWindow = false;
         foreach (string raw in helpText.Split('\n'))
         {
             string[] t = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -211,8 +254,10 @@ public static class AudioTempoFilterBuilder
             if (t[0] == "tempo") tempo = true;
             else if (t[0] == "transients") transients = true;
             else if (t[0] == "mixed") mixed = true;
+            else if (t[0] == "window") window = true;
+            else if (t[0] == "short") shortWindow = true;
         }
-        return tempo && transients && mixed;
+        return tempo && transients && mixed && window && shortWindow;
     }
 
     private static async Task<bool> ProbeAsync(string ffmpegPath)

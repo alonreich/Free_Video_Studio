@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -42,15 +39,12 @@ internal static class UpgradeBrokerHost
         _args = args;
         IsActive = true;
 
-        // UPGRADEUX_06 — started straight from the downloaded installer, the broker finds its two
-        // window libraries in the staging folder the launcher prepared (validated: %TEMP%\FVS_Upgrade).
         string? stage = UpgradeCoordinator.StageFromArgs(args);
         if (stage != null && !NativeHelpers.SetDllDirectory(stage))
             RuntimeLog.Info("Upgrade window", "Could not point the window libraries at the staging folder.");
 
         try
         {
-            // Must run before any await: Avalonia starts on the process's main thread.
             int code = AppBuilder.Configure<AvaloniaApp>()
                 .UsePlatformDetect()
                 .WithInterFont()
@@ -87,15 +81,12 @@ internal static class UpgradeBrokerHost
             else
             {
                 RuntimeLog.Fail("Upgrade", finished.Exception?.ToString() ?? "The update stopped unexpectedly.");
-                // No failure is silent, even one the coordinator could not report itself.
                 if (!progress.Finished)
                     await progress.FailedAsync("The update stopped unexpectedly",
                         "Something went wrong before the update could start, so nothing was changed. "
                       + "Please try again. If it keeps happening, restart your computer first.").ConfigureAwait(false);
             }
 
-            // A success stays on screen long enough to be read; the new app is already opening.
-            // (Read from the progress object, not the view-model: the UI post may not have run yet.)
             if (progress.SucceededShown) await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             Dispatcher.UIThread.Post(() =>
             {

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -14,8 +11,6 @@ public partial class AvaloniaApp : Application
     {
         AvaloniaXamlLoader.Load(this);
 
-        // UPGRADEUX_01 — the update window needs styles only. No sounds: they read settings, and
-        // the broker must not touch settings while user data may be mid-migration.
         if (Services.UpgradeBrokerHost.IsActive) return;
 
         Avalonia.Controls.Button.ClickEvent.AddClassHandler<Avalonia.Controls.Button>(
@@ -69,9 +64,6 @@ public partial class AvaloniaApp : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // UPGRADEUX_01 — the upgrade broker shows its progress window and nothing else. It returns
-        // BEFORE SettingsManager.Load: 05 SYS-UPGRADE dispatches deployment helpers before any
-        // settings initialization, and loading them here could write a settings file mid-migration.
         if (Services.UpgradeBrokerHost.IsActive && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime broker)
         {
             Services.UpgradeBrokerHost.Attach(broker);
@@ -126,7 +118,7 @@ public partial class AvaloniaApp : Application
                     catch (System.Exception ex)
                     {
                         window.ShowFailureAndWait(ex.Message);
-                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                         return;
                     }
                     
@@ -160,7 +152,6 @@ public partial class AvaloniaApp : Application
                 desktop.MainWindow = new MainWindow();
                 if (argsList.Contains("--upgrade-health"))
                 {
-                    // UPGRADEUX_05 — editing stays disabled until the commit, and now the user is told why.
                     Services.UpgradeFinishedNotice.Attach(desktop, desktop.MainWindow, argsList);
                 }
             }

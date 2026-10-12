@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
@@ -74,7 +71,7 @@ public partial class PreviewMonitorWindow : Window
     protected override void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
         base.OnClosing(e);
-        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsSync(this, _boundsKey);
+        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, _boundsKey);
 
         if (Controller != null && Controller.IsDetached)
         {

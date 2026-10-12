@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
@@ -9,7 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-// Independent audit regression: no hardware, files, sleeps, or production changes.
 public sealed class MicrophoneSpectrumAuditTests
 {
     [Theory]
@@ -24,8 +23,6 @@ public sealed class MicrophoneSpectrumAuditTests
         int published = 0;
         session.SpectrumAvailable += (_, _) => Interlocked.Increment(ref published);
 
-        // Hold the analysis gate, allowing the real PCM handler to pass admission
-        // but preventing its first FFT from completing until the source stops.
         object gate = typeof(VoiceCaptureSession).GetField("_spectrumGate",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session)!;
         Exception? workerError = null;

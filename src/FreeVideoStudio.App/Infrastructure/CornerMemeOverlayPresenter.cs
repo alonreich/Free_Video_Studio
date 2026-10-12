@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -17,7 +11,6 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Media;
-// ⚠️ NAME COLLISION (see MemePreviewDirector.cs): a bare MemePlacement here binds to the MEME_02 enum.
 using CoreMeme = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.App.Infrastructure;
@@ -42,9 +35,6 @@ public sealed record CornerMemeSpan(CoreMeme Meme, double GameStartSec, double G
 public sealed class CornerMemeOverlayPresenter
 {
     private readonly Canvas _layer = new() { IsHitTestVisible = false, ZIndex = 50, ClipToBounds = true };
-    // CORNERPARITY_01 — one Image per simultaneously visible overlay, in export z-order (the export chains
-    // one `overlay` per corner meme, so a later meme paints over an earlier one). One Image used to show
-    // only the FIRST active meme while the export showed all of them.
     private readonly List<Image> _images = new();
     private IReadOnlyList<CornerMemeSpan> _spans = Array.Empty<CornerMemeSpan>();
     private Control? _videoHost;
@@ -110,7 +100,6 @@ public sealed class CornerMemeOverlayPresenter
         var active = ActiveAt(_spans, gameplaySec);
         if (active.Count == 0 || _videoHost == null) { Hide(); return; }
 
-        // The letterboxed video rectangle inside the host, then the export's box inside it.
         var host = _videoHost.Bounds;
         if (host.Width < 2 || host.Height < 2 || _layer.Parent is not Visual panel) { Hide(); return; }
         Point origin = _videoHost.TranslatePoint(default, panel) ?? default;
@@ -122,7 +111,7 @@ public sealed class CornerMemeOverlayPresenter
         {
             var img = new Image { Stretch = Avalonia.Media.Stretch.Fill, IsVisible = false };
             _images.Add(img);
-            _layer.Children.Add(img);   // added later = painted later = on top, like the export's chain
+            _layer.Children.Add(img);
         }
 
         int shown = 0;

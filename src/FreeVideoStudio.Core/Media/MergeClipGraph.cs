@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -69,14 +64,10 @@ public static class MergeClipGraph
         var ci = CultureInfo.InvariantCulture;
         string p = $"c{clip}_";
         var filters = new List<string>();
-        // The trim starts 0.5 ms early (FRAMESNAP_01) so the first kept frame survives. The granular
-        // engine's origin stays the NOMINAL cut: measured in the harness, moving the origin to the
-        // epsilon instant made chunk edges land worse (+3 frames on a freeze clip) than this (±1).
         double origin = keepStartSec;
         double keepSec = Math.Max(0.001, keepEndSec - keepStartSec);
         double speed = baseSpeed > 0.001 && double.IsFinite(baseSpeed) ? baseSpeed : 1.0;
 
-        // 1. The kept window, starting at 0.
         string ts = MergerWorker.TrimStartSec(keepStartSec).ToString("F6", ci);
         string te = keepEndSec.ToString("F6", ci);
         filters.Add($"{inputVideo}trim=start={ts}:end={te},setpts=PTS-STARTPTS[{p}src_v]");
@@ -87,8 +78,6 @@ public static class MergeClipGraph
             srcAudio = $"[{p}src_a]";
         }
 
-        // 2. The Main App's granular engine, in source pixels. Positions are ABSOLUTE source ms with
-        //    the kept-in point as origin, exactly as ProcessWorker calls it.
         var segments = new List<SpeedSegment>(fx.Speed.Count + fx.Freezes.Count);
         foreach (var s in fx.Speed)
         {
@@ -117,16 +106,10 @@ public static class MergeClipGraph
         gV = Prefix(gV);
         gA = Prefix(gA);
 
-        // 3. Canvas + CFR, same normalisation as a plain clip.
         filters.Add($"{gV}{canvasChain},fps=60:start_time=0:round=near[{p}body_v]");
-        // CLIPLEVEL_01 / PEAKSAFE_01 — the clip's own loudness match and peak tamer (leading comma,
-        // empty when neither is on) act on the GAMEPLAY body only, before memes are spliced in.
         filters.Add($"{gA}aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=48000{bodyAudioFilter}[{p}body_a]");
         string bodyV = $"[{p}body_v]", bodyA = $"[{p}body_a]";
 
-        // 3b. MEMEMODE_01 — corner overlays ride on the clip's BODY (before any full-screen meme is
-        //     spliced in), at the body output time of their anchor. They add zero seconds: the body is
-        //     the main input of every overlay and the first input of the amix (FFM-MEMECORNER).
         var cornerInputs = new List<CornerMemeInput>();
         foreach (var m in memes)
         {
@@ -145,7 +128,6 @@ public static class MergeClipGraph
             bodyA = overlaid.AudioLabel;
         }
 
-        // 4. Full-screen memes, at their output times inside this clip.
         var placed = memes
             .Where(m => !m.IsCornerOverlay && m.DurationSec > 0.001)
             .Select(m => (Meme: m, Cut: SnapFrame(Math.Clamp(BodyOutputSec(m, mapper, keepStartSec), 0, bodyDur))))
@@ -154,7 +136,6 @@ public static class MergeClipGraph
         if (placed.Count == 0)
             return new MergeClipGraphResult(filters, bodyV, bodyA, bodyDur, cornerInputs.Count);
 
-        // Distinct cut points; a cut within one frame of the start/end, or of the previous one, is merged.
         var cutPoints = new List<double>();
         foreach (var (_, cut) in placed)
         {
@@ -179,7 +160,6 @@ public static class MergeClipGraph
         if (pieces == 1)
         {
             pieceV[0] = bodyV;
-            // SPLICE_03 — a meme butt-joins this body at its start or end: de-click both edges.
             filters.Add($"{bodyA}anull{MemeLoudness.SpliceFade(bodyDur)}[{p}pa0]");
             pieceA[0] = $"[{p}pa0]";
         }
@@ -197,7 +177,6 @@ public static class MergeClipGraph
             }
         }
 
-        // Meme streams, normalised to the canvas and CFR, silence when the meme has no sound.
         var memeLabels = new List<(double At, string V, string A, double Dur)>();
         for (int k = 0; k < placed.Count; k++)
         {
@@ -206,13 +185,12 @@ public static class MergeClipGraph
             string mv = $"[{p}m{k}_v]", ma = $"[{p}m{k}_a]";
             filters.Add($"[{m.InputIndex}:v]trim=duration={d},setpts=PTS-STARTPTS,{memeCanvasChain},setsar=1,fps=60:start_time=0:round=near," +
                         $"tpad=stop_mode=clone:stop_duration={d},trim=duration={d},setpts=PTS-STARTPTS{mv}");
-            filters.Add(m.HasAudio && !m.IsImage && m.PlaySound   // MEMEMODE_01 — sound off = silence of its length
+            filters.Add(m.HasAudio && !m.IsImage && m.PlaySound
                 ? $"[{m.InputIndex}:a]atrim=duration={d},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=48000{MemeLoudness.Chain(m.GainDb)},apad,atrim=duration={d}{MemeLoudness.SpliceFade(m.DurationSec)}{ma}"
                 : $"anullsrc=r=48000:cl=stereo,atrim=duration={d},asetpts=PTS-STARTPTS{ma}");
             memeLabels.Add((NearestCut(placed[k].Cut), mv, ma, m.DurationSec));
         }
 
-        // Interleave: piece 0, memes at bound[1], piece 1, ... ; memes at 0 lead, memes at the end trail.
         var order = new List<(string V, string A)>();
         double total = bodyDur;
         for (int k = 0; k <= pieces; k++)

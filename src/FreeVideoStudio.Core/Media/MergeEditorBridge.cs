@@ -1,31 +1,14 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// MERGEEDIT_01 — ONE GRANULAR EDITOR OVER THE WHOLE MERGE (Video-Merger-Migration.md P6.2, D16–D18).
-//
-// The Granular Speed Editor knows ONE source with ONE time axis. The merge becomes exactly that:
 //   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
-//     is the clip's integer merged-frame count / 60, so mpv's time-pos IS the merged clock (P4.1 PASS:
-//     seamless across mixed codecs / sizes / rates).
-//   • EFFECTS  — the editor edits in MERGED milliseconds. On the way in, every clip's EdlEffects are
-//     mapped from (ClipId, source µs) to merged ms; on the way out, every editor effect is put back
-//     into the clip it belongs to. A speed segment or cut that crosses a clip boundary is SPLIT (the
-//     output is identical, and D4 "effects stay inside one clip" holds by construction). A freeze or
-//     meme belongs to the clip under it; a meme's Start/Mid/End placement follows D17.
-// Pure: no UI, no mpv, no disk. Unit-tested.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>One clip as the merge editor sees it (merged ms ↔ this clip's source µs).</summary>
+//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
 public sealed record MergeEditorClip(
     int Index, Guid ClipId, string Path,
     double StartMs, double EndMs,
@@ -118,7 +101,6 @@ public sealed class MergeEditorSource
         return -1;
     }
 
-    // ── EDL → editor ─────────────────────────────────────────────────────────────────────────
 
     public MergeEditorState ToEditor(MergeEdl edl)
     {
@@ -158,7 +140,7 @@ public sealed class MergeEditorSource
                     _ => clip.ToMergedMs(m.AtUs),
                 };
                 memes.Add(new MemePlacement(m.FilePath, at / 1000.0, m.DurationSec, m.Id,
-                    m.Mode, m.Corner, m.Size, m.PlaySound));   // MEMEMODE_01
+                    m.Mode, m.Corner, m.Size, m.PlaySound));
             }
         }
         ExtraFreezes = Math.Max(0, freezes - 1);
@@ -168,7 +150,6 @@ public sealed class MergeEditorSource
         return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed);
     }
 
-    // ── editor → EDL ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Puts the editor's result back into the clips. Freezes the v1 editor could not show
@@ -215,8 +196,6 @@ public sealed class MergeEditorSource
             double at = m.AtSourceSecRelative * 1000.0;
             int i = ClipAt(at);
             var clip = Clips[i];
-            // MEMEMODE_01 — a corner overlay is a visibility interval, not an insertion: it stays
-            // exactly where the user put it (Mid), never snapped to the clip's start/fade-out.
             var placement = m.IsCornerOverlay ? EdlMemePlacement.Mid : PlacementAt(clip, at);
             long atUs = placement switch
             {
@@ -225,7 +204,7 @@ public sealed class MergeEditorSource
                 _ => clip.ToSourceUs(at),
             };
             memes[i].Add(new EdlMeme(m.Id, m.FilePath, placement, atUs, m.DurationSec,
-                m.Mode, m.Corner, m.Size, m.PlaySound));   // MEMEMODE_01
+                m.Mode, m.Corner, m.Size, m.PlaySound));
         }
 
         var clips = new List<EdlClip>(edl.Clips);
@@ -233,7 +212,6 @@ public sealed class MergeEditorSource
         {
             var clip = Clips[i];
             var old = edl.Clips[clip.Index].Effects;
-            // v1: the editor shows ONE freeze; the rest (ExtraFreezes) stay where they were.
             var keptFreezes = new List<EdlFreeze>(freezes[i]);
             if (ExtraFreezes > 0) keptFreezes.AddRange(SkipFirstFreeze(edl, clip.Index));
             clips[clip.Index] = edl.Clips[clip.Index] with
@@ -268,7 +246,6 @@ public sealed class MergeEditorSource
 
     private IEnumerable<EdlFreeze> SkipFirstFreeze(MergeEdl edl, int clipIndex)
     {
-        // The first freeze of the WHOLE merge was shown in the editor; every other one is kept.
         bool firstSeen = false;
         foreach (var c in Clips)
         {

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -35,7 +32,6 @@ public class ProcessWorker : IDisposable
     /// so none of this file's ~30 call sites change.
     /// </summary>
     private readonly FfmpegJobLifetime _lifetime = new("Process", "FFmpeg");
-    // PIPELIFE_01 — the gate itself moved into FfmpegJobLifetime, which now owns the process slot.
 
     /// <summary>
     /// FFMPEGSTOP_01 — single-flight gate for the cooperative shutdown ladder.
@@ -69,7 +65,6 @@ public class ProcessWorker : IDisposable
     /// <c>TryRescueFinishedRender</c> shipped the same race twice (RESCUE_01). One copy now lives
     /// in <see cref="CooperativeShutdownGate"/>; the members below are thin delegations kept at
     /// their original signatures so no call site in this file changes.
-    // PIPELIFE_01 — the shutdown ladder now lives in FfmpegJobLifetime.
 
     /// <summary>
     /// PIPELIFE_01 — kept as a private alias over the shared lifetime's flag so every existing
@@ -159,9 +154,6 @@ public class ProcessWorker : IDisposable
     public List<MusicTrack>? MusicTracks { get; set; }
     public double? TargetMbOverride { get; set; }
 
-    // ── PROBE_01 ── telemetry for the empirical NVENC complexity probe. Read by
-    // tests/MediaPipelineChecks to assert the probe ran, stayed off the CUDA decode
-    // path, and actually replaced the blind size retry on the first attempt.
     public bool ComplexityProbeRan { get; private set; }
     public double ComplexityProbeBitsPerSecond { get; private set; }
     public double ComplexityProbeScaleFactor { get; private set; } = 1.0;
@@ -423,22 +415,6 @@ public class ProcessWorker : IDisposable
         var earlierAttempts = new List<ExportFailure>();
         int attemptCounter = 0;
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // CANCELREG_01 — THIS REGISTRATION MUST STAY INSIDE THE TRY. DO NOT HOIST IT BACK OUT.
-        //
-        // It used to sit ABOVE the try. CancellationToken.Register throws ObjectDisposedException
-        // when its CancellationTokenSource has already been disposed — which is exactly what
-        // happened when the user cancelled an export and immediately started another one, because
-        // the new export disposed the previous CTS while this worker still held registrations on it.
-        // That exception escaped RunAsync entirely, so EmitFinished NEVER FIRED, the controller's
-        // TaskCompletionSource never completed, and the caller's await hung forever: overlay gone,
-        // PROCESS button dead, no error on screen.
-        //
-        // Inside the try, the same throw lands in the catch-all at the bottom of this method, which
-        // always calls EmitFinished. A cancelled export then reports as cancelled instead of wedging
-        // the UI. (EXPORTSESSION_01 in MainWindow.Export.cs removes the disposal race itself; this
-        // is the defence in depth that keeps a future regression from being unrecoverable.)
-        // ══════════════════════════════════════════════════════════════════════════════════════
         CancellationTokenRegistration cancelMirror = default;
 
         try
@@ -449,8 +425,6 @@ public class ProcessWorker : IDisposable
             }
             var pipelineStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var encoderMgr = await Task.Run(() => new EncoderManager(HardwareStrategy, _ffmpegPath), cancellationToken).ConfigureAwait(false);
-            // TEMPO_01 — Rubber Band capability, probed once per FFmpeg binary and cached, BEFORE any
-            // graph is built. Never throws; a failed probe means the atempo chain.
             await AudioTempoFilterBuilder.EnsureProbedAsync(_ffmpegPath).ConfigureAwait(false);
             if (encoderMgr.EncoderPreflightError != null)
             {
@@ -497,8 +471,6 @@ public class ProcessWorker : IDisposable
                 }
                 if (MusicConfig != null)
                 {
-                    // The authoritative read (type-agnostic, never throws) is in AudioFilterChain;
-                    // this is only the log line.
                     CoreLogger.Info("Process",
                         $"Music ducking flag: {MusicConfig["ducking_enabled"]?.ToString() ?? "default"}, " +
                         $"carving flag: {MusicConfig["carving_enabled"]?.ToString() ?? "default"}.");
@@ -513,16 +485,12 @@ public class ProcessWorker : IDisposable
                 double sourceDuration = await prober.GetDurationAsync();
                 OriginalResolution = await prober.GetResolutionStringAsync();
 
-                // COLOR_01 — decide the colour conversion ONCE per export, from the source's own tags.
                 VideoColorInfo sourceColor = await prober.GetVideoColorInfoAsync();
                 bool canToneMap = sourceColor.IsHdr
                     && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "zscale")
                     && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "tonemap");
                 string? colorChain = ExportColorPolicy.BuildConversionChain(sourceColor, canToneMap, out string colorDescription, out string? colorDegraded);
                 CoreLogger.Info("COLOR", $"Source {sourceColor}. {colorDescription}");
-                // PREVIEWFIDELITY_01 — a background preview-mix render is not an export: it renders no
-                // picture, and raising this notice from it re-showed "the export may look washed out"
-                // after every edit. The preview's own fidelity marker reports HDR instead.
                 if (colorDegraded != null && string.IsNullOrEmpty(AudioPreviewOutputPath))
                 {
                     FreeVideoStudio.Core.Abstractions.Faults.Degraded("EXPORT", colorDegraded, technicalDetail: colorDescription);
@@ -562,10 +530,6 @@ public class ProcessWorker : IDisposable
                 if (padEndHumanSec < minPadSec) padEndHumanSec = 0;
                 double sourcePadEndSec = padEndHumanSec * SpeedFactor;
 
-                // MEMEMODE_01 — `memes` holds ONLY the full-screen cutaways: everything below that
-                // shifts time (meme cuts, MemeTimeInsertedBefore for music and voice-over, the end-pad
-                // rule, the timing tag) reads it, so a corner overlay can never move anything. Corner
-                // overlays are resolved into `cornerMemes` and drawn over the rendered stream.
                 var memes = new List<ResolvedMeme>();
                 var cornerMemes = new List<ResolvedMeme>();
                 {
@@ -622,13 +586,10 @@ public class ProcessWorker : IDisposable
 
                         if (m.IsImage) m.DurationSec = MemePlacement.StillImageDurationSec;
 
-                        // MEMEMODE_01 — sound off: the meme is treated as silent everywhere.
                         if (!m.PlaySound) m.HasAudio = false;
 
                         if (m.HasAudio && !m.IsImage)
                         {
-                            // MEMELEVEL_02 — measured here, matched to the gameplay once that has
-                            // been measured too (see GAMEPLAY LOUDNESS below).
                             m.MeasuredLufs = await MemeLoudness.MeasureLufsAsync(_ffmpegPath, path, cancellationToken).ConfigureAwait(false);
                         }
 
@@ -673,10 +634,6 @@ public class ProcessWorker : IDisposable
                 double gDur = (actualExtractEndMs - actualExtractStartMs) / 1000.0 / SpeedFactor;
                 Func<double, double>? granularTimeMapper = null;
 
-                // CUT_01 — cuts are built by the SAME chunk/concat engine as speed segments, so
-                // the granular path must be taken when there are cuts even with no speed segments.
-                // Without this the export silently ignored every cut whenever the user had not also
-                // used the speed editor — which is the normal case.
                 var exportCuts = CutRange.ToClipRelative(Cuts, actualExtractStartMs);
                 bool hasCuts = exportCuts.Count > 0;
 
@@ -716,43 +673,6 @@ public class ProcessWorker : IDisposable
                         budgetDurationSec, audioKbps, targetMb, keepHighestRes, qualityLevel, outputRes, targetFps);
                 }
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // PROBE_01 — EMPIRICAL COMPLEXITY PROBING FOR SIZE-LOCKED NVENC EXPORTS.
-                //
-                // NVENC ignores `-pass 1` stats files, so a size-locked export used to
-                // allocate `-b:v` from budget arithmetic alone and then, if the file
-                // missed the target, run a full blind second encode scaled by a generic
-                // ratio — which often missed again. Instead we now MEASURE the clip's
-                // complexity before the main graph is built: a 5-second slice from the
-                // middle of the timeline is pushed through h264_nvenc at a reference
-                // CQ (no rate cap) to the null muxer, and its bits-per-second is the
-                // content's "appetite" at reference quality.
-                //
-                // Calibrated empirically on this project's NVENC stack (p7/hq, CBR,
-                // multipass fullres, maxrate == b:v): CBR honours the ask in BOTH
-                // regimes — starved content (appetite 2.5-4.5x budget, QP starved to
-                // ~44) landed +0.1..0.3% over the ask, and flush content filled a
-                // 100 Mbps ask at ~102 Mbps — so the landing error comes from mux
-                // overhead (~0.13% measured), integer bitrate rounding and the HRD
-                // tail of a 2x VBV buffer when the content is starved. The appetite
-                // ratio tells us WHICH regime we are in before spending a full encode:
-                //
-                //   factor = 1 - 0.004 (mux + rounding margin)
-                //                - min(0.004, 0.002 * (appetiteRatio - 1))  [starve tail]
-                //
-                // A 25.0 MB / 20 s export at appetite 2.5x budget therefore asks
-                // ~10.29 Mbps instead of ~10.36 and lands at ~24.8 MB — first attempt,
-                // no blind retry (the retry loop below stays as the safety net for
-                // probe failures and foreign NVENC SDK behaviour).
-                //
-                // ZERO-COPY GUARDRAIL: the probe builds its own argument list with NO
-                // `-hwaccel*` flags and software decoding; frames are uploaded to NVENC
-                // from system RAM. It never touches ExportVideoPipeline device flags
-                // and lives nowhere near the libmpv preview path (MpvVideoView).
-                //
-                // Probe failure (no NVENC session, unparsable output, cancellation)
-                // is non-fatal: the budget arithmetic above stands unchanged.
-                // ══════════════════════════════════════════════════════════════════════════
                 if (targetMb.HasValue && videoBitrateKbps.HasValue
                     && HardwareStrategy != "CPU"
                     && budgetDurationSec >= 8.0
@@ -791,7 +711,6 @@ public class ProcessWorker : IDisposable
                 var musicTracks = MusicTracks != null ? new List<MusicTrack>(MusicTracks) : new List<MusicTrack>();
                 if (musicTracks.Count > 0 && (padStartHumanSec > 0 || padEndHumanSec > 0))
                 {
-                    // MUSICPAD_01 — the UI placed the music from MARK START; the body starts at the fade-in pad.
                     double firstBefore = musicTracks[0].TimelineStartDelay;
                     musicTracks = MusicPadAlignment.Align(musicTracks, padStartHumanSec, padEndHumanSec, gDur, MusicLeadFadeIn, MusicTailFadeOut);
                     CoreLogger.Info("Audio",
@@ -818,7 +737,7 @@ public class ProcessWorker : IDisposable
                 
                 int memeInputBase = 1 + musicTracks.Count + (introInputIndex.HasValue ? 1 : 0) + (textPngPath != null ? 1 : 0);
                 for (int i = 0; i < memes.Count; i++) memes[i].InputIndex = memeInputBase + i;
-                for (int i = 0; i < cornerMemes.Count; i++) cornerMemes[i].InputIndex = memeInputBase + memes.Count + i;   // MEMEMODE_01
+                for (int i = 0; i < cornerMemes.Count; i++) cornerMemes[i].InputIndex = memeInputBase + memes.Count + i;
 
                 double renderDurationSec = gDur + introDurationSec;
 
@@ -936,7 +855,7 @@ public class ProcessWorker : IDisposable
                         try { os = bodyStart + granularTimeMapper(seg.StartMs / 1000.0); oe = bodyStart + granularTimeMapper(seg.EndMs / 1000.0); }
                         catch (System.Exception swallowed10)
                         {
-                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed10);   // FAULTTIER_02 — no failure is silent.
+                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed10);
                             continue;
                         }
                         os = Math.Max(bodyStart, os); oe = Math.Min(bodyEnd, oe);
@@ -961,11 +880,6 @@ public class ProcessWorker : IDisposable
                     return Math.Clamp(acc / totalCostW, 0, 1);
                 }
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // GAMEPLAY LOUDNESS (PEAKSAFE_01 / MEMELEVEL_02). Measured over the exported
-                // range, ONLY to place the peak tamer's threshold and to match memes to the
-                // gameplay. The gameplay level itself is never changed (LOUDSTD_REMOVED_01).
-                // ══════════════════════════════════════════════════════════════════════════
                 double? gameplayLufs = null;
                 bool memesNeedLevel = memes.Any(mm => mm.MeasuredLufs.HasValue) || cornerMemes.Any(mm => mm.MeasuredLufs.HasValue);
                 if (sourceHasAudio && (AutoSpikeFlattening || memesNeedLevel))
@@ -1001,9 +915,8 @@ public class ProcessWorker : IDisposable
 
                     if (sourceHasAudio)
                     {
-                        // TEMPO_01 — the ONE tempo policy (AudioTempoFilterBuilder). AVSYNC_01: "" at
-                        // 1.0x; the leading comma lives in the segment so it disappears with it.
-                        string baseAtempoSegment = AudioTempoFilterBuilder.Segment(SpeedFactor, leadingComma: true);
+                        string baseAtempoSegment = AudioTempoFilterBuilder.Segment(SpeedFactor, leadingComma: true,
+                            (actualExtractEndMs - actualExtractStartMs) / 1000.0);
                         coreFilters.Add($"{baseAudioLabel}aresample=48000:async=1,asetpts=PTS{baseAtempoSegment}[a_prepared_base]");
                         aPreparedPad = "[a_prepared_base]";
                     }
@@ -1014,10 +927,6 @@ public class ProcessWorker : IDisposable
                     }
                 }
 
-                // COLOR_01 — convert to SDR BT.709 TV range straight after the timing stage (speed,
-                // cuts, CFR: colour-agnostic) and BEFORE fades, the intro still, the portrait crop, the
-                // HUD overlays and memes. Those are all SDR artwork, and would be tone-mapped too if
-                // they were composited first. Both the main branch and the HUD branch are converted.
                 if (colorChain != null)
                 {
                     coreFilters.Add($"{vStabilizedPad}{colorChain}[v_color]");
@@ -1029,9 +938,6 @@ public class ProcessWorker : IDisposable
                     }
                 }
 
-                // PEAKSAFE_01 — the peak tamer acts on the GAMEPLAY bus, before the voice-over and the
-                // music are mixed in, with its threshold placed relative to the gameplay's own
-                // measured loudness. Off by the user switch, or when the level is unknown.
                 if (sourceHasAudio && AutoSpikeFlattening && PeakSafety.TamerFilter(gameplayLufs) is string tamer)
                 {
                     coreFilters.Add($"{aPreparedPad}{tamer}[a_tamed]");
@@ -1047,15 +953,6 @@ public class ProcessWorker : IDisposable
 
                 var effectiveTakes = GetEffectiveVoiceOverTakes();
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // VOPROT_01 — ONE PULSE ENVELOPE, TWO CONSUMERS.
-                //
-                // 1.0 across every take (with a 0.3s ramp either side), 0 everywhere else. It used
-                // to be built INSIDE the game-ducking branch, so the music bed had no way to see
-                // it — which is why the old "Auto-Duck Game Audio" could leave the voice buried
-                // under music it never touched. Declared here so both protections can read it, and
-                // left null when neither is on so the graph is byte-for-byte unchanged.
-                // ══════════════════════════════════════════════════════════════════════════
                 string? voicePulseExpr = null;
 
                 if (effectiveTakes.Count > 0)
@@ -1091,11 +988,6 @@ public class ProcessWorker : IDisposable
 
                     if (sourceHasAudio && VoiceOverDuckAudio && voicePulseExpr != null)
                     {
-                        // VOPROT_01 / VOGATE_01 — DUCK **AND** CARVE the game, across the takes ONLY.
-                        // The 85% dip alone still leaves the game competing in the 1-4 kHz band that
-                        // carries speech, so it is paired with a 2.5 kHz scoop. The scoop used to be a
-                        // static equalizer on the whole bus for the whole video; it is now gated by the
-                        // same pulse (AudioFilterChain.GatedVoiceProtection).
                         coreFilters.AddRange(AudioFilterChain.GatedVoiceProtection(aPreparedPad, voicePulseExpr, "vpg", "[a_ducked]"));
                         aPreparedPad = "[a_ducked]";
                         CoreLogger.Info("Audio",
@@ -1104,9 +996,6 @@ public class ProcessWorker : IDisposable
 
                     int voBaseIndex = 1 + musicTracks.Count + (introDurationSec > 0.001 ? 1 : 0) + (textPngPath != null ? 1 : 0) + memes.Count + cornerMemes.Count;
 
-                    // PEAKSAFE_01 — no per-take limiter any more: it was a second auto-level alimiter
-                    // on top of the final one (+3 dB on the voice). The always-on safety limiter on
-                    // the final mix covers the takes.
 
                     string? finalVoLabel = null;
                     if (effectiveTakes.Count > 0)
@@ -1283,12 +1172,6 @@ public class ProcessWorker : IDisposable
                 string vOutputFinal = "[v_render_out]";
                 string aOutputFinal = currentALabel;
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // MEMEMODE_01 / FFM-MEMECORNER — corner overlays, drawn over the RENDERED stream
-                // (intro + body, final canvas) BEFORE any full-screen meme is spliced in, so they ride
-                // with the gameplay and a cutaway pauses them with it. Zero added duration: the
-                // rendered stream is the main input of every overlay and the first input of the amix.
-                // ══════════════════════════════════════════════════════════════════════════
                 if (cornerMemes.Count > 0)
                 {
                     int frameW, frameH;
@@ -1352,8 +1235,6 @@ public class ProcessWorker : IDisposable
 
                         string memeAudio = "aresample=48000:async=1";
 
-                        // MEMELEVEL_02 — as loud as the gameplay it interrupts; no per-meme limiter
-                        // (the safety limiter on the final mix covers it).
                         double memeGainDb = MemeLoudness.GainFor(m.MeasuredLufs, gameplayLufs);
                         memeAudio += MemeLoudness.Chain(memeGainDb);
                         if (m.HasAudio)
@@ -1361,7 +1242,6 @@ public class ProcessWorker : IDisposable
                             CoreLogger.Info("Audio",
                                 $"MEME LEVEL: '{Path.GetFileName(m.FilePath)}' {(m.MeasuredLufs is double ml ? $"{ml:F2}" : "unmeasured")} LUFS " +
                                 $"-> gameplay {(gameplayLufs is double gl ? $"{gl:F2}" : "unmeasured")} LUFS = {memeGainDb:+0.00;-0.00} dB.");
-                            // SPLICE_03 — the meme butt-joins gameplay on both sides: de-click.
                             memeAudio += MemeLoudness.SpliceFade(m.DurationSec);
                         }
 
@@ -1416,7 +1296,6 @@ public class ProcessWorker : IDisposable
                             string startArg = i == 0 ? "0" : CutSec(cuts[i - 1]);
                             string endArg = i == pieceCount - 1 ? "" : $":end={CutSec(cuts[i])}";
                             coreFilters.Add($"[v_cut{i}_src]trim=start={startArg}{endArg},setpts=PTS-STARTPTS[v_cut{i}]");
-                            // SPLICE_03 — every piece borders a meme: 8 ms de-click fades.
                             double pieceStart = i == 0 ? 0 : cuts[i - 1];
                             double pieceEnd = i == pieceCount - 1 ? renderDurationSec : cuts[i];
                             coreFilters.Add($"[a_cut{i}_src]atrim=start={startArg}{endArg},asetpts=PTS-STARTPTS{MemeLoudness.SpliceFade(pieceEnd - pieceStart)}[a_cut{i}]");
@@ -1514,8 +1393,6 @@ public class ProcessWorker : IDisposable
                 }
 
 
-                // PEAKSAFE_01 — the always-on true-peak safety limiter. Not behind any switch: with
-                // the old switch off NOTHING limited the summed bus and a hot mix clipped the AAC.
                 coreFilters.Add($"{aOutputFinal}{PeakSafety.SafetyLimiterFilter()}[a_flattened]");
                 aOutputFinal = "[a_flattened]";
                 CoreLogger.Info("Audio", $"SAFETY LIMITER: true-peak ceiling {PeakSafety.SafetyCeilingDbtp:F1} dBTP (4x oversampled, no auto-level).");
@@ -1527,10 +1404,6 @@ public class ProcessWorker : IDisposable
 
                 string corePath = Path.Combine(tempJobDir, "core.mp4");
 
-                // TIMINGTAG_02 — frame-exact timing stamped into the delivered file (intro + fades),
-                // alongside the SCRAPER_01 v1 seconds key that older Merger builds read.
-                // A meme at an edge moves the fade away from the file's edge, so that fade is written
-                // as UNKNOWN (null) rather than as a wrong position.
                 {
                     if (!ExportTiming.TryParseFps(targetFps, out int tagFpsNum, out int tagFpsDen)) { tagFpsNum = 60; tagFpsDen = 1; }
                     double tagFps = (double)tagFpsNum / tagFpsDen;
@@ -1544,10 +1417,6 @@ public class ProcessWorker : IDisposable
                     CoreLogger.Info("FFmpeg", $"Timing tag: {ExportTimingTag.Format(_exportTiming)}");
                 }
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // PREVIEWMIX_01 — AUDIO-ONLY RENDER FOR THE LIVE PREVIEW. The graph above is the
-                // export's graph, byte for byte; only its audio half is run.
-                // ══════════════════════════════════════════════════════════════════════════
                 if (!string.IsNullOrEmpty(AudioPreviewOutputPath))
                 {
                     string audioGraph = AudioGraphPruner.Prune(filterScript, aOutputFinal);
@@ -1570,7 +1439,6 @@ public class ProcessWorker : IDisposable
                     foreach (var track in musicTracks) a.AddRange(["-i", track.Path]);
                     if (introInputIndex.HasValue)
                     {
-                        // Input slot only — the intro is a still frame; its audio is synthesised silence.
                         a.AddRange(["-t", "0.2", "-i", InputPath]);
                     }
                     if (textPngPath != null) a.AddRange(["-i", textPngPath]);
@@ -1579,7 +1447,7 @@ public class ProcessWorker : IDisposable
                         if (m.IsImage) a.AddRange(["-i", m.FilePath]);
                         else a.AddRange(["-i", m.FilePath]);
                     }
-                    foreach (var m in cornerMemes)   // MEMEMODE_01 — same input slots as the export
+                    foreach (var m in cornerMemes)
                         a.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps));
                     foreach (var voTake in GetEffectiveVoiceOverTakes()) a.AddRange(["-i", voTake.Path]);
                     a.AddRange(["-filter_complex_script", audioGraphPath, "-map", aOutputFinal,
@@ -1638,10 +1506,8 @@ public class ProcessWorker : IDisposable
                             currentEncoder, requestedBitrate, gDur, targetFps, qualityLevel,
                             targetMb.HasValue);
 
-                        var videoPipeline = ExportVideoPipeline.Create(currentEncoder, filterScript, !gpuFiltersDisabled);
+                        var videoPipeline = ExportVideoPipeline.Create(currentEncoder, filterScript, !gpuFiltersDisabled, codecArgs);
                         videoPipeline.ApplyCodecFlags(codecArgs);
-                        // IO_OPT: Pass short filter graphs inline to avoid the disk write.
-                        // Falls back to -filter_complex_script for long graphs.
                         bool useInlineFilter = videoPipeline.FilterGraph.Length < 8000;
                         if (!useInlineFilter)
                             await File.WriteAllTextAsync(filterScriptPath, videoPipeline.FilterGraph, cancellationToken);
@@ -1693,7 +1559,6 @@ public class ProcessWorker : IDisposable
                             }
                         }
 
-                        // MEMEMODE_01 — corner overlay inputs follow the full-screen memes.
                         foreach (var m in cornerMemes)
                             ffmpegArgs.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps));
 
@@ -1731,14 +1596,14 @@ public class ProcessWorker : IDisposable
                             ffmpegArgs.AddRange(TwoPassEncoding.PassArgs(requestedBitrate!.Value, 2, twoPassLogPrefix));
                             ffmpegArgs.AddRange(["-c:a", "aac", "-b:a", $"{audioKbps}k",
                                 "-t", totalOutputDurationSec.ToString("F3", System.Globalization.CultureInfo.InvariantCulture),
-                                ..IntroTag.OutputArgs(_exportTiming), corePath]);   // TIMINGTAG_02
+                                ..IntroTag.OutputArgs(_exportTiming), corePath]);
                         }
                         else
                         {
                             ffmpegArgs.AddRange(codecArgs);
                             ffmpegArgs.AddRange(["-c:a", "aac", "-b:a", $"{audioKbps}k",
                                 "-t", totalOutputDurationSec.ToString("F3", System.Globalization.CultureInfo.InvariantCulture),
-                                ..IntroTag.OutputArgs(_exportTiming), corePath]);   // TIMINGTAG_02
+                                ..IntroTag.OutputArgs(_exportTiming), corePath]);
                         }
 
                         double encodeBand = EncodeBandMax - encodeFloor;
@@ -1792,12 +1657,6 @@ public class ProcessWorker : IDisposable
                             FileName = _ffmpegPath,
                             RedirectStandardOutput = true,
                             RedirectStandardError = true,
-                            // FFMPEGSTOP_01 — redirected on purpose: this is the ONLY channel for
-                            // FFmpeg's interactive quit command ('q'), which the cooperative
-                            // shutdown ladder writes to ask the encoder to finalize its container
-                            // (moov atom, indexes) and exit on its own. Without it a cancel can
-                            // only ever be a mid-write kill, and the output is unplayable.
-                            // ⚠️ No argument in ffmpegArgs may be -nostdin, or the quit is ignored.
                             RedirectStandardInput = true,
                             UseShellExecute = false,
                             CreateNoWindow = true,
@@ -1839,11 +1698,11 @@ public class ProcessWorker : IDisposable
                             LastFailure = startFailure;
                             FailureDetail = startFailure.FormatDiagnosticReport();
                             lastError = startFailure.Summary;
-                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(startEx);   // FAULTTIER_02 — no failure is silent.
+                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(startEx);
                             return false;
                         }
 
-                        SetCurrentProcess(proc);   // PROCGATE_01
+                        SetCurrentProcess(proc);
 
                         bool disposedByGuard = false;
                         try
@@ -1851,17 +1710,9 @@ public class ProcessWorker : IDisposable
 
                         try { ChildProcessTracker.AddProcess(proc); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-                        // FFMPEGSTOP_01 — cooperative stop on external cancellation: 'q' quit
-                        // command -> 1500 ms grace -> Kill(entireProcessTree) -> 2000 ms exit
-                        // confirmation. Single-flight and off-thread, so cancelling can never hang
-                        // the caller, and FFmpeg gets the chance to write its moov atom instead of
-                        // leaving a headerless mdat behind.
                         using var reg = cancellationToken.Register(
                             () => BeginCooperativeShutdown(proc, "FFmpeg", attemptQuitCommand: true));
 
-                        // ⚠️ The reader loops below deliberately take NO cancellation token: they
-                        // drain to EOF once the cooperatively stopped process closes its pipes, so
-                        // they always complete before the Process object is disposed.
                         var progressTask = Task.Run(async () =>
                         {
                             using var reader = proc.StandardOutput;
@@ -1909,24 +1760,20 @@ public class ProcessWorker : IDisposable
                         try { await proc.WaitForExitAsync(cancellationToken); }
                         catch (OperationCanceledException swallowed5)
                         {
-                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
+                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);
                         }
 
                         try { await Task.WhenAll(progressTask, stderrTask); }
                         catch (OperationCanceledException swallowed3)
                         {
-                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+                            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
                         }
                         catch (Exception ex) { CoreLogger.Fail("FFmpeg", $"Reader task error: {ex.Message}"); }
 
-                        // FFMPEGSTOP_01 — let an in-flight ladder finish before reading the exit
-                        // code, so the code comes from a process that has actually finished
-                        // finalizing its output rather than one still writing its trailer.
-                        // Bounded by the ladder itself; returns immediately when none is running.
                         await AwaitActiveShutdownAsync();
 
                         int exitCode = ReadExitCodeSafely(proc, "FFmpeg");
-                        TakeCurrentProcess();      // PROCGATE_01 — claim + clear atomically
+                        TakeCurrentProcess();
                         proc.Dispose();
                         disposedByGuard = true;
 
@@ -2044,7 +1891,7 @@ public class ProcessWorker : IDisposable
                         {
                             if (!disposedByGuard)
                             {
-                                TakeCurrentProcess();   // PROCGATE_01
+                                TakeCurrentProcess();
                                 try { proc.Dispose(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
                             }
                         }
@@ -2228,26 +2075,18 @@ public class ProcessWorker : IDisposable
 
                 try
                 {
-                    // IO_OPT: File.Move is nearly instant on the same volume (atomic rename).
-                    // This avoids writing the entire finished video a second time.
-                    // Falls back to File.Copy + File.Delete for cross-volume moves.
                     try
                     {
                         File.Move(corePath, finalOutput, overwrite: true);
                     }
                     catch (IOException)
                     {
-                        // Cross-volume move — fall back to copy + delete.
                         File.Copy(corePath, finalOutput, true);
                         try { File.Delete(corePath); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
                     }
                 }
                 catch (Exception copyEx)
                 {
-                    // OUTPATH_01 — the name was RESERVED with a zero-byte placeholder. The move that
-                    // was meant to fill it failed, so remove the placeholder rather than leaving an
-                    // empty "FreeVideoStudio-N.mp4" in the user's folder that looks like a broken
-                    // export. Only ever deletes a file that is still zero bytes.
                     try
                     {
                         if (File.Exists(finalOutput) && new FileInfo(finalOutput).Length == 0)
@@ -2340,21 +2179,8 @@ public class ProcessWorker : IDisposable
                         }
                         else
                         {
-                            // PROCGATE_02 — the thumbnail grab was the one child process in this
-                            // pipeline that was never published to _currentProcess, never registered
-                            // against the cancellation token and never handed to ChildProcessTracker.
-                            // Cancel() therefore could not reach it at all, and if the app exited
-                            // during the grab the ffmpeg child was not covered by the kill-on-close
-                            // Job Object either. All three are now wired, exactly like every other
-                            // child process here.
                             SetCurrentProcess(p);
                             try { ChildProcessTracker.AddProcess(p); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-                            // FFMPEGSTOP_01 — cooperativeGraceMs: 0 ON PURPOSE. This child has no
-                            // redirected stdin and writes a single -vframes 1 still, so there is
-                            // no container to finalize and nothing for a 'q' to save; spending the
-                            // 1500 ms grace here would only slow a cancel down. What the ladder
-                            // DOES add over the bare Kill is a bounded exit CONFIRMATION, so
-                            // teardown can no longer proceed while the child is still dying.
                             using var thumbReg = cancellationToken.Register(() =>
                                 GracefulProcessTerminator.Terminate(
                                     p, "Thumbnail", attemptQuitCommand: false, cooperativeGraceMs: 0));
@@ -2378,14 +2204,14 @@ public class ProcessWorker : IDisposable
                             try { await p.WaitForExitAsync(cancellationToken); }
                             catch (OperationCanceledException swallowed8)
                             {
-                                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);   // FAULTTIER_02 — no failure is silent.
+                                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);
                             }
 
                             string thumbErr = string.Empty;
                             try { thumbErr = await thumbErrTask; } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
                             int thumbExit = ReadExitCodeSafely(p, "Thumbnail", graceMs: 2000);
-                            TakeCurrentProcess();   // PROCGATE_02 — the grab is done; stop advertising it.
+                            TakeCurrentProcess();
                             bool thumbWritten = File.Exists(thumbnailOutput) && new FileInfo(thumbnailOutput).Length > 0;
 
                             if (thumbExit == 0 && thumbWritten)
@@ -2422,12 +2248,6 @@ public class ProcessWorker : IDisposable
             }
             finally
             {
-                // FFMPEGSTOP_01 — WAIT FOR THE STOP LADDER BEFORE DELETING THE SCRATCH DIRECTORY.
-                // On Windows a file with a live handle cannot be deleted. Terminating FFmpeg is
-                // asynchronous, so a cancel that reached here while the child was still dying made
-                // this Directory.Delete fail, the failure was swallowed, and the two-pass scratch
-                // master — which can be GIGABYTES — was left in the temp root for good. Awaiting
-                // the ladder (bounded; a no-op when none is running) closes that leak.
                 await AwaitActiveShutdownAsync();
                 try { if (Directory.Exists(tempJobDir)) Directory.Delete(tempJobDir, true); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
             }
@@ -2461,15 +2281,8 @@ public class ProcessWorker : IDisposable
         }
         finally
         {
-            // CANCELREG_01 — the registration replaced the old `using var`, so it is released here.
-            // Dispose on a default(CancellationTokenRegistration) is a documented no-op, and on a
-            // registration whose source has already been disposed it is also safe.
             try { cancelMirror.Dispose(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-            // CANCELREG_01 — last-resort completion guarantee. Every path above already calls
-            // EmitFinished, and EmitFinished is idempotent (_finishEmitted), so this fires ONLY if
-            // some future edit introduces a silent return. Without it, such a path wedges the
-            // caller's await forever with no error on screen.
             if (!_finishEmitted)
             {
                 CoreLogger.Fail("Process", "Export pipeline ended without reporting a result — reporting failure so the UI cannot hang.");
@@ -2568,7 +2381,7 @@ public class ProcessWorker : IDisposable
             }
             catch (IOException swallowed4)
             {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);
             }
         }
 
@@ -2625,7 +2438,7 @@ public class ProcessWorker : IDisposable
 
         var pass2 = new List<string> { "-y", "-hide_banner", "-progress", "pipe:1", "-i", masterPath };
         pass2.AddRange(TwoPassEncoding.PassArgs(videoBitrateKbps, 2, passLogPrefix));
-        pass2.AddRange(["-c:a", "copy", ..IntroTag.OutputArgs(_exportTiming), finalPath]);   // TIMINGTAG_02
+        pass2.AddRange(["-c:a", "copy", ..IntroTag.OutputArgs(_exportTiming), finalPath]);
 
         if (!await RunPassAsync(pass2, "Encoding Video (3 of 3)", totalOutputDurationSec,
                                 pass1Ceiling, pass2Ceiling, cancellationToken))
@@ -2653,9 +2466,6 @@ public class ProcessWorker : IDisposable
             FileName = _ffmpegPath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            // FFMPEGSTOP_01 — see the main encode: this is the channel for the 'q' quit command.
-            // The two-pass tail is the pass that actually writes the deliverable file, so a
-            // mid-write kill here is exactly the case that produces an unplayable export.
             RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -2669,13 +2479,12 @@ public class ProcessWorker : IDisposable
             return false;
         }
 
-        SetCurrentProcess(proc);   // PROCGATE_01
+        SetCurrentProcess(proc);
 
         try
         {
             try { ChildProcessTracker.AddProcess(proc); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-            // FFMPEGSTOP_01 — cooperative stop, single-flight, off-thread. See the main encode.
             using var reg = cancellationToken.Register(
                 () => BeginCooperativeShutdown(proc, "FFmpeg", attemptQuitCommand: true));
 
@@ -2714,38 +2523,22 @@ public class ProcessWorker : IDisposable
                 }
             });
 
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // PIPEDRAIN_01 — DRAIN BEFORE DISPOSE, ON EVERY PATH INCLUDING CANCELLATION.
-            //
-            // This used to be `catch (OperationCanceledException) { return false; }`. That return
-            // jumped straight to the finally below, which disposes `proc` — closing the
-            // StandardOutput / StandardError pipe handles while progressTask and stderrTask were
-            // still suspended inside ReadLineAsync on them. Both tasks faulted with nobody awaiting
-            // them (unobserved), their `using var reader` double-disposed the StreamReader, and the
-            // anonymous pipe pair survived until finalization. The main encode loop above already
-            // does this correctly with Task.WhenAll; this path was simply missed.
-            //
-            // The 5s ceiling exists so a child that survived the kill cannot hold teardown open.
-            // ══════════════════════════════════════════════════════════════════════════════════
             bool tailCanceled = false;
             try { await proc.WaitForExitAsync(cancellationToken); }
             catch (OperationCanceledException swallowed6)
             {
                 tailCanceled = true;
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);
             }
 
             try { await Task.WhenAll(progressTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)); }
             catch (OperationCanceledException swallowed9)
             {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed9);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed9);
             }
             catch (TimeoutException) { CoreLogger.Warn("FFmpeg", "Two-pass reader drain timed out after 5s; continuing teardown."); }
             catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-            // FFMPEGSTOP_01 — a cancelled tail must still let the ladder finish, or the process is
-            // abandoned mid-finalize and the scratch master/passlog are left behind with a live
-            // writer still holding them.
             await AwaitActiveShutdownAsync();
 
             if (tailCanceled) return false;
@@ -2772,7 +2565,7 @@ public class ProcessWorker : IDisposable
         }
         finally
         {
-            TakeCurrentProcess();      // PROCGATE_01
+            TakeCurrentProcess();
             proc.Dispose();
         }
     }
@@ -2808,8 +2601,6 @@ public class ProcessWorker : IDisposable
         double probeSec = Math.Min(5.0, extractSec);
         double probeStartSec = extractStartMs / 1000.0 + (extractSec - probeSec) / 2.0;
 
-        // "1080x1920" / "1920x1080" -> scale geometry. Unparsable input falls back
-        // to FHD landscape rather than aborting the export's probing attempt.
         int width = 1920, height = 1080;
         string[] dims = (outputResolution ?? "").Split('x');
         if (dims.Length == 2 &&
@@ -2820,7 +2611,6 @@ public class ProcessWorker : IDisposable
             height = h;
         }
 
-        // Frame-count -> seconds needs the real fps; accept "60" or "60000/1001".
         double fps = 60.0;
         string fpsExpr = string.IsNullOrWhiteSpace(targetFps) ? "60" : targetFps.Trim();
         int slash = fpsExpr.IndexOf('/');
@@ -2843,9 +2633,6 @@ public class ProcessWorker : IDisposable
             "-t", probeSec.ToString("F3", ci),
             "-i", InputPath,
             "-vf", $"fps={targetFps},scale={width}:{height},setsar=1,format=yuv420p",
-            // Reference-quality appetite measurement — deliberately NOT the export's
-            // CBR flag set: no rate cap, single pass, so the bits the content WANTS
-            // at CQ 20 are the bits it GETS.
             "-c:v", "h264_nvenc",
             "-preset", "p7", "-tune", "hq",
             "-rc", "vbr", "-cq", "20", "-multipass", "disabled",
@@ -2875,9 +2662,6 @@ public class ProcessWorker : IDisposable
 
         try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-        // FFMPEGSTOP_01 — PROBE_01 writes to the NULL MUXER ("-f null -"): no file is produced,
-        // so there is nothing a cooperative quit could protect. Grace 0 keeps cancellation as
-        // immediate as it was, while still confirming the tree actually died.
         using var probeKill = cancellationToken.Register(() =>
             GracefulProcessTerminator.Terminate(
                 process, "FFmpeg", attemptQuitCommand: false, cooperativeGraceMs: 0));
@@ -2910,7 +2694,7 @@ public class ProcessWorker : IDisposable
         try { await process.WaitForExitAsync(cancellationToken); }
         catch (OperationCanceledException swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return null;
         }
 
@@ -2926,7 +2710,6 @@ public class ProcessWorker : IDisposable
 
         string stdErr = string.Join("\n", lastLines);
 
-        // "video: 15850KiB" from the null-muxer summary = exact video payload of the slice.
         double kib = 0;
         var videoMatches = System.Text.RegularExpressions.Regex.Matches(stdErr, @"video:\s*([\d.]+)\s*[kK]i?B");
         if (videoMatches.Count == 0 ||
@@ -2936,8 +2719,6 @@ public class ProcessWorker : IDisposable
             return null;
         }
 
-        // Denominator from the FINAL frame count, not from `time=` (which trails the
-        // last frame's PTS): 300 frames at 60 fps is exactly 5.000s of content.
         long frames = 0;
         var frameMatches = System.Text.RegularExpressions.Regex.Matches(stdErr, @"frame=\s*(\d+)");
         if (frameMatches.Count > 0)

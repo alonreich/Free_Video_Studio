@@ -91,26 +91,19 @@ public sealed class VersionAndUpdaterTests : IDisposable
     [Fact]
     public void SkippedVersion_GetAndClear_WorksWithUiStateStore()
     {
-        // Act: Initially empty
         UpdateService.ClearSkippedVersion();
         string initial = UpdateService.GetSkippedVersion();
         Assert.Equal(string.Empty, initial);
 
-        // Act: Store skipped tag into state
         UiStateStore.WriteText("update_skipped_tag.txt", "v2026.09.99.9999");
         string readBack = UpdateService.GetSkippedVersion();
         Assert.Equal("v2026.09.99.9999", readBack);
 
-        // Act: Clear skipped tag
         UpdateService.ClearSkippedVersion();
         string cleared = UpdateService.GetSkippedVersion();
         Assert.Equal(string.Empty, cleared);
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════════════
-    // UPDATEUX_01..06 and UPGRADEUX_01..05 — the update and install flows always say what is
-    // happening. These pin the wording rules and the state machines behind the windows.
-    // ════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void DownloadProgressShowsPercentSizeSpeedAndTimeLeft()
@@ -152,42 +145,38 @@ public sealed class VersionAndUpdaterTests : IDisposable
     }
 
     [Fact]
-    public void RemindMeLaterIsItsOwnChoiceAndStoresNothing()
+    public void UpdateCardAsksOneQuestionWithTwoButtonsOnlyWhenReady()
     {
-        var vm = new UpdateAvailableViewModel(new Version(1, 0), "v2.0", null, "Download size: 1 MB", canInstallItself: true);
-        bool closed = false;
-        vm.CloseRequested += () => closed = true;
-        vm.LaterCommand.Execute(null);
-        Assert.True(closed);
-        Assert.Equal(UpdateChoice.NotNow, vm.Choice);
-    }
+        var vm = new UpdateToastViewModel();
+        vm.Working("2.0", "Downloading…", 0.4);
+        Assert.True(vm.IsWorking);
+        Assert.False(vm.IsReady);
+        Assert.Equal(40, vm.Percent, 3);
 
-    [Fact]
-    public void UnsignedCopyIsToldUpFrontAndOffersTheDownloadPage()
-    {
-        var vm = new UpdateAvailableViewModel(new Version(1, 0), "v2.0", "notes", null, canInstallItself: false);
-        Assert.True(vm.CannotInstallItself);
-        Assert.Contains("not digitally signed", vm.DownloadSizeText);
-        Assert.Contains("download page", vm.UpdateButtonText);
-    }
-
-    [Fact]
-    public void DownloadWindowStagesDisableCancelDuringTheSafetyCheckAndEndInAChoice()
-    {
-        var vm = new UpdateDownloadViewModel();
-        Assert.True(vm.IsIndeterminate);                 // opens immediately, before hashing starts
-        vm.Stage("Downloading", "…", 0.5, canCancel: true);
-        Assert.True(vm.CancelCommand.CanExecute(null));
-        vm.Stage("Checking the download is safe…", "…", null, canCancel: false);
-        Assert.False(vm.CancelCommand.CanExecute(null));
-        vm.Ready();
+        vm.Ready("2.0", "Smart update: 2 changed files.");
         Assert.True(vm.IsReady);
         Assert.False(vm.IsWorking);
+        Assert.Contains("installs by itself the next time you close", vm.Status);
 
-        bool? restart = null;
-        vm.ReadyChoice += r => restart = r;
-        vm.RestartNowCommand.Execute(null);
+        bool restart = false, later = false;
+        vm.RestartRequested += () => restart = true;
+        vm.LaterRequested += () => later = true;
+        vm.RestartCommand.Execute(null);
+        vm.LaterCommand.Execute(null);
         Assert.True(restart);
+        Assert.True(later);
+    }
+
+    [Fact]
+    public void UpdateCardFailureAndPauseSayNothingWasChanged()
+    {
+        var vm = new UpdateToastViewModel();
+        vm.Failed("No internet.");
+        Assert.True(vm.IsFailed);
+        Assert.Contains("Nothing was changed", vm.Status);
+        vm.Paused();
+        Assert.True(vm.IsPaused);
+        Assert.Contains("continues", vm.Status);
     }
 
     [Fact]
@@ -267,12 +256,30 @@ public sealed class VersionAndUpdaterTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// UPDATECONSENT_01 — the startup check asks first (nothing is sent before the answer) and never
+    /// contacts GitHub sooner than five minutes after the window opens.
+    /// </summary>
     [Fact]
-    public void StagingFolderArgumentIsAcceptedOnlyInsideTheUpgradeTempRoot()
+    public void UpdateConsent01_NoNetworkAtStartupBeforeConsentAndBeforeFiveMinutes()
     {
-        // UPGRADEUX_06 — the elevated worker is started from this folder, so an argument must never
-        // be able to point it anywhere else.
-        string root = Path.Combine(Path.GetTempPath(), "FVS_Upgrade");
+        Assert.True(UpdateService.StartupGracePeriod >= TimeSpan.FromMinutes(5));
+        Assert.False(new FreeVideoStudio.App.Infrastructure.AppSettings().UpdateConsentAsked);
+
+        string code = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "UpdateService.cs"));
+        int start = code.IndexOf("public static async Task RunStartupCheckAsync", StringComparison.Ordinal);
+        int consent = code.IndexOf("UpdateConsentAsked", start, StringComparison.Ordinal);
+        int delay = code.IndexOf("StartupGracePeriod", start, StringComparison.Ordinal);
+        int query = code.IndexOf("QueryLatestReleaseAsync()", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && consent > start && delay > consent && query > delay,
+            "RunStartupCheckAsync must ask for consent, then wait, then query GitHub.");
+    }
+
+    [Fact]
+    public void StagingFolderArgumentIsAcceptedOnlyInsideTheUpgradeStageRoot()
+    {
+        string root = UpgradeCoordinator.StageRoot;
+        Assert.False(root.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase), "NOTEMPEXEC_01: the worker is never staged in %TEMP%.");
         string good = Path.Combine(root, "t" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(good);
         try
@@ -293,7 +300,6 @@ public sealed class VersionAndUpdaterTests : IDisposable
     [Fact]
     public async Task DevUpdateSourceIsOffOutsideDevCmdAndExplainsAMissingLocalBuild()
     {
-        // DEVUPDATE_01 — production (no FVS_DEV_LOG_DIR / FVS_DEV_UPDATE_SOURCE) never reads a local folder.
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FVS_DEV_LOG_DIR")))
             Assert.Null(UpdateService.DevReleaseFolder);
 
@@ -304,9 +310,37 @@ public sealed class VersionAndUpdaterTests : IDisposable
         Assert.Contains("dev_build.cmd", problem);
 
         Directory.CreateDirectory(Path.Combine(repo, "compiled"));
-        File.WriteAllText(Path.Combine(repo, "compiled", "FreeVideoStudio.exe"), "not a real exe");
+        File.WriteAllText(Path.Combine(repo, "compiled", UpdateService.SetupAssetName), "not a real exe");
         (release, problem) = await UpdateService.QueryLocalDevReleaseAsync(repo);
         Assert.Null(release);
         Assert.Contains("could not read the version", problem);
+    }
+
+    [Fact]
+    public async Task ADownloadResumesFromWhatWasAlreadyReceivedAndIsStillHashChecked()
+    {
+        byte[] data = new byte[3 * 1024 * 1024];
+        new Random(5).NextBytes(data);
+        string source = Path.Combine(_tempDir, "source.bin");
+        File.WriteAllBytes(source, data);
+        string sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+        string target = Path.Combine(_tempDir, "download", "file.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllBytes(target + ".part", data[..(1024 * 1024)]);
+
+        long firstReported = -1;
+        using var http = new System.Net.Http.HttpClient();
+        await UpdateDownloader.DownloadAsync(http, new Uri(source).AbsoluteUri, source, target, data.Length, sha,
+            p => { if (firstReported < 0) firstReported = p.Done; }, CancellationToken.None);
+
+        Assert.Equal(data, File.ReadAllBytes(target));
+        Assert.True(firstReported >= 1024 * 1024, $"the download restarted from {firstReported} instead of resuming");
+        Assert.False(File.Exists(target + ".part"));
+
+        string wrong = Path.Combine(_tempDir, "download", "wrong.bin");
+        await Assert.ThrowsAsync<IOException>(() => UpdateDownloader.DownloadAsync(http, new Uri(source).AbsoluteUri, source, wrong,
+            data.Length, new string('0', 64), null, CancellationToken.None));
+        Assert.False(File.Exists(wrong));
+        Assert.False(File.Exists(wrong + ".part"));
     }
 }

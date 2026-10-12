@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 
@@ -126,7 +123,7 @@ public sealed class RenderedMixGate
     /// <summary>Records a render that failed (not cancelled): its signature is not retried until the edit changes.</summary>
     public void Fail(Ticket ticket)
     {
-        if (InFlight is not { } t || t.Generation != ticket.Generation) return;   // superseded: not this edit's verdict
+        if (InFlight is not { } t || t.Generation != ticket.Generation) return;
         InFlight = null;
         FailedSignature = ticket.Signature;
     }

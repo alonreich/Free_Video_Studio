@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -52,11 +49,11 @@ public partial class VideoMergerWindow
     private Canvas? _cMarkersCanvas;
     private Canvas? MarkersCanvasCtl => _cMarkersCanvas ??= this.FindControl<Canvas>("TimelineMarkersCanvas");
     private Canvas? _cFilmLane;
-    private Canvas? FilmLaneCtl => _cFilmLane ??= this.FindControl<Canvas>("MergerFilmstripLane");   // LANES_01
+    private Canvas? FilmLaneCtl => _cFilmLane ??= this.FindControl<Canvas>("MergerFilmstripLane");
     private Canvas? _cWaveLane;
-    private Canvas? WaveLaneCtl => _cWaveLane ??= this.FindControl<Canvas>("MergerWaveformLane");    // LANES_01
+    private Canvas? WaveLaneCtl => _cWaveLane ??= this.FindControl<Canvas>("MergerWaveformLane");
     private Canvas? _cBlocksLane;
-    private Canvas? BlocksLaneCtl => _cBlocksLane ??= this.FindControl<Canvas>("MergerClipBlocksLane");  // D20
+    private Canvas? BlocksLaneCtl => _cBlocksLane ??= this.FindControl<Canvas>("MergerClipBlocksLane");
 
     /// <summary>AOTCLEAN_01 — in-app reorder drag payload (application-private format; replaces the obsolete string key "VideoItem").</summary>
     private static readonly Avalonia.Input.DataFormat<string> VideoItemFormat = Avalonia.Input.DataFormat.CreateStringApplicationFormat("fvs.merger.video-item");

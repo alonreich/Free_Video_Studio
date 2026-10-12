@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -120,10 +117,6 @@ public partial class MainWindow
             return ExportOutcome.Declined;
         }
 
-        // EXPORTSESSION_01 — the CancellationTokenSource is created and disposed by ExportCoordinator
-        // (EXPORTSESSION_02), the only code that knows when this pipeline has actually stopped. The old
-        // `previousCts?.Dispose()` that stood here disposed a source the PREVIOUS export's worker was
-        // still registered on; see the block on ProcessVideoAsync. Do not reintroduce it.
         await Task.Yield();
         
         SetTimelinePopupsVisible(false);
@@ -142,24 +135,9 @@ public partial class MainWindow
         }
 
         
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // QUALITY_01 — THE WORKER'S CONTRACT DID NOT CHANGE. Only who computes the number did.
-        //
-        // `resolvedTargetMb` has always been "the size to aim for, or null for constant quality",
-        // and it still is. What changed is that it used to BE the dial's value (5 + idx * 5) and
-        // is now DERIVED from the quality tier the dial selects — through the same estimator
-        // that produces the readout beside PROCESS, so the user is never promised
-        // one size and handed another.
-        // ══════════════════════════════════════════════════════════════════════════════════════
         int qualityIdx = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("QualitySlider")?.Value
                          ?? FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
-        // ⚠️ QUALITY_02 — THE WORKER IS NOT GIVEN THE TIER INDEX. It is given the quality LEVEL
-        // its own VideoConfig.GetQualitySettings understands, where ">= 20" is what unlocks
-        // keepHighestRes and the constant-quality path. Passing the raw tier here would strip
-        // `Original` of the one thing it promises. See QualityLadder.ToWorkerQualityLevel.
         int resolvedQuality = FreeVideoStudio.App.ViewModels.QualityLadder.ToWorkerQualityLevel(qualityIdx);
-        // SIZEESTIMATE_01 — recapture current inputs; never export using a stale displayed result.
-        // Original's rough prediction remains separate from its null (uncapped) encoder target.
         var sizeRequest = CaptureSizeRequest();
         Services.OutputSizeEstimate sizeEstimate;
         try
@@ -173,7 +151,7 @@ public partial class MainWindow
             processButton.IsEnabled = true;
             processButton.Content = "PROCESS";
             if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
             return ExportOutcome.Cancelled;
         }
         catch (Exception ex)
@@ -228,10 +206,6 @@ public partial class MainWindow
             ShowTacticalFeedback(result.Warning == null ? "Processing complete" : "Complete — thumbnail failed");
             PlayUiSound();
 
-            // CAPTIONWIPE_01 — this video is finished, so its title is finished with it. MUST run
-            // BEFORE the clean flag below: writing OverlayText fires NotifyStateDirty, which would
-            // clear that flag again and arm crash recovery for a project that has just been
-            // exported successfully. See MainWindow.ClearOverlayTextForNextVideo.
             ClearOverlayTextForNextVideo("the video finished processing");
 
             _exportedCleanSinceLastEdit = true;
@@ -285,11 +259,6 @@ public partial class MainWindow
         var segments = BuildExportSpeedSegments();
         int segmentCount = segments?.Count ?? 0;
 
-        // CUT_01 — a cut splits one stretch of footage in two, so it costs ONE extra branch: half
-        // what a speed segment costs (which adds itself plus the gap after it). A cut touching the
-        // very start or end of the clip splits nothing and is free, which is what ExtraChunkCost
-        // works out. Counting cuts here is what keeps "many tiny snips" — the one real performance
-        // danger of this feature — in front of the user before the encode starts rather than after.
         int cutChunks = 0;
         if (_cuts.Count > 0)
         {
@@ -349,19 +318,6 @@ public partial class MainWindow
         {
             double musicStartMs = Math.Max(_trimStartMs, _musicWizardResult.TimelineStartSeconds * 1000.0);
             double musicEndMs = Math.Min(_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs, _musicWizardResult.TimelineEndSeconds * 1000.0);
-            // ══════════════════════════════════════════════════════════════════════════
-            // CUTS_02 — MUSIC IS PLACED IN OUTPUT TIME, AND OUTPUT TIME IS SHORTER AFTER A CUT.
-            //
-            // These two numbers are where in the finished video the music starts and stops.
-            // CalculateEffectiveDurationMs converts source ms to output ms through the speed
-            // segments — but it knew nothing about deleted sections, so every second removed
-            // before the music's start point was still counted as time the music had to wait
-            // through. A thirty-second cut near the top of a clip pushed the whole bed thirty
-            // seconds late, and stretched its length by the same amount over the end of the video.
-            //
-            // OutputTimeline is the one type that owns this conversion and it already handles
-            // cuts, so the mapping is delegated to it rather than adding a second implementation.
-            // ══════════════════════════════════════════════════════════════════════════
             double startDelay = SourceMsToOutputSeconds(musicStartMs, allSegments);
             double outputEndSec = SourceMsToOutputSeconds(musicEndMs, allSegments);
             double dur = outputEndSec - startDelay;
@@ -385,8 +341,6 @@ public partial class MainWindow
                 musicPaths.Add(_musicWizardResult.MusicFilePath);
             }
 
-            // Probe once and keep the lengths: the loop pass below needs them again, and
-            // ProbeMusicDurationSecondsAsync spawns ffprobe.
             var musicDurations = new System.Collections.Generic.List<double>(musicPaths.Count);
             for (int i = 0; i < musicPaths.Count; i++)
             {
@@ -403,25 +357,6 @@ public partial class MainWindow
                 musicDurations.Add(knownDuration);
             }
 
-            // ══════════════════════════════════════════════════════════════════════════════
-            // LOOP_01 — "LOOP MUSIC UNTIL VIDEO ENDS" NOW ACTUALLY DOES THAT HERE.
-            //
-            // The tick box has always existed in the Music Wizard, and `LoopMusic` has always been
-            // carried on the result and written into the recovery file. But ONLY MergerWorker ever
-            // read it (via `loop_music` in its own music config). On this path — a single video in
-            // the Main App — nothing consumed it, so the tick box was decorative: the music still
-            // stopped when the song ran out. That was survivable while the box was hidden outside
-            // the Video Merger; now that COVER_01 shows it to everyone, it has to be real.
-            //
-            // The repeat is expressed the same way the first pass is — more MusicTrack entries,
-            // each taking a slice of what is left — so the filter graph sees nothing new. Repeats
-            // start at 0.0 rather than the user's chosen song start: the start point was chosen as
-            // an ENTRANCE, and re-entering there each cycle would skip the same opening every time.
-            // The guard is a hard stop against a zero-length track spinning this forever.
-            // ══════════════════════════════════════════════════════════════════════════════
-            // MUSICSYNC_01 — the first pass (wizard offset into track 1, then each following track
-            // from 0) and the LOOP_01 repeat pass now live in MusicBedPlan.Build, unchanged in
-            // behaviour, so the live preview (MainWindow.PreviewAudio.cs) plays exactly this plan.
             var bedPlan = FreeVideoStudio.Core.Media.MusicBedPlan.Build(
                 musicPaths, musicDurations, _musicWizardResult.OffsetSeconds, dur, _musicWizardResult.LoopMusic, startDelay);
             foreach (var seg in bedPlan)
@@ -437,23 +372,18 @@ public partial class MainWindow
 
             musicConfig = new System.Text.Json.Nodes.JsonObject
             {
-                // DUCKOFF_01 — the EXPLICIT flag is what AudioFilterChain reads now. The
-                // threshold/ratio below stay for the checked case (and as the legacy fallback for
-                // configs written before this key existed).
                 ["ducking_enabled"] = _musicWizardResult.EnableDucking,
                 ["ducking_threshold"] = _musicWizardResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedThreshold : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassThreshold,
                 ["ducking_ratio"] = _musicWizardResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedRatio : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassRatio,
                 ["main_vol"] = _musicWizardResult.VideoVolume,
                 ["music_vol"] = _musicWizardResult.MusicVolume,
                 ["carving_enabled"] = _musicWizardResult.EnableCarving,
-                // DUCKSTRENGTH_01 — the two strength handles from Settings (50 = tuned).
                 ["ducking_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.DuckingStrength,
                 ["carving_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.CarvingStrength
             };
         }
         else
         {
-            // The main bubble slider is a monitor control, never an export gain.
             musicConfig = new System.Text.Json.Nodes.JsonObject { ["main_vol"] = _musicWizardResult?.VideoVolume ?? 1.0 };
         }
         
@@ -480,18 +410,8 @@ public partial class MainWindow
                           Infrastructure.MemePlacementStore.Get(memeFile!) == Infrastructure.MemePlacement.Start,
             PortraitText = this.FindControl<Avalonia.Controls.TextBox>("PortraitTextInput")?.Text,
             SpeedSegments = allSegments,
-            // CUT_01 — absolute source ms, converted to clip-relative inside ProcessWorker.
             Cuts = new List<FreeVideoStudio.Core.Media.CutRange>(_cuts),
 
-            // ══════════════════════════════════════════════════════════════════════════
-            // MEME_06 — THE LINE THAT MAKES MID-VIDEO MEMES REAL.
-            //
-            // MEME_05 built the entire N-meme export graph and shipped it, and then nothing on any
-            // screen ever assigned this property — so every export in the product fell through to
-            // ProcessWorker's legacy "one meme, start or end" branch and the whole engine sat
-            // unreachable. Non-empty here makes it authoritative; empty keeps the legacy pair,
-            // which is exactly how the main screen's Start/End dropdown still works.
-            // ══════════════════════════════════════════════════════════════════════════
             MemePlacements = _memePlacements.Count > 0
                 ? new List<FreeVideoStudio.Core.Media.MemePlacement>(_memePlacements)
                 : null,

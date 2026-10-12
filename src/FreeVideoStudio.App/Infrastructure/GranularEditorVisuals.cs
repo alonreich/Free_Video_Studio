@@ -1,10 +1,7 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia;
-using Avalonia.Controls;   // ResourceNodeExtensions.TryFindResource
+using Avalonia.Controls;
 using Avalonia.Media;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Media;
@@ -133,7 +130,7 @@ internal static class GranularEditorVisuals
             : $"{ts.Minutes:D2}:{ts.Seconds:D2}";
     }
 
-    internal static string FormatMs(double ms) => FreeVideoStudio.Core.Editing.GranularEditSession.FormatMs(ms);   // EDITSTATE_01 — one formatter
+    internal static string FormatMs(double ms) => FreeVideoStudio.Core.Editing.GranularEditSession.FormatMs(ms);
 
     internal static int Even(int v) => v % 2 == 0 ? v : v - 1;
 

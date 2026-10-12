@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -90,7 +87,6 @@ internal static unsafe partial class AuthenticodeVerifier
         Rejected
     }
 
-    // ── WinVerifyTrust constants (wintrust.h) ────────────────────────────────────────────────
     private const uint WTD_UI_NONE = 2;
     private const uint WTD_REVOKE_NONE = 0;
     private const uint WTD_CHOICE_FILE = 1;
@@ -128,7 +124,7 @@ internal static unsafe partial class AuthenticodeVerifier
         public uint dwUIChoice;
         public uint fdwRevocationChecks;
         public uint dwUnionChoice;
-        public nint pUnion;            // pFile, for dwUnionChoice == WTD_CHOICE_FILE
+        public nint pUnion;
         public uint dwStateAction;
         public nint hWVTStateData;
         public nint pwszURLReference;
@@ -148,7 +144,9 @@ internal static unsafe partial class AuthenticodeVerifier
         bool HasSignature,
         string Subject,
         string Thumbprint,
-        string Detail);
+        string Detail,
+        bool IntegrityValid = false,
+        byte[]? SignerCertificate = null);
 
     /// <summary>
     /// Runs the OS trust provider over <paramref name="filePath"/> and, when it carries a
@@ -169,14 +167,15 @@ internal static unsafe partial class AuthenticodeVerifier
         }
         catch (Exception ex)
         {
-            // A missing wintrust.dll or a blocked entry point is NOT a pass.
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return new SignatureInfo(false, false, string.Empty, string.Empty,
                 $"Trust provider unavailable ({ex.GetType().Name}: {ex.Message}).");
         }
 
         bool hasSignature = trustResult != TRUST_E_NOSIGNATURE;
         bool chainValid = trustResult == 0;
+        bool integrityValid = chainValid || trustResult is CERT_E_UNTRUSTEDROOT or CERT_E_CHAINING;
+        byte[]? raw = null;
 
         string subject = string.Empty;
         string thumbprint = string.Empty;
@@ -184,54 +183,44 @@ internal static unsafe partial class AuthenticodeVerifier
         {
             try
             {
-                // AOTSAFETY_05 / SYSLIB0057: the obsoletion directs callers to
-                // X509CertificateLoader, which loads certificate FILES. It has no equivalent for
-                // extracting an embedded signer certificate from a signed PE, which is what this
-                // call does and what SYS-SIGNING needs. Suppressed for this one statement, with
-                // the reason recorded, rather than project-wide — revisit if .NET ships a
-                // replacement for reading Authenticode signers.
 #pragma warning disable SYSLIB0057
                 using X509Certificate signer = X509Certificate.CreateFromSignedFile(filePath);
 #pragma warning restore SYSLIB0057
                 subject = signer.Subject ?? string.Empty;
                 thumbprint = signer.GetCertHashString(HashAlgorithmName.SHA256) ?? string.Empty;
+                raw = signer.GetRawCertData();
             }
             catch (Exception ex)
             {
-                // Signed per the trust provider, but the certificate could not be read back. Treat
-                // as unusable rather than as a pass — a publisher we cannot name is not a publisher
-                // we can compare.
                 chainValid = false;
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                 return new SignatureInfo(false, true, string.Empty, string.Empty,
                     $"Signature present but the signer certificate could not be read ({ex.GetType().Name}: {ex.Message}).");
             }
         }
 
-        return new SignatureInfo(chainValid, hasSignature, subject, thumbprint, DescribeTrustResult(trustResult));
+        return new SignatureInfo(chainValid, hasSignature, subject, thumbprint, DescribeTrustResult(trustResult), integrityValid, raw);
     }
 
-    /// <summary>
-    /// UPDATEUX_05 — asked BEFORE anything is downloaded: can this running copy verify an update
-    /// at all? Same anchor test as <see cref="EvaluateUpdateCandidate"/>, so the answer can never
-    /// disagree with the check that runs before launch. The developer override
-    /// <c>FVS_ALLOW_UNSIGNED_UPDATE=1</c> (UPDATETRUST_02, environment only) counts as yes.
-    /// </summary>
-    internal static bool CanVerifyUpdates(string? anchorPath, out string detail)
+    /// <summary>UPDATEPIN_01 — intact signature whose signer chains to the pinned publisher root.</summary>
+    internal static bool IsSignedByPinnedPublisher(SignatureInfo info, out string detail)
     {
-        if (string.Equals(Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED_UPDATE"), "1", StringComparison.Ordinal))
+        if (!info.HasSignature || !info.IntegrityValid || info.SignerCertificate is null)
         {
-            detail = "Developer override FVS_ALLOW_UNSIGNED_UPDATE=1 is set.";
-            return true;
-        }
-        if (string.IsNullOrWhiteSpace(anchorPath))
-        {
-            detail = "The running executable's path is unknown.";
+            detail = info.Detail;
             return false;
         }
-        SignatureInfo anchor = Inspect(anchorPath!);
-        detail = anchor.Detail;
-        return anchor.ChainValid && !string.IsNullOrWhiteSpace(anchor.Subject);
+        try
+        {
+            using X509Certificate2 signer = X509CertificateLoader.LoadCertificate(info.SignerCertificate);
+            return FreeVideoStudio.Core.Infrastructure.PublisherRoot.Vouches(signer, out detail);
+        }
+        catch (CryptographicException ex)
+        {
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
+            detail = "The signer certificate could not be read.";
+            return false;
+        }
     }
 
     /// <summary>
@@ -241,13 +230,24 @@ internal static unsafe partial class AuthenticodeVerifier
     /// <param name="detail">A one-line, user-safe explanation of the verdict, always populated.</param>
     internal static TrustVerdict EvaluateUpdateCandidate(string candidatePath, string? anchorPath, out string detail)
     {
+        SignatureInfo pinned = Inspect(candidatePath);
+        if (IsSignedByPinnedPublisher(pinned, out string pinDetail))
+        {
+            detail = $"{pinDetail} (sha256 {Shorten(pinned.Thumbprint)}).";
+            return TrustVerdict.Trusted;
+        }
+        if (pinned.HasSignature && !pinned.IntegrityValid)
+        {
+            detail = $"The downloaded file's signature did not validate: {pinned.Detail}";
+            return TrustVerdict.Rejected;
+        }
+
         SignatureInfo anchor = string.IsNullOrWhiteSpace(anchorPath)
             ? new SignatureInfo(false, false, string.Empty, string.Empty, "The running executable's path is unknown.")
             : Inspect(anchorPath!);
 
         if (!anchor.ChainValid || string.IsNullOrWhiteSpace(anchor.Subject))
         {
-            // Unsigned (or unverifiable) distribution. There is nothing to pin to.
             detail = $"The running build is not signed ({anchor.Detail}), so the update cannot be checked against a publisher.";
             return TrustVerdict.NoAnchor;
         }
@@ -329,7 +329,7 @@ internal static unsafe partial class AuthenticodeVerifier
                 Guid closeAction = GenericVerifyV2;
                 try { WinVerifyTrust(nint.Zero, ref closeAction, ref data); } catch (System.Exception swallowed)
                 {
-                    global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+                    global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
                 }
             }
 

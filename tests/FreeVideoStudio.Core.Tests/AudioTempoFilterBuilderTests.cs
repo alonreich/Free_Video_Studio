@@ -18,12 +18,11 @@ public class AudioTempoFilterBuilderTests
 {
     public static IEnumerable<object[]> Rates => new[] { 0.25, 0.5, 0.75, 1.0, 1.25, 2.0, 4.0 }.Select(r => new object[] { r });
 
-    // ── policy ──────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(0.25, new[] { "rubberband=tempo=0.2500:transients=mixed" })]
-    [InlineData(0.5, new[] { "rubberband=tempo=0.5000:transients=mixed" })]
-    [InlineData(0.75, new[] { "rubberband=tempo=0.7500:transients=mixed" })]
+    [InlineData(0.25, new[] { "rubberband=tempo=0.2500:transients=mixed:window=short" })]
+    [InlineData(0.5, new[] { "rubberband=tempo=0.5000:transients=mixed:window=short" })]
+    [InlineData(0.75, new[] { "rubberband=tempo=0.7500:transients=mixed:window=short" })]
     [InlineData(1.0, new string[0])]
     [InlineData(1.25, new[] { "atempo=1.2500" })]
     [InlineData(2.0, new[] { "atempo=2.0000" })]
@@ -62,22 +61,22 @@ public class AudioTempoFilterBuilderTests
     [InlineData(-1.0)]
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
-    public void ImpossibleRates_FallBackToNoFilter(double rate)   // ISSUE_04 — must not hang either
+    public void ImpossibleRates_FallBackToNoFilter(double rate)
     {
         Assert.Empty(AudioTempoFilterBuilder.Build(rate, true));
         Assert.Empty(AudioTempoFilterBuilder.Build(rate, false));
     }
 
     [Fact]
-    public void Segment_NeverLeavesADanglingComma()   // AVSYNC_01
+    public void Segment_NeverLeavesADanglingComma()
     {
         Assert.Equal("", AudioTempoFilterBuilder.Segment(1.0, leadingComma: true, rubberbandAvailable: true));
         Assert.Equal("", AudioTempoFilterBuilder.Segment(1.0, leadingComma: false, rubberbandAvailable: false));
-        Assert.Equal(",rubberband=tempo=0.5000:transients=mixed", AudioTempoFilterBuilder.Segment(0.5, true, true));
+        Assert.Equal(",adelay=delays=512S:all=1,rubberband=tempo=0.5000:transients=mixed:window=short," +
+                     "asetpts=PTS-STARTPTS,atrim=start_sample=512,asetpts=PTS-STARTPTS", AudioTempoFilterBuilder.Segment(0.5, true, true));
         Assert.Equal("atempo=2.0,atempo=2.0000,", AudioTempoFilterBuilder.Segment(4.0, false, true));
     }
 
-    // ── capability ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Unprobed_IsAbsent_AndAScopedOverrideIsLocalToItsFlow()
@@ -101,7 +100,30 @@ public class AudioTempoFilterBuilderTests
              mixed           256          ..F.A......
              smooth          512          ..F.A......
            detector          <int>        ..F.A...... set detector (from 0 to INT_MAX) (default compound)
+             compound        0            ..F.A......
+             percussive      1024         ..F.A......
+             soft            2048         ..F.A......
+           phase             <int>        ..F.A...... set phase (from 0 to INT_MAX) (default laminar)
+             laminar         0            ..F.A......
+             independent     8192         ..F.A......
+           window            <int>        ..F.A...... set window (from 0 to INT_MAX) (default standard)
+             standard        0            ..F.A......
+             short           1048576      ..F.A......
+             long            2097152      ..F.A......
         """;
+
+    [Theory]
+    [InlineData(0.5, 1.0, 96512)]
+    [InlineData(0.25, 2.0, 384512)]
+    [InlineData(0.75, 1.5, 96512)]
+    public void AVSYNC_04_CompensatedRubberBand_IsCutToExactlyInputOverTempo(double rate, double inputSec, long endSample)
+    {
+        string seg = AudioTempoFilterBuilder.Segment(rate, false, true, inputSec);
+        Assert.StartsWith("adelay=delays=512S:all=1,rubberband=", seg);
+        Assert.Contains($"atrim=start_sample=512:end_sample={endSample},asetpts=PTS-STARTPTS,", seg);
+        Assert.Equal(AudioTempoFilterBuilder.Segment(rate, false, false), AudioTempoFilterBuilder.Segment(rate, false, false, inputSec));
+        Assert.Equal("", AudioTempoFilterBuilder.Segment(1.0, false, true, inputSec));
+    }
 
     [Fact]
     public void HelpParse_AcceptsTheRealOptionTable_RejectsAbsenceAndMissingSyntax()
@@ -111,6 +133,7 @@ public class AudioTempoFilterBuilderTests
         Assert.False(AudioTempoFilterBuilder.HelpListsRequiredOptions(""));
         Assert.False(AudioTempoFilterBuilder.HelpListsRequiredOptions(RealHelp.Replace("mixed ", "other ")));
         Assert.False(AudioTempoFilterBuilder.HelpListsRequiredOptions(RealHelp.Replace("tempo  ", "speed  ")));
+        Assert.False(AudioTempoFilterBuilder.HelpListsRequiredOptions(RealHelp.Replace("short ", "other ")));
     }
 
     [Fact]
@@ -121,7 +144,6 @@ public class AudioTempoFilterBuilderTests
         Assert.True(AudioTempoFilterBuilder.IsProbed);
     }
 
-    // ── one policy on every route (Main / Granular / Merger plain / Merger effects) ────────
 
     [Theory]
     [MemberData(nameof(Rates))]
@@ -130,7 +152,7 @@ public class AudioTempoFilterBuilderTests
         foreach (bool cap in new[] { true, false })
         {
             using var _ = AudioTempoFilterBuilder.OverrideCapability(cap);
-            string expected = AudioTempoFilterBuilder.Segment(rate, leadingComma: false, cap);
+            string expected = AudioTempoFilterBuilder.Segment(rate, leadingComma: false, cap, 2.0);
 
             var main = GranularSpeedBuilder.Build(4000, [new SpeedSegment(1000, 3000, rate)], 1.0, 0, "[0:v]", "[0:a]", "60", needHudBranch: false);
             var merger = MergeClipGraph.Build(0, "[0:v]", "[0:a]", 0.0, 4.0,
@@ -173,7 +195,6 @@ public class AudioTempoFilterBuilderTests
         var offenders = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Split(Path.DirectorySeparatorChar).Any(p => p is "bin" or "obj"))
             .Where(f => Path.GetFileName(f) != "AudioTempoFilterBuilder.cs")
-            // Phase4Gate PARSES atempo elements to check their [0.5, 2.0] bounds; it builds no export graph.
             .Where(f => Path.GetFileName(f) != "Phase4Gate.cs")
             .Where(f => Regex.IsMatch(File.ReadAllText(f), "\"[^\"\\n]*(atempo=|rubberband=)"))
             .Select(f => Path.GetRelativePath(repo, f)).ToList();
@@ -189,7 +210,6 @@ public class AudioTempoFilterBuilderTests
         Assert.Contains("AudioTempoFilterBuilder.EnsureProbedAsync(_ffmpegPath)", Read("MergerWorker.cs"));
     }
 
-    // ── real FFmpeg: capability, duration, pitch (bundled binary on Windows; FVS_TEST_FFMPEG elsewhere) ──
 
     [MediaFact]
     public async Task RealFfmpeg_ProbeFindsRubberBand()
@@ -201,7 +221,6 @@ public class AudioTempoFilterBuilderTests
     [InlineData(0.25, false)] [InlineData(0.5, false)] [InlineData(0.75, false)]
     public void RealFfmpeg_GranularGraph_ExactDuration_And440HzStays440Hz(double rate, bool cap)
     {
-        // Known fixture: a 440 Hz sine under a 4 s clip whose whole length runs at `rate`.
         (string filterGraph, string videoLabel, string hudLabel, string audioLabel, double finalDuration, Func<double, double> timeMapper) g;
         using (AudioTempoFilterBuilder.OverrideCapability(cap))
             g = GranularSpeedBuilder.Build(4000, [new SpeedSegment(0, 4000, rate)], 1.0, 0, "[0:v]", "[1:a]", "30",
@@ -235,7 +254,6 @@ public class AudioTempoFilterBuilderTests
         finally { try { File.Delete(raw); } catch (IOException) { /* temp file; nothing to do */ } }
     }
 
-    // ── helpers ─────────────────────────────────────────────────────────────────────────────
 
     private static (string filterGraph, double finalDuration) Built(double rate, bool cap)
     {

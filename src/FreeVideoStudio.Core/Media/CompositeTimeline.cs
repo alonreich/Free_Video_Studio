@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
@@ -135,9 +130,6 @@ public sealed class CompositeTimeline
     /// </summary>
     private static OutputTimeline BuildClipOutput(EdlClip c, long keepIn, long keepOut, long frames, double baseSpeed)
     {
-        // The clip's length on the output clock is its ROUNDED frame count at MergeFps, because that
-        // is what the export's per-clip fps=60 normalisation actually emits. Using the raw µs length
-        // drifts by up to half a frame per clip (44 ms over 200 clips in T2.3a).
         double keepSec = frames / (double)MergeFps;
         var fx = c.Effects;
 
@@ -148,7 +140,6 @@ public sealed class CompositeTimeline
         var insertions = new List<OutputTimeline.Insertion>(fx.Memes.Count);
         foreach (var m in fx.Memes)
         {
-            // MEMEMODE_01 — a corner overlay plays over the clip and adds zero output seconds.
             if (m.IsCornerOverlay) continue;
             insertions.Add(new OutputTimeline.Insertion(MemeAtRelSec(c, m, keepIn, keepOut, keepSec), m.DurationSec, m.Id));
         }
@@ -198,13 +189,10 @@ public sealed class CompositeTimeline
         long f = Math.Clamp(frame, 0, TotalMergedFrames);
         if (f == TotalMergedFrames)
         {
-            // The very end belongs to the last clip that has content.
             int last = Clips.Count - 1;
             while (last > 0 && Clips[last].MergedFrames == 0) last--;
             return last;
         }
-        // Largest index whose start is <= f. Starts never decrease, and a zero-length clip shares its
-        // start with the next clip, so for f < total this always lands on a clip that has content at f.
         int lo = 0, hi = Clips.Count - 1;
         while (lo < hi)
         {

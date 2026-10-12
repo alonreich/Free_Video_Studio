@@ -1,11 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -80,8 +73,7 @@ public sealed partial class GranularEditSession
     public MemePlacement AddMeme(string filePath, double at, double durationSec, MemePresentationMode mode,
         MemeOverlayCorner corner, MemeOverlaySize size, bool playSound)
     {
-        Checkpoint("add meme");   // UNDO_02
-        // ⚠️ Ids become FFmpeg filter labels: unique for the life of this editor (MEME_05).
+        Checkpoint("add meme");
         var placement = new MemePlacement(filePath, at, durationSec, NewMemeId(), mode, corner, size, playSound);
         Memes.Add(placement);
         SelectedMemeId = placement.Id;
@@ -115,9 +107,9 @@ public sealed partial class GranularEditSession
         var updated = new MemePlacement(filePath, at, durationSec, old.Id, mode, corner, size, playSound);
         before = old;
         after = updated;
-        if (updated == old) return EditOutcome.Success;   // U4 — nothing changed, nothing recorded
+        if (updated == old) return EditOutcome.Success;
 
-        Checkpoint("change meme");   // UNDO_02 — one step for every property that changed
+        Checkpoint("change meme");
         Memes[idx] = updated;
         SelectedMemeId = memeId;
         return EditOutcome.Success;
@@ -130,7 +122,7 @@ public sealed partial class GranularEditSession
         int idx = Memes.FindIndex(m => m.Id == SelectedMemeId);
         if (idx < 0) { SelectedMemeId = null; return null; }
 
-        Checkpoint("remove meme");   // UNDO_02
+        Checkpoint("remove meme");
         var removed = Memes[idx];
         Memes.RemoveAt(idx);
         SelectedMemeId = null;
@@ -170,7 +162,7 @@ public sealed partial class GranularEditSession
         int idx = Memes.FindIndex(m => m.Id == id);
         if (idx < 0) return false;
 
-        Checkpoint("move meme", gestureKey);   // UNDO_02 — one snapshot per gesture
+        Checkpoint("move meme", gestureKey);
         double snapped = baseTimeline.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out blockedBy));
 
         if (Math.Abs(snapped - Memes[idx].AtSourceSecRelative) < 0.0005) return false;

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using FreeVideoStudio.Core.Abstractions;
@@ -256,11 +253,9 @@ public static class VideoFrameGrabber
         }
         catch (Exception ex) when (backend == VideoFrameBackend.Auto)
         {
-            // An unexpected managed failure (native path or the caller's converter). The subprocess
-            // can still answer, so the user's outcome is unchanged: Recoverable, not Degraded.
             Faults.Recoverable("LIBAV-FRAME-FALLBACK", $"{Path.GetFileName(mediaPath)}: native frame decode threw; retrying once with ffmpeg.", ex);
             fallbackReason = ex.Message;
-            fault = false;   // already reported
+            fault = false;
         }
 
         if (backend == VideoFrameBackend.Native)
@@ -269,7 +264,6 @@ public static class VideoFrameGrabber
             return null;
         }
 
-        // ── Auto: exactly one fallback to the subprocess ───────────────────────────────────────
         Interlocked.Increment(ref _fallbacks);
         if (fault)
             Faults.Recoverable("LIBAV-FRAME-FALLBACK", $"{Path.GetFileName(mediaPath)} @ {FfmpegTime.Describe(request.SeekMicroseconds)} s: native frame decode failed ({fallbackReason}); retrying once with ffmpeg.");

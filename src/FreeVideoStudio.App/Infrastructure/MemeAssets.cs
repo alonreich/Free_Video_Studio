@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -129,7 +126,6 @@ public static class MemeAssets
             string marker = MarkerPath(category);
             if (File.Exists(marker)) return 0;
 
-            // MEMEFOLDER_01 — honour a delivery made under the old per-kind categories.
             if (string.Equals(category, MemeCategoryFolder, StringComparison.OrdinalIgnoreCase) &&
                 LegacyMemeCategories.Any(c => File.Exists(MarkerPath(c))))
             {

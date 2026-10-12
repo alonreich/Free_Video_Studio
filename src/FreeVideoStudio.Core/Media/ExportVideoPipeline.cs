@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -41,7 +38,19 @@ public sealed partial class ExportVideoPipeline
     public string DecoderDescription { get; }
     public string Description { get; }
 
-    public static ExportVideoPipeline Create(string encoder, string softwareGraph, bool allowGpuFrames = true)
+    /// <summary>
+    /// CUDATAG_01 — FFmpeg 7.1+ negotiates colour space on every filter link. The encoder-side
+    /// output tags (<see cref="ExportColorPolicy.OutputTagArgs"/>, passed here as
+    /// <paramref name="codecFlags"/>) become a buffersink constraint, and untagged CUDA frames
+    /// cannot meet it: FFmpeg inserts a software auto_scale after the last scale_cuda and the
+    /// graph fails ("Impossible to convert between the formats supported by the filter
+    /// 'Parsed_scale_cuda_N' and the filter 'auto_scale_0'"). The CPU route gets the same
+    /// relabel for free from swscale. The resident route therefore stamps the identical
+    /// metadata on each decoded input with <c>setparams</c> (a metadata-only filter that
+    /// accepts hardware frames), so every link agrees and frames never leave VRAM.
+    /// </summary>
+    public static ExportVideoPipeline Create(string encoder, string softwareGraph, bool allowGpuFrames = true,
+        IReadOnlyList<string>? codecFlags = null)
     {
         if (encoder != "h264_nvenc" || !allowGpuFrames)
             return new(encoder, softwareGraph, false, allowGpuFrames
@@ -73,7 +82,61 @@ public sealed partial class ExportVideoPipeline
         }
         if (quote != '\0' || escaped)
             return new(encoder, softwareGraph, false, "Unrecognised filter syntax.");
-        return new(encoder, output.ToString(), true, "");
+        string? colourTag = ColourTagFilter(codecFlags);
+        return new(encoder, colourTag == null ? output.ToString() : TagVideoInputs(output.ToString(), colourTag), true, "");
+    }
+
+    /// <summary>CUDATAG_01 — the setparams equivalent of the encoder's colour flags, or null when there are none.</summary>
+    private static string? ColourTagFilter(IReadOnlyList<string>? codecFlags)
+    {
+        if (codecFlags == null) return null;
+        var parts = new List<string>();
+        foreach (var (flag, option) in new[] { ("-color_range", "range"), ("-color_primaries", "color_primaries"),
+                     ("-color_trc", "color_trc"), ("-colorspace", "colorspace") })
+        {
+            int i = -1;
+            for (int k = 0; k < codecFlags.Count - 1; k++)
+                if (codecFlags[k] == flag) i = k;
+            if (i >= 0 && SafeValue().IsMatch(codecFlags[i + 1])) parts.Add($"{option}={codecFlags[i + 1]}");
+        }
+        return parts.Count == 0 ? null : "setparams=" + string.Join(':', parts);
+    }
+
+    /// <summary>
+    /// CUDATAG_01 — every decoded video input pad (<c>[N:v]</c>, <c>[N:v:M]</c>) is routed through
+    /// one setparams chain before its first consumer. Labels are only rewritten outside quotes.
+    /// </summary>
+    private static string TagVideoInputs(string graph, string colourTag)
+    {
+        var prefix = new StringBuilder();
+        var body = new StringBuilder(graph.Length);
+        var seen = new Dictionary<string, int>();
+        char quote = '\0';
+        bool escaped = false;
+        for (int i = 0; i < graph.Length; i++)
+        {
+            char c = graph[i];
+            if (escaped) { escaped = false; body.Append(c); continue; }
+            if (c == '\\') { escaped = true; body.Append(c); continue; }
+            if (quote != '\0') { if (c == quote) quote = '\0'; body.Append(c); continue; }
+            if (c is '\'' or '"') { quote = c; body.Append(c); continue; }
+            if (c == '[')
+            {
+                int end = graph.IndexOf(']', i);
+                if (end > i && InputVideoLabel().IsMatch(graph[(i + 1)..end]))
+                {
+                    string label = graph[(i + 1)..end];
+                    seen[label] = seen.TryGetValue(label, out int n) ? n + 1 : 0;
+                    string tagged = $"fvs_cudatag_{label.Replace(':', '_')}_{seen[label]}";
+                    prefix.Append('[').Append(label).Append(']').Append(colourTag).Append('[').Append(tagged).Append("];");
+                    body.Append('[').Append(tagged).Append(']');
+                    i = end;
+                    continue;
+                }
+            }
+            body.Append(c);
+        }
+        return prefix.Append(body).ToString();
     }
 
     private static bool TryGpuFilter(string token, out string replacement, out string reason)
@@ -93,8 +156,6 @@ public sealed partial class ExportVideoPipeline
         string name = token[start..nameEnd];
         if (FrameMetadataFilters.Contains(name) || AudioFilters.Contains(name)) return true;
 
-        // Only these exact software operations have a verified GPU equivalent here.
-        // Colour conversions, padding, crop, zoom and fades must not be silently removed.
         int labels = token.IndexOf('[', nameEnd);
         if (labels < 0) labels = token.Length;
         string filter = token[start..labels];
@@ -126,4 +187,10 @@ public sealed partial class ExportVideoPipeline
 
     [GeneratedRegex(@"^scale=(\d+):(\d+):flags=lanczos$", RegexOptions.CultureInvariant)]
     private static partial Regex FixedScale();
+
+    [GeneratedRegex(@"^\d+:v(:\d+)?$", RegexOptions.CultureInvariant)]
+    private static partial Regex InputVideoLabel();
+
+    [GeneratedRegex(@"^[a-z0-9_-]+$", RegexOptions.CultureInvariant)]
+    private static partial Regex SafeValue();
 }

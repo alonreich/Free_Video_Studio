@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using FreeVideoStudio.App.Controls;
@@ -44,7 +41,6 @@ internal static class UpgradeFinishedNotice
             }
             catch (Exception ex)
             {
-                // The broker reports the failure in its own window and rolls back.
                 RuntimeLog.Fail("Upgrade first launch", ex.ToString());
                 desktop.Shutdown(1);
                 return;

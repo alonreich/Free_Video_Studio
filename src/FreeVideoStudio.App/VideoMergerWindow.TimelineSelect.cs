@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,7 +33,7 @@ public partial class VideoMergerWindow
 
     private bool _draggingClipChip;
     private bool _chipPressed;
-    private bool _selectWithoutPreview;   // D23 — a selection that must not seek the preview
+    private bool _selectWithoutPreview;
     private double _chipBlockLeft;
     private int _chipFrom = -1;
     private double _chipPressX;
@@ -114,7 +108,7 @@ public partial class VideoMergerWindow
             Canvas.SetTop(rect, 0);
             markers.Children.Add(rect);
         }
-        DrawClipBlocks(w, total);   // D20 — the same clips as blocks over the filmstrip
+        DrawClipBlocks(w, total);
     }
 
     /// <summary>
@@ -192,14 +186,13 @@ public partial class VideoMergerWindow
     private void AttachClipChip(Border chip, int index, Canvas markers)
     {
         chip.IsHitTestVisible = true;
-        chip.Cursor = Infrastructure.GrabCursors.Open;   // GRABCURSOR_01 — open hand: this can be picked up
+        chip.Cursor = Infrastructure.GrabCursors.Open;
 
         chip.PointerPressed += (_, e) =>
         {
             var props = e.GetCurrentPoint(chip).Properties;
             if (props.IsRightButtonPressed)
             {
-                // D20 — right-click: this clip becomes the selection, then its menu opens.
                 if (!SelectedQueueIndices().Contains(index)) SelectQueueRow(index, preview: false);
                 ShowClipContextMenu(chip);
                 e.Handled = true;
@@ -211,14 +204,13 @@ public partial class VideoMergerWindow
             _chipFrom = index;
             _chipPressX = e.GetPosition(markers).X;
             _chipBlockLeft = Canvas.GetLeft(chip);
-            chip.Cursor = Infrastructure.GrabCursors.Closed;   // closed hand: holding it
+            chip.Cursor = Infrastructure.GrabCursors.Closed;
             e.Pointer.Capture(chip);
-            e.Handled = true;   // a chip press is not a seek
+            e.Handled = true;
         };
         chip.PointerMoved += (_, e) =>
         {
             if (!_chipPressed) return;
-            // THUMB_02 — no button held means the gesture is over, whatever the flags say.
             if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) { EndClipChip(markers, commitX: null); return; }
             double x = e.GetPosition(markers).X;
             if (!_draggingClipChip && Math.Abs(x - _chipPressX) < ChipDragThresholdPx) return;
@@ -228,7 +220,7 @@ public partial class VideoMergerWindow
                 chip.Opacity = 0.75;
                 chip.ZIndex = 50;
             }
-            Canvas.SetLeft(chip, _chipBlockLeft + (x - _chipPressX));   // the block follows the pointer
+            Canvas.SetLeft(chip, _chipBlockLeft + (x - _chipPressX));
             ShowInsertBar(markers, x);
             e.Handled = true;
         };
@@ -286,7 +278,7 @@ public partial class VideoMergerWindow
 
         if (!wasDrag)
         {
-            if (commitX != null) SelectQueueRow(from, preview: false);   // D23 — a click selects, it never seeks
+            if (commitX != null) SelectQueueRow(from, preview: false);
             RedrawTimelineSelection();
             return;
         }
@@ -297,7 +289,7 @@ public partial class VideoMergerWindow
         {
             RuntimeLog.Info("MERGER", $"Timeline drag: clip {from + 1} moved to position {to + 1}.");
             VideoQueue.Move(from, to);
-            SelectQueueRow(to, preview: false);   // D22 — the playhead stays on its clip; the moved clip is just highlighted
+            SelectQueueRow(to, preview: false);
         }
         RedrawTimelineSelection();
     }

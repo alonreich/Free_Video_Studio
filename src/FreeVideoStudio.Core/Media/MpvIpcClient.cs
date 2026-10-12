@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -36,9 +33,6 @@ public class MpvIpcClient : IDisposable
     private volatile bool _isPaused;
     private volatile bool _isEof;
 
-    // THROTTLE_01 — see AnyPlaybackActive. Static because the question it answers is app-wide:
-    // background work (the film-lane prewarm) must yield to the MAIN preview just as much as to
-    // the Granular editor's or the Music Wizard's player, and no one client knows about the rest.
     private static int _playingClientCount;
     private bool _countedAsPlaying;
     private readonly object _playbackGate = new();
@@ -50,20 +44,6 @@ public class MpvIpcClient : IDisposable
     private ulong _fpsObsId;
 
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // AUD-MASTERVOL — THE SUITE-WIDE PREVIEW MASTER (Main App, Video Merger, Crop Tools and every
-    // dialog with a player). One level, one mute, one event; every window and player follows it.
-    //
-    // VOLCURVE_01 — the slider position is PERCEPTUAL: gain = (position/100)^3, the same cubic curve
-    //   mpv uses natively (50% ≈ -18 dB). The old code cancelled mpv's curve so the slider was linear
-    //   amplitude (50% = -6 dB) and most of its travel barely changed anything. The Music Wizard's
-    //   VIDEO/MUSIC faders stay LINEAR (they must match the export's `volume=` gain), so a player's
-    //   mpv volume is position × ∛balance:  ((position/100)·∛balance)³ = (position/100)³ · balance.
-    // VOLMUTE_01 — mute is its own flag: muting keeps the level, unmuting restores it exactly.
-    // VOLSYNC_01 — while the Windows audio session of this process carries the master level
-    //   (WindowsAudioSessionSync), MasterAppliedBySystem is true and players carry ONLY their balance,
-    //   so the master is applied once — never twice.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     public static int GlobalMasterVolume { get; private set; } = 100;
     public static bool GlobalMuted { get; private set; }
     public static bool MasterAppliedBySystem { get; private set; }
@@ -276,8 +256,6 @@ public class MpvIpcClient : IDisposable
         _pauseObsId   = MpvWrapper.ObserveProperty(_mpvHandle, "pause",     MpvWrapper.MpvFormat.Double);
         _durationObsId = MpvWrapper.ObserveProperty(_mpvHandle, "duration",  MpvWrapper.MpvFormat.Double);
         _eofObsId     = MpvWrapper.ObserveProperty(_mpvHandle, "eof-reached", MpvWrapper.MpvFormat.Double);
-        // THUMB_01 — container-fps is the file's declared rate and is stable for the whole clip,
-        // unlike estimated-vf-fps which drifts with decode load and would make a frame step jitter.
         _fpsObsId     = MpvWrapper.ObserveProperty(_mpvHandle, "container-fps", MpvWrapper.MpvFormat.Double);
 
 
@@ -343,7 +321,7 @@ public class MpvIpcClient : IDisposable
                 }
                 catch (Exception swallowed2)
                 {
-                    global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                    global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
                 }
             }
         }
@@ -353,9 +331,6 @@ public class MpvIpcClient : IDisposable
         }
     }
 
-    // SEEKSETTLE_01 — accepting a command is not completing its decode. In particular a
-    // paused high-resolution seek may take many UI ticks. Reissuing it on those ticks
-    // keeps throwing away the decoder's progress and can trap both picture and audio.
     private void CompleteSeek(bool cancelled)
     {
         bool notify;
@@ -364,8 +339,6 @@ public class MpvIpcClient : IDisposable
             if (!_seekInProgress) return;
             if (!cancelled)
             {
-                // Initial loads also emit playback-restart. A queued older restart must
-                // not complete a newer seek that mpv is still decoding.
                 if (!_seekObserved || GetPropertyString("seeking") != "no") return;
                 if (double.TryParse(GetPropertyString("time-pos"), NumberStyles.Float,
                         CultureInfo.InvariantCulture, out double position))
@@ -409,24 +382,20 @@ public class MpvIpcClient : IDisposable
                     IsPaused = paused;
                     PauseChanged?.Invoke(paused);
                 }
-                UpdatePlaybackContribution(); // THROTTLE_01 — run even when unchanged: property
-                                              // events can arrive before/after duration in any
-                                              // order, and the call early-outs for free.
+                UpdatePlaybackContribution();
                 break;
 
             case "duration":
                 Duration = value > 0 ? value : 0;
-                UpdatePlaybackContribution(); // THROTTLE_01 — a load starts playing (pause=false)
+                UpdatePlaybackContribution();
                 break;
 
             case "eof-reached":
                 IsEof = value > 0.5;
-                UpdatePlaybackContribution(); // THROTTLE_01 — playback finished
+                UpdatePlaybackContribution();
                 break;
 
             case "container-fps":
-                // THUMB_01 — mpv reports 0 (and briefly nonsense) between files; only accept a
-                // plausible rate so a bad reading cannot poison a frame step.
                 if (value > 1.0 && value < 1000.0) VideoFps = value;
                 break;
         }
@@ -507,15 +476,12 @@ public class MpvIpcClient : IDisposable
             int result;
             lock (_seekGate)
             {
-                // Cut skipping can ask for the same endpoint on every playback tick.
-                // Let the outstanding seek land instead of restarting it indefinitely.
                 bool absolute = args.Length > 2 && args[2].ToString()!.Contains("absolute", StringComparison.Ordinal);
                 if (absolute && _seekInProgress && _pendingSeekCommand == command)
                     return Task.CompletedTask;
                 _pendingSeekCommand = command;
                 _seekInProgress = true;
                 _seekObserved = false;
-                // MPVEOF_01 — the old end-of-file answer is invalid as soon as we seek.
                 IsEof = false;
                 result = MpvWrapper.mpv_command_string(_mpvHandle, command);
             }
@@ -585,31 +551,6 @@ public class MpvIpcClient : IDisposable
             {
                 IsPaused = value == "yes";
 
-                // ══════════════════════════════════════════════════════════════════════════
-                // MPVEOF_01 — CLEAR eof-reached LOCALLY WHEN WE ASK IT TO PLAY.
-                //
-                // THE TRAP: `IsEof` is written ONLY by the "eof-reached" property observer, which
-                // arrives asynchronously on mpv's event thread. `IsPaused`, one line above, has
-                // always been written locally and immediately — precisely so a caller that just
-                // issued a command is not told the opposite by a stale field. `IsEof` was left
-                // out of that rule, and MainWindow's playback tick ends with an UNCONDITIONAL
-                //
-                //     if (IpcClient.IsEof) SetPropertyAsync("pause", "yes");
-                //
-                // So at the end of a file: PLAY unpauses -> the 100 ms tick fires before mpv's
-                // eof-reached=no event has landed -> the tick pauses again. One frame, then
-                // paused, forever, with the play button appearing to do nothing. That is the
-                // "trapped, only moves one frame at a time" report, and it is reachable from any
-                // route that leaves the playhead at the end — playing to it, seeking to it, or
-                // dragging a marker there.
-                //
-                // Setting it false here mirrors the IsPaused rule exactly: we asked for playback,
-                // so we are no longer at a standstill on the last frame. mpv still owns the truth
-                // and the observer will set it back to true the moment the file really does end.
-                //
-                // ⚠️ The seek above must clear it too — it moves the playhead off the end, so
-                // leaving eof-reached latched would pause the very playback it just rewound for.
-                // ══════════════════════════════════════════════════════════════════════════
                 if (value == "no") IsEof = false;
             }
         }
@@ -666,9 +607,6 @@ public class MpvIpcClient : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // THROTTLE_01 — must run before anything below tears state down: a player that was
-        // counted as playing has to give its count back or background work would stay yielded
-        // forever. _disposed is already true here, so this can only ever decrement.
         UpdatePlaybackContribution();
 
         bool loopStopped = true;
@@ -687,7 +625,7 @@ public class MpvIpcClient : IDisposable
                 catch (System.Exception swallowed)
                 {
                     loopStopped = false;
-                    global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+                    global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
                 }
                 _eventLoopThread = null;
             }
@@ -702,7 +640,7 @@ public class MpvIpcClient : IDisposable
         {
             CoreLogger.Fail("MPV",
                 "The mpv event loop did not stop in time — abandoning the player handle instead of destroying it underneath a live thread.");
-            IsHandleAbandoned = true; // VOAPPLY_04 — mark handle abandoned
+            IsHandleAbandoned = true;
             _mpvHandle = nint.Zero;
             return;
         }

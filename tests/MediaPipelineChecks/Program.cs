@@ -6,8 +6,6 @@ using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
 
-// LIBAVFRAME_01 benchmark child: one 160 px thumbnail frame in a FRESH process ("cold"), timed in-process.
-// native = VideoFrameGrabber native only; ffmpeg = the exact MemeThumbnailCache subprocess (PNG on stdout).
 if (args.Length == 5 && args[0] == "--libavframe-cold")
 {
     var coldFrameWatch = Stopwatch.StartNew();
@@ -21,7 +19,6 @@ if (args.Length == 5 && args[0] == "--libavframe-cold")
     return coldFrameOk ? 0 : 1;
 }
 
-// LIBAVPROBE_01 benchmark child: one metadata probe in a FRESH process ("cold"), timed in-process.
 if (args.Length == 4 && args[0] == "--libav-cold")
 {
     var backend = args[1] == "native" ? MediaProbeBackend.Native : MediaProbeBackend.Ffprobe;
@@ -32,7 +29,6 @@ if (args.Length == 4 && args[0] == "--libav-cold")
     return coldResult.Ok ? 0 : 1;
 }
 
-// Run from the workspace root. All generated media and state stay inside this directory.
 string root = Directory.GetCurrentDirectory();
 string ffmpeg = Path.Combine(root, "binaries", "ffmpeg.exe");
 if (!File.Exists(ffmpeg)) throw new InvalidOperationException("Run from the workspace root.");
@@ -45,9 +41,6 @@ Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvir
 Environment.SetEnvironmentVariable("PATH", Path.Combine(root, "binaries") + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"));
 var failures = new List<string>();
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// LIBAVPROBE_01 — native libav metadata: parity, stress/resources, benchmark (Windows).
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 string ffprobe = Path.Combine(root, "binaries", "ffprobe.exe");
 string libavClip = Path.Combine(work, "libav-av.mp4");
 string libavBad = Path.Combine(work, "libav-truncated.mp4");
@@ -100,7 +93,7 @@ await Check("LIBAV: stress — repeated open/probe/close, invalid media and rapi
         }
     }
 
-    await Valid(50); await Invalid(20);   // warm-up
+    await Valid(50); await Invalid(20);
     var start = Sample();
     var rows = new List<string> { $"    start            priv {start.priv / 1024,8} KB  handles {start.handles,5}  threads {start.threads,3}" };
     (long priv, int handles, int threads) last = start;
@@ -136,7 +129,6 @@ await Check("LIBAV: benchmark — cold and warm metadata probe, native vs ffprob
         report.Add($"  {label,-44} n={native.Count,3}/{sub.Count,3}  native median {nm,8:F3} ms  p95 {np,8:F3} ms | ffprobe median {sm,8:F3} ms  p95 {sp,8:F3} ms | median change {(nm - sm) / sm * 100,7:F1}%  ({sm / nm,6:F1}x)");
     }
 
-    // Cold: a fresh process per sample; time = the first probe inside it (DLL load / process spawn included).
     string self = Environment.ProcessPath!;
     string? selfDll = self.EndsWith("dotnet.exe", StringComparison.OrdinalIgnoreCase) ? Path.Combine(AppContext.BaseDirectory, "MediaPipelineChecks.dll") : null;
     async Task<double> Cold(string backend, string file)
@@ -154,7 +146,6 @@ await Check("LIBAV: benchmark — cold and warm metadata probe, native vs ffprob
         Row(label, n, p);
     }
 
-    // Warm: same process, after warm-up.
     async Task<List<double>> Warm(MediaProbeBackend backend, string file, int count)
     {
         for (int i = 0; i < 5; i++) await MediaMetadataProbe.ProbeAsync(ffprobe, file, TimeSpan.FromSeconds(15), default, backend);
@@ -174,15 +165,11 @@ await Check("LIBAV: benchmark — cold and warm metadata probe, native vs ffprob
     Console.WriteLine(string.Join(Environment.NewLine, report));
 });
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// LIBAVFRAME_01 — native single-frame decode: parity, stress/resources, benchmark (Windows).
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 string frameClip = Path.Combine(work, "libavframe-counter.mp4");
 string frameBad = Path.Combine(work, "libavframe-truncated.mp4");
 
 await Check("LIBAV: frame — native single frame matches the ffmpeg subprocess (selection exact, pixels within tolerance)", async () =>
 {
-    // Frame number painted into the picture (lossless, B-frames, GOP 30): selection must match EXACTLY.
     await Ffmpeg("-f", "lavfi", "-i", "nullsrc=s=320x240:r=30:d=6", "-vf",
         "format=yuv420p,geq=lum='16+12*if(lt(Y\\,H/2)\\,mod(N\\,16)\\,trunc(N/16))':cb=128:cr=128",
         "-c:v", "libx264", "-preset", "fast", "-qp", "0", "-g", "30", "-bf", "3", "-pix_fmt", "yuv420p", frameClip);
@@ -268,7 +255,7 @@ await Check("LIBAV: frame — stress: decodes, seeks, invalid media and rapid ca
         }
     }
 
-    await Valid(40); await Invalid(10);   // warm-up
+    await Valid(40); await Invalid(10);
     var start = Sample();
     var rows = new List<string> { $"    start            priv {start.priv / 1024,8} KB  handles {start.handles,5}  threads {start.threads,3}" };
     var last = start;
@@ -356,12 +343,6 @@ await Check("LIBAV: frame — benchmark: cold, warm and random-timestamp single 
     Console.WriteLine(string.Join(Environment.NewLine, report));
 });
 
-// LIBAVFRAME_01 — long soak (opt-in: --libav-soak runs ONLY this). Several thousand native single-frame
-// decodes mixed with seeks, invalid media and cancellations; full managed GC before every sample, so a
-// native leak cannot hide in (or be faked by) ordinary managed-heap fluctuation.
-// LIBAVFRAME_01 — soak DIAGNOSIS (opt-in: --libav-soak-diag runs ONLY this). Isolates each native path
-// on ONE input at a time and samples, besides private bytes, the process heaps' IN-USE bytes
-// (HeapSummary.cbAllocated): a leak grows in-use bytes; fragmentation/caching only grows committed.
 await Check("LIBAV-SOAKDIAG: frame — per-path isolation with heap in-use bytes", async () =>
 {
     string clip = Path.Combine(work, "diag-counter.mp4");
@@ -392,7 +373,7 @@ await Check("LIBAV-SOAKDIAG: frame — per-path isolation with heap in-use bytes
     var verdicts = new List<string>();
     async Task Phase(string label, int ops, int every, Func<int, Task> op)
     {
-        for (int i = 0; i < Math.Min(200, ops / 10); i++) await op(i);   // phase warm-up
+        for (int i = 0; i < Math.Min(200, ops / 10); i++) await op(i);
         var rows = new List<(int ops, long priv, long gc, long ha, long hc, int handles, int threads)>();
         var s0 = Sample(); rows.Add((0, s0.priv, s0.gc, s0.heapAlloc, s0.heapCommit, s0.handles, s0.threads));
         for (int i = 1; i <= ops; i++)
@@ -460,8 +441,8 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
         {
             string file = rng.Next(3) == 0 ? soakClip : memes[rng.Next(memes.Count)];
             double d = durations[file];
-            string t = (rng.NextDouble() * (d + 0.5)).ToString("0.000", CultureInfo.InvariantCulture);   // includes past-the-end
-            int width = rng.Next(4) == 0 ? 0 : 160;   // 1 in 4 full-size (Gemini), else thumbnail
+            string t = (rng.NextDouble() * (d + 0.5)).ToString("0.000", CultureInfo.InvariantCulture);
+            int width = rng.Next(4) == 0 ? 0 : 160;
             var r = await VideoFrameGrabber.DecodeNativeAsync(ffmpeg, file, VideoFrameRequest.AtFfmpegSeek(t, width, width > 0), TimeSpan.FromSeconds(30));
             Require(r.Status is NativeFrameStatus.Ok or NativeFrameStatus.NoFrame, $"{Path.GetFileName(file)} @ {t}: {r.Status} {r.Detail}");
             if (r.Status == NativeFrameStatus.Ok) okFrames++; else noFrames++;
@@ -492,10 +473,7 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
             cancelAttempts++;
         }
     }
-    // gc = bytes the managed GC itself has COMMITTED (its regions, incl. the large-object heap that the
-    // full-size BGRA buffers live in). private − gc is everything else: libav, swscale, decoder threads,
-    // the CRT heap — the part a NATIVE leak would grow. The first soak run could not separate the two.
-    var heapSeries = new List<(long inUse, long committed)>();   // one entry per Sample(), same order as `series`
+    var heapSeries = new List<(long inUse, long committed)>();
     (long priv, long ws, int handles, int threads, long gc) Sample()
     {
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
@@ -507,9 +485,8 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
         return (me.PrivateMemorySize64, me.WorkingSet64, me.HandleCount, me.Threads.Count, GC.GetGCMemoryInfo().TotalCommittedBytes);
     }
 
-    // Warm-up: thread pool, decoder thread pools, libav static tables, swscale caches — before the baseline.
     await Valid(300); await Invalid(30); await Cancel(30);
-    const int Rounds = 48, PerRound = 200;   // ~9,600 measured decodes (first soak run: 24 rounds was too short to call)
+    const int Rounds = 48, PerRound = 200;
     var series = new List<(int round, long decodes, long priv, long ws, int handles, int threads, long gc)>();
     var b = Sample();
     series.Add((0, decodes, b.priv, b.ws, b.handles, b.threads, b.gc));
@@ -530,12 +507,6 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
         Console.WriteLine($"    {r.round,5}  {r.decodes,7}  {heapSeries[k].inUse / 1024,14}  {heapSeries[k].committed / 1024,17}  {r.priv / 1024,11}  {r.gc / 1024,15}  {(r.priv - r.gc) / 1024,13}  {r.ws / 1024,14}  {r.handles,7}  {r.threads,7}");
     }
 
-    // Trend. A native leak raises the FLOOR of private bytes linearly with decodes and can never be
-    // given back. The Windows heap, by contrast, keeps freed blocks and occasionally decommits them
-    // (the first soak run dropped from 163 MB to 112.8 MB — below its own baseline — at round 19).
-    // Least squares is dragged by such a drop, so the decision uses the Theil–Sen estimator (median of
-    // pairwise slopes, robust to outliers) over the second half, and the series of per-window floors
-    // (minimum of each 8-round window) is printed so a rising floor is visible directly.
     static double TheilSen(IReadOnlyList<(double x, double y)> p)
     {
         var slopes = new List<double>();
@@ -551,7 +522,7 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
         double num = p.Sum(q => (q.x - mx) * (q.y - my)), den = p.Sum(q => (q.x - mx) * (q.x - mx));
         return den == 0 ? 0 : num / den;
     }
-    var post = series.Skip(1).Select(r => ((double)r.decodes, r.priv / 1024.0)).ToList();          // after the first measured round
+    var post = series.Skip(1).Select(r => ((double)r.decodes, r.priv / 1024.0)).ToList();
     var half = series.Skip(series.Count / 2).Select(r => ((double)r.decodes, r.priv / 1024.0)).ToList();
     var nativeHalf = series.Skip(series.Count / 2).Select(r => ((double)r.decodes, (r.priv - r.gc) / 1024.0)).ToList();
     var gcHalf = series.Skip(series.Count / 2).Select(r => ((double)r.decodes, r.gc / 1024.0)).ToList();
@@ -571,19 +542,6 @@ await Check("LIBAV-SOAK: frame — several thousand decodes, seeks, invalid medi
         using (new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.None)) { }
     Console.WriteLine($"  source media not locked: {memes.Count + 3} files opened FileShare.None after the soak");
 
-    // A real per-decode native leak of even 1 KB would be ≥ 1000 KB per 1000 decodes.
-    // ══ LEAK-SAFETY DECISION — LOCKED 2026-10-04 (user decision, Stage 2 sign-off rule) ═══════════════
-    // Pass/fail is judged ONLY on what a leak must grow, never on memory the heaps can give back:
-    //   1. native heap bytes IN USE (HeapSummary.cbAllocated over all process heaps — libav's av_malloc
-    //      lands there): Theil–Sen slope over rounds 1..N < 256 KB per 1000 decodes (a 1 KB/decode leak
-    //      would be ≥ 1000), and the last sample within 16 MB of the baseline;
-    //   2. handle count stable (growth < 20);  3. thread count stable (growth < 12);
-    //   4. every source file openable FileShare.None afterwards (checked above — throws if locked);
-    //   5. cancellation/cleanup: every cancelled decode completes in < 3000 ms, and every decode returns
-    //      Ok/NoFrame and every invalid input a non-Unavailable status (checked in the loops above).
-    // Private bytes, working set, GC-committed and heap-COMMITTED bytes are REPORTED ONLY: the
-    // diagnosis run (--libav-soak-diag) showed them rising through reusable heap free space while
-    // in-use bytes stayed flat in every native path. Do NOT change this rule based on a soak result.
     var inUse = series.Select((r, k) => ((double)r.decodes, heapSeries[k].inUse / 1024.0)).Skip(1).ToList();
     double tsInUse = TheilSen(inUse) * 1000;
     long inUseGrowthKb = (heapSeries[^1].inUse - heapSeries[0].inUse) / 1024;
@@ -636,8 +594,6 @@ await Check("FFmpeg filters remain identical across regional settings", async ()
             Require(speed.filterGraph == baseline, $"Graph varies under {culture}.");
             foreach (var rate in new[] { 0.1, 0.5, 1.0, 1.25, 4.0 })
             {
-                // AVSYNC_01 — 1.0x is a true no-op and returns an empty chain.
-                // TEMPO_01 — both engines of the shared policy must parse in the bundled FFmpeg.
                 foreach (bool rubberband in new[] { false, true })
                 {
                     var tempoChain = AudioTempoFilterBuilder.Build(rate, rubberband);
@@ -692,12 +648,12 @@ await Check("Actual mpv preview audio matches linear Wizard/export levels", asyn
     await Ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=0.5", source);
     double referenceRms = 0;
     MpvIpcClient.SetGlobalMuted(false);
-    MpvIpcClient.SetGlobalMasterVolume(100);   // VOLCURVE_01 — balances are linear under a 100% master
+    MpvIpcClient.SetGlobalMasterVolume(100);
     foreach (int linear in new[] { 100, 80, 40, 20, 0 })
     {
         string wav = Path.Combine(work, $"preview-{linear}.wav");
         var result = await RunExecutable(Path.Combine(root, "binaries", "mpv.exe"),
-            ["--no-config", "--no-terminal", "--vid=no", "--ao=pcm", "--ao-pcm-file=" + wav,
+            ["--no-config", "--no-terminal", "--media-controls=no", "--vid=no", "--ao=pcm", "--ao-pcm-file=" + wav,
              "--volume=" + MpvIpcClient.PlayerMpvVolume(linear / 100.0).ToString(CultureInfo.InvariantCulture), source]);
         Require(result.exit == 0, result.error);
         string raw = wav + ".raw";
@@ -848,12 +804,6 @@ await Check("GPU: unsupported hardware decoding retries once and retains NVENC",
 
 await Check("GPU: size-locked NVENC export probes complexity and lands on target without a blind retry", async () =>
 {
-    // PROBE_01 — 20 s of 1080p60 content under a 25.0 MB size lock. The export must
-    // MEASURE the clip's complexity with a 5 s NVENC CQ-20 middle slice (software
-    // decode, null muxer), pull the -b:v ask below the naive budget by the calibrated
-    // margin, and land inside the acceptance band on the FIRST encode. The blind
-    // size-retry loop (attempt 2) must never be entered; it stays only as the safety
-    // net for probe failures and foreign NVENC SDK behaviour.
     string input = Path.Combine(work, "nvenc-size-source.mp4");
     if (!File.Exists(input))
         await Ffmpeg("-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=60:d=20",
@@ -880,9 +830,6 @@ await Check("GPU: size-locked NVENC export probes complexity and lands on target
     string log = File.ReadAllText(Path.Combine(work, "gpu-size-probe.log"));
     Require(log.Split("PROBE_01 complexity probe:").Length == 2,
         "The probe must run exactly once per export.");
-    // The probe-scaled rate must actually reach the encoder: -b:v and -maxrate carry
-    // the same probe-discounted value, below the 10358 kbps naive budget for this
-    // exact 25.0 MB / 20 s / 127 kbps-audio configuration.
     var bv = System.Text.RegularExpressions.Regex.Match(log, @"-b:v (\d+)k");
     var mr = System.Text.RegularExpressions.Regex.Match(log, @"-maxrate (\d+)k");
     Require(bv.Success && mr.Success && bv.Groups[1].Value == mr.Groups[1].Value,
@@ -1093,11 +1040,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     const double AacPacketSec = 1024.0 / SampleRate;
     string ffprobe = Path.Combine(root, "binaries", "ffprobe.exe");
 
-    // AVSYNC_01 — the synthetic source. Ten seconds of 30 fps footage with a 1 kHz
-    // beep whose ONSET sits exactly on every 1.0 s frame boundary (0.2 s beep,
-    // 0.8 s silence). The beeps are drift probes: whatever the export graph does
-    // to time, each surviving beep's decoded onset must equal the output second
-    // that OutputTimeline predicts for its source second.
     string input = Path.Combine(work, "sync-source.mp4");
     string beep = "0.8*sin(2*PI*1000*t)*lt(mod(t\\,1)\\,0.2)";
     await Ffmpeg(
@@ -1106,14 +1048,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-shortest", input);
 
-    // AVSYNC_01 — the edit under test, expressed exactly as the UI expresses it:
-    // CutRange and SpeedSegment in ABSOLUTE source milliseconds. The cut swallows
-    // the 2 s beep whole and closes the timeline up; the 0.5x segment doubles
-    // 5-6 s. Expected finished video: [0,2) + [3,5) + [5,6)@0.5 + [6,10) =
-    // exactly 10.0 s. Normalisation and the peak limiter are switched off on
-    // purpose: they are gain stages orthogonal to the seam mathematics under
-    // test, and the limiter's lookahead is itself a few milliseconds of filter
-    // latency that would pollute the drift measurement.
     using var worker = new ProcessWorker(new ApplicationPaths(Path.Combine(work, "sync-state")))
     {
         InputPath = input, OutputDirectory = ExportDirectory("sync-export"),
@@ -1128,13 +1062,13 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     bool success = false;
     string output = "";
     worker.Finished += (ok, message) => { success = ok; output = message; };
-    await worker.RunAsync();
+    var syncLogs = new System.Collections.Concurrent.ConcurrentQueue<string>();
+    var previousSyncInfo = CoreLogger.InfoAction;
+    CoreLogger.InfoAction = (topic, message) => syncLogs.Enqueue($"{topic}: {message}");
+    try { await worker.RunAsync(); }
+    finally { CoreLogger.InfoAction = previousSyncInfo; File.WriteAllLines(Path.Combine(work, "sync.log"), syncLogs); }
     Require(success, worker.FailureDetail ?? output);
 
-    // The timeline model the rest of the application already draws with is the
-    // independent oracle: source second -> output second for each beep that
-    // survives the cut. The canonical mapping is asserted too, so a change to
-    // the model itself can never silently re-bless this check.
     var timeline = OutputTimeline.Create(10000, [new SpeedSegment(5000, 6000, 0.5)], 1.0, 0, null,
         [new OutputTimeline.Cut(2.0, 3.0)]);
     double[] expected = new[] { 0, 1, 3, 4, 5, 6, 7, 8, 9 }.Select(s => timeline.SourceToOutput(s)).ToArray();
@@ -1143,11 +1077,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
         Require(Math.Abs(expected[i] - canonical[i]) < 1e-9,
             $"OutputTimeline oracle returned {expected[i]:F4}s for beep {i + 1}, expected {canonical[i]:F4}s.");
 
-    // AVSYNC_01 — packet-level truth on the finished file. The mix is AAC at
-    // 48 kHz, so every full packet is exactly 1024 samples. If any seam drops,
-    // duplicates or offsets audio, a pts gap stops being 1024/48000 long before
-    // the drift can reach the 5 ms budget. (1 ms structural budget — far
-    // tighter than the 5 ms DoD, and immune to ffprobe's 6-decimal rounding.)
     var audioPackets = JsonNode.Parse(await RunText(ffprobe, "-v", "error", "-select_streams", "a",
         "-show_entries", "packet=pts_time,duration_time", "-of", "json", output))!["packets"]!.AsArray();
     var audioPts = new List<double>();
@@ -1164,10 +1093,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     double worstGap = 0;
     for (int i = 1; i < audioPts.Count - 1; i++)
         worstGap = Math.Max(worstGap, Math.Abs(audioPts[i] - audioPts[i - 1] - AacPacketSec));
-    // AAC's encoder priming is the ONE negative start allowed: the encoder emits
-    // a leading frame the edit list discards, so raw packet pts may begin exactly
-    // one frame before zero — decoded content still starts at zero, which the
-    // beep-onset measurement below proves against the same budget.
     Require(audioPts[0] >= -AacPacketSec - 0.0005 && audioPts[0] <= DriftToleranceSec,
         $"Audio stream starts at {audioPts[0]:F6}s; only one AAC frame of encoder priming (-{AacPacketSec:F6}s) may precede zero.");
     Require(worstGap <= 0.001,
@@ -1175,11 +1100,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     Require(Math.Abs(audioPts[^1] + lastDuration - 10.0) <= DriftToleranceSec,
         $"Audio spans {audioPts[0]:F4}-{audioPts[^1] + lastDuration:F4}s; the finished edit must be exactly 10.0 s.");
     Console.WriteLine($"  Audio packets: {audioPts.Count}, first={audioPts[0]:F6}s, last={audioPts[^1]:F6}s (+{lastDuration:F6}s), worst gap error {worstGap * 1000:F3} ms.");
-    // AVSYNC-PART2 — the video side of the same contract: 600 frames of strict
-    // CFR 60 starting at zero, and a keyframe sitting exactly on each seam
-    // second (the exporter's 2 s GOP puts an IDR on every concat boundary:
-    // 0/2/4/6/8 s). B-frames reorder packets, so pts are sorted before the
-    // uniform-spacing assertion.
     var videoPackets = JsonNode.Parse(await RunText(ffprobe, "-v", "error", "-select_streams", "v",
         "-show_entries", "packet=pts_time,flags", "-of", "json", output))!["packets"]!.AsArray();
     var frames = videoPackets
@@ -1201,11 +1121,6 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
         Require(onSeam.Any(f => f.Keyframe), $"No keyframe lands on the {seam}s seam.");
     }
 
-    // AVSYNC-PART2 — decode the finished mix and measure where each beep
-    // actually begins. A 1 ms backward-looking peak envelope feeds a rising-edge
-    // gate (on above 30% of the beep plateau, off below 5%); the backward window
-    // keeps the detected edge a fraction of a millisecond after the true one, so
-    // the whole 5 ms budget stays available for real drift.
     string raw = Path.Combine(work, "sync-output-audio.raw");
     await Ffmpeg("-i", output, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", raw);
     byte[] bytes = File.ReadAllBytes(raw);
@@ -1230,25 +1145,28 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     string found = string.Join(", ", onsets.Select(o => o.ToString("F4", CultureInfo.InvariantCulture)));
     Require(onsets.Count == canonical.Length,
         $"Expected {canonical.Length} beeps after the cut, found {onsets.Count}: [{found}].");
-    // The beep at output 0.0 sits on TWO by-design amplitude ramps: the SPLICE_01
-    // de-click fade into its chunk and the AAC decoder's first-frame
-    // reconstruction after the edit-list priming trim. Both delay the envelope
-    // crossing (~10 ms combined) without moving the content — the packet checks
-    // above prove the t=0 boundary exactly (one priming frame, then zero drift).
     const double StartOfStreamBudgetSec = 0.012;
     double worstDrift = 0;
-    int worstIndex = 0;
-    bool exceeded = false;
+    int violator = -1;
+    double violatorOverrun = 0;
     for (int i = 0; i < Math.Min(onsets.Count, canonical.Length); i++)
     {
         double drift = Math.Abs(onsets[i] - canonical[i]);
-        if (drift > worstDrift) { worstDrift = drift; worstIndex = i; }
-        if (drift > (i == 0 ? StartOfStreamBudgetSec : DriftToleranceSec)) exceeded = true;
+        double budget = i == 0 ? StartOfStreamBudgetSec : DriftToleranceSec;
+        worstDrift = Math.Max(worstDrift, drift);
+        if (drift - budget > violatorOverrun) { violatorOverrun = drift - budget; violator = i; }
     }
-    Require(!exceeded,
-        $"Beep {worstIndex + 1} landed at {onsets[worstIndex]:F4}s, expected {canonical[worstIndex]:F4}s " +
-        $"(drift {(onsets[worstIndex] - canonical[worstIndex]) * 1000:+0.00;-0.00} ms, budget 5 ms). Onsets: [{found}].");
+    if (violator >= 0)
+    {
+        double budget = violator == 0 ? StartOfStreamBudgetSec : DriftToleranceSec;
+        Require(false,
+            $"Beep {violator + 1} landed at {onsets[violator]:F4}s, expected {canonical[violator]:F4}s " +
+            $"(drift {(onsets[violator] - canonical[violator]) * 1000:+0.00;-0.00} ms, budget " +
+            $"{(budget * 1000).ToString("0.##", CultureInfo.InvariantCulture)} ms" +
+            $"{(violator == 0 ? " start-of-stream allowance" : "")}). Onsets: [{found}].");
+    }
     Console.WriteLine($"  Max A/V drift across the 2 s cut and 0.5x seams: {worstDrift * 1000:F2} ms over {onsets.Count} beeps.");
+    Console.WriteLine($"  Beep onsets: [{found}]");
 });
 
 if (failures.Count > 0)
@@ -1276,7 +1194,6 @@ return 0;
 
 static async Task<byte[]> ThumbPng(string ffmpegExe, string file, string seek)
 {
-    // The exact MemeThumbnailCache subprocess (LIBAVFRAME_04 fallback path).
     var psi = new ProcessStartInfo(ffmpegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
     foreach (string a in new[] { "-hide_banner", "-loglevel", "error", "-ss", seek, "-i", file, "-frames:v", "1", "-vf", "scale=160:-2", "-f", "image2pipe", "-c:v", "png", "pipe:1" })
         psi.ArgumentList.Add(a);
@@ -1310,11 +1227,10 @@ static (double mae, double psnr) ImageDiff(DecodedVideoFrame a, DecodedVideoFram
 }
 async Task Check(string name, Func<Task> check)
 {
-    // LIBAV-SOAKDIAG: opt-in only. --libav-soak-diag runs it and nothing else.
     if (args.Contains("--libav-soak-diag") != name.StartsWith("LIBAV-SOAKDIAG:", StringComparison.Ordinal)) return;
-    // LIBAV-SOAK: opt-in only (minutes long). --libav-soak runs it and nothing else.
     if (args.Contains("--libav-soak") != name.StartsWith("LIBAV-SOAK:", StringComparison.Ordinal)) return;
     if (args.Contains("--gpu-only") && !name.StartsWith("GPU:", StringComparison.Ordinal)) return;
+    if (args.Contains("--avsync-only") && !name.StartsWith("A/V sync drift:", StringComparison.Ordinal)) return;
     if (args.Contains("--libav-only") && !name.StartsWith("LIBAV:", StringComparison.Ordinal)) return;
     if (args.Contains("--skip-libav") && name.StartsWith("LIBAV:", StringComparison.Ordinal)) return;
     try { await check(); Console.WriteLine("PASS: " + name); }

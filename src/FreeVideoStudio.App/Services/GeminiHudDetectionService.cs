@@ -1,8 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md, docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -135,7 +131,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(_timeout);
 
-        string url = Endpoint + model + ":generateContent";   // ⚠️ no key here, by design
+        string url = Endpoint + model + ":generateContent";
         string? responseText;
         HttpStatusCode status;
 
@@ -154,11 +150,10 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            throw;   // the caller cancelled: a cancel is not a fault (FAULTTIER_01)
+            throw;
         }
         catch (OperationCanceledException ex)
         {
-            // Our own timeout fired, not the caller's token.
             _faults.Recoverable(FaultArea, $"AI HUD request timed out after {_timeout.TotalSeconds:0}s ({ex.GetType().Name}).");
             return Fail(AiHudOutcome.Timeout, $"no answer within {_timeout.TotalSeconds:0}s", apiKey);
         }
@@ -224,9 +219,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         return result;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // REQUEST — built with Utf8JsonWriter: NativeAOT/trim safe, no reflection, no JSON context.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
 
     public const string Prompt =
         "You are looking at ONE still frame from a video game recording. Find the PERSISTENT gameplay "
@@ -290,14 +282,14 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
             foreach (string f in new[] { "label", "normalizedX", "normalizedY", "normalizedWidth", "normalizedHeight", "confidence" })
                 w.WriteStringValue(f);
             w.WriteEndArray();
-            w.WriteEndObject();   // items
-            w.WriteEndObject();   // candidates
-            w.WriteEndObject();   // properties
+            w.WriteEndObject();
+            w.WriteEndObject();
+            w.WriteEndObject();
             w.WriteStartArray("required");
             w.WriteStringValue("candidates");
             w.WriteEndArray();
-            w.WriteEndObject();   // responseSchema
-            w.WriteEndObject();   // generationConfig
+            w.WriteEndObject();
+            w.WriteEndObject();
 
             w.WriteEndObject();
         }

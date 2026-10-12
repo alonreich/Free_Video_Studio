@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -118,7 +115,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         }
         CancelQuietly(previous);
 
-        // ── Start BOTH before awaiting either, so the AI round-trip overlaps the local scan.
         Task<AiHudDetectionResult>? aiTask = null;
         AiHudOutcome? aiOutcome = null;
         if (request.AiFrame != null)
@@ -140,11 +136,10 @@ public sealed class HudDetectionCoordinator : IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             await ObserveAsync(aiTask).ConfigureAwait(false);
-            return null;   // the user (or a newer run) cancelled: publish nothing.
+            return null;
         }
         catch (OperationCanceledException ex)
         {
-            // Not our token: the detector hit its own MaxSeconds ceiling.
             localTimedOut = true;
             _faults.Recoverable(FaultArea, "Local Magic Wand reached its time ceiling.", ex);
         }
@@ -199,7 +194,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         var converted = new List<HudCandidate>(aiResult.Candidates.Count);
         foreach (AiHudCandidate c in aiResult.Candidates)
         {
-            // Defence in depth: a provider that skipped the parser still cannot get geometry through.
             if (!AiHudResponseParser.IsValid(c)) continue;
 
             (int x, int y, int w, int h) = AiHudGeometry.ToSourcePixels(c, sourceWidth, sourceHeight);
@@ -258,7 +252,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // A cancel is the user getting what they asked for (FAULTTIER_01): nothing to report.
         }
     }
 

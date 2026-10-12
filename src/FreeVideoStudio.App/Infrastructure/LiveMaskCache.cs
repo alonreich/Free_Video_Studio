@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -82,7 +79,6 @@ public static class LiveMaskCache
 
     private static void RefreshCore()
     {
-        // Cleared BEFORE reading, so a change that lands during the read queues another pass.
         Interlocked.Exchange(ref _refreshQueued, 0);
         string? active = SafeActiveProfile();
         try
@@ -91,7 +87,6 @@ public static class LiveMaskCache
         }
         catch (Exception ex)
         {
-            // The previous snapshot stays in place, so edits keep recording the last known mask.
             FreeVideoStudio.Core.Abstractions.Faults.Degraded("PROJECT",
                 "The HUD mask could not be read, so project saves may record the previous mask. " +
                 "Editing and export still work.",
@@ -129,8 +124,6 @@ public static class LiveMaskCache
                 if (string.IsNullOrEmpty(dir)) return;
                 Directory.CreateDirectory(dir);
 
-                // AtomicJsonFile writes a GUID temp file and File.Move()s it over the target, so
-                // the target name shows up as Renamed (NewName), not Changed. Both are watched.
                 var watcher = new FileSystemWatcher(dir, Path.GetFileName(file))
                 {
                     NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
@@ -151,14 +144,11 @@ public static class LiveMaskCache
             }
             catch (Exception ex)
             {
-                // Without a watcher the profile-name check still triggers refreshes, and
-                // ReadNow() still guarantees saves. Only external edits of the same profile go
-                // unnoticed until the next save.
                 FreeVideoStudio.Core.Abstractions.Faults.Degraded("PROJECT",
                     "HUD mask changes made outside this window may not be noticed until the next save. " +
                     "Editing, saving and export still work.",
                     ex);
-                _watcher = new FileSystemWatcher();   // sentinel: do not retry every tick
+                _watcher = new FileSystemWatcher();
             }
             RequestRefresh();
         }

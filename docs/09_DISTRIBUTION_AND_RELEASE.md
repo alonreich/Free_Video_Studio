@@ -8,8 +8,16 @@
 | :--- | :--- | :--- | :--- |
 | `src/FreeVideoStudio.Core/Infrastructure/RuntimePayloadManifest.cs` | `RuntimePayloadManifest` | `FromFolder`, `Read`, `Write`, `SYS-PAYLOADSPLIT` | Runtime fingerprint. |
 | `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `AppOnlyAssetName`, `RuntimeAlreadyMatchesAsync`, `SYS-PAYLOADSPLIT` | Which package to download. **⚠ CO-GOVERNED BY: 05** |
-| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `REBRAND_03` | Draft-verify-publish; creates the previous-brand download alias transiently. |
-| `build/FvsBuild/Staging.cs` | `Staging` | `CreatePayloadZip`, `SYS-PAYLOADSPLIT` | Writes the manifest before zipping the payload; produces the app-only archive and manifest in `obj\ReleaseAssets`. |
+| `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature`, `DIST-SMART` | The signed per-file list of a release. |
+| `src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs` | `BinaryDelta` | `Create`, `Apply`, `ApplyFile`, `StreamBufferSize`, `BINDELTA_01`, `BINDELTA_02` | Binary patch for the main program. |
+| `src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs` | `BrotliFile` | `CompressFile`, `DecompressFile` | Per-file asset compression. |
+| `build/FvsBuild/SmartUpdateBuilder.cs` | `SmartUpdateBuilder` | `Prepare`, `Finish`, `ReleaseFiles`, `MarkReleased`, `DIST-SMART`, `NODROPPER_01` | Builds the per-file assets, patches, the signed list packed into the installer and the release update.json. |
+| `build/installer/FreeVideoStudio.iss` | Inno Setup script | `ForwardedArguments`, `NODROPPER_01`, `PEIDENTITY_01` | The single download: a non-elevated Inno Setup package that unpacks the release beside its signed list and starts the transactional installer. |
+| `build/FvsBuild/InnoInstaller.cs` | `InnoInstaller` | `Build`, `SetupFileName`, `NODROPPER_01` | Finds ISCC.exe (Inno Setup 6.3+, `FVS_ISCC`) and compiles the script into `compiled\FreeVideoStudio-Setup.exe`. |
+| `build/FvsBuild/PeIdentity.cs` | `PeIdentity` | `FixOriginalFilename`, `Patch`, `PEIDENTITY_01` | Rewrites OriginalFilename/InternalName to the shipped file name before signing. **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.App/Services/UpdatePreparer.cs` | `UpdatePreparer` | `PrepareAsync` | Client side of DIST-SMART. **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01` | Draft-verify-publish; creates the previous-brand download alias transiently. |
+| `build/FvsBuild/Staging.cs` | `Staging` | `WriteManifests`, `ValidateCompiledOutput`, `SYS-PAYLOADSPLIT`, `NODROPPER_01` | Stages the release folder and writes its manifests (nothing is zipped or embedded); `obj\ReleaseAssets\runtime.manifest.json`. |
 | `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish` | Runs the ratchets; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
@@ -46,11 +54,12 @@
 | Core project | `src/FreeVideoStudio.Core/FreeVideoStudio.Core.csproj` |
 | Core assembly / package ID / root namespace | `FreeVideoStudio.Core` |
 | Test projects and assemblies | `FreeVideoStudio.App.Tests`, `FreeVideoStudio.Core.Tests` |
-| Standalone installer output | `compiled/FreeVideoStudio.exe` |
-| Raw payload executable and installed executable | `FreeVideoStudio.exe` |
-| Embedded payload resource | `FreeVideoStudio.App.payload.zip` (the explicit app root namespace is retained) |
-| App-only archive | `obj/ReleaseAssets/FreeVideoStudio.App.update.zip`, containing a signed compact installer named `FreeVideoStudio.exe` |
-| Runtime manifest | `runtime.manifest.json` inside the payload and under `obj/ReleaseAssets` |
+| Standalone installer output | `compiled/FreeVideoStudio-Setup.exe` — an Inno Setup package (NODROPPER_01, §3c DIST-INSTALLER) |
+| Installed executable | `FreeVideoStudio.exe` (version resource `OriginalFilename`/`InternalName` = `FreeVideoStudio.exe`, PEIDENTITY_01) |
+| Embedded payload resource | **none** — retired by NODROPPER_01; `AvCleanRuleTests` fails if one comes back |
+| App-only archive | **retired** (`FreeVideoStudio.App.update.zip` is no longer built or published; smart updates replace it) |
+| Runtime manifest | `runtime.manifest.json` in the staged release and under `obj/ReleaseAssets` |
+| Release-asset aliases | `FreeVideoStudio.exe` (same bytes as the setup, for updaters released before NODROPPER_01) and the previous-brand name (REBRAND_03); both created transiently at publish time |
 
 The internal tool names `FvsBuild` and `FvsVerify` are unchanged. The GitHub repository is `alonreich/Free_Video_Studio`; GitHub redirects the previous repository address, so old clients still reach `releases/latest`. Game-specific crop profiles and recording-discovery folders remain gameplay identifiers, not product branding. Historical storage names are compatibility data in `LegacyAppDataNames.txt` (`05` SYS-REBRAND). The full old→new map and update flow are in `REBRAND_MIGRATION.md`.
 
@@ -65,7 +74,7 @@ dotnet run --project build/FvsVerify/FvsVerify.csproj -v q
 dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj --filter RebrandTests
 ```
 
-`RebrandTests.PreviousBrandNameAppearsOnlyInTheMigrationAllowList` fails if the previous product name appears outside `LegacyAppDataNames.txt` and `REBRAND_MIGRATION.md`. Project GUIDs stay unchanged; solution paths, project references, source-generated serializer types, XAML namespaces and sentinel paths use the renamed projects. `ProductionNamespacesUseTheProductRoot` enforces production namespace declarations; `AppDataPathsTests` guards migration behavior. Build output must contain only the standalone executable, with release sidecars under `obj/ReleaseAssets`.
+`RebrandTests.PreviousBrandNameAppearsOnlyInTheMigrationAllowList` fails if the previous product name appears outside `LegacyAppDataNames.txt` and `REBRAND_MIGRATION.md`. Project GUIDs stay unchanged; solution paths, project references, source-generated serializer types, XAML namespaces and sentinel paths use the renamed projects. `ProductionNamespacesUseTheProductRoot` enforces production namespace declarations; `AppDataPathsTests` guards migration behavior. Build output must contain only the Inno Setup installer (`FreeVideoStudio-Setup.exe`), with release sidecars under `obj/ReleaseAssets`.
 
 ---
 
@@ -101,8 +110,11 @@ Two separate defects hide in that table, and they need separate fixes.
 ## 2. Why The Binary Is 322 MB  {#DIST-WHYBIG}
 
 Invariant #1 — *Single Binary Executable Mandate, zero loose companion assets* — is the direct
-cause. `payload.zip` (FFmpeg, libmpv, starter media) is embedded as a managed resource in a
-NativeAOT executable and extracted to the install folder on first run.
+cause. ~~`payload.zip` (FFmpeg, libmpv, starter media) is embedded as a managed resource in a
+NativeAOT executable and extracted to the install folder on first run.~~ **Superseded by
+NODROPPER_01 (2026-10-12, §3c):** the single download is now an Inno Setup package; nothing is
+embedded in the program. The size (FFmpeg + libmpv + starter media) is unchanged — LZMA2 packs it
+somewhat tighter than deflate did.
 
 ⚠️ **The mandate is worth re-examining, and this spec does not pretend otherwise.** It buys "one
 file on disk", a property no user of a video editor has asked for. It costs: a 322 MB download, a
@@ -145,28 +157,141 @@ recurs: the *repeat* download.
   (`05` §5 SYS-SIGNING, `UPDATETRUST_02`). A manifest is a hint, and hints are not a security
   boundary.
 
-* **Current packaging behavior.** `Staging.CreatePayloadZip` writes `runtime.manifest.json` into the staging folder **before** building `payload.zip`, so fresh installs receive the fingerprint. It also writes `obj/ReleaseAssets/runtime.manifest.json` and builds `obj/ReleaseAssets/FreeVideoStudio.App.update.zip` containing the signed compact installer. These artifacts stay outside `compiled/`, which contains only the standalone installer.
+* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio-Setup.exe`. The client code that reads a compact package stays dormant (no published asset ⇒ `RuntimeAlreadyMatchesAsync` is false ⇒ the full installer), so an older release that still carries one is handled as before.
 
-* **Operational compact updates.** `FromFolder` excludes the root application and uninstaller.
+* **Operational compact updates (dormant since NODROPPER_01 — kept for releases that still publish the package).** `FromFolder` excludes the root application and uninstaller.
   Before selecting a compact update, the updater verifies the installed file manifest, requires
   the canonical install location, a published package digest and a matching runtime fingerprint.
   It fetches the selected asset and verifies its digest. The archive must contain exactly one
   installer executable, which is Authenticode-checked before launch. The installer embeds the
   new complete manifest and refuses to reuse any installed file with different bytes.
-* **Build ordering.** Publish and sign the raw app; stage dependencies; generate manifests and
-  the full payload; publish/sign the full installer; replace the embedded payload with the app
-  and manifests only; publish/sign the compact installer; archive it; restore the full payload.
-  Both installers use the same source and transactional worker. `compiled` still contains only
-  the full standalone executable; sidecars live in `obj/ReleaseAssets`. The legacy filename alias is
-  never staged (REBRAND_03): `Staging` deletes any stale copy, and `GitHubReleasePublisher` creates it in
-  a private temp folder for the upload only and deletes it afterwards.
+* **Build ordering (NODROPPER_01).** ONE NativeAOT publish of the program into staging; rewrite its
+  PE identity (PEIDENTITY_01); sign it; stage dependencies; write the manifests; build the smart
+  assets and the signed file list for the installer (`SmartUpdateBuilder.Prepare`); compile the Inno
+  Setup installer into `compiled` (`InnoInstaller.Build`); sign it; write the release `update.json`
+  that names it (`SmartUpdateBuilder.Finish`); validate that `compiled` holds exactly
+  `FreeVideoStudio-Setup.exe`. The two extra NativeAOT publishes (embedding installer, compact
+  installer) are gone, so a release build is also several minutes faster. The legacy filename aliases
+  are never staged (REBRAND_03): `Staging` deletes any stale copy, and `GitHubReleasePublisher` creates
+  them in a private temp folder for the upload only and deletes them afterwards.
 * **Old updater bridge (REBRAND_03).** The legacy executable filename, taken from `LegacyProductIdentity`,
   remains a release asset containing identical bytes to the full installer (created transiently at publish time). This lets old
   clients discover the rebrand without maintaining a separate app. Do not remove this alias
   until dropping automatic migration from those released clients is an explicit product decision.
-* **Publication transaction.** Upload all four assets to a draft, verify every asset by name and
+* **Old updater bridge (NODROPPER_01).** Every release before the Inno Setup installer looks for a full
+  installer asset named `FreeVideoStudio.exe` and starts it with `--install --auto-update --source-current
+  --wait-pid <id>`. The release therefore also carries the setup's bytes under that name
+  (`GitHubReleasePublisher.PreSetupDownloadName`), and the script forwards exactly those switches to the
+  program it unpacks, so those copies update normally (Inno shows its own small "Unpacking…" window for
+  them, because they do not pass `/VERYSILENT`). Its version resource says `FreeVideoStudio-Setup.exe` —
+  the one place a file name and its `OriginalFilename` differ, and only for that download. Remove the
+  alias only together with automatic updates for copies released before 2026-10-12.
+* **Publication transaction.** Upload all assets (setup, its two aliases, runtime manifest, smart files) to a draft, verify every asset by name and
   SHA-256, then publish it as latest. Failed uploads stay unpublished. Existing releases and tags
   are retained, supporting interrupted downloads and recovery; publication never deletes them first.
+
+---
+
+## 3a. Smart Updates: Only What Changed  {#DIST-SMART}
+
+* **What a release publishes in addition (all verified by name + SHA-256 after upload):**
+  * `update.json` — every installed file (path, length, SHA-256) with the content-addressed asset that
+    holds it (`f-<sha256>.br`, Brotli, 16 MB window), plus binary patches for the main program;
+  * `update.sig.json` — RSA-SHA256 signature of `update.json` by the publisher leaf, with the leaf
+    certificate. Believed only when the leaf chains to the pinned root (UPDATEPIN_01);
+  * `f-*.br` and `p-<from16>-<to16>.patch` files.
+* **Content decides, never names.** `SmartUpdateManifest.Plan`: a file is reused only when SOME installed
+  file has exactly its SHA-256 (a moved or renamed identical file is reused too); the same name with
+  different bytes is downloaded. The client hashes the installed folder, downloads only the changed
+  files (each decompressed file re-hashed against the signed list), rebuilds the main program from a
+  patch made from exactly the installed program's SHA-256 when one exists, and falls back — on ANY doubt
+  — to the compact package (when a release still publishes one; none does since NODROPPER_01), then the
+  full installer. If the smart download would be ≥ 90 % of the full installer, the full installer is used.
+* **Who installs it.** The new main program itself (Authenticode-checked against the pinned root) runs
+  as the installer with `--smart-update <folder>`. The elevated worker re-verifies the signed list
+  ITSELF, requires its version to equal its own, copies each downloaded file into its protected staging
+  folder and hashes the copy there (so nothing in the user-writable folder is trusted after the check),
+  hard-links identical installed files, and verifies the whole result (`InstallPayload.ExtractFromSmartUpdate`).
+* **BINDELTA_01 — patches.** bsdiff-style (exact matches found through a hash index of the old file,
+  extended with byte differences stored as new−old; shifted code becomes long zero runs) in a Brotli
+  stream. The header names old and new by length and SHA-256; `Apply` refuses another old file and
+  re-hashes its result, so a wrong or damaged patch is an error, never a wrong file. Bases: the last 3
+  PUBLISHED versions (`obj\ReleaseHistory\<version>\`, marked `released.txt` after a successful publish);
+  a patch larger than 60 % of the compressed program is dropped. Measured on a synthetic 120 MB
+  "recompiled" file: 1.7 MB patch, 6 s to build, 0.4 s to apply (in-memory apply, before BINDELTA_02;
+  streamed disk-to-disk: 160 MB in 1.2 s incl. both SHA-256 passes).
+* **BINDELTA_02 — applying streams, it never loads a program file.** `BinaryDelta.ApplyFile` /
+  `Apply(Stream old, Stream patch, Stream output, …)`: the old EXE is length-checked and SHA-256-hashed
+  from disk, the FVSDELTA1 blocks are decoded unchanged, the old file is seeked only when a block needs
+  it, `new = old + diff (mod 256)` is computed in `StreamBufferSize` = 64 KiB chunks and written (and
+  hashed) straight to a `.partial` file. Managed memory: 3 × 64 KiB, plus the Brotli decoder window
+  (≤ 16 MB, format-fixed) — independent of program size (the old path held old EXE + new EXE in RAM).
+  Any failure or cancellation deletes the partial. `UpdatePreparer` promotes it (`File.Move`, same
+  folder) only after length + SHA-256 match the signed update.json AND the publisher check passes.
+  `Apply(byte[], Stream)` remains for small inputs and runs the same decoder. Tests: `BinaryDeltaTests`
+  (legacy-decoder parity, hand-written FVSDELTA1 patch, fragmented streams, bad hashes, truncation,
+  cancellation, 192 MiB bounded-memory run). Measured: 160 MB file, 260 KB managed allocations,
+  +26 MB peak working set.
+* **Build cost.** Compressed assets are cached by content in `obj\ReleaseAssets\smart` (an unchanged file
+  is not compressed again); assets no longer listed are removed.
+* **D1 — dev.** `dev_build.cmd` produces the same assets (patch bases: any of the last 6 builds) and the
+  dev updater (DEVUPDATE_01) reads them from `obj\ReleaseAssets`, so `dev.cmd` exercises the smart,
+  compact and full paths exactly like production.
+
+## 3b. After Every Public Release  {#DIST-NEWRELEASE}
+
+* **NEWRELEASE_01.** After a SUCCESSFUL publish only (not `--dev`, not `--no-publish`, not exit 2),
+  `build/FvsBuild/ReleaseChecklist.cs` prepares `obj/ReleaseSubmit/`: `FreeVideoStudio-program-<version>.zip`
+  (the signed program from `obj/ReleaseHistory/<version>/`, password `infected` when 7-Zip is installed)
+  and `submission-text.txt` (every Microsoft WDSI form field, SHA-256 of program and installer, release
+  URL). It then opens `docs/New-Release.md` and that text file in Notepad++ (`-multiInst`; Notepad as fallback).
+* Why the program and not the installer: the WDSI form accepts at most **50 MB**; the installer (`FreeVideoStudio-Setup.exe`) is ~300 MB.
+* It never fails the build: the release is already public when it runs. Problems are warnings.
+* The steps are manual by necessity: Microsoft's free submission form has no API (the API needs a paid
+  Defender for Endpoint licence). `docs/New-Release.md` is the human checklist.
+
+## 3c. The Installer Is An Inno Setup Package  {#DIST-INSTALLER}
+
+* **NODROPPER_01 — WHY.** The release used to be one NativeAOT program that carried FFmpeg, libmpv, the
+  starter media and a copy of itself as a deflate-compressed zip inside its managed resources, unpacked
+  them on first run and started them. *An executable whose resources hold compressed executables that it
+  writes to disk and runs* is the definition of a dropper; Defender's machine-learning detections
+  (`Trojan:Win32/Wacatac.*!ml`) and other engines scored every new, low-reputation release that way. An
+  Inno Setup package is a container every antivirus engine unpacks natively: each file in it is scanned
+  and reputation-checked on its own, under its real name, and the Inno engine is one of the most common
+  installers on Windows. The user still downloads ONE file.
+* **What the installer does** (`build/installer/FreeVideoStudio.iss`, compiled by `InnoInstaller`):
+  * runs WITHOUT administrator rights (`PrivilegesRequired=lowest`), creates no program folder, no
+    registry entries and no uninstaller of its own (`CreateAppDir=no`, `Uninstallable=no`);
+  * unpacks the staged release with its real layout into Inno's private `{tmp}\fvs` (Inno deletes `{tmp}`
+    when it exits), beside the signed file list (`update.json` + `update.sig.json`, built by
+    `SmartUpdateBuilder.Prepare` WITHOUT the full-installer entry, which cannot name its own hash);
+  * starts `{tmp}\fvs\FreeVideoStudio.exe --install --smart-update "{tmp}\fvs"` as the user who started
+    Setup (`runasoriginaluser`) and waits for it. Everything after that is the existing transactional
+    installer (`05` SYS-UPGRADE): broker window, one UAC prompt, elevated worker (staged under
+    `%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage`, NOTEMPEXEC_01), which re-verifies the signed list
+    itself, copies every file into its protected folder and hashes the copy
+    (`InstallPayload.ExtractFromSmartUpdate`, which accepts real paths as well as content names), shortcuts,
+    Apps & features entry, first-launch health check, rollback;
+  * forwards ONLY `--auto-update`, `--source-current`, `--no-launch`, `--quiet` and `--wait-pid <number>`
+    (`ForwardedArguments`), so a command line can never steer the unpacked program into another mode.
+* **Trust is unchanged.** `UpgradeCoordinator.SmartFromArgs` accepts the folder because it is the folder
+  the running program was unpacked into; the elevated worker never trusts that check and verifies the
+  list's signature against the pinned root (UPDATEPIN_01) and every byte against the list. A program
+  started without a signed list refuses to install ("This program is not an installer. Download
+  FreeVideoStudio-Setup.exe…").
+* **In-app full updates** start the setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` plus the usual
+  switches, so the user sees only the update window (UPGRADEUX_01). The publisher check
+  (`AuthenticodeVerifier`) is applied to the setup exactly as it was to the old installer.
+* **Signing.** `CodeSigning.SignIfNeeded` signs the program in staging and then the finished setup. The
+  small Inno engine Setup unpacks for itself (`is-*.tmp`) is Inno's own, byte-identical in every
+  installer built with the same Inno version — left as shipped so it keeps that reputation.
+* **Build requirement.** Inno Setup 6.3 or newer (free): `winget install JRSoftware.InnoSetup`, or set
+  `FVS_ISCC` to `ISCC.exe`. Missing → the build fails with that instruction. A build without the
+  update-list signing certificate fails too (the installer installs only from a signed list).
+* **Measured / to verify on Windows.** Compression `lzma2/max`, solid. Real-Windows checks still needed:
+  double-click install, in-app full update (`/VERYSILENT`), an old client updating through the
+  `FreeVideoStudio.exe` alias, UAC No, and a Defender scan of the setup.
 
 ---
 
@@ -191,7 +316,7 @@ recurs: the *repeat* download.
   3. `git filter-repo --path mp3/ --path mp4/ --path jpeg/ --path meme/ --path binaries/ --invert-paths`
      (`filter-repo`, not `filter-branch` — the latter is slow and its author recommends against it).
   4. Re-add the media through LFS in a single fresh commit, or move it to release assets — the
-     starter media is shipped in `payload.zip` and does not need to be in the source tree at all.
+     starter media is shipped in the installer and does not need to be in the source tree at all.
      `.gitattributes` now routes `meme/*.png`, `meme/*.jpg` and `meme/*.jpeg` through LFS as well
      (MEMEFOLDER_01); images elsewhere in the tree are deliberately not affected.
   5. `git push --force --all` and `--tags`, then everyone re-clones. Not "pulls" — **re-clones**.
@@ -207,7 +332,6 @@ recurs: the *repeat* download.
 size on every push to `main`.
 
 ⚠️ **It measures only the app's `dotnet publish` folder, NOT the user download.** CI never runs
-`FvsBuild`, so no `payload.zip` exists and none is embedded (`EmbeddedResource Include="payload.zip"`
-is conditional on the file existing). The printed total is the app alone — roughly what an app-only
+`FvsBuild` (and since NODROPPER_01 nothing is embedded in the program at all). The printed total is the app alone — roughly what an app-only
 patch would cost — while the 322 MB installer (FFmpeg, libmpv, starter media) is not measured
 anywhere in CI. A number nobody prints is a number nobody defends; this one is only half printed.

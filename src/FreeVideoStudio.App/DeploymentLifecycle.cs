@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
@@ -15,9 +12,6 @@ namespace FreeVideoStudio.App;
 internal static class DeploymentLifecycle
 {
     private const int DeleteRetries = 3;
-    private static readonly string SessionTempFolder = Path.Combine(
-        DeploymentFootprint.DeploymentTempRoot,
-        "Staging_" + Environment.ProcessId);
 
     private static int _pendingRebootDeletes;
 
@@ -65,7 +59,7 @@ internal static class DeploymentLifecycle
             "Deployment failed before it could complete." + Environment.NewLine +
             $"Reason: {ex.Message}" + Environment.NewLine +
             $"Report: {DeploymentFootprint.InstallReportPath}");
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return 1;
         }
     }
@@ -77,32 +71,15 @@ internal static class DeploymentLifecycle
     {
         bool quiet = args.Any(a => a.Equals("--quiet", StringComparison.OrdinalIgnoreCase));
         await DeploymentReporter.ResetAsync("UNINSTALL LAUNCHER").ConfigureAwait(false);
-        await DeploymentReporter.StepAsync("UNINSTALL", "Preparing elevated cleanup worker from temporary staging.", 5).ConfigureAwait(false);
+        await DeploymentReporter.StepAsync("UNINSTALL", "Starting the elevated cleanup worker from the program folder.", 5).ConfigureAwait(false);
 
-        Directory.CreateDirectory(SessionTempFolder);
-        string source = Environment.ProcessPath ?? DeploymentFootprint.UninstallPath;
-        string tempUninstaller = Path.Combine(SessionTempFolder, DeploymentFootprint.UninstallExeName);
-        File.Copy(source, tempUninstaller, overwrite: true);
-
-        string? sourceDir = Path.GetDirectoryName(source);
-        if (sourceDir != null)
-        {
-            foreach (string dll in new[] { "libSkiaSharp.dll", "libHarfBuzzSharp.dll" })
-            {
-                string sourceDll = Path.Combine(sourceDir, dll);
-                if (File.Exists(sourceDll))
-                {
-                    File.Copy(sourceDll, Path.Combine(SessionTempFolder, dll), overwrite: true);
-                }
-            }
-        }
-
+        string uninstaller = Environment.ProcessPath ?? DeploymentFootprint.UninstallPath;
         int parentPid = Environment.ProcessId;
         string workerArgs = $"--uninstall --cleanup-worker {parentPid}" + (quiet ? " --quiet" : "");
 
         workerArgs = AppendUserDesktopArgument(workerArgs, ProbeInvokingUserDesktop());
 
-        if (!TryStartElevated(tempUninstaller, workerArgs))
+        if (!TryStartElevated(uninstaller, workerArgs))
         {
             await DeploymentReporter.FailAsync("ELEVATION", "User cancelled Administrator permission or Windows refused to start the elevated cleanup worker.", 10).ConfigureAwait(false);
             if (!quiet)
@@ -166,6 +143,13 @@ internal static class DeploymentLifecycle
         {
             installerGate.Release();
             QueueSelfCleanup(DeploymentFootprint.TempAppFolder);
+            string? runningFrom = Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty);
+            if (!string.IsNullOrEmpty(runningFrom) &&
+                (string.Equals(Path.GetFullPath(runningFrom), Path.GetFullPath(DeploymentFootprint.InstallFolder), StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(Path.GetFullPath(runningFrom), Path.GetFullPath(DeploymentFootprint.LegacyInstallFolder), StringComparison.OrdinalIgnoreCase)))
+            {
+                QueueSelfCleanup(runningFrom);
+            }
         }
     }
 
@@ -232,7 +216,6 @@ internal static class DeploymentLifecycle
 
         int cmp = current.CompareTo(installed);
 
-        // INSTALL_02 — upgrade (cmp > 0) AND same-version reinstall (cmp == 0) both proceed silently.
         if (cmp >= 0) return true;
 
         return NativeDialog.ShowQuestion(
@@ -334,76 +317,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <param name="invokingUserDesktop">
-    /// The desktop folder of the user who launched the installer, resolved BEFORE elevation and
-    /// handed over on the command line. Null falls back to the Public desktop. See
-    /// <see cref="ProbeInvokingUserDesktop"/>.
-    /// </param>
-    private static async Task InstallFreshAsync(string? invokingUserDesktop = null)
-    {
-        await DeploymentReporter.StepAsync("DEPLOY FILES", $"Extracting application payload to: {DeploymentFootprint.InstallFolder}", 60).ConfigureAwait(false);
-        Directory.CreateDirectory(DeploymentFootprint.InstallFolder);
-
-        string source = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot resolve current executable path.");
-        ExtractEmbeddedPayload(DeploymentFootprint.InstallFolder);
-
-        string stagedExe = Path.Combine(DeploymentFootprint.InstallFolder, "FreeVideoStudio.exe");
-        if (File.Exists(stagedExe))
-        {
-            if (!string.Equals(stagedExe, DeploymentFootprint.InstallPath, StringComparison.OrdinalIgnoreCase))
-            {
-                await CopyFileAggressiveAsync(stagedExe, DeploymentFootprint.InstallPath).ConfigureAwait(false);
-                File.Delete(stagedExe);
-            }
-        }
-        else
-        {
-            await CopyFileAggressiveAsync(source, DeploymentFootprint.InstallPath).ConfigureAwait(false);
-        }
-
-        await CopyFileAggressiveAsync(DeploymentFootprint.InstallPath, DeploymentFootprint.UninstallPath).ConfigureAwait(false);
-
-        // USERSCOPE_01 — no machine-wide writable folder any more. App state lives per user under
-        // %LOCALAPPDATA% (ApplicationPaths.DefaultUserRoot), created by the app itself on first
-        // launch. This step used to create %ProgramData%\Free Video Studio and grant
-        // BUILTIN\Users FULL CONTROL over it, which is what let every account on the machine read
-        // and overwrite every other account's settings and crash-recovery state. A legacy folder
-        // from an older install is left for the one-time per-user migration, and it is still purged
-        // by the uninstaller (DeploymentFootprint.GetDirectoryPurgeTargets).
-        await DeploymentReporter.StepAsync("DEPLOY PROGRAMDATA", "Per-user data root (created by the app on first launch); no machine-wide writable folder is created.", 72).ConfigureAwait(false);
-
-        await DeploymentReporter.StepAsync("DEPLOY REGISTRY", "Writing Windows Apps & Features uninstall entry.", 78).ConfigureAwait(false);
-        await WriteUninstallRegistryAsync().ConfigureAwait(false);
-
-        await DeploymentReporter.StepAsync("DEPLOY SHORTCUT", "Creating Start Menu shortcut with the app icon.", 84).ConfigureAwait(false);
-        await CreateStartMenuShortcutAsync().ConfigureAwait(false);
-
-        await DeploymentReporter.StepAsync("DEPLOY DESKTOP", "Creating desktop shortcut with the app icon.", 88).ConfigureAwait(false);
-        await CreateDesktopShortcutAsync(invokingUserDesktop).ConfigureAwait(false);
-
-        await DeploymentReporter.StepAsync("DEPLOY VERIFY", "Verifying install files and shortcut exist.", 92).ConfigureAwait(false);
-        VerifyInstallArtifacts();
-    }
-
-    private static void VerifyInstallArtifacts()
-    {
-        if (!File.Exists(DeploymentFootprint.InstallPath))
-        {
-            throw new FileNotFoundException("Installed executable is missing after copy.", DeploymentFootprint.InstallPath);
-        }
-
-        if (!File.Exists(DeploymentFootprint.UninstallPath))
-        {
-            throw new FileNotFoundException("Installed uninstaller is missing after copy.", DeploymentFootprint.UninstallPath);
-        }
-
-        string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Free Video Studio.lnk");
-        if (!File.Exists(shortcut))
-        {
-            throw new FileNotFoundException("Start Menu shortcut was not created.", shortcut);
-        }
-    }
-
     private static async Task PurgeDirectoryRecursiveAsync(string directory)
     {
         if (!Directory.Exists(directory))
@@ -421,7 +334,7 @@ internal static class DeploymentLifecycle
         catch (Exception ex)
         {
             await DeploymentReporter.StepAsync("CLEANUP RETRY", $"Fast delete failed for {directory}: {ex.Message}. Deleting contents one by one.", null).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
 
         foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToArray())
@@ -471,7 +384,7 @@ internal static class DeploymentLifecycle
                 {
                 await Task.Delay(250).ConfigureAwait(false);
                 }
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
         }
     }
@@ -517,7 +430,7 @@ internal static class DeploymentLifecycle
             try { normalized = Path.GetFullPath(folder).TrimEnd('\\', '/'); }
             catch (System.Exception swallowed)
             {
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
                 continue;
             }
 
@@ -615,7 +528,7 @@ internal static class DeploymentLifecycle
         catch (Exception ex)
         {
             await DeploymentReporter.StepAsync("REGISTRY SKIP", $"{hive} {view}\\{path}: {ex.Message}", null).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
 
@@ -760,7 +673,7 @@ internal static class DeploymentLifecycle
         }
         catch (System.Exception swallowed2)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
             return null;
         }
     }
@@ -775,62 +688,6 @@ internal static class DeploymentLifecycle
 
         File.Copy(source, destination, overwrite: true);
         await DeploymentReporter.StepAsync("COPY OK", $"{source} -> {destination}", null).ConfigureAwait(false);
-    }
-
-    private static void ExtractEmbeddedPayload(string destinationFolder)
-    {
-        try
-        {
-            using Stream? stream = typeof(DeploymentLifecycle).Assembly.GetManifestResourceStream("FreeVideoStudio.App.payload.zip");
-            if (stream is null)
-            {
-                DeploymentReporter.AppendFatalAsync("EXTRACT PAYLOAD", new Exception("Payload resource FreeVideoStudio.App.payload.zip not found")).GetAwaiter().GetResult();
-                return;
-            }
-
-            Directory.CreateDirectory(DeploymentFootprint.DeploymentTempRoot);
-            string tempZip = Path.Combine(DeploymentFootprint.DeploymentTempRoot, "payload.zip");
-            using (FileStream fs = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                stream.CopyTo(fs);
-            }
-
-            System.IO.Compression.ZipFile.ExtractToDirectory(tempZip, destinationFolder, overwriteFiles: true);
-            File.Delete(tempZip);
-        }
-        catch (Exception ex)
-        {
-            DeploymentReporter.AppendFatalAsync("EXTRACT PAYLOAD", ex).GetAwaiter().GetResult();
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
-        }
-    }
-
-    public static void ExtractAvaloniaDependencies(string destinationFolder)
-    {
-        try
-        {
-            using Stream? stream = typeof(DeploymentLifecycle).Assembly.GetManifestResourceStream("FreeVideoStudio.App.payload.zip");
-            if (stream is null) return;
-            
-            using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
-            foreach (var entry in archive.Entries)
-            {
-                if (entry.Name.Equals("libSkiaSharp.dll", StringComparison.OrdinalIgnoreCase) ||
-                    entry.Name.Equals("libHarfBuzzSharp.dll", StringComparison.OrdinalIgnoreCase))
-                {
-                    string destPath = Path.Combine(destinationFolder, entry.Name);
-                    if (!File.Exists(destPath))
-                    {
-                        System.IO.Compression.ZipFileExtensions.ExtractToFile(entry, destPath, overwrite: true);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            DeploymentReporter.AppendFatalAsync("EXTRACT DEPENDENCIES", ex).GetAwaiter().GetResult();
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
-        }
     }
 
     private static async Task LaunchInstalledApplicationAsync()
@@ -860,7 +717,7 @@ internal static class DeploymentLifecycle
             catch (Exception ex)
             {
                 await DeploymentReporter.StepAsync("LAUNCH RETRY", $"Attempt {attempt} failed: {ex.Message}", 98).ConfigureAwait(false);
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
 
             await Task.Delay(200).ConfigureAwait(false);
@@ -958,7 +815,7 @@ internal static class DeploymentLifecycle
         {
             await DeploymentReporter.StepAsync("PROCESS TASKKILL", $"Falling back to taskkill for PID {process.Id}: {ex.Message}", null).ConfigureAwait(false);
             await RunHiddenProcessAsync("taskkill.exe", $"/F /PID {process.Id} /T", 3000).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
 
@@ -1057,7 +914,7 @@ internal static class DeploymentLifecycle
         }
         catch (System.Exception swallowed3)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);
         }
 
         try
@@ -1102,7 +959,7 @@ internal static class DeploymentLifecycle
         }
         catch (System.Exception swallowed5)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed5);
             return "1.0.0.0";
         }
     }
@@ -1240,7 +1097,7 @@ internal static class DeploymentLifecycle
                 }
                 catch (System.Exception swallowed6)
                 {
-                    global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+                    global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6);
                     return null;
                 }
             }
@@ -1276,7 +1133,7 @@ internal static class DeploymentLifecycle
         }
         catch (System.Exception swallowed7)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed7);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed7);
             return false;
         }
     }
@@ -1340,10 +1197,6 @@ internal static class DeploymentLifecycle
             }
             catch (TimeoutException swallowed4)
             {
-                // Deployment helpers are non-interactive, so the stdin quit command is skipped
-                // and the grace period is zero: hard kill the tree immediately — but WITH the
-                // bounded exit confirmation, so the output reads below never race a process
-                // that is still dying. Never throws.
                 await GracefulProcessTerminator.TerminateAsync(
                 process,
                 "PROCESS TIMEOUT",
@@ -1353,7 +1206,7 @@ internal static class DeploymentLifecycle
                 error = errorTask.IsCompletedSuccessfully ? errorTask.Result : string.Empty;
                 await DeploymentReporter.StepAsync("PROCESS TIMEOUT",
                 $"{command}; killed after {timeoutMilliseconds} ms; output={output}; error={error}", null).ConfigureAwait(false);
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed4);
                 return -1;
             }
 
@@ -1363,25 +1216,73 @@ internal static class DeploymentLifecycle
         catch (Exception ex)
         {
             await DeploymentReporter.StepAsync("PROCESS ERROR", $"{exe} {args}: {ex.Message}", null).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return -1;
         }
     }
 
+    /// <summary>
+    /// NOSELFDELETE_01 — removes a folder the uninstaller may itself be running from (the program folder,
+    /// NOTEMPEXEC_01; older versions' scratch folders in %TEMP%) WITHOUT a "cmd /c ping … &amp; del"
+    /// chain. That chain (wait with ping, then delete the running program) is a ransomware signature
+    /// (Sigma "ping + del combined execution", MITRE T1070.004) and made antivirus flag new releases.
+    /// Everything that is not in use is deleted now. What is still locked — this running uninstaller,
+    /// its hard-linked twin FreeVideoStudio.exe and its two window libraries — is handed to Windows' own delete-on-restart list
+    /// (MoveFileEx MOVEFILE_DELAY_UNTIL_REBOOT; this worker is elevated, which that list requires).
+    /// Files are queued before their folders, so Windows removes them in a working order.
+    /// </summary>
     private static void QueueSelfCleanup(string directory)
     {
         try
         {
             string tempRoot = DeploymentFootprint.TempRoot;
-            string cleanupCommand = $"/c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"{directory}\" & del /q \"{Path.Combine(tempRoot, "FVS_*")}\" 2>nul & del /q \"{Path.Combine(tempRoot, "fvs_*")}\" 2>nul";
-            
-            Process.Start(new ProcessStartInfo
+            foreach (string pattern in new[] { "FVS_*", "fvs_*" })
             {
-                FileName = "cmd.exe",
-                Arguments = cleanupCommand,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            });
+                if (!Directory.Exists(tempRoot)) break;
+                foreach (string file in Directory.EnumerateFiles(tempRoot, pattern, SearchOption.TopDirectoryOnly))
+                {
+                    try { File.Delete(file); }
+                    catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
+            }
+
+            if (!Directory.Exists(directory)) return;
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+                return;
+            }
+            catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RuntimeLog.Swallowed(ex);
+            }
+
+            foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                    File.Delete(file);
+                }
+                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    if (!MoveFileEx(file, null, MoveFileFlags.DelayUntilReboot))
+                        RuntimeLog.Info("Uninstall", $"Could not schedule removal after restart: {file}");
+                }
+            }
+
+            foreach (string folder in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories)
+                         .OrderByDescending(path => path.Length)
+                         .Append(directory))
+            {
+                try { Directory.Delete(folder, recursive: false); }
+                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    _ = MoveFileEx(folder, null, MoveFileFlags.DelayUntilReboot);
+                }
+            }
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }

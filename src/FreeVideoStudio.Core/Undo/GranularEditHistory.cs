@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -42,12 +39,11 @@ public sealed record GranularEditorSnapshot(
         if (Math.Abs(FreezeDurationS - other.FreezeDurationS) > 0.0001) return false;
         if (Segments.Length != other.Segments.Length) return false;
         if (Cuts.Length != other.Cuts.Length) return false;
-        if (Memes.Length != other.Memes.Length) return false;   // MEME_06
+        if (Memes.Length != other.Memes.Length) return false;
         for (int i = 0; i < Segments.Length; i++)
             if (!Segments[i].Equals(other.Segments[i])) return false;
         for (int i = 0; i < Cuts.Length; i++)
             if (!Cuts[i].Equals(other.Cuts[i])) return false;
-        // MemePlacement is a record: path, anchor, duration, id and presentation all compare.
         for (int i = 0; i < Memes.Length; i++)
             if (!Memes[i].Equals(other.Memes[i])) return false;
         return true;
@@ -145,8 +141,6 @@ public sealed class GranularEditHistory
         {
             if (Equals(_stack.Current, before))
             {
-                // The previous action changed nothing (yet). U4: no entry. U1: a continuing gesture
-                // still refreshes its idle clock, as the old PushUndo did on a dropped push.
                 if (gestureKey != null && p.Key == gestureKey) _stack.TouchGesture(gestureKey);
                 _stack.ReplaceCurrent(before);
             }
@@ -157,9 +151,6 @@ public sealed class GranularEditHistory
         }
         else
         {
-            // Nothing pending: the live state may still differ from the last committed one by an
-            // unrecorded change, or by the selection. Adopt it as the baseline of this action —
-            // the old stack stored exactly this before-state.
             _stack.ReplaceCurrent(before);
         }
 
@@ -244,7 +235,7 @@ public sealed class GranularEditHistory
     {
         if (!BelongsTo(parked, clipKey, opening)) return false;
         _stack = new UndoStack<GranularEditorSnapshot>(opening, MaxDepth, GestureIdleMs);
-        _stack.Restore(parked!.Undo, parked.Redo);   // U2 re-applied on restore
+        _stack.Restore(parked!.Undo, parked.Redo);
         _pending = null;
         return true;
     }

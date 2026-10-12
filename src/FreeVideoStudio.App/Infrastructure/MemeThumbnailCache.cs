@@ -1,9 +1,5 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -30,11 +26,20 @@ namespace FreeVideoStudio.App.Infrastructure;
 /// priority, killed after <see cref="FrameTimeout"/>) kept as the one-shot fallback. Nothing is
 /// written to disk on either path. <c>FVS_FRAME_DECODE=ffmpeg|native</c> forces one path.</item>
 /// <item>At most <see cref="MaxConcurrent"/> decodes run at once so a large library cannot flood
-/// the machine with ffmpeg processes while the user is editing.</item>
-/// <item>Results are kept for the life of the process, keyed by path + size + last-write time, so
-/// reopening the picker is instant and a replaced file is never shown with a stale picture.</item>
+/// the machine with ffmpeg processes while the user is editing. A caller that cancels while
+/// waiting for a lane leaves the queue at once (stale picker rows never decode).</item>
+/// <item>CACHEBOUND_02 — results live in ONE byte-budgeted LRU (<see cref="Store"/>:
+/// <see cref="MemoryBudgetBytes"/> of pixels, at most <see cref="MaxEntries"/> entries), keyed by
+/// path + size + last-write time, so reopening the picker is instant and a replaced file is never
+/// shown with a stale picture (its old entry is retired the moment the new key is stored). The
+/// cache OWNS every bitmap: callers get an <see cref="OwnedLruCache{T}.Lease"/>, and an evicted
+/// bitmap is disposed only after the last lease on it closes, so a picture still bound to an
+/// <c>Image</c> is never disposed under it. It used to be a static dictionary that kept every
+/// bitmap of every meme ever shown for the life of the process.</item>
 /// </list>
-/// A failure yields null and the picker shows the type icon instead. It never throws.
+/// A failure yields null and the picker shows the type icon instead (the failure is cached as a
+/// small negative entry, keyed by mtime, so a replaced file is retried). It never throws, except
+/// the caller's own cancellation.
 /// </summary>
 public static class MemeThumbnailCache
 {
@@ -42,37 +47,92 @@ public static class MemeThumbnailCache
     private const int MaxConcurrent = 3;
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(10);
 
-    private static readonly SemaphoreSlim _lanes = new(MaxConcurrent, MaxConcurrent);
-    private static readonly ConcurrentDictionary<string, Bitmap?> _cache = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>CACHEBOUND_02 — pixels kept for thumbnails that are NOT on screen (~290 landscape 160×90 thumbnails).</summary>
+    internal const long MemoryBudgetBytes = 16L * 1024 * 1024;
+    /// <summary>CACHEBOUND_02 — entry cap, so thousands of cached "no picture" answers stay bounded too.</summary>
+    internal const int MaxEntries = 1024;
+    /// <summary>Accounting cost of a negative ("no picture") entry.</summary>
+    internal const long NegativeEntryCost = 256;
 
-    public static async Task<Bitmap?> GetAsync(string path, bool isImage, CancellationToken ct)
+    private static readonly SemaphoreSlim _lanes = new(MaxConcurrent, MaxConcurrent);
+
+    /// <summary>CACHEBOUND_02 — the one owner of every meme thumbnail bitmap.</summary>
+    internal static readonly OwnedLruCache<Bitmap> Store = new(MemoryBudgetBytes, MaxEntries, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// CACHEBOUND_02 — a lease on the meme's preview picture, or null (no file, empty file, no picture).
+    /// The caller OWNS the lease and must dispose it once the picture is no longer shown. When
+    /// <paramref name="ct"/> is cancelled the call throws and no lease is handed out.
+    /// </summary>
+    internal static Task<OwnedLruCache<Bitmap>.Lease?> AcquireAsync(string path, bool isImage, CancellationToken ct)
+        => AcquireCoreAsync(Store, _lanes, path,
+            token => isImage ? Task.FromResult(DecodeImage(path)) : GrabVideoFrameAsync(path, token),
+            BitmapCost, ct);
+
+    /// <summary>Accounting cost of a decoded thumbnail: its BGRA pixels.</summary>
+    internal static long BitmapCost(Bitmap b) => Math.Max(1L, (long)b.PixelSize.Width * b.PixelSize.Height * 4);
+
+    /// <summary>
+    /// CACHEBOUND_02 — the cache protocol, independent of what is decoded (tests drive it with fakes).
+    /// Key = path|size|mtime ticks (stable file identity); identity = path.
+    /// </summary>
+    internal static async Task<OwnedLruCache<T>.Lease?> AcquireCoreAsync<T>(
+        OwnedLruCache<T> store, SemaphoreSlim lanes, string path,
+        Func<CancellationToken, Task<T?>> decode, Func<T, long> cost, CancellationToken ct)
+        where T : class, IDisposable
     {
+        ct.ThrowIfCancellationRequested();
         string key;
         try
         {
             var fi = new FileInfo(path);
-            if (!fi.Exists || fi.Length == 0) return null;
+            if (!fi.Exists || fi.Length == 0)
+            {
+                store.Remove(path);
+                return null;
+            }
             key = $"{path}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}";
         }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); return null; }
 
-        if (_cache.TryGetValue(key, out Bitmap? hit)) return hit;
+        switch (store.TryAcquire(key, out var hit))
+        {
+            case OwnedLruCache<T>.Lookup.Hit: return hit;
+            case OwnedLruCache<T>.Lookup.Negative: return null;
+        }
 
-        await _lanes.WaitAsync(ct).ConfigureAwait(false);
+        await lanes.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_cache.TryGetValue(key, out hit)) return hit;
-            Bitmap? made = isImage ? DecodeImage(path) : await GrabVideoFrameAsync(path, ct).ConfigureAwait(false);
-            _cache[key] = made;
-            return made;
+            switch (store.TryAcquire(key, out hit))
+            {
+                case OwnedLruCache<T>.Lookup.Hit: return Handover(hit, ct);
+                case OwnedLruCache<T>.Lookup.Negative: return null;
+            }
+
+            T? made;
+            try { made = await decode(ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                RuntimeLog.Info("Memes", $"Thumbnail failed for '{Path.GetFileName(path)}': {ex.Message}");
+                made = null;
+            }
+
+            long size = made != null ? cost(made) : NegativeEntryCost;
+            return Handover(store.AddAndAcquire(key, path, made, size), ct);
         }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
-        {
-            RuntimeLog.Info("Memes", $"Thumbnail failed for '{Path.GetFileName(path)}': {ex.Message}");
-            return null;
-        }
-        finally { _lanes.Release(); }
+        finally { lanes.Release(); }
+    }
+
+    /// <summary>The result is cached either way; a caller that cancelled meanwhile gets no lease to leak.</summary>
+    private static OwnedLruCache<T>.Lease? Handover<T>(OwnedLruCache<T>.Lease? lease, CancellationToken ct)
+        where T : class, IDisposable
+    {
+        if (!ct.IsCancellationRequested) return lease;
+        lease?.Dispose();
+        ct.ThrowIfCancellationRequested();
+        return null;
     }
 
     private static Bitmap? DecodeImage(string path)
@@ -84,13 +144,11 @@ public static class MemeThumbnailCache
     private static Task<Bitmap?> GrabVideoFrameAsync(string path, CancellationToken ct)
         => GrabVideoFrameAsync(BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"), path, ct);
 
-    /// <summary>Uncached grab with an explicit ffmpeg (tests). Same rules as <see cref="GetAsync"/>'s video branch.</summary>
+    /// <summary>Uncached grab with an explicit ffmpeg (tests). Same rules as <see cref="AcquireAsync"/>'s video branch.</summary>
     internal static async Task<Bitmap?> GrabVideoFrameAsync(string ffmpeg, string path, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(ffmpeg) || !File.Exists(ffmpeg)) return null;
 
-        // Half a second in skips the black first frame most clips open with; a clip shorter than
-        // that falls back to its very first frame.
         foreach (string seek in new[] { "0.5", "0" })
         {
             Bitmap? frame = await GrabFrameAsync(ffmpeg, path, seek, ct).ConfigureAwait(false);
@@ -111,7 +169,7 @@ public static class MemeThumbnailCache
         {
             return await VideoFrameGrabber.GrabAsync(
                 ffmpeg, path,
-                VideoFrameRequest.AtFfmpegSeek(seek, ThumbWidth, evenHeight: true),   // == -ss {seek} … scale={ThumbWidth}:-2
+                VideoFrameRequest.AtFfmpegSeek(seek, ThumbWidth, evenHeight: true),
                 FrameTimeout,
                 ToBitmap,
                 async (budget, token) =>
@@ -125,7 +183,7 @@ public static class MemeThumbnailCache
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return null;   // our own timeout (native deadline or exhausted budget): no picture, not an error — as before
+            return null;
         }
     }
 
@@ -162,7 +220,7 @@ public static class MemeThumbnailCache
         try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(budget);   // FrameTimeout, minus whatever a native attempt already spent
+        timeout.CancelAfter(budget);
         try
         {
             using var ms = new MemoryStream();
@@ -177,7 +235,7 @@ public static class MemeThumbnailCache
         {
             try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
             if (ct.IsCancellationRequested) throw;
-            return null;   // our own timeout: no picture, not an error
+            return null;
         }
     }
 }

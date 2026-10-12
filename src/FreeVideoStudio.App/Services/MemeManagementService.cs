@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -47,7 +44,7 @@ public static class MemeManagementService
             var tb = new TextBlock { Text = item.FileName, VerticalAlignment = VerticalAlignment.Center };
             if (item.IsDownloadAction)
             {
-                bool pictures = item.DownloadCategory == MemeCategory.Image;   // MEMECAT_01
+                bool pictures = item.DownloadCategory == MemeCategory.Image;
                 tb.Text = pictures
                     ? "⬇  Download more meme PICTURES…"
                     : "⬇  Download more meme VIDEOS…";

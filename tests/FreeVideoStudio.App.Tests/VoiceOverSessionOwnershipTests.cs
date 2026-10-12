@@ -1,8 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -58,7 +54,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
 
     private static KeyEventArgs VKey() => new() { Key = Key.V, RoutedEvent = InputElement.KeyDownEvent };
 
-    // ───────────────────────────── T1 ─────────────────────────────
 
     [AvaloniaFact]
     public async Task RecordClickKeyAndDirectEntry_AreRejected_WhileValidationOwnsTheSession()
@@ -73,9 +68,9 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         await store.Entered.Task.WaitAsync(Timeout);
         Assert.Equal(VoiceOverWindow.VoiceOverSessionOwner.Recovery, window.CurrentSessionOwner);
 
-        window.TriggerKeyDown(VKey());                    // keyboard path → ToggleRecord
+        window.TriggerKeyDown(VKey());
         Assert.False(window.IsRecordingLive);
-        window.TriggerStartRecordingAndPlayback();        // direct entry
+        window.TriggerStartRecordingAndPlayback();
         Assert.False(window.IsRecordingLive);
         Assert.False(window.RecordButtonControl!.IsEnabled, "RECORD is disabled while recovery owns the session");
 
@@ -123,7 +118,7 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         string wav = Wav("pending.wav");
         window.RecoveryManager.RegisterFailedTake(Take(wav), null, "failure");
 
-        window.TriggerStartRecordingAndPlayback();   // arming
+        window.TriggerStartRecordingAndPlayback();
         Assert.True(window.IsRecordingLive);
         Assert.Equal(VoiceOverWindow.VoiceOverSessionOwner.Capture, window.CurrentSessionOwner);
         Assert.False(await window.RecoverFailedTakesAction());
@@ -158,7 +153,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         Assert.True(await window.RecoverFailedTakesAction());
     }
 
-    // ───────────────────────────── T2 ─────────────────────────────
 
     private (VoiceOverRecoveryManager Stale, VoiceOverRecoveryManager Other, string Wav) TwoHolders(IVoiceOverRecoveryStore? store = null)
     {
@@ -215,8 +209,8 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
 
         store.Reset(gateWrite: true);
         var commit = other.CommitTakesAsync(new[] { wav });
-        await store.Entered.Task.WaitAsync(Timeout);   // commit holds the store mid-write
-        var staleSave = stale.PersistAsync();          // queued behind it
+        await store.Entered.Task.WaitAsync(Timeout);
+        var staleSave = stale.PersistAsync();
         store.Release.Set();
         Assert.True((await commit.WaitAsync(Timeout)).Success);
         Assert.True((await staleSave.WaitAsync(Timeout)).Success);
@@ -248,7 +242,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         using var capture = Capture();
         other.RecoverTakes(capture, _ => { });
         other.CommitTakes(new[] { wav });
-        // Simulate a cleanup write that never landed: the old manifest is back on disk.
         File.WriteAllText(stale.PendingFailedTakes[0].SourceManifestPath!, manifest);
         AssertNotRediscovered();
     }
@@ -265,7 +258,7 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         Assert.False(result.Success);
         var fresh = Manager();
         fresh.CheckAndOfferReopenRecovery();
-        Assert.Single(fresh.PendingFailedTakes);   // record kept: no resolution without a durable tombstone
+        Assert.Single(fresh.PendingFailedTakes);
     }
 
     /// <summary>Real file system with explicit gates on read/validate/delete/write.</summary>

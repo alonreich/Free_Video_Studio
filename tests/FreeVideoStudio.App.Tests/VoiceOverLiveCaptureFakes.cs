@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -178,10 +175,10 @@ internal static class LiveCaptureDriver
         clock.Time = startAt;
         clock.Paused = true;
         window.TriggerStartRecordingAndPlayback();
-        window.TriggerTimerTick();          // arming baseline (paused → just re-baselines)
-        clock.Paused = false;               // the production arm un-pauses mpv; the seam stands in for it
+        window.TriggerTimerTick();
+        clock.Paused = false;
         clock.Time = startAt + 0.02;
-        window.TriggerTimerTick();          // the clock moved: the open is queued on the device chain
+        window.TriggerTimerTick();
         await PumpUntil(() => devices.Recorders.Count > before && window.CurrentSession != null
                                && !window.IsArmingTake && !string.IsNullOrEmpty(window.CurrentSession.WavPath)
                                && devices.Recorders[^1].IsRecording && window.CurrentRecordingIndicator?.Phase != RecordingPhase.StartingMic

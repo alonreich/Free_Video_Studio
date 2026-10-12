@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 
@@ -73,8 +70,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
             ? Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency)
             : 0;
 
-        // Every native resource is created and released inside DecodeBlocking on ONE pool thread
-        // (never the UI thread); awaiting it is the ownership boundary.
         return await Task.Run(() => DecodeBlocking(mediaPath, request, deadline, cancellationToken), CancellationToken.None)
             .ConfigureAwait(false);
     }
@@ -87,7 +82,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         using var registration = token.Register(static s => ((InterruptStateHandle)s!).Cancel(), interrupt);
         token.ThrowIfCancellationRequested();
 
-        // ── 1. open ──────────────────────────────────────────────────────────────────────────────
         using FormatContextHandle? input = LibAvMediaBackend.OpenInputBlocking(mediaPath, interrupt, token, out string openError);
         if (input == null) return Fail(NativeFrameStatus.MediaError, openError);
         AVFormatContextView* ic = input.Context;
@@ -98,7 +92,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         }
         ThrowIfAborted(interrupt, token);
 
-        // ── 2. seek (ffmpeg_demux.c ifile_open) ──────────────────────────────────────────────────
         long timestamp = request.SeekMicroseconds;
         if (ic->start_time != LibAvConstants.AV_NOPTS_VALUE) timestamp += ic->start_time;
         long seekTimestamp = timestamp;
@@ -114,10 +107,9 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
             }
         }
         int err = LibAvFrame.avformat_seek_file(ic, -1, long.MinValue, seekTimestamp, seekTimestamp, 0);
-        if (err < 0) LibAvMediaBackend.ThrowIfInterrupted(err, interrupt, token);   // else: ffmpeg only warns and decodes from where it is
+        if (err < 0) LibAvMediaBackend.ThrowIfInterrupted(err, interrupt, token);
         ThrowIfAborted(interrupt, token);
 
-        // ── 3. stream (ffmpeg_mux_init.c map_auto_video) ─────────────────────────────────────────
         int vIndex = SelectVideoStream(ic);
         if (vIndex < 0) return Fail(NativeFrameStatus.NoFrame, "no video stream");
         AVStreamView* st = (AVStreamView*)ic->streams[vIndex];
@@ -129,7 +121,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         AVRational tb = st->time_base;
         if (tb.num <= 0 || tb.den <= 0) return Fail(NativeFrameStatus.MediaError, $"invalid stream time_base {tb.num}/{tb.den}");
 
-        // ── 4. decoder (ffmpeg_dec.c dec_open) ───────────────────────────────────────────────────
         void* codec = LibAvFrame.avcodec_find_decoder(par->codec_id);
         if (codec == null) return Fail(NativeFrameStatus.MediaError, $"no decoder for codec id {par->codec_id}");
         void* rawCodecCtx = LibAvFrame.avcodec_alloc_context3(codec);
@@ -150,12 +141,11 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
             LibAv.av_dict_free(&decoderOptions);
         }
         if (err < 0) return Fail(NativeFrameStatus.MediaError, $"avcodec_open2: {LibAv.ErrorText(err)}");
-        LibAvFrame.avcodec_flush_buffers(dec.Context);   // the decoder is opened after the seek; flushing makes "no pre-seek state" explicit
+        LibAvFrame.avcodec_flush_buffers(dec.Context);
 
         for (uint i = 0; i < ic->nb_streams; i++)
             if (i != (uint)vIndex) ((AVStreamView*)ic->streams[i])->discard = LibAvConstants.AVDISCARD_ALL;
 
-        // ── 5. decode + select (ts_offset + trim start 0) ────────────────────────────────────────
         long offset = FrameMath.RescaleQ(-timestamp, 1, LibAvConstants.AV_TIME_BASE, tb.num, tb.den);
 
         AVPacketView* rawPkt = LibAvFrame.av_packet_alloc();
@@ -175,13 +165,12 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         long pts = LibAvConstants.AV_NOPTS_VALUE;
         while (!selected)
         {
-            ThrowIfAborted(interrupt, token);   // between packets
+            ThrowIfAborted(interrupt, token);
             if (!draining)
             {
                 err = LibAvFrame.av_read_frame(ic, pkt.Packet);
                 if (err < 0)
                 {
-                    // AVERROR_EOF or a read error: ffmpeg ends this input either way and drains the decoder.
                     LibAvMediaBackend.ThrowIfInterrupted(err, interrupt, token);
                     draining = true;
                     LibAvFrame.avcodec_send_packet(dec.Context, null);
@@ -189,7 +178,7 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
                 else
                 {
                     bool ours = pkt.Packet->stream_index == vIndex;
-                    if (ours) LibAvFrame.avcodec_send_packet(dec.Context, pkt.Packet);   // a corrupt packet is skipped, as ffmpeg does without -xerror
+                    if (ours) LibAvFrame.avcodec_send_packet(dec.Context, pkt.Packet);
                     LibAvFrame.av_packet_unref(pkt.Packet);
                     if (!ours) continue;
                 }
@@ -206,7 +195,7 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
                 if (err == LibAvConstants.AVERROR_EOF)
                     return Fail(NativeFrameStatus.NoFrame, $"no frame at or after {FfmpegTime.Describe(request.SeekMicroseconds)} s");
                 if (err < 0) return Fail(NativeFrameStatus.MediaError, $"avcodec_receive_frame: {LibAv.ErrorText(err)}");
-                ThrowIfAborted(interrupt, token);   // between decoded frames
+                ThrowIfAborted(interrupt, token);
 
                 pts = frame->best_effort_timestamp;
                 if (pts == LibAvConstants.AV_NOPTS_VALUE)
@@ -219,7 +208,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         if (frame->width <= 0 || frame->height <= 0 || frame->format == LibAvConstants.AV_PIX_FMT_NONE || frame->data[0] == 0)
             return Fail(NativeFrameStatus.MediaError, $"decoder returned an empty frame ({frame->width}x{frame->height}, format {frame->format})");
 
-        // ── 6. orientation (autorotate) ──────────────────────────────────────────────────────────
         int[]? matrix = null;
         AVFrameSideDataView* sd = LibAvFrame.av_frame_get_side_data(frame, LibAvConstants.AV_FRAME_DATA_DISPLAYMATRIX);
         if (sd != null && sd->data != null && sd->size >= 36)
@@ -231,7 +219,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         if (orientation.Unsupported)
             return Fail(NativeFrameStatus.MediaError, "display matrix needs the rotate filter (left to ffmpeg)");
 
-        // ── 7. size + one swscale pass (rgb24 → BGRA) ───────────────────────────────────────────────────
         int orientedW = orientation.SwapsAxes ? frame->height : frame->width;
         int orientedH = orientation.SwapsAxes ? frame->width : frame->height;
         if (!FrameMath.TryOutputSize(orientedW, orientedH, request.TargetWidth, request.EvenHeight, out int outW, out int outH)
@@ -239,9 +226,8 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
             return Fail(NativeFrameStatus.MediaError, $"unsupported output size for {orientedW}x{orientedH} → width {request.TargetWidth}");
         int scaleW = orientation.SwapsAxes ? outH : outW;
         int scaleH = orientation.SwapsAxes ? outW : outH;
-        ThrowIfAborted(interrupt, token);   // before the expensive conversion
+        ThrowIfAborted(interrupt, token);
 
-        // vf_scale.c scale_frame(): interl=0 clears the interlaced flag; in_chroma_loc defaults to UNSPECIFIED.
         frame->flags &= ~LibAvConstants.AV_FRAME_FLAG_INTERLACED;
         frame->chroma_location = LibAvConstants.AVCHROMA_LOC_UNSPECIFIED;
 
@@ -252,15 +238,12 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         if (err < 0) return Fail(NativeFrameStatus.MediaError, $"av_frame_copy_props: {LibAv.ErrorText(err)}");
         dst.Frame->width = scaleW;
         dst.Frame->height = scaleH;
-        // rgb24 — the SAME destination format ffmpeg's scale → png chain negotiates, so swscale runs the
-        // same output writer. (Windows validation 2026-10-04: with a BGRA destination the 12–24× downscales
-        // measured MAE 2.9–3.9 against ffmpeg's PNG, vs ≤ 1.4 elsewhere.) Widened to BGRA below.
         dst.Frame->format = LibAvConstants.AV_PIX_FMT_RGB24;
 
         void* rawSws = LibAvFrame.sws_alloc_context();
         if (rawSws == null) return Fail(NativeFrameStatus.MediaError, "sws_alloc_context returned NULL.");
         using var sws = new SwsContextHandle(rawSws);
-        LibAvFrame.av_opt_set_int(sws.Context, "threads", 0, 0);   // vf_scale: the filter graph's thread count (auto); output is identical either way
+        LibAvFrame.av_opt_set_int(sws.Context, "threads", 0, 0);
         err = LibAvFrame.sws_scale_frame(sws.Context, dst.Frame, frame);
         if (err < 0) return Fail(NativeFrameStatus.MediaError, $"sws_scale_frame: {LibAv.ErrorText(err)}");
         AVFrameView* o = dst.Frame;
@@ -268,7 +251,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         if (o->data[0] == 0 || o->width != scaleW || o->height != scaleH || srcStride < scaleW * 3)
             return Fail(NativeFrameStatus.MediaError, $"swscale produced an unexpected frame ({o->width}x{o->height}, stride {srcStride})");
 
-        // Copy into managed memory BEFORE any handle is released: R,G,B → B,G,R,255.
         int rowBytes = scaleW * 4;
         byte[] scaled = new byte[rowBytes * scaleH];
         fixed (byte* pDst = scaled)
@@ -357,7 +339,7 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
     /// <summary>libavutil/frame.c get_frame_defaults — a shifted AVFrame layout cannot pass all of these.</summary>
     private static unsafe bool ValidateFreshFrame(AVFrameView* f, out string problem)
     {
-        bool ok = f->extended_data == (void*)f   // extended_data = data (offset 0)
+        bool ok = f->extended_data == (void*)f
                   && f->format == LibAvConstants.AV_PIX_FMT_NONE
                   && f->pts == LibAvConstants.AV_NOPTS_VALUE && f->pkt_dts == LibAvConstants.AV_NOPTS_VALUE
                   && f->best_effort_timestamp == LibAvConstants.AV_NOPTS_VALUE
@@ -424,16 +406,14 @@ internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, b
 
     public static FrameOrientation FromDisplayMatrix(int[]? m)
     {
-        // ffmpeg keeps an all-zero matrix when the frame has none; av_display_rotation_get then
-        // returns NaN and every branch below is false — i.e. no filter. A null matrix is that case.
         if (m == null || m.Length < 9) return Identity;
         double theta = GetRotation(m);
         if (Math.Abs(theta - 90) < 1.0) return new(m[3] > 0 ? 0 : 1, false, false, false);
         if (Math.Abs(theta - 180) < 1.0) return new(-1, m[0] < 0, m[4] < 0, false);
         if (Math.Abs(theta - 270) < 1.0) return new(m[3] < 0 ? 3 : 2, false, false, false);
-        if (Math.Abs(theta) > 1.0) return new(-1, false, false, true);   // ffmpeg inserts "rotate"
+        if (Math.Abs(theta) > 1.0) return new(-1, false, false, true);
         if (Math.Abs(theta) < 1.0) return new(-1, false, m[4] < 0, false);
-        return Identity;   // NaN
+        return Identity;
     }
 
     /// <summary>fftools/cmdutils.c get_rotation (C round() = half away from zero).</summary>
@@ -467,15 +447,13 @@ internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, b
         byte[] cur = src;
         if (TransposeDir >= 0)
         {
-            // vf_transpose filter_slice: dst row y / col x reads src row x (reversed when dir&1),
-            // col y; dst rows are written bottom-up when dir&2. outW = h, outH = w.
             int ow = h, oh = w;
             var dstBuf = new byte[cur.Length];
             var s = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(cur);
             var d = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(dstBuf);
             for (int r = 0; r < oh; r++)
             {
-                int y = (TransposeDir & 2) != 0 ? oh - 1 - r : r;    // the src column this dst row reads
+                int y = (TransposeDir & 2) != 0 ? oh - 1 - r : r;
                 for (int c = 0; c < ow; c++)
                 {
                     int srcRow = (TransposeDir & 1) != 0 ? h - 1 - c : c;

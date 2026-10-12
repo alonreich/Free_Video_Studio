@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Linq;
 using Avalonia.Input;
 using FreeVideoStudio.Core.Editing;
@@ -33,9 +30,6 @@ namespace FreeVideoStudio.App;
 /// </summary>
 public partial class CropToolWindow
 {
-    // EDITSTATE_01 — the stack itself (UndoStack<CropLayoutSnapshot>), Capture, the restore of the
-    // layers and the re-entrancy guard are the edit session's (CropEditSession.History / Step /
-    // Record). This partial keeps the window's half: re-rendering after a restore, and the buttons.
 
     /// <summary>A new starting point (window opened, RESET): the history before it describes nothing on screen.</summary>
     private void InitializeHistory()
@@ -50,8 +44,6 @@ public partial class CropToolWindow
 
     private void StepHistory(bool undo)
     {
-        // The session restores the layers and re-reads them as an equivalent form (ReplaceCurrent,
-        // never Apply — MERGEUNDO_01) so the redo branch survives.
         if (_edit.Step(undo, RebuildLayerVisuals) is not { } step)
         {
             return;
@@ -66,7 +58,7 @@ public partial class CropToolWindow
 
     private void PushHistory(CropLayoutSnapshot snapshot, string label)
     {
-        _edit.Record(snapshot, label);   // U4 / U3 / U2 live in UndoStack; a no-op while restoring
+        _edit.Record(snapshot, label);
         RefreshUndoRedoButtons();
     }
 

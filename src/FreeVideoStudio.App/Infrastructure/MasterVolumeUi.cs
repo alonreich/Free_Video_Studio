@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
@@ -80,7 +74,6 @@ public static class MasterVolumeUi
             {
                 if (e.Property != Avalonia.Controls.Primitives.RangeBase.ValueProperty || syncing) return;
                 int vol = (int)Math.Round(slider.Value);
-                // Moving the level is asking to hear it: a muted master unmutes (VOLMUTE_01).
                 if (MpvIpcClient.GlobalMuted && vol > 0) MpvIpcClient.SetGlobalMuted(false);
                 MpvIpcClient.SetGlobalMasterVolume(vol);
             };

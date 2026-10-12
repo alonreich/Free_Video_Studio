@@ -16,7 +16,6 @@ namespace FreeVideoStudio.Core.Tests;
 /// </summary>
 public class SharedHistoryMigrationTests
 {
-    // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private static GranularEditorSnapshot Gran(double baseSpeed = 1.0, int selected = -1,
         IEnumerable<SpeedSegment>? segs = null, IEnumerable<CutRange>? cuts = null, IEnumerable<MemePlacement>? memes = null,
@@ -38,25 +37,22 @@ public class SharedHistoryMigrationTests
         bool duck = true, bool carve = true, bool loop = false, params string[] queue) =>
         MusicWizardSnapshot.Create(track, queue, start, video, music, duck, carve, loop);
 
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // SHARED (1–5), proven on each of the three new snapshot types
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void T01_NoOpIsRejected_ForEverySnapshotType()
     {
         var crop = new UndoStack<CropLayoutSnapshot>(Layout(Item("kills", 1, 1)));
-        Assert.False(crop.Apply(Layout(Item("kills", 1, 1, name: "renamed label")), "move crop"));   // DisplayName is not geometry
+        Assert.False(crop.Apply(Layout(Item("kills", 1, 1, name: "renamed label")), "move crop"));
         Assert.Equal(0, crop.UndoCount);
 
         var music = new UndoStack<MusicWizardSnapshot>(Music(video: 80));
-        Assert.False(music.Apply(Music(video: 80.00001), "change video balance"));   // fader settle is not an edit
-        Assert.False(music.Apply(Music(track: "A.MP3", video: 80), "choose song"));   // path case is not an edit
+        Assert.False(music.Apply(Music(video: 80.00001), "change video balance"));
+        Assert.False(music.Apply(Music(track: "A.MP3", video: 80), "choose song"));
         Assert.Equal(0, music.UndoCount);
 
         var gran = new GranularEditHistory();
         gran.Checkpoint(Gran(selected: 0), "select only");
-        Assert.Null(gran.Undo(Gran(selected: 3)));   // a selection change is not an edit (U4)
+        Assert.Null(gran.Undo(Gran(selected: 3)));
     }
 
     [Fact]
@@ -80,8 +76,8 @@ public class SharedHistoryMigrationTests
         Assert.NotNull(gran.Undo(Gran(2.0)));
         Assert.True(gran.CanRedo);
         gran.Checkpoint(Gran(1.0), "add segment");
-        Assert.False(gran.CanRedo);   // hidden at once, the moment the new edit begins
-        Assert.Null(gran.Redo(WithSegment(0, 1000, 0.5)));   // and burned when it commits
+        Assert.False(gran.CanRedo);
+        Assert.Null(gran.Redo(WithSegment(0, 1000, 0.5)));
     }
 
     [Fact]
@@ -123,7 +119,6 @@ public class SharedHistoryMigrationTests
         var music = new UndoStack<MusicWizardSnapshot>(Music());
         music.Apply(Music(video: 50), "change video balance");
 
-        // The window's Changed handler pushes the slider back, whose change event calls Apply.
         music.Changed += (_, _) => music.Apply(Music(video: 77), "echo");
         music.Undo();
 
@@ -132,7 +127,6 @@ public class SharedHistoryMigrationTests
         Assert.Equal(Music(), music.Current);
     }
 
-    // ── UndoStack additions (UNDO_26) keep existing callers unchanged ───────────────────────────
 
     [Fact]
     public void UndoStack_DefaultGestureWindowIsStill900ms_AndPerInstanceOverrideDoesNotLeak()
@@ -149,7 +143,7 @@ public class SharedHistoryMigrationTests
     {
         var s = new UndoStack<MusicWizardSnapshot>(Music(), gestureIdleMs: 150);
         s.Apply(Music(music: 90), "m", "k");
-        Thread.Sleep(300);   // well past 150, well under the shared 900
+        Thread.Sleep(300);
         s.Apply(Music(music: 80), "m", "k");
         Assert.Equal(2, s.UndoCount);
     }
@@ -159,19 +153,16 @@ public class SharedHistoryMigrationTests
     {
         var s = new UndoStack<MusicWizardSnapshot>(Music(), gestureIdleMs: 250);
         s.Apply(Music(music: 90), "m", "k");
-        for (int i = 0; i < 4; i++) { Thread.Sleep(120); s.TouchGesture("k"); }   // 480ms of clamped movement
+        for (int i = 0; i < 4; i++) { Thread.Sleep(120); s.TouchGesture("k"); }
         s.Apply(Music(music: 80), "m", "k");
         Assert.Equal(1, s.UndoCount);
 
         s.EndGesture();
-        s.TouchGesture("k");   // nothing open: must not open one
+        s.TouchGesture("k");
         s.Apply(Music(music: 70), "m", "k");
         Assert.Equal(2, s.UndoCount);
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // MUSIC (6–9)
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void T06_Music_TrackChangeUndoRedo()
@@ -191,7 +182,6 @@ public class SharedHistoryMigrationTests
     [Fact]
     public void T06b_Music_LabelsNameTheCauseNotTheSideEffect()
     {
-        // Choosing a song clears the queue: the step is "choose song", not "clear song queue".
         Assert.Equal("choose song", MusicWizardSnapshot.DescribeChange(
             Music(track: "a.mp3", queue: new[] { "a.mp3", "c.mp3" }), Music(track: "b.mp3")).Label);
         Assert.Equal("move song start", MusicWizardSnapshot.DescribeChange(
@@ -218,7 +208,7 @@ public class SharedHistoryMigrationTests
         }
         Assert.Equal(1, s.UndoCount);
 
-        s.EndGesture();   // pointer released on the fader
+        s.EndGesture();
         var again = Music(video: 50);
         var d = MusicWizardSnapshot.DescribeChange(s.Current, again);
         s.Apply(again, d.Label, d.GestureKey);
@@ -226,11 +216,11 @@ public class SharedHistoryMigrationTests
     }
 
     [Theory]
-    [InlineData("Z", true, false, HistoryCommand.Undo)]    // Ctrl+Z
-    [InlineData("Y", true, false, HistoryCommand.Redo)]    // Ctrl+Y
-    [InlineData("Z", true, true, HistoryCommand.Redo)]     // Ctrl+Shift+Z
-    [InlineData("Y", true, true, HistoryCommand.Redo)]     // Ctrl+Shift+Y (the Crop Tool always allowed it)
-    [InlineData("Z", false, false, HistoryCommand.None)]   // plain Z is typing
+    [InlineData("Z", true, false, HistoryCommand.Undo)]
+    [InlineData("Y", true, false, HistoryCommand.Redo)]
+    [InlineData("Z", true, true, HistoryCommand.Redo)]
+    [InlineData("Y", true, true, HistoryCommand.Redo)]
+    [InlineData("Z", false, false, HistoryCommand.None)]
     [InlineData("X", true, false, HistoryCommand.None)]
     public void T08_Music_ShortcutTable(string key, bool ctrl, bool shift, HistoryCommand expected)
     {
@@ -246,16 +236,13 @@ public class SharedHistoryMigrationTests
         Assert.Equal(HistoryCommand.None, HistoryShortcut.Classify(key, control: true, shift, textInputFocused: true));
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // CROP (10–14)
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>Mirrors Item_PointerPressed/Moved/Released: snapshot at press, nothing while moving, one Apply on release.</summary>
     private static void SimulatePointerGesture(UndoStack<CropLayoutSnapshot> s, bool resize, IEnumerable<CropLayoutSnapshot> moves)
     {
         CropLayoutSnapshot start = s.Current;
         CropLayoutSnapshot last = start;
-        foreach (CropLayoutSnapshot m in moves) last = m;   // PointerMoved never touches history
+        foreach (CropLayoutSnapshot m in moves) last = m;
         if (!start.Equals(last)) s.Apply(last, CropHistoryLabels.ForPointerGesture(resize));
     }
 
@@ -290,11 +277,9 @@ public class SharedHistoryMigrationTests
     public void T12_Crop_CommittedMagicWandCropIsOneOperation()
     {
         var s = new UndoStack<CropLayoutSnapshot>(Layout());
-        // Scan, publish and browse candidates: the layout does not change, so nothing is recorded.
         for (int browse = 0; browse < 25; browse++) s.Apply(Layout(), CropHistoryLabels.AddElement);
         Assert.Equal(0, s.UndoCount);
 
-        // Commit (AddCurrentSelection): exactly one step, and undo removes exactly that element.
         s.Apply(Layout(Item("kills", 40, 40)), CropHistoryLabels.AddElement);
         Assert.Equal(1, s.UndoCount);
         Assert.Equal("add HUD element", s.NextUndoLabel);
@@ -326,21 +311,18 @@ public class SharedHistoryMigrationTests
         Assert.Null(s.Redo());
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // GRANULAR (15–19)
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void T15_Granular_SpeedMemeCutSemanticsPreserved()
     {
         var h = new GranularEditHistory();
         var s0 = Gran();
-        var s1 = WithSegment(0, 2000, 0.5);                                           // add segment
+        var s1 = WithSegment(0, 2000, 0.5);
         var meme = new MemePlacement("m.mp4", 1.0, 2.0, "id1");
-        var s2 = s1 with { Memes = ImmutableArray.Create(meme) };                     // add meme
-        var s3 = s2 with { Cuts = ImmutableArray.Create(new CutRange(3000, 4000)) };  // delete parts
+        var s2 = s1 with { Memes = ImmutableArray.Create(meme) };
+        var s3 = s2 with { Cuts = ImmutableArray.Create(new CutRange(3000, 4000)) };
 
-        h.Checkpoint(s0, "add segment");   // PushUndo at the TOP of the handler, before the change
+        h.Checkpoint(s0, "add segment");
         h.Checkpoint(s1, "add meme");
         h.Checkpoint(s2, "delete parts");
 
@@ -366,7 +348,7 @@ public class SharedHistoryMigrationTests
         var before = WithSegment(0, 1000, 0.5) with { SelectedIndex = 0 };
         h.Checkpoint(before, "delete segment");
         var restored = h.Undo(Gran(selected: -1))!.Value.State;
-        Assert.Equal(0, restored.SelectedIndex);   // UNDO_02 rule 4
+        Assert.Equal(0, restored.SelectedIndex);
     }
 
     [Fact]
@@ -375,10 +357,8 @@ public class SharedHistoryMigrationTests
         Assert.Equal(700, GranularEditHistory.GestureIdleMs);
 
         var h = new GranularEditHistory();
-        // One drag: PushUndo("resize segment", "seg-edge") on every pointer move.
         for (int i = 0; i <= 50; i++) h.Checkpoint(WithSegment(0, 1000 + i * 10, 0.5), "resize segment", "seg-edge");
         h.EndGesture(WithSegment(0, 1510, 0.5));
-        // A second, separate drag of the same handle.
         for (int i = 0; i <= 10; i++) h.Checkpoint(WithSegment(0, 1510 + i * 10, 0.5), "resize segment", "seg-edge");
         h.EndGesture(WithSegment(0, 1620, 0.5));
 
@@ -390,14 +370,12 @@ public class SharedHistoryMigrationTests
     [Fact]
     public void T16b_Granular_ClampedDragStillRefreshesTheIdleClock()
     {
-        // The old PushUndo refreshed the idle clock even when a push was dropped. A drag pinned
-        // against a boundary (state unchanged) for longer than 700ms must stay ONE step.
         var h = new GranularEditHistory();
         h.Checkpoint(WithSegment(0, 1000, 0.5), "resize segment", "seg-edge");
         h.Checkpoint(WithSegment(0, 1100, 0.5), "resize segment", "seg-edge");
         for (int i = 0; i < 6; i++)
         {
-            Thread.Sleep(200);   // 1.2s total, each gap well inside 700ms
+            Thread.Sleep(200);
             h.Checkpoint(WithSegment(0, 1100, 0.5), "resize segment", "seg-edge");
         }
         h.Checkpoint(WithSegment(0, 1200, 0.5), "resize segment", "seg-edge");
@@ -422,8 +400,8 @@ public class SharedHistoryMigrationTests
     {
         var h = new GranularEditHistory();
         h.Checkpoint(Gran(1.0), "change speed");
-        h.Checkpoint(Gran(1.0), "change zoom style");   // previous action changed nothing
-        h.EndGesture(Gran(1.0));                          // and neither did this one
+        h.Checkpoint(Gran(1.0), "change zoom style");
+        h.EndGesture(Gran(1.0));
         Assert.False(h.CanUndo);
     }
 
@@ -447,12 +425,10 @@ public class SharedHistoryMigrationTests
         var parked = h.Park(ClipA, baseline, final)!;
         Assert.Equal(ClipA, parked.ClipKey);
 
-        // Closed without APPLY → reopens on the baseline: the history comes back.
         var reopened = new GranularEditHistory();
         Assert.True(reopened.TryAdopt(parked, ClipA, baseline));
         Assert.Equal("add segment", reopened.NextUndoLabel);
 
-        // Also when it reopens on exactly the state it closed with.
         Assert.True(new GranularEditHistory().TryAdopt(parked, ClipA, final));
     }
 
@@ -463,9 +439,9 @@ public class SharedHistoryMigrationTests
         var parked = h.Park(ClipA, baseline, final)!;
 
         var other = new GranularEditHistory();
-        Assert.False(other.TryAdopt(parked, ClipB, baseline));                   // another clip
-        Assert.False(other.TryAdopt(parked, ClipA, Gran(1.5)));                  // same file, another project / newer revision
-        Assert.False(other.TryAdopt(parked, string.Empty, baseline));            // merge mode has no clip identity
+        Assert.False(other.TryAdopt(parked, ClipB, baseline));
+        Assert.False(other.TryAdopt(parked, ClipA, Gran(1.5)));
+        Assert.False(other.TryAdopt(parked, string.Empty, baseline));
         Assert.False(other.TryAdopt(null, ClipA, baseline));
         Assert.False(other.CanUndo);
     }
@@ -474,15 +450,14 @@ public class SharedHistoryMigrationTests
     public void T19_Granular_ApplyBoundaryRemainsSafe()
     {
         var (h, baseline, final) = EditedSession();
-        h.Clear();   // ClearUndoHistory("changes applied")
+        h.Clear();
         Assert.False(h.CanUndo);
         Assert.False(h.CanRedo);
-        Assert.Null(h.Park(ClipA, baseline, final));   // nothing to park → the window clears its slot
+        Assert.Null(h.Park(ClipA, baseline, final));
 
-        // Even a history parked BEFORE the apply cannot cross into the newer accepted state.
         var (h2, b2, f2) = EditedSession();
         var parked = h2.Park(ClipA, b2, f2)!;
-        var accepted = f2 with { Cuts = ImmutableArray.Create(new CutRange(0, 500)) };   // the Main App normalised what it received
+        var accepted = f2 with { Cuts = ImmutableArray.Create(new CutRange(0, 500)) };
         Assert.False(new GranularEditHistory().TryAdopt(parked, ClipA, accepted));
     }
 
@@ -496,9 +471,6 @@ public class SharedHistoryMigrationTests
         Assert.Equal(GranularEditHistory.MaxDepth, h.UndoCount);
     }
 
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
-    // No snapshot may contain Avalonia controls or native resources.
-    // ═════════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void Snapshots_ArePlainImmutableData_WithNoUiOrNativeTypes()

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -95,7 +92,7 @@ public static class InstallPayload
             string source = EntryPath(reuseRoot, entry.Path);
             if (!File.Exists(source) || new FileInfo(source).Length != entry.Length || HashMismatch(source, entry))
                 throw new IOException("Installed runtime files have changed. Download the full installer.");
-            UpgradeFiles.CopyVerified(source, target);
+            if (!HardLink.TryCreate(target, source)) UpgradeFiles.CopyVerified(source, target);
             reused += entry.Length;
             progress?.Invoke(0.70 + 0.15 * reused / reuseTotal);
         }
@@ -103,6 +100,68 @@ public static class InstallPayload
     }
 
     private static bool HashMismatch(string path, InstallFile entry) => UpgradeFiles.Hash(path) != entry.Sha256;
+
+    /// <summary>
+    /// DIST-SMART — builds the complete new installation in <paramref name="destination"/> from a
+    /// SIGNATURE-VERIFIED <see cref="SmartUpdateManifest"/>: each file comes from
+    /// <paramref name="downloaded"/> (named by its SHA-256, or at its install path for the Inno Setup
+    /// installer, NODROPPER_01) or is reused from an installed root when a
+    /// file there has the SAME SHA-256 — never just the same name. Downloaded files sit in a folder the
+    /// user can write, so they are COPIED and the copy is hashed; reused installed files are hard-linked
+    /// (FASTINSTALL_01). Ends with a full <see cref="Verify"/>.
+    /// </summary>
+    public static void ExtractFromSmartUpdate(SmartUpdateManifest manifest, string downloaded, string destination,
+        IEnumerable<string> reuseRoots, Action<double>? progress = null)
+    {
+        UpgradeFiles.RequirePlainPath(destination);
+        Directory.CreateDirectory(destination);
+        InstallFileManifest install = manifest.ReadInstallManifest();
+        AtomicJsonFile.WriteText(Path.Combine(destination, ManifestName), manifest.InstallManifest);
+
+        string[] roots = reuseRoots.Where(Directory.Exists).ToArray();
+        Dictionary<long, List<string>>? bySize = null;
+        long total = Math.Max(1, install.Files.Sum(x => x.Length)), done = 0;
+        foreach (InstallFile entry in install.Files)
+        {
+            string target = EntryPath(destination, entry.Path);
+            UpgradeFiles.RequirePlainPath(Path.GetDirectoryName(target)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            string fetched = Path.Combine(downloaded, entry.Sha256.ToLowerInvariant());
+            if (!File.Exists(fetched)) fetched = EntryPath(downloaded, entry.Path);
+            if (File.Exists(fetched))
+            {
+                UpgradeFiles.CopyVerified(fetched, target, overwrite: true);
+            }
+            else
+            {
+                string? source = FindSameContent(entry, roots, ref bySize)
+                    ?? throw new IOException($"The update is missing {entry.Path}. Download the full installer.");
+                if (!HardLink.TryCreate(target, source)) UpgradeFiles.CopyVerified(source, target, overwrite: true);
+            }
+            if (new FileInfo(target).Length != entry.Length || UpgradeFiles.Hash(target) != entry.Sha256)
+                throw new IOException($"Installation payload verification failed: {entry.Path}");
+            done += entry.Length;
+            progress?.Invoke(0.85 * done / total);
+        }
+        Verify(destination, progress == null ? null : f => progress(0.85 + 0.15 * f));
+    }
+
+    /// <summary>An installed file with exactly this content: same path first, then any path of equal size.</summary>
+    private static string? FindSameContent(InstallFile entry, string[] roots, ref Dictionary<long, List<string>>? bySize)
+    {
+        foreach (string root in roots)
+        {
+            string samePath = EntryPath(root, entry.Path);
+            if (File.Exists(samePath) && new FileInfo(samePath).Length == entry.Length && !HashMismatch(samePath, entry))
+                return samePath;
+        }
+        bySize ??= roots.SelectMany(r => UpgradeFiles.Files(r))
+            .GroupBy(f => new FileInfo(f).Length)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        return bySize.TryGetValue(entry.Length, out List<string>? candidates)
+            ? candidates.FirstOrDefault(c => !HashMismatch(c, entry))
+            : null;
+    }
 
     internal static string EntryPath(string root, string relative)
     {

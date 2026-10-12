@@ -1,12 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -78,7 +70,6 @@ public sealed partial class GranularEditSession
         _parking = parking;
     }
 
-    // ── identity ────────────────────────────────────────────────────────────────────────────
 
     public string VideoPath { get; }
 
@@ -103,7 +94,6 @@ public sealed partial class GranularEditSession
     /// <summary>The capture resolution zoom rectangles are measured in.</summary>
     public string OriginalResolution { get; set; } = "1920x1080";
 
-    // ── the edit ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Speed blocks, TRIM-RELATIVE ms. Zoom configuration is carried on each block.</summary>
     public List<SpeedSegment> Segments { get; } = new();
@@ -114,23 +104,6 @@ public sealed partial class GranularEditSession
     /// </summary>
     public List<CutRange> Cuts { get; } = new();
 
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // MEME_06 — MEMES SPLICED INTO THE MIDDLE OF THE VIDEO.
-    //
-    // A CUT occupies zero OUTPUT time, so it is marked on the Main App's SOURCE ruler. A MEME
-    // occupies zero SOURCE time, so it is placed on this editor's OUTPUT ruler, where it is a real
-    // block with a left edge, a right edge and a middle to grab. Each feature is edited where it
-    // actually has a shape.
-    //
-    // ⚠️ AtSourceSecRelative is CLIP-RELATIVE SOURCE seconds and must already be snapped through
-    // OutputTimeline.SnapInsertionPoint (full-screen) or pushed out of deleted footage (corner).
-    // Storing a raw click drops the meme somewhere the user never saw. Every write goes through
-    // a command below, never directly.
-    //
-    // MEMEMODE_01 — the two presentation modes are NOT collapsed here: InlineFullScreen is a real
-    // output insertion that lengthens the video; CornerOverlay adds zero output seconds and never
-    // shifts anything after it. MemePlacement carries the mode, OutputTimeline honours it.
-    // ══════════════════════════════════════════════════════════════════════════════════════
     public List<MemePlacement> Memes { get; } = new();
 
     /// <summary>The block speed applied where no segment says otherwise.</summary>
@@ -150,7 +123,6 @@ public sealed partial class GranularEditSession
     /// <summary>The freeze in TRIM-RELATIVE ms, or -1 — the form <see cref="OutputTimeline"/> takes.</summary>
     public double FreezeRelativeMs => FreezeTimeMs >= 0 ? FreezeTimeMs - TrimStartMs : -1;
 
-    // ── logical selection & pending marks (identifiers, never visuals) ───────────────────────
 
     /// <summary>The selected block's index, or -1.</summary>
     public int SelectedSegmentIndex { get; set; } = -1;
@@ -174,7 +146,6 @@ public sealed partial class GranularEditSession
 
     public SpeedSegment? SelectedSegment => HasSelectedSegment ? Segments[SelectedSegmentIndex] : null;
 
-    // ── seeding ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// GRANPROBE_01 — a duration resolved before (probe) or after (mpv) the editor opened. Only
@@ -231,7 +202,6 @@ public sealed partial class GranularEditSession
         }
     }
 
-    // ── what the Main App reads back ────────────────────────────────────────────────────────
 
     /// <summary>Segments in ABSOLUTE source ms, zoom spans included.</summary>
     public IReadOnlyList<SpeedSegment> ResultSegments => Segments
@@ -255,7 +225,6 @@ public sealed partial class GranularEditSession
         .ToList()
         .AsReadOnly();
 
-    // ── dirty bookkeeping ───────────────────────────────────────────────────────────────────
 
     private string _openingSignature = "";
 
@@ -289,7 +258,6 @@ public sealed partial class GranularEditSession
     /// <summary>True when CANCEL would actually throw work away.</summary>
     public bool IsDirty => BuildStateSignature() != _openingSignature || PendingStartMs >= 0 || PendingEndMs >= 0;
 
-    // ── small logical queries ───────────────────────────────────────────────────────────────
 
     /// <summary>The speed in force at a TRIM-RELATIVE position: the block's, else the base speed.</summary>
     public double SpeedAt(double relPosMs)

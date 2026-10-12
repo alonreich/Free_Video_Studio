@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using FreeVideoStudio.App.ViewModels;
@@ -28,12 +25,10 @@ public partial class UpgradeProgressWindow : Window
         {
             if (vm.IsAsking)
             {
-                // Closing the question with X means "no": cancel, change nothing.
                 vm.CancelCommand.Execute(null);
             }
             else if (!vm.IsFinished)
             {
-                // Closing mid-copy cannot stop the elevated worker; it would only hide the progress.
                 vm.Detail = "Please wait — this window closes by itself when the update is finished.";
             }
             else

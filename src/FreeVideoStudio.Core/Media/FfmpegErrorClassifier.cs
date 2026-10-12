@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -18,25 +15,21 @@ public static class FfmpegErrorClassifier
 {
     private static readonly (string Needle, ExportFailureCategory Category, string Summary)[] KnownPatterns =
     [
-        // Disk space
         ("No space left on device", ExportFailureCategory.DiskFull, "The drive ran out of free space while writing the video."),
         ("Disk quota exceeded", ExportFailureCategory.DiskFull, "The drive ran out of free space while writing the video."),
         ("There is not enough space on the disk", ExportFailureCategory.DiskFull, "The drive ran out of free space while writing the video."),
         ("Not enough space", ExportFailureCategory.DiskFull, "The drive ran out of free space while writing the video."),
 
-        // Permissions / Access
         ("Permission denied", ExportFailureCategory.AccessDenied, "Windows blocked access to a file or folder needed for this export."),
         ("Access is denied", ExportFailureCategory.AccessDenied, "Windows blocked access to a file or folder needed for this export."),
         ("Operation not permitted", ExportFailureCategory.AccessDenied, "Windows blocked access to a file or folder needed for this export."),
 
-        // Corrupt / unreadable input
         ("moov atom not found", ExportFailureCategory.CorruptInput, "The source video file is corrupt, incomplete, or in an unreadable format."),
         ("Invalid data found when processing input", ExportFailureCategory.CorruptInput, "The source video file is corrupt or is not a video format the app can read."),
         ("error reading header", ExportFailureCategory.CorruptInput, "The source video file header is unreadable."),
         ("could not find codec parameters", ExportFailureCategory.CorruptInput, "The source video file format could not be identified."),
         ("EBML header parsing failed", ExportFailureCategory.CorruptInput, "The source video file header is corrupt."),
 
-        // Missing / unsupported encoder
         ("Unknown encoder", ExportFailureCategory.MissingEncoder, "The requested video encoder is not available on this system."),
         ("Cannot load nvcuda", ExportFailureCategory.MissingEncoder, "The NVIDIA driver could not be loaded, so the graphics card cannot be used for this export."),
         ("No NVENC capable devices found", ExportFailureCategory.MissingEncoder, "No NVIDIA encoder was found on this machine."),
@@ -46,7 +39,6 @@ public static class FfmpegErrorClassifier
         ("No VAAPI device", ExportFailureCategory.MissingEncoder, "The hardware acceleration device was not found."),
         ("Failed to create Direct3D", ExportFailureCategory.MissingEncoder, "Direct3D hardware acceleration could not be initialized."),
 
-        // Encoding session / filter / internal pipeline failures
         ("OpenEncodeSessionEx failed", ExportFailureCategory.EncodingFailure, "The graphics card refused a new encoding session. Close other apps that are recording or streaming and try again."),
         ("Impossible to convert between the formats", ExportFailureCategory.EncodingFailure, "The video filter chain could not process the frames it was given."),
         ("Error initializing filter", ExportFailureCategory.EncodingFailure, "A video filter failed to initialize."),
@@ -73,7 +65,6 @@ public static class FfmpegErrorClassifier
 
         var previousAttempts = earlierAttempts ?? Array.Empty<ExportFailure>();
 
-        // 1. User cancellation
         if (isCancellation)
         {
             return new ExportFailure
@@ -89,7 +80,6 @@ public static class FfmpegErrorClassifier
             };
         }
 
-        // 2. Timeout
         if (isTimeout)
         {
             return new ExportFailure
@@ -105,7 +95,6 @@ public static class FfmpegErrorClassifier
             };
         }
 
-        // 3. Process startup exceptions
         if (processStartException != null)
         {
             return ClassifyStartupException(processStartException, stage, attempt, diagnostics, previousAttempts);
@@ -114,12 +103,11 @@ public static class FfmpegErrorClassifier
         int? nativeCode = collector?.ExplicitErrorCode;
         string? nativeSource = collector?.ExplicitErrorSource;
 
-        // 4. Explicit FFmpeg codes (when unambiguous)
         if (nativeCode.HasValue)
         {
             switch (nativeCode.Value)
             {
-                case -28: // ENOSPC
+                case -28:
                     return new ExportFailure
                     {
                         Category = ExportFailureCategory.DiskFull,
@@ -133,7 +121,7 @@ public static class FfmpegErrorClassifier
                         DiagnosticLines = diagnostics,
                         EarlierAttempts = previousAttempts
                     };
-                case -13: // EACCES
+                case -13:
                     return new ExportFailure
                     {
                         Category = ExportFailureCategory.AccessDenied,
@@ -147,7 +135,7 @@ public static class FfmpegErrorClassifier
                         DiagnosticLines = diagnostics,
                         EarlierAttempts = previousAttempts
                     };
-                case -1094995529: // AVERROR_INVALIDDATA
+                case -1094995529:
                     return new ExportFailure
                     {
                         Category = ExportFailureCategory.CorruptInput,
@@ -161,7 +149,7 @@ public static class FfmpegErrorClassifier
                         DiagnosticLines = diagnostics,
                         EarlierAttempts = previousAttempts
                     };
-                case -9: // MFX unsupported session
+                case -9:
                     return new ExportFailure
                     {
                         Category = ExportFailureCategory.MissingEncoder,
@@ -178,8 +166,6 @@ public static class FfmpegErrorClassifier
             }
         }
 
-        // 5. Tested text pattern fallback
-        // Check both early significant lines and tail lines
         foreach (var (needle, category, summary) in KnownPatterns)
         {
             foreach (string line in diagnostics)
@@ -203,7 +189,6 @@ public static class FfmpegErrorClassifier
             }
         }
 
-        // 6. Honest Unknown when evidence is insufficient
         string unknownSummary = previousAttempts.Count > 0
             ? "The export failed after all encoder attempts were exhausted."
             : "The export failed due to an unexpected FFmpeg error.";
@@ -242,7 +227,7 @@ public static class FfmpegErrorClassifier
         if (ex is Win32Exception win32)
         {
             int code = win32.NativeErrorCode;
-            if (code == 5) // ERROR_ACCESS_DENIED
+            if (code == 5)
             {
                 return new ExportFailure
                 {
@@ -257,7 +242,7 @@ public static class FfmpegErrorClassifier
                     EarlierAttempts = earlierAttempts
                 };
             }
-            if (code == 2) // ERROR_FILE_NOT_FOUND
+            if (code == 2)
             {
                 return new ExportFailure
                 {

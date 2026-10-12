@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using FreeVideoStudio.App.Services;
@@ -21,7 +15,6 @@ public sealed class ExportCoordinatorTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    // ── 1 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task SecondExport_IsRejected_WhileRunning()
     {
@@ -35,13 +28,12 @@ public sealed class ExportCoordinatorTests
         Assert.Equal(ExportOutcome.Rejected, rejected.Outcome);
         Assert.Equal(0, second.Invocations);
         Assert.Equal(ExportState.Running, h.Coordinator.State);
-        Assert.False(h.Runner.Token.IsCancellationRequested);   // the running session is untouched
+        Assert.False(h.Runner.Token.IsCancellationRequested);
 
         h.Runner.Complete(ExportOutcome.Succeeded);
         Assert.Equal(ExportOutcome.Succeeded, (await first.WaitAsync(Timeout)).Outcome);
     }
 
-    // ── 2 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task SecondExport_IsRejected_WhileCancelling()
     {
@@ -60,7 +52,6 @@ public sealed class ExportCoordinatorTests
         h.Runner.Complete(ExportOutcome.Cancelled);
         await first.WaitAsync(Timeout);
 
-        // Only once Idle is a new export accepted.
         var third = new FakeRunner();
         var accepted = h.Coordinator.StartAsync(h.Request(third));
         Assert.Equal(1, third.Invocations);
@@ -68,7 +59,6 @@ public sealed class ExportCoordinatorTests
         Assert.Equal(ExportOutcome.Succeeded, (await accepted.WaitAsync(Timeout)).Outcome);
     }
 
-    // ── 3 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task Cancel_DoesNotTransitionToIdle_BeforeTheRunnerExits()
     {
@@ -78,14 +68,13 @@ public sealed class ExportCoordinatorTests
         Assert.True(h.Coordinator.Cancel());
         Assert.True(h.Runner.Token.IsCancellationRequested);
 
-        // The worker is still "killing FFmpeg / deleting temp": give it real time.
         await Task.Delay(200);
         Assert.Equal(ExportState.Cancelling, h.Coordinator.State);
         Assert.False(session.IsCompleted);
         Assert.Equal(0, h.CompletedCount);
         Assert.DoesNotContain(ExportState.Idle, h.Transitions);
 
-        Assert.False(h.Coordinator.Cancel());   // a second Cancel is not a second transition
+        Assert.False(h.Coordinator.Cancel());
 
         h.Runner.Complete(ExportOutcome.Cancelled);
         var done = await session.WaitAsync(Timeout);
@@ -95,7 +84,6 @@ public sealed class ExportCoordinatorTests
         Assert.True(done.CancelRequested);
     }
 
-    // ── 4 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task TokenSource_IsNotDisposed_UntilTheRunnerHasFinished()
     {
@@ -105,8 +93,6 @@ public sealed class ExportCoordinatorTests
 
         h.Coordinator.Cancel();
 
-        // While the runner is alive its token must stay fully usable: WaitHandle and Register both
-        // throw ObjectDisposedException on a disposed source (the CANCELREG_01 hang).
         Exception? whileRunning = Record.Exception(() =>
         {
             _ = token.WaitHandle;
@@ -117,11 +103,9 @@ public sealed class ExportCoordinatorTests
         h.Runner.Complete(ExportOutcome.Cancelled);
         await session.WaitAsync(Timeout);
 
-        // ...and it IS disposed afterwards — by the coordinator, the only owner.
         Assert.Throws<ObjectDisposedException>(() => _ = token.WaitHandle);
     }
 
-    // ── 5 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task SuccessfulExport_ReturnsToIdle_ExactlyOnce()
     {
@@ -136,7 +120,6 @@ public sealed class ExportCoordinatorTests
         h.AssertSingleIdle();
     }
 
-    // ── 6 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task FailedExport_ReturnsToIdle_ExactlyOnce()
     {
@@ -157,8 +140,8 @@ public sealed class ExportCoordinatorTests
         var done = await session.WaitAsync(Timeout);
 
         Assert.Equal(ExportOutcome.Failed, done.Outcome);
-        Assert.Same(boom, done.Error);                                   // handed to the caller
-        Assert.Contains(h.Faults.Captured, f => ReferenceEquals(f.Exception, boom));   // and recorded
+        Assert.Same(boom, done.Error);
+        Assert.Contains(h.Faults.Captured, f => ReferenceEquals(f.Exception, boom));
         h.AssertSingleIdle();
     }
 
@@ -175,7 +158,6 @@ public sealed class ExportCoordinatorTests
         h.AssertSingleIdle();
     }
 
-    // ── 7 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task CancelledExport_ReturnsToIdle_ExactlyOnce()
     {
@@ -200,16 +182,15 @@ public sealed class ExportCoordinatorTests
 
         Assert.Equal(ExportOutcome.Cancelled, done.Outcome);
         Assert.IsAssignableFrom<OperationCanceledException>(done.Error);
-        Assert.Empty(h.Faults.Captured);   // FAULTTIER_01: a cancel is never a fault
+        Assert.Empty(h.Faults.Captured);
         h.AssertSingleIdle();
     }
 
-    // ── 8 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task Shutdown_RequestsCancellation_AndIsBounded()
     {
         var h = new Harness();
-        var session = h.Coordinator.StartAsync(h.Request(h.Runner));   // ignores its token: never exits
+        var session = h.Coordinator.StartAsync(h.Request(h.Runner));
 
         var sw = Stopwatch.StartNew();
         bool stopped = await h.Coordinator.ShutdownAsync(TimeSpan.FromMilliseconds(150)).WaitAsync(Timeout);
@@ -218,7 +199,7 @@ public sealed class ExportCoordinatorTests
         Assert.False(stopped);
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"shutdown took {sw.Elapsed}");
         Assert.True(h.Runner.Token.IsCancellationRequested);
-        Assert.Equal(ExportState.Cancelling, h.Coordinator.State);   // never claims Idle for the pipeline
+        Assert.Equal(ExportState.Cancelling, h.Coordinator.State);
         Assert.Equal(0, h.CompletedCount);
 
         h.Runner.Complete(ExportOutcome.Cancelled);
@@ -252,14 +233,12 @@ public sealed class ExportCoordinatorTests
         Assert.Empty(h.Transitions);
     }
 
-    // ── 9 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task CompletionNotification_FiresOnce_PerAcceptedSession()
     {
         var h = new Harness();
         var session = h.Coordinator.StartAsync(h.Request(h.Runner));
 
-        // Hammer the gate and Cancel from several threads while it runs.
         var rejects = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
         {
             h.Coordinator.Cancel();
@@ -290,7 +269,6 @@ public sealed class ExportCoordinatorTests
         Assert.Contains(h.Faults.Captured, f => f.Tier == FaultTier.Degraded);
     }
 
-    // ── Fakes ─────────────────────────────────────────────────────────────────────────────────
 
     private sealed class Harness
     {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -36,7 +36,6 @@ public class MemePresentationModeTests
         Memes = memes.ToList(),
     };
 
-    // ── the mandatory duration cases ────────────────────────────────────────────────────────
 
     [Fact] public void TenSecondsPlusFourSecondInline_IsFourteen() => Assert.Equal(14.0, Total(Inline("a", 5)), 6);
 
@@ -73,7 +72,6 @@ public class MemePresentationModeTests
         Assert.Single(MemePlacement.CornerOnly(new[] { Inline("a", 1), Corner("b", 2) }));
     }
 
-    // ── nothing after a corner meme moves (music, voice-over, cuts, other memes) ────────────
 
     [Fact]
     public void EveryMomentAfterACornerMeme_MapsExactlyAsWithoutIt()
@@ -85,17 +83,16 @@ public class MemePresentationModeTests
 
         foreach (double t in new[] { 0.0, 2.9, 3.0, 3.5, 5.0, 6.99, 8.0, 9.5, 10.0 })
         {
-            Assert.Equal(plain.SourceToOutput(t), withCorner.SourceToOutput(t), 9);       // music / voice-over anchors
+            Assert.Equal(plain.SourceToOutput(t), withCorner.SourceToOutput(t), 9);
             if (t > 3.0) Assert.Equal(plain.SourceToOutput(t) + 4.0, withInline.SourceToOutput(t), 9);
         }
-        Assert.Equal(plain.CutMarkerOutputPositions(), withCorner.CutMarkerOutputPositions());   // cuts
+        Assert.Equal(plain.CutMarkerOutputPositions(), withCorner.CutMarkerOutputPositions());
         Assert.Empty(withCorner.InsertionOutputRanges());
     }
 
     [Fact]
     public void MergerMusicByOutputTime_IgnoresCornerMemes_ButNotFullScreenOnes()
     {
-        // MUSICMAP_01 — the Merger places music by body output time. A corner meme at 2 s must not move it.
         EdlClip Clip(params EdlMeme[] memes) => new()
         {
             Path = "a.mp4",
@@ -116,15 +113,12 @@ public class MemePresentationModeTests
     [Fact]
     public void ProcessWorker_RoutesCornerMemesAwayFromEveryTimeShiftingList()
     {
-        // The music shift, the voice-over delay, the end-pad rule, the meme cuts and the timing tag
-        // all read ProcessWorker's `memes` list; a corner meme must never reach it.
         string src = File.ReadAllText(Path.Combine(AudioTempoFilterBuilderTests.FindRepoRoot(), "src", "FreeVideoStudio.Core", "Media", "ProcessWorker.cs"));
         Assert.Contains("if (m.IsCorner) cornerMemes.Add(m);", src);
         Assert.Contains("else memes.Add(m);", src);
-        Assert.Contains("memes.Select(m => (m.CutOutputSec, m.DurationSec))", src);   // the preview mix map: full screen only
+        Assert.Contains("memes.Select(m => (m.CutOutputSec, m.DurationSec))", src);
     }
 
-    // ── persistence: project, recovery (same serializer), editor session, Merger EDL ────────
 
     [Fact]
     public void ProjectFile_RoundTripsModeCornerSizeAndSound()
@@ -162,7 +156,7 @@ public class MemePresentationModeTests
     public void RecoveryEnvelope_CarriesTheCornerMeme()
     {
         var doc = Doc(Corner("b", 5, 3.0, MemeOverlayCorner.TopRight, MemeOverlaySize.Small, sound: false));
-        JsonObject json = ProjectSerializer.Write(doc);   // RECOVERYDOC_01 — the recovery file holds exactly this document
+        JsonObject json = ProjectSerializer.Write(doc);
         var back = ProjectSerializer.Read(JsonNode.Parse(json.ToJsonString())!.AsObject(), out _);
         Assert.Equal(doc.Memes[0], back!.Memes[0]);
     }
@@ -209,12 +203,11 @@ public class MemePresentationModeTests
         Assert.Equal((MemePresentationMode.CornerOverlay, MemeOverlayCorner.TopRight, MemeOverlaySize.Large, false), (m.Mode, m.Corner, m.Size, m.PlaySound));
         var back = source.FromEditor(state, edl);
         var bm = Assert.Single(back.Clips[0].Effects.Memes);
-        Assert.Equal(EdlMemePlacement.Mid, bm.Placement);   // 0.1 s in: a full-screen meme would snap AtStart
+        Assert.Equal(EdlMemePlacement.Mid, bm.Placement);
         Assert.Equal(corner with { AtUs = bm.AtUs }, bm);
         Assert.InRange(bm.AtUs, 99_000, 101_000);
     }
 
-    // ── undo ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void EveryPropertyChange_IsAnUndoableStep()
@@ -237,7 +230,6 @@ public class MemePresentationModeTests
         Assert.Equal(a, stack.Undo());
     }
 
-    // ── preview plan (Merger) ───────────────────────────────────────────────────────────────
 
     [Fact]
     public void MergerPreview_CornerMemesAreNeverCutaways_AndRunOnTheGameplayClock()
@@ -252,14 +244,13 @@ public class MemePresentationModeTests
 
         Assert.Equal("full", Assert.Single(plan.MemePlacements).Id);
         var span = Assert.Single(plan.CornerOverlays);
-        Assert.Equal(5.0, span.GameStartSec, 3);     // gameplay clock: the full-screen 4 s hold is not counted
+        Assert.Equal(5.0, span.GameStartSec, 3);
         Assert.Equal(8.0, span.GameEndSec, 3);
         Assert.Equal(5.0, plan.GameplaySecAt(5.0), 3);
         Assert.Equal(9.0, plan.OutputSecAt(5.0), 3);
         Assert.Equal(14.0, plan.TotalOutputSec, 3);
     }
 
-    // ── export graph ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void MergeClipGraph_CornerIsAnOverlay_FullScreenIsSpliced_LengthOnlyGrowsByFullScreen()
@@ -273,7 +264,7 @@ public class MemePresentationModeTests
         string g = string.Join(";", cornerOnly.Filters);
         Assert.Contains("overlay=x=32:y=32:eof_action=pass:enable='between(t,3.0000,7.0000)'", g);
         Assert.Contains("amix=inputs=2:normalize=0:duration=first", g);
-        Assert.DoesNotContain("concat=n=", g.Split("[c0_body_v]")[^1].Replace("v=1:a=0", ""));   // no meme splice after the body
+        Assert.DoesNotContain("concat=n=", g.Split("[c0_body_v]")[^1].Replace("v=1:a=0", ""));
         Assert.DoesNotContain("fx_v", cornerOnly.VideoLabel);
 
         var both = MergeClipGraph.Build(0, "[0:v]", "[0:a]", 0, 10, fx with { Speed = new[] { new EdlSpeedSegment(0, 1_000_000, 1.0) } }, 1.0, Canvas, MemeCanvas,
@@ -296,12 +287,11 @@ public class MemePresentationModeTests
         Assert.Contains("overlay=x=W-w-32:y=H-h-32", string.Join(";", r.Filters));
         Assert.Contains("scale=454:454:force_original_aspect_ratio=decrease", string.Join(";", r.Filters));
 
-        // The preview's box is the export's box.
         var (x, y, w, h) = MemeOverlayLayout.Place(1080, 1920, 640, 360, MemeOverlayCorner.BottomRight, MemeOverlaySize.Medium);
         Assert.Equal((454, 254), (w, h));
         Assert.Equal((1080 - 32 - 454, 1920 - 32 - 254), (x, y));
         Assert.Null(MemePlacement.VisibleInterval(10.0, 4.0, 10.0));
-        Assert.Equal((8.0, 10.0), MemePlacement.VisibleInterval(8.0, 4.0, 10.0));   // clipped: never lengthens the video
+        Assert.Equal((8.0, 10.0), MemePlacement.VisibleInterval(8.0, 4.0, 10.0));
     }
 
     [MediaFact]
@@ -331,7 +321,7 @@ public class MemePresentationModeTests
             Assert.True(Pixel(8.0)[2] > 200 && Pixel(8.0)[0] < 50, "blue after the window");
 
             byte[] audio = RunBytes("-v", "error", "-i", outFile, "-map", "0:a", "-ac", "1", "-ar", "48000", "-f", "f32le", "-");
-            Assert.InRange(audio.Length / 4 / 48000.0, 9.99, 10.01);   // zero added duration
+            Assert.InRange(audio.Length / 4 / 48000.0, 9.99, 10.01);
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { /* temp folder; nothing to do */ } }
     }

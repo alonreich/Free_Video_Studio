@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -51,12 +51,12 @@ public class RenderedMixParityTests
         string pruned = AudioGraphPruner.Prune(graph, final);
 
         foreach (string chain in audioChains)
-            Assert.Contains(chain, pruned);   // byte-for-byte the export's chain
-        Assert.Contains("sidechaincompress=threshold=0.1:ratio=4", pruned);     // ducking
-        Assert.Contains("sidechaincompress=threshold=0.1:ratio=2.5", pruned);   // carving
-        Assert.Contains(AudioFilterChain.VoiceCarveEq, pruned);                 // voice protection
-        Assert.Contains("acompressor=", pruned);                                // tamer
-        Assert.EndsWith($"[a_cat]{PeakSafety.SafetyLimiterFilter()}[a_flattened]", pruned);   // limiter last
+            Assert.Contains(chain, pruned);
+        Assert.Contains("sidechaincompress=threshold=0.1:ratio=4", pruned);
+        Assert.Contains("sidechaincompress=threshold=0.1:ratio=2.5", pruned);
+        Assert.Contains(AudioFilterChain.VoiceCarveEq, pruned);
+        Assert.Contains("acompressor=", pruned);
+        Assert.EndsWith($"[a_cat]{PeakSafety.SafetyLimiterFilter()}[a_flattened]", pruned);
         Assert.DoesNotContain("[0:v]", pruned);
         Assert.DoesNotContain("[4:v]", pruned);
     }
@@ -68,7 +68,7 @@ public class RenderedMixParityTests
         string off = AudioGraphPruner.Prune(ExportLikeGraph(cornerSound: false).Graph, "[a_flattened]");
         Assert.Contains("[7:a]atrim=duration=3.0000", on);
         Assert.Contains("adelay=delays=2000:all=1", on);
-        Assert.Contains("duration=first", on);   // never lengthens the mix
+        Assert.Contains("duration=first", on);
         Assert.DoesNotContain("[7:a]", off);
         Assert.DoesNotContain("pw_cm_amix", off);
     }
@@ -97,8 +97,8 @@ public class RenderedMixParityTests
     }
 
     [Theory]
-    [InlineData(1.1, true)]    // default base speed: the export runs atempo, the live player scaletempo
-    [InlineData(0.5, true)]    // slowdown: Rubber Band in the export
+    [InlineData(1.1, true)]
+    [InlineData(0.5, true)]
     [InlineData(1.0, false)]
     public void TempoAlone_DecidesTheRenderedMix(double baseSpeed, bool expected)
         => Assert.Equal(expected, PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, baseSpeed, null));
@@ -111,13 +111,12 @@ public class RenderedMixParityTests
         Assert.True(PreviewMixPolicy.NeedsRenderedMix(false, false, true, false, 1.0, null));
         Assert.True(PreviewMixPolicy.NeedsRenderedMix(false, false, false, true, 1.0, null));
         Assert.True(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 0.25 }));
-        Assert.False(PreviewMixPolicy.ChangesTempo(0.0));   // a freeze is silence, not a tempo
+        Assert.False(PreviewMixPolicy.ChangesTempo(0.0));
     }
 
     [Fact]
     public void MixMap_CountsOnlyFullScreenMemes()
     {
-        // The export's map lists only inline memes (ProcessWorker passes `memes`, never `cornerMemes`).
         var placements = new List<MemePlacement>
         {
             new("a.mp4", 1.0, 2.0, "meme0"),
@@ -125,12 +124,12 @@ public class RenderedMixParityTests
         };
         var inline = MemePlacement.InlineOnly(placements);
         var map = new AudioPreviewMap(0.1, 0.0, inline.Select(m => (0.1 + m.AtSourceSecRelative, m.DurationSec)).ToList());
-        Assert.Equal(0.1 + 5.0 + 2.0, map.MixSecFor(5.0), 6);   // the corner meme added nothing
+        Assert.Equal(0.1 + 5.0 + 2.0, map.MixSecFor(5.0), 6);
         Assert.Equal(0.0, placements[1].OutputDurationSec);
     }
 }
 
-public class RenderedMixGateTests   // PREVIEWMIX_02
+public class RenderedMixGateTests
 {
     private static readonly AudioPreviewMap Map = new(0, 0, new List<(double, double)>());
 
@@ -144,7 +143,7 @@ public class RenderedMixGateTests   // PREVIEWMIX_02
         Assert.True(g.IsActive);
 
         Assert.True(g.Observe("B", 10));
-        Assert.False(g.IsActive);   // no timer in between: stale audio is never driven again
+        Assert.False(g.IsActive);
     }
 
     [Fact]
@@ -166,7 +165,7 @@ public class RenderedMixGateTests   // PREVIEWMIX_02
         g.Observe("A", 0);
         var older = g.Begin("A", "slot0.wav");
         var newer = g.Begin("A", "slot1.wav");
-        Assert.False(g.TryComplete(older, Map, "A", cancelled: false));   // superseded ticket
+        Assert.False(g.TryComplete(older, Map, "A", cancelled: false));
         Assert.True(g.TryComplete(newer, Map, "A", cancelled: false));
         Assert.Equal("slot1.wav", g.RenderedPath);
     }
@@ -180,8 +179,8 @@ public class RenderedMixGateTests   // PREVIEWMIX_02
         g.Observe("B", 1);
         g.Begin("B", "slot1.wav");
         g.Observe("C", 2);
-        var overwriting = g.Begin("C", "slot0.wav");   // the alternating slot comes back round
-        g.Observe("A", 3);                              // undo to A while slot0 is half-written with C
+        var overwriting = g.Begin("C", "slot0.wav");
+        g.Observe("A", 3);
         Assert.False(g.IsActive);
         Assert.False(g.TryComplete(overwriting, Map, "A", false));
     }
@@ -203,9 +202,9 @@ public class RenderedMixGateTests   // PREVIEWMIX_02
         g.Observe("A", 0);
         Assert.True(g.ShouldStart(1000, 800));
         g.Fail(g.Begin("A", "slot0.wav"));
-        Assert.False(g.ShouldStart(5000, 800));   // no 250 ms retry storm
+        Assert.False(g.ShouldStart(5000, 800));
         g.Observe("B", 5000);
-        Assert.False(g.ShouldStart(5100, 800));   // debounced
+        Assert.False(g.ShouldStart(5100, 800));
         Assert.True(g.ShouldStart(5800, 800));
     }
 
@@ -221,7 +220,7 @@ public class RenderedMixGateTests   // PREVIEWMIX_02
     }
 }
 
-public class VoiceProtectionPulseTests   // VOPREVIEW_02
+public class VoiceProtectionPulseTests
 {
     /// <summary>The export's pulse expression for these takes, built the way ProcessWorker builds it, evaluated at t.</summary>
     private static double ExportExpression(double t, params (double S, double E)[] takes)
@@ -242,7 +241,7 @@ public class VoiceProtectionPulseTests   // VOPREVIEW_02
     [InlineData(9.0)]
     public void LivePulse_EqualsTheExportExpression(double t)
     {
-        var takes = new[] { (2.0, 4.0), (4.5, 6.0) };   // 0.5 s apart: their ramps overlap
+        var takes = new[] { (2.0, 4.0), (4.5, 6.0) };
         Assert.Equal(ExportExpression(t, takes), AudioFilterChain.VoiceProtectionPulseAt(t, takes), 9);
     }
 
@@ -250,7 +249,6 @@ public class VoiceProtectionPulseTests   // VOPREVIEW_02
     public void OverlappingRamps_AreSummed_NotMaxed()
     {
         var takes = new[] { (2.0, 4.0), (4.4, 6.0) };
-        // At 4.2 s each ramp is at 1/3 → export sum 2/3; the old preview max said 1/3.
         Assert.Equal(2.0 / 3.0, AudioFilterChain.VoiceProtectionPulseAt(4.2, takes), 6);
     }
 }
@@ -298,7 +296,6 @@ public class ZoomParityTests
     public void SlowZoom_GlideMidpoint_MatchesTheExportRampAtHalfProgress()
     {
         var seg = Box(2000, 4000, 600, 300, 640, 360, slow: true);
-        // The export's ramp-in phase is [zs - ZoomRampSeconds, zs] with progress 0 → 1.
         double mid = 2.0 - GranularSpeedBuilder.ZoomRampSeconds / 2;
         var r = ZoomPreviewSimulator.Compute(new[] { seg }, mid, 10.0);
         Assert.Equal(0.5, r.Progress, 6);
@@ -307,7 +304,6 @@ public class ZoomParityTests
         Assert.InRange(Math.Abs(w - e.W), 0, 2);
         Assert.InRange(Math.Abs(x - e.X), 0, 2);
 
-        // The export really emits that ramp (a per-frame scale expression) for this layout.
         var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(10_000, new List<SpeedSegment> { seg }, 1.0, 0, needHudBranch: false);
         Assert.Contains(":eval=frame", graph);
     }
@@ -315,11 +311,11 @@ public class ZoomParityTests
     [Fact]
     public void SlowZoomWithoutRoom_SnapsInBothPreviewAndExport()
     {
-        var seg = Box(200, 4000, 600, 300, 640, 360, slow: true);   // 0.2 s before it: no room for a 0.5 s glide
-        Assert.False(ZoomPreviewSimulator.Compute(new[] { seg }, 0.1, 10.0).HasCrop);   // no partial glide before it
+        var seg = Box(200, 4000, 600, 300, 640, 360, slow: true);
+        Assert.False(ZoomPreviewSimulator.Compute(new[] { seg }, 0.1, 10.0).HasCrop);
         var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(10_000, new List<SpeedSegment> { seg }, 1.0, 0, needHudBranch: false);
         int rampScales = Regex.Matches(graph, @"scale=w='iw\*").Count;
-        Assert.Equal(1, rampScales);   // the glide OUT only (the glide in was dropped)
+        Assert.Equal(1, rampScales);
     }
 
     [Fact]
@@ -335,17 +331,17 @@ public class ZoomParityTests
     [Fact]
     public void EdgeZoom_IsReportedAsPaddedInTheExport_AndClampedInThePreview()
     {
-        var seg = Box(2000, 4000, 1820, 900, 100, 180);   // box hard against the bottom-right corner, tall
+        var seg = Box(2000, 4000, 1820, 900, 100, 180);
         var r = ZoomPreviewSimulator.Compute(new[] { seg }, 3.0, 10.0);
         var e = ExportRegion(seg, 1.0);
-        Assert.True(e.X + e.W > 1920 || e.Y + e.H > 1080);   // the export's window leaves the picture → black
+        Assert.True(e.X + e.W > 1920 || e.Y + e.H > 1080);
         Assert.True(r.EdgeClamped);
         Assert.True(ZoomPreviewSimulator.AnyEdgePadding(new[] { seg }));
         Assert.False(ZoomPreviewSimulator.AnyEdgePadding(new[] { Box(2000, 4000, 600, 300, 640, 360) }));
     }
 
     [Fact]
-    public void EveryZoomPath_CarriesTheExportsSharpeningIntent()   // CAS: export-only, deliberately not previewed
+    public void EveryZoomPath_CarriesTheExportsSharpeningIntent()
     {
         foreach (bool slow in new[] { false, true })
         {
@@ -359,7 +355,7 @@ public class ZoomParityTests
     }
 }
 
-public class AiTrajectoryParityTests   // AIPARITY_01
+public class AiTrajectoryParityTests
 {
     private static AiTrajectorySmoother.SmoothedTrajectory Trajectory(bool dynamicScale)
     {
@@ -417,9 +413,8 @@ public class AiTrajectoryParityTests   // AIPARITY_01
     public void Interpolation_IsLinear_LikeTheExport_NotSmoothstep()
     {
         var traj = Trajectory(dynamicScale: false);
-        // A quarter of the way from 0.5 s to 1.5 s: linear says 500.6 + 0.25·299.4 = 575.45 → even-truncated 574.
         Assert.Equal(574, traj.EvaluateExportCrop(0.75, 1920, 1080).X, 6);
-        Assert.NotEqual(574, Math.Floor(traj.EvaluateAt(0.75).CropX / 2) * 2);   // the old preview's smoothstep
+        Assert.NotEqual(574, Math.Floor(traj.EvaluateAt(0.75).CropX / 2) * 2);
     }
 
     [Fact]
@@ -439,10 +434,9 @@ public class AiTrajectoryParityTests   // AIPARITY_01
     public void AChunkStartingInsideTheZoom_ContinuesTheTrajectory()
     {
         var traj = Trajectory(dynamicScale: false);
-        // A chunk that starts 0.75 s into the zoom: its own t = 0 must be the trajectory's 0.75 s.
         var shifted = EvaluateExportFilter(traj.ToFfmpegCropFilter(0.75), 0.0);
         Assert.Equal(traj.EvaluateExportCrop(0.75, 1920, 1080).X, shifted.X, 6);
-        Assert.Equal(traj.ToFfmpegCropFilter(), traj.ToFfmpegCropFilter(0));   // unchanged when nothing is split
+        Assert.Equal(traj.ToFfmpegCropFilter(), traj.ToFfmpegCropFilter(0));
     }
 
     [Fact]
@@ -452,7 +446,7 @@ public class AiTrajectoryParityTests   // AIPARITY_01
         var seg = new SpeedSegment(2000, 4000, 1.0, 0, 0, 960, 540, "1920x1080", false, 2000, 4000, traj.ToJson());
         var cuts = new List<OutputTimeline.Cut> { new(2.8, 3.0) };
         var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(10_000, new List<SpeedSegment> { seg }, 1.0, 0, needHudBranch: false, cuts: cuts);
-        Assert.Contains("(t+1.000)", graph);   // the chunk after the cut resumes 1.0 s into the trajectory
+        Assert.Contains("(t+1.000)", graph);
     }
 
     /// <summary>A tiny evaluator for the subset of ffmpeg's expression language the crop filters use.</summary>
@@ -497,10 +491,10 @@ public class AiTrajectoryParityTests   // AIPARITY_01
                 case "out_w": return _outW;
                 case "out_h": return _outH;
             }
-            _i++;   // '('
+            _i++;
             var args = new List<double> { Sum() };
             while (_s[_i] == ',') { _i++; args.Add(Sum()); }
-            _i++;   // ')'
+            _i++;
             return id switch
             {
                 "if" => args[0] != 0 ? args[1] : args[2],
@@ -514,7 +508,7 @@ public class AiTrajectoryParityTests   // AIPARITY_01
     }
 }
 
-public class CornerMemeParityTests   // CORNERPARITY_01
+public class CornerMemeParityTests
 {
     [Theory]
     [InlineData(1920, 1080, MemeOverlayCorner.BottomRight, MemeOverlaySize.Medium)]
@@ -524,7 +518,6 @@ public class CornerMemeParityTests   // CORNERPARITY_01
     public void PreviewPlacement_IsTheExportOverlay(int fw, int fh, MemeOverlayCorner corner, MemeOverlaySize size)
     {
         const int memeW = 1280, memeH = 720;
-        // Export: scale into a BxB box keeping aspect (force_original_aspect_ratio=decrease), then even-floor.
         int b = MemeOverlayLayout.BoxSide(fw, fh, size);
         double k = Math.Min((double)b / memeW, (double)b / memeH);
         int ew = (int)Math.Floor(Math.Round(memeW * k) / 2) * 2;
@@ -541,7 +534,7 @@ public class CornerMemeParityTests   // CORNERPARITY_01
         Assert.InRange(Math.Abs(h - eh), 0, 2);
         Assert.InRange(Math.Abs(x - ex), 0, 2);
         Assert.InRange(Math.Abs(y - ey), 0, 2);
-        Assert.True(MemeOverlayLayout.Margin(fw, fh) > 0);   // a real frame always has a margin (the 16x9 stand-in had 0)
+        Assert.True(MemeOverlayLayout.Margin(fw, fh) > 0);
     }
 
     [Fact]
@@ -573,12 +566,12 @@ public class CornerMemeParityTests   // CORNERPARITY_01
         var r = CornerMemeOverlayGraph.Build("[v]", "[a]", memes, 1920, 1080, "60", "t_");
         string g = string.Join(";", r.Filters);
         Assert.True(g.IndexOf("[t_cm0_o]", StringComparison.Ordinal) < g.IndexOf("[t_cm1_o]", StringComparison.Ordinal));
-        Assert.Contains("[t_cm0_o][t_cm1_v]overlay", g);   // the second is drawn OVER the first
-        Assert.Equal("[a]", r.AudioLabel);                 // pictures only: no sound chain
+        Assert.Contains("[t_cm0_o][t_cm1_v]overlay", g);
+        Assert.Equal("[a]", r.AudioLabel);
     }
 }
 
-public class PreviewFidelityTests   // PREVIEWFIDELITY_01
+public class PreviewFidelityTests
 {
     [Fact]
     public void AMatchingPreview_ShowsNothing()
@@ -590,7 +583,6 @@ public class PreviewFidelityTests   // PREVIEWFIDELITY_01
     [Fact]
     public void SdrRangeOrMatrixDifferences_AreNotMaterial()
     {
-        // The export converts full range / BT.601 to BT.709 TV; mpv decodes the source's own tags: same picture.
         var full = new VideoColorInfo("yuvj420p", "bt709", "bt709", "bt470bg", "pc");
         Assert.NotNull(ExportColorPolicy.BuildConversionChain(full, false, out _, out var degraded));
         Assert.Null(degraded);
@@ -639,15 +631,12 @@ public class TimelineParityTests
         var preview = OutputTimeline.Create(10_000, segs, 1.1, 0, null, cuts);
         foreach (double s in new[] { 0.0, 1.0, 2.5, 4.4, 4.6, 5.0, 6.0, 7.5, 8.2, 8.7, 9.5, 10.0 })
             Assert.Equal(preview.SourceToOutput(s), exportMap(s), 6);
-        Assert.InRange(Math.Abs(preview.TotalOutputSeconds - finalDuration), 0, 3.0 / 60);   // frame quantisation only
+        Assert.InRange(Math.Abs(preview.TotalOutputSeconds - finalDuration), 0, 3.0 / 60);
     }
 
     [Fact]
     public void LaterMusicAndVoice_FollowTheSameMapping()
     {
-        // The music bed's start delay and every take's delay are SourceToOutput of their source moment
-        // (MainWindow.Export: SourceMsToOutputSeconds; ProcessWorker: granularTimeMapper): a cut or a
-        // slowdown before them moves them by exactly what it removed or added.
         var plain = OutputTimeline.Create(20_000, null, 1.0, 0, null, null);
         var edited = OutputTimeline.Create(20_000, new List<SpeedSegment> { new(1000, 3000, 0.5) }, 1.0, 0, null,
             new List<OutputTimeline.Cut> { new(5.0, 8.0) });
@@ -655,12 +644,12 @@ public class TimelineParityTests
         Assert.Equal(plain.SourceToOutput(take) + 2.0 - 3.0, edited.SourceToOutput(take), 6);
         double delay = edited.SourceToOutput(take);
         var bed = MusicBedPlan.Build(new[] { "m.mp3" }, new[] { 60.0 }, 0, 5.0, false, delay);
-        Assert.Null(MusicBedPlan.Locate(bed, delay - 0.5));                       // silent before it
-        Assert.Equal(1.0, MusicBedPlan.Locate(bed, delay + 1.0)!.Value.PositionSec, 6);   // 1 s in, 1 s into the song
+        Assert.Null(MusicBedPlan.Locate(bed, delay - 0.5));
+        Assert.Equal(1.0, MusicBedPlan.Locate(bed, delay + 1.0)!.Value.PositionSec, 6);
     }
 }
 
-public class MasterVolumeIsolationTests   // AUD-MASTERVOL: "the master never reaches an FFmpeg export graph"
+public class MasterVolumeIsolationTests
 {
     private static string ExportAudio()
     {
@@ -691,7 +680,7 @@ public class MasterVolumeIsolationTests   // AUD-MASTERVOL: "the master never re
             Assert.Equal(reference, ExportAudio());
             MpvIpcClient.SetGlobalMuted(true);
             Assert.Equal(reference, ExportAudio());
-            Assert.NotEqual(1.0, MpvIpcClient.MasterLinearGain);   // ...while the preview gain did change
+            Assert.NotEqual(1.0, MpvIpcClient.MasterLinearGain);
         }
         finally
         {

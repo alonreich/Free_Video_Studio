@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -47,21 +41,6 @@ public static class WindowBoundsHelper
             var state = Services.InProcessSessionState.ReadSnapshot();
             bool hasOwnBounds = state.TryGetPropertyValue(key, out var ownBounds) && ownBounds is JsonObject;
 
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // FIRSTFIT_01 — THE PRECEDENCE, AND WHY IT IS IN THIS ORDER.
-            //
-            //   1. This window's OWN saved bounds. Once the user has moved or resized a window,
-            //      that is the answer, forever. Nothing below may override it.
-            //   2. The seed window's bounds (WINSEED_01) — the Granular editor opening over the
-            //      geometry the Main App is already using is a better first impression than any
-            //      computed default, because it matches what the user is looking at.
-            //   3. The 16:9 display fit. Reached only when there is nothing to remember and
-            //      nothing to borrow, i.e. genuinely the first run on this machine.
-            //
-            // ⚠️ The fit is a FIRST-RUN DEFAULT, NOT A POLICY. The moment the user drags or
-            // resizes the window, the debounced save writes its own key and step 1 wins from then
-            // on — that is the whole contract. Never call the fit on a later open.
-            // ══════════════════════════════════════════════════════════════════════════════════
             bool applied;
             if (!hasOwnBounds && seedFromKey != null)
                 applied = ApplyBounds(window, state, seedFromKey, sizeAndPositionOnly: true);
@@ -97,11 +76,11 @@ public static class WindowBoundsHelper
                     try { snapshot = WindowSnapshot.Capture(window); }
                     catch (System.Exception swallowed2)
                     {
-                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
                         return;
                     }
 
-                    _ = Task.Run(() => SaveSnapshot(snapshot, key));
+                    SaveSnapshot(snapshot, key);
                 };
             }
             debounce.Stop();
@@ -131,7 +110,7 @@ public static class WindowBoundsHelper
         window.Closing += (_, _) =>
         {
             try { debounce?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-            SaveBoundsSync(window, key);
+            SaveBoundsOnClose(window, key);
         };
     }
 
@@ -330,30 +309,77 @@ public static class WindowBoundsHelper
         {
             WindowSnapshot snapshot = Avalonia.Threading.Dispatcher.UIThread.CheckAccess()
                 ? WindowSnapshot.Capture(window)
-                : Avalonia.Threading.Dispatcher.UIThread.Invoke(() => WindowSnapshot.Capture(window));
+                : await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => WindowSnapshot.Capture(window));
 
-            var state = Services.InProcessSessionState.ReadSnapshot();
-            var updates = new JsonObject { [key] = BuildBoundsObj(snapshot, state, key) };
-            await new Core.Ipc.StateTransferStore().UpdatePropertiesAsync(updates).ConfigureAwait(false);
+            var writer = Core.Ipc.SessionStateWriter.For();
+            writer.Enqueue(new JsonObject { [key] = BuildBoundsObj(snapshot, writer.ReadSnapshot(), key) });
+            if (!await writer.FlushAsync(CloseFlushBudget).ConfigureAwait(false))
+                RuntimeLog.Fail("WindowState", $"Bounds for '{key}' were not acknowledged by the session-state owner; they stay queued for retry.");
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
+    /// <summary>UIIPC_01 — how long a close-time save may wait (in the background) for its ACK.</summary>
+    public static readonly TimeSpan CloseFlushBudget = TimeSpan.FromSeconds(3);
+
+    /// <summary>UIIPC_01 — re-entrancy guard: the deferred-close contract fires Closing twice.</summary>
+    [ThreadStatic] private static bool t_inCloseSave;
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, CloseSaveMark> s_lastCloseSave = new();
+
+    private sealed class CloseSaveMark { public string? Value; }
+
     /// <summary>
-    /// Synchronous save for use in Closing/Closed handlers.
-    /// CRITICAL: Must NOT use Task.Run + GetAwaiter().GetResult() because the
-    /// async continuation captures the UI SynchronizationContext, causing a
-    /// classic async-over-sync deadlock when the UI thread is blocked.
-    /// Instead, we perform the file I/O directly on the calling thread.
+    /// ══════════════════════════════════════════════════════════════════════════════════════════
+    /// UIIPC_01 — CLOSE-TIME BOUNDS SAVE THAT NEVER BLOCKS THE DISPATCHER.
+    ///
+    /// This replaced <c>SaveBoundsSync</c>, which ran from <c>Window.Closing</c> and called
+    /// <c>StateTransferStore.UpdatePropertiesSync</c> → <c>StartCommit(...).GetAwaiter().GetResult()</c>:
+    /// the commit itself ran on the pool, but the UI thread still WAITED for the pipe ACK / lease / disk
+    /// for up to the whole delivery budget, on every window close.
+    ///
+    /// Now, on the UI thread: capture an immutable <see cref="WindowSnapshot"/> → build the bounds
+    /// object against the MEMORY snapshot → <see cref="Core.Ipc.SessionStateWriter.Enqueue"/> (returns
+    /// immediately) → a bounded background flush whose failure is logged with
+    /// <see cref="RuntimeLog.Fail"/> (the values stay queued and are retried by the next flush, and by the
+    /// process-exit final flush in <c>Program.RunUiAsync</c>).
+    ///
+    /// Re-entrancy: the deferred-close contract fires Closing twice (cancel + re-posted Close) and a
+    /// close handler can be re-entered from inside itself; a nested call is ignored and an identical
+    /// second snapshot is not enqueued again. A CHANGED second snapshot is enqueued (latest wins).
+    /// ══════════════════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public static void SaveBoundsSync(Window window, string key)
+    public static void SaveBoundsOnClose(Window window, string key)
+        => SaveBoundsOnClose(window, key, Core.Ipc.SessionStateWriter.For());
+
+    /// <summary>UIIPC_01 — <see cref="SaveBoundsOnClose(Window, string)"/> against an explicit writer.</summary>
+    internal static void SaveBoundsOnClose(Window window, string key, Core.Ipc.SessionStateWriter writer)
+    {
+        if (t_inCloseSave) return;
+        t_inCloseSave = true;
+        try
+        {
+            var snapshot = WindowSnapshot.Capture(window);
+            var bounds = BuildBoundsObj(snapshot, writer.ReadSnapshot(), key);
+            string fingerprint = key + "|" + bounds.ToJsonString();
+
+            var last = s_lastCloseSave.GetOrCreateValue(window);
+            if (string.Equals(last.Value, fingerprint, StringComparison.Ordinal)) return;
+            last.Value = fingerprint;
+
+            writer.Enqueue(new JsonObject { [key] = bounds });
+            _ = ObserveCloseFlushAsync(writer, key);
+        }
+        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        finally { t_inCloseSave = false; }
+    }
+
+    private static async Task ObserveCloseFlushAsync(Core.Ipc.SessionStateWriter writer, string key)
     {
         try
         {
-            var timeout = Core.Ipc.StateTransferStore.InteractiveMutexTimeout;
-            var state = Services.InProcessSessionState.ReadSnapshot();
-            var updates = new JsonObject { [key] = UpdateBoundsObj(window, state, key) };
-            new Core.Ipc.StateTransferStore().UpdatePropertiesSync(updates, default, timeout);
+            if (!await writer.FlushAsync(CloseFlushBudget).ConfigureAwait(false))
+                RuntimeLog.Fail("WindowState", $"Close-time bounds for '{key}' were not acknowledged by the session-state owner; they stay queued for the final flush.");
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
@@ -386,23 +412,22 @@ public static class WindowBoundsHelper
     }
 
     /// <summary>
-    /// ISSUE_10 — performs the read-modify-write for a captured snapshot. Safe to call from any
-    /// thread because it never touches the Window. Used by the debounced background save.
+    /// ISSUE_10 — builds the bounds entry for a captured snapshot against the MEMORY state and
+    /// enqueues it (UIIPC_01). Never touches the Window, the pipe or the disk; used by the debounce.
     /// </summary>
     private static void SaveSnapshot(WindowSnapshot snapshot, string key)
     {
         try
         {
-            var state = Services.InProcessSessionState.ReadSnapshot();
-            var updates = new JsonObject { [key] = BuildBoundsObj(snapshot, state, key) };
-            new Core.Ipc.StateTransferStore().UpdatePropertiesSync(updates);
+            var writer = Core.Ipc.SessionStateWriter.For();
+            writer.Enqueue(new JsonObject { [key] = BuildBoundsObj(snapshot, writer.ReadSnapshot(), key) });
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
     /// <summary>
     /// ISSUE_08/ISSUE_10 — the single place that decides what a persisted bounds entry contains,
-    /// shared by the background debounce save and the synchronous close-time save.
+    /// shared by the debounced save, the close-time save and SaveBoundsAsync.
     /// </summary>
     private static JsonObject BuildBoundsObj(WindowSnapshot snapshot, JsonObject state, string key)
     {
@@ -430,18 +455,5 @@ public static class WindowBoundsHelper
         }
 
         return boundsObj;
-    }
-
-    /// <summary>
-    /// UI-thread entry point: snapshots the window and defers to the single shared builder, so
-    /// the debounced background save and the close-time save can never diverge.
-    /// ⚠️ BOUNDS_01 — THE NAME IS A PROMISE. This touches the Window, so it may ONLY be called
-    /// from the UI thread. `SaveBoundsAsync` used to call it after an await and crashed every time;
-    /// it now captures its own snapshot up front. `SaveBoundsSync` is the only caller left, and it
-    /// runs inside a close handler, on the UI thread, before any await.
-    /// </summary>
-    private static JsonObject UpdateBoundsObj(Window window, JsonObject state, string key)
-    {
-        return BuildBoundsObj(WindowSnapshot.Capture(window), state, key);
     }
 }

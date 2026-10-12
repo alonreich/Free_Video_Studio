@@ -101,6 +101,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   MpvIpcClient.cs                            02
 ⚠ MpvVideoView.cs                            04 05
   NamedPipeStateServer.cs                    05
+  IpcTests.cs                                05 SYS-IPCLIFETIME | 05 SYS-WRITEORDER
+  IpcChildProcess.cs                         05 SYS-IPCLIFETIME
 ⚠ MusicWizardWindow.axaml.cs                 01 02
 ⚠ OutputTimeline.cs                          01 06
   OutputFileSize.cs                          03
@@ -133,7 +135,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   TimelineLanesControl.axaml.cs              01
   TimelineReorder.cs                         04
   UiStateStore.cs                            05
-  UpdateAvailableWindow.axaml.cs             04
+  UpdateToastWindow.axaml.cs                 04 UI-SETTINGS-ABOUT | 05 SYS-AUTOUPDATE
 ⚠ VideoMergerWindow.ClipActions.cs           01 04
 ⚠ VideoMergerWindow.EdlPreview.cs            01 03 04
 ⚠ VideoMergerWindow.Effects.cs               01 04
@@ -218,13 +220,27 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   UpgradeProgressViewModel.cs                05 SYS-UPGRADEUX
   UpdateFinishedViewModel.cs                 05 SYS-UPGRADEUX
   UpdateFinishedWindow.axaml(.cs)            04 UI-SETTINGS-ABOUT | 05 SYS-UPGRADEUX
-⚠ UpdatePromptViewModels.cs                  04 05 SYS-AUTOUPDATE
-  UpdateAvailableWindow.axaml(.cs)           04 UI-SETTINGS-ABOUT
-  UpdateDownloadWindow.axaml(.cs)            04 UI-SETTINGS-ABOUT
+⚠ UpdateToastViewModel.cs                    04 05 SYS-AUTOUPDATE (BGUPDATE_01)
+⚠ UpdateService.Background.cs                05 09 SYS-AUTOUPDATE (BGUPDATE_01)
+⚠ UpdatePreparer.cs                          05 09 DIST-SMART
+⚠ UpdateDownloader.cs                        05 09 DLRESUME_01
+  SmartUpdateManifest.cs                     09 DIST-SMART
+  BinaryDelta.cs                             09 DIST-SMART (BINDELTA_01, BINDELTA_02)
+  BrotliFile.cs                              09 DIST-SMART
+  SmartUpdateBuilder.cs                      09 DIST-SMART
+  PublisherRoot.cs                           05 §5 SYS-SIGNING (UPDATEPIN_01)
+  HardLink.cs                                05 SYS-UPGRADE (FASTINSTALL_01)
+  SmartUpdateTests.cs                        09 DIST-SMART
+  BinaryDeltaTests.cs                        09 DIST-SMART (BINDELTA_01, BINDELTA_02)
   VersionAndUpdaterTests.cs                  05 SYS-AUTOUPDATE | SYS-UPGRADEUX
   UpgradeProgressReportingTests.cs           05 SYS-UPGRADEUX
   Staging.cs                                 09
   GitHubReleasePublisher.cs                  09 DIST-SPLIT
+  InnoInstaller.cs                           09 DIST-INSTALLER (NODROPPER_01)
+  FreeVideoStudio.iss (build/installer)      09 DIST-INSTALLER (NODROPPER_01)
+⚠ PeIdentity.cs                              05 09 SYS-SIGNING (PEIDENTITY_01)
+  PeIdentityTests.cs                         05 SYS-SIGNING (PEIDENTITY_01)
+  DeploymentFootprint.cs                     05 SYS-AVCLEAN (NOTEMPEXEC_01)
 ⚠ GranularSpeedEditorWindow.History.cs       04 07
 ⚠ MainWindow.Controls.cs                     01 02 04 GOV
   GranularSpeedEditorWindow.Controls.cs      04
@@ -248,6 +264,13 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   VideoMergerWindow.Playhead.cs              04
 ⚠ LaneDiskCache.cs                           04 05
   WaveformPeaks.cs                           04
+  PcmStream.cs                               04
+  MusicEnergyAnalysis.cs                     02
+  WaveformEnvelope.cs                        04
+  WaveformLanePresenter.cs                   04
+  WaveformPeakSource.cs                      04
+  FilmLanePresenter.cs                       04
+  FilmStripSource.cs                         04
   CoreLogger.cs                              05
   CropConfigStore.cs                         05
 ⚠ MainWindow.Recovery.cs                     05 07
@@ -274,11 +297,14 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   MemeCatalog.cs                             03
   MemePickerWindow.axaml                     04
   MemeThumbnailCache.cs                      04
+  OwnedLruCache.cs                           04
+  ViewportThumbnailLoader.cs                 04
   NamedPipeStateClient.cs                    05
   PreviewDetachController.cs                 04
   PreviewMonitorWindow.axaml                 04
   SingleInstanceGuard.cs                     05
   StateTransferStore.cs                      05
+  SessionStateWriter.cs                      05
   ViewModelBase.cs                           04
   WavAudioReader.cs                          02
   WaveformGenerator.cs                       02
@@ -309,6 +335,10 @@ GRANPROBE_01                                 04 §7c UI-GRANOPEN
 ImportedImageSlot                            04 §7b UI-GPUSLOT
 IPCLEASE_01                                  05 §4d SYS-IPCLIFETIME
 IPCTEARDOWN_01                               05 §4d SYS-IPCLIFETIME
+IPCOWNER_01                                  05 §4d SYS-IPCLIFETIME | 05 SYS-WRITEORDER
+DeliveryBudget                               05 §4d SYS-IPCLIFETIME
+CommitAsync                                  05 §4d SYS-IPCLIFETIME (StateTransferStore)
+ServerMutexName                              05 §4d SYS-IPCLIFETIME | 05 §1 SYS-MUTEX
 OUTPATH_01                                   03 §8b FFM-EXPORTLIFETIME
 OUTNAME_01                                   03 §8c FFM-OUTNAME | 04 §11 UI-SETTINGS-ABOUT
 MainOutputBaseName                           03 §8c FFM-OUTNAME
@@ -348,6 +378,8 @@ AskEditOrRemoveAsync                         02 §6 AUD-DIALOGS | 04 (mini-map o
 ATOMICTEXT_01                                05 §4c SYS-ATOMICWRITE
 AtomicJsonFile                               05 §4 SYS-RECOVERY
 AtomicJsonFile.WriteText                     05 §4c SYS-ATOMICWRITE
+AtomicJsonFile.WriteBytes                    05 §4c SYS-ATOMICWRITE
+ATOMICBYTES_01                               05 §4c SYS-ATOMICWRITE
 AudioFilterChain                             02 §7 AUD-MUSICFADE
 AudioLoudnessProbe                           02 §2 AUD-MASTERING
 BeginMoveDrag                                04 §7 UI-BORDERLESS
@@ -359,6 +391,11 @@ BuildAtempoChain                             03 §3a FFM-TEMPO
 AudioTempoFilterBuilder                      03 §3a FFM-TEMPO
 AudioTempoEngine                             03 §3a FFM-TEMPO
 TEMPO_01                                     03 §3a FFM-TEMPO
+AVSYNC_02                                    03 §3a FFM-TEMPO
+AVSYNC_03                                    02 §2 AUD-MASTERING
+AVSYNC_04                                    03 §3a FFM-TEMPO
+CUDATAG_01                                   03 §1 FFM-HWENC
+MERGESCRIPT_01                               03 §1 FFM-HWENC
 MEMEMODE_01                                  01 §7 TL-MEME | 03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT | 06 §8 | 07 §5
 MemePresentationMode                         01 §7 TL-MEME
 MemeOverlayCorner                            01 §7 TL-MEME  [default BottomRight]
@@ -372,7 +409,7 @@ GameplaySecAt                                01 §7 TL-MEME  [MergerPreviewPlan]
 MemeChoiceViewModel                          04 §10 UI-MEMESELECT
 CornerMemeOverlayPresenter                   04 §10 UI-MEMESELECT
 MemePresentationJson                         06 §8
-RubberbandOptions                            03 §3a FFM-TEMPO  [= transients=mixed]
+RubberbandOptions                            03 §3a FFM-TEMPO  [= transients=mixed:window=short]
 EnsureProbedAsync                            03 §3a FFM-TEMPO
 HelpListsRequiredOptions                     03 §3a FFM-TEMPO
 CalculateEffectiveDurationMs                 03 §8a FFM-QUALITY
@@ -756,11 +793,11 @@ UNDO_20                                      07 §2 UNDO-RULES
 UNDO_21                                      07 §3 UNDO-STATE   [code-only: ProjectSession.cs]
 UNDO_22                                      04 §6 UI-GRANULAR   [code-only: MainWindow.Project.cs]
 UPDATETRUST_02                               05 §5 SYS-SIGNING
-UPDATEUX_01                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (Remind me later)
+UPDATEUX_01                                  RETIRED — superseded by BGUPDATE_01
 UPDATEUX_02                                  05 §6 SYS-AUTOUPDATE   (size + time in the prompt)
 UPDATEUX_03                                  05 §6 SYS-AUTOUPDATE   (download window stages, speed, safety check)
-UPDATEUX_04                                  05 §6 SYS-AUTOUPDATE   (Restart & update now)
-UPDATEUX_05                                  05 §6 SYS-AUTOUPDATE   (unsigned copy told before download)
+UPDATEUX_04                                  05 §6 SYS-AUTOUPDATE   (Restart & update now — now on the update card, BGUPDATE_01)
+UPDATEUX_05                                  RETIRED — superseded by UPDATEPIN_01
 UPDATEUX_06                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (Last checked)
 UPGRADEUX_01                                 05 SYS-UPGRADEUX   (broker progress window, worker progress)
 UPGRADEUX_02                                 05 SYS-UPGRADEUX   (UAC explained first)
@@ -770,6 +807,29 @@ UPGRADEUX_05                                 05 SYS-UPGRADEUX   (first-launch "F
 UPGRADEUX_06                                 05 SYS-UPGRADEUX   (installer window first, worker copy in background)
 DEVDATA_01                                   05 §4a SYS-DEVBUILD   (dev sandbox in %LOCALAPPDATA%, AI keys kept)
 DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (dev updates from .\compiled)
+DEVFAST_01                                   05 §4a SYS-DEVBUILD   (default dev run is incremental; dev rebuild = full wipe)
+UPDATEPIN_01                                 05 §5 SYS-SIGNING   (publisher root built into the app)
+UPDATEPIN_02                                 05 §5 SYS-SIGNING   (leaf renews itself from the root)
+BGUPDATE_01                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (background download, one question)
+DLRESUME_01                                  05 §6 SYS-AUTOUPDATE   (resumable downloads)
+DIST-SMART                                   09 §3a DIST-SMART   (per-file smart updates)
+BINDELTA_01                                  09 §3a DIST-SMART   (binary patch of the main program)
+BINDELTA_02                                  09 §3a DIST-SMART   (streaming patch apply, 64 KiB buffers, bounded memory)
+FASTINSTALL_01                               05 SYS-UPGRADE   (build the new folder, link unchanged files)
+ONEBACKUP_01                                 05 SYS-UPGRADE   (keep one backup)
+NOSYSTEMTASK_01                              05 SYS-UPGRADE | 05 SYS-AVCLEAN   (no SYSTEM scheduled task)
+NOPOWERSHELL_01                              05 SYS-AVCLEAN   (shortcuts via IShellLinkW, ShellLinkWriter)
+NOPOWERSHELL_02                              03 RDP Auto-Fix | 05 SYS-AVCLEAN   (--apply-rdp-gpu-policy)
+NOSELFDELETE_01                              05 SYS-AVCLEAN   (uninstaller cleanup, MoveFileEx)
+NODROPPER_01                                 09 DIST-INSTALLER | 05 SYS-AVCLEAN   (Inno Setup installer, no embedded payload)
+NOTEMPEXEC_01                                05 SYS-AVCLEAN   (no self-copy to %TEMP%; updates under %LOCALAPPDATA%\FreeVideoStudioUpdates)
+PEIDENTITY_01                                05 §5 SYS-SIGNING   (OriginalFilename = file name, manifest version)
+UPDATECONSENT_01                             05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (ask once, first check after 5 min)
+DIST-INSTALLER                               09 §3c DIST-INSTALLER
+NOCMD_01                                     05 SYS-AVCLEAN   (whatsapp:// via shell, no cmd /c)
+AvCleanRuleTests                             05 SYS-AVCLEAN
+NEWRELEASE_01                                09 DIST-NEWRELEASE   (Build.cmd → docs/New-Release.md)
+ReleaseChecklist                             09 DIST-NEWRELEASE
 VERIFYHALT_01                                05 §4a SYS-DEVBUILD
 SYS-VERIFYTOOL                               05 SYS-VERIFYTOOL
 SYS-CI                                       08 COMP-CI | 09 §5 DIST-CIWATCH
@@ -858,6 +918,8 @@ MergerThumbnailScraper                       03 §12 FFM-SCRAPER
 MERGEEDL_01                                  01 §10 TL-COMPOSITE
 EDLNULL_01                                   01 §10 TL-COMPOSITE
 RESTOREMISS_01                               05 §4 SYS-RECOVERY
+RESTORECRASH_01                              05 §4 SYS-RECOVERY
+RESTOREFAIL_01                               05 §4 SYS-RECOVERY
 MergeEdl                                     01 §10 TL-COMPOSITE
 COMPOSITE_01                                 01 §10 TL-COMPOSITE
 MERGESESSION_01                              05 §4 SYS-RECOVERY
@@ -869,7 +931,33 @@ LANES_01                                     04 §9 UI-MERGERQUEUE
 LANECACHE_02                                 04 §9 UI-MERGERQUEUE
 ThumbGrid                                    04 §9 UI-MERGERQUEUE
 WaveformPeaks                                04 §9 UI-MERGERQUEUE
-LaneDiskCache                                04 §9 UI-MERGERQUEUE | 05 (mini-map only)
+LaneDiskCache                                04 §9 UI-MERGERQUEUE | 05 §4c SYS-ATOMICWRITE
+LaneDiskStore                                04 §9 UI-MERGERQUEUE | 05 §4c SYS-ATOMICWRITE
+CACHEBOUND_01                                04 §9 UI-MERGERQUEUE | 05 §4c SYS-ATOMICWRITE
+CACHEBOUND_02                                04 §10 UI-MEMESELECT
+CACHEBOUND_03                                04 §10 UI-MEMESELECT
+CACHEBOUND_04                                04 §9 UI-MERGERQUEUE
+WAVEPIXEL_01                                 04 §9 UI-MERGERQUEUE
+WaveformEnvelope                             04 §9 UI-MERGERQUEUE
+WaveformLanePresenter                        04 §9 UI-MERGERQUEUE
+WaveformPeakSource                           04 §9 UI-MERGERQUEUE
+FILMPIXEL_01                                 04 §9 UI-MERGERQUEUE
+FilmLanePresenter                            04 §9 UI-MERGERQUEUE
+LANEINSTANCE_01                              04 §9 UI-MERGERQUEUE
+PCMSTREAM_01                                 04 §9 UI-MERGERQUEUE (LANECACHE_02)
+PCMSTREAM_02                                 04 §9 UI-MERGERQUEUE | 02 §6 AUD-DIALOGS
+PCMSTREAM_03                                 02 §6 AUD-DIALOGS
+FfmpegPcmPipe                                04 §9 UI-MERGERQUEUE | 02 §6 AUD-DIALOGS
+MusicEnergyAnalysis                          02 §6 AUD-DIALOGS
+UIIPC_01                                     05 §4d SYS-IPCLIFETIME | 05 §3 SYS-WINSTATE
+IPCDEADLINE_01                               05 §4d SYS-IPCLIFETIME
+SessionStateWriter                           05 §4d SYS-IPCLIFETIME
+SaveBoundsOnClose                            05 §3 SYS-WINSTATE
+FilmStripSource                              04 §9 UI-MERGERQUEUE
+FilmCacheBudgetBytes                         04 §9 UI-MERGERQUEUE
+ReleaseFilmLeases                            04 §9 UI-MERGERQUEUE
+OwnedLruCache                                04 §10 UI-MEMESELECT
+ViewportThumbnailLoader                      04 §10 UI-MEMESELECT
 REMOVEUX_01                                  04 §9 UI-MERGERQUEUE | 04 §4 UI-SAFEGUARDS | 05 §6 SYS-AUTOUPDATE
 EMPTYQUEUE_01                                04 §9 UI-MERGERQUEUE
 LanePlanner                                  04 §9 UI-MERGERQUEUE
@@ -1047,11 +1135,11 @@ TOOLRETURN_01                                05 §3 SYS-WINSTATE
 
 | File, symbol or tag | Specification |
 | :--- | :--- |
-| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
+| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio-Setup.exe`, retired `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
 | `REBRAND_01`, `AppDataDir`, `LocalCacheDir`, `MigrateDirectory`, `FvsFreeVideoStudioMutex` | `05` SYS-REBRAND |
 | `NOSPACE_01`, `LegacyInstallFolder`, `KnownDestinations`, `ReuseRoot`, `RetargetUserLinksAsync` | `05` SYS-NOSPACE |
 | `MEMEFOLDER_01`, `MEMEFOLDER_02`, `CloudMemeFolder`, `MemeCategory`, `MEMECAT_01`, `MEMESYNC_01`..`03`, `STARTERLIST_01`, `ResolveSavedFile` | `03` FFM-MEMELIB |
-| `MEMEPICK_01`, `MEMEPICK_02`, `MEMEWALL_01`, `MEMEMUSIC_01`, `MemeThumbnailCache` | `04` UI-MEMESELECT |
+| `MEMEPICK_01`, `MEMEPICK_02`, `MEMEWALL_01`, `MEMEMUSIC_01`, `MemeThumbnailCache`, `CACHEBOUND_02`, `CACHEBOUND_03`, `OwnedLruCache`, `ViewportThumbnailLoader` | `04` UI-MEMESELECT |
 | `REBRAND_02`, `LegacyResidueSweep`, `RunForCurrentUser`, `LegacyTempNames`, `LegacyStorageNames` | `05` SYS-REBRAND-SWEEP |
 | `REBRAND_03`, `GitHubReleasePublisher.ReleaseAssets`, previous-brand release alias | `09` DIST-SPLIT |
 | Old→new identity map, old-brand update flow, allow list | `REBRAND_MIGRATION.md` |

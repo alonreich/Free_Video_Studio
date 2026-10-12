@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-namespace FreeVideoStudio.App;
+﻿namespace FreeVideoStudio.App;
 
 /// <summary>
 /// TOOLNAV_05 — the in-process navigation surface of the Crop Tool (Architectural Fix #3), kept in

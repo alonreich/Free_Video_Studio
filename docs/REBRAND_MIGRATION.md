@@ -21,7 +21,8 @@
 | :--- | :--- | :--- |
 | Display name | Fortnite Video Software | Free Video Studio |
 | Solution / projects | `FortniteVideoSoftware.*` | `FreeVideoStudio.sln`, `FreeVideoStudio.App`, `FreeVideoStudio.Core` (+ `.Tests`) |
-| Installed executable | `FortniteVideoSoftware.exe` | `FreeVideoStudio.exe` (`compiled/FreeVideoStudio.exe`) |
+| Installed executable | `FortniteVideoSoftware.exe` | `FreeVideoStudio.exe` (installed by `compiled/FreeVideoStudio-Setup.exe`, NODROPPER_01) |
+| Release download | `FortniteVideoSoftware.exe` (kept as an alias asset, REBRAND_03) | `FreeVideoStudio-Setup.exe`; `FreeVideoStudio.exe` is an alias asset with the same bytes for pre-2026-10-12 updaters (`09` DIST-SPLIT) |
 | Install folder | `%ProgramFiles%\Fortnite Video Software` | `%ProgramFiles%\FreeVideoStudio` (was `%ProgramFiles%\Free Video Studio` until NOSPACE_01, `05` SYS-NOSPACE) |
 | Per-user state | `%LOCALAPPDATA%` / `%APPDATA%` `\Fortnite Video Software`, `\FortniteVideoSoftware` | `%LOCALAPPDATA%\FreeVideoStudio`, `%APPDATA%\FreeVideoStudio` |
 | Machine state (pre USERSCOPE_01) | `%ProgramData%\Fortnite Video Software` | none (per-user only) |

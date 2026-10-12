@@ -34,7 +34,6 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema5_SetsAutoUpdateChecksTrue_AndPersistsSchema7()
     {
-        // Arrange: An older schema v5 settings JSON without AutoUpdateChecks or explicitly false
         string v5Json = """
         {
             "SchemaVersion": 5,
@@ -45,14 +44,11 @@ public sealed class SettingsMigrationTests : IDisposable
         """;
         File.WriteAllText(_settingsFile, v5Json);
 
-        // Act
         SettingsManager.Load();
 
-        // Assert
         Assert.Equal(SettingsManager.CurrentSchemaVersion, SettingsManager.Instance.SchemaVersion);
         Assert.True(SettingsManager.Instance.AutoUpdateChecks);
 
-        // Verify disk contents were saved with SchemaVersion = 7 and AutoUpdateChecks = true
         string savedJson = File.ReadAllText(_settingsFile);
         Assert.Contains($"\"SchemaVersion\": {SettingsManager.CurrentSchemaVersion}", savedJson);
         Assert.Contains("\"AutoUpdateChecks\": true", savedJson);
@@ -61,7 +57,6 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void UpgradeFromOlderConfigLackingAutoUpdate_SetsAutoUpdateChecksTrue_AndPersists()
     {
-        // Arrange: An older config where AutoUpdateChecks key never existed
         string olderJson = """
         {
             "SchemaVersion": 6,
@@ -71,10 +66,8 @@ public sealed class SettingsMigrationTests : IDisposable
         """;
         File.WriteAllText(_settingsFile, olderJson);
 
-        // Act
         SettingsManager.Load();
 
-        // Assert
         Assert.True(SettingsManager.Instance.AutoUpdateChecks);
         string savedJson = File.ReadAllText(_settingsFile);
         Assert.Contains($"\"SchemaVersion\": {SettingsManager.CurrentSchemaVersion}", savedJson);
@@ -84,13 +77,10 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void FreshInstallWithoutConfig_CreatesInitialConfigFile_WithAutoUpdateChecksTrue()
     {
-        // Arrange: Ensure no settings file exists
         if (File.Exists(_settingsFile)) File.Delete(_settingsFile);
 
-        // Act
         SettingsManager.Load();
 
-        // Assert
         Assert.True(File.Exists(_settingsFile));
         Assert.True(SettingsManager.Instance.AutoUpdateChecks);
         string savedJson = File.ReadAllText(_settingsFile);
@@ -100,7 +90,6 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema7_ForcesThumbnailScraperOn()
     {
-        // SCRAPER_05 — an upgrader who had the flag OFF (or never had it) gets it ON.
         File.WriteAllText(_settingsFile, """
         {
             "SchemaVersion": 7,
@@ -158,7 +147,7 @@ public sealed class SettingsMigrationTests : IDisposable
     }
 
     [Fact]
-    public void MigrateFromSchema12_SplitsAudioProtection_AndKeepsUserStrengths()   // DUCKSTRENGTH_01
+    public void MigrateFromSchema12_SplitsAudioProtection_AndKeepsUserStrengths()
     {
         File.WriteAllText(_settingsFile, """
         {
@@ -173,7 +162,6 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.Equal(50, SettingsManager.Instance.Defaults.DuckingStrength);
         Assert.Equal(50, SettingsManager.Instance.Defaults.CarvingStrength);
 
-        // A current file with the user's own values is left exactly as it is.
         File.WriteAllText(_settingsFile, """
         {
             "SchemaVersion": 13,
@@ -211,7 +199,6 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema8_TurnsTheMergerRemoveConfirmOff_Once()
     {
-        // REMOVEUX_01 — an upgrader who had the confirm ON gets it OFF once; a v9 file keeps the user's choice.
         File.WriteAllText(_settingsFile, """
         {
             "SchemaVersion": 8,
@@ -250,9 +237,8 @@ public sealed class SettingsMigrationTests : IDisposable
     }
 
     [Fact]
-    public void FileWithoutSchemaVersion_IsTreatedAsV1_AndWalksEveryMigration()   // SCHEMALEGACY_01
+    public void FileWithoutSchemaVersion_IsTreatedAsV1_AndWalksEveryMigration()
     {
-        // A pre-schema file: no SchemaVersion key. Every value below is one a migration step changes.
         const string legacy = """
         {
             "AutoUpdateChecks": false,
@@ -269,12 +255,12 @@ public sealed class SettingsMigrationTests : IDisposable
 
         AppSettings s = SettingsManager.Instance;
         Assert.Equal(SettingsManager.CurrentSchemaVersion, s.SchemaVersion);
-        Assert.True(s.AutoUpdateChecks);                 // v6/v7
-        Assert.Equal("Auto", s.VideoEncoderOverride);     // v4
-        Assert.True(s.MergerThumbnailScraper);           // v8
-        Assert.False(s.ConfirmVideoMergerRemove);        // v9
-        Assert.DoesNotContain("\\", s.MainOutputBaseName); // v11
-        Assert.False(s.Defaults.DuckingEnabled);         // v13 — seeded from AudioProtection
+        Assert.True(s.AutoUpdateChecks);
+        Assert.Equal("Auto", s.VideoEncoderOverride);
+        Assert.True(s.MergerThumbnailScraper);
+        Assert.False(s.ConfirmVideoMergerRemove);
+        Assert.DoesNotContain("\\", s.MainOutputBaseName);
+        Assert.False(s.Defaults.DuckingEnabled);
         Assert.False(s.Defaults.CarvingEnabled);
 
         string saved = File.ReadAllText(_settingsFile);
@@ -282,7 +268,6 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.Contains("\"MergerThumbnailScraper\": true", saved);
         Assert.Contains("\"ConfirmVideoMergerRemove\": false", saved);
 
-        // The same legacy file reached through an Update transaction (not Load) migrates identically.
         File.WriteAllText(_settingsFile, legacy);
         Assert.True(SettingsManager.Update(x => x.Volume = 33));
         Assert.Equal(SettingsManager.CurrentSchemaVersion, SettingsManager.Instance.SchemaVersion);
@@ -293,7 +278,7 @@ public sealed class SettingsMigrationTests : IDisposable
     }
 
     [Fact]
-    public void ExplicitCurrentSchema_IsNotReMigrated()   // SCHEMALEGACY_01 — only a MISSING key means v1
+    public void ExplicitCurrentSchema_IsNotReMigrated()
     {
         File.WriteAllText(_settingsFile, $$"""
         {

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -33,7 +30,7 @@ public sealed class NativeFrameCallerTests : IDisposable
     {
         Environment.SetEnvironmentVariable(VideoFrameGrabber.BackendEnvironmentVariable, _oldBackend);
         try { Directory.Delete(_work, recursive: true); }
-        catch (IOException ex) { Debug.WriteLine(ex.Message); }   // temp cleanup only
+        catch (IOException ex) { Debug.WriteLine(ex.Message); }
     }
 
     private string Gen(string name, params string[] args)
@@ -65,17 +62,14 @@ public sealed class NativeFrameCallerTests : IDisposable
             long nativeBefore = VideoFrameGrabber.NativeCount, fallbackBefore = VideoFrameGrabber.FallbackCount;
             var tall = await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, CancellationToken.None);
             Assert.NotNull(tall);
-            // shorter than 0.5 s: the 0.5 attempt yields nothing, the retry from 0 yields the first frame.
             Assert.NotNull(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, shortClip, CancellationToken.None));
             Assert.Null(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, garbage, CancellationToken.None));
-            // The headless test platform stores Bitmaps as 1x1 stubs, so pixel size is asserted in Core
-            // (LibAvFrameDecodeTests: 160x284 for 1080x1920). Here: WHICH path answered.
             if (backend == "native")
             {
                 Assert.True(VideoFrameGrabber.NativeCount >= nativeBefore + 2, "native did not answer the two video thumbnails");
-                Assert.Equal(fallbackBefore, VideoFrameGrabber.FallbackCount);   // native-only never starts ffmpeg
+                Assert.Equal(fallbackBefore, VideoFrameGrabber.FallbackCount);
             }
-            else Assert.Equal(nativeBefore, VideoFrameGrabber.NativeCount);       // ffmpeg-only never decodes natively
+            else Assert.Equal(nativeBefore, VideoFrameGrabber.NativeCount);
             using var cts = new CancellationTokenSource();
             cts.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, cts.Token));

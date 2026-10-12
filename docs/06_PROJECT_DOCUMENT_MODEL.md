@@ -254,7 +254,7 @@ The model and its persistence exist and are unit-tested
    or the merger queue). Atomic writes, the WRITEORDER_01 ordering, the granular-session
    preservation merge and the 750 ms write-behind debounce are unchanged.
 2. `.fvsproj` shell association and icon (`ShellFileAssociation.cs`), plus open-with launch.
-3. Publishing and applying the app-only update (`09` §3 DIST-SPLIT). `Staging.CreatePayloadZip` now produces `obj/ReleaseAssets/FreeVideoStudio.App.update.zip` and embeds the runtime manifest in the full payload. Uploading the sidecars, applying the app-only archive and excluding the app from the runtime fingerprint remain unfinished.
+3. Publishing and applying the app-only update (`09` §3 DIST-SPLIT). ~~`Staging.CreatePayloadZip` now produces `obj/ReleaseAssets/FreeVideoStudio.App.update.zip` and embeds the runtime manifest in the full payload.~~ Superseded by NODROPPER_01 (`09` DIST-INSTALLER): no compact package, no embedded payload; `Staging.WriteManifests` writes the manifests into the staged release. Uploading the sidecars, applying the app-only archive and excluding the app from the runtime fingerprint remain unfinished.
 
 ---
 

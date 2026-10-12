@@ -1,11 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -40,7 +33,6 @@ public sealed partial class GranularEditSession
 
     private string OverlapText(SpeedSegment seg) => $"[{FormatMs(seg.StartMs)} – {FormatMs(seg.EndMs)}]";
 
-    // ── MARK START / MARK END ───────────────────────────────────────────────────────────────
 
     /// <summary>
     /// MARK START at a TRIM-RELATIVE ms. Refused inside an existing block (returns its index);
@@ -97,7 +89,6 @@ public sealed partial class GranularEditSession
         return EditOutcome.Success;
     }
 
-    // ── creating blocks ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Turns the MARK START / MARK END pair into a block at the BASE speed. The overlap ban and the
@@ -107,7 +98,7 @@ public sealed partial class GranularEditSession
     public EditOutcome AddPendingSegment(out SpeedSegment? added)
     {
         added = null;
-        Checkpoint("add segment");   // UNDO_01 — before the list changes
+        Checkpoint("add segment");
         if (PendingStartMs < 0 || PendingEndMs < 0) return EditOutcome.Refused("Mark a START and END time first.");
 
         double start = Math.Min(PendingStartMs, PendingEndMs);
@@ -123,7 +114,7 @@ public sealed partial class GranularEditSession
             return EditOutcome.Refused($"That segment would be too small to create — segments must be at least {SegMinWidthMs}ms.");
 
         PendingSpeed = BaseSpeed;
-        Checkpoint("add segment");   // UNDO_02
+        Checkpoint("add segment");
         added = new SpeedSegment((int)start, (int)end, BaseSpeed);
         Segments.Add(added);
         SortSegments();
@@ -189,7 +180,7 @@ public sealed partial class GranularEditSession
     private int InsertZoomContainer(double start, double end)
     {
         var created = new SpeedSegment(start, end, BaseSpeed);
-        Checkpoint("apply zoom");   // UNDO_02
+        Checkpoint("apply zoom");
         Segments.Add(created);
         SortSegments();
         int newIndex = Segments.FindIndex(x => ReferenceEquals(x, created));
@@ -198,7 +189,6 @@ public sealed partial class GranularEditSession
 
     private void SortSegments() => Segments.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
 
-    // ── changing blocks ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// How far block <paramref name="index"/> (spanning <paramref name="startMs"/>–<paramref name="endMs"/>)
@@ -234,7 +224,7 @@ public sealed partial class GranularEditSession
     public bool ApplyPendingSpeedToSelection(string? gestureKey)
     {
         if (SelectedSegment is not { } seg) return false;
-        Checkpoint("change speed", gestureKey);   // UNDO_02
+        Checkpoint("change speed", gestureKey);
         Segments[SelectedSegmentIndex] = seg with { Speed = PendingSpeed };
         return true;
     }
@@ -243,7 +233,7 @@ public sealed partial class GranularEditSession
     public SpeedSegment? DeleteSelectedSegment()
     {
         if (SelectedSegment is not { } seg) return null;
-        Checkpoint("delete segment");   // UNDO_01
+        Checkpoint("delete segment");
         Segments.RemoveAt(SelectedSegmentIndex);
         SelectedSegmentIndex = -1;
         return seg;
@@ -257,7 +247,7 @@ public sealed partial class GranularEditSession
     public bool ClearAll()
     {
         bool hadFreeze = HasFreeze;
-        Checkpoint("clear all");   // UNDO_01 — the most destructive action, and the one most worth taking back
+        Checkpoint("clear all");
         Segments.Clear();
         SelectedSegmentIndex = -1;
         ClearPendingMarks();
@@ -265,7 +255,6 @@ public sealed partial class GranularEditSession
         return hadFreeze;
     }
 
-    // ── zoom configuration (carried on the block) ───────────────────────────────────────────
 
     /// <summary>ZOOM_04 — strips the zoom from the selected block and keeps its speed change.</summary>
     public EditOutcome RemoveZoomFromSelection()
@@ -273,7 +262,7 @@ public sealed partial class GranularEditSession
         if (SelectedSegment is not { } seg) return EditOutcome.Refused("Select a block first.");
         if (!seg.ZoomW.HasValue) return EditOutcome.Refused("That block has no zoom to remove.");
 
-        Checkpoint("apply zoom");   // UNDO_02
+        Checkpoint("apply zoom");
         Segments[SelectedSegmentIndex] = seg with
         {
             ZoomX = null, ZoomY = null, ZoomW = null, ZoomH = null,
@@ -287,7 +276,7 @@ public sealed partial class GranularEditSession
     public bool ApplyZoomToSelection(int x, int y, int w, int h, string originalResolution, bool slow)
     {
         if (SelectedSegment is not { } seg) return false;
-        Checkpoint("apply zoom");   // UNDO_02
+        Checkpoint("apply zoom");
         Segments[SelectedSegmentIndex] = seg with
         {
             ZoomX = x, ZoomY = y, ZoomW = w, ZoomH = h, ZoomOrigRes = originalResolution, ZoomSlow = slow
@@ -407,7 +396,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    // ── the freeze ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>FREEZE_CLEAR_01 — the logical half of UNFREEZE: no frame, no preset.</summary>
     public void ClearFreeze()
@@ -424,7 +412,7 @@ public sealed partial class GranularEditSession
     {
         if (absoluteMs < TrimStartMs) absoluteMs = TrimStartMs;
         if (TrimEndMs > 0 && absoluteMs > TrimEndMs) absoluteMs = TrimEndMs;
-        Checkpoint("set freeze");   // UNDO_01
+        Checkpoint("set freeze");
         FreezeTimeMs = absoluteMs;
         FreezeDurationS = durationS;
     }
@@ -440,7 +428,7 @@ public sealed partial class GranularEditSession
     public bool SetFreezeDuration(double durationS, string? gestureKey)
     {
         if (FreezeTimeMs < 0) return false;
-        Checkpoint("change freeze length", gestureKey);   // UNDO_02
+        Checkpoint("change freeze length", gestureKey);
         FreezeDurationS = durationS;
         return true;
     }
@@ -456,7 +444,7 @@ public sealed partial class GranularEditSession
     /// <summary>FREEZE_DRAG — moves the frozen frame to a TRIM-RELATIVE source second, as part of the window's gesture.</summary>
     public void MoveFreezeToSourceRelSec(double relSec, string gestureKey)
     {
-        Checkpoint("move freeze", gestureKey);   // UNDO_02
+        Checkpoint("move freeze", gestureKey);
         FreezeTimeMs = TrimStartMs + relSec * 1000.0;
     }
 
@@ -465,7 +453,7 @@ public sealed partial class GranularEditSession
     {
         if (FreezeTimeMs < 0 || clipDurationSec <= 0) return false;
         const double Fps = 60.0;
-        Checkpoint("move freeze", gestureKey);   // UNDO_02
+        Checkpoint("move freeze", gestureKey);
         FreezeTimeMs = Math.Clamp(FreezeTimeMs + 1000.0 / Fps * frameDelta, TrimStartMs, TrimStartMs + clipDurationSec * 1000.0);
         return true;
     }
@@ -479,7 +467,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    // ── DELETE PARTS ────────────────────────────────────────────────────────────────────────
 
     /// <summary>CUT_02 — the cut list in the units OutputTimeline wants: clip-relative SECONDS.</summary>
     public List<OutputTimeline.Cut> CutsForTimeline()
@@ -522,7 +509,7 @@ public sealed partial class GranularEditSession
     /// </summary>
     public void DeleteRange(double startMs, double endMs, double clipDurMs)
     {
-        Checkpoint("delete parts");   // UNDO_01 — one snapshot covers the cut AND the reconciliation
+        Checkpoint("delete parts");
         Cuts.Add(new CutRange(startMs, endMs));
         NormalizeCuts(clipDurMs);
         ApplyCutToSegmentsAndFreeze(startMs, endMs);
@@ -607,11 +594,8 @@ public sealed partial class GranularEditSession
                     trimmed++;
                 }
             }
-            // spans the cut entirely -> untouched, on purpose.
         }
 
-        // The freeze holds ONE frame. If that frame was deleted there is nothing left to hold — the
-        // same rule OutputTimeline.Create applies, kept in step so the UI and the export agree.
         if (FreezeTimeMs >= 0)
         {
             double freezeRel = FreezeTimeMs - TrimStartMs;

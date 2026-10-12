@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
@@ -66,7 +63,7 @@ public static class TwoPassEncoding
     public static List<string> MasterCodecArgs() =>
     [
         "-c:v", "libx264",
-        .. ExportColorPolicy.OutputTagArgs,   // COLOR_01
+        .. ExportColorPolicy.OutputTagArgs,
         "-preset", "veryfast",
         "-crf", MasterCrf,
         "-pix_fmt", "yuv420p",
@@ -88,7 +85,7 @@ public static class TwoPassEncoding
         return
         [
             "-c:v", "libx264",
-            .. ExportColorPolicy.OutputTagArgs,   // COLOR_01 — identical on both passes
+            .. ExportColorPolicy.OutputTagArgs,
             "-preset", "medium",
             "-b:v", $"{kbps}k",
             "-pass", passNumber.ToString(),

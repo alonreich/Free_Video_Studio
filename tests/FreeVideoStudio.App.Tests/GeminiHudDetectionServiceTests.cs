@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -24,7 +18,6 @@ public sealed class GeminiHudDetectionServiceTests
 {
     private const string SecretKey = "AIzaSyTEST-SECRET-KEY-0123456789abcdef";
 
-    // ── fakes ───────────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -89,7 +82,6 @@ public sealed class GeminiHudDetectionServiceTests
 
     private static HudDetectionRequest Request() => new(_ => Task.FromResult(LocalSet), Frame(), 1920, 1080);
 
-    // ── 1. valid structured result parses (end to end through the mocked transport) ────────
 
     [Fact]
     public async Task ValidResponse_ParsesIntoValidatedCandidates_AndSendsOneFrameOnly()
@@ -113,7 +105,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Contains("Do NOT report: people", parts[0].GetProperty("text").GetString());
     }
 
-    // ── 2. malformed result rejected ────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData("I think the minimap is top right.")]
@@ -133,7 +124,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal(AiHudOutcome.MalformedResponse, (await service.DetectAsync(Frame(), CancellationToken.None)).Outcome);
     }
 
-    // ── 3. invalid geometry rejected (never reaches the caller) ────────────────────────────
 
     [Fact]
     public async Task InvalidGeometry_IsFilteredBeforeTheCallerSeesIt()
@@ -150,7 +140,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal("ammo", Assert.Single(result.Candidates).Label);
     }
 
-    // ── 5. missing API key -> local detector still succeeds ─────────────────────────────────
 
     [Theory]
     [InlineData(null)]
@@ -170,7 +159,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.DoesNotContain(faults.Faults, f => f.Tier == FaultTier.Degraded);
     }
 
-    // ── 6. timeout -> local fallback ────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Timeout_FallsBackToLocal()
@@ -190,7 +178,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Contains(faults.Faults, f => f.Tier == FaultTier.Degraded && f.UserMessage.Contains("timed out"));
     }
 
-    // ── 7. rate limit -> local fallback ─────────────────────────────────────────────────────
 
     [Fact]
     public async Task RateLimit_FallsBackToLocal_WithoutRetry()
@@ -200,7 +187,7 @@ public sealed class GeminiHudDetectionServiceTests
         using var coordinator = new HudDetectionCoordinator(service, faults);
         HudDetectionResult? result = await coordinator.RunAsync(Request());
 
-        Assert.Single(handler.Requests);   // no retry storm while the user waits
+        Assert.Single(handler.Requests);
         Assert.Equal(LocalSet, result!.Candidates);
         Assert.Equal(AiHudOutcome.RateLimited, result.AiOutcome);
         Assert.Contains(faults.Faults, f => f.Tier == FaultTier.Degraded && f.UserMessage.Contains("rate-limiting"));
@@ -225,7 +212,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Empty(faults.Faults);
     }
 
-    // ── 8 / 9. cancellation and supersession with the real provider ─────────────────────────
 
     [Fact]
     public async Task SlowGeminiAnswer_NeverOverwritesNewerScan()
@@ -234,7 +220,7 @@ public sealed class GeminiHudDetectionServiceTests
         int calls = 0;
         var (service, _, faults, _) = Create(async (_, _) =>
         {
-            if (Interlocked.Increment(ref calls) == 1) await release.Task;   // first request hangs (ignores cancel)
+            if (Interlocked.Increment(ref calls) == 1) await release.Task;
             return Json(HttpStatusCode.OK, GeminiEnvelope(ValidModelText));
         });
         using var coordinator = new HudDetectionCoordinator(service, faults);
@@ -262,7 +248,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.DoesNotContain(faults.Faults, f => f.Tier != FaultTier.Recoverable);
     }
 
-    // ── cache ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task SameFrame_IsCached_OtherFrameOrModel_IsNot()
@@ -292,7 +277,6 @@ public sealed class GeminiHudDetectionServiceTests
             Assert.Single(handler.Requests).Uri.ToString());
     }
 
-    // ── 12. API key absent from logs / faults / results / URLs ─────────────────────────────
 
     [Fact]
     public async Task ApiKey_NeverAppearsInUrlLogsFaultsOrResults()
@@ -327,7 +311,6 @@ public sealed class GeminiHudDetectionServiceTests
         everything.AddRange(faults.Faults.Select(f => $"{f.Area}|{f.UserMessage}|{f.TechnicalDetail}|{f.Exception}"));
         everything.AddRange(results.Select(r => r.ToString() + "|" + r.Detail + "|" + string.Join(";", r.Candidates)));
 
-        // Run it through the coordinator too: the published result is what the window holds.
         using var coordinator = new HudDetectionCoordinator(service, faults);
         HudDetectionResult? published = await coordinator.RunAsync(Request());
         everything.Add(published!.ToString() + string.Join(";", published.Candidates));
@@ -350,9 +333,6 @@ public sealed class GeminiHudDetectionServiceTests
     [Fact]
     public void ApiKey_IsNotReachableFromProjectRecoveryOrCropConfigWriters()
     {
-        // "Never save the key in project/recovery files." The key lives in settings.json only
-        // (05 SYS-AISETTINGS). No file that writes a project, a recovery snapshot or a crop config
-        // may even mention it, and the AI HUD types that DO flow into the Crop Tool carry no key field.
         string[] writers = RepoRoot.SourceFiles(".cs")
             .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^(Project(Serializer|Store|Session|Document)|RecoveryManager|CropConfig(Json|Store|Defaults)|CropToolWindow.*)\.", RegexOptions.IgnoreCase))
             .ToArray();
@@ -363,7 +343,6 @@ public sealed class GeminiHudDetectionServiceTests
             string text = File.ReadAllText(file);
             if (Path.GetFileName(file).Equals("CropToolWindow.MagicWand.cs", StringComparison.OrdinalIgnoreCase))
             {
-                // The ONE permitted mention: the provider lambda that hands the key to the service at call time.
                 Assert.Single(Regex.Matches(text, @"\bGeminiApiKey\b"));
                 Assert.Contains("() => SettingsManager.Instance.GeminiApiKey", text);
                 continue;
@@ -375,7 +354,6 @@ public sealed class GeminiHudDetectionServiceTests
             Assert.DoesNotContain(t.GetProperties(), p => p.Name.Contains("Key", StringComparison.OrdinalIgnoreCase) && p.Name != "FrameKey" && p.Name != "RoleKey");
     }
 
-    // ── 11. AI candidate never auto-commits ─────────────────────────────────────────────────
 
     [Fact]
     public void MagicWand_NeverCommitsACrop()
@@ -387,14 +365,12 @@ public sealed class GeminiHudDetectionServiceTests
 
         string[] commits = { "ConfirmSelectionAsAsync", "AddCurrentSelection", "PushHistory", "MarkDirty", "SaveAndReturnAsync", "_items.Add" };
 
-        // The guard is only meaningful if the commit paths it names are real.
         foreach (string c in commits.Where(c => !c.StartsWith('_')))
             Assert.Matches(@"\b" + Regex.Escape(c) + @"\s*\(", windowText);
 
         foreach (string c in commits)
             Assert.DoesNotContain(c, wand);
 
-        // The candidate-click branch (SourceCanvas_PointerPressed, branch 3) only SELECTS.
         Match branch = Regex.Match(windowText, @"control\.Tag is CandidateSpec candidate\)\s*\{(?<body>[^}]*)\}");
         Assert.True(branch.Success, "candidate-click branch not found");
         Assert.Contains("SetSourceSelection(", branch.Groups["body"].Value);
@@ -415,11 +391,10 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.DoesNotMatch(@"using\s+Avalonia", service);
     }
 
-    // ── one frozen frame: encoding and identity ─────────────────────────────────────────────
 
     [Theory]
-    [InlineData(3840, 2160)]   // landscape 4K
-    [InlineData(1080, 1920)]   // portrait
+    [InlineData(3840, 2160)]
+    [InlineData(1080, 1920)]
     public void FrameBuilder_SendsOneDownscaledStill_ButKeepsSourceDimensions(int w, int h)
     {
         string dir = Path.Combine(Path.GetTempPath(), "fvs-aihud-" + Guid.NewGuid().ToString("N"));
@@ -441,12 +416,12 @@ public sealed class GeminiHudDetectionServiceTests
             using (var decoded = SkiaSharp.SKBitmap.Decode(a.JpegBytes))
             {
                 Assert.True(Math.Max(decoded.Width, decoded.Height) <= AiHudFrameBuilder.MaxLongEdge);
-                Assert.Equal(w > h, decoded.Width > decoded.Height);   // orientation preserved
+                Assert.Equal(w > h, decoded.Width > decoded.Height);
             }
             Assert.Equal(a.FrameKey, again.FrameKey);
-            Assert.NotEqual(a.FrameKey, other.FrameKey);              // another frame never shares a cache entry
+            Assert.NotEqual(a.FrameKey, other.FrameKey);
             Assert.Equal(a.SourceFingerprint, other.SourceFingerprint);
-            Assert.DoesNotContain("clip", a.SourceFingerprint);       // opaque: no path text
+            Assert.DoesNotContain("clip", a.SourceFingerprint);
         }
         finally
         {

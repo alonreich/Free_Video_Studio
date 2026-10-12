@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -80,7 +74,7 @@ public partial class MainWindow
         double startDelay = _viewModel.Timeline.PreviewSourceToOutputSeconds(musicStartMs);
         double outputEnd = _viewModel.Timeline.PreviewSourceToOutputSeconds(musicEndMs);
         double bedDuration = outputEnd - startDelay;
-        if (bedDuration <= 0) bedDuration = 1.0;   // the export's own floor
+        if (bedDuration <= 0) bedDuration = 1.0;
 
         var key = (result, startDelay, bedDuration, result.OffsetSeconds, result.LoopMusic,
                    result.MusicFilePath, result.MusicFilePaths?.Count ?? 0, result.MusicDurationSeconds);
@@ -97,9 +91,6 @@ public partial class MainWindow
             paths.Add(result.MusicFilePath);
         }
 
-        // The export ffprobes a track whose length the wizard did not record. The preview does
-        // not spawn processes on the UI thread, so an unknown length is treated as "covers the rest".
-        // That is the same assumption the export makes when its probe also comes back empty.
         var durations = new List<double>(paths.Count);
         for (int i = 0; i < paths.Count; i++)
         {
@@ -119,8 +110,6 @@ public partial class MainWindow
     /// <summary>MUSICSYNC_01/02 — called on every playback tick with the video's SOURCE time.</summary>
     private void UpdateMusicPreview(double sourceTimeSec, bool videoEnded)
     {
-        // PREVIEWMIX_01 — the rendered mix already contains the music bed (ducked and carved).
-        // PREVIEWMIX_02 — re-observe the edit FIRST: this follower runs before UpdatePreviewMix on the tick.
         RefreshPreviewMixState();
         if (PreviewMixActive)
         {
@@ -151,14 +140,13 @@ public partial class MainWindow
             return;
         }
 
-        if (ipc?.IsSeeking == true) return;   // SEEKSETTLE_01 — after the pause/stop branch
+        if (ipc?.IsSeeking == true) return;
         if (!_isMusicPreviewPlaying)
         {
             if (!isDraggingAnyMarker) StartMusicPreview(want.Path, want.PositionSec);
             return;
         }
 
-        // Crossed into another track of the bed (multi-track or LOOP_01): load it where it belongs.
         if (!string.Equals(want.Path, _musicPreviewPath, StringComparison.OrdinalIgnoreCase))
         {
             StartMusicPreview(want.Path, want.PositionSec);
@@ -177,7 +165,6 @@ public partial class MainWindow
         if (++_musicDriftStrikes < Infrastructure.PreviewAudioSync.DriftStrikes) return;
         _musicDriftStrikes = 0;
 
-        // Seek, never re-rate: the music stays at its normal speed.
         _ = _musicPreviewIpcClient.SendCommandAsync("seek", want.PositionSec, "absolute");
         _musicSyncHoldUntilTicks = Environment.TickCount64 + MusicSyncSettleMs;
     }
@@ -197,9 +184,7 @@ public partial class MainWindow
         }
 
         await _musicPreviewIpcClient.ApplyPreviewGainAsync(_musicWizardResult.MusicVolume * PreviewMusicDuckGain());
-        // MUSICSYNC_02 — the music's own playback rate is pinned to normal speed. Never anything else.
         await _musicPreviewIpcClient.SetPropertyDoubleAsync("speed", 1.0);
-        // LoadFileAsync starts playback (it unpauses) at the requested position.
         await _musicPreviewIpcClient.LoadFileAsync(path, Math.Max(0, positionSec));
 
         _musicPreviewPath = path;
@@ -231,23 +216,17 @@ public partial class MainWindow
         bool isPaused = ipc?.IsPaused ?? true;
         if (_isCurrentlyFrozen) isPaused = false;
 
-        // Continue through the stop path when paused, even if the new frame is still decoding.
-        if (!isPaused && !videoEnded && ipc?.IsSeeking == true) return;   // SEEKSETTLE_01
+        if (!isPaused && !videoEnded && ipc?.IsSeeking == true) return;
 
         double editedTime = PreviewOutputSeconds(sourceTimeSec);
         var timeline = _viewModel.Timeline;
 
         foreach (var take in _voiceOverPreviewTakes)
         {
-            // Take start in output seconds, from the SAME mapping as the playhead. It is
-            // recomputed each tick (the timeline is cached), so trims, cuts and speed edits
-            // re-place the take immediately.
             take.StartProjectSec = timeline.PreviewSourceToOutputSeconds(take.Take.StartSec * 1000.0);
 
             double voiceTime = editedTime - take.StartProjectSec;
-            // AUD-MASTERVOL — takes used to play at unity whatever the master said.
             take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
-            // PREVIEWMIX_01 — the rendered mix already contains every take.
             bool shouldPlayVoice = !PreviewMixActive && !isPaused && !videoEnded && voiceTime >= 0 && voiceTime <= take.Reader.TotalTime.TotalSeconds;
 
             try
@@ -256,7 +235,6 @@ public partial class MainWindow
             }
             catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
         }
-        // VOPREVIEW_01 — the voice protection's level dip, live (voice first, gameplay, then music).
         UpdatePreviewVoicePulse(isPaused || videoEnded ? -1 : editedTime);
     }
 }

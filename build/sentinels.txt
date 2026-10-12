@@ -1,4 +1,4 @@
-# ══════════════════════════════════════════════════════════════════════════════════════════════
+﻿# ══════════════════════════════════════════════════════════════════════════════════════════════
 # FIX SENTINELS — THE LIST OF FIXES THAT MUST STILL BE IN THE SOURCE.
 #
 # SYS-DEVBUILD / VERIFYHALT_01. Each entry names a comment tag that sits next to a specific fix and
@@ -552,6 +552,21 @@ TEMPO_01=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
 TEMPO_01=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
 TEMPO_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 TEMPO_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# AVSYNC_02 — 03 FFM-TEMPO: Rubber Band runs with window=short (seam onsets +8.7 ms -> +4.2 ms; 440 Hz exact).
+AVSYNC_02=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
+AVSYNC_02=tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs
+# AVSYNC_03 — 02 AUD-MASTERING: the safety limiter compensates its 1 ms lookahead (latency=1).
+AVSYNC_03=src/FreeVideoStudio.Core/Media/PeakSafety.cs
+# AVSYNC_04 — 03 FFM-TEMPO: Rubber Band start pad/delay compensation (FFmpeg omits it), output bounded to input/tempo.
+AVSYNC_04=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
+AVSYNC_04=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
+AVSYNC_04=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+AVSYNC_04=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+AVSYNC_04=tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs
+# CUDATAG_01 — 03 FFM-HWENC: resident CUDA graphs carry the output colour tags (setparams) so FFmpeg never inserts a software auto_scale.
+CUDATAG_01=src/FreeVideoStudio.Core/Media/ExportVideoPipeline.cs
+# MERGESCRIPT_01 — 03 FFM-HWENC: every Merger attempt rewrites filter_complex.txt with its own planned graph.
+MERGESCRIPT_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
 # MEMEMODE_01 — 01 TL-MEME / 03 FFM-MEMECORNER: dual-mode memes (full screen = insertion, corner overlay = zero duration).
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/MemePlacement.cs
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
@@ -650,13 +665,12 @@ VOLIVE_01=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
 VOLIVE_01=tests/FreeVideoStudio.App.Tests/VoiceOverTimelineTests.cs
 
 # UPDATEUX_01..06 (05 SYS-AUTOUPDATE): the in-app updater never has a silent moment.
-UPDATEUX_01=src/FreeVideoStudio.App/ViewModels/UpdatePromptViewModels.cs
-UPDATEUX_01=src/FreeVideoStudio.App/Controls/UpdateAvailableWindow.axaml
+# RETIRED UPDATEUX_01 — superseded by BGUPDATE_01 (R3): the 4-button question was removed; the update card asks Restart & update / Later.
 UPDATEUX_02=src/FreeVideoStudio.App/Services/UpdateService.cs
 UPDATEUX_03=src/FreeVideoStudio.App/Services/UpdateService.cs
-UPDATEUX_03=src/FreeVideoStudio.App/Controls/UpdateDownloadWindow.axaml.cs
+UPDATEUX_03=src/FreeVideoStudio.App/Services/UpdateDownloader.cs
 UPDATEUX_04=src/FreeVideoStudio.App/Services/UpdateService.cs
-UPDATEUX_05=src/FreeVideoStudio.App/Services/AuthenticodeVerifier.cs
+# RETIRED UPDATEUX_05 — superseded by UPDATEPIN_01: every copy now verifies updates against the pinned publisher root.
 UPDATEUX_06=src/FreeVideoStudio.App/Services/UpdateService.cs
 UPDATEUX_06=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
 # UPGRADEUX_01..05 (05 SYS-UPGRADEUX): install/update broker shows every step.
@@ -677,3 +691,139 @@ DEVDATA_01=dev.cmd
 DEVDATA_01=build/DevSandbox.ps1
 DEVUPDATE_01=dev.cmd
 DEVUPDATE_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# DEVFAST_01 (05 SYS-DEVBUILD): default dev run is incremental; dev rebuild wipes bin/obj.
+DEVFAST_01=dev.cmd
+# R1/R2/R4-R8 — pinned publisher root, background update card, resumable downloads, smart per-file
+# updates with binary patches, fast install, one backup (05 SYS-SIGNING/SYS-UPGRADE, 09 DIST-SMART).
+UPDATEPIN_01=src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs
+UPDATEPIN_01=src/FreeVideoStudio.App/Services/AuthenticodeVerifier.cs
+UPDATEPIN_01=build/FvsBuild/CodeSigning.cs
+UPDATEPIN_02=build/FvsBuild/CodeSigning.cs
+BGUPDATE_01=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
+BGUPDATE_01=src/FreeVideoStudio.App/ViewModels/UpdateToastViewModel.cs
+DLRESUME_01=src/FreeVideoStudio.App/Services/UpdateDownloader.cs
+DIST-SMART=src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs
+DIST-SMART=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
+DIST-SMART=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+DIST-SMART=build/FvsBuild/SmartUpdateBuilder.cs
+BINDELTA_01=src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs
+BINDELTA_01=build/FvsBuild/SmartUpdateBuilder.cs
+# BINDELTA_02 (09 DIST-SMART): patches apply by streaming through 64 KiB buffers, never whole-EXE arrays.
+BINDELTA_02=src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs
+BINDELTA_02=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
+FASTINSTALL_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+FASTINSTALL_01=src/FreeVideoStudio.Core/Infrastructure/HardLink.cs
+ONEBACKUP_01=src/FreeVideoStudio.Core/Infrastructure/DirectoryUpgrade.cs
+ONEBACKUP_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# SYS-AVCLEAN — antivirus-clean deployment behaviour (05).
+NOSYSTEMTASK_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+NOPOWERSHELL_01=src/FreeVideoStudio.App/ShellLinkWriter.cs
+NOPOWERSHELL_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
+NOPOWERSHELL_02=src/FreeVideoStudio.App/ViewModels/ExportViewModel.cs
+NOPOWERSHELL_02=src/FreeVideoStudio.App/Program.cs
+NOSELFDELETE_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
+NOCMD_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+NOCMD_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# NEWRELEASE_01 — Build.cmd prepares the Microsoft submission and opens docs/New-Release.md (09).
+NEWRELEASE_01=build/FvsBuild/ReleaseChecklist.cs
+NEWRELEASE_01=build/FvsBuild/Program.cs
+# ── 2026-10-11 Non-destructive restore crash-loop recovery (05 SYS-RECOVERY / SYS-WRITEORDER) ──
+RESTORECRASH_01=src/FreeVideoStudio.Core/Infrastructure/RecoveryManager.cs
+RESTORECRASH_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+RESTOREFAIL_01=src/FreeVideoStudio.App/MainWindow.Restore.cs
+# ── 2026-10-11 One authoritative session-state owner; no disk write behind a live IPC server (05 SYS-IPCLIFETIME / SYS-WRITEORDER) ──
+IPCOWNER_01=src/FreeVideoStudio.Core/Ipc/StateTransferStore.cs
+IPCOWNER_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
+IPCOWNER_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
+IPCOWNER_01=tests/FreeVideoStudio.Core.Tests/IpcChildProcess.cs
+# ── 2026-10-11 Bounded caches: lane disk cache, meme thumbnail memory, viewport-driven picker (04 UI-MERGERQUEUE / UI-MEMESELECT, 05 SYS-ATOMICWRITE) ──
+# CACHEBOUND_01 — LaneDiskCache prunes continuously under entry AND byte budgets (was: once per process).
+CACHEBOUND_01=src/FreeVideoStudio.App/Infrastructure/LaneDiskCache.cs
+CACHEBOUND_01=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# CACHEBOUND_02 — meme thumbnails live in a byte-budgeted LRU that owns and disposes the bitmaps (was: unbounded static dictionary).
+CACHEBOUND_02=src/FreeVideoStudio.App/Infrastructure/OwnedLruCache.cs
+CACHEBOUND_02=src/FreeVideoStudio.App/Infrastructure/MemeThumbnailCache.cs
+CACHEBOUND_02=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# CACHEBOUND_03 — the picker decodes only realized + near-visible rows, cancels stale requests, releases far rows.
+CACHEBOUND_03=src/FreeVideoStudio.App/Infrastructure/ViewportThumbnailLoader.cs
+CACHEBOUND_03=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml.cs
+CACHEBOUND_03=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# ATOMICBYTES_01 — one shared atomic write for byte payloads; the lane cache no longer carries its own copy (05 SYS-ATOMICWRITE).
+ATOMICBYTES_01=src/FreeVideoStudio.Core/Infrastructure/AtomicJsonFile.cs
+ATOMICBYTES_01=src/FreeVideoStudio.App/Infrastructure/LaneDiskCache.cs
+ATOMICBYTES_01=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# CACHEBOUND_04 — Merger filmstrip strips are owned (byte budget, disposal) and leased while on the lane (04 UI-MERGERQUEUE).
+CACHEBOUND_04=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
+CACHEBOUND_04=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# WAVEPIXEL_01 — Merger waveform lane: pixel-resolution envelope off the dispatcher, reconciled tiles, shared per-clip peak fetch (04 UI-MERGERQUEUE).
+WAVEPIXEL_01=src/FreeVideoStudio.Core/Media/WaveformEnvelope.cs
+WAVEPIXEL_01=src/FreeVideoStudio.App/Infrastructure/WaveformLanePresenter.cs
+WAVEPIXEL_01=src/FreeVideoStudio.App/Infrastructure/WaveformPeakSource.cs
+WAVEPIXEL_01=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
+WAVEPIXEL_01=tests/FreeVideoStudio.App.Tests/TimelineLanesTests.cs
+WAVEPIXEL_01=tests/FreeVideoStudio.Core.Tests/WaveformEnvelopeTests.cs
+# FILMPIXEL_01 — Merger filmstrip lane: reconciled tiles with one lease each, one shared ffmpeg stream per clip across runs (04 UI-MERGERQUEUE).
+FILMPIXEL_01=src/FreeVideoStudio.App/Infrastructure/FilmLanePresenter.cs
+FILMPIXEL_01=src/FreeVideoStudio.App/Infrastructure/FilmStripSource.cs
+FILMPIXEL_01=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
+FILMPIXEL_01=tests/FreeVideoStudio.App.Tests/TimelineLanesTests.cs
+
+# UIIPC_01 — UI never blocks on session-state IPC: enqueue-only writes, memory-only reads, bounded final flush (05 SYS-IPCLIFETIME / SYS-WINSTATE).
+UIIPC_01=src/FreeVideoStudio.Core/Ipc/SessionStateWriter.cs
+UIIPC_01=src/FreeVideoStudio.Core/Ipc/StateTransferStore.cs
+UIIPC_01=src/FreeVideoStudio.App/Services/InProcessSessionState.cs
+UIIPC_01=src/FreeVideoStudio.App/WindowBoundsHelper.cs
+UIIPC_01=src/FreeVideoStudio.App/Program.cs
+UIIPC_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
+UIIPC_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
+UIIPC_01=tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs
+# IPCDEADLINE_01 — one end-to-end deadline for connect + write + read; no synchronous pipe client (05 SYS-IPCLIFETIME).
+IPCDEADLINE_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs
+IPCDEADLINE_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateClient.cs
+IPCDEADLINE_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
+# PCMSTREAM_01/02/03 — decoded PCM streamed through a bounded buffer; ffmpeg child always reaped (04 UI-MERGERQUEUE, 02 AUD-DIALOGS).
+PCMSTREAM_01=src/FreeVideoStudio.Core/Media/PcmStream.cs
+PCMSTREAM_01=src/FreeVideoStudio.Core/Media/WaveformPeaks.cs
+PCMSTREAM_01=tests/FreeVideoStudio.Core.Tests/ProgressiveLanesTests.cs
+PCMSTREAM_02=src/FreeVideoStudio.Core/Media/PcmStream.cs
+PCMSTREAM_02=tests/FreeVideoStudio.Core.Tests/MusicEnergyAnalysisTests.cs
+PCMSTREAM_03=src/FreeVideoStudio.Core/Media/MusicEnergyAnalysis.cs
+PCMSTREAM_03=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+# LANEINSTANCE_01 — Merger lanes: occurrence identity for tiles/leases, source identity for caches/decodes (04 UI-MERGERQUEUE).
+LANEINSTANCE_01=src/FreeVideoStudio.Core/Media/ProgressiveLanes.cs
+LANEINSTANCE_01=src/FreeVideoStudio.App/Infrastructure/FilmLanePresenter.cs
+LANEINSTANCE_01=src/FreeVideoStudio.App/Infrastructure/WaveformLanePresenter.cs
+LANEINSTANCE_01=src/FreeVideoStudio.App/Infrastructure/FilmStripSource.cs
+LANEINSTANCE_01=src/FreeVideoStudio.App/Infrastructure/WaveformPeakSource.cs
+LANEINSTANCE_01=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
+LANEINSTANCE_01=tests/FreeVideoStudio.App.Tests/TimelineLanesTests.cs
+# NODROPPER_01 — the release is an Inno Setup package; the program never embeds a payload (05 SYS-AVCLEAN, 09 DIST-INSTALLER).
+NODROPPER_01=build/installer/FreeVideoStudio.iss
+NODROPPER_01=build/FvsBuild/InnoInstaller.cs
+NODROPPER_01=build/FvsBuild/Staging.cs
+NODROPPER_01=build/FvsBuild/SmartUpdateBuilder.cs
+NODROPPER_01=build/FvsBuild/GitHubReleasePublisher.cs
+NODROPPER_01=src/FreeVideoStudio.App/FreeVideoStudio.App.csproj
+NODROPPER_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+NODROPPER_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+NODROPPER_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+NODROPPER_01=src/FreeVideoStudio.Core/Infrastructure/InstallPayload.cs
+NODROPPER_01=tests/FreeVideoStudio.App.Tests/AvCleanRuleTests.cs
+NODROPPER_01=tests/FreeVideoStudio.Core.Tests/SmartUpdateTests.cs
+# NOTEMPEXEC_01 — no self-copy to %TEMP%, nothing elevated staged in %TEMP%; leftovers go on the delete-on-restart list (05 SYS-AVCLEAN).
+NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
+NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentFootprint.cs
+NOTEMPEXEC_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+NOTEMPEXEC_01=src/FreeVideoStudio.App/Program.cs
+NOTEMPEXEC_01=tests/FreeVideoStudio.App.Tests/AvCleanRuleTests.cs
+# PEIDENTITY_01 — OriginalFilename/InternalName name the shipped file; app.manifest version = file version (05 SYS-SIGNING).
+PEIDENTITY_01=build/FvsBuild/PeIdentity.cs
+PEIDENTITY_01=build/FvsBuild/Program.cs
+PEIDENTITY_01=build/installer/FreeVideoStudio.iss
+PEIDENTITY_01=src/FreeVideoStudio.App/FreeVideoStudio.App.csproj
+PEIDENTITY_01=tests/FreeVideoStudio.Core.Tests/PeIdentityTests.cs
+# UPDATECONSENT_01 — no network at startup: one-time consent question, first check 5 minutes after launch (05 SYS-AUTOUPDATE).
+UPDATECONSENT_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+UPDATECONSENT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+UPDATECONSENT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs
+UPDATECONSENT_01=tests/FreeVideoStudio.App.Tests/VersionAndUpdaterTests.cs

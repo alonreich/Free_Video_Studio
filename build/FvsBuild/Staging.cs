@@ -1,19 +1,18 @@
-﻿using System.IO.Compression;
-
-namespace FvsBuild;
+﻿namespace FvsBuild;
 
 /// <summary>
-/// Step 1-2 of the pipeline: clean, stage the NativeAOT payload (app publish output +
-/// backend/frontend native binaries + starter media) and zip it into
-/// src\FreeVideoStudio.App\payload.zip with System.IO.Compression, replacing the
-/// old external tar.exe call. Every filename here is a contract: DeploymentLifecycle
-/// extracts this zip on launch and MemeAssets.StarterFiles lists the starter names.
+/// Step 1-2 of the pipeline: clean, stage the release (app publish output + backend/frontend
+/// native binaries + starter media) and write its manifests. NODROPPER_01: the staged folder is
+/// what the Inno Setup installer packs (InnoInstaller) — nothing is zipped into the program's own
+/// resources any more. Every filename here is a contract: the installer installs exactly this
+/// layout and MemeAssets.StarterFiles lists the starter names.
 /// </summary>
 internal static class Staging
 {
     private const string ProjectFile = @"src\FreeVideoStudio.App\FreeVideoStudio.App.csproj";
     private const string ProjectExe = "FreeVideoStudio.exe";
-    private const string OutputExe = "FreeVideoStudio.exe";
+    /// <summary>NODROPPER_01 — .\compiled holds exactly the Inno Setup installer.</summary>
+    private const string OutputExe = InnoInstaller.SetupFileName;
     private const string OutputDir = @".\compiled";
     /// <summary>
     /// RELEASEASSETS_01 — release sidecars (runtime.manifest.json) live HERE, not in .\compiled.
@@ -22,8 +21,10 @@ internal static class Staging
     /// </summary>
     private const string ReleaseAssetsDir = @".\obj\ReleaseAssets";
     private const string StagingDir = @".\obj\StandaloneTemp\Staging";
-    private const string FinalDir = @".\obj\StandaloneTemp\NativeAot_final";
-    private const string PayloadZip = @"src\FreeVideoStudio.App\payload.zip";
+    /// <summary>NODROPPER_01 — the signed file list packed into the installer beside the staged files.</summary>
+    private const string InstallerListDir = @".\obj\StandaloneTemp\InstallerList";
+    /// <summary>Left by builds before NODROPPER_01; removed so it can never be embedded again.</summary>
+    private const string LegacyPayloadZip = @"src\FreeVideoStudio.App\payload.zip";
 
     private static readonly string[] BackendExact =
     [
@@ -31,8 +32,6 @@ internal static class Staging
         "ffprobe.exe",
     ];
 
-    // Wildcard families: each must yield at least one DLL or the build fails loudly
-    // (a silent zero-file copy once shipped an installer with no codecs).
     private static readonly string[] BackendWildcards = ["av*.dll", "sw*.dll", "postproc*.dll"];
 
     private static readonly string[] FrontendExact = ["libmpv-2.dll", "mpv.exe"];
@@ -43,9 +42,6 @@ internal static class Staging
         "Cool Dance Background Music (No CopyRights).mp3",
     ];
 
-    // STARTERLIST_01 / MEMEFOLDER_01 — the meme starter set, all from the single repo `meme\`
-    // folder. ⚠️ Must equal MemeAssets.StarterFiles["meme"] exactly (ArchitectureRuleTests
-    // .StarterListsMatchTheStagingLists). Every name here is required: a missing file halts staging.
     private static readonly string[] StarterMeme =
     [
         "What the fuck am I doing here (Robert Deniro) - Landscape.mp4",
@@ -58,9 +54,10 @@ internal static class Staging
     ];
 
     public static string CompiledExePath => Path.Combine(OutputDir, OutputExe);
+    public static string CompiledDirPath => OutputDir;
     public static string StagingDirPath => StagingDir;
-    public static string FinalDirPath => FinalDir;
-    public static string PayloadZipPath => PayloadZip;
+    public static string InstallerListDirPath => InstallerListDir;
+    public static string StagedProgramPath => Path.Combine(StagingDir, ProjectExe);
 
     /// <summary>Kills any running copies of the product and stops dotnet build servers, so locked files cannot survive a clean.</summary>
     public static void TerminateProcesses(BuildLog log)
@@ -91,19 +88,21 @@ internal static class Staging
         if (devMode)
         {
             Directory.CreateDirectory(OutputDir);
+            TryDeleteFile(Path.Combine(OutputDir, ProjectExe));
             return;
         }
         TryDeleteDirectory(OutputDir);
         Directory.CreateDirectory(OutputDir);
     }
 
-    /// <summary>Removes stale staging folders and any leftover payload.zip before the payload publish runs.</summary>
+    /// <summary>Removes stale staging folders and any leftover payload.zip before the publish runs.</summary>
     public static void PurgeTempArtifacts(BuildLog log)
     {
         log.Info("[NativeAOT] 1. Purging old temp folders...");
         TryDeleteDirectory(StagingDir);
-        TryDeleteDirectory(FinalDir);
-        TryDeleteFile(PayloadZip);
+        TryDeleteDirectory(InstallerListDir);
+        TryDeleteDirectory(@".\obj\StandaloneTemp\NativeAot_final");
+        TryDeleteFile(LegacyPayloadZip);
     }
 
     /// <summary>
@@ -120,7 +119,7 @@ internal static class Staging
         "error IL1013",
     ];
 
-    /// <summary>Runs one of the two identical NativeAOT publishes (staging pass or final installer pass).</summary>
+    /// <summary>Runs the NativeAOT publish of the program into the staging folder (the only publish since NODROPPER_01).</summary>
     public static bool Publish(string outputDir, string buildVersion, BuildLog log, string stepTitle)
     {
         log.Info($"[NativeAOT] {stepTitle}");
@@ -130,12 +129,9 @@ internal static class Staging
         }
         if (!ilcCrashed)
         {
-            return false;   // a real build error: report it as it is
+            return false;
         }
 
-        // ILCCRASH_01 — the compiler crashed, not the code. Re-run the SAME publish once with
-        // ILC's scanner single-threaded (--parallelism:1), which removes the race window. Slower,
-        // identical output. A second failure is reported as a failure.
         log.Warn("[NativeAOT] ILC (the NativeAOT compiler) crashed internally - known .NET 9 race, dotnet/runtime#108743.");
         log.Warn("[NativeAOT] Retrying this publish once with a single-threaded ILC scanner (slower, same output)...");
         return RunPublish(outputDir, buildVersion, log, singleThreadedIlc: true, out _);
@@ -241,7 +237,6 @@ internal static class Staging
 
         if (missing.Count > 0)
         {
-            // Fail loudly rather than shipping an installer that silently seeds nothing.
             foreach (string file in missing)
             {
                 log.Error($"ERROR: staging input missing: {file}");
@@ -253,14 +248,14 @@ internal static class Staging
     }
 
     /// <summary>
-    /// Step 3: creates payload.zip from the staging folder. System.IO.Compression with
-    /// optimal compression replaces the old tar.exe call; entries use zip-standard
-    /// forward slashes and no leading "./" so ZipFile.ExtractToDirectory on launch
-    /// lands every file exactly where the old tar-built payload did.
+    /// Step 3: writes the release manifests into the staging folder (runtime.manifest.json, then
+    /// install.manifest.json over every staged file) and the release copy of runtime.manifest.json.
+    /// Debug symbols move to obj\ReleaseAssets\Symbols first, so they are never installed.
+    /// NODROPPER_01: nothing is zipped; the staged folder IS what the Inno Setup installer packs.
     /// </summary>
-    public static bool CreatePayloadZip(BuildLog log)
+    public static bool WriteManifests(BuildLog log)
     {
-        log.Info("[NativeAOT] 3. Zipping payload...");
+        log.Info("[NativeAOT] 3. Writing release manifests...");
         try
         {
             string symbols = Path.Combine(ReleaseAssetsDir, "Symbols");
@@ -269,113 +264,31 @@ internal static class Staging
                 Directory.CreateDirectory(symbols);
                 File.Move(pdb, Path.Combine(symbols, Path.GetFileName(pdb)), overwrite: true);
             }
-            if (File.Exists(PayloadZip))
-            {
-                File.Delete(PayloadZip);
-            }
-            Directory.CreateDirectory(Path.GetDirectoryName(PayloadZip)!);
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // SYS-PAYLOADSPLIT — FINGERPRINT THE RUNTIME AND SHIP THE ANSWER.
-            //
-            // Written twice, on purpose:
-            //   • INTO the staging folder, so it lands beside the installed binaries and the
-            //     updater on that machine can read what is actually installed.
-            //   • BESIDE compiled\ (obj\ReleaseAssets, RELEASEASSETS_01), so the release can publish it as a tiny sidecar asset and the
-            //     updater can read what the release EXPECTS without downloading 322 MB to find out.
-            // A fingerprint that exists in only one of those two places answers nothing.
-            //
-            // ⚠️ Computed BEFORE the zip is written into the staging tree, so the manifest
-            // describes the runtime binaries and not itself.
-            // ══════════════════════════════════════════════════════════════════════════════════
             var manifest = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromFolder(StagingDir);
             manifest.Write(StagingDir);
             FreeVideoStudio.Core.Infrastructure.InstallPayload.WriteManifest(StagingDir);
-            int entryCount = 0;
-            using (ZipArchive archive = ZipFile.Open(PayloadZip, ZipArchiveMode.Create))
-            {
-                foreach (string file in Directory.EnumerateFiles(StagingDir, "*", SearchOption.AllDirectories))
-                {
-                    string relative = Path.GetRelativePath(StagingDir, file).Replace('\\', '/');
-                    _ = archive.CreateEntryFromFile(file, relative, CompressionLevel.Optimal);
-                    entryCount++;
-                }
-            }
-            // Entries cannot be read while the archive is open in Create mode; count them ourselves.
-            log.Info($"[NativeAOT] Payload zipped: {entryCount} entries, {new FileInfo(PayloadZip).Length / (1024 * 1024)} MB.");
-
 
             Directory.CreateDirectory(ReleaseAssetsDir);
             manifest.Write(ReleaseAssetsDir);
-
+            foreach (string retired in new[] { "FreeVideoStudio.App.update.zip", "full-payload.zip" })
+                TryDeleteFile(Path.Combine(ReleaseAssetsDir, retired));
+            string staleAlias = Path.Combine(ReleaseAssetsDir,
+                FreeVideoStudio.Core.Infrastructure.LegacyProductIdentity.DownloadName);
+            if (File.Exists(staleAlias)) File.Delete(staleAlias);
 
             log.Info($"[NativeAOT] Runtime fingerprint {manifest.Fingerprint} over {manifest.FileCount} binaries "
-                   + $"({FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FormatBytes(manifest.TotalBytes)}). "
-                   + "Publish " + ReleaseAssetsDir.TrimStart('.', '\\') + "\\runtime.manifest.json as a release asset so patch updates can skip the payload.");
+                   + $"({FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FormatBytes(manifest.TotalBytes)}).");
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            log.Error($"ERROR: Failed to zip payload: {ex.Message}");
+            log.Error($"ERROR: Failed to write the release manifests: {ex.Message}");
             return false;
         }
-    }
-
-    public static bool CreateCompactInstaller(string buildVersion, BuildLog log)
-    {
-        string completePayload = Path.Combine(ReleaseAssetsDir, "full-payload.zip");
-        try
-        {
-            File.Copy(PayloadZip, completePayload, overwrite: true);
-            File.Delete(PayloadZip);
-            using (var patch = ZipFile.Open(PayloadZip, ZipArchiveMode.Create))
-            {
-                foreach (string name in new[] { OutputExe, FreeVideoStudio.Core.Infrastructure.InstallPayload.ManifestName,
-                             FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FileName })
-                    patch.CreateEntryFromFile(Path.Combine(StagingDir, name), name, CompressionLevel.Optimal);
-            }
-            if (!Publish(FinalDir, buildVersion, log, "Publishing compact update installer...")) return false;
-            string executable = Path.Combine(FinalDir, ProjectExe);
-            if (!CodeSigning.SignIfNeeded(executable, log)) return false;
-            string updateArchive = Path.Combine(ReleaseAssetsDir, "FreeVideoStudio.App.update.zip");
-            if (File.Exists(updateArchive)) File.Delete(updateArchive);
-            using (var update = ZipFile.Open(updateArchive, ZipArchiveMode.Create))
-                update.CreateEntryFromFile(executable, OutputExe, CompressionLevel.Optimal);
-            // REBRAND_03 — the previous-brand download alias is NOT staged on disk any more.
-            // GitHubReleasePublisher creates it transiently at publish time and deletes it after upload.
-            // A copy left by an older FvsBuild is removed here.
-            string staleAlias = Path.Combine(ReleaseAssetsDir,
-                FreeVideoStudio.Core.Infrastructure.LegacyProductIdentity.DownloadName);
-            if (File.Exists(staleAlias)) File.Delete(staleAlias);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            log.Error("Compact update packaging failed: " + ex.Message);
-            return false;
-        }
-        finally
-        {
-            if (File.Exists(completePayload)) File.Move(completePayload, PayloadZip, overwrite: true);
-        }
-    }
-
-    /// <summary>Step 5: moves the NativeAOT exe into .\compiled under its shipped name.</summary>
-    public static bool MoveFinalExe(BuildLog log)
-    {
-        log.Info("[NativeAOT] 5. Moving final EXE to compiled folder...");
-        string source = Path.Combine(FinalDir, ProjectExe);
-        if (!File.Exists(source))
-        {
-            log.Error($"ERROR: Expected NativeAOT EXE was not produced in {FinalDir}");
-            return false;
-        }
-        Directory.CreateDirectory(OutputDir);
-        File.Move(source, CompiledExePath, overwrite: true);
-        return true;
     }
 
     /// <summary>
-    /// Verifies .\compiled contains EXACTLY FreeVideoStudio.exe (MANDATE #2).
+    /// Verifies .\compiled contains EXACTLY FreeVideoStudio-Setup.exe (MANDATE #2, NODROPPER_01).
     /// Strays are removed, then reported as a failure - same as the old
     /// :PURGE_COMPILED_EXTRAS + :VALIDATE_COMPILED_OUTPUT pair.
     /// </summary>
@@ -401,13 +314,13 @@ internal static class Staging
         return true;
     }
 
-    /// <summary>Step 6: removes staging folders and the transient payload.zip.</summary>
+    /// <summary>Step 6: removes the staging folders.</summary>
     public static void CleanupTempArtifacts(BuildLog log)
     {
         log.Info("[NativeAOT] 6. Cleaning up temporary artifacts...");
         TryDeleteDirectory(StagingDir);
-        TryDeleteDirectory(FinalDir);
-        TryDeleteFile(PayloadZip);
+        TryDeleteDirectory(InstallerListDir);
+        TryDeleteFile(LegacyPayloadZip);
     }
 
     private static bool CopyTo(string source, string destinationFolder)
@@ -431,7 +344,6 @@ internal static class Staging
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A locked file here fails the publish or validation stage with a clearer message.
         }
     }
 

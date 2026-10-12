@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -84,7 +81,7 @@ public sealed record MusicWizardSnapshot(
         ArgumentNullException.ThrowIfNull(after);
 
         if (!SamePath(before.TrackPath, after.TrackPath))
-            return ("choose song", "choose-song");   // arrowing down the list is one choice, not twelve
+            return ("choose song", "choose-song");
 
         if (Math.Abs(before.SongStartSeconds - after.SongStartSeconds) > SecondsTolerance)
             return ("move song start", "song-start");
@@ -140,7 +137,7 @@ public static class HistoryShortcut
     {
         if (textInputFocused || !control) return HistoryCommand.None;
         if (string.Equals(key, "Z", StringComparison.Ordinal)) return shift ? HistoryCommand.Redo : HistoryCommand.Undo;
-        if (string.Equals(key, "Y", StringComparison.Ordinal)) return HistoryCommand.Redo;   // Ctrl+Shift+Y too, as the Crop Tool always allowed
+        if (string.Equals(key, "Y", StringComparison.Ordinal)) return HistoryCommand.Redo;
         return HistoryCommand.None;
     }
 }

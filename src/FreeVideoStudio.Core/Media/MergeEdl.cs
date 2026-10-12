@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -12,25 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Media;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// MERGEEDL_01 — THE VIDEO MERGER'S EDIT DECISION LIST (Video-Merger-Migration.md P2.1).
-//
-// The whole merge is DATA: which clips, in which order, which part of each, and which effects.
-// Nothing is rendered until MERGE. Preview, music, undo, autosave and export all read this one
-// object, so they cannot disagree.
-//
-// TIME UNIT: SOURCE MICROSECONDS (long) inside each clip's own file. Not seconds (double drift),
-// and not frame indexes (gameplay captures can be variable frame rate, so "frame 600" has no fixed
-// time). P2.2 snaps every stored microsecond to a REAL frame timestamp of that file.
-//
-// ANCHORS: everything that must survive a layout change (reorder, scraper toggle, custom
-// thumbnail) is stored as (ClipId, SourceUs). ClipId is a GUID given when a clip enters the queue,
-// so the same file added twice gets two identities.
-//
-// EQUALITY: records that hold lists implement structural Equals/GetHashCode by hand. A record's
-// generated Equals compares lists BY REFERENCE, which silently breaks UndoStack's "no-op edit"
-// detection (see UNDOEQ_01 in ProjectDocument).
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Where a meme sits inside its clip (user decision D4).</summary>
 public enum EdlMemePlacement
@@ -224,10 +200,6 @@ public sealed record MergeEdl
         if (string.IsNullOrWhiteSpace(json)) return null;
         try
         {
-            // EDLNULL_01 — the source-generated reader assigns default(T) to every init property the
-            // file does not mention (it does not run initializers). A file written before a field
-            // existed would silently load e.g. ScraperEnabled=false, BaseSpeed=0, volumes=0. So every
-            // object is first completed with the missing keys from a freshly constructed default.
             if (JsonNode.Parse(json) is not JsonObject root) return null;
             FillMissing(root, Template.Edl);
             if (root["Clips"] is JsonArray clips)
@@ -240,7 +212,6 @@ public sealed record MergeEdl
                     if (clip["Effects"] is JsonObject fx)
                     {
                         FillMissing(fx, Template.Effects);
-                        // MEMEMODE_01 — a meme from before the presentation keys is full screen with sound.
                         if (fx["Memes"] is JsonArray memeArray)
                             foreach (var mm in memeArray)
                                 if (mm is JsonObject memeObj) FillMissing(memeObj, Template.Meme);
@@ -276,7 +247,7 @@ public sealed record MergeEdl
         private static JsonObject Of(JsonNode? node)
         {
             var o = node as JsonObject ?? new JsonObject();
-            o.Remove("Clips");   // a template never contributes content, only defaults for missing scalars/lists
+            o.Remove("Clips");
             return o;
         }
     }

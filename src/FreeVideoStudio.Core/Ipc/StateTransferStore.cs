@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -67,7 +64,7 @@ public sealed class StateTransferStore
         }
         catch (System.Exception swallowed6)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);
             return new JsonObject { ["schema_version"] = SchemaVersion };
         }
     }
@@ -107,247 +104,212 @@ public sealed class StateTransferStore
             }
             catch (FreeVideoStudio.Core.Infrastructure.LockException swallowed3)
             {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
                 return new JsonObject();
             }
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public JsonObject LoadSync(CancellationToken cancellationToken = default, TimeSpan? mutexTimeout = null)
+
+    /// <summary>IPCOWNER_01 — total time a mutation may spend retrying a live-but-silent server.</summary>
+    public static readonly TimeSpan DeliveryBudget = TimeSpan.FromSeconds(2);
+
+    /// <summary>IPCOWNER_01 — ceiling for one pipe attempt while backing off.</summary>
+    private static readonly TimeSpan MaxPipeAttemptTimeout = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>IPCOWNER_01 test seam — treat this process's own server as if it were in another
+    /// process (forces the pipe / lease path). False in production.</summary>
+    internal bool IgnoreInProcessServerForTests { get; init; }
+
+    /// <summary>IPCOWNER_01 test seam — overrides <see cref="DeliveryBudget"/>.</summary>
+    internal TimeSpan? DeliveryBudgetForTests { get; init; }
+
+    private enum StateMutation { Save, Update, Handoff, Clear }
+
+    private enum OwnerCommit { Committed, NotOwner, Failed }
+
+    /// <summary>Returns true only when the state was acknowledged by the server or durably committed.</summary>
+    public Task<bool> SaveAsync(JsonObject state, CancellationToken cancellationToken = default)
+        => StartCommit(StateMutation.Save, Clone(state), NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
+
+    /// <summary>Returns true only when the update was acknowledged by the server or durably committed.</summary>
+    public Task<bool> UpdatePropertiesAsync(JsonObject updates, CancellationToken cancellationToken = default)
+        => StartCommit(StateMutation.Update, Clone(updates), NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
+
+
+    public Task<bool> SendHandoffAsync(HandoffPayload payload, TimeSpan? timeout = null, CancellationToken ct = default)
+        => StartCommit(StateMutation.Handoff, BuildHandoffNode(payload), timeout ?? NamedPipeStateClient.DefaultTimeout, null, ct);
+
+    /// <summary>Returns true only when the clear was acknowledged by the server or durably committed.</summary>
+    public Task<bool> ClearAsync(CancellationToken cancellationToken = default)
+        => StartCommit(StateMutation.Clear, null, NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
+
+    private static JsonObject BuildHandoffNode(HandoffPayload payload)
     {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeof(HandoffPayload), IpcJsonContext.Default);
+        var node = JsonNode.Parse(bytes) as JsonObject ?? new JsonObject();
+        if (payload.ReturnedFromCropTool.HasValue)
         {
-            return server.GetState();
+            node["returned_from_crop_tool"] = payload.ReturnedFromCropTool.Value;
         }
+        return node;
+    }
 
-        var startedServer = NamedPipeStateServer.TryStart(Paths);
-        if (startedServer != null)
-        {
-            return startedServer.GetState();
-        }
+    /// <summary>The commit always runs on the thread pool, so the named mutex is never taken on the UI
+    /// thread and no caller's SynchronizationContext is captured. Nothing may block on the result
+    /// (UIIPC_01): callers await it, or enqueue through <see cref="SessionStateWriter"/>.</summary>
+    private Task<bool> StartCommit(StateMutation op, JsonObject? payload, TimeSpan firstAttempt, TimeSpan? budgetOverride, CancellationToken ct)
+        => Task.Run(() => CommitAsync(op, payload, firstAttempt, budgetOverride, ct));
 
-        var ipcState = NamedPipeStateClient.GetStateSync(NamedPipeStateClient.FastProbeTimeout, cancellationToken);
-        if (ipcState != null)
-        {
-            return ipcState;
-        }
+    private async Task<bool> CommitAsync(StateMutation op, JsonObject? payload, TimeSpan firstAttempt, TimeSpan? budgetOverride, CancellationToken ct)
+    {
+        TimeSpan budget = budgetOverride ?? DeliveryBudgetForTests ?? DeliveryBudget;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        TimeSpan attemptTimeout = firstAttempt > TimeSpan.Zero ? firstAttempt : NamedPipeStateClient.FastProbeTimeout;
+        int attempt = 0;
 
         try
         {
-            Paths.EnsureWritableDirectories();
-            using NamedSystemMutex guard = NamedSystemMutex.Acquire(
-                MutexName,
-                mutexTimeout ?? DefaultMutexTimeout,
-                cancellationToken);
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
 
-            return LoadUnlocked();
+                var server = NamedPipeStateServer.ActiveInstance;
+                if (!IgnoreInProcessServerForTests && server != null && server.IsRunning && ApplyInProcess(server, op, payload))
+                {
+                    return true;
+                }
+
+                TimeSpan remaining = budget - clock.Elapsed;
+                if (remaining <= TimeSpan.Zero) break;
+
+                TimeSpan thisAttempt = attemptTimeout < remaining ? attemptTimeout : remaining;
+                if (await SendOverPipeAsync(op, payload, thisAttempt, ct).ConfigureAwait(false))
+                {
+                    return true;
+                }
+
+                remaining = budget - clock.Elapsed;
+                TimeSpan lockWait = remaining > TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100);
+                switch (TryCommitAsPersistenceOwner(op, payload, lockWait, ct))
+                {
+                    case OwnerCommit.Committed: return true;
+                    case OwnerCommit.Failed: return false;
+                }
+
+                if (clock.Elapsed >= budget) break;
+                attempt++;
+                attemptTimeout = attemptTimeout + attemptTimeout < MaxPipeAttemptTimeout ? attemptTimeout + attemptTimeout : MaxPipeAttemptTimeout;
+                int backoffMs = Math.Min(20 * attempt, 100);
+                await Task.Delay(backoffMs, ct).ConfigureAwait(false);
+            }
         }
-        catch (System.Exception swallowed5)
+        catch (OperationCanceledException ex)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
-            return new JsonObject();
+            CoreLogger.Swallowed(ex);
+            CoreLogger.Warn("SessionState", $"Session state {op} was cancelled before it was acknowledged or written.");
+            return false;
         }
+
+        CoreLogger.Fail("SessionState",
+            $"Session state {op} was NOT saved: the state server holds the lease but did not acknowledge within {budget.TotalMilliseconds:0} ms. " +
+            "Nothing was written to disk, so the live session state was not overwritten.");
+        return false;
     }
 
-    public async Task SaveAsync(JsonObject state, CancellationToken cancellationToken = default)
+    private static bool ApplyInProcess(NamedPipeStateServer server, StateMutation op, JsonObject? payload) => op switch
     {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
+        StateMutation.Save => server.SaveState(payload!),
+        StateMutation.Update or StateMutation.Handoff => server.UpdateProperties(payload!),
+        _ => server.ClearState(),
+    };
+
+    private static Task<bool> SendOverPipeAsync(StateMutation op, JsonObject? payload, TimeSpan timeout, CancellationToken ct) => op switch
+    {
+        StateMutation.Save => NamedPipeStateClient.SaveStateAsync(payload!, timeout, ct),
+        StateMutation.Update => NamedPipeStateClient.UpdatePropertiesAsync(payload!, timeout, ct),
+        StateMutation.Handoff => NamedPipeStateClient.SendHandoffAsync(payload!, timeout, ct),
+        _ => NamedPipeStateClient.ClearStateAsync(timeout, ct),
+    };
+
+    /// <summary>
+    /// IPCOWNER_01 — the ONLY direct writer of SessionStateFile outside the server. Creating the lease
+    /// NEW proves that no server (current or pre-fix build, which OWNS the same name) is alive, and
+    /// holding the handle across the write keeps one from starting and loading the file until the
+    /// atomic replace has finished. Nothing is ever acquired on the lease (IPCLEASE_01).
+    /// Lock order: lease handle → <see cref="MutexName"/> → AtomicJsonFile. Synchronous on purpose:
+    /// the named mutex is thread-affine, so no await may sit between acquire and release.
+    /// </summary>
+    private OwnerCommit TryCommitAsPersistenceOwner(StateMutation op, JsonObject? payload, TimeSpan lockWait, CancellationToken ct)
+    {
+        Mutex lease;
+        bool createdNew;
+        try
         {
-            server.SaveState(state);
-            return;
+            lease = new Mutex(initiallyOwned: false, name: IpcProtocol.ServerMutexName, createdNew: out createdNew);
+        }
+        catch (Exception ex)
+        {
+            CoreLogger.Warn("SessionState", $"Could not verify state-server ownership: {ex.Message}");
+            return OwnerCommit.NotOwner;
         }
 
-        bool sent = await NamedPipeStateClient.SaveStateAsync(state, NamedPipeStateClient.DefaultTimeout, cancellationToken).ConfigureAwait(false);
-        if (sent) return;
-
-        await Task.Run(() =>
+        using (lease)
         {
-            Paths.EnsureWritableDirectories();
+            if (!createdNew) return OwnerCommit.NotOwner;
 
             try
             {
-                using NamedSystemMutex guard = NamedSystemMutex.Acquire(
-                    MutexName,
-                    DefaultMutexTimeout,
-                    cancellationToken);
+                Paths.EnsureWritableDirectories();
+                using NamedSystemMutex guard = NamedSystemMutex.Acquire(MutexName, lockWait, ct);
 
-                JsonObject payload = SanitizeObject(Clone(state), "save");
-                payload["schema_version"] = SchemaVersion;
-                AtomicJsonFile.WriteObject(Paths.SessionStateFile, payload);
+                switch (op)
+                {
+                    case StateMutation.Save:
+                    {
+                        JsonObject state = SanitizeObject(payload!, "save");
+                        state["schema_version"] = SchemaVersion;
+                        AtomicJsonFile.WriteObject(Paths.SessionStateFile, state);
+                        break;
+                    }
+                    case StateMutation.Update:
+                    case StateMutation.Handoff:
+                    {
+                        JsonObject current = LoadUnlocked();
+                        ApplySanitizedUpdates(current, payload!, op == StateMutation.Handoff ? "handoff" : "update");
+                        current["schema_version"] = SchemaVersion;
+                        AtomicJsonFile.WriteObject(Paths.SessionStateFile, current);
+                        break;
+                    }
+                    default:
+                    {
+                        AtomicJsonFile.TryDelete(Paths.SessionStateFile);
+                        if (File.Exists(Paths.SessionStateFile))
+                        {
+                            CoreLogger.Fail("SessionState", "Could not clear session state: the file could not be deleted.");
+                            return OwnerCommit.Failed;
+                        }
+                        break;
+                    }
+                }
+
+                return OwnerCommit.Committed;
             }
-            catch (FreeVideoStudio.Core.Infrastructure.LockException swallowed2)
+            catch (OperationCanceledException)
             {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                throw;
             }
-            catch (OperationCanceledException swallowed20)
+            catch (LockException ex)
             {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed20);   // FAULTTIER_02 — no failure is silent.
+                CoreLogger.Fail("SessionState", $"Could not save session state — the file was locked: {ex.Message}");
+                return OwnerCommit.Failed;
             }
             catch (Exception ex)
             {
                 CoreLogger.Fail("SessionState", $"Could not save session state: {ex.Message}");
+                return OwnerCommit.Failed;
             }
-        }, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task UpdatePropertiesAsync(JsonObject updates, CancellationToken cancellationToken = default)
-    {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            server.UpdateProperties(updates);
-            return;
         }
-
-        bool sent = await NamedPipeStateClient.UpdatePropertiesAsync(updates, NamedPipeStateClient.DefaultTimeout, cancellationToken).ConfigureAwait(false);
-        if (sent) return;
-
-        await Task.Run(() =>
-        {
-            Paths.EnsureWritableDirectories();
-
-            try
-            {
-                using NamedSystemMutex guard = NamedSystemMutex.Acquire(
-                    MutexName,
-                    DefaultMutexTimeout,
-                    cancellationToken);
-
-                JsonObject current = LoadUnlocked();
-                ApplySanitizedUpdates(current, updates, "update");
-
-                current["schema_version"] = SchemaVersion;
-                AtomicJsonFile.WriteObject(Paths.SessionStateFile, current);
-            }
-            catch (FreeVideoStudio.Core.Infrastructure.LockException swallowed)
-            {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
-            }
-            catch (OperationCanceledException swallowed9)
-            {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed9);   // FAULTTIER_02 — no failure is silent.
-            }
-            catch (Exception ex)
-            {
-                CoreLogger.Fail("SessionState", $"Could not update session state: {ex.Message}");
-            }
-        }, cancellationToken).ConfigureAwait(false);
-    }
-
-    public void UpdatePropertiesSync(JsonObject updates, CancellationToken cancellationToken = default, TimeSpan? mutexTimeout = null)
-    {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            server.UpdateProperties(updates);
-            return;
-        }
-
-        bool sent = NamedPipeStateClient.UpdatePropertiesSync(updates, NamedPipeStateClient.FastProbeTimeout, cancellationToken);
-        if (sent) return;
-
-        JsonObject clonedUpdates = Clone(updates);
-        try
-        {
-            Paths.EnsureWritableDirectories();
-
-            using NamedSystemMutex guard = NamedSystemMutex.Acquire(
-                MutexName,
-                mutexTimeout ?? DefaultMutexTimeout,
-                cancellationToken);
-
-            JsonObject current = LoadUnlocked();
-            ApplySanitizedUpdates(current, clonedUpdates, "update (sync)");
-
-            current["schema_version"] = SchemaVersion;
-            AtomicJsonFile.WriteObject(Paths.SessionStateFile, current);
-        }
-        catch (FreeVideoStudio.Core.Infrastructure.LockException ex)
-        {
-            CoreLogger.Fail("SessionState", $"Could not update session state — the file was locked: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Fail("SessionState", $"Could not update session state: {ex.Message}");
-        }
-    }
-
-    public async Task<bool> SendHandoffAsync(HandoffPayload payload, TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeof(HandoffPayload), IpcJsonContext.Default);
-        var node = JsonNode.Parse(bytes) as JsonObject ?? new JsonObject();
-        if (payload.ReturnedFromCropTool.HasValue)
-        {
-            node["returned_from_crop_tool"] = payload.ReturnedFromCropTool.Value;
-        }
-
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            server.UpdateProperties(node);
-            return true;
-        }
-
-        bool sent = await NamedPipeStateClient.SendHandoffAsync(node, timeout ?? NamedPipeStateClient.DefaultTimeout, ct).ConfigureAwait(false);
-        if (sent) return true;
-
-        await UpdatePropertiesAsync(node, ct).ConfigureAwait(false);
-        return true;
-    }
-
-    public bool SendHandoffSync(HandoffPayload payload, TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeof(HandoffPayload), IpcJsonContext.Default);
-        var node = JsonNode.Parse(bytes) as JsonObject ?? new JsonObject();
-        if (payload.ReturnedFromCropTool.HasValue)
-        {
-            node["returned_from_crop_tool"] = payload.ReturnedFromCropTool.Value;
-        }
-
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            server.UpdateProperties(node);
-            return true;
-        }
-
-        bool sent = NamedPipeStateClient.SendHandoffSync(node, timeout ?? NamedPipeStateClient.DefaultTimeout, ct);
-        if (sent) return true;
-
-        UpdatePropertiesSync(node, ct);
-        return true;
-    }
-
-    public async Task ClearAsync(CancellationToken cancellationToken = default)
-    {
-        var server = NamedPipeStateServer.ActiveInstance;
-        if (server != null && server.IsRunning)
-        {
-            server.ClearState();
-        }
-
-        await NamedPipeStateClient.ClearStateAsync(NamedPipeStateClient.DefaultTimeout, cancellationToken).ConfigureAwait(false);
-
-        await Task.Run(() =>
-        {
-            Paths.EnsureWritableDirectories();
-
-            try
-            {
-                using NamedSystemMutex guard = NamedSystemMutex.Acquire(
-                    MutexName,
-                    DefaultMutexTimeout,
-                    cancellationToken);
-
-                AtomicJsonFile.TryDelete(Paths.SessionStateFile);
-            }
-            catch (FreeVideoStudio.Core.Infrastructure.LockException swallowed12)
-            {
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed12);   // FAULTTIER_02 — no failure is silent.
-            }
-        }, cancellationToken).ConfigureAwait(false);
     }
 
     private JsonObject LoadUnlocked()
@@ -392,7 +354,7 @@ public sealed class StateTransferStore
         }
         catch (UnauthorizedAccessException swallowed18)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed18);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed18);
             return new JsonObject();
         }
     }
@@ -456,12 +418,12 @@ public sealed class StateTransferStore
         }
         catch (InvalidDataException swallowed13)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed13);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed13);
             return false;
         }
         catch (Exception swallowed8)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);
             return false;
         }
 
@@ -485,11 +447,11 @@ public sealed class StateTransferStore
         }
         catch (IOException swallowed19)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed19);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed19);
         }
         catch (UnauthorizedAccessException swallowed14)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed14);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed14);
         }
     }
 
@@ -614,12 +576,12 @@ public sealed class StateTransferStore
         }
         catch (InvalidOperationException swallowed10)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed10);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed10);
             return false;
         }
         catch (FormatException swallowed4)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);
             return false;
         }
     }
@@ -634,12 +596,12 @@ public sealed class StateTransferStore
         }
         catch (InvalidOperationException swallowed21)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed21);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed21);
             return false;
         }
         catch (FormatException swallowed15)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed15);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed15);
             return false;
         }
     }
@@ -654,12 +616,12 @@ public sealed class StateTransferStore
         }
         catch (InvalidOperationException swallowed16)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed16);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed16);
             return false;
         }
         catch (FormatException swallowed17)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed17);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed17);
             return false;
         }
     }
@@ -674,12 +636,12 @@ public sealed class StateTransferStore
         }
         catch (InvalidOperationException swallowed11)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed11);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed11);
             return false;
         }
         catch (FormatException swallowed7)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed7);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed7);
             return false;
         }
     }

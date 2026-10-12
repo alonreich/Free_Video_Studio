@@ -1,286 +1,76 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
-using System;
-using System.IO;
+﻿using System;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Ipc;
 
+/// <summary>
+/// Named-pipe client for the session-state server.
+///
+/// IPCDEADLINE_01 — every call is asynchronous and bounded end to end: connect, write and read run
+/// under ONE deadline (<see cref="IpcProtocol.ExchangeAsync"/>). There is deliberately NO synchronous
+/// variant: the former <c>GetStateSync</c>/<c>UpdatePropertiesSync</c>/<c>SaveStateSync</c>/
+/// <c>ClearStateSync</c>/<c>SendHandoffSync</c> bounded only <c>Connect()</c> and then blocked in
+/// <c>ReadFrame</c> with no deadline, and they were reachable from the UI thread (UIIPC_01).
+/// UI code reads through <see cref="SessionStateWriter.ReadSnapshot"/> and writes through
+/// <see cref="SessionStateWriter.Enqueue"/>.
+/// </summary>
 public static class NamedPipeStateClient
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMilliseconds(100);
     public static readonly TimeSpan FastProbeTimeout = TimeSpan.FromMilliseconds(30);
 
-    private static NamedPipeClientStream CreateClientStream(bool async) =>
+    private static NamedPipeClientStream CreateClientStream() =>
         new NamedPipeClientStream(
             ".",
             IpcProtocol.PipeName,
             PipeDirection.InOut,
-            async ? PipeOptions.Asynchronous : PipeOptions.None,
+            PipeOptions.Asynchronous,
             TokenImpersonationLevel.Identification);
+
+    private static Task<IpcFrame?> ExchangeAsync(IpcOpcode request, ReadOnlyMemory<byte> payload, TimeSpan? timeout, TimeSpan fallback, CancellationToken ct)
+        => IpcProtocol.ExchangeAsync(CreateClientStream, request, payload, timeout ?? fallback, ct);
 
     public static async Task<JsonObject?> GetStateAsync(TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
+        var response = await ExchangeAsync(IpcOpcode.GetState, ReadOnlyMemory<byte>.Empty, timeout, DefaultTimeout, ct).ConfigureAwait(false);
+        if (response is { Opcode: IpcOpcode.GetStateAck } frame)
         {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteFrameAsync(client, IpcOpcode.GetState, ReadOnlyMemory<byte>.Empty, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            if (response != null && response.Value.Opcode == IpcOpcode.GetStateAck)
-            {
-                return IpcProtocol.FromUtf8Bytes(response.Value.Payload);
-            }
-
-            return null;
+            return IpcProtocol.FromUtf8Bytes(frame.Payload);
         }
-        catch (OperationCanceledException swallowed3)
-        {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
-            return null;
-        }
-        catch (TimeoutException swallowed)
-        {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
-            return null;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"GetStateAsync failed: {ex.Message}");
-            return null;
-        }
-    }
-
-    public static JsonObject? GetStateSync(TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(false);
-            client.Connect((int)Math.Max(1, actualTimeout.TotalMilliseconds));
-
-            IpcProtocol.WriteFrame(client, IpcOpcode.GetState, ReadOnlySpan<byte>.Empty);
-            var response = IpcProtocol.ReadFrame(client);
-
-            if (response != null && response.Value.Opcode == IpcOpcode.GetStateAck)
-            {
-                return IpcProtocol.FromUtf8Bytes(response.Value.Payload);
-            }
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"GetStateSync failed: {ex.Message}");
-            return null;
-        }
+        return null;
     }
 
     public static async Task<bool> UpdatePropertiesAsync(JsonObject updates, TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteJsonFrameAsync(client, IpcOpcode.UpdateProperties, updates, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            return response != null && response.Value.Opcode == IpcOpcode.UpdatePropertiesAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"UpdatePropertiesAsync failed: {ex.Message}");
-            return false;
-        }
-    }
-
-    public static bool UpdatePropertiesSync(JsonObject updates, TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(false);
-            client.Connect((int)Math.Max(1, actualTimeout.TotalMilliseconds));
-
-            IpcProtocol.WriteJsonFrame(client, IpcOpcode.UpdateProperties, updates);
-            var response = IpcProtocol.ReadFrame(client);
-
-            return response != null && response.Value.Opcode == IpcOpcode.UpdatePropertiesAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"UpdatePropertiesSync failed: {ex.Message}");
-            return false;
-        }
+        var response = await ExchangeAsync(IpcOpcode.UpdateProperties, IpcProtocol.ToUtf8Bytes(updates), timeout, DefaultTimeout, ct).ConfigureAwait(false);
+        return response is { Opcode: IpcOpcode.UpdatePropertiesAck };
     }
 
     public static async Task<bool> SaveStateAsync(JsonObject state, TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteJsonFrameAsync(client, IpcOpcode.SaveState, state, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            return response != null && response.Value.Opcode == IpcOpcode.SaveStateAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"SaveStateAsync failed: {ex.Message}");
-            return false;
-        }
-    }
-
-    public static bool SaveStateSync(JsonObject state, TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(false);
-            client.Connect((int)Math.Max(1, actualTimeout.TotalMilliseconds));
-
-            IpcProtocol.WriteJsonFrame(client, IpcOpcode.SaveState, state);
-            var response = IpcProtocol.ReadFrame(client);
-
-            return response != null && response.Value.Opcode == IpcOpcode.SaveStateAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"SaveStateSync failed: {ex.Message}");
-            return false;
-        }
+        var response = await ExchangeAsync(IpcOpcode.SaveState, IpcProtocol.ToUtf8Bytes(state), timeout, DefaultTimeout, ct).ConfigureAwait(false);
+        return response is { Opcode: IpcOpcode.SaveStateAck };
     }
 
     public static async Task<bool> ClearStateAsync(TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteFrameAsync(client, IpcOpcode.ClearState, ReadOnlyMemory<byte>.Empty, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            return response != null && response.Value.Opcode == IpcOpcode.ClearStateAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"ClearStateAsync failed: {ex.Message}");
-            return false;
-        }
-    }
-
-    public static bool ClearStateSync(TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(false);
-            client.Connect((int)Math.Max(1, actualTimeout.TotalMilliseconds));
-
-            IpcProtocol.WriteFrame(client, IpcOpcode.ClearState, ReadOnlySpan<byte>.Empty);
-            var response = IpcProtocol.ReadFrame(client);
-
-            return response != null && response.Value.Opcode == IpcOpcode.ClearStateAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"ClearStateSync failed: {ex.Message}");
-            return false;
-        }
+        var response = await ExchangeAsync(IpcOpcode.ClearState, ReadOnlyMemory<byte>.Empty, timeout, DefaultTimeout, ct).ConfigureAwait(false);
+        return response is { Opcode: IpcOpcode.ClearStateAck };
     }
 
     public static async Task<bool> SendHandoffAsync(JsonObject handoffPayload, TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteJsonFrameAsync(client, IpcOpcode.Handoff, handoffPayload, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            return response != null && response.Value.Opcode == IpcOpcode.HandoffAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"SendHandoffAsync failed: {ex.Message}");
-            return false;
-        }
-    }
-
-    public static bool SendHandoffSync(JsonObject handoffPayload, TimeSpan? timeout = null, CancellationToken ct = default)
-    {
-        TimeSpan actualTimeout = timeout ?? DefaultTimeout;
-        try
-        {
-            using var client = CreateClientStream(false);
-            client.Connect((int)Math.Max(1, actualTimeout.TotalMilliseconds));
-
-            IpcProtocol.WriteJsonFrame(client, IpcOpcode.Handoff, handoffPayload);
-            var response = IpcProtocol.ReadFrame(client);
-
-            return response != null && response.Value.Opcode == IpcOpcode.HandoffAck;
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Warn("IpcClient", $"SendHandoffSync failed: {ex.Message}");
-            return false;
-        }
+        var response = await ExchangeAsync(IpcOpcode.Handoff, IpcProtocol.ToUtf8Bytes(handoffPayload), timeout, DefaultTimeout, ct).ConfigureAwait(false);
+        return response is { Opcode: IpcOpcode.HandoffAck };
     }
 
     public static async Task<bool> PingAsync(TimeSpan? timeout = null, CancellationToken ct = default)
     {
-        TimeSpan actualTimeout = timeout ?? FastProbeTimeout;
-        try
-        {
-            using var client = CreateClientStream(true);
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(actualTimeout);
-
-            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-
-            await IpcProtocol.WriteFrameAsync(client, IpcOpcode.Ping, ReadOnlyMemory<byte>.Empty, cts.Token).ConfigureAwait(false);
-            var response = await IpcProtocol.ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
-
-            return response != null && response.Value.Opcode == IpcOpcode.Pong;
-        }
-        catch (System.Exception swallowed2)
-        {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
-            return false;
-        }
+        var response = await ExchangeAsync(IpcOpcode.Ping, ReadOnlyMemory<byte>.Empty, timeout, FastProbeTimeout, ct).ConfigureAwait(false);
+        return response is { Opcode: IpcOpcode.Pong };
     }
 }

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Media;
@@ -82,7 +79,6 @@ public static class MemePresentationJson
         _ => MemeOverlaySize.Medium,
     };
 
-    // JsonValue.TryGetValue never throws on a type mismatch; it returns false.
     private static string? Text(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
 
     private static bool Bool(JsonNode? n, bool fallback)

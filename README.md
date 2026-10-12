@@ -13,7 +13,7 @@
 <h3 align="center">⚡ High-Performance, Ultra-Specialized NLE Engineered for Automated Gaming Content Creation.</h3>
 
 <h2 align="center">
-  <a href="https://github.com/alonreich/Free_Video_Studio/releases/latest/download/FreeVideoStudio.exe">⬇️ DOWNLOAD LATEST INSTALLER (.EXE) ⬇️</a>
+  <a href="https://github.com/alonreich/Free_Video_Studio/releases/latest/download/FreeVideoStudio-Setup.exe">⬇️ DOWNLOAD LATEST INSTALLER (.EXE) ⬇️</a>
 </h2>
 
 <p align="center">
@@ -108,7 +108,7 @@ cd Free_Video_Studio
 .\build.cmd
 ```
 
-> **💡 Pro Tip:** Development watch mode (Hot Reload) is available via `.\dev.cmd` for rapid UI iteration without rebuilding the entire AOT binary. The final executable will be located in `.\compiled\FreeVideoStudio.exe`.
+> **💡 Pro Tip:** Development watch mode (Hot Reload) is available via `.\dev.cmd` for rapid UI iteration without rebuilding the entire AOT binary. The final installer will be located in `.\compiled\FreeVideoStudio-Setup.exe` (building it needs the free Inno Setup 6.3+: `winget install JRSoftware.InnoSetup`).
 
 ---
 

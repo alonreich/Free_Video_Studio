@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -54,7 +47,7 @@ public partial class VoiceOverWindow
     internal async Task ApplyAndCloseAsync()
     {
         if (_isCommitted || _isApplying || _isClosing) return;
-        if (!CanAdmit(VoiceOverSessionOwner.Apply))   // SESSIONOWNER_01 — a recovery operation owns the session
+        if (!CanAdmit(VoiceOverSessionOwner.Apply))
         {
             UpdateApplyState("Recovered audio is still being checked. Apply when it finishes.");
             return;
@@ -72,7 +65,6 @@ public partial class VoiceOverWindow
                 StopRecordingAndPlayback();
             }
 
-            // VOASYNC_02 — the last take may still be draining on the audio chain.
             if (_capture.HasPendingFinalizations)
             {
                 RuntimeLog.Info("VoiceOver", "[Stage: CaptureDrain] Draining active capture finalizations...");
@@ -243,11 +235,6 @@ public partial class VoiceOverWindow
                 }
 
                 RuntimeLog.Info("VoiceOver", "[Stage: PersistEnd] Persistence complete.");
-                // VORECOVERY_01 — commit boundary = every take is persisted to its new file. Only the
-                // committed take ids leave the durable index (off-thread); other sessions' records and
-                // still-pending takes are untouched. A failed index update does not undo a completed
-                // save: the persisted copies are delivered in Result, and any stale record left behind
-                // reopens as an explicit "audio missing" entry the user discards — never as silent loss.
                 var commitStore = await _recovery.CommitTakesAsync(snapshot.ConvertAll(s => s.WavPath));
                 if (!commitStore.Success)
                     RuntimeLog.Fail("VoiceOver", $"[Stage: RecoveryCommit] takes saved, recovery index cleanup failed: {commitStore.Error}");
@@ -405,8 +392,6 @@ public partial class VoiceOverWindow
 
     private bool HasApplicableVoiceEffect()
     {
-        // VOASYNC_02 — a take whose drain has not landed yet is still a take. Without this the
-        // Apply button and the discard prompt would both go blind for the ~100 ms after stop.
         return _isRecording || _capture.HasPendingFinalizations || HasSavedVoiceOverSession();
     }
 
@@ -515,7 +500,7 @@ public partial class VoiceOverWindow
     {
         if (_discardFailedTakesButton != null) _discardFailedTakesButton.IsEnabled = false;
         if (_recoverFailedTakesButton != null) _recoverFailedTakesButton.IsEnabled = false;
-        UpdateTransportState();   // SESSIONOWNER_01 — RECORD is unavailable while recovery owns the session
+        UpdateTransportState();
         UpdateApplyState();
     }
 
@@ -539,7 +524,7 @@ public partial class VoiceOverWindow
     internal async Task<bool> DiscardFailedTakesAction()
     {
         if (!CanStartRecoveryOperation()) return false;
-        var pending = _recovery.DiscardTakesAsync(_capture);   // takes ownership synchronously
+        var pending = _recovery.DiscardTakesAsync(_capture);
         BeginRecoveryOperationUi();
         (bool success, string? error) = (false, null);
         try { (success, error) = await pending; }
@@ -570,7 +555,7 @@ public partial class VoiceOverWindow
             if (_isCommitted || _isClosing || _isApplying) return false;
             _sessions.Add(session);
             return true;
-        });   // takes ownership synchronously, before its first await
+        });
         BeginRecoveryOperationUi();
         FreeVideoStudio.App.Services.RecoveryBatchResult result;
         try
@@ -648,7 +633,7 @@ public partial class VoiceOverWindow
         if (hasUnresolved)
         {
             var unresolved = _recovery.PendingFailedTakes;
-            bool busy = !CanAdmit(VoiceOverSessionOwner.Recovery);   // SESSIONOWNER_01 — also while capture owns the session
+            bool busy = !CanAdmit(VoiceOverSessionOwner.Recovery);
             if (_discardFailedTakesButton != null) _discardFailedTakesButton.IsEnabled = !busy;
             if (_recoverFailedTakesButton != null) _recoverFailedTakesButton.IsEnabled = !busy;
             FreeVideoStudio.App.Services.PendingFailedTake? lastUnresolved = null;
@@ -704,11 +689,8 @@ public partial class VoiceOverWindow
 
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // ZOOMLIVE_06 — this window pushes `video-crop` into a host the Main App owns and reuses.
-        // Leaving a crop behind would zoom the main screen's preview after the studio closes.
         ClearLiveZoomCrop();
 
-        // VORECOVERY_01 — a recovery operation owns the take list: defer the close, never abandon it.
         if (_recovery.IsOperationInFlight && !_isCommitted)
         {
             e.Cancel = true;
@@ -716,7 +698,6 @@ public partial class VoiceOverWindow
             return;
         }
 
-        // Every transition already persisted; this re-asserts durable records off the dispatcher.
         if (_recovery.HasDurableTakes)
         {
             _ = ObserveRecoveryStoreAsync(_recovery.PersistAsync());
@@ -724,7 +705,7 @@ public partial class VoiceOverWindow
 
         if (_isSafeToClose || _isCommitted)
         {
-            if (!_isClosing) WindowBoundsHelper.SaveBoundsSync(this, BoundsKey);
+            if (!_isClosing) WindowBoundsHelper.SaveBoundsOnClose(this, BoundsKey);
             return;
         }
 
@@ -755,6 +736,6 @@ public partial class VoiceOverWindow
         }
 
         if (_isClosing) return;
-        WindowBoundsHelper.SaveBoundsSync(this, BoundsKey);
+        WindowBoundsHelper.SaveBoundsOnClose(this, BoundsKey);
     }
 }

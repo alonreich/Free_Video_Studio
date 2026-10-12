@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -89,7 +86,7 @@ internal sealed class PreviewShutdownCoordinator
             var task = RunCoreAsync(core, cancellationToken);
             if (!task.IsCompleted)
             {
-                _pending = task; // VOAPPLY_05 — only retain in-flight tasks so synchronous failures remain retryable
+                _pending = task;
             }
             return task;
         }

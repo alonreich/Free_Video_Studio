@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
@@ -26,7 +23,6 @@ public sealed class MemePickerRow : ViewModelBase
     public MemePickerRow(MemeItem item, bool portrait)
     {
         Item = item;
-        // UI-MEMESELECT — the same rule as the main-screen combo: portrait AND aspect > 0.85f.
         RatioWarning = portrait && item.AspectRatio > 0.85f;
     }
 
@@ -102,6 +98,17 @@ public partial class MemePickerWindow : Window
 
     private readonly CancellationTokenSource _cts = new();
     private List<MemePickerRow> _rows = new();
+
+    /// <summary>
+    /// CACHEBOUND_03 — pictures for the realized (on-screen) rows plus a few either side only; a row
+    /// scrolled far away, filtered out or replaced by a re-scan cancels its request and gives its
+    /// picture back to <see cref="MemeThumbnailCache"/> (CACHEBOUND_02), which disposes it when evicted.
+    /// </summary>
+    private readonly ViewportThumbnailLoader<MemePickerRow, Bitmap> _thumbs = new(
+        (row, ct) => Task.Run(() => MemeThumbnailCache.AcquireAsync(row.Item.FullPath, row.Item.IsImage, ct), ct),
+        (row, bitmap) => row.Thumbnail = bitmap,
+        action => Dispatcher.UIThread.Post(action),
+        action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
     private bool _portrait;
     private int _scanGeneration;
     private bool _downloading;
@@ -117,6 +124,13 @@ public partial class MemePickerWindow : Window
         var search = this.FindControl<TextBox>("SearchBox");
         var moreVideos = this.FindControl<Button>("DownloadVideosBtn");
         var morePictures = this.FindControl<Button>("DownloadPicturesBtn");
+
+        if (list != null)
+        {
+            list.ContainerPrepared += (_, e) => _thumbs.Realized(e.Container, e.Index);
+            list.ContainerIndexChanged += (_, e) => _thumbs.IndexChanged(e.Container, e.NewIndex);
+            list.ContainerClearing += (_, e) => _thumbs.Cleared(e.Container);
+        }
 
         if (list != null && useBtn != null)
         {
@@ -146,6 +160,7 @@ public partial class MemePickerWindow : Window
         {
             MemeDirectory.Changed -= OnMemeDirectoryChanged;
             _cts.Cancel();
+            _thumbs.Dispose();
         };
     }
 
@@ -179,8 +194,6 @@ public partial class MemePickerWindow : Window
                 string.Equals(r.Item.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase));
             if (again != null) list.SelectedItem = again;
         }
-
-        _ = LoadThumbnailsAsync(_rows);
     }
 
     private void ApplyFilter()
@@ -191,26 +204,11 @@ public partial class MemePickerWindow : Window
             : _rows.Where(r => r.FileName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
 
         var list = this.FindControl<ListBox>("MemeList");
+        _thumbs.SetRows(shown);
         if (list != null) list.ItemsSource = shown;
 
         var empty = this.FindControl<TextBlock>("EmptyText");
         if (empty != null) empty.IsVisible = shown.Count == 0;
-    }
-
-    private async Task LoadThumbnailsAsync(List<MemePickerRow> rows)
-    {
-        CancellationToken ct = _cts.Token;
-        foreach (MemePickerRow row in rows)
-        {
-            if (ct.IsCancellationRequested || !ReferenceEquals(rows, _rows)) return;
-            try
-            {
-                Bitmap? bmp = await Task.Run(() => MemeThumbnailCache.GetAsync(row.Item.FullPath, row.Item.IsImage, ct), ct);
-                if (bmp != null) Dispatcher.UIThread.Post(() => row.Thumbnail = bmp);
-            }
-            catch (OperationCanceledException) { return; }
-            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-        }
     }
 
     /// <summary>MEMEPICK_02 — re-scan the meme folder; only the newest scan may write.</summary>
@@ -243,7 +241,7 @@ public partial class MemePickerWindow : Window
             else
                 ShowStatus(count == 0
                     ? $"You already have all available {label}."
-                    : $"✓ Downloaded {count} new {label}.");   // the re-scan was raised by NotifyChanged
+                    : $"✓ Downloaded {count} new {label}.");
         }
         catch (Exception ex)
         {
@@ -314,7 +312,6 @@ public partial class MemePickerWindow : Window
         }
         catch (Exception ex)
         {
-            // A picker that cannot open must not be read as "the user picked something".
             RuntimeLog.Fail("MEME", $"Meme picker failed to open: {ex.Message}");
             return null;
         }

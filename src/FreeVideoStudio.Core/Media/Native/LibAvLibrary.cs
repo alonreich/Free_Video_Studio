@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Runtime.InteropServices;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -140,23 +137,13 @@ internal static class LibAvLibrary
             || LibAvConstants.MajorMinor(codec) != LibAvConstants.ExpectedAvCodec
             || LibAvConstants.MajorMinor(util) != LibAvConstants.ExpectedAvUtil)
         {
-            // The struct views were derived from 62.0 / 62.0 / 60.1. Any other major.minor may move
-            // a field; refusing is the only safe answer. The DLLs stay loaded but are never called again.
             return new LoadState(false, $"version mismatch ({versions}); struct layout pinned to avformat 62.0, avcodec 62.0, avutil 60.1.", null);
         }
 
-        // ffprobe runs with -v quiet. Same here: libav must not write to the (absent) stderr.
         LibAv.av_log_set_level(LibAvConstants.AV_LOG_QUIET);
         return new LoadState(true, $"native media backend loaded from {dir} ({versions}).", dir, handles);
     }
 
-    // ── LIBAVFRAME_02 — the single-frame decode tier ────────────────────────────────────────────
-    //
-    // NOT a second loader: it runs only after the tier above succeeded, loads exactly ONE more
-    // module (swscale-9) by absolute path from the SAME directory, binds LibAvFrame against the
-    // module handles already held, and checks swscale's major.minor. Latched separately, so a
-    // missing/mismatched swscale disables frame decoding (callers keep their ffmpeg subprocess)
-    // and never touches metadata. Never unloaded.
 
     private static LoadState? _frameState;
 

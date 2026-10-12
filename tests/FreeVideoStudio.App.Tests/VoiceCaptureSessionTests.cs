@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Collections.Concurrent;
 using System.IO;
 using Avalonia.Headless.XUnit;
@@ -21,7 +18,6 @@ public sealed class VoiceCaptureSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    // ── 1 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task MonitoringToRecording_ReleasesMonitorFirst()
     {
@@ -32,7 +28,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.True(session.IsMonitorOpen);
         Assert.Equal(VoiceCaptureState.Monitoring, session.State);
 
-        // Deliberately WITHOUT StopMonitorAsync: the session must release the monitor itself.
         var open = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(open);
         var result = await open!.WaitAsync(Timeout);
@@ -46,7 +41,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 2 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task RecordingToMonitoring_ReleasesRecorderFirst()
     {
@@ -58,7 +52,7 @@ public sealed class VoiceCaptureSessionTests
         devices.Mic.Log.Clear();
         var take = session.FinalizeRecordingAsync(_ => { });
         Assert.NotNull(take);
-        Task monitorBack = session.StartMonitorAsync(0);   // issued immediately, like the window does
+        Task monitorBack = session.StartMonitorAsync(0);
 
         await monitorBack.WaitAsync(Timeout);
         await session.WhenFinalizationsSettled().WaitAsync(Timeout);
@@ -69,12 +63,11 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 3 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task RapidRecordClicks_CannotDoubleOpenTheDevice()
     {
         var devices = new FakeDevices();
-        devices.OpenGate.Reset();   // hold the first open inside the driver
+        devices.OpenGate.Reset();
         using var session = new VoiceCaptureSession(devices, a => a());
 
         var first = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
@@ -86,13 +79,12 @@ public sealed class VoiceCaptureSessionTests
 
         devices.OpenGate.Set();
         Assert.Equal(RecordingOpenOutcome.Opened, (await first!.WaitAsync(Timeout)).Outcome);
-        Assert.Null(session.StartRecordingAsync(devices.TempPath(), 0, _ => { }));   // live: still refused
+        Assert.Null(session.StartRecordingAsync(devices.TempPath(), 0, _ => { }));
 
         Assert.Equal(1, devices.RecordersCreated);
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 4 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task DisposeWhileRecording_DrainsExactlyOnce()
     {
@@ -114,7 +106,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 5 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task DeviceOpenFailure_ProducesDeterministicState()
     {
@@ -135,7 +126,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Null(devices.Mic.Owner);
         Assert.Equal(1, Assert.Single(devices.Recorders).Disposals);
 
-        // Recovery is explicit and lands in a known state.
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
         Assert.Equal(VoiceCaptureState.Monitoring, session.State);
         Assert.Null(session.LastFault);
@@ -143,7 +133,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 6 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task ClosingWhileFinalizationPending_WaitsForTheDrainAndTheVerdict()
     {
@@ -152,7 +141,7 @@ public sealed class VoiceCaptureSessionTests
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
         await session.StartRecordingAsync(devices.TempPath(), 0, _ => { })!.WaitAsync(Timeout);
 
-        devices.StopGate.Reset();   // the drain is in flight
+        devices.StopGate.Reset();
         bool verdictRan = false;
         Assert.NotNull(session.FinalizeRecordingAsync(_ => verdictRan = true));
         Task settled = session.WhenFinalizationsSettled();
@@ -166,7 +155,7 @@ public sealed class VoiceCaptureSessionTests
 
         devices.StopGate.Set();
         await settled.WaitAsync(Timeout);
-        Assert.True(verdictRan);   // the verdict lands BEFORE the settle completes
+        Assert.True(verdictRan);
         await closed.WaitAsync(Timeout);
 
         Assert.False(session.HasPendingFinalizations);
@@ -175,7 +164,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── 7 ─────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task Disposal_UnsubscribesEveryHandler()
     {
@@ -213,11 +201,10 @@ public sealed class VoiceCaptureSessionTests
         string path = devices.TempPath();
 
         var open = session.StartRecordingAsync(path, 0, _ => { })!;
-        Assert.Null(session.FinalizeRecordingAsync(_ => { }));   // nothing live yet: cancels the open
+        Assert.Null(session.FinalizeRecordingAsync(_ => { }));
         devices.OpenGate.Set();
 
         Assert.Equal(RecordingOpenOutcome.Cancelled, (await open.WaitAsync(Timeout)).Outcome);
-        // TryDeleteFile (ISSUE_05) deletes on a retrying background task; give it its turn.
         for (int i = 0; i < 100 && File.Exists(path); i++) await Task.Delay(20);
         Assert.False(File.Exists(path));
         Assert.False(session.IsRecorderLive);
@@ -225,7 +212,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Null(devices.Mic.Owner);
     }
 
-    // ── 8 ─────────────────────────────────────────────────────────────────────────────────────
     [AvaloniaFact]
     public async Task NoBlockingDeviceOperation_RunsOnTheAvaloniaUiThread()
     {
@@ -247,16 +233,14 @@ public sealed class VoiceCaptureSessionTests
 
         Assert.NotEmpty(devices.DeviceCallThreads);
         Assert.DoesNotContain(uiThread, devices.DeviceCallThreads);
-        Assert.All(callbackThreads, t => Assert.Equal(uiThread, t));   // verdicts come back to the UI thread
+        Assert.All(callbackThreads, t => Assert.Equal(uiThread, t));
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-    // ── VOCAPTURE_02 — settlement contract: the returned Task completes only AFTER onSettled ─────
 
     [Fact]
     public async Task DeviceOpenFailure_ImmediateDispatch_CallbackAlwaysPrecedesCompletion()
     {
-        // The original race was intermittent; repeat it so a regression cannot pass by luck.
         for (int i = 0; i < 200; i++)
         {
             var devices = new FakeDevices { FailNextOpen = true };
@@ -291,8 +275,8 @@ public sealed class VoiceCaptureSessionTests
             Interlocked.Increment(ref calls);
         })!.WaitAsync(Timeout);
 
-        Assert.Same(result, posted);                       // published before the await resumed
-        Assert.Equal(poster.ThreadId, callbackThread);     // on the post target, not the chain
+        Assert.Same(result, posted);
+        Assert.Equal(poster.ThreadId, callbackThread);
         Assert.Equal(RecordingOpenOutcome.Failed, result.Outcome);
         Assert.Equal(VoiceCaptureState.Faulted, session.State);
         Assert.Equal("device busy", session.LastFault?.Message);
@@ -300,7 +284,7 @@ public sealed class VoiceCaptureSessionTests
         Assert.Null(devices.Mic.Owner);
 
         await Task.Delay(150);
-        Assert.Equal(1, Volatile.Read(ref calls));         // no double callback
+        Assert.Equal(1, Volatile.Read(ref calls));
         Assert.Equal(0, devices.Mic.Violations);
     }
 
@@ -321,7 +305,7 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(VoiceCaptureState.Recording, session.State);
         int monitorClose = devices.Mic.Log.IndexOf("monitor.close");
         int recorderOpen = devices.Mic.Log.IndexOf("recorder.open");
-        Assert.True(monitorClose >= 0 && recorderOpen > monitorClose, string.Join(",", devices.Mic.Log));   // VOASYNC_02
+        Assert.True(monitorClose >= 0 && recorderOpen > monitorClose, string.Join(",", devices.Mic.Log));
         await Task.Delay(100);
         Assert.Equal(1, Volatile.Read(ref calls));
         Assert.Equal(0, devices.Mic.Violations);
@@ -396,7 +380,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.NotNull(open);
         var result = await open!.WaitAsync(Timeout);
 
-        // VOAPPLY_03 / VOCAPTURE_01: monitor stop failure aborts recorder creation, leaving no concurrent device open
         Assert.Equal(RecordingOpenOutcome.Failed, result.Outcome);
         Assert.Equal(VoiceCaptureState.Faulted, session.State);
         Assert.Empty(devices.Recorders);
@@ -449,7 +432,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(VoiceCaptureState.Disposed, session.State);
     }
 
-    // ── MICHEALTH_01 — Truthful health states and error handling ──────────────────────────────
 
     [Fact]
     public async Task ImmediateStopped_DuringRecorderOpen_CannotBeOverwrittenByLaterSuccess()
@@ -495,14 +477,12 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(VoiceCaptureState.Recording, session.State);
         Assert.Equal(MicrophoneHealth.AudibleData, session.Health);
 
-        // Disconnect or driver crash mid-take
         recorder.RaiseStopped(new InvalidOperationException("Device unplugged"));
 
         Assert.Equal(VoiceCaptureState.Faulted, session.State);
         Assert.Equal(MicrophoneHealth.Faulted, session.Health);
         Assert.Equal("Device unplugged", session.LastFault?.Message);
 
-        // Finalize must drain once, retain valid audio, and report the take
         CapturedTake? verdict = null;
         var takeTask = session.FinalizeRecordingAsync(t => verdict = t);
         Assert.NotNull(takeTask);
@@ -527,18 +507,14 @@ public sealed class VoiceCaptureSessionTests
         var monitorTask = session.StartMonitorAsync(0);
         await monitorTask.WaitAsync(Timeout);
 
-        // Device opened, but 0 buffers delivered yet
         Assert.Equal(MicrophoneHealth.ZeroBuffers, session.Health);
 
-        // Deliver zero-amplitude buffer (pure silence)
         devices.Monitor!.Raise(0.0f);
         Assert.Equal(MicrophoneHealth.SilentData, session.Health);
 
-        // Deliver audible buffer (> 0.002)
         devices.Monitor!.Raise(0.05f);
         Assert.Equal(MicrophoneHealth.AudibleData, session.Health);
 
-        // Driver failure
         devices.Monitor!.RaiseStopped(new InvalidOperationException("driver crash"));
         Assert.Equal(MicrophoneHealth.Faulted, session.Health);
     }
@@ -555,11 +531,9 @@ public sealed class VoiceCaptureSessionTests
         await session.StartRecordingAsync(devices.TempPath(), 0, _ => { })!.WaitAsync(Timeout);
         Assert.Equal(VoiceCaptureState.Recording, session.State);
 
-        // Late callbacks from old monitor
         oldMonitor.Raise(0.9f);
         oldMonitor.RaiseStopped(new InvalidOperationException("old monitor fault"));
 
-        // Must NOT alter new recording device's state
         Assert.Equal(VoiceCaptureState.Recording, session.State);
         Assert.Null(session.LastFault);
     }
@@ -574,10 +548,9 @@ public sealed class VoiceCaptureSessionTests
         var res1 = await open1.WaitAsync(Timeout);
 
         Assert.Equal(RecordingOpenOutcome.Failed, res1.Outcome);
-        Assert.Null(devices.Mic.Owner); // Fully released
+        Assert.Null(devices.Mic.Owner);
         Assert.Equal(0, devices.Mic.Violations);
 
-        // Retry now succeeds with one owner
         var open2 = session.StartRecordingAsync(devices.TempPath(), 0, _ => { })!;
         var res2 = await open2.WaitAsync(Timeout);
 
@@ -695,7 +668,6 @@ public sealed class VoiceCaptureSessionTests
         var devices = new FakeDevices();
         using var session = new VoiceCaptureSession(devices, a => a());
 
-        // Configure recorder to throw on both stop and dispose
         devices.RecorderStopImmediatelyDuringOpen = false;
         var r1Open = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(r1Open);
@@ -709,11 +681,9 @@ public sealed class VoiceCaptureSessionTests
         Assert.NotNull(finalizeTask);
         await finalizeTask!.WaitAsync(Timeout);
 
-        // Session must be faulted and have unreleased device
         Assert.True(session.HasUnreleasedDevice);
         Assert.Equal(VoiceCaptureState.Faulted, session.State);
 
-        // Attempting to start a new recording must be refused
         var r2Open = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         if (r2Open != null)
         {
@@ -725,7 +695,6 @@ public sealed class VoiceCaptureSessionTests
             Assert.Null(r2Open);
         }
 
-        // Factory must NOT have created a second recorder on the wedged endpoint!
         Assert.Equal(1, devices.RecordersCreated);
     }
 
@@ -808,10 +777,8 @@ public sealed class VoiceCaptureSessionTests
         await open!.WaitAsync(Timeout);
 
         var r = devices.Recorders.Single();
-        // Simulate a runtime capture fault on the device
         r.RaiseStopped(new InvalidOperationException("Runtime buffer error"));
 
-        // Finalize recording - Stop and Dispose succeed cleanly
         r.ThrowOnStop = false;
         r.ThrowOnDispose = false;
 
@@ -825,7 +792,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.False(session.HasUnreleasedDevice, "Clean endpoint release must not latch HasUnreleasedDevice.");
         Assert.Null(session.UnreleasedOwner);
 
-        // Next recording must be allowed
         var nextOpen = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(nextOpen);
         var nextResult = await nextOpen!.WaitAsync(Timeout);
@@ -855,7 +821,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.True(session.HasUnreleasedDevice);
         Assert.NotNull(session.UnreleasedOwner);
 
-        // Next recording is refused while device unreleased and failing dispose
         var blockedOpen = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         if (blockedOpen != null)
         {
@@ -868,10 +833,8 @@ public sealed class VoiceCaptureSessionTests
         }
         Assert.True(session.HasUnreleasedDevice);
 
-        // Device recovers: ThrowOnDispose becomes false
         r.ThrowOnDispose = false;
 
-        // Next recording attempt automatically retries disposing unreleased owner and recovers!
         var recoveredOpen = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(recoveredOpen);
         var recResult = await recoveredOpen!.WaitAsync(Timeout);
@@ -888,10 +851,8 @@ public sealed class VoiceCaptureSessionTests
 
         devices.OpenGate.Reset();
 
-        // Queue monitor open
         var monTask = session.StartMonitorAsync(0);
 
-        // Queue recording open immediately after
         var recTask = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(recTask);
 
@@ -904,9 +865,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(VoiceCaptureState.Recording, session.State);
         Assert.False(session.IsMonitorOpen);
 
-        // The queued monitor either opened and was closed BEFORE the recorder opened, or was
-        // superseded on the chain and never opened at all (both orders are legitimate; which one
-        // occurs depends on when the chain worker dequeues). What may never happen is overlap.
         int monOpen = devices.Mic.Log.IndexOf("monitor.open");
         int monClose = devices.Mic.Log.IndexOf("monitor.close");
         int recOpen = devices.Mic.Log.IndexOf("recorder.open");
@@ -924,7 +882,6 @@ public sealed class VoiceCaptureSessionTests
         var devices = new FakeDevices();
         using var session = new VoiceCaptureSession(devices, a => a());
 
-        // First, record a take that fails disposal to latch an unreleased owner
         var open = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
         Assert.NotNull(open);
         await open!.WaitAsync(Timeout);
@@ -939,7 +896,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.True(session.HasUnreleasedDevice);
         Assert.NotNull(session.UnreleasedOwner);
 
-        // Fix disposal for recovery
         r.ThrowOnDispose = false;
 
         int callerThreadId = -1;
@@ -1014,7 +970,6 @@ public sealed class VoiceCaptureSessionTests
 
         Assert.True(inDisposeGate.Wait(TimeSpan.FromSeconds(5)), "Recovery must enter Dispose");
 
-        // Concurrent reads MUST NOT DEADLOCK because _gate is released around Dispose()
         var stateRead = Task.Run(() =>
         {
             var s = session.State;
@@ -1026,7 +981,6 @@ public sealed class VoiceCaptureSessionTests
         var readResult = await stateRead.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(readResult.h);
 
-        // Concurrent start while recovery is active
         var concurrentRec = session.StartRecordingAsync(devices.TempPath(), 0, _ => { });
 
         releaseDisposeGate.Set();
@@ -1071,7 +1025,6 @@ public sealed class VoiceCaptureSessionTests
         public void Dispose() => _queue.CompleteAdding();
     }
 
-    // ── SPECTRUM_02 — the spectrum comes from the ACTIVE source only ───────────────────────────
 
     private static byte[] TonePcm(double hz, double amp = 0.4, int frames = 8192)
     {
@@ -1104,8 +1057,8 @@ public sealed class VoiceCaptureSessionTests
         Assert.True(raised > 0);
 
         await session.StartRecordingAsync(devices.TempPath(), 0, _ => { })!.WaitAsync(Timeout);
-        Assert.Null(session.LatestSpectrum);                 // the monitor's spectrum ended with the hand-over
-        devices.Monitor.RaisePcm(TonePcm(300));               // a late monitor buffer must not paint the take
+        Assert.Null(session.LatestSpectrum);
+        devices.Monitor.RaisePcm(TonePcm(300));
         Assert.Null(session.LatestSpectrum);
 
         var recorder = Assert.Single(devices.Recorders);
@@ -1113,7 +1066,7 @@ public sealed class VoiceCaptureSessionTests
         var take = session.LatestSpectrum;
         Assert.NotNull(take);
         Assert.True(Math.Abs(take!.PeakBandIndex - BandOf(take, 5000)) <= 1);
-        Assert.Equal((8192 - 4096) / 1024 + 1, take.Sequence); // 5 windows of THIS buffer: the analyzer was reset, not continued
+        Assert.Equal((8192 - 4096) / 1024 + 1, take.Sequence);
     }
 
     [Fact]
@@ -1130,7 +1083,7 @@ public sealed class VoiceCaptureSessionTests
         Assert.NotNull(take);
         await take!.WaitAsync(Timeout);
         Assert.Null(session.LatestSpectrum);
-        Assert.Equal(0, recorder.PcmSubscribers);             // detached, so it cannot even try
+        Assert.Equal(0, recorder.PcmSubscribers);
         recorder.RaisePcm(TonePcm(2000));
         Assert.Null(session.LatestSpectrum);
     }
@@ -1144,16 +1097,15 @@ public sealed class VoiceCaptureSessionTests
         devices.Monitor!.RaisePcm(TonePcm(400));
         Assert.True(session.LatestSpectrum!.Sequence > 0);
 
-        // Switching device: the window stops and re-opens the monitor on another index.
         Task stop = session.StopMonitorAsync();
-        Assert.Null(session.LatestSpectrum);                  // cleared the moment the switch is issued
-        devices.Monitor.RaisePcm(TonePcm(400));               // a buffer in flight from the old device
+        Assert.Null(session.LatestSpectrum);
+        devices.Monitor.RaisePcm(TonePcm(400));
         Assert.Null(session.LatestSpectrum);
         await stop.WaitAsync(Timeout);
         await session.StartMonitorAsync(1).WaitAsync(Timeout);
         devices.Monitor.RaisePcm(TonePcm(6000, frames: 4096));
         var fresh = session.LatestSpectrum!;
-        Assert.Equal(1, fresh.Sequence);                      // analyzer reset: no 400 Hz window carried over
+        Assert.Equal(1, fresh.Sequence);
         Assert.True(fresh.BandDbfs[BandOf(fresh, 400)] < -90, $"{fresh.BandDbfs[BandOf(fresh, 400)]:0.0}");
 
         devices.Monitor.RaiseStopped(new InvalidOperationException("driver crash"));
@@ -1210,7 +1162,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Same(recorderAdapter, sender);
     }
 
-    // ── SPECTRUM_05 — a retired source can never publish, even its first in-flight spectrum ──────
 
     /// <summary>Holds the FIRST admitted buffer in flight (after admission, before analysis) until released.</summary>
     private sealed class InFlightGate : IDisposable
@@ -1297,10 +1248,8 @@ public sealed class VoiceCaptureSessionTests
         session.SpectrumAdmittedForTesting = gate.Hook;
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
 
-        // Old device: its first buffer (400 Hz) is admitted and held.
         Task stale = gate.Run(() => devices.Monitor!.RaisePcm(TonePcm(400, frames: 4096)));
 
-        // Device switch while it is in flight; the fresh source publishes promptly.
         await session.StopMonitorAsync().WaitAsync(Timeout);
         await session.StartMonitorAsync(1).WaitAsync(Timeout);
         devices.Monitor!.RaisePcm(TonePcm(6000, frames: 4096));
@@ -1309,15 +1258,13 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(1, fresh!.Sequence);
         Assert.True(Math.Abs(fresh.PeakBandIndex - BandOf(fresh, 6000)) <= 1);
 
-        // The retired buffer completes: it must neither replace the fresh snapshot nor reset the
-        // analyzer the fresh source is filling.
         gate.Release.Set();
         await stale.WaitAsync(Timeout);
         Assert.Same(fresh, session.LatestSpectrum);
 
         devices.Monitor.RaisePcm(TonePcm(6000, frames: 4096));
         var next = session.LatestSpectrum!;
-        Assert.Equal(1 + 4096 / 1024, next.Sequence);   // continued, not restarted by the stale buffer
+        Assert.Equal(1 + 4096 / 1024, next.Sequence);
         Assert.True(Math.Abs(next.PeakBandIndex - BandOf(next, 6000)) <= 1);
         Assert.True(next.BandDbfs[BandOf(next, 400)] < -90, $"{next.BandDbfs[BandOf(next, 400)]:0.0} dB of the old tone leaked");
     }
@@ -1333,14 +1280,13 @@ public sealed class VoiceCaptureSessionTests
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
         Assert.Equal(VoiceCaptureState.Monitoring, session.State);
 
-        for (int i = 0; i < 3; i++) session.CheckHealth();   // repeated health ticks must not block fresh data
+        for (int i = 0; i < 3; i++) session.CheckHealth();
         devices.Monitor.RaisePcm(TonePcm(2000, frames: 4096));
         var s = session.LatestSpectrum;
         Assert.NotNull(s);
         Assert.True(Math.Abs(s!.PeakBandIndex - BandOf(s, 2000)) <= 1);
     }
 
-    // ── fakes ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One physical capture endpoint. Records every open/close and every double-hold.</summary>
     private sealed class FakeMicrophone
@@ -1443,7 +1389,6 @@ public sealed class VoiceCaptureSessionTests
 
         public void RaiseStopped(Exception? error) => _stopped?.Invoke(this, error);
 
-        // SPECTRUM_02 — raw PCM like MicLevelMonitor.PcmAvailable.
         private EventHandler<PcmBuffer>? _pcm;
         public int PcmSubscribers { get; private set; }
         public event EventHandler<PcmBuffer>? PcmAvailable
@@ -1520,7 +1465,6 @@ public sealed class VoiceCaptureSessionTests
             _stopped?.Invoke(this, error);
         }
 
-        // SPECTRUM_02 — raw PCM like VoiceRecorder.PcmAvailable.
         private EventHandler<PcmBuffer>? _pcm;
         public int PcmSubscribers { get; private set; }
         public event EventHandler<PcmBuffer>? PcmAvailable
@@ -1566,7 +1510,7 @@ public sealed class VoiceCaptureSessionTests
         {
             OnDisposeAction?.Invoke();
             if (ThrowOnDispose) throw new InvalidOperationException("recorder dispose error");
-            StopRecording();   // mirrors VoiceRecorder.Dispose
+            StopRecording();
             Disposals++;
         }
     }

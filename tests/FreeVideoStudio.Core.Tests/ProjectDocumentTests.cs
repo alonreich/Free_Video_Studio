@@ -46,7 +46,7 @@ public class ProjectDocumentTests : IDisposable
         Segments = new List<SpeedSegment>
         {
             new(10_000, 20_000, 0.5),
-            new(25_000, 25_100, 0.0),                                    // a freeze
+            new(25_000, 25_100, 0.0),
             new(30_000, 35_000, 2.0, 100, 200, 640, 360, "1920x1080", true, 30_000, 31_000),
         },
         Cuts = new List<OutputTimeline.Cut> { new(40.0, 42.0) },
@@ -75,7 +75,6 @@ public class ProjectDocumentTests : IDisposable
         },
     };
 
-    // ── Round trip ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void RoundTrip_PreservesEveryField()
@@ -133,8 +132,8 @@ public class ProjectDocumentTests : IDisposable
         {
             Source = SampleDocument().Source with
             {
-                SizeBytes = 9_007_199_254_740_995L,   // 2^53 + 3: unrepresentable as a double
-                ModifiedUtcSeconds = 4_102_444_800L,  // 2100-01-01, past int.MaxValue
+                SizeBytes = 9_007_199_254_740_995L,
+                ModifiedUtcSeconds = 4_102_444_800L,
             },
         };
 
@@ -157,9 +156,9 @@ public class ProjectDocumentTests : IDisposable
         JsonObject json = ProjectSerializer.Write(SampleDocument());
         JsonObject source = (JsonObject)json["source"]!;
 
-        source["size_bytes"] = JsonValue.Create("123456789");     // string
-        source["duration_ms"] = JsonValue.Create(42);             // int where a double is expected
-        source["width"] = JsonValue.Create(1920L);                // long where an int is expected
+        source["size_bytes"] = JsonValue.Create("123456789");
+        source["duration_ms"] = JsonValue.Create(42);
+        source["width"] = JsonValue.Create(1920L);
 
         ProjectDocument? loaded = ProjectSerializer.Read(json, out string? error);
 
@@ -169,7 +168,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(1920, loaded.Source.Width);
     }
 
-    // ── PROJ_11 — the mask and the merge queue ──────────────────────────────────────────────
 
     private static JsonObject SampleMaskConfig() => new()
     {
@@ -219,7 +217,7 @@ public class ProjectDocumentTests : IDisposable
         var mask = new ProjectMask("Apex Legends", ProjectMask.ComputeFingerprint(config), config);
 
         JsonObject edited = SampleMaskConfig();
-        edited["crops_1080p"]!["stats"]!["y"] = 31;   // one pixel
+        edited["crops_1080p"]!["stats"]!["y"] = 31;
 
         Assert.True(mask.MatchesLive(config));
         Assert.False(mask.MatchesLive(edited));
@@ -286,7 +284,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(original.Merge!.Clips, loaded.Merge.Clips);
     }
 
-    // ── PROJ_12 — the Video Merger's edit list (Video-Merger-Migration.md P3.1) ─────────────
 
     [Fact]
     public void T31a_ASchemaTwoMergeQueueMigratesToAnEdl()
@@ -313,7 +310,7 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(12_250_000, edl.Clips[1].OutUs);
         Assert.Equal(0, edl.Clips[0].OutUs);
         Assert.True(edl.Clips.All(c => c.Effects.IsEmpty));
-        Assert.Equal(edl, loaded.Merge.ToEdl());   // deterministic ids: migrating twice is equal
+        Assert.Equal(edl, loaded.Merge.ToEdl());
     }
 
     [Fact]
@@ -356,7 +353,7 @@ public class ProjectDocumentTests : IDisposable
         };
 
         JsonObject json = ProjectSerializer.Write(original);
-        Assert.Equal(4, (int)json["schema_version"]!);   // MEMEMODE_01 bumped 3 -> 4 (per-meme presentation keys)
+        Assert.Equal(4, (int)json["schema_version"]!);
         ProjectDocument? loaded = ProjectSerializer.Read(json, out string? error);
 
         Assert.Null(error);
@@ -423,7 +420,6 @@ public class ProjectDocumentTests : IDisposable
     [Fact]
     public void RoundTrip_ProducesIdenticalTimeline()
     {
-        // The real contract: not "the fields match" but "the finished video is the same video".
         ProjectDocument original = SampleDocument();
         ProjectDocument loaded = ProjectSerializer.Read(ProjectSerializer.Write(original), out _)!;
 
@@ -437,7 +433,6 @@ public class ProjectDocumentTests : IDisposable
             Assert.Equal(a.Chunks[i], b.Chunks[i]);
     }
 
-    // ── Compatibility ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Read_FutureSchema_IsRefusedWithAnExplanation()
@@ -466,8 +461,6 @@ public class ProjectDocumentTests : IDisposable
     [Fact]
     public void Read_UnknownFieldsSurviveASaveByAnOlderBuild()
     {
-        // The amputation risk: a newer build adds "colour_grade"; this build must carry it through
-        // an open-and-save untouched rather than deleting the user's work silently.
         JsonObject json = ProjectSerializer.Write(SampleDocument());
         json["colour_grade"] = new JsonObject { ["lut"] = "teal_orange", ["strength"] = 0.4 };
 
@@ -509,7 +502,7 @@ public class ProjectDocumentTests : IDisposable
 
         Assert.Null(error);
         Assert.NotNull(loaded);
-        Assert.Equal(1.0, loaded!.BaseSpeed);   // fell back
+        Assert.Equal(1.0, loaded!.BaseSpeed);
         Assert.Equal(0, loaded.Source.Width);
     }
 
@@ -517,8 +510,8 @@ public class ProjectDocumentTests : IDisposable
     public void Read_MalformedEntriesAreDroppedNotFatal()
     {
         JsonObject json = ProjectSerializer.Write(SampleDocument());
-        ((JsonArray)json["memes"]!).Add(new JsonObject { ["at_source_sec"] = 5.0 }); // no path, no id
-        ((JsonArray)json["cuts"]!).Add(new JsonObject { ["start_sec"] = 1.0 });      // no end
+        ((JsonArray)json["memes"]!).Add(new JsonObject { ["at_source_sec"] = 5.0 });
+        ((JsonArray)json["cuts"]!).Add(new JsonObject { ["start_sec"] = 1.0 });
 
         ProjectDocument loaded = ProjectSerializer.Read(json, out _)!;
 
@@ -526,7 +519,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Single(loaded.Cuts);
     }
 
-    // ── Disk ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Save_AppendsTheExtensionWhenTheUserOmitsIt()
@@ -573,7 +565,7 @@ public class ProjectDocumentTests : IDisposable
     {
         string path = PathIn("montage.fvsproj");
         ProjectStore.Save(SampleDocument() with { Title = "good" }, path);
-        ProjectStore.Save(SampleDocument() with { Title = "also good" }, path);   // creates .bak
+        ProjectStore.Save(SampleDocument() with { Title = "also good" }, path);
 
         File.WriteAllText(path, "{ this is not json");
 
@@ -593,7 +585,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.NotNull(error);
     }
 
-    // ── Source integrity ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void CheckSource_MissingFile_IsMissing()
@@ -639,7 +630,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(SourceIntegrity.Changed, stale.CheckSource());
     }
 
-    // ── Recent list ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Recent_TouchMovesToTopAndDeduplicatesCaseInsensitively()
@@ -678,12 +668,9 @@ public class ProjectDocumentTests : IDisposable
         Assert.False(entry.Exists);
     }
 
-    // ── UNDOEQ_01: edit-state equality (07_UNDO_AND_HISTORY.md §3, U4) ─────────────────────────
 
     private static ProjectDocument FreshCaptureOf(ProjectDocument d) => d with
     {
-        // Exactly what ProjectSession.Capture() does on every edit: new arrays, new timestamps,
-        // a freshly cloned mask object.
         Segments = new List<SpeedSegment>(d.Segments).ToArray(),
         Cuts = new List<OutputTimeline.Cut>(d.Cuts).ToArray(),
         Memes = new List<MemePlacement>(d.Memes).ToArray(),

@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,17 +30,57 @@ namespace FreeVideoStudio.App;
 /// RE-PLACES cached pieces: each on-screen frame slot shows the nearest grid frame (a cropped view of the
 /// strip, no pixel work) and the waveform is a vector shape stretched to the clip's width. ffmpeg runs
 /// only for a clip it has never seen (keyframe-only decode, tiny frames, 2 at a time).
+///
+/// WAVEPIXEL_01 (2026-10-11) — the waveform lane is RECONCILED, never cleared on a layout change
+/// (<see cref="Infrastructure.WaveformLanePresenter"/>): unchanged tiles keep their Path, peaks are
+/// reduced OFF the dispatcher to one level per device pixel (<see cref="WaveformEnvelope"/>), off-lane
+/// clips are culled and slivers share one path. A clip's peak fetch is shared across runs
+/// (<see cref="Infrastructure.WaveformPeakSource"/>), so a resize or reorder never restarts its ffmpeg.
+///
+/// FILMPIXEL_01 (2026-10-11) — the filmstrip lane follows the same rules: reconciled by clip key
+/// (<see cref="Infrastructure.FilmLanePresenter"/>; unchanged tiles keep their images, moved ones re-lay
+/// from the same strip and lease), and a clip's streamed strip is ONE shared job
+/// (<see cref="Infrastructure.FilmStripSource"/>) that a superseded run never kills.
+///
+/// LANEINSTANCE_01 (2026-10-11) — a clip queued more than once (same file, same trim) is drawn once PER
+/// OCCURRENCE: the presenters key tiles by <see cref="LaneTile.Occurrence"/> and fan every source result
+/// (streamed frame, cached strip, peaks) out to all occurrences; the decode itself stays keyed by
+/// <see cref="LaneTile.CacheKey"/>, so the duplicate costs no second ffmpeg run. Each displayed strip tile
+/// holds its own cache lease.
 /// ══════════════════════════════════════════════════════════════════════════════════════════════
 /// </summary>
 public partial class VideoMergerWindow
 {
     private const int LaneParallelism = 2;
     private const int LaneCacheSize = 128;
+    /// <summary>
+    /// CACHEBOUND_04 — pixels kept for filmstrip strips NOT on the lane. A strip is
+    /// <c>FrameWidthPx × frames × StripHeightPx × 4</c> (≤ 107 × 90 × 60 × 4 ≈ 2.3 MB), so this holds ~40
+    /// off-screen clips; strips on the lane are leased and never evicted.
+    /// </summary>
+    private const long FilmCacheBudgetBytes = 96L * 1024 * 1024;
 
     private readonly ProgressiveLaneRunner _filmRunner = new();
     private readonly ProgressiveLaneRunner _waveRunner = new();
-    private readonly LaneCache<IImage> _filmCache = new(LaneCacheSize);
+    /// <summary>
+    /// CACHEBOUND_04 — the ONE owner of every finished filmstrip bitmap (was a 128-entry
+    /// <c>LaneCache&lt;IImage&gt;</c> that dropped bitmaps without disposing them and had no byte budget).
+    /// </summary>
+    private readonly Infrastructure.OwnedLruCache<Bitmap> _filmCache = new(FilmCacheBudgetBytes, LaneCacheSize);
+    /// <summary>
+    /// CACHEBOUND_04 / FILMPIXEL_01 — owns the film lane's images and the ONE lease per tile showing a cached
+    /// strip; a lease is closed one Background turn after its images leave the lane.
+    /// </summary>
+    private Infrastructure.FilmLanePresenter? _filmLane;
+    /// <summary>FILMPIXEL_01 — one streamed strip per clip, shared by every run of <see cref="_filmRunner"/>.</summary>
+    private Infrastructure.FilmStripSource? _filmJobs;
     private readonly LaneCache<float[]> _waveCache = new(LaneCacheSize);
+    /// <summary>WAVEPIXEL_01 — one fetch per clip (disk → ffmpeg → disk), shared by every run of <see cref="_waveRunner"/>.</summary>
+    private Infrastructure.WaveformPeakSource? _wavePeaks;
+    /// <summary>WAVEPIXEL_01 — owns the waveform lane's children; reconciles instead of clearing.</summary>
+    private Infrastructure.WaveformLanePresenter? _waveLane;
+    /// <summary>WAVEPIXEL_01 — the lane's device-pixel scale, read on the UI thread for the workers' reductions.</summary>
+    private double _waveScaling = 1;
     private DispatcherTimer? _laneTimer;
     private string? _laneKey;
     private bool _lanesClosed;
@@ -66,8 +100,26 @@ public partial class VideoMergerWindow
             _laneTimer.Stop();
             _filmRunner.Dispose();
             _waveRunner.Dispose();
+            _wavePeaks?.Dispose();
+            _filmJobs?.Dispose();
+            _waveLane?.Clear();
+            ReleaseFilmLeases(thenClearCache: true);
         };
     }
+
+    /// <summary>
+    /// CACHEBOUND_04 — empties the film lane and hands its strips back to the cache. The presenter closes
+    /// the leases one dispatcher turn later (Background), after the lane has dropped the
+    /// <c>CroppedBitmap</c>s, so an evicted strip is never disposed under an image still on screen; the
+    /// cache clear (window closed) is queued behind them.
+    /// </summary>
+    private void ReleaseFilmLeases(bool thenClearCache = false)
+    {
+        _filmLane?.Clear();
+        if (thenClearCache) Dispatcher.UIThread.Post(() => _filmCache.Clear(), DispatcherPriority.Background);
+    }
+
+    private static long StripCost(Bitmap b) => Math.Max(1L, (long)b.PixelSize.Width * b.PixelSize.Height * 4);
 
     /// <summary>The merged layout or the lane width may have changed: replan soon (debounced).</summary>
     private void ScheduleLaneRefresh()
@@ -93,14 +145,14 @@ public partial class VideoMergerWindow
             _filmRunner.Cancel();
             _waveRunner.Cancel();
             _laneKey = null;
-            film.Children.Clear();
-            wave.Children.Clear();
+            WaveLane(wave).Clear();
+            ReleaseFilmLeases();
             return;
         }
 
         double w = film.Bounds.Width;
         if (w <= 0) w = MarkersCanvasCtl?.Bounds.Width ?? 0;
-        if (w <= 0) { ScheduleLaneRefresh(); return; }   // not laid out yet: try again shortly
+        if (w <= 0) { ScheduleLaneRefresh(); return; }
 
         string key = $"{w:F0}|{_timeline.Signature}";
         if (key == _laneKey) return;
@@ -120,20 +172,9 @@ public partial class VideoMergerWindow
         var filmTiles = LanePlanner.Plan(clips, _timeline.TotalSec, w, FilmSlotPx(film), "film");
         var waveTiles = LanePlanner.Plan(audioClips, _timeline.TotalSec, w, 0, "wave");
 
-        film.Children.Clear();
-        wave.Children.Clear();
-        var filmTodo = new List<LaneTile>();
-        var waveTodo = new List<LaneTile>();
-        foreach (var t in filmTiles)
-        {
-            if (_filmCache.TryGet(t.CacheKey, out var img)) PlaceFilmTile(film, t, img);
-            else filmTodo.Add(t);
-        }
-        foreach (var t in waveTiles)
-        {
-            if (_waveCache.TryGet(t.CacheKey, out var peaks)) PlaceWaveTile(wave, t, peaks);
-            else waveTodo.Add(t);
-        }
+        var filmTodo = FilmLane(film).Sync(filmTiles, w, k => FilmJobs.Running(k)?.Bitmap);
+        _waveScaling = TopLevel.GetTopLevel(wave)?.RenderScaling ?? 1;
+        var waveTodo = WaveLane(wave).Sync(waveTiles, k => _waveCache.TryGet(k, out var p) ? p : null, w, _waveScaling);
 
         _laneFfmpeg ??= BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
         if (filmTodo.Count > 0 || waveTodo.Count > 0)
@@ -142,148 +183,133 @@ public partial class VideoMergerWindow
         _ = _waveRunner.RunAsync(waveTodo, BuildWaveTileAsync, LaneParallelism);
     }
 
+    /// <summary>WAVEPIXEL_01 — the waveform lane's presenter (created with the lane).</summary>
+    private Infrastructure.WaveformLanePresenter WaveLane(Canvas wave) => _waveLane ??= new Infrastructure.WaveformLanePresenter(wave);
+
+    /// <summary>WAVEPIXEL_01 — the shared per-clip peak fetch; ffmpeg only on a disk miss, at most <see cref="LaneParallelism"/> at once.</summary>
+    private Infrastructure.WaveformPeakSource WavePeaks => _wavePeaks ??= new Infrastructure.WaveformPeakSource(
+        (t, ct) => WaveformPeaks.ExtractAsync(_laneFfmpeg ?? "ffmpeg", t.Path, t.StartSec, t.DurationSec, ct),
+        key => Infrastructure.LaneDiskCache.TryRead(key, ".peaks"),
+        (key, bytes) => Infrastructure.LaneDiskCache.Write(key, ".peaks", bytes),
+        LaneParallelism);
+
+    /// <summary>FILMPIXEL_01 — the film lane's presenter (created with the lane).</summary>
+    private Infrastructure.FilmLanePresenter FilmLane(Canvas film) => _filmLane ??= new Infrastructure.FilmLanePresenter(film, _filmCache);
+
     /// <summary>
-    /// Lays one clip's filmstrip into its slice: as many frame slots as fit (lane height × 16:9 each),
-    /// each showing the nearest grid frame of the clip's strip. Returns the slot images (to repaint while
-    /// a strip is still filling).
+    /// FILMPIXEL_01 — the shared per-clip strip stream (keyframes only, painted frame by frame), at most
+    /// <see cref="LaneParallelism"/> ffmpeg at once. Its callbacks run on the UI thread and paint only a clip
+    /// in the CURRENT plan (the presenter's layout guard), so a superseded layout never paints.
     /// </summary>
-    private List<Image> PlaceFilmTile(Canvas lane, LaneTile t, IImage strip)
-    {
-        var images = new List<Image>();
-        int frames = Math.Max(1, t.Frames);
-        int slots = ThumbGrid.Slots(t.Width, FilmSlotPx(lane));
-        int[] pick = ThumbGrid.Pick(frames, slots);
-        double slotW = t.Width / slots;
-        double h = lane.Height > 0 ? lane.Height : 34;
-        int fw = ThumbnailStripGenerator.FrameWidthPx, fh = ThumbnailStripGenerator.StripHeightPx;
-        for (int j = 0; j < slots; j++)
-        {
-            var img = new Image
-            {
-                Source = new CroppedBitmap(strip, new Avalonia.PixelRect(pick[j] * fw, 0, fw, fh)),
-                Width = Math.Max(1, slotW),
-                Height = h,
-                Stretch = Stretch.UniformToFill,
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(img, t.X0 + j * slotW);
-            Canvas.SetTop(img, 0);
-            lane.Children.Add(img);
-            images.Add(img);
-        }
-        return images;
-    }
+    private Infrastructure.FilmStripSource FilmJobs => _filmJobs ??= new Infrastructure.FilmStripSource(
+        (t, ct, onReady, onFrame) => ThumbnailStripGenerator.StreamAsync(
+            _laneFfmpeg ?? "ffmpeg", t.Path, t.StartSec, t.DurationSec, ct,
+            onReady: onReady, onFrame: onFrame, frames: Math.Max(1, t.Frames), logTag: "MergerLane"),
+        job => { if (!_lanesClosed && job.Bitmap != null) _filmLane?.ShowStreaming(job.Key, job.Bitmap); },
+        job => { if (job.Bitmap != null) _filmLane?.InvalidateFrames(job.Key, job.Bitmap); },
+        OnFilmStripDoneAsync,
+        LaneParallelism);
 
-    /// <summary>One clip's waveform: its peaks as a filled envelope, stretched to the clip's slice (vector, any width).</summary>
-    private static void PlaceWaveTile(Canvas lane, LaneTile t, float[] peaks)
-    {
-        if (peaks.Length == 0) return;
-        double h = lane.Height > 0 ? lane.Height : 18;
-        var geo = new StreamGeometry();
-        using (var g = geo.Open())
-        {
-            int n = peaks.Length;
-            // Scaled to the clip's own loudest moment so a quiet clip still reads as a shape.
-            float top = 0.05f;
-            foreach (var v in peaks) if (v > top) top = v;
-            g.BeginFigure(new Avalonia.Point(0, 1), true);
-            for (int i = 0; i < n; i++) g.LineTo(new Avalonia.Point(i + 0.5, 1 - Math.Min(1, peaks[i] / top)));
-            g.LineTo(new Avalonia.Point(n, 1));
-            for (int i = n - 1; i >= 0; i--) g.LineTo(new Avalonia.Point(i + 0.5, 1 + Math.Min(1, peaks[i] / top)));
-            g.EndFigure(true);
-        }
-        var path = new Avalonia.Controls.Shapes.Path
-        {
-            Data = geo,
-            Fill = Infrastructure.ThemeResources.Brush(lane, "AppInfoBrush", Brushes.DeepSkyBlue),
-            Opacity = 0.75,
-            Stretch = Stretch.Fill,
-            Width = Math.Max(1, t.Width),
-            Height = h,
-            IsHitTestVisible = false,
-        };
-        Canvas.SetLeft(path, t.X0);
-        Canvas.SetTop(path, 0);
-        lane.Children.Add(path);
-    }
-
-    /// <summary>Runs on the thread pool: disk cache first, else ffmpeg (keyframes only), painting as frames land.</summary>
+    /// <summary>Runs on the thread pool: disk cache first, else the clip's shared ffmpeg stream (joined, never restarted).</summary>
     private async Task BuildFilmTileAsync(LaneTile t, int generation, CancellationToken ct)
     {
-        // 1. Disk cache — a clip seen in any earlier session paints at once.
+        if (_filmCache.TryAcquire(t.CacheKey, out var ready) != Infrastructure.OwnedLruCache<Bitmap>.Lookup.Miss)
+        {
+            if (ready != null)
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!_lanesClosed && generation == _filmRunner.Generation && _filmLane is { } lane) lane.Adopt(t.CacheKey, ready);
+                    else ready.Dispose();
+                });
+            return;
+        }
+
         byte[]? png = await Task.Run(() => Infrastructure.LaneDiskCache.TryRead(t.CacheKey, ".png"), ct).ConfigureAwait(false);
         if (png != null)
         {
             Bitmap? cached = null;
             try { using var ms = new MemoryStream(png); cached = new Bitmap(ms); }
             catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-            if (cached != null && cached.PixelSize.Width >= ThumbnailStripGenerator.FrameWidthPx * Math.Max(1, t.Frames))
+            if (cached != null && cached.PixelSize.Width < ThumbnailStripGenerator.FrameWidthPx * Math.Max(1, t.Frames))
+            {
+                cached.Dispose();
+                cached = null;
+            }
+            if (cached is Bitmap strip)
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _filmCache.Put(t.CacheKey, cached);
-                    var lane = FilmLaneCtl;
-                    if (lane != null && !_lanesClosed && generation == _filmRunner.Generation) PlaceFilmTile(lane, CurrentTile(t), cached);
+                    if (_lanesClosed) { strip.Dispose(); return; }
+                    var lease = _filmCache.AddAndAcquire(t.CacheKey, t.CacheKey, strip, StripCost(strip));
+                    if (lease == null) return;
+                    if (generation == _filmRunner.Generation && _filmLane is { } lane) lane.Adopt(t.CacheKey, lease);
+                    else lease.Dispose();
                 });
                 return;
             }
         }
 
-        // 2. ffmpeg — the fixed grid of this clip, painted frame by frame.
-        string ffmpeg = _laneFfmpeg ?? "ffmpeg";
-        List<Image>? shown = null;
-        WriteableBitmap? bitmap = null;
-        bool ok = await ThumbnailStripGenerator.StreamAsync(
-            ffmpeg, t.Path, t.StartSec, t.DurationSec, ct,
-            onReady: wb =>
-            {
-                bitmap = wb;
-                var lane = FilmLaneCtl;
-                if (lane != null && !_lanesClosed && generation == _filmRunner.Generation) shown = PlaceFilmTile(lane, CurrentTile(t), wb);
-            },
-            onFrame: () => { if (shown != null) foreach (var img in shown) img.InvalidateVisual(); },
-            frames: Math.Max(1, t.Frames),
-            logTag: "MergerLane").ConfigureAwait(false);
+        await FilmJobs.GetAsync(t, ct).ConfigureAwait(false);
+    }
 
-        if (!ok || bitmap is not WriteableBitmap done) return;
+    /// <summary>
+    /// A clip's stream ended (once per clip, not per run): cache the finished strip and pin it on the lane,
+    /// write it to disk. CACHEBOUND_04 — a strip still shown is never disposed under its images.
+    /// </summary>
+    private async Task OnFilmStripDoneAsync(Infrastructure.FilmStripSource.Job job)
+    {
         byte[]? bytes = null;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _filmCache.Put(t.CacheKey, done);
+            var done = job.Bitmap;
+            bool onLane = done != null && _filmLane?.IsShowing(done) == true;
+            if (!job.Ok || done == null)
+            {
+                if (done != null && !onLane) done.Dispose();
+                if (!job.Cancelled && done == null && !_lanesClosed) _filmCache.AddAndAcquire(job.Key, job.Key, null, 1);
+                return;
+            }
             try { using var ms = new MemoryStream(); done.Save(ms); bytes = ms.ToArray(); }
             catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+
+            if (_lanesClosed)
+            {
+                if (!onLane) done.Dispose();
+                return;
+            }
+            if (_filmCache.TryAcquire(job.Key, out var existing) == Infrastructure.OwnedLruCache<Bitmap>.Lookup.Hit && existing != null)
+            {
+                if (_filmLane is { } shownLane) shownLane.Adopt(job.Key, existing); else existing.Dispose();
+                if (_filmLane?.IsShowing(done) != true)
+                    Dispatcher.UIThread.Post(() => { if (_filmLane?.IsShowing(done) != true) done.Dispose(); }, DispatcherPriority.Background);
+                return;
+            }
+            var lease = _filmCache.AddAndAcquire(job.Key, job.Key, done, StripCost(done));
+            if (lease == null) return;
+            if (_filmLane is { } lane) lane.Adopt(job.Key, lease);
+            else lease.Dispose();
         });
-        if (bytes != null) await Task.Run(() => Infrastructure.LaneDiskCache.Write(t.CacheKey, ".png", bytes)).ConfigureAwait(false);
+        if (bytes != null) await Task.Run(() => Infrastructure.LaneDiskCache.Write(job.Key, ".png", bytes)).ConfigureAwait(false);
     }
 
-    /// <summary>Runs on the thread pool: disk cache first, else ffmpeg reads the clip's sound once and reduces it to peaks.</summary>
+    /// <summary>
+    /// Runs on the thread pool: the clip's shared peak fetch (disk cache, else ffmpeg once), then — still
+    /// off the dispatcher — the reduction to this tile's device-pixel columns (WAVEPIXEL_01). The UI thread
+    /// only caches the peaks and hands O(columns) levels to the presenter; a superseded run never paints.
+    /// </summary>
     private async Task BuildWaveTileAsync(LaneTile t, int generation, CancellationToken ct)
     {
-        float[]? peaks = WaveformPeaks.FromBytes(await Task.Run(() => Infrastructure.LaneDiskCache.TryRead(t.CacheKey, ".peaks"), ct).ConfigureAwait(false));
-        if (peaks == null)
-        {
-            peaks = await WaveformPeaks.ExtractAsync(_laneFfmpeg ?? "ffmpeg", t.Path, t.StartSec, t.DurationSec, ct).ConfigureAwait(false);
-            if (peaks == null) return;
-            var bytes = WaveformPeaks.ToBytes(peaks);
-            _ = Task.Run(() => Infrastructure.LaneDiskCache.Write(t.CacheKey, ".peaks", bytes));
-        }
+        var peaks = await WavePeaks.GetAsync(t, ct).ConfigureAwait(false);
+        if (peaks == null || peaks.Length == 0) return;
+        int columns = WaveformEnvelope.Columns(t.Width, Volatile.Read(ref _waveScaling), peaks.Length);
+        var levels = WaveformEnvelope.Reduce(peaks, columns);
+        ct.ThrowIfCancellationRequested();
 
-        var done = peaks;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _waveCache.Put(t.CacheKey, done);
-            var lane = WaveLaneCtl;
-            if (lane != null && !_lanesClosed && generation == _waveRunner.Generation) PlaceWaveTile(lane, CurrentTile(t), done);
+            _waveCache.Put(t.CacheKey, peaks);
+            if (_lanesClosed || generation != _waveRunner.Generation) return;
+            _waveLane?.Deliver(t.CacheKey, peaks, levels, columns);
         });
-    }
-
-    /// <summary>A tile planned for an older width: re-derive its span on the lane as it is NOW (same clip).</summary>
-    private LaneTile CurrentTile(LaneTile t)
-    {
-        var film = FilmLaneCtl;
-        double w = film?.Bounds.Width ?? 0;
-        if (w <= 0 || _timeline.TotalSec <= 0 || t.ClipIndex < 0 || t.ClipIndex >= _timeline.Clips.Count) return t;
-        var c = _timeline.Clips[t.ClipIndex];
-        return t with { X0 = c.MergedStartSec / _timeline.TotalSec * w, X1 = c.MergedEndSec / _timeline.TotalSec * w };
     }
 }

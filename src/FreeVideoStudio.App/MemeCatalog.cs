@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -136,11 +133,9 @@ public static class MemeCatalog
     {
         long startTicks = Environment.TickCount64;
 
-        // ── PHASE A: enumeration + cheap filtering ──────────────────────────────────────────
         List<ScanCandidate> candidates = await Task.Run(() => EnumerateCandidates(directory)).ConfigureAwait(false);
         if (candidates.Count == 0) return new List<MemeItem>();
 
-        // ── PHASE B: dimensions — cache first, bounded-concurrency probe for the misses ──────
         MemeDimensionCache cache = MemeDimensionCache.Load();
 
         var misses = new List<ScanCandidate>();
@@ -159,9 +154,6 @@ public static class MemeCatalog
 
         if (misses.Count > 0)
         {
-            // MEMESCAN_01 — the ceiling exists because each lane is a live ffprobe PROCESS, not a
-            // thread. Saturating every core with child processes during app start would fight the
-            // preview decode the user is actually looking at.
             int lanes = Math.Clamp(Environment.ProcessorCount / 2, 2, 6);
 
             await Parallel.ForEachAsync(
@@ -190,30 +182,23 @@ public static class MemeCatalog
                     }
                     catch (Exception ex)
                     {
-                        // §3 — one bad file may never fault the whole pass.
                         RuntimeLog.Info("Memes", $"Dimension probe failed for '{c.FileName}': {ex.Message}");
                     }
                 }).ConfigureAwait(false);
 
             foreach (ScanCandidate c in misses)
             {
-                // Put() ignores non-positive dimensions, so a failed probe is never cached and the
-                // export-crash guard below can never be satisfied from stale data.
                 cache.Put(c.FullPath, c.Length, c.MTimeTicks, c.Width, c.Height);
             }
 
             cache.Save();
         }
 
-        // ── PHASE C: exclusion + assembly, in the PHASE A order ─────────────────────────────
         var items = new List<MemeItem>(candidates.Count);
         int excluded = 0;
 
         foreach (ScanCandidate c in candidates)
         {
-            // ⚠️ LOAD-BEARING GUARD. A video with no usable geometry crashes the export filter
-            // graph. Images are deliberately NOT subject to this — a Skia decode failure leaves a
-            // usable item that simply has no aspect-ratio hint for the §2 UI guardrail.
             if (!c.IsImage && (c.Width <= 0 || c.Height <= 0))
             {
                 RuntimeLog.Fail("Memes", $"Excluding unreadable video meme '{c.FileName}' (failed to probe; would crash export).");
@@ -260,9 +245,6 @@ public static class MemeCatalog
         var candidates = new List<ScanCandidate>();
         if (!Directory.Exists(directory)) return candidates;
 
-        // §3 — UnauthorizedAccessException from here PROPAGATES on purpose: the Settings
-        // meme-folder change flow catches it to block the path change and revert. Do NOT wrap this
-        // in a catch-all.
         string[] files = Directory.GetFiles(directory);
 
         foreach (string f in files.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
@@ -282,13 +264,10 @@ public static class MemeCatalog
             }
             catch (System.Exception swallowed2)
             {
-                // Unreadable metadata — same disposition as the original zero-byte guard: skip.
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
                 continue;
             }
 
-            // ⚠️ LOAD-BEARING GUARD. Zero bytes means an unresolved Git-LFS pointer or a
-            // half-finished download. It must be skipped BEFORE anything tries to probe it.
             if (length == 0) continue;
 
             candidates.Add(new ScanCandidate
@@ -324,7 +303,7 @@ public static class MemeCatalog
         }
         catch (System.Exception swallowed3)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);
             return false;
         }
     }
@@ -418,7 +397,6 @@ public static class MemeCatalog
                 }
                 if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    // MEMESYNC_02 — never "you already have everything".
                     RuntimeLog.Fail(logTag, $"Cloud sync: folder '{cloudFolder}' does not exist in the repository.");
                     return (0, "The online library could not be found. Update Free Video Studio to the latest version and try again.");
                 }
@@ -480,7 +458,6 @@ public static class MemeCatalog
                 string rawUrl = $"https://raw.githubusercontent.com/{CloudOwner}/{CloudRepo}/HEAD/{cloudFolder}/{escaped}";
                 string lfsUrl = $"https://media.githubusercontent.com/media/{CloudOwner}/{CloudRepo}/HEAD/{cloudFolder}/{escaped}";
 
-                // MEMESYNC_03 — a pointer-sized blob is an LFS file: ask the LFS host first.
                 bool lfsFirst = size > 0 && size <= LfsPointerMaxBytes;
                 string[] urls = lfsFirst ? new[] { lfsUrl, rawUrl } : new[] { rawUrl, lfsUrl };
 

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using NAudio.Wave;
 using System;
 using FreeVideoStudio.Core.Infrastructure;
@@ -114,7 +111,6 @@ public sealed class MicLevelMonitor : IDisposable
 
                 waveIn.StartRecording();
 
-                // Explicit startup ordering check: if OnRecordingStopped fired during StartRecording
                 if (_lastError != null)
                 {
                     var err = _lastError;
@@ -179,7 +175,6 @@ public sealed class MicLevelMonitor : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs a)
     {
-        // MICHEALTH_01 — Ignore stale callbacks from replaced devices
         if (sender != _waveIn) return;
 
         try
@@ -195,7 +190,6 @@ public sealed class MicLevelMonitor : IDisposable
             }
             LevelChanged?.Invoke(this, max);
 
-            // SPECTRUM_01 — publish the real samples with the real format; never reinterpret.
             if (PcmAvailable is { } pcm && sender is WaveIn source)
                 pcm.Invoke(this, new PcmBuffer(a.Buffer, a.BytesRecorded, ToCaptureFormat(source.WaveFormat)));
         }
@@ -207,7 +201,6 @@ public sealed class MicLevelMonitor : IDisposable
         Exception? errorToPublish = null;
         lock (_gate)
         {
-            // MICHEALTH_01 — Ignore stale callbacks from replaced devices
             if (sender != _waveIn) return;
 
             _running = false;

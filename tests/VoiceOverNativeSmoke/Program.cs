@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Linq;
@@ -45,8 +42,6 @@ internal static class Program
     public static int Main(string[] args)
     {
         bool optInRun = args.Any(a => string.Equals(a, "--run", StringComparison.OrdinalIgnoreCase));
-        // MICSMOKE_01 — with --require-signal the user must speak: a peak below this fails the run,
-        // proving real samples (not just delivered digital zeros) reach the recorder.
         bool requireSignal = args.Any(a => string.Equals(a, "--require-signal", StringComparison.OrdinalIgnoreCase));
         const float SignalPeakThreshold = 0.01f;
         ReportExecutionMode();
@@ -89,7 +84,6 @@ internal static class Program
 
         try
         {
-            // ── Phase 1: Test MicLevelMonitor (Idle Monitoring) ────────────────────────
             Console.WriteLine("Phase 1: Testing MicLevelMonitor idle capture...");
             using (var monitor = new MicLevelMonitor())
             {
@@ -120,7 +114,6 @@ internal static class Program
                 Console.WriteLine($"  MicLevelMonitor OK: {monitor.BuffersSeen} buffers, {monitorLevelsSeen} level events, peak: {monitorPeak:0.####}");
             }
 
-            // ── Phase 2: Test VoiceRecorder (Recording & WAV Persistence) ──────────────
             Console.WriteLine("Phase 2: Testing VoiceRecorder capture and WAV output...");
             string wavPath = Path.Combine(tempWavDir, "smoke_take_1.wav");
             if (requireSignal) Console.WriteLine("  >>> SPEAK NOW for 2 seconds <<<");
@@ -165,7 +158,6 @@ internal static class Program
                 }
             }
 
-            // ── Phase 2b: Take preview playback (same WaveOut + WavAudioReader path as VoiceOverPreviewPlayer) ──
             Console.WriteLine("Phase 2b: Playing the recorded take through WaveOut...");
             {
                 Exception? playbackError = null;
@@ -185,7 +177,6 @@ internal static class Program
                 Console.WriteLine($"  WaveOut OK: state while playing = {state}, position {reader.CurrentTime.TotalSeconds:0.###}s");
             }
 
-            // ── Phase 3: Consecutive Record/Drain Cycles ──────────────────────────────
             Console.WriteLine("Phase 3: Testing 5 consecutive open/record/drain cycles...");
             for (int cycle = 1; cycle <= 5; cycle++)
             {
@@ -211,7 +202,6 @@ internal static class Program
                 Console.WriteLine($"  Cycle {cycle}/5 OK: {rec.BuffersSeen} buffers, {rec.BytesCaptured} bytes, {rdr.TotalTime.TotalSeconds:0.###}s");
             }
 
-            // ── Phase 4: Production ordering — idle monitor -> record -> stop -> monitor, repeated ──
             Console.WriteLine("Phase 4: Testing 3 monitor -> record -> monitor hand-offs on the same endpoint...");
             using (var monitor = new MicLevelMonitor())
             {
@@ -220,7 +210,7 @@ internal static class Program
                     monitor.Start(targetDevice);
                     Thread.Sleep(400);
                     int monitorBuffers = monitor.BuffersSeen;
-                    monitor.Stop();   // VOMON_01 — the monitor releases the endpoint before the recorder opens it
+                    monitor.Stop();
                     if (monitor.LastError != null || monitorBuffers <= 0)
                     {
                         Console.Error.WriteLine($"[FAIL] Round {round} monitor: {monitor.LastError?.Message ?? "0 buffers"}");
@@ -253,7 +243,6 @@ internal static class Program
         }
         finally
         {
-            // Microphone samples are never kept as fixtures.
             try { Directory.Delete(tempWavDir, recursive: true); }
             catch (IOException ex) { Console.Error.WriteLine($"[WARN] Could not delete smoke audio at {tempWavDir}: {ex.Message}"); }
             catch (UnauthorizedAccessException ex) { Console.Error.WriteLine($"[WARN] Could not delete smoke audio at {tempWavDir}: {ex.Message}"); }

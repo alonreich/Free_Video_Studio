@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -9,14 +6,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.Core.Media;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// AIHUD_01 — OPTIONAL AI ASSISTANCE FOR THE MAGIC WAND (01 §12a TL-AIHUD).
-//
-// The offline HudAutoDetector stays the Magic Wand's baseline: it needs no key, no network and no
-// consent, and it is what the user gets whenever the AI path is missing, slow, refused or wrong.
-// An AI provider may ADD candidates and may REFINE a local box; it can never remove one, and it
-// never commits anything. Every AI box is validated here before a single pixel is derived from it.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Where a Magic Wand candidate came from.</summary>
 public enum HudCandidateSource
