@@ -22,7 +22,6 @@ internal sealed class BuildLog : IDisposable
     public BuildLog(string path)
     {
         _path = path;
-        // Legacy artifact of the pre-C# pipeline; harmless if absent.
         try { if (File.Exists("build.result.txt")) File.Delete("build.result.txt"); } catch (IOException) { }
         _writer = new StreamWriter(path, append: false, new UTF8Encoding(false)) { AutoFlush = true };
     }
@@ -58,7 +57,6 @@ internal sealed class BuildLog : IDisposable
             }
             catch (IOException)
             {
-                // Console handle redirected or gone (CI); the log file still gets the line.
                 Console.WriteLine(line);
             }
             _writer.WriteLine(line);

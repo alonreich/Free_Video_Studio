@@ -5,10 +5,10 @@ namespace FvsBuild;
 /// <summary>
 /// FvsBuild - structured replacement for the old monolithic Build.cmd.
 /// Pipeline: terminate processes -> clean -> detect MSVC toolchain -> NativeAOT publish
-/// to staging -> stage backend/frontend/starter files -> zip payload (System.IO.Compression)
-/// -> NativeAOT publish of the installer (embeds payload.zip) -> move to .\compiled ->
-/// Authenticode sign if configured -> validate exactly one exe -> cleanup -> optional
-/// GitHub release replacement.
+/// to staging -> PE identity (PEIDENTITY_01) -> sign the program -> stage backend/frontend/starter
+/// files -> manifests -> smart-update assets + signed file list -> Inno Setup installer into
+/// .\compiled (NODROPPER_01) -> sign it -> release update.json -> validate exactly one file ->
+/// cleanup -> optional GitHub release replacement.
 /// Exit codes (consumed by CI and by Build.cmd): 0 = OK, 1 = BUILD FAILED, 2 = build OK
 /// but the GitHub publish did not complete.
 /// </summary>
@@ -22,27 +22,25 @@ internal static class Program
     {
         bool noPublish = args.Any(a => a.Equals("--no-publish", StringComparison.OrdinalIgnoreCase));
         bool devMode = args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
-        bool zipOnly = args.Any(a => a.Equals("--zip-only", StringComparison.OrdinalIgnoreCase));
+        bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
         if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.OrdinalIgnoreCase)))
         {
             Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev]");
-            Console.WriteLine("  (default)   build .\\compiled\\FreeVideoStudio.exe, then replace the GitHub release");
+            Console.WriteLine("  (default)   build .\\compiled\\FreeVideoStudio-Setup.exe, then replace the GitHub release");
             Console.WriteLine("  --no-publish  build only; GitHub is not touched");
             Console.WriteLine("  --dev         local dev build: no GitHub, and .\\compiled is not wiped first");
-            Console.WriteLine("  --zip-only    diagnostic: stage dependencies and create payload.zip, then stop.");
-            Console.WriteLine("                Leaves src\\FreeVideoStudio.App\\payload.zip and the staging");
-            Console.WriteLine("                folder in place for inspection. GitHub and .\\compiled are untouched.");
+            Console.WriteLine("  --stage-only  diagnostic: publish, stage dependencies and write the manifests, then stop.");
+            Console.WriteLine("                Leaves the staging folder in place for inspection.");
+            Console.WriteLine("                GitHub and .\\compiled are untouched.");
             return ExitOk;
         }
 
-        // The orchestrator may be launched from any CWD (CI checkout, double-click);
-        // anchor everything to the repository that contains this build project.
         Environment.CurrentDirectory = FindRepoRoot();
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { }
 
         DateTimeOffset started = DateTimeOffset.Now;
         using BuildLog log = new("build.log");
-        int exitCode = RunPipeline(log, noPublish, devMode, zipOnly, started);
+        int exitCode = RunPipeline(log, noPublish, devMode, stageOnly, started);
         return exitCode;
     }
 
@@ -60,37 +58,32 @@ internal static class Program
         return Environment.CurrentDirectory;
     }
 
-    private static int RunPipeline(BuildLog log, bool noPublish, bool devMode, bool zipOnly, DateTimeOffset started)
+    private static int RunPipeline(BuildLog log, bool noPublish, bool devMode, bool stageOnly, DateTimeOffset started)
     {
-        // yyyy.MM.dd.HHmm - each part must stay under 65535 for a Windows version resource,
-        // and the time keeps two same-day builds from colliding on one tag. Computed ONCE
-        // so the exe, the release tag and the published notes all say the same thing.
         string buildVersion = DateTime.Now.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
         string tag = "v" + buildVersion;
         string flavor = devMode ? "Local Dev" : "NativeAOT win-x64";
+        SmartUpdateBuilder.IsDevBuild = devMode;
         log.Info($"Build version: {buildVersion}  (tag {tag})");
         SynchronizeVersionFiles(buildVersion, log);
 
         try
         {
-            if (zipOnly)
+            if (stageOnly)
             {
-                // Diagnostic path for CI and hand checks: reproduce the exact payload.zip the
-                // shipping build embeds, without publishing the installer. Nothing outside
-                // obj\StandaloneTemp and src\...\App\payload.zip is touched.
                 log.Banner("###########################################################");
-                log.Banner("ZIP-ONLY: staging + payload.zip, then stop. .\\compiled is untouched.");
+                log.Banner("STAGE-ONLY: staging + manifests, then stop. .\\compiled is untouched.");
                 log.Banner("###########################################################");
                 Staging.PurgeTempArtifacts(log);
                 bool staged = Staging.Publish(Staging.StagingDirPath, buildVersion, log, "Publishing raw payload to staging...")
                               && Staging.StageDependencies(log)
-                              && Staging.CreatePayloadZip(log);
+                              && Staging.WriteManifests(log);
                 if (!staged)
                 {
                     return FailBuild(log, started);
                 }
                 log.Banner("###########################################################");
-                log.Success($"SUCCESS: payload.zip diagnostic build completed: {Staging.PayloadZipPath}");
+                log.Success($"SUCCESS: staging diagnostic build completed: {Staging.StagingDirPath}");
                 log.Info("Staging folder kept for inspection: .\\obj\\StandaloneTemp\\Staging");
                 log.Banner("###########################################################");
                 log.WriteVerdictAndClose(ExitOk, DateTimeOffset.Now - started);
@@ -145,19 +138,10 @@ internal static class Program
 
             if (CodeSigning.SignedWithLocalDevCertificate)
             {
-                // SIGNLOCAL_02 (supersedes the SIGNLOCAL_01 refusal) — USER DECISION (2026-09-26, option A): publish even when signed with the
-                // local development certificate. Consequences, stated every time so nobody forgets:
-                //   • the in-app "new version available" notification works for every user (it is a
-                //     version check against the GitHub release);
-                //   • in-app INSTALL stays refused on user machines (UPDATETRUST_02): their Windows does
-                //     not trust this private root, so the publisher cannot be verified and the user is
-                //     sent to the release page to install by hand;
-                //   • SmartScreen still shows "unknown publisher" to new downloaders.
-                // A publicly trusted certificate (FVS_SIGN_PFX / FVS_SIGN_PASS) removes all three.
                 log.Banner(string.Empty);
-                log.Warn("[PUBLISH] Signed with the LOCAL DEVELOPMENT certificate (SIGNLOCAL_02, publishing by user decision).");
-                log.Warn("[PUBLISH] Users WILL see the update notification; in-app install sends them to the release page");
-                log.Warn("[PUBLISH] (publisher not verifiable on their PCs). A public code-signing certificate fixes this.");
+                log.Warn("[PUBLISH] Signed with the repository publisher certificate (SIGNLOCAL_02, publishing by user decision).");
+                log.Warn("[PUBLISH] In-app updates verify against the built-in publisher root and install for everyone");
+                log.Warn("[PUBLISH] (UPDATEPIN_01). New downloaders still see SmartScreen's 'unknown publisher' once.");
             }
 
             log.Banner(string.Empty);
@@ -165,6 +149,8 @@ internal static class Program
             log.Banner("PUBLISHING RELEASE TO GITHUB...");
             log.Banner("###########################################################");
             bool published = GitHubReleasePublisher.Publish(Staging.CompiledExePath, tag, log);
+            if (published) SmartUpdateBuilder.MarkReleased(buildVersion, log);
+            if (published) ReleaseChecklist.PrepareAndOpen(buildVersion, tag, Staging.CompiledExePath, log);
             log.WriteVerdictAndClose(published ? ExitOk : ExitPublishIncomplete, DateTimeOffset.Now - started);
             if (published)
             {
@@ -173,7 +159,7 @@ internal static class Program
             log.Banner(string.Empty);
             log.Banner("###########################################################");
             log.Warn("BUILD OK - but the release was NOT updated.");
-            log.Warn(".\\compiled\\FreeVideoStudio.exe is good and usable.");
+            log.Warn(".\\compiled\\FreeVideoStudio-Setup.exe is good and usable.");
             log.Warn("Only the GitHub publish step did not finish - reason above.");
             log.Banner("###########################################################");
             return ExitPublishIncomplete;
@@ -185,12 +171,15 @@ internal static class Program
         }
     }
 
-    /// <summary>The :BUILD_NATIVE ladder: staging publish, dependency staging, payload zip, installer publish, sign, validate, cleanup.</summary>
+    /// <summary>
+    /// The :BUILD_NATIVE ladder. NODROPPER_01: ONE NativeAOT publish (the program); the release is
+    /// packed by Inno Setup, not embedded in a second program.
+    /// </summary>
     private static bool RunNativeAotStages(BuildLog log, string buildVersion)
     {
         Staging.PurgeTempArtifacts(log);
 
-        if (!Staging.Publish(Staging.StagingDirPath, buildVersion, log, "2. Publishing raw payload to staging..."))
+        if (!Staging.Publish(Staging.StagingDirPath, buildVersion, log, "2. Publishing the program to staging..."))
         {
             return false;
         }
@@ -198,16 +187,14 @@ internal static class Program
         {
             return false;
         }
-        if (!CodeSigning.SignIfNeeded(Path.Combine(Staging.StagingDirPath, "FreeVideoStudio.exe"), log)) return false;
-        if (!Staging.CreatePayloadZip(log))
+        if (!PeIdentity.FixOriginalFilename(Staging.StagedProgramPath, log)) return false;
+        if (!CodeSigning.SignIfNeeded(Staging.StagedProgramPath, log)) return false;
+        if (!Staging.WriteManifests(log))
         {
             return false;
         }
-        if (!Staging.Publish(Staging.FinalDirPath, buildVersion, log, "4. Publishing standalone installer..."))
-        {
-            return false;
-        }
-        if (!Staging.MoveFinalExe(log))
+        if (!SmartUpdateBuilder.Prepare(buildVersion, Staging.StagingDirPath, Staging.InstallerListDirPath, log)) return false;
+        if (!InnoInstaller.Build(buildVersion, Staging.StagingDirPath, Staging.InstallerListDirPath, Staging.CompiledDirPath, log))
         {
             return false;
         }
@@ -215,7 +202,7 @@ internal static class Program
         {
             return false;
         }
-        if (!Staging.CreateCompactInstaller(buildVersion, log)) return false;
+        if (!SmartUpdateBuilder.Finish(buildVersion, Staging.CompiledExePath, log)) return false;
         if (!Staging.ValidateCompiledOutput(log))
         {
             return false;
@@ -241,7 +228,6 @@ internal static class Program
         string root = FindRepoRoot();
         log.Info($"[VERSION] Synchronizing version '{buildVersion}' across project files...");
 
-        // 1. version.txt
         string versionTxtPath = Path.Combine(root, "version.txt");
         try
         {
@@ -253,7 +239,6 @@ internal static class Program
             log.Warn($"[VERSION] Failed to update version.txt: {ex.Message}");
         }
 
-        // 2. Directory.Build.props
         string propsPath = Path.Combine(root, "Directory.Build.props");
         string propsContent = $"""
 <Project>
@@ -277,12 +262,25 @@ internal static class Program
             log.Warn($"[VERSION] Failed to update Directory.Build.props: {ex.Message}");
         }
 
-        // 3. Update csproj files directly so IDE and standalone builds always match
         string appCsproj = Path.Combine(root, "src", "FreeVideoStudio.App", "FreeVideoStudio.App.csproj");
         UpdateCsprojVersion(appCsproj, buildVersion, log);
 
         string coreCsproj = Path.Combine(root, "src", "FreeVideoStudio.Core", "FreeVideoStudio.Core.csproj");
         UpdateCsprojVersion(coreCsproj, buildVersion, log);
+
+        string manifestPath = Path.Combine(root, "src", "FreeVideoStudio.App", "app.manifest");
+        try
+        {
+            string manifest = File.ReadAllText(manifestPath);
+            string updated = System.Text.RegularExpressions.Regex.Replace(manifest,
+                @"(<assemblyIdentity\s+version="")[^""]*("")", "${1}" + buildVersion + "${2}");
+            if (updated != manifest) File.WriteAllText(manifestPath, updated);
+            log.Info($"[VERSION] Updated {manifestPath}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warn($"[VERSION] Failed to update app.manifest: {ex.Message}");
+        }
     }
 
     private static void UpdateCsprojVersion(string csprojPath, string buildVersion, BuildLog log)

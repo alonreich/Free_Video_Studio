@@ -13,6 +13,12 @@ To resume only the GPU checks:
 dotnet run --project tests/MediaPipelineChecks/MediaPipelineChecks.csproj --no-restore -- --gpu-only
 ```
 
+To run only the AVSYNC_01 drift probe (`sync.log` keeps the export graph and command):
+
+```powershell
+dotnet run --project tests/MediaPipelineChecks/MediaPipelineChecks.csproj --no-restore -- --avsync-only
+```
+
 The GPU checks require a working NVIDIA GPU and the bundled FFmpeg CUDA/NVENC filters. They run actual exports, not just argument comparisons. The FFV1 test deliberately fails GPU video processing, then verifies one compatibility retry with NVENC retained. Intel preset parsing is checked separately; Intel hardware encoding requires a supported Intel device.
 
 Generated media, logs and temporary state stay under `artifacts/<timestamp>`. Existing user media/settings are not changed. The harness verifies numerical audio levels, crop recovery, regional formatting, complete exports and GPU route selection. It does not automate desktop window interaction or publish NativeAOT.

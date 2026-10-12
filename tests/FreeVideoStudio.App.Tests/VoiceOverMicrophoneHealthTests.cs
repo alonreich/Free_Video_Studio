@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Threading;
@@ -28,7 +25,7 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
     public VoiceOverMicrophoneHealthTests()
     {
         Directory.CreateDirectory(_tempDir);
-        VoiceOverWindow.RecoveryDirectorySeam = () => _tempDir;   // VORECOVERY_01 isolation
+        VoiceOverWindow.RecoveryDirectorySeam = () => _tempDir;
     }
 
     public void Dispose()
@@ -61,13 +58,11 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
 
         try
         {
-            // Start monitor async queues open; state transitions to Connecting while waiting on gate
             _ = session.StartMonitorAsync(0);
             window.TriggerUpdateReadyLamp();
 
             var lamp = window.ReadyLampControl;
             Assert.NotNull(lamp);
-            // During connecting, opacity is 0.5 (connecting), not 1.0 (ready)
             Assert.Equal(0.5, lamp!.Opacity);
             var tip = ToolTip.GetTip(lamp) as string;
             Assert.NotNull(tip);
@@ -89,13 +84,11 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
 
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
 
-        // Before any buffers are delivered, health is ZeroBuffers
         Assert.Equal(MicrophoneHealth.ZeroBuffers, session.Health);
         window.TriggerUpdateReadyLamp();
 
         var lamp = window.ReadyLampControl;
         Assert.NotNull(lamp);
-        // Not ready: opacity is 0.5 (waiting for initial audio data)
         Assert.Equal(0.5, lamp!.Opacity);
         var tip = ToolTip.GetTip(lamp) as string;
         Assert.NotNull(tip);
@@ -111,7 +104,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
         window.IsMpvReady = true;
 
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
-        // Deliver first buffer as pure digital silence (0.0f)
         devices.Monitor!.Raise(0.0f);
 
         Assert.Equal(MicrophoneHealth.SilentData, session.Health);
@@ -119,7 +111,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
 
         var lamp = window.ReadyLampControl;
         Assert.NotNull(lamp);
-        // Valid audio delivered: lamp is fully ready (1.0)
         Assert.Equal(1.0, lamp!.Opacity);
         var tip = ToolTip.GetTip(lamp) as string;
         Assert.NotNull(tip);
@@ -135,20 +126,18 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
         window.IsMpvReady = true;
 
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
-        devices.Monitor!.Raise(0.05f); // Audible data arrives
+        devices.Monitor!.Raise(0.05f);
 
         Assert.Equal(MicrophoneHealth.AudibleData, session.Health);
         window.TriggerUpdateReadyLamp();
         Assert.Equal(1.0, window.ReadyLampControl!.Opacity);
 
-        // Simulate buffer starvation: 7 seconds elapsed since last buffer
         session.SetLastBufferReceivedUtcForTesting(DateTime.UtcNow.AddSeconds(-7));
         session.CheckHealth();
 
         Assert.Equal(MicrophoneHealth.ZeroBuffers, session.Health);
         window.TriggerUpdateReadyLamp();
 
-        // Lamp is no longer ready
         Assert.Equal(0.5, window.ReadyLampControl!.Opacity);
         var tip = ToolTip.GetTip(window.ReadyLampControl) as string;
         Assert.NotNull(tip);
@@ -164,7 +153,7 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
         window.IsMpvReady = true;
 
         await session.StartMonitorAsync(0).WaitAsync(Timeout);
-        devices.Monitor!.Raise(0.05f); // Audible buffer
+        devices.Monitor!.Raise(0.05f);
 
         window.TriggerUpdateReadyLamp();
 
@@ -189,7 +178,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
         window.TriggerUpdateReadyLamp();
         Assert.Equal(1.0, window.ReadyLampControl!.Opacity);
 
-        // Crash the monitor driver
         devices.Monitor!.RaiseStopped(new InvalidOperationException("Driver disconnected"));
         window.TriggerUpdateReadyLamp();
 
@@ -215,10 +203,8 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             noticeKind = kind;
         };
 
-        // Simulate 6 seconds elapsed since monitor opened
         window.TestSetMicMonitorOpenUtc(DateTime.UtcNow.AddSeconds(-7));
 
-        // Report health with zero buffers delivered
         window.TriggerReportMicHealth(hasDevice: true, monitorOpen: true, health: MicrophoneHealth.ZeroBuffers, connecting: false, faulted: false);
 
         Assert.NotNull(noticeText);
@@ -242,10 +228,8 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             noticeKind = kind;
         };
 
-        // Simulate 6 seconds elapsed since monitor opened
         window.TestSetMicMonitorOpenUtc(DateTime.UtcNow.AddSeconds(-7));
 
-        // Report health with silent buffers delivered
         window.TriggerReportMicHealth(hasDevice: true, monitorOpen: true, health: MicrophoneHealth.SilentData, connecting: false, faulted: false);
 
         Assert.NotNull(noticeText);
@@ -309,7 +293,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             EndSec = 0.0
         };
 
-        // 882 bytes = ~0.01 seconds (< 0.05s threshold)
         window.TriggerCompleteTake(takeSession, micWasOpen: true, capturedBytes: 882, capturedBuffers: 1, capturedPeak: 0.1f);
 
         Assert.True(window.LastTakeWasRejected);
@@ -341,7 +324,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             EndSec = 0.0
         };
 
-        // Delivered buffers with peak 0.0 (silent data, but legitimate capture of 1 second)
         window.TriggerCompleteTake(takeSession, micWasOpen: true, capturedBytes: 88200, capturedBuffers: 20, capturedPeak: 0.0f);
 
         Assert.False(window.LastTakeWasRejected);
@@ -369,20 +351,16 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             EndSec = 0.0
         };
 
-        // Mid-take fault occurs
         window.TriggerCaptureHealthChanged(MicrophoneHealth.Faulted);
 
-        // Assert recording flags cleared
         Assert.False(window.IsRecordingLive);
         Assert.Null(window.CurrentSession);
 
-        // Assert controls reset
         var status = window.RecordingStatusTextControl;
         Assert.NotNull(status);
         Assert.Equal("MIC ERROR", status!.Text);
     }
 
-    // ── Test Devices ──────────────────────────────────────────────────────────────────────────
 
     private sealed class TestHealthDevices : IVoiceCaptureDeviceFactory
     {

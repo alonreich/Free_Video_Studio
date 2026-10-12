@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -203,8 +197,6 @@ public sealed class ToolNavigator
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(shutdownVideoPipeline);
 
-        // Re-entrancy: the button is clickable again for the frame between the click and the
-        // window appearing, and a double-click used to start two processes.
         if (_navigating || IsToolOpen) return false;
         _navigating = true;
 
@@ -213,7 +205,6 @@ public sealed class ToolNavigator
             string toolName = tool == Tool.CropTool ? "Crop Tools" : "Video Merger";
 
 
-            // TOOLNAV_02 (1) — release the GPU before the tool takes it.
             var shutdown = await shutdownVideoPipeline(System.Threading.CancellationToken.None);
             if (!shutdown.Succeeded)
             {
@@ -234,24 +225,20 @@ public sealed class ToolNavigator
             }
             catch (Exception ex)
             {
-                // The old path could not reach this case: a failed Process.Start left the user
-                // with a still-running app, but a tool that threw during construction took the
-                // whole thing down. Here the owner is still alive and still visible.
                 _faults.Fatal("UI", $"{toolName} could not be opened, so nothing has changed.", ex);
                 restoreVideoPipeline?.Invoke();
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                 return false;
             }
 
             IsToolOpen = true;
-            OpenedInProcess = true;      // TOOLNAV_04
+            OpenedInProcess = true;
             RuntimeLog.Info("UI", $"Opening {toolName} in-process; main window hidden (TOOLNAV_01).");
 
-            // TOOLNAV_03 — hide, never close.
             toolWindow.Closed += (_, _) =>
             {
                 IsToolOpen = false;
-                OpenedInProcess = false;     // TOOLNAV_04
+                OpenedInProcess = false;
 
                 var result = (toolWindow as IToolNavigationResultSource)?.NavigationResult
                     ?? ToolNavigationResult.Cancelled(toolName);
@@ -271,10 +258,6 @@ public sealed class ToolNavigator
                 RuntimeLog.Info("UI", $"{toolName} closed; main window restored.");
             };
 
-            // The desktop lifetime's MainWindow decides what "the application's window" is for
-            // shutdown purposes. Point it at the tool while it owns the screen, so closing the
-            // tool with the owner hidden cannot terminate the process with the owner's document
-            // still in memory.
             PointLifetimeAt(toolWindow);
 
             toolWindow.Show();

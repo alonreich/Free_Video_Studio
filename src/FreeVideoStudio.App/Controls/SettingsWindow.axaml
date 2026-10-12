@@ -449,6 +449,11 @@
                                         <TextBlock Name="UpdateLastCheckText" Foreground="{DynamicResource AppTextMutedBrush}"
                                                    FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" Margin="0,2,0,0"/>
 
+                                        <!-- R3 — "Skip this version" lives here, not on the update card. -->
+                                        <Button Name="SkipPendingBtn" Classes="Secondary" Content="Skip This Version" IsVisible="False"
+                                                Cursor="Hand" HorizontalAlignment="Left"
+                                                ToolTip.Tip="Stops the update that is downloading or waiting, and does not offer this version again. A newer version will still be offered."/>
+
                                         <!-- Skipped Releases Reset -->
                                         <Border Name="SkippedReleaseBorder" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,6,0,0" IsVisible="False">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">

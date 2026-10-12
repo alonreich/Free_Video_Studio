@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -32,16 +32,15 @@ internal static class GitHubReleasePublisher
             return false;
         }
 
-        // REBRAND_03 — old-brand clients look for the previous download name in the latest
-        // release. That alias is created here, in a private temp folder, for the duration of the
-        // upload only, so no previous-brand file ever persists in the repository or obj/.
         string aliasDirectory = Path.Combine(Path.GetTempPath(), "fvs-release-" + Guid.NewGuid().ToString("N"));
         try
         {
             Directory.CreateDirectory(aliasDirectory);
             string alias = Path.Combine(aliasDirectory, LegacyProductIdentity.DownloadName);
             File.Copy(exePath, alias, overwrite: true);
-            return PublishAssets(ReleaseAssets(exePath, alias), tag, repo, exePath, log);
+            string bridge = Path.Combine(aliasDirectory, PreSetupDownloadName);
+            File.Copy(exePath, bridge, overwrite: true);
+            return PublishAssets(ReleaseAssets(exePath, alias, bridge), tag, repo, exePath, log);
         }
         finally
         {
@@ -85,12 +84,16 @@ internal static class GitHubReleasePublisher
         return true;
     }
 
-    internal static string[] ReleaseAssets(string exePath, string legacyAliasPath) =>
+    /// <summary>NODROPPER_01 — the full-installer name used by every release before the Inno Setup installer.</summary>
+    internal const string PreSetupDownloadName = "FreeVideoStudio.exe";
+
+    internal static string[] ReleaseAssets(string exePath, string legacyAliasPath, string preSetupAliasPath) =>
     [
         exePath,
         legacyAliasPath,
-        Path.Combine("obj", "ReleaseAssets", "FreeVideoStudio.App.update.zip"),
-        Path.Combine("obj", "ReleaseAssets", RuntimePayloadManifest.FileName)
+        preSetupAliasPath,
+        Path.Combine("obj", "ReleaseAssets", RuntimePayloadManifest.FileName),
+        .. SmartUpdateBuilder.ReleaseFiles()
     ];
 
     internal static bool VerifyAssets(IEnumerable<string> paths, string response)

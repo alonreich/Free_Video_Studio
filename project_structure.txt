@@ -16,7 +16,9 @@ Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Te
 Local packaging:      .\dev_build.cmd
 Verification tool:    .\build\FvsVerify\FvsVerify.csproj
 Sentinel registry:     .\build\sentinels.txt
-Standalone output:    .\compiled\FreeVideoStudio.exe
+Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; needs Inno Setup 6.3+)
+Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-INSTALLER)
+AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01 (docs/05 SYS-AVCLEAN)
 
 Product display name: Free Video Studio
 Naming rule:          "Free Video Studio" = user-visible text (title bars, About, dialogs,

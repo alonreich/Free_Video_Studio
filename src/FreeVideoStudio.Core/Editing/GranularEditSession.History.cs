@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Immutable;
 using System.Linq;
@@ -38,15 +35,6 @@ public sealed class GranularHistoryParking
 
 public sealed partial class GranularEditSession
 {
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // UNDO_01 / UNDO_26 — the editor's history, on the shared UndoStack<T> through
-    // GranularEditHistory. NOT a second engine: U1–U4, the 40-step ceiling and the 700ms gesture
-    // window are UndoStack's / GranularEditHistory's. This only owns the editor's half of the
-    // calling convention — "record the state BEFORE the change" — and the restore of project data.
-    //
-    // Restoring touches project data only: never the playhead, the zoom overlay or playback. Those
-    // are the window's, and it refreshes them after a restore.
-    // ══════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>UNDO_26 — this editor's history.</summary>
     public GranularEditHistory History { get; } = new();
@@ -79,7 +67,7 @@ public sealed partial class GranularEditSession
     public GranularEditorSnapshot Capture() => new(
         ImmutableArray.CreateRange(Segments),
         ImmutableArray.CreateRange(Cuts),
-        ImmutableArray.CreateRange(Memes),   // MEME_06
+        ImmutableArray.CreateRange(Memes),
         BaseSpeed, FreezeTimeMs, FreezeDurationS, SelectedSegmentIndex);
 
     /// <summary>
@@ -135,8 +123,6 @@ public sealed partial class GranularEditSession
         Cuts.Clear();
         Cuts.AddRange(snap.Cuts);
 
-        // MEME_06 — drop a selection pointing at a meme that no longer exists; a stale id would
-        // leave REMOVE MEME on screen with nothing behind it.
         Memes.Clear();
         Memes.AddRange(snap.Memes);
         if (SelectedMemeId != null && !Memes.Any(m => m.Id == SelectedMemeId)) SelectedMemeId = null;
@@ -145,7 +131,6 @@ public sealed partial class GranularEditSession
         FreezeTimeMs = snap.FreezeTimeMs;
         FreezeDurationS = snap.FreezeDurationS;
 
-        // UNDO_02 (rule 4) — KEEP THE SELECTION, clamped in case the list it pointed into shrank.
         SelectedSegmentIndex = snap.SelectedIndex >= 0 && snap.SelectedIndex < Segments.Count ? snap.SelectedIndex : -1;
         ClearPendingMarks();
     }
@@ -188,7 +173,6 @@ public sealed partial class GranularEditSession
         if (Math.Abs(to.FreezeDurationS - from.FreezeDurationS) > 0.005)
             return $"Freeze back to {to.FreezeDurationS:0.0}s";
 
-        // Same count on both sides: something INSIDE a segment changed. Name it.
         for (int i = 0; i < to.Segments.Length && i < from.Segments.Length; i++)
         {
             var a = from.Segments[i];
@@ -206,7 +190,6 @@ public sealed partial class GranularEditSession
         return $"Undid {label}";
     }
 
-    // ── UNDO_25 park / reopen ───────────────────────────────────────────────────────────────
 
     /// <summary>
     /// UNDO_25 / UNDO_26 — takes back the history this clip had when its editor was last closed.
@@ -220,7 +203,7 @@ public sealed partial class GranularEditSession
         HistoryBaseline = opening;
 
         if (_parking.Slot is not { } parked) return false;
-        if (string.IsNullOrEmpty(HistoryKey)) return false;   // MERGEEDIT_02 — a merge never parks
+        if (string.IsNullOrEmpty(HistoryKey)) return false;
 
         if (!History.TryAdopt(parked, HistoryKey, opening))
         {

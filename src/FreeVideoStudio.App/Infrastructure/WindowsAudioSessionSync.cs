@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -52,16 +49,16 @@ internal static unsafe partial class WindowsAudioSessionSync
     private static partial int CoCreateInstance(in Guid rclsid, IntPtr pUnkOuter, uint dwClsContext, in Guid riid, out IntPtr ppv);
 
     private static Thread? _thread;
-    private static volatile int _desiredLevel = -1;     // app position the session should reflect
-    private static volatile int _desiredMuted = -1;     // 0/1, -1 = nothing pending
-    private static int _suppressPosition = -1;          // a position that CAME from Windows: do not echo it back
+    private static volatile int _desiredLevel = -1;
+    private static volatile int _desiredMuted = -1;
+    private static int _suppressPosition = -1;
     private static volatile bool _stop;
 
     public static void Start()
     {
         if (!OperatingSystem.IsWindows() || _thread != null) return;
         MpvIpcClient.GlobalMasterVolumeChanged += OnAppMasterChanged;
-        _desiredLevel = MpvIpcClient.GlobalMasterVolume;   // the app is the truth at startup
+        _desiredLevel = MpvIpcClient.GlobalMasterVolume;
         _desiredMuted = MpvIpcClient.GlobalMuted ? 1 : 0;
         _thread = new Thread(Run) { IsBackground = true, Name = "FVS Windows audio session sync" };
         _thread.Start();
@@ -91,8 +88,6 @@ internal static unsafe partial class WindowsAudioSessionSync
         {
             try
             {
-                // Re-acquire every few seconds: the default output device can change (headphones
-                // plugged in), and the session volume is per device.
                 if (volume == IntPtr.Zero || Environment.TickCount64 - acquiredAt > 3000)
                 {
                     Release(ref volume);
@@ -201,21 +196,17 @@ internal static unsafe partial class WindowsAudioSessionSync
             if (CoCreateInstance(CLSID_MMDeviceEnumerator, IntPtr.Zero, CLSCTX_ALL, IID_IMMDeviceEnumerator, out enumerator) < 0
                 || enumerator == IntPtr.Zero) return IntPtr.Zero;
 
-            // IMMDeviceEnumerator::GetDefaultAudioEndpoint(eRender = 0, eMultimedia = 1, out IMMDevice) — slot 4.
             var getDefault = (delegate* unmanaged[Stdcall]<IntPtr, int, int, IntPtr*, int>)(*(void***)enumerator)[4];
             IntPtr dev;
             if (getDefault(enumerator, 0, 1, &dev) < 0 || dev == IntPtr.Zero) return IntPtr.Zero;
             device = dev;
 
-            // IMMDevice::Activate(riid, dwClsCtx, pActivationParams, out ppInterface) — slot 3.
             var activate = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, uint, IntPtr, IntPtr*, int>)(*(void***)device)[3];
             Guid iid = IID_IAudioSessionManager;
             IntPtr mgr;
             if (activate(device, &iid, CLSCTX_ALL, IntPtr.Zero, &mgr) < 0 || mgr == IntPtr.Zero) return IntPtr.Zero;
             manager = mgr;
 
-            // IAudioSessionManager::GetSimpleAudioVolume(AudioSessionGuid = NULL, StreamFlags = 0, out) — slot 4.
-            // NULL selects this process's default session — the one mpv, NAudio and WinMM all open.
             var getSimple = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, uint, IntPtr*, int>)(*(void***)manager)[4];
             IntPtr sv;
             if (getSimple(manager, null, 0, &sv) < 0 || sv == IntPtr.Zero) return IntPtr.Zero;

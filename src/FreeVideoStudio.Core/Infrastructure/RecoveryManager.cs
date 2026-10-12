@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, docs/SPEC_GOVERNANCE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -27,24 +24,8 @@ public sealed class RecoveryManager
 
     private readonly ApplicationPaths _paths;
     private readonly TimeSpan _safeModeThreshold = TimeSpan.FromSeconds(120);
-    private static readonly object _saveLock = new(); // Shared by the main window and editor writers.
+    private static readonly object _saveLock = new();
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // WRITEORDER_01 — ONE PROCESS-WIDE ORDER FOR EVERY WHOLE-FILE WRITE AND DELETE.
-    //
-    // The sequence used to be PER INSTANCE and covered saves only. There are at least three
-    // RecoveryManager instances (MainWindow._recovery, ProjectRecoveryService, the granular editor),
-    // and ClearState() was not sequenced at all. It ran File.Delete outside the lock. So a
-    // SaveStateAsync queued BEFORE a ClearState could run AFTER it and resurrect the file. Two
-    // real triggers: undoing back to an empty project, and the clean-shutdown CleanupLock(). After
-    // that, the next launch could offer to "recover" work the user had deliberately discarded.
-    //
-    // Now every save and every clear takes a version FROM A STATIC COUNTER AT CALL TIME (the
-    // order the user caused them), and is applied under _saveLock only if it is newer than the
-    // last one applied to that file. An older queued save that loses the race is dropped. The
-    // granular editor's UpdateGranularSession is a read-modify-write MERGE of one sub-key, not a
-    // whole-file replacement, so it is serialised by the lock but not versioned against saves.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     private static long _writeVersion;
     private static readonly Dictionary<string, long> _appliedVersionByFile = new(StringComparer.OrdinalIgnoreCase);
 
@@ -59,6 +40,25 @@ public sealed class RecoveryManager
         return true;
     }
     private bool _skipCleanup;
+
+    public const int MaxRestoreAttempts = 3;
+    private int _crashedRestoreAttempts;
+    private bool _restoreAttemptedThisProcess;
+
+    /// <summary>RESTORECRASH_01 — consecutive restore attempts that died with their owner (0 = none).</summary>
+    public int CrashedRestoreAttempts => _crashedRestoreAttempts;
+
+    /// <summary>RESTORECRASH_01 — true when the previous launch died while restoring the snapshot.</summary>
+    public bool RestoreCrashDetected => _crashedRestoreAttempts > 0;
+
+    /// <summary>RESTORECRASH_01 — false once the retry budget is spent or this process already tried.</summary>
+    public bool CanRetryRestore => !_restoreAttemptedThisProcess && _crashedRestoreAttempts < MaxRestoreAttempts;
+
+    /// <summary>
+    /// RESTORECRASH_01 — where the last snapshot moved aside by <see cref="QuarantineSnapshot"/> is kept,
+    /// byte for byte. Each quarantine gets a unique name so an earlier kept copy is never overwritten.
+    /// </summary>
+    public string? QuarantinedSnapshotFile { get; private set; }
 
     public RecoveryManager(ApplicationPaths? paths = null)
     {
@@ -119,6 +119,13 @@ public sealed class RecoveryManager
             return false;
         }
 
+        if (RestoreCrashDetected)
+        {
+            CoreLogger.Info("Recovery",
+                $"Previous restore attempt crashed ({_crashedRestoreAttempts} consecutive). Recovery state preserved; awaiting user choice.");
+            return true;
+        }
+
         if (!File.Exists(_paths.AppSessionLockFile))
         {
             return false;
@@ -153,22 +160,22 @@ public sealed class RecoveryManager
                     }
                     catch (ArgumentException swallowed3)
                     {
-                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
                     }
                     catch (InvalidOperationException swallowed4)
                     {
-                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);
                     }
                     catch (System.ComponentModel.Win32Exception swallowed7)
                     {
-                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed7);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed7);
                     }
                 }
             }
         }
         catch (Exception swallowed6)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed6);
         }
 
         CoreLogger.Info("Recovery", "Previous session did not shut down cleanly (crash detected). Recovery state is available to restore.");
@@ -212,14 +219,22 @@ public sealed class RecoveryManager
                 if (age < _safeModeThreshold) return true;
             }
 
-            try { if (File.Exists(_paths.AppSessionLockFile)) File.Delete(_paths.AppSessionLockFile); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-            try { if (File.Exists(_paths.RecoveryStateFile)) File.Delete(_paths.RecoveryStateFile); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
+            _crashedRestoreAttempts = Math.Max(_crashedRestoreAttempts, ParseRestoreAttempt(content));
+            CoreLogger.Info("Recovery",
+                $"Restore owner is gone (attempt {_crashedRestoreAttempts} crashed). Stale restore marker cleared; recovery state preserved.");
 
             File.Delete(_paths.SafeModeSentinelFile);
         }
         catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
         return false;
+    }
+
+    /// <summary>RESTORECRASH_01 — the attempt number in "pid:startTicks:attempt"; older stamps count as attempt 1.</summary>
+    private static int ParseRestoreAttempt(string content)
+    {
+        string[] parts = (content ?? "").Split(':');
+        return parts.Length >= 3 && int.TryParse(parts[2], out int attempt) && attempt > 0 ? attempt : 1;
     }
 
     /// <summary>Parses a "pid:startTicks" owner stamp. Shared by the lock and the safe-mode sentinel.</summary>
@@ -246,35 +261,49 @@ public sealed class RecoveryManager
         }
         catch (ArgumentException swallowed8)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed8);
             return false;
         }
         catch (InvalidOperationException swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return false;
         }
         catch (System.ComponentModel.Win32Exception swallowed5)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed5);
             return false;
         }
         catch (System.Exception ex) { CoreLogger.Swallowed(ex); return false; }
     }
 
-    public void ActivateSafeMode()
+    /// <summary>
+    /// Marks this process as the restore owner. RESTORECRASH_01: returns false (and restores
+    /// nothing) once the retry budget is spent or this process already attempted a restore, so a
+    /// crashing snapshot can never be retried automatically or endlessly.
+    /// </summary>
+    public bool ActivateSafeMode()
     {
+        if (!CanRetryRestore)
+        {
+            CoreLogger.Info("Recovery",
+                $"Restore not started: {_crashedRestoreAttempts} consecutive restore crashes (limit {MaxRestoreAttempts}) or already attempted in this process.");
+            return false;
+        }
+
+        _restoreAttemptedThisProcess = true;
         try
         {
             _paths.EnsureWritableDirectories();
             File.WriteAllText(_paths.SafeModeSentinelFile,
-                $"{Environment.ProcessId}:{Process.GetCurrentProcess().StartTime.Ticks}");
+                $"{Environment.ProcessId}:{Process.GetCurrentProcess().StartTime.Ticks}:{_crashedRestoreAttempts + 1}");
             CoreLogger.Info("Recovery", "Safe mode activated to prevent a crash loop.");
         }
         catch (Exception ex)
         {
             CoreLogger.Fail("Recovery", $"Failed to activate safe mode: {ex.Message}");
         }
+        return true;
     }
 
     /// <summary>
@@ -289,6 +318,7 @@ public sealed class RecoveryManager
             {
                 File.Delete(_paths.SafeModeSentinelFile);
             }
+            _crashedRestoreAttempts = 0;
             CoreLogger.Info("Recovery", "Safe mode deactivated after successful recovery.");
         }
         catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
@@ -362,7 +392,7 @@ public sealed class RecoveryManager
 
     public void SaveStateAsync(JsonObject state)
     {
-        long version = NextVersion();   // WRITEORDER_01 — ordered by when the edit happened, not when the pool runs it
+        long version = NextVersion();
         Task.Run(() => SaveStateVersioned(state, version));
     }
 
@@ -374,10 +404,7 @@ public sealed class RecoveryManager
             var state = AtomicJsonFile.ReadObject(_paths.RecoveryStateFile);
             if (state == null && session == null) return;
             state ??= new JsonObject();
-            // Explicit null suppresses SaveState's preservation rule on deliberate close.
             state["granular_session"] = session?.DeepClone();
-            // WRITEORDER_01 — a sub-key MERGE, serialised by the lock but not versioned: it must
-            // not make a queued main-window save look stale (that would drop the user's edit).
             WriteLocked(state);
         }
     }
@@ -412,8 +439,6 @@ public sealed class RecoveryManager
 
                 state["schema_version"] = SchemaVersion;
 
-                // RECOVERY_03 — if an active granular editing session exists in the current recovery file,
-                // preserve it so an app-level state save does not wipe out the in-flight granular edits.
                 if (!state.ContainsKey("granular_session") && File.Exists(_paths.RecoveryStateFile))
                 {
                     try
@@ -494,9 +519,43 @@ public sealed class RecoveryManager
         }
     }
 
+    /// <summary>
+    /// RESTORECRASH_01 — the retry budget is spent, or a restore failed without crashing
+    /// (RESTOREFAIL_01). Moves the snapshot aside INTACT (one atomic
+    /// rename, sequenced like every other whole-file write by WRITEORDER_01) so the crash loop
+    /// stops without destroying the user's work. Returns false when there was nothing to move.
+    /// </summary>
+    public bool QuarantineSnapshot()
+    {
+        long version = NextVersion();
+        lock (_saveLock)
+        {
+            if (!TryClaimVersionLocked(version)) return false;
+            try
+            {
+                if (!File.Exists(_paths.RecoveryStateFile)) return false;
+                string target = $"{_paths.RecoveryStateFile}.crashed-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
+                File.Move(_paths.RecoveryStateFile, target, overwrite: false);
+                QuarantinedSnapshotFile = target;
+                _crashedRestoreAttempts = 0;
+                CoreLogger.Info("Recovery", $"Crashing recovery snapshot preserved at {QuarantinedSnapshotFile}.");
+                return true;
+            }
+            catch (System.Exception ex) { CoreLogger.Swallowed(ex); return false; }
+        }
+    }
+
+    /// <summary>RESTORECRASH_01 — explicit user Start Fresh: the ONLY path that discards a crashed-restore snapshot.</summary>
+    public void DiscardRecoveryState()
+    {
+        ClearState();
+        _crashedRestoreAttempts = 0;
+        CoreLogger.Info("Recovery", "Recovery state discarded by explicit user choice.");
+    }
+
     public void ClearState()
     {
-        long version = NextVersion();   // WRITEORDER_01 — any save queued before this is now stale
+        long version = NextVersion();
         lock (_saveLock)
         {
             if (!TryClaimVersionLocked(version)) return;

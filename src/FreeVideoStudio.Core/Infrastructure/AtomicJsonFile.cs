@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Text.Json;
@@ -54,7 +48,7 @@ public static class AtomicJsonFile
         }
         catch (JsonException swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return null;
         }
         catch (Exception ex)
@@ -97,6 +91,18 @@ public static class AtomicJsonFile
             byte[] bytes = System.Text.Encoding.UTF8.GetBytes(contents);
             stream.Write(bytes, 0, bytes.Length);
         });
+
+    /// <summary>
+    /// ATOMICBYTES_01 — the SAME power-outage-safe protocol for an opaque byte payload (cache files:
+    /// the Merger's lane PNG/peaks, CACHEBOUND_01). One implementation, not a copy at the call site
+    /// (<c>docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-ATOMICWRITE</c>: "Never reimplement this sequence").
+    /// Takes no lock: callers that share the file across processes still hold their own mutex.
+    /// </summary>
+    public static void WriteBytes(string path, byte[] data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        WriteCore(path, stream => stream.Write(data, 0, data.Length));
+    }
 
     private static void WriteCore(string path, Action<FileStream> emit)
     {
@@ -154,11 +160,11 @@ public static class AtomicJsonFile
         }
         catch (IOException swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
         }
         catch (UnauthorizedAccessException swallowed3)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
         }
     }
 }

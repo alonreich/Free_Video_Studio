@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.ViewModels;
@@ -150,15 +147,12 @@ public sealed class ProjectRecoveryService
     {
         if (mainVm.ExportedCleanSinceLastEdit) return false;
 
-        // No clip, no project. Nothing below can be true in a way that matters.
         if (string.IsNullOrWhiteSpace(mainVm.LoadedVideoPath)) return false;
 
         var defaults = SettingsManager.Instance.Defaults;
 
         bool memeSelected = mainVm.IsAddMeme || mainVm.SelectedMemeItem != null;
 
-        // SPECTATINGDEFAULT_01 — the eye starts on, so turning it off is an edit.
-        // No Mask forces both controls off; that profile's initial state is still clean.
         bool noMask = MaskOverlayManager.IsNoMask(SettingsManager.Instance.ActiveMaskOverlay);
         bool hudToggled = mainVm.IsTeammates != (!noMask && defaults.ShowTeammates)
                        || mainVm.IsSpectating != !noMask;

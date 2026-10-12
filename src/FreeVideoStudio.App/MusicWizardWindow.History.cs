@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Linq;
@@ -68,7 +65,6 @@ public partial class MusicWizardWindow
             {
                 if (e.Property == Slider.ValueProperty) RecordWizardEdit();
             };
-            // U1 — the sweep ends when the pointer lets go, so the next drag is its own step.
             slider.AddHandler(InputElement.PointerReleasedEvent, (_, _) => EndWizardGesture(),
                 RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         }
@@ -78,8 +74,6 @@ public partial class MusicWizardWindow
             if (box != null) box.IsCheckedChanged += (_, _) => RecordWizardEdit();
         }
 
-        // A wizard opened WITHOUT a placement to resume is settled once it is on screen; one that
-        // resumes is settled by the resume itself (the Loaded handler in the constructor).
         Loaded += (_, _) =>
         {
             if (InitialState == null && !_historyReady) ResetWizardHistory();
@@ -99,7 +93,7 @@ public partial class MusicWizardWindow
         if (!_historyReady || _restoringHistory) return;
 
         MusicWizardSnapshot next = CaptureWizardSnapshot();
-        if (Equals(next, _history.Current)) return;   // U4
+        if (Equals(next, _history.Current)) return;
 
         var (label, gesture) = MusicWizardSnapshot.DescribeChange(_history.Current, next);
         if (_history.Apply(next, label, gesture))
@@ -133,7 +127,7 @@ public partial class MusicWizardWindow
             e.KeyModifiers.HasFlag(KeyModifiers.Control),
             e.KeyModifiers.HasFlag(KeyModifiers.Shift),
             textFocused);
-        if (command == HistoryCommand.None) return;   // text fields keep their own undo
+        if (command == HistoryCommand.None) return;
 
         e.Handled = true;
         _ = StepWizardHistoryAsync(command == HistoryCommand.Undo);
@@ -143,7 +137,7 @@ public partial class MusicWizardWindow
     {
         if (_restoringHistory || !_historyReady) return;
 
-        RecordWizardEdit();   // anything not yet recorded becomes a step first, so undo removes the LATEST edit
+        RecordWizardEdit();
         _history.EndGesture();
 
         string? label = undo ? _history.NextUndoLabel : _history.NextRedoLabel;
@@ -162,8 +156,6 @@ public partial class MusicWizardWindow
 
             if (reloadPhase3 && _currentStep == 3)
             {
-                // The final preview is built from the song; a different song needs it rebuilt —
-                // the same transition the step-2 branch of OnNextClicked performs.
                 StopPreview();
                 CancelPhase3Load();
                 _phase3Ready = false;
@@ -234,7 +226,6 @@ public partial class MusicWizardWindow
             _restoringHistory = false;
         }
 
-        // Re-reading the window after a restore is an equivalent form, never a new step.
         _history.ReplaceCurrent(CaptureWizardSnapshot());
         return trackChanged;
     }
@@ -249,7 +240,6 @@ public partial class MusicWizardWindow
             if (listbox != null) listbox.SelectedItem = null;
             if (_currentStep != 1)
             {
-                // No song: the later steps have nothing to show.
                 StopPreview();
                 CancelPhase3Load();
                 _phase3Ready = false;

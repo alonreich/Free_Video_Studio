@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Abstractions;
@@ -107,7 +104,6 @@ public static class MediaMetadataProbe
         if (backend == MediaProbeBackend.Native)
             return new MediaProbeResult(null, "libav", -1, result.Detail);
 
-        // ── Auto: exactly one fallback to the subprocess ───────────────────────────────────────
         Interlocked.Increment(ref _fallbacks);
         if (result.Status == NativeProbeStatus.MediaError)
             Faults.Recoverable("LIBAV-FALLBACK", $"{Path.GetFileName(mediaPath)}: native probe failed ({result.Detail}); retrying once with ffprobe.");

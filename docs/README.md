@@ -25,7 +25,7 @@ Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for pa
 ## 2. The 9 North Star Architectural Invariants
 All subsystems, controls, and rendering components across `src/` must strictly enforce these nine non-negotiable architectural pillars:
 
-1. **Single Binary Executable Mandate:** Zero loose companion assets (`.gif`, `.png`, `.wav`, `.ico`) alongside the output binary. All UI overlays, guide indicators, brand icons, and animations must be generated dynamically via code or vector path geometry (`PathGeometry`) in memory.
+1. **Single Binary Executable Mandate:** Zero loose companion assets (`.gif`, `.png`, `.wav`, `.ico`) alongside the output binary. All UI overlays, guide indicators, brand icons, and animations must be generated dynamically via code or vector path geometry (`PathGeometry`) in memory. The user downloads ONE file, the Inno Setup package `FreeVideoStudio-Setup.exe`; the program itself never carries other executables inside its resources (NODROPPER_01, `09` DIST-INSTALLER).
 2. **Absolute Authority for Time:** `src/FreeVideoStudio.Core/Media/OutputTimeline.cs` is the authoritative mathematical model for single-clip linear edits and per-clip segment durations. For multi-clip NLE virtual timelines, `src/FreeVideoStudio.Core/Media/CompositeTimeline.cs` and `MergeEdl.cs` constitute the sole mathematical authority mapping source µs, 60 fps merged frames, and output seconds across `edl://` libmpv preview playback and FFmpeg multi-clip rendering.
 3. **Strict A/V Process Isolation:** Master preview volume (Windows OS PID session) and preview playback remain completely decoupled from FFmpeg export filtergraphs. Master preview slider adjustments must never alter export loudness.
 4. **Leak-Free Render Pipelines:** The deprecated FFmpeg `zoompan` filter is banned suite-wide due to fatal native heap leaks. Dynamic zooms must be achieved via frame-evaluated padding, dynamic scaling, cropping, and contrast-adaptive sharpening (`cas=0.5`).
@@ -91,9 +91,9 @@ AmbientBubblesBackground.cs  AvaloniaApp.axaml  CoachOverlay.cs  ConfirmDialogWi
 FloatingNotice.cs  ⚠FluidVolumeSlider.cs  GrabCursors.cs  ⚠GranularSpeedEditorWindow.axaml.cs
 ⚠GranularSpeedEditorWindow.History.cs  ⚠GranularSpeedEditorWindow.Merge.cs  ⚠IUserNotifier.cs
 ⚠LaneDiskCache.cs  MainViewModel.cs  ⚠MainWindow.axaml.cs  ⚠MainWindow.Controls.cs  MemePickerWindow.axaml
-MemeThumbnailCache.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
+MemeThumbnailCache.cs  OwnedLruCache.cs  ViewportThumbnailLoader.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
 ⚠MainWindow.CornerMemes.cs  ⚠VideoMergerWindow.CornerMemes.cs  ⚠MicrophoneSpectrumControl.cs  PreviewFidelityBadge.cs  ⚠PreviewFidelity.cs  ⚠MainWindow.PreviewFidelity.cs  ⚠PhoneFrameMockup.axaml.cs  PreviewDetachController.cs  PreviewMonitorWindow.axaml
-ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SpinningWheelSlider.cs  UpdateAvailableWindow.axaml.cs
+ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SpinningWheelSlider.cs  UpdateToastWindow.axaml.cs
 ⚠VideoMergerWindow.EdlPreview.cs  ⚠VideoMergerWindow.Lanes.cs  VideoMergerWindow.Playhead.cs
 ⚠VideoMergerWindow.Session.cs  ⚠VideoMergerWindow.TimelineSelect.cs  ViewModelBase.cs  WaveformPeaks.cs
 ⚠WindowBoundsHelper.cs  WindowResizeGrip.cs  ⚠GranularEditSession.cs  ⚠CropEditSession.cs  CropLayer.cs

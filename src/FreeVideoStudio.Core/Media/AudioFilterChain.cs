@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 
 using System.Globalization;
 using System.Text;
@@ -280,20 +277,12 @@ public class AudioFilterChain
             bgMusicLabel = preparedMusicLabels[0];
         }
 
-        // AUDIOCHK_01 — flags are read type-agnostically and never throw (a quoted "true" or a 0/1
-        // number must not kill the export). Unrecognised values degrade to the default.
         bool carvingEnabled = ReadBool(musicConfig, "carving_enabled", true);
 
-        // DUCKOFF_01 — explicit flag. The ratio fallback is only for configs written before the key
-        // existed: a bypass ratio of 1.0 is how "off" used to be encoded.
         double legacyRatio = GetDouble(musicConfig, "ducking_ratio", SidechainCompressNode.TunedRatio);
         bool duckingEnabled = ReadBool(musicConfig, "ducking_enabled",
                                        legacyRatio > SidechainCompressNode.BypassRatio + 0.0001);
 
-        // VOPROT_01 / VOPRIO_01 — protect the voice from the music FIRST: across the takes only, the
-        // bed is ducked 85% and its speech band carved. Gated by the same pulse (VOGATE_01), so the
-        // music between takes is untouched. Applied before the sidechain stage below, so the music
-        // arriving there is already out of the voice's way.
         if (!string.IsNullOrEmpty(voiceProtectMusicPulse))
         {
             chain.AddRange(GatedVoiceProtection(bgMusicLabel, voiceProtectMusicPulse, "vpm", "[a_bg_voice_protected]"));
@@ -317,19 +306,6 @@ public class AudioFilterChain
         string gameForMix;
         if (duckingEnabled || carvingEnabled)
         {
-            // DUCKMB_01 — MULTIBAND SIDECHAIN. Both protections are now DYNAMIC: they act only while
-            // the gameplay (+voice) is actually sounding, and leave the music alone in quiet stretches.
-            //
-            //   music → acrossover 250 Hz / 2900 Hz → LOW | MID (speech/gameplay band) | HIGH
-            //   LOW  (<250 Hz)   never touched — the bed keeps its body.
-            //   MID  ducking (ratio 4) and/or carving (ratio 2.5, the dynamic replacement of the old
-            //        static 2 kHz -4 dB EQ, which dulled the music for the whole video).
-            //   HIGH ducking (ratio 4) only.
-            //   The three bands are summed back (measured flat to ±0.001 dB with no compression).
-            //
-            // Old ducking was threshold 0.15 / ratio 1.13: measured -1.2 dB under a near-full-scale
-            // trigger, i.e. inaudible. The tuned stage measures about -8 dB under the same trigger.
-            // DUCKSTRENGTH_01 — the two strength handles from Settings (0-100, 50 = tuned).
             int duckStrength = (int)Math.Round(GetDouble(musicConfig, "ducking_strength", SidechainCompressNode.DefaultStrength));
             int carveStrength = (int)Math.Round(GetDouble(musicConfig, "carving_strength", SidechainCompressNode.DefaultStrength));
             var compressors = new List<(string band, SidechainCompressNode node)>();
@@ -345,9 +321,6 @@ public class AudioFilterChain
 
             int n = compressors.Count;
             chain.Add($"[game_leveled]asplit=2[game_out_pre][game_trig]");
-            // Both sidechaincompress inputs are pinned to one explicit format: with a split trigger
-            // the graph otherwise has no channel layout to negotiate and ffmpeg rejects it
-            // ("No channel layout for input 1").
             string pinFormat = $"aformat=sample_fmts=fltp:sample_rates={targetSampleRate}:channel_layouts=stereo";
             chain.Add("[game_trig]highpass=f=200,lowpass=f=3500," +
                       $"agate=threshold=0.05:attack=5:release=100,{pinFormat}" +
@@ -381,8 +354,6 @@ public class AudioFilterChain
         }
         else
         {
-            // DUCKOFF_01 — no asplit, no trigger bus, no crossover: the music reaches the mix untouched.
-            // (An unconsumed asplit pad would make ffmpeg reject the whole filter_complex.)
             gameForMix = "[game_leveled]";
         }
 
@@ -463,7 +434,7 @@ public class AudioFilterChain
         try { return obj[key]?.GetValue<double>() ?? defaultValue; }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return defaultValue;
         }
     }

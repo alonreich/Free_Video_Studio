@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using Avalonia;
 using Avalonia.Controls;
@@ -66,7 +63,6 @@ public sealed class AppServices
           + "once in Program.RunUiAsync, before Avalonia starts. If you are seeing this from a "
           + "test, call AppServices.InitializeForTests(...) in the fixture.");
 
-    // ── The graph ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>ProgramData, temp and log path resolution (05 §SYS-MUTEX / GOV).</summary>
     public ApplicationPaths Paths { get; }
@@ -125,7 +121,6 @@ public sealed class AppServices
 
         if (_current is not null)
         {
-            // Not fatal, but it means two roots exist and half the app is talking to the wrong one.
             RuntimeLog.Fail("COMPOSITION",
                 "AppServices.Initialize called twice. The second call is ignored; the first graph stands.");
             return _current;
@@ -144,14 +139,6 @@ public sealed class AppServices
             projects:   FileProjectStore.Instance,
             filePicker: new StorageProviderFilePicker(windows, faults));
 
-        // FAULTTIER_02 — make the sink reachable from the ~900 catch blocks that cannot be handed
-        // one: static helpers, window code-behind Avalonia constructs, worker threads with no
-        // object graph in scope. Installed HERE, immediately after the graph is built, because
-        // every line of startup after this point can now report a classified failure instead of
-        // writing a log line nobody opens.
-        //
-        // ⚠️ This is a diagnostic channel, not a collaborator. See the note on Faults for why that
-        // distinction is what keeps it from being the service locator COMPOSITION_02 retires.
         Core.Abstractions.Faults.Install(faults);
 
         RuntimeLog.Info("COMPOSITION", "Application service graph constructed.");
@@ -173,9 +160,6 @@ public sealed class AppServices
     {
         _current = new AppServices(paths, clock, windows, notifier, faults, projects, filePicker);
 
-        // FAULTTIER_02 — a test that installs a recording sink must also receive the faults raised
-        // through the ambient channel, or half the code under test reports into a void and the
-        // test passes while proving nothing.
         Core.Abstractions.Faults.ResetForTests();
         Core.Abstractions.Faults.Install(faults);
 
@@ -227,8 +211,6 @@ public sealed class AvaloniaWindowProvider : IActiveWindowProvider
             }
             catch (Exception ex)
             {
-                // Reading the lifetime during teardown can race. A null answer degrades the caller
-                // to the log, which is the documented contract above.
                 RuntimeLog.WarnThrottled("COMPOSITION", $"Active window lookup failed: {ex.Message}");
                 return null;
             }

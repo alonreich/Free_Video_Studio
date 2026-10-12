@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
@@ -178,13 +175,27 @@ public partial class SettingsWindow : Window
 
         var statusText = this.FindNameScope()?.Find("UpdateStatusText") as TextBlock;
         var checkBtn = this.FindNameScope()?.Find("CheckUpdatesNowBtn") as Button;
-        // UPDATEUX_06 — "Last checked 5 minutes ago: You have the latest version (…)".
         var lastCheckText = this.FindNameScope()?.Find("UpdateLastCheckText") as TextBlock;
+        var skipPendingBtn = this.FindNameScope()?.Find("SkipPendingBtn") as Button;
         void RefreshLastCheck()
         {
             if (lastCheckText != null) lastCheckText.Text = UpdateService.DescribeLastCheck();
+            string? pending = UpdateService.PendingVersion;
+            if (skipPendingBtn != null)
+            {
+                skipPendingBtn.IsVisible = pending != null;
+                skipPendingBtn.Content = pending != null ? $"Skip version {pending}" : "Skip This Version";
+            }
         }
         RefreshLastCheck();
+        if (skipPendingBtn != null)
+        {
+            skipPendingBtn.Click += (_, _) =>
+            {
+                UpdateService.SkipPendingVersion();
+                RefreshLastCheck();
+            };
+        }
         var autoCheckCb = this.FindNameScope()?.Find("AutoUpdateChecksCheckbox") as CheckBox;
         if (autoCheckCb != null)
         {

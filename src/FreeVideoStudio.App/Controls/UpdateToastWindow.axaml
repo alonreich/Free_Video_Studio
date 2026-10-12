@@ -1,0 +1,67 @@
+<!-- BGUPDATE_01 — the update card in the bottom-right corner of the main window.
+     Owned, non-activating (never steals focus from the editor), no title bar, not persisted, not
+     in WindowBoundsHelper. Positioned by UpdateService against its owner. All state is bound to
+     UpdateToastViewModel (MVVM_01). -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
+        x:DataType="vm:UpdateToastViewModel"
+        x:Class="FreeVideoStudio.App.Controls.UpdateToastWindow"
+        Title="Free Video Studio update"
+        Width="380" SizeToContent="Height"
+        Background="{DynamicResource AppSurfaceBrush}"
+        CanResize="False"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        SystemDecorations="None"
+        WindowStartupLocation="Manual">
+
+    <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppInfoBrush}"
+            BorderThickness="2" CornerRadius="6" Padding="16,12">
+        <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding Headline}" TextWrapping="Wrap" FontWeight="Bold"
+                           FontSize="{DynamicResource AppFontSize13}"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                <!-- While downloading: pause (keeps what was downloaded). -->
+                <Button Grid.Column="1" Classes="Secondary" Content="PAUSE" Padding="8,2" Cursor="Hand"
+                        IsVisible="{Binding IsWorking}" Command="{Binding PauseCommand}"
+                        AutomationProperties.Name="Pause the update download"
+                        ToolTip.Tip="Stops for now. What was already downloaded is kept and the download continues next time."/>
+            </Grid>
+
+            <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
+                       FontSize="{DynamicResource AppFontSize12}"
+                       Foreground="{DynamicResource AppTextMutedBrush}"/>
+
+            <ProgressBar Height="8" Minimum="0" Maximum="100"
+                         Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}"
+                         IsVisible="{Binding IsWorking}"
+                         Foreground="{DynamicResource AppInfoBrush}"
+                         Background="{DynamicResource AppPanelBrush}"/>
+
+            <!-- R3 — the ONE question, with TWO buttons. "Restart & update" is the "yes, install it". -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsVisible="{Binding IsReady}">
+                <Button Classes="Secondary" Content="LATER" MinWidth="90" Cursor="Hand"
+                        Command="{Binding LaterCommand}"
+                        AutomationProperties.Name="Install the update later"
+                        ToolTip.Tip="Keep working. The update installs by itself the next time you close Free Video Studio."/>
+                <Button Classes="Success" Content="RESTART &amp; UPDATE" MinWidth="150" Cursor="Hand"
+                        Command="{Binding RestartCommand}"
+                        AutomationProperties.Name="Restart and install the update now"
+                        ToolTip.Tip="Closes Free Video Studio (asking you to save first if needed), installs the update and opens it again."/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsVisible="{Binding IsFinished}">
+                <Button Classes="Secondary" Content="CLOSE" MinWidth="90" Cursor="Hand"
+                        Command="{Binding CloseCommand}" AutomationProperties.Name="Close this message"/>
+                <Button Classes="Primary" Content="TRY AGAIN" MinWidth="110" Cursor="Hand"
+                        IsVisible="{Binding IsFailed}" Command="{Binding RetryCommand}"
+                        AutomationProperties.Name="Try the update download again"/>
+                <Button Classes="Primary" Content="CONTINUE NOW" MinWidth="130" Cursor="Hand"
+                        IsVisible="{Binding IsPaused}" Command="{Binding RetryCommand}"
+                        AutomationProperties.Name="Continue the update download now"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

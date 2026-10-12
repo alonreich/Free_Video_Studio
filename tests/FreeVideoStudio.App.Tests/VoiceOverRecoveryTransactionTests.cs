@@ -1,8 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -71,7 +67,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
     private static CapturedTake FailedOutcome(string message = "Endpoint hang")
         => new(44100 * 2, 10, 0.5f, IsSuccess: false, EndpointReleased: true, FileFinalized: false, Error: new InvalidOperationException(message));
 
-    // ───────────────────────── storage / identity ─────────────────────────
 
     [Fact]
     public void TwoSessions_ResolvingOne_LeavesTheOtherSessionsFileAndRecordIntact()
@@ -115,7 +110,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.True(t.Session.IsMuted);
         Assert.Equal(TakeRecoveryState.Pending, t.State);
 
-        // A third manager after reopened rewrote nothing still sees the same single identity.
         var third = Manager();
         third.CheckAndOfferReopenRecovery();
         Assert.Equal(id, Assert.Single(third.PendingFailedTakes).Id);
@@ -233,7 +227,7 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         m.CheckAndOfferReopenRecovery();
         string id = Assert.Single(m.PendingFailedTakes).Id;
         Assert.StartsWith("legacy-", id);
-        m.RegisterFailedTake(Take(Wav("new.wav")), null, "new");   // rewrites every tracked index
+        m.RegisterFailedTake(Take(Wav("new.wav")), null, "new");
         using (var doc = JsonDocument.Parse(File.ReadAllText(legacy)))
             Assert.Single(doc.RootElement.GetProperty("failedTakes").EnumerateArray());
 
@@ -250,7 +244,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         owner.RegisterFailedTake(Take(Wav("o1.wav")), null, "o1");
         string path = owner.GetRecoveryManifestPath();
 
-        // Another writer appends an entry this manager does not hold.
         var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
         json["failedTakes"]!.AsArray().Add(new System.Text.Json.Nodes.JsonObject
         {
@@ -320,7 +313,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.True(File.Exists(wav));
     }
 
-    // ───────────────────────── UI transaction ─────────────────────────
 
     private VoiceOverWindow WindowWithFailedTake(VoiceCaptureSession capture, out string wav)
     {
@@ -346,14 +338,12 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.True(window.RecoveryManager.IsOperationInFlight);
         await store.ValidationEntered.Task.WaitAsync(Timeout);
 
-        // Dispatcher heartbeat while validation is blocked on the store.
         bool heartbeat = false;
         Dispatcher.UIThread.Post(() => heartbeat = true);
         await Task.Delay(20);
         Dispatcher.UIThread.RunJobs();
         Assert.True(heartbeat, "the dispatcher must keep running while recovery I/O is blocked");
 
-        // Conflicting operations are refused while the recovery owns the take list.
         Assert.False(await window.DiscardFailedTakesAction());
         Assert.True(File.Exists(wav));
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
@@ -387,12 +377,12 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         var dialog = window.ShowDialog(owner);
         await Task.Delay(50);
         Dispatcher.UIThread.RunJobs();
-        while (window.RecoveryManager.IsOperationInFlight) { await Task.Delay(10); }   // reopen discovery
+        while (window.RecoveryManager.IsOperationInFlight) { await Task.Delay(10); }
 
         store.ValidationGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var recover = window.RecoverFailedTakesAction();
         await store.ValidationEntered.Task.WaitAsync(Timeout);
-        window.IsSafeToClose = true;   // e.g. the user confirmed DISCARD in the close prompt
+        window.IsSafeToClose = true;
         window.Close();
         Dispatcher.UIThread.RunJobs();
         Assert.False(closed, "the close must wait for the in-flight recovery");
@@ -437,7 +427,7 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         await store.ReadEntered.Task.WaitAsync(Timeout);
         Assert.True(window.RecoveryManager.IsOperationInFlight);
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
-        Assert.Null(window.Result);   // cannot apply past an undisclosed failed take
+        Assert.Null(window.Result);
 
         store.ReadGate.SetResult();
         await discovery.WaitAsync(Timeout);
@@ -453,7 +443,7 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         await window.RecoveryManager.WhenStoreIdle();
         string id = window.PendingFailedTakes[0].Id;
         Assert.True(await window.RecoverFailedTakesAction());
-        window.Sessions[0].TrimLeftSec = 0.2;   // forces the trim path
+        window.Sessions[0].TrimLeftSec = 0.2;
         VoiceOverWindow.TrimRunnerSeam = (_, _) => throw new IOException("disk full");
 
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);

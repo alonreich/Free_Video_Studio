@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 
@@ -144,12 +141,8 @@ public sealed class UndoStack<T> where T : class
     {
         ArgumentNullException.ThrowIfNull(next);
 
-        // A state change raised BY an undo is not an edit. Without this guard, restoring a state
-        // pushes it back onto the stack and the history grows every time the user presses Ctrl+Z.
         if (_restoring) return false;
 
-        // U4 — nothing changed. Checked before the gesture bookkeeping so a no-op cannot open a
-        // gesture window and swallow the user's next real edit.
         if (Equals(Current, next)) return false;
 
         long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -158,7 +151,7 @@ public sealed class UndoStack<T> where T : class
         if (gestureKey != null)
         {
             sameGesture = _gestureKey == gestureKey && (nowMs - _gestureAtMs) < GestureIdle;
-            _gestureAtMs = nowMs;          // U1 — refresh even when dropping; track the LAST movement.
+            _gestureAtMs = nowMs;
             _gestureKey = gestureKey;
         }
         else
@@ -168,8 +161,6 @@ public sealed class UndoStack<T> where T : class
 
         if (sameGesture)
         {
-            // Mid-gesture: the state moves, the history does not. The entry already on the stack is
-            // the one from before the gesture started, which is what a single Ctrl+Z must restore.
             Current = next;
             Changed?.Invoke(this, EventArgs.Empty);
             return false;
@@ -177,10 +168,8 @@ public sealed class UndoStack<T> where T : class
 
         _undo.Add(new UndoEntry<T>(Current, label, nowMs));
 
-        // U2 — ceiling applied on push, never after.
         while (_undo.Count > MaxDepth) _undo.RemoveAt(0);
 
-        // U3 — a new edit invalidates every redo branch.
         _redo.Clear();
 
         Current = next;
@@ -221,22 +210,13 @@ public sealed class UndoStack<T> where T : class
         UndoEntry<T> entry = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
 
-        // The redo entry carries the SAME label, because the label names the action that sits
-        // BETWEEN the two states — undoing "delete segment" makes "delete segment" the thing redo
-        // would reapply.
         _redo.Add(new UndoEntry<T>(Current, entry.Label, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
-        // UNDO_23 — THE GUARD MUST COVER THE NOTIFICATION, NOT JUST THE ASSIGNMENT.
-        // Changed is the whole point of the guard: the handler is what repopulates the controls,
-        // and a control raising its own change event calls Apply straight back into this stack.
-        // Resetting _restoring in a finally that runs BEFORE the invoke left the re-entrant Apply
-        // unguarded, so every Ctrl+Z pushed the echoed state back onto the history and undo could
-        // never reach the beginning. UndoStackTests.RestoringDoesNotRecordHistory proves it.
         _restoring = true;
         try
         {
             Current = entry.State;
-            EndGesture();   // an undo always breaks the gesture; the next edit is a new entry.
+            EndGesture();
             Changed?.Invoke(this, EventArgs.Empty);
         }
         finally
@@ -257,7 +237,6 @@ public sealed class UndoStack<T> where T : class
         _undo.Add(new UndoEntry<T>(Current, entry.Label, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         while (_undo.Count > MaxDepth) _undo.RemoveAt(0);
 
-        // UNDO_23 — same guard, same reason as Undo above.
         _restoring = true;
         try
         {
@@ -285,8 +264,6 @@ public sealed class UndoStack<T> where T : class
     public void Reset(T state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        // UNDO_23 — a Changed handler firing from Reset is repopulating controls for a DIFFERENT
-        // document. Anything it echoes back is not an edit of that document and must not be one.
         _restoring = true;
         try
         {
@@ -339,7 +316,6 @@ public sealed class UndoStack<T> where T : class
         }
         EndGesture();
 
-        // UNDO_23 — see Reset. Restoring persisted history is not an edit either.
         _restoring = true;
         try { Changed?.Invoke(this, EventArgs.Empty); }
         finally { _restoring = false; }

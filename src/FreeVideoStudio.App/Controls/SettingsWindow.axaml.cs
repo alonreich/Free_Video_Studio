@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -97,9 +94,9 @@ public partial class SettingsWindow : Window
         ConfirmGranularDeleteSegment = SettingsManager.Instance.ConfirmGranularDeleteSegment;
         ConfirmGranularClearAll = SettingsManager.Instance.ConfirmGranularClearAll;
         ConfirmMainAppCancel = SettingsManager.Instance.ConfirmMainAppCancel;
-        ConfirmMainAppCut = SettingsManager.Instance.ConfirmMainAppCut;   // CUT_01
+        ConfirmMainAppCut = SettingsManager.Instance.ConfirmMainAppCut;
         ConfirmMainAppSwitchTool = SettingsManager.Instance.ConfirmMainAppSwitchTool;
-        KeepOverlayTextBetweenVideos = SettingsManager.Instance.KeepOverlayTextBetweenVideos;   // CAPTIONWIPE_01
+        KeepOverlayTextBetweenVideos = SettingsManager.Instance.KeepOverlayTextBetweenVideos;
         ConfirmVoiceOverDeleteTake = SettingsManager.Instance.ConfirmVoiceOverDeleteTake;
         ConfirmFinishedDialogExit = SettingsManager.Instance.ConfirmFinishedDialogExit;
         AutoUpdateChecks = SettingsManager.Instance.AutoUpdateChecks;
@@ -293,8 +290,6 @@ public partial class SettingsWindow : Window
             };
         }
 
-        // VOPROT_02 — option order IS VoiceProtectionMode's declaration order
-        // (RememberLastChoice / AlwaysOn / AlwaysOff), so the index is the enum value.
         var protectGame = this.FindControl<ComboBox>("VoiceProtectGameComboBox");
         if (protectGame != null)
         {
@@ -528,9 +523,6 @@ public partial class SettingsWindow : Window
         panel.Children.Add(MakeValueBehaviorRow("Default Speed", _pendingDefaults.SpeedBehavior, v => _pendingDefaults.SpeedBehavior = v, speedNum));
 
         var qCombo = new ComboBox { Width = 150, HorizontalAlignment = HorizontalAlignment.Right };
-        // QUALITY_01 — the list is the quality ladder, not a column of megabyte figures. The
-        // setting names the LOOK a new project starts with; the size it works out to depends on
-        // that project's length and is shown live under the dial on the main screen.
         var qItems = new List<string>();
         foreach (var tier in FreeVideoStudio.App.ViewModels.QualityLadder.Tiers) qItems.Add(tier.Name);
         qCombo.ItemsSource = qItems;
@@ -568,18 +560,6 @@ public partial class SettingsWindow : Window
         };
         panel.Children.Add(MakeSimpleRow("Default Freeze Duration", freezeCombo));
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // CAPTIONWIPE_01 — "Leave text from Video to Video".
-        //
-        // Built here in code rather than written into the AXAML because this whole tab is built in
-        // code (see the "Speed Editor" heading a few rows up); a static CheckBox declared in the
-        // AXAML would land ABOVE every row this method appends, which is not where it belongs.
-        //
-        // The tooltip is deliberately written for someone who has never heard the word "overlay".
-        // It names the thing by where they can SEE it ("the words you type across the top"), states
-        // what happens with the box off, states what happens with it on, and says which one is
-        // normal — in that order, because that is the order the question forms in the reader's head.
-        // ══════════════════════════════════════════════════════════════════════════════════════
         panel.Children.Add(new TextBlock
         {
             Text = "Text Caption",
@@ -802,7 +782,7 @@ public partial class SettingsWindow : Window
         }
 
         e.Cancel = true;
-        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsSync(this, "SettingsBounds");
+        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, "SettingsBounds");
 
         this.Hide();
 

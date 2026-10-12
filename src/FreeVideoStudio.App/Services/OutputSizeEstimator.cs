@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App.ViewModels;
 using FreeVideoStudio.Core.Media;
@@ -33,11 +30,10 @@ public sealed class OutputSizeEstimator
 
     public OutputSizeEstimator(Func<string> probePath) => _probePath = probePath;
 
-    // The first result needs no disk access. The same worker refines it using actual file details.
     public static OutputSizeEstimate? QuickMainEstimate(MainSizeRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path)) return OutputSizeEstimate.Empty;
-        if (request.EndMs <= request.StartMs) return null; // Metadata can still be loading after open/restore.
+        if (request.EndMs <= request.StartMs) return null;
         if (QualityLadder.IsOriginal(request.Quality) ||
             (request.Memes.Length == 0 && !string.IsNullOrWhiteSpace(request.LegacyMeme))) return null;
         var timeline = OutputTimeline.Create(Math.Max(0, request.EndMs - request.StartMs), request.Segments,
@@ -65,7 +61,6 @@ public sealed class OutputSizeEstimator
                 return cached.Media;
             long bytes = file.Length;
             DateTime modified = file.LastWriteTimeUtc;
-            // LIBAVPROBE_03 — native libav metadata, ffprobe subprocess as the bounded fallback.
             var probe = await MediaMetadataProbe.ProbeAsync(_probePath(), path, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             if (!probe.Ok) return null;
@@ -120,19 +115,17 @@ public sealed class OutputSizeEstimator
 
     public static OutputSizeEstimate CalculateMain(MainSizeRequest request, EstimateMedia source, IReadOnlyList<EstimateMedia> memes)
     {
-        // Recovery can arrive before the player reports duration. Resolve the unmarked end locally.
         double endMs = request.EndMs > request.StartMs ? request.EndMs : source.Duration * 1000;
         var timeline = OutputTimeline.Create(Math.Max(0, endMs - request.StartMs), request.Segments,
             request.Speed, request.StartMs, cuts: CutRange.ToClipRelative(request.Cuts, request.StartMs));
         double bodySeconds = timeline.TotalOutputSeconds;
         double freezeSeconds = timeline.Chunks.Where(c => c.IsFreeze).Sum(c => c.OutputLengthSec);
-        double totalSeconds = bodySeconds + memes.Sum(m => m.Duration) + 0.1; // Export's intro still.
+        double totalSeconds = bodySeconds + memes.Sum(m => m.Duration) + 0.1;
         double? target = QualityLadder.TargetMbFor(request.Quality, totalSeconds,
             request.Portrait ? CoordinateConstants.ContentW : 1920,
             request.Portrait ? CoordinateConstants.ContentH : 1080, request.Portrait, freezeSeconds);
         if (target.HasValue) return new(target, totalSeconds, target);
 
-        // Original remains uncapped. This prediction never becomes an encoder size target.
         double rate = OriginalVideoRate(source, request.Portrait);
         double videoKilobits = rate * QualityLadder.BillableSeconds(bodySeconds + 0.1, freezeSeconds + 0.1);
         foreach (var meme in memes)
@@ -148,7 +141,7 @@ public sealed class OutputSizeEstimator
         foreach (string path in request.Paths)
         {
             var media = await ReadMediaAsync(path, token).ConfigureAwait(false);
-            if (media == null) return OutputSizeEstimate.Empty; // Never present a partial queue as the total.
+            if (media == null) return OutputSizeEstimate.Empty;
             sources.Add(media);
         }
         return CalculateMerger(sources, request.Speed, request.Quality, request.OutputSeconds);
@@ -159,13 +152,9 @@ public sealed class OutputSizeEstimator
         double duration = sources.Sum(s => s.Duration);
         if (duration <= 0 || speed <= 0 || !double.IsFinite(speed)) return OutputSizeEstimate.Empty;
         double average = sources.Sum(s => s.Duration * s.VideoKbps) / duration;
-        // MERGEQUALITY_01 — below 100% the export targets exactly this bitrate (100% × the quality curve), so the
-        // estimate uses the same number and a lower setting always shows (and produces) a smaller file.
         double rate = OutputFileSize.MergerTargetKbps(average) * OutputFileSize.MergerQualityRatio(quality);
         if (quality < 100) rate = Math.Max(300, Math.Round(rate));
-        // MERGESIZE_01 — the edit list's exact finished length when known (effects change it); else files ÷ speed.
         double seconds = outputSeconds is double exact && exact > 0 && double.IsFinite(exact) ? exact : duration / speed;
-        // MergerWorker always writes one 192 kbps AAC soundtrack, including mixed music/voice.
         return new(OutputFileSize.FromBitrate(rate, seconds, 192, seconds) * 1.01,
             seconds, Sources: sources, VideoKbps: rate);
     }

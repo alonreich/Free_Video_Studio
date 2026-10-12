@@ -1,8 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/03_FFMPEG_EXPORT_PIPELINE.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -223,7 +219,7 @@ public static class GeminiTrackingService
     private static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
     {
         string ffmpeg = BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
-        string seek = sec.ToString("0.000", CultureInfo.InvariantCulture);   // the exact -ss text both paths use
+        string seek = sec.ToString("0.000", CultureInfo.InvariantCulture);
         await VideoFrameGrabber.GrabAsync<string>(
             ffmpeg, videoPath, VideoFrameRequest.AtFfmpegSeek(seek), StillTimeout,
             frame =>

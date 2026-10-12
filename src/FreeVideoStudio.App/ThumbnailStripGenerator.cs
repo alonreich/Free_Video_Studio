@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Diagnostics;
 using Avalonia;
@@ -122,9 +119,6 @@ public static class ThumbnailStripGenerator
         catch (System.Exception ex)
         {
             Debug.WriteLine(ex.ToString());
-            // FAULTTIER_02 — DEGRADED, NOT SWALLOWED. The filmstrip is the thing the user is
-            // looking at while they trim; a blank one with no explanation is the exact
-            // "did I mis-click?" moment FAULTTIER_01 was written about.
             global::FreeVideoStudio.Core.Abstractions.Faults.Degraded("THUMBS",
                 "The timeline filmstrip could not be built — its temporary folder could not be created, so the strip will stay blank. Trimming, editing and export all still work.",
                 ex);
@@ -252,7 +246,7 @@ public static class ThumbnailStripGenerator
         catch (System.Exception ex)
         {
             Debug.WriteLine(ex.ToString());
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
 
@@ -270,7 +264,7 @@ public static class ThumbnailStripGenerator
         catch (System.Exception ex)
         {
             Debug.WriteLine(ex.ToString());
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
 
@@ -297,9 +291,9 @@ public static class ThumbnailStripGenerator
             try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
-            TrySetBelowNormalPriority(process); // THROTTLE_01
+            TrySetBelowNormalPriority(process);
 
             Task<string> stdOut = process.StandardOutput.ReadToEndAsync(cancellationToken);
             Task<string> stdErr = process.StandardError.ReadToEndAsync(cancellationToken);
@@ -310,7 +304,7 @@ public static class ThumbnailStripGenerator
             try { errText = await stdErr.ConfigureAwait(true); } catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
 
             if (process.ExitCode == 0 && File.Exists(outPng)) return true;
@@ -326,7 +320,7 @@ public static class ThumbnailStripGenerator
             catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
             TryDelete(outPng);
             throw;
@@ -334,7 +328,7 @@ public static class ThumbnailStripGenerator
         catch (System.Exception ex)
         {
             Debug.WriteLine(ex.ToString());
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return false;
         }
         finally
@@ -342,7 +336,7 @@ public static class ThumbnailStripGenerator
             try { process?.Dispose(); } catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
         }
     }
@@ -487,9 +481,9 @@ public static class ThumbnailStripGenerator
             try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
-            TrySetBelowNormalPriority(process); // THROTTLE_01
+            TrySetBelowNormalPriority(process);
 
             using var watchdog = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             watchdog.CancelAfter(TimeSpan.FromSeconds(StreamWatchdogSeconds));
@@ -501,16 +495,6 @@ public static class ThumbnailStripGenerator
             int have = 0;
             while (landed < frames)
             {
-                // THROTTLE_01 — cooperative yield. While the gate says "something is playing",
-                // stop READING. The pipe fills within a frame or two, FFmpeg blocks on write, and
-                // its decode and disk reads stop — no process suspension, nothing to clean up.
-                // `have` (the partial frame in frameBuf) and `landed` ARE the cached byte offset:
-                // when playback pauses, the loop resumes at the exact byte it stopped at instead
-                // of restarting the process and re-reading the same blocks from disk. The
-                // watchdog is re-armed every poll, so the 30s ceiling keeps measuring ACTIVE
-                // decode time and can never fire on a stream that is merely being deferred; the
-                // CALLER's token is not re-armed, so a superseded or shutting-down render still
-                // cancels instantly out of the yield.
                 while (yieldWhile != null && yieldWhile())
                 {
                     watchdog.CancelAfter(TimeSpan.FromSeconds(StreamWatchdogSeconds));
@@ -565,7 +549,7 @@ public static class ThumbnailStripGenerator
                     catch (System.Exception ex)
                     {
                         Debug.WriteLine(ex.ToString());
-                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                        global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                     }
                 });
             }
@@ -581,7 +565,7 @@ public static class ThumbnailStripGenerator
             catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
 
             return landed > 0;
@@ -592,7 +576,7 @@ public static class ThumbnailStripGenerator
             catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
 
             if (cancellationToken.IsCancellationRequested) throw;
@@ -611,7 +595,7 @@ public static class ThumbnailStripGenerator
             try { process?.Dispose(); } catch (System.Exception ex)
             {
                 Debug.WriteLine(ex.ToString());
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             }
         }
     }

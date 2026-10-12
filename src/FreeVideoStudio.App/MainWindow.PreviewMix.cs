@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Globalization;
 using System.IO;
@@ -53,7 +47,7 @@ public partial class MainWindow
 
     private DispatcherTimer? _mixTimer;
     private FreeVideoStudio.Core.Media.MpvIpcClient? _mixClient;
-    private readonly RenderedMixGate _mixGate = new();   // PREVIEWMIX_02 — the one owner of "which mix is valid"
+    private readonly RenderedMixGate _mixGate = new();
     private long _mixObservedAtTicks;
     private CancellationTokenSource? _mixCts;
     private bool _mixPlaying;
@@ -82,7 +76,6 @@ public partial class MainWindow
         if (_mixGate.Observe(PreviewMixSignature(), now) && wasActive != PreviewMixActive) OnPreviewMixActiveChanged();
     }
 
-    // ── VOPREVIEW_01 — live gains ──────────────────────────────────────────────────────────────
 
     private double PreviewGameDuckGain()
     {
@@ -99,7 +92,6 @@ public partial class MainWindow
     /// <summary>The voice-over pulse at output time <paramref name="outputSec"/>: the export's 0.3 s ramps, exactly.</summary>
     private void UpdatePreviewVoicePulse(double outputSec)
     {
-        // VOPREVIEW_02 — the export's own pulse (summed ramps), shared with the Voice Over studio.
         double pulse = outputSec < 0 ? 0 : AudioFilterChain.VoiceProtectionPulseAt(outputSec,
             _voiceOverPreviewTakes.Select(take => (take.StartProjectSec, take.StartProjectSec + take.Reader.TotalTime.TotalSeconds)));
         if (Math.Abs(pulse - _previewVoicePulse) < 0.02 && !(pulse == 0 && _previewVoicePulse != 0)) return;
@@ -119,7 +111,6 @@ public partial class MainWindow
         _ = ActiveVideoHost?.IpcClient?.SetPropertyAsync("af", filter);
     }
 
-    // ── PREVIEWMIX_01 — rendered mix ──────────────────────────────────────────────────────────
 
     private void EnsurePreviewMixScheduler()
     {
@@ -133,7 +124,7 @@ public partial class MainWindow
     {
         ApplyLivePreviewFilters();
         RefreshPreviewMixState();
-        UpdatePreviewFidelity();   // PREVIEWFIDELITY_01
+        UpdatePreviewFidelity();
 
         string? sig = _mixGate.CurrentSignature;
         if (sig == null || !_mixGate.ShouldStart(Environment.TickCount64, MixDebounceMs)) return;
@@ -148,7 +139,6 @@ public partial class MainWindow
         string dir = _paths.TempDirectory;
         _mixSlot ^= 1;
         string wav = Path.Combine(dir, $"fvs_preview_mix_{Environment.ProcessId}_{_mixSlot}.wav");
-        // PREVIEWMIX_02 — the ticket supersedes any older render; a valid mix living in `wav` stops being valid.
         bool wasActive = PreviewMixActive;
         var ticket = _mixGate.Begin(sig, wav);
         if (wasActive != PreviewMixActive) OnPreviewMixActiveChanged();
@@ -163,8 +153,6 @@ public partial class MainWindow
             }
 
             var payload = await ComposeExportPayloadAsync(dir, SelectedLegacyMemeFile(), 20, null);
-            // The payload is read from the editor across an await (music probing): if the edit moved
-            // meanwhile, this payload may not be `sig`'s — abandon it (the next tick renders the new edit).
             if (PreviewMixSignature() != sig)
             {
                 _mixGate.TryComplete(ticket, null, null, cancelled: true);
@@ -188,7 +176,6 @@ public partial class MainWindow
             return;
         }
 
-        // Back on the UI thread: accept only the newest ticket, and only if the edit is STILL what was rendered.
         _mixObservedAtTicks = 0;
         RefreshPreviewMixState();
         if (_mixGate.TryComplete(ticket, map, PreviewMixSignature(), cts.IsCancellationRequested))
@@ -216,7 +203,7 @@ public partial class MainWindow
     private void UpdatePreviewMix(double sourceTimeSec, bool videoEnded)
     {
         EnsurePreviewMixScheduler();
-        RefreshPreviewMixState();   // PREVIEWMIX_02 — never drive a mix the current edit no longer matches
+        RefreshPreviewMixState();
         if (!PreviewMixActive)
         {
             if (_mixPlaying) _ = StopPreviewMixPlaybackAsync();
@@ -236,8 +223,7 @@ public partial class MainWindow
             return;
         }
 
-        // Pausing wins over seek settling: never leave the soundtrack running during a paused scrub.
-        if (ipc?.IsSeeking == true) return;   // SEEKSETTLE_01 — the old video clock is not a sync target
+        if (ipc?.IsSeeking == true) return;
         double want = _mixGate.Map!.MixSecFor(PreviewOutputSeconds(sourceTimeSec));
         if (!_mixPlaying || !string.Equals(_mixLoadedPath, _mixGate.RenderedPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -253,7 +239,7 @@ public partial class MainWindow
         }
         if (++_mixDriftStrikes < Infrastructure.PreviewAudioSync.DriftStrikes) return;
         _mixDriftStrikes = 0;
-        _ = _mixClient.SendCommandAsync("seek", want, "absolute");   // seek, never re-rate
+        _ = _mixClient.SendCommandAsync("seek", want, "absolute");
         _mixHoldUntilTicks = Environment.TickCount64 + MixSyncSettleMs;
     }
 
@@ -267,7 +253,7 @@ public partial class MainWindow
                 _mixClient = new FreeVideoStudio.Core.Media.MpvIpcClient();
                 await _mixClient.StartAudioOnlyAsync("");
             }
-            await _mixClient.ApplyPreviewGainAsync();   // the master only: the mix already carries every fader
+            await _mixClient.ApplyPreviewGainAsync();
             await _mixClient.SetPropertyDoubleAsync("speed", 1.0);
             await _mixClient.LoadFileAsync(path, Math.Max(0, positionSec));
             _mixLoadedPath = path;
@@ -317,16 +303,13 @@ public partial class MainWindow
         if (string.IsNullOrEmpty(_loadedVideoPath) || _loadedVideoDurationMs <= 0) return null;
 
         var settings = Infrastructure.SettingsManager.Instance;
-        // PREVIEWMIX_02 — the export applies the tamer whether or not the UPLOAD reading exists (it measures
-        // the exported range itself), so the mix must not wait for that reading either.
         bool tamer = settings.Defaults.AutoSpikeFlattening
                      && (_applyPeakFlattening ?? settings.PeakFlatteningPrompt != Infrastructure.AudioFixPrompt.NeverApply);
-        var music = _musicWizardResult;   // the export uses the result whenever it exists
+        var music = _musicWizardResult;
         var vo = _voiceOverResult;
         string? legacyMeme = SelectedLegacyMemeFile();
         bool hasVo = vo != null && (vo.VoiceOverTakes.Count > 0 || !string.IsNullOrEmpty(vo.VoiceOverWavPath));
         var exportSegments = BuildExportSpeedSegments();
-        // PREVIEWMIX_02 / TEMPO_01 — a non-1.0x rate is also something only the export graph reproduces.
         if (!PreviewMixPolicy.NeedsRenderedMix(music != null, hasVo, _memePlacements.Count > 0 || legacyMeme != null, tamer,
                 _baseSpeed, exportSegments?.Select(s => s.Speed))) return null;
 
@@ -338,13 +321,11 @@ public partial class MainWindow
           .Append('|').Append(string.Join(",", _cuts))
           .Append('|').Append(string.Join(",", _memePlacements))
           .Append('|').Append(legacyMeme).Append(legacyMeme != null ? Infrastructure.MemePlacementStore.Get(legacyMeme).ToString() : "")
-          // The chosen cover frame changes pixels only; the intro's audio is always 0.1 s silence.
-          // Setting/moving/removing that marker must not drop and reload an identical soundtrack.
           .Append('|').Append(this.FindControl<Avalonia.Controls.ToggleSwitch>("EnableFadeCheckbox")?.IsChecked)
           .Append('|').Append(_keepMusicDuringMeme)
           .Append('|').Append(tamer).Append(_gameplayLoudnessLufs?.ToString("F2", ci))
           .Append('|').Append(settings.Defaults.DuckingEnabled).Append(settings.Defaults.DuckingStrength)
-          .Append(settings.Defaults.CarvingEnabled).Append(settings.Defaults.CarvingStrength);   // DUCKSTRENGTH_01
+          .Append(settings.Defaults.CarvingEnabled).Append(settings.Defaults.CarvingStrength);
         if (music != null)
         {
             sb.Append("|M:").Append(music.MusicFilePath).Append(string.Join(",", music.MusicFilePaths))

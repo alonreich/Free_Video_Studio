@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -70,7 +67,7 @@ public class MediaProber
         catch (System.Exception swallowed)
         {
             _probeData = new JsonObject();
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
         }
         finally
         {

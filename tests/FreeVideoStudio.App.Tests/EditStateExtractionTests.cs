@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.Core.Editing;
 using Xunit;
@@ -33,7 +33,7 @@ public sealed class EditStateExtractionTests
             Assert.DoesNotMatch(@"\b(private|internal)\b[^;=(]*\s" + Regex.Escape(field) + @"\s*(=|;)", code);
 
         Assert.Contains("GranularEditSession _edit", code);
-        Assert.DoesNotMatch(@"\bnew\s+GranularEditHistory\s*\(", code);   // one history, owned by the session
+        Assert.DoesNotMatch(@"\bnew\s+GranularEditHistory\s*\(", code);
     }
 
     [Fact]
@@ -45,14 +45,12 @@ public sealed class EditStateExtractionTests
             Assert.DoesNotMatch(@"\b(private|internal)\b[^;=(]*\s" + Regex.Escape(field) + @"\s*(=|;)", code);
 
         Assert.Contains("CropEditSession _edit", code);
-        Assert.DoesNotMatch(@"\bnew\s+UndoStack\s*<", code);              // UNDO_27 stack is the session's
+        Assert.DoesNotMatch(@"\bnew\s+UndoStack\s*<", code);
     }
 
     [Fact]
     public void MagicWandStaysOutOfTheEditState()
     {
-        // AIHUD_01 / UNDO_27 — the wand's scan, AI request, cancellation and candidates are window
-        // state; only a COMMITTED candidate (AddCurrentSelection) reaches the session.
         string wand = Src("CropToolWindow.MagicWand.cs");
         Assert.DoesNotMatch(@"_edit\s*\.\s*(AddLayer|Record|DeleteSelected|ApplySnapshot|MoveSelectedLayer|ResetWorking)\b", wand);
 

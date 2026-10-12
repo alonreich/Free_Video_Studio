@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -137,6 +134,14 @@ public class AppSettings
     public bool AutoUpdateChecks { get; set; } = true;
 
     /// <summary>
+    /// UPDATECONSENT_01 — true once the user has answered "Check for updates automatically?" (or
+    /// changed the checkbox in Settings › About). Until then the app sends nothing to GitHub by
+    /// itself, whatever <see cref="AutoUpdateChecks"/> says. Additive (missing reads as false), so
+    /// no schema bump: every existing install is asked once too.
+    /// </summary>
+    public bool UpdateConsentAsked { get; set; }
+
+    /// <summary>
     /// ISSUE_13 — the suite is a dark-first video tool and its Light palette is the weaker of the
     /// two, so a fresh install starts in Dark rather than inheriting whatever the OS happens to
     /// be set to. Users who want Light still get it from Settings > Appearance > Theme.
@@ -144,7 +149,7 @@ public class AppSettings
     public ThemeMode ThemeMode { get; set; } = ThemeMode.Dark;
     public FontScale FontScale { get; set; } = FontScale.Normal;
 
-    public bool ConfirmVideoMergerRemove { get; set; } = false;   // REMOVEUX_01 — off by default; removal is undoable (Ctrl+Z)
+    public bool ConfirmVideoMergerRemove { get; set; } = false;
     public bool ConfirmVideoMergerClearAll { get; set; } = true;
 
     /// <summary>
@@ -268,20 +273,6 @@ public class AppSettings
     /// </summary>
     public int UiSoundVolume { get; set; } = 70;
 
-    // ══════════════════════════════════════════════════════════════════════════════
-    // VOPROT_02 — WHO DECIDES THE TWO VOICE-PROTECTION CHECKBOXES.
-    //
-    // The checkboxes in the Voice Over Studio start ON and are remembered between projects, which
-    // is the right default. But "remembered" is only one of three wishes a user can have, and the
-    // other two are not reachable from a checkbox: "always on, stop asking me" and "never do this
-    // to my audio". A studio that always protects and a studio that never touches the mix are both
-    // legitimate ways to work, and a remembered checkbox forces the second kind of user to notice
-    // and clear it on every single project.
-    //
-    // So the MODE lives here and the checkbox is its instrument. On Always* the box is set and
-    // disabled with a tooltip that says where the decision was made — never silently overridden,
-    // which would look like a bug.
-    // ══════════════════════════════════════════════════════════════════════════════
 
     /// <summary>VOPROT_02 — who decides "Protect VoiceOver Recording from Game-Play Sound".</summary>
     public VoiceProtectionMode VoiceProtectGameMode { get; set; } = VoiceProtectionMode.RememberLastChoice;
@@ -689,23 +680,6 @@ public static class SettingsManager
     /// </summary>
     private static readonly object SerializeGate = new();
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // SETTX_02 — LOCK ORDER (the ONLY order; every path in this class follows it):
-    //
-    //   1. SerializeGate            (in-process Monitor)
-    //   2. SettingsMutexName        (cross-process named mutex) — acquired ONCE per transaction
-    //   3. file I/O on settings.json and its quarantine copies
-    //
-    // The named mutex is held across the WHOLE read → deserialize → migrate/default → patch →
-    // serialize → AtomicJsonFile.WriteText sequence, so no sibling process can commit between this
-    // transaction's read and its write. It is never acquired while SerializeGate is NOT held, never
-    // acquired twice (no helper reacquires it — the *Locked helpers REQUIRE the caller to own it),
-    // and never held across a UI await or while raising Committed.
-    //
-    // BEFORE (defect): Update took the gate, then the mutex for the READ, RELEASED it, patched and
-    // serialized, then took the mutex AGAIN for the WRITE. Load took the mutex for its read without
-    // the gate. A sibling process could commit in the gap and be overwritten by a stale snapshot.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>Test seam: the settings mutex name, so tests can contend on it from another thread.</summary>
     internal static string SettingsMutexNameForTests => SettingsMutexName;
@@ -779,7 +753,6 @@ public static class SettingsManager
                     return false;
                 }
 
-                // Future schema is never downgraded; older/current is stamped current.
                 next.SchemaVersion = read.EffectiveSchemaVersion;
 
                 string json;
@@ -829,6 +802,13 @@ public static class SettingsManager
     /// </summary>
     public static bool SetAutoUpdateChecks(bool enabled) => Update(s => s.AutoUpdateChecks = enabled);
 
+    /// <summary>UPDATECONSENT_01 — records the user's answer to the one-time update question.</summary>
+    public static bool SetUpdateConsent(bool allowed) => Update(s =>
+    {
+        s.AutoUpdateChecks = allowed;
+        s.UpdateConsentAsked = true;
+    });
+
     public static void Load()
     {
         LoadFailureMessage = null;
@@ -869,8 +849,6 @@ public static class SettingsManager
                     }
                 }
 
-                // Load publishes what is on disk (or the defaults that replaced a missing/corrupt
-                // file); it is not a mutation and raises no Committed event.
                 Instance = loaded;
                 RuntimeLog.Info("Settings", $"Settings loaded (schema v{loaded.SchemaVersion}).");
             }
@@ -958,9 +936,6 @@ public static class SettingsManager
             };
         }
 
-        // SCHEMALEGACY_01 — a file WITHOUT a SchemaVersion key is the original v1 (pre-schema) shape.
-        // The deserializer leaves the property initializer (CurrentSchemaVersion) in place for a
-        // missing key, which used to skip every migration. Pin it to 1 so Migrate walks the chain.
         if (!HasRootSchemaVersion(json))
         {
             loaded.SchemaVersion = 1;
@@ -980,8 +955,6 @@ public static class SettingsManager
             Origin = PersistedOrigin.Existing,
             PersistedSchemaVersion = schemaBefore,
             UnknownRoot = ExtractUnknownRootProperties(json),
-            // A FUTURE-schema file is left untouched by Load (only an explicit Update rewrites it,
-            // and then without downgrading or dropping anything).
             NeedsPersist = schemaBefore < CurrentSchemaVersion
                         || (lackedAutoUpdate && schemaBefore <= CurrentSchemaVersion),
         };
@@ -1048,7 +1021,7 @@ public static class SettingsManager
             ?? throw new InvalidDataException("Serialized settings are not a JSON object.");
         foreach (KeyValuePair<string, JsonNode?> property in unknownRoot)
         {
-            if (merged.ContainsKey(property.Key)) continue;   // known current field wins
+            if (merged.ContainsKey(property.Key)) continue;
             merged[property.Key] = property.Value?.DeepClone();
         }
 
@@ -1114,9 +1087,6 @@ public static class SettingsManager
 
         if (from < 5)
         {
-            // VOPROT_02 — purely additive. A v4 file has no policy recorded, and the C# property
-            // defaults (RememberLastChoice, both last-choices true) reproduce EXACTLY the
-            // behaviour that build had, so there is nothing to convert.
             from = 5;
         }
 
@@ -1128,23 +1098,18 @@ public static class SettingsManager
 
         if (from < 7)
         {
-            // AUTO-UPDATE — newly introduced configuration:
-            // On upgrade from any prior version that lacked this configuration,
-            // auto-update checks MUST be enabled (true) by default.
             loaded.AutoUpdateChecks = true;
             from = 7;
         }
 
         if (from < 8)
         {
-            // SCRAPER_05 — new feature, on by default for upgraders too (product decision).
             loaded.MergerThumbnailScraper = true;
             from = 8;
         }
 
         if (from < 9)
         {
-            // REMOVEUX_01 — user decision 2026-09-27: no blocking confirm by default, also on upgrade.
             loaded.ConfirmVideoMergerRemove = false;
             from = 9;
         }
@@ -1170,15 +1135,11 @@ public static class SettingsManager
 
         if (from < 12)
         {
-            // LOUDSTD_REMOVED_01 / CLIPLEVEL_01 / VOLMUTE_01 — removals need nothing (unknown keys are
-            // ignored); the additions take their C# defaults.
             from = 12;
         }
 
         if (from < 13)
         {
-            // DUCKSTRENGTH_01 — split the old master switch into the two new ones; strengths start
-            // at the middle (their C# defaults). Runs once; later upgrades never touch them.
             loaded.Defaults.DuckingEnabled = loaded.Defaults.AudioProtection;
             loaded.Defaults.CarvingEnabled = loaded.Defaults.AudioProtection;
             from = 13;
@@ -1233,47 +1194,4 @@ public static class SettingsManager
     private static readonly SettingsJsonContext IndentedContext =
         new(new JsonSerializerOptions { WriteIndented = true });
 
-    // SETTINGSATOMIC_01 — cross-process, power-outage-safe settings persistence.
-    //
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // WHAT WAS WRONG, AND WHY IT WAS THREE BUGS, NOT ONE.
-    //
-    // This used to be:
-    //     string tempFile = SettingsPath + ".tmp";
-    //     File.WriteAllText(tempFile, json);
-    //     File.Move(tempFile, SettingsPath, overwrite: true);
-    //
-    //   1. THE TEMP NAME WAS A CONSTANT. settings.json lives under ProgramDataRoot, which the Main
-    //      App, the Video Merger (--merger) and the Crop Tools (--crop-tool) all share. Three
-    //      processes writing "settings.json.tmp" is three processes writing the SAME scrap of
-    //      paper. The loser gets IOException (swallowed, and 10 of the 12 call sites discarded the
-    //      bool), or — worse — process B's File.Move publishes process A's half-written payload as
-    //      the live configuration.
-    //
-    //   2. THERE WAS NO DURABILITY BARRIER. File.WriteAllText returns when the bytes reach the OS
-    //      cache, not the platter, and File.Move maps to MoveFileExW with MOVEFILE_REPLACE_EXISTING
-    //      only. NTFS journals the RENAME but not the DATA, so a power cut in that window leaves a
-    //      correctly named, correctly sized, ZERO-FILLED settings.json. Load() then quarantines it
-    //      and resets every preference the user ever set.
-    //
-    //   3. Instance WAS SERIALISED WITHOUT A LOCK. It is a mutable static reference object, and
-    //      UpdateService's background task writes to it while UI handlers do. JsonSerializer walking
-    //      a graph that is being mutated yields a torn document or InvalidOperationException.
-    //
-    // THE FIX, in the order the three defects are listed:
-    //   1. A Global\ named mutex (SettingsMutexName) serialises the write across all three
-    //      processes, exactly as CropConfigStore already does for crops_coordinations.conf.
-    //   2. AtomicJsonFile.WriteText supplies the GUID temp name + FileOptions.WriteThrough +
-    //      Flush(flushToDisk: true) + atomic File.Move that
-    //      docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-RECOVERY mandates for ALL disk saves.
-    //   3. The serialisation happens inside SerializeGate, so the JSON string is a consistent
-    //      snapshot taken before any lock on the filesystem is contended for.
-    //
-    // SETTX_02 SUPERSEDES the original "mutex only around the write" rule: holding it only there
-    // let a sibling process commit between our read and our write (lost update). The mutex now
-    // spans the whole read-modify-write (see the LOCK ORDER block above); it is still never held
-    // across a UI await and still uses the 2-second InteractiveMutexTimeout.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // SETTX_02 — the former public/private Save() is gone: every write now happens inside one
-    // gate + named-mutex transaction (Update, or Load's own write-back), via TryWriteLocked/Update.
 }

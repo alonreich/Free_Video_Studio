@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -65,24 +62,8 @@ public partial class MainWindow
         var overlay = OverlayLayerCtl;
         if (overlay != null)
         {
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // EXPORTSESSION_01 — CANCEL SIGNALS. IT DOES NOT DECLARE THE FLOOR CLEAR.
-            //
-            // This used to call Cancel() and then, in the same breath, StopOverlay() and
-            // btn.IsEnabled = true — telling the user the export was over while FFmpeg was still
-            // being killed, the reader pipes were still draining and a multi-gigabyte temp directory
-            // was still being deleted. That re-armed button is what let a SECOND pipeline start on
-            // top of the first. See the EXPORTSESSION_01 block on ProcessVideoAsync in
-            // MainWindow.Export.cs and ExportCoordinator for the full three-part failure chain.
-            //
-            // Cancel now only: (a) signals the token, (b) shows "CANCELLING..." so the click is
-            // acknowledged within a frame. The overlay is dismissed and the button re-armed in the
-            // ONE place that knows the pipeline has genuinely stopped — ProcessVideoAsync, after
-            // ExportCoordinator reports the session Idle.
-            // ══════════════════════════════════════════════════════════════════════════════════
             overlay.CancelRequested += (s, e) =>
             {
-                // EXPORTSESSION_02 — true only for the click that performed Running -> Cancelling.
                 if (_exportCoordinator.Cancel())
                 {
                     var btn = ProcessButtonCtl;
@@ -101,11 +82,6 @@ public partial class MainWindow
 
         this.Loaded += (s, e) => Controls.CoachOverlay.Register(this, Controls.CoachTours.MainAppKey, Controls.CoachTours.MainApp);
 
-        // KEYFOCUS_01 — the hard-coded Space tunnel interceptor that lived here is gone.
-        // Play/Pause now flows through PlayPauseButton.Command (and its KeyBinding); the
-        // settings-bound gesture is dispatched by GlobalKeyDownHandler → TryExecutePlayPause.
-        // While a text input (TextBox / NumericUpDown / ComboBox) holds focus, the key belongs
-        // to that control — no interception at the window root.
 
         SettingsManager.Load();
         ThemeManager.ApplyFromSettings();
@@ -123,9 +99,7 @@ public partial class MainWindow
                 if (changed)
                 {
                     UpdateTooltips();
-                    RefreshTransportKeyBindings();   // KEYFOCUS_01 — re-sync transport gestures if keybinds changed
-                    // NOMASK_01 — the Mask Overlay tab is the only place the profile changes at
-                    // runtime, and SettingsWindow.Save has already called ApplyProfile by now.
+                    RefreshTransportKeyBindings();
                     ApplyMaskProfileToOverlayUi();
                 }
             };
@@ -232,9 +206,9 @@ public partial class MainWindow
         };
 
         UpdateTooltips();
-        RefreshTransportKeyBindings();   // KEYFOCUS_01 — attach transport Commands + KeyBindings (post-settings-load)
+        RefreshTransportKeyBindings();
 
-        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MainWindowBounds", fitDisplayOnFirstRun: true);   // FIRSTFIT_01
+        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MainWindowBounds", fitDisplayOnFirstRun: true);
 
 
         InitializeUxInnovations();
@@ -253,15 +227,6 @@ public partial class MainWindow
 
         this.AddHandler(InputElement.PointerPressedEvent, (s, e) =>
         {
-            // THUMB_02 — the thumbnail marker was MISSING from this hand-written list. Every other
-            // marker drag suppresses the canvas rebuild while it is in flight, for exactly the
-            // reason the thumbnail one needed it most: UpdateTimelineMarkers clears and recreates
-            // the marker controls, so a rebuild during a gesture destroys the control holding
-            // pointer capture.
-            // TIMELINEDRAW_01 — the list itself now lives in exactly one place, MainWindow's
-            // IsMarkerGestureActive, so it cannot be transcribed wrongly again. The checks below
-            // are kept (they still short-circuit the call) even though the render pass now enforces
-            // the same rule for all thirty call sites.
             bool markerDragActive = IsMarkerGestureActive;
 
             if (_isMusicBlockFocused)
@@ -349,10 +314,6 @@ public partial class MainWindow
         {
             processButton.Click += async (s, e) =>
             {
-                // EXPORTSESSION_01 — the single-flight guard lives inside ProcessVideoAsync so every
-                // entry point is covered, not just this one. Do NOT set the caption here: a click
-                // the guard rejects must leave the live caption ("CANCELLING...", "PROCESSING... 42%")
-                // untouched.
                 RuntimeLog.Info("UI", "User clicked PROCESS button.");
                 await ProcessVideoAsync(processButton);
             };
@@ -366,16 +327,6 @@ public partial class MainWindow
             {
                 RuntimeLog.Info("UI", "User clicked GRANULAR SPEED button.");
 
-                // ══════════════════════════════════════════════════════════════════════
-                // EDIT3_01 — WAS A ONE-CLICK WIPE WITH NO PROMPT AT ALL.
-                //
-                // Pressing this button while speeds existed deleted every segment, the freeze and
-                // every cut on the spot. The editor it opens has ALWAYS been able to load the
-                // existing work — it is handed `_speedSegments`, `_freezeTimeMs` and `_cuts` a few
-                // lines below — so "change one of my twelve segments" was possible the whole time
-                // and simply had no route to it. The only way in was to destroy the twelve and
-                // rebuild them.
-                // ══════════════════════════════════════════════════════════════════════
                 if (_isGranularSpeedActive)
                 {
                     var choice = await ConfirmDialogWindow.AskEditOrRemoveAsync(
@@ -392,11 +343,6 @@ public partial class MainWindow
                     {
                         _speedSegments.Clear();
                         _freezeTimeMs = -1;
-                        // ⚠️ `_cuts` are deliberately NOT cleared here. Cuts are a separate feature
-                        // (DELETE PARTS) that happens to be edited in the same window, and this
-                        // button offers REMOVE. Deleting a user's cuts as a side effect of
-                        // clearing their speed segments is exactly the kind of unannounced loss the
-                        // prompt above exists to prevent — and the prompt does not mention cuts.
                         SetGranularButtonActive(false);
                         _lastAppliedSpeed = _baseSpeed;
                         if (ActiveVideoHost?.IpcClient != null)
@@ -412,8 +358,6 @@ public partial class MainWindow
                     }
 
                     RuntimeLog.Info("UI", "User chose EDIT on existing granular speed segments.");
-                    // EDIT falls through to the normal open below, which already seeds the editor
-                    // with the current segments, freeze, zoom source and cuts.
                 }
 
                 if (string.IsNullOrWhiteSpace(_loadedVideoPath))
@@ -436,10 +380,6 @@ public partial class MainWindow
                     ? $"{zoomIpc.VideoWidth}x{zoomIpc.VideoHeight}"
                     : "1920x1080";
                 bool cutsChangedByEditor = false;
-                // GRANPROBE_01 — CreateAsync, not `new`. The duration probe this window needs before
-                // it can lay out a timeline used to run as a blocking Task.Wait inside the
-                // constructor, freezing the UI for up to half a second on every open. It now runs
-                // off the dispatcher and the window is constructed once the answer is in hand.
                 var editor = await GranularSpeedEditorWindow.CreateAsync(
                     _loadedVideoPath,
                     _trimStartMs,
@@ -451,11 +391,9 @@ public partial class MainWindow
                     isMobileForZoom,
                     zoomSrcRes,
                     _voiceOverResult,
-                    _cuts,           // CUT_02 — cuts are edited in the Granular editor now
-                    _memePlacements); // MEME_06 — and so are memes
+                    _cuts,
+                    _memePlacements);
 
-                // MEME_06 — handed over rather than re-scanned: this window already scanned the
-                // meme folder and probed every file's dimensions on startup.
                 editor.AvailableMemes = _memeItems;
 
                 await editor.ShowDialog(this);
@@ -472,15 +410,10 @@ public partial class MainWindow
                     _freezeTimeMs = editor.ResultFreezeTimeMs;
                     _freezeDurationS = editor.ResultFreezeDurationS;
 
-                    // CUT_02 — cuts come home in absolute source ms, same as the segments above.
                     _cuts.Clear();
                     _cuts.AddRange(editor.ResultCuts);
                     cutsChangedByEditor = true;
 
-                    // MEME_06 — memes come home in CLIP-RELATIVE SOURCE seconds and stay that way.
-                    // Unlike the cuts above there is no trim offset to re-apply; MemePlacement is
-                    // defined in clip-relative time end to end, from this list through
-                    // ExportPayload to the FFmpeg graph.
                     _memePlacements.Clear();
                     _memePlacements.AddRange(editor.ResultMemes);
 
@@ -504,17 +437,6 @@ public partial class MainWindow
                     UpdateTimelineMarkers();
                     SaveRecoveryState(label: "granular speed edits");
 
-                    // ══════════════════════════════════════════════════════════════════════
-                    // CUTS_02 — A CUT MADE IN THE EDITOR IS A CHANGE TO THE WHOLE PROJECT.
-                    //
-                    // This block used to hand-roll a partial refresh — markers and a save — while
-                    // AfterCutsChangedAsync (the method that exists precisely so no caller can
-                    // forget a step) was never called on the one path that actually changes the cut
-                    // list. Three things were therefore skipped: the cuts were not re-normalised
-                    // with the same rules the export uses, the main preview was left parked inside
-                    // deleted footage if that is where the playhead happened to be, and the
-                    // "your video got shorter, re-run ADD MUSIC" notice never appeared.
-                    // ══════════════════════════════════════════════════════════════════════
                     if (cutsChangedByEditor) await AfterCutsChangedAsync();
                 }
             };
@@ -543,60 +465,15 @@ public partial class MainWindow
         {
             cropSettingsButton.Click += async (s, e) =>
             {
-                // NOMASK_01 — the reserved profile has nothing to edit and must not be edited.
-                // Crop Tools CLOSES the Main App to launch, so this check has to happen before
-                // that hand-off, not inside the Crop Tools window.
                 if (BlockCropToolsForNoMaskProfile()) return;
                 await SwitchToCompanionAppAsync("--crop-tool", "Crop Tools");
             };
         }
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // DOUBLEFIRE_01 — THE PLAY BUTTON'S Click HANDLER IS GONE. THIS WAS THE WHOLE BUG.
-        //
-        // KEYFOCUS_01 moved Play/Pause onto `PlayPauseButton.Command` (RefreshTransportKeyBindings
-        // assigns `btn.Command = _playPauseCommand`) but LEFT the old `Click` handler attached here.
-        // Avalonia raises BOTH on a single press, so every click ran the toggle TWICE:
-        //
-        //     click -> Command -> TogglePlayPauseTransport()  : paused  -> PLAY
-        //           -> Click   -> TogglePlayPauseTransport()  : playing -> PAUSE
-        //
-        // Net effect of pressing PLAY: the player runs for the few milliseconds between the two
-        // calls — one frame — and stops. Pressing it again does exactly the same thing. That is
-        // the "play advances one frame at a time and pauses itself, trapped" fault, and it is why
-        // MARK START released it: ExecuteMarkStart issues an unconditional `pause=no` rather than a
-        // TOGGLE, so running it twice is idempotent and playback survives.
-        //
-        // It is invisible to reading because the two wirings live in different files and neither
-        // is wrong on its own — only their sum is. TRANSPORT_TRACE_01 is what exposed it: two
-        // `user-transport` lines, PLAY then PAUSE, in the same second, from one click.
-        //
-        // ⚠️ A TOGGLE MUST HAVE EXACTLY ONE ACTIVATION PATH. Do not re-add a Click handler to any
-        // control that already carries a Command. See TryExecutePlayPause for the guard that now
-        // makes a recurrence loud instead of silent.
-        // ══════════════════════════════════════════════════════════════════════════════════════
 
         var setThumbnailButton = SetThumbnailButtonCtl;
         if (setThumbnailButton != null)
         {
-            // ══════════════════════════════════════════════════════════════════════════
-            // THUMB_01 — THREE OUTCOMES, NOT TWO.
-            //
-            // This was a plain toggle: once a thumbnail existed the button could ONLY remove it.
-            // So "click the timeline where I want it, then press SET THUMBNAIL" — the obvious way
-            // to change your mind — did nothing but delete the marker, and you had to press the
-            // button a second time to place a new one. Two presses and a destroyed marker to move
-            // a thing you could already see.
-            //
-            // Now the button does whatever its label says, and the label follows the playhead:
-            //   nothing set                     SET THUMBNAIL        place it here
-            //   set, playhead somewhere else    MOVE THUMBNAIL HERE  pick it up and put it here
-            //   set, playhead on the marker     REMOVE THUMBNAIL     you are asking to clear it
-            //
-            // The "playhead is on the marker" test is what makes remove reachable without a second
-            // control: park on your own thumbnail and the button offers to clear it. See
-            // UpdateThumbnailButtonState.
-            // ══════════════════════════════════════════════════════════════════════════
             setThumbnailButton.Click += (s, e) =>
             {
                 double time = GetCurrentMpvTime();
@@ -614,7 +491,7 @@ public partial class MainWindow
                     bool moved = _thumbnailSet;
                     _thumbnailPosMs = time * 1000;
                     _thumbnailSet = true;
-                    _isThumbnailMarkerSelected = true;   // leave it armed for the arrow keys
+                    _isThumbnailMarkerSelected = true;
 
                     PlayUiSound();
                     ShowTacticalFeedback($"📸 {(moved ? "Moved to " : "")}{TimeSpan.FromSeconds(time):mm\\:ss\\.ff}");
@@ -635,9 +512,6 @@ public partial class MainWindow
             {
                 if (string.IsNullOrEmpty(_loadedVideoPath)) return;
 
-                // EDIT3_01 — the shared three-way prompt. This screen invented it; the Granular
-                // Speed and Add Music buttons now use the SAME method rather than their own
-                // wording, colours and keyboard behaviour.
                 if (_voiceOverResult != null)
                 {
                     var choice = await ConfirmDialogWindow.AskEditOrRemoveAsync(
@@ -668,13 +542,11 @@ public partial class MainWindow
                     _trimEndSet ? _trimEndMs : 0,
                     BuildExportSpeedSegments(),
                     _baseSpeed,
-                    _cuts,          // CUTS_02 — deleted sections are shown, skipped and mapped
-                    _memePlacements) // MEME_06 — so a take after a meme maps to the right instant
+                    _cuts,
+                    _memePlacements)
                 {
                     InitialState = _voiceOverResult
                 };
-                // ZOOMLIVE_06 — the studio simulates the zoom now, and portrait changes what the
-                // usable area is, exactly as it does for the Music Wizard's copy of this line.
                 dialog.IsPortraitPreview =
                     PortraitModeCheckboxCtl?.IsChecked == true;
                 try
@@ -699,11 +571,6 @@ public partial class MainWindow
             };
         }
 
-        // KEYFOCUS_01 — MARK START / MARK END now bind through commands (see
-        // MainWindow.Shortcuts.RefreshTransportKeyBindings); the click behaviour moved
-        // verbatim into ExecuteMarkStart / ExecuteMarkEnd.
-
-        // KEYFOCUS_01 — MARK END wiring moved to _markEndCommand (MainWindow.Shortcuts.ExecuteMarkEnd).
 
         var timelineSlider = TimelineSliderCtl;
         if (timelineSlider != null)
@@ -771,14 +638,12 @@ public partial class MainWindow
             };
             mainSpeedSlider.ValueChangeCompleted += (s, e) =>
             {
-                EndProjectGesture();   // UNDOEQ_02 — the sweep is one undo step; the next sweep is another.
+                EndProjectGesture();
                 RuntimeLog.Info("UI", $"Speed slider final resting value: {e / 10.0:F1}x");
             };
             UpdateSpeedLabel();
         }
 
-        // VOLSHARED_01 — the shared master rack (level, mute, badge, icon, wheel), identical in all
-        // three apps. Persistence is central (MasterVolumePersistence), not per gesture.
         Infrastructure.MasterVolumeUi.Bind(this, VolumeSliderCtl,
             this.FindControl<TextBlock>("VolumeBadgeText"),
             this.FindControl<Avalonia.Controls.Shapes.Path>("VolumeSpeakerIcon"),
@@ -788,17 +653,12 @@ public partial class MainWindow
         var qualitySlider = QualitySliderCtl;
         if (qualitySlider != null)
         {
-            // QUALITY_01 — the dial's stops ARE the quality words. It used to read "5MB", "10MB"
-            // ... "100MB", "ORIGINAL QUALITY", which asked the user to solve for the thing they
-            // wanted instead of picking it.
             qualitySlider.SetRange(0, FreeVideoStudio.App.ViewModels.QualityLadder.MaxIndex);
             var labels = new System.Collections.Generic.List<string>();
             foreach (var tier in FreeVideoStudio.App.ViewModels.QualityLadder.Tiers)
                 labels.Add(tier.Name.ToUpperInvariant());
             qualitySlider.SetLabels(labels);
             qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
-            // QUALITY_04 / SIZEESTIMATE_01 — the estimate and tooltip bind to ExportViewModel.
-            // The shared background estimator publishes both from the same snapshot.
             qualitySlider.ValueChanged += (s, v) =>
             {
                 UpdateEstimatedQuality();
@@ -806,13 +666,10 @@ public partial class MainWindow
             };
             qualitySlider.ValueChangeCompleted += (s, v) =>
             {
-                EndProjectGesture();   // UNDOEQ_02
+                EndProjectGesture();
                 RuntimeLog.Info("UI", $"Quality dial resting on '{FreeVideoStudio.App.ViewModels.QualityLadder.NameOf(v)}' (tier {v}).");
             };
 
-            // QUALITY_04 — prime the readout and the tooltip once at startup. Without this the
-            // strip under the dial stays blank and the tooltip stays generic until the user
-            // happens to TOUCH the dial — which is precisely the user who never touches it.
             UpdateEstimatedQuality();
         }
 
@@ -825,10 +682,6 @@ public partial class MainWindow
                 RuntimeLog.Info("UI", "User clicked ADD MUSIC button.");
                 RuntimeLog.Info("UI", "User clicked ADD MUSIC button (launching Wizard).");
 
-                // EDIT3_01 — was also a silent one-click wipe. The wizard now reopens on the
-                // existing placement at PHASE 3, which is the screen the placement actually lives
-                // on (song start, volumes, ducking, carving, looping). Phases 1 and 2 stay
-                // reachable with BACK, so swapping the song itself is still one click away.
                 bool resumeExistingMusic = false;
                 if (_isMusicActive)
                 {
@@ -871,12 +724,10 @@ public partial class MainWindow
                     _baseSpeed,
                     BuildExportSpeedSegments(),
                     _voiceOverResult,
-                    _cuts,          // CUTS_02 — music is laid against the video's REAL length
-                    _memePlacements); // MEME_06 — which memes make LONGER, not shorter
+                    _cuts,
+                    _memePlacements);
                 wizard.IsPortraitPreview = PortraitModeCheckboxCtl?.IsChecked == true;
 
-                // EDIT3_01 — hand the existing placement over so the wizard opens on it. Must be
-                // set before ShowDialog: the wizard consumes it in its Loaded handler.
                 if (resumeExistingMusic) wizard.InitialState = _musicWizardResult;
 
                 await wizard.ShowDialog(this);
@@ -897,13 +748,9 @@ public partial class MainWindow
                     var memeCb = MemeComboBoxCtl;
                     if (addMemeCb?.IsChecked == true && memeCb?.SelectedItem != null)
                     {
-                        // MEMEMUSIC_01 — the music was just (re)configured: this is the one place
-                        // the answer is asked again even if it was already given.
                         await AskKeepMusicDuringMemeAsync();
                     }
 
-                    // VOLSHARED_01 — re-apply the new balance to the players. NEVER re-send the slider
-                    // value as the master: that is how a stale slider used to snap the level back.
                     ApplyPreviewPlayersVolume();
 
                     UpdateTimelineMarkers();
@@ -969,10 +816,6 @@ public partial class MainWindow
             }
 
             SaveRecoveryState(label: "choose meme");
-            // MEMEMUSIC_01 — asked once, then remembered. This used to be a blocking Win32 box
-            // (NativeDialog) raised on EVERY meme pick, so browsing the list meant answering the
-            // same question again and again. The answer stays until the music is set up again in
-            // the Music Wizard, which is where it is re-asked.
             if (addMemeCb?.IsChecked == true && memeCb.SelectedItem != null && _musicWizardResult != null &&
                 !string.IsNullOrEmpty(_musicWizardResult.MusicFilePath) && _keepMusicDuringMeme == null)
             {
@@ -998,29 +841,49 @@ public partial class MainWindow
             PopulateMemeComboBox();
 
             bool hadFault = _recovery.CheckFault();
-            if (hadFault)
+            if (hadFault && !_recovery.CanRetryRestore)
             {
-                RuntimeLog.Info("RECOVERY", "Previous crash detected. Prompting user for recovery.");
+                RuntimeLog.Info("RECOVERY", $"Restore crashed {_recovery.CrashedRestoreAttempts} times. Quarantining the snapshot.");
+                _recovery.AcquireLock();
+                bool kept = _recovery.QuarantineSnapshot();
+                string keptPath = _recovery.QuarantinedSnapshotFile ?? "";
+                await Task.Run(() => NativeDialog.ShowError(
+                    $"Restoring your previous session crashed the app {RecoveryManager.MaxRestoreAttempts} times in a row, " +
+                    "so it will not be retried.\n\n" +
+                    (kept ? $"Your session snapshot was kept, unchanged, at:\n{keptPath}\n\n" : "") +
+                    "The app will start fresh.",
+                    "Free Video Studio - Session Recovery"));
+            }
+            else if (hadFault)
+            {
+                bool restoreCrashed = _recovery.RestoreCrashDetected;
+                RuntimeLog.Info("RECOVERY", restoreCrashed
+                    ? $"Previous restore attempt crashed ({_recovery.CrashedRestoreAttempts}). Offering Retry / Start Fresh."
+                    : "Previous crash detected. Prompting user for recovery.");
                 bool shouldRestore = await Task.Run(() => NativeDialog.ShowQuestion(
-                    "The app was closed unexpectedly during your last session.\n\n" +
-                    "Would you like to restore your previous work? This includes your video, " +
-                    "trim points, speed settings, music, and all edits exactly as you left them.\n\n" +
-                    "Click Yes to recover, or No to start fresh.",
+                    restoreCrashed
+                        ? "The app closed unexpectedly while restoring your previous session " +
+                          $"(attempt {_recovery.CrashedRestoreAttempts} of {RecoveryManager.MaxRestoreAttempts}).\n\n" +
+                          "Your saved session has been kept unchanged.\n\n" +
+                          "Click Yes to retry the restore, or No to start fresh and discard it."
+                        : "The app was closed unexpectedly during your last session.\n\n" +
+                          "Would you like to restore your previous work? This includes your video, " +
+                          "trim points, speed settings, music, and all edits exactly as you left them.\n\n" +
+                          "Click Yes to recover, or No to start fresh.",
                     "Free Video Studio - Session Recovery"));
 
                 _recovery.AcquireLock();
 
-                if (shouldRestore)
+                if (shouldRestore && _recovery.ActivateSafeMode())
                 {
                     RuntimeLog.Info("RECOVERY", "User chose to restore previous session.");
-                    _recovery.ActivateSafeMode();
                     await RestoreRecoveryStateAsync();
                     _recovery.DeactivateSafeMode();
                 }
                 else
                 {
                     RuntimeLog.Info("RECOVERY", "User chose to start fresh. Discarding recovery state.");
-                    _recovery.ClearState();
+                    _recovery.DiscardRecoveryState();
                 }
             }
             else

@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -103,8 +97,8 @@ public static class CropProfileCodec
                 Width = w,
                 Height = h,
                 Z = ReadInt(ReadSectionNode(zOrders, role.Key), role.DefaultZ),
-                FromSavedConfig = true,              // GHOSTKILL_01
-                GeometryVerified = geometryVerified, // RESGUESS_01
+                FromSavedConfig = true,
+                GeometryVerified = geometryVerified,
             });
         }
         return layers;
@@ -144,7 +138,7 @@ public static class CropProfileCodec
             var quantized = s.QuantizeLayerSize(layer.SourceRect, layer.Width, layer.RoleKey);
             layer.Width = quantized.width;
             layer.Height = quantized.height;
-            s.NormalizeLayout(layer);   // the layout pass the window always ran here before writing
+            s.NormalizeLayout(layer);
 
             var transformed = s.ToContent(layer.SourceRect, layer.RoleKey);
             var clampedCrop = CoordinateMath.ClampContentCrop((Math.Max(2, transformed.w), Math.Max(2, transformed.h), transformed.x, transformed.y));
@@ -162,7 +156,6 @@ public static class CropProfileCodec
 
         foreach (string deletedKey in s.DeletedRoleKeys)
         {
-            // KEYCASE_01 — the layers and the tombstone set agree on what "same key" means.
             if (s.FindLayer(deletedKey) != null) continue;
             if (ReadSectionNode(crops, deletedKey) is null) continue;
 

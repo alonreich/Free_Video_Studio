@@ -1,30 +1,9 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// VOLIVE_01 — WHAT HAS ACTUALLY BEEN CAPTURED FOR THE TAKE IN PROGRESS (docs/02 AUD-VOICEOVER).
-//
-// The studio used to "show recording" by growing a red rectangle with the VIDEO clock, so a dead
-// microphone looked exactly like a working one, and the only waveform appeared after the take was
-// finalised. This meter is fed by the SAME recorder PCM the WAV writer and the spectrum receive
-// (VoiceCaptureSession, SPECTRUM_02 data path) and answers two questions the UI samples on its own
-// tick: how many seconds of audio have really arrived, and what their amplitude envelope is.
-//
-// Bounded by construction:
-//   * one float per bucket (default 50 ms of audio), at most MaxBuckets (default 2048) buckets;
-//   * when full, adjacent buckets are merged pairwise (peak = max) and the bucket length doubles,
-//     so storage never grows past MaxBuckets however long the take runs (resolution degrades);
-//   * no PCM is retained, nothing is queued per callback, nothing is dispatched to the UI.
-// Thread model: Append runs on the capture thread, Snapshot on the UI thread; one private lock.
-// Freeze() ends the take: later callbacks (a buffer in flight while the recorder was detached)
-// are ignored, so a finalised segment's envelope cannot keep moving.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>VOLIVE_01 — an immutable view of the take in progress. Safe to hold on the UI thread.</summary>
 public sealed record LiveTakeSnapshot(
@@ -73,7 +52,7 @@ public sealed class LiveTakeMeter
         if (!(bucketSeconds > 0) || double.IsInfinity(bucketSeconds)) throw new ArgumentOutOfRangeException(nameof(bucketSeconds));
         if (maxBuckets < 2) throw new ArgumentOutOfRangeException(nameof(maxBuckets));
         _baseBucketSeconds = bucketSeconds;
-        _maxBuckets = maxBuckets & ~1;   // even, so a pairwise merge halves it exactly
+        _maxBuckets = maxBuckets & ~1;
         _peaks = new float[_maxBuckets];
     }
 
@@ -98,7 +77,7 @@ public sealed class LiveTakeMeter
             if (_frozen) return;
             if (_sampleRate != format.SampleRate)
             {
-                if (_sampleRate != 0 && _frames > 0) return;   // a take has one rate; refuse a mid-take change rather than lie
+                if (_sampleRate != 0 && _frames > 0) return;
                 _sampleRate = format.SampleRate;
                 _framesPerBucket = Math.Max(1, (long)Math.Round(_baseBucketSeconds * _sampleRate));
             }
@@ -108,8 +87,6 @@ public sealed class LiveTakeMeter
             var span = pcm.Span;
             int i = 0;
 
-            // A frame split across two callbacks is completed from the carry, so duration and
-            // envelope are identical however the driver chunks the stream.
             if (_carryCount > 0)
             {
                 int need = block - _carryCount;
@@ -182,13 +159,11 @@ public sealed class LiveTakeMeter
 
         if (_count == _maxBuckets)
         {
-            // Bounded: halve the resolution instead of growing.
             for (int k = 0; k < _maxBuckets / 2; k++)
                 _peaks[k] = Math.Max(_peaks[2 * k], _peaks[2 * k + 1]);
             Array.Clear(_peaks, _maxBuckets / 2, _maxBuckets / 2);
             _count = _maxBuckets / 2;
             _framesPerBucket *= 2;
-            // The bucket in progress now covers half of a doubled bucket; keep accumulating it.
             if (_framesInCurrent < _framesPerBucket) return;
         }
 

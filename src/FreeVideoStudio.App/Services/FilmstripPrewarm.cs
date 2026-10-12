@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -142,10 +139,6 @@ internal static class FilmstripPrewarm
         lock (_gate) { job = _pending; _pending = null; }
         if (job == null) return;
 
-        // THROTTLE_01 — LAYER 1: while anything is playing, do not spawn the process at all.
-        // Put the job back and retry one debounce later; this costs a single 450ms timer tick
-        // and saves the file open + container-header walk an FFmpeg would do before its first
-        // frame. `??=` keeps a newer job (a fresh Schedule that raced this tick) in place.
         if (MpvIpcClient.AnyPlaybackActive)
         {
             lock (_gate) { _pending ??= job; }
@@ -185,7 +178,7 @@ internal static class FilmstripPrewarm
             }
             catch (OperationCanceledException swallowed)
             {
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
                 return;
             }
             catch (Exception ex) { RuntimeLog.Swallowed(ex); return; }

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
@@ -81,9 +78,6 @@ public static class MemePlacementStore
                     {
                         string? raw = kv.Value?.ToString();
                         if (string.IsNullOrWhiteSpace(raw)) continue;
-                        // ⚠️ LENIENT BY CONTRACT. Files written by older builds carry "1", "Start"
-                        // and "true" for the same meaning. Tightening this silently resets choices
-                        // users have already made. Anything unrecognised is End, the safe default.
                         map[kv.Key] = raw.Equals("1", StringComparison.Ordinal) ||
                                       raw.Equals("Start", StringComparison.OrdinalIgnoreCase) ||
                                       raw.Equals("true", StringComparison.OrdinalIgnoreCase)
@@ -107,8 +101,6 @@ public static class MemePlacementStore
         if (string.IsNullOrWhiteSpace(memePath)) return MemePlacement.End;
         string key = Path.GetFileName(memePath);
 
-        // ATOMICSTATE_01 — the lookup happens INSIDE the lock. Returning the dictionary and
-        // probing it outside would reintroduce the exact read-during-mutation race.
         lock (_sync)
         {
             if (LoadUnlocked().TryGetValue(key, out var chosen)) return chosen;
@@ -149,7 +141,6 @@ public static class MemePlacementStore
         {
             string payload;
 
-            // Snapshot under the gate; commit to disk outside it. See _sync.
             lock (_sync)
             {
                 var map = LoadUnlocked();

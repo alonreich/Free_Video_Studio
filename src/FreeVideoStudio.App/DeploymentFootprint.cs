@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Microsoft.Win32;
 
 namespace FreeVideoStudio.App;
@@ -40,7 +37,7 @@ internal static class DeploymentFootprint
 
     public static readonly string ProgramDataFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);   // NOSPACE_01
+        FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
 
     /// <summary>NOSPACE_01 — the spaced machine folder older builds may have left behind.</summary>
     public static readonly string LegacyProgramDataFolder = Path.Combine(
@@ -62,6 +59,28 @@ internal static class DeploymentFootprint
     /// </summary>
     public static readonly string TempAppFolder = Path.Combine(TempRoot,
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
+
+    /// <summary>
+    /// NOTEMPEXEC_01 — where update downloads (<see cref="UpdateDownloadsRoot"/>) and the staged copy of
+    /// the elevated update worker (<see cref="UpdateStageRoot"/>) live. Antivirus behaviour engines weigh
+    /// "a program in %TEMP% starts an elevated program from %TEMP%" as a dropper pattern; this per-user
+    /// folder is not %TEMP%. It is SEPARATE from <see cref="LocalAppDataFolder"/> on purpose: that folder
+    /// is user data the update transaction itself moves (UserDataUpgrade), and the worker must never run
+    /// from inside a folder the update renames. Scratch only — the uninstaller always removes it.
+    /// </summary>
+    public static readonly string UpdatesRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName + "Updates");
+
+    /// <summary>NOTEMPEXEC_01 — one sub-folder per release tag (DLRESUME_01 resumes inside it).</summary>
+    public static readonly string UpdateDownloadsRoot = Path.Combine(UpdatesRoot, "Downloads");
+
+    /// <summary>NOTEMPEXEC_01 / UPGRADEUX_06 — one sub-folder per install run, holding the worker copy.</summary>
+    public static readonly string UpdateStageRoot = Path.Combine(UpdatesRoot, "Stage");
+
+    /// <summary>NOTEMPEXEC_01 — the %TEMP% folders used before; still accepted (old updaters) and swept.</summary>
+    public static readonly string LegacyUpdateDownloadsRoot = Path.Combine(Path.GetTempPath(), "FVS_AutoUpdate");
+    public static readonly string LegacyUpdateStageRoot = Path.Combine(Path.GetTempPath(), "FVS_Upgrade");
 
     /// <summary>NOSPACE_01 — the spaced scratch folder used before this change.</summary>
     public static readonly string LegacyTempAppFolder = Path.Combine(TempRoot, DisplayName);
@@ -125,25 +144,23 @@ internal static class DeploymentFootprint
         if (includeInstallFolder)
         {
             yield return InstallFolder;
-            // NOSPACE_01 — normally already moved into the upgrade backup store by the installer;
-            // listed so an uninstall after an interrupted move leaves nothing behind.
             yield return LegacyInstallFolder;
         }
 
         yield return TempAppFolder;
-        yield return LegacyTempAppFolder;   // NOSPACE_01
+        yield return LegacyTempAppFolder;
+        yield return UpdatesRoot;
+        yield return LegacyUpdateDownloadsRoot;
+        yield return LegacyUpdateStageRoot;
 
         if (includeUserData)
         {
             yield return ProgramDataFolder;
-            yield return LegacyProgramDataFolder;   // NOSPACE_01
+            yield return LegacyProgramDataFolder;
             yield return RoamingAppDataFolder;
             yield return LocalAppDataFolder;
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FreeVideoStudio");
 
-            // REBRAND_02 — previous-brand user/machine roots (05 SYS-REBRAND). The machine root under
-            // %ProgramData% is shared by every account, so only this elevated, explicit
-            // "remove my data" path deletes it; the per-user sweep never does.
             foreach (string legacy in FreeVideoStudio.Core.Infrastructure.LegacyResidueSweep.LegacyStorageNames())
             {
                 yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), legacy);
@@ -156,9 +173,9 @@ internal static class DeploymentFootprint
     public static IEnumerable<string> GetVerificationTargets()
     {
         yield return InstallFolder;
-        yield return LegacyInstallFolder;        // NOSPACE_01
+        yield return LegacyInstallFolder;
         yield return ProgramDataFolder;
-        yield return LegacyProgramDataFolder;    // NOSPACE_01
+        yield return LegacyProgramDataFolder;
         yield return RoamingAppDataFolder;
         yield return LocalAppDataFolder;
     }
@@ -196,7 +213,7 @@ internal static class DeploymentFootprint
             try { normalized = Path.GetFullPath(candidate!).TrimEnd('\\', '/'); }
             catch (System.Exception swallowed2)
             {
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
                 continue;
             }
 
@@ -261,7 +278,7 @@ internal static class DeploymentFootprint
     {
         yield return Path.Combine(TempRoot, "FreeVideoStudio.log");
         yield return Path.Combine(TempAppFolder, "*");
-        yield return Path.Combine(LegacyTempAppFolder, "*");   // NOSPACE_01
+        yield return Path.Combine(LegacyTempAppFolder, "*");
         yield return Path.Combine(TempRoot, "FVS_*");
         yield return Path.Combine(TempRoot, "fvs_*");
     }

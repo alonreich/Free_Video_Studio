@@ -32,6 +32,18 @@ public sealed class ReleasePublicationTests : IDisposable
     }
 
     [Fact]
+    public void NoDropper01_TheReleaseCarriesTheSetupAndTheOldNameBridgeButNoEmbeddedCompactInstaller()
+    {
+        string[] assets = GitHubReleasePublisher.ReleaseAssets(@"compiled\FreeVideoStudio-Setup.exe", "legacy.exe", "FreeVideoStudio.exe");
+        Assert.Contains(@"compiled\FreeVideoStudio-Setup.exe", assets);
+        Assert.Contains("FreeVideoStudio.exe", assets);
+        Assert.Contains("legacy.exe", assets);
+        Assert.DoesNotContain(assets, a => a.EndsWith("FreeVideoStudio.App.update.zip", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("FreeVideoStudio.exe", GitHubReleasePublisher.PreSetupDownloadName);
+        Assert.Equal("FreeVideoStudio-Setup.exe", InnoInstaller.SetupFileName);
+    }
+
+    [Fact]
     public void MalformedReleaseResponseDoesNotPassVerification() =>
         Assert.False(GitHubReleasePublisher.VerifyAssets(["missing"], "{broken"));
 

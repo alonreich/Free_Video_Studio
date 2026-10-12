@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App;
 using FreeVideoStudio.Core.Infrastructure;
@@ -13,10 +10,11 @@ try
 {
     RuntimeLog.SetDeploymentPhase(true);
     if (args.FirstOrDefault() == "--upgrade-worker") return await UpgradeInstallWorker.RunAsync(args);
-    // UPGRADEUX_01 — the broker now shows a progress window (headless fallback inside).
     if (args.FirstOrDefault() == "--upgrade-broker") return await UpgradeBrokerHost.RunAsync(args);
     if (args.FirstOrDefault() == "--upgrade-probe") return UpgradeInstallWorker.Probe();
     if (args.FirstOrDefault() == "--upgrade-maintenance") return await UpgradeInstallWorker.MaintainAsync();
+    if (args.FirstOrDefault() == FreeVideoStudio.App.ViewModels.ExportViewModel.ApplyRdpGpuPolicyArgument)
+        return FreeVideoStudio.App.ViewModels.ExportViewModel.ApplyRdpGpuPolicyElevated();
     if (args.FirstOrDefault() == "--complete-user-migration")
     {
         await UpgradeCoordinator.CompleteUserAsync();
@@ -48,7 +46,7 @@ RuntimeLog.SetDeploymentPhase(false);
 FreeVideoStudio.Core.Infrastructure.CoreLogger.InfoAction = RuntimeLog.Info;
 FreeVideoStudio.Core.Infrastructure.CoreLogger.FailAction = RuntimeLog.Fail;
 FreeVideoStudio.Core.Infrastructure.CoreLogger.DebugAction = RuntimeLog.Debug;
-FreeVideoStudio.Core.Infrastructure.CoreLogger.WarnAction = RuntimeLog.WarnThrottled;   // LOGVIS_01
+FreeVideoStudio.Core.Infrastructure.CoreLogger.WarnAction = RuntimeLog.WarnThrottled;
 FreeVideoStudio.Core.Infrastructure.CoreLogger.AppendAction = RuntimeLog.AppendRaw;
 RuntimeLog.InitializeAppName(args);
 RuntimeLog.ResetForProcess();
@@ -86,7 +84,6 @@ bool isSiblingProcess = args.Any(a =>
 if (!isSiblingProcess)
 {
     _ = CrashLogDigest.RunAsync();
-    // REBRAND_02 — remove previous-brand residue once it is provably migrated (05 SYS-REBRAND).
     if (!args.Contains("--upgrade-health"))
         _ = Task.Run(FreeVideoStudio.Core.Infrastructure.LegacyResidueSweep.RunForCurrentUser);
 }
@@ -183,6 +180,7 @@ static async Task<int> BootstrapAsync(bool showDialog)
 
     RuntimeLog.Info("BOOTSTRAP", "Loading session_state.json through named mutex.");
     JsonObject state = await new StateTransferStore(paths).LoadAsync();
+    SessionStateWriter.For(paths).Prime(state);
     RuntimeLog.Success("SESSION STATE READY", $"properties={state.Count}");
     RuntimeLog.Debug("SESSION STATE READY", $"path={paths.SessionStateFile}; properties={state.Count}");
 
@@ -289,31 +287,12 @@ static async Task<int> RunUiAsync(string[] args)
     if (isWorker)
     {
         var workerPaths = ApplicationPaths.CreateDefault();
-        string uiTempFolder = Path.Combine(workerPaths.TempDirectory, "FreeVideoStudio_SetupUI_" + Environment.ProcessId);
-
-        PurgeStaleSetupUiFolders(workerPaths.TempDirectory, uiTempFolder);
-
-        Directory.CreateDirectory(uiTempFolder);
-        DeploymentLifecycle.ExtractAvaloniaDependencies(uiTempFolder);
-        NativeHelpers.SetDllDirectory(uiTempFolder);
+        PurgeStaleSetupUiFolders(workerPaths.TempDirectory, string.Empty);
     }
 
     RuntimeLog.Info("RUN UI", "Running bootstrapper before UI.");
     await BootstrapAsync(showDialog: false);
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // COMPOSITION_01 — build the application service graph exactly once, here.
-    //
-    // Position is load-bearing. It is AFTER BootstrapAsync, which is what calls
-    // ApplicationPaths.EnsureWritableDirectories() — a graph built before that would hand every
-    // service paths to directories that do not exist yet. It is BEFORE Avalonia starts, so that
-    // the very first window constructed already finds a complete graph; AppServices.Current
-    // throws rather than lazily half-building one, because a half-built graph is how a fault sink
-    // ends up null at exactly the moment something faults.
-    //
-    // AvaloniaWindowProvider reads the desktop lifetime lazily, so constructing it before any
-    // window exists is safe and deliberate.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     FreeVideoStudio.App.Infrastructure.AppServices.Initialize(ApplicationPaths.CreateDefault());
 
     if (OperatingSystem.IsWindows())
@@ -326,28 +305,6 @@ static async Task<int> RunUiAsync(string[] args)
         .UsePlatformDetect()
         .WithInterFont();
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // TRACEFLOOD_01 — VERBOSE AVALONIA LOGGING FREEZES THE DEV BUILD. DO NOT RESTORE IT BLINDLY.
-    //
-    // LogToTrace routes through System.Diagnostics.Trace, whose DefaultTraceListener calls the
-    // native OutputDebugString. That call is synchronous and serialises every process on the
-    // machine through a single global OS mutex (DBWinMutex); with a debugger or `dotnet watch`
-    // attached it costs on the order of a millisecond EACH.
-    //
-    // At Verbose, Avalonia emits a trace line for ordinary property writes. Any redraw that
-    // touches many visuals therefore pays milliseconds per property. Captured from a frozen
-    // process (dotnet-dump, 2026-09-12), the UI thread was here:
-    //     GranularSpeedEditorWindow.RedrawTimeline -> RelayoutFrameLane
-    //       -> Avalonia.Visual.set_ClipToBounds
-    //         -> Trace.WriteLine -> OutputDebugString   (BLOCKED)
-    // The window stops repainting and the app reads as hard-frozen, in dev mode only.
-    //
-    // Warning level keeps every genuine Avalonia complaint (binding errors, layout warnings) and
-    // drops the per-property spam. To debug a specific Avalonia subsystem, opt IN narrowly and
-    // temporarily, e.g.:
-    //     builder.LogToTrace(LogEventLevel.Verbose, Avalonia.Logging.LogArea.Binding)
-    // and never with a timeline-heavy window open.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     builder = builder.LogToTrace(Avalonia.Logging.LogEventLevel.Warning);
     if (RuntimeLog.IsDevMode)
     {
@@ -355,7 +312,14 @@ static async Task<int> RunUiAsync(string[] args)
             "Dev mode: Avalonia logging at Warning (TRACEFLOOD_01 - Verbose calls OutputDebugString per property and freezes the UI thread).");
     }
 
-    return builder.StartWithClassicDesktopLifetime(args);
+    int exitCode = builder.StartWithClassicDesktopLifetime(args);
+
+    if (!await SessionStateWriter.FlushAllAsync(TimeSpan.FromSeconds(3)))
+        RuntimeLog.Fail("SessionState", "Final session-state flush was not acknowledged; the last window/preference changes may not have been saved.");
+    try { NamedPipeStateServer.ActiveInstance?.FlushToDiskSafe(); }
+    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+
+    return exitCode;
 }
 
 static void PurgeStaleSetupUiFolders(string tempRoot, string keepFolder)
@@ -371,7 +335,8 @@ static void PurgeStaleSetupUiFolders(string tempRoot, string keepFolder)
         {
             try
             {
-                if (string.Equals(Path.GetFullPath(folder), Path.GetFullPath(keepFolder), StringComparison.OrdinalIgnoreCase))
+                if (keepFolder.Length > 0 &&
+                    string.Equals(Path.GetFullPath(folder), Path.GetFullPath(keepFolder), StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 string suffix = Path.GetFileName(folder)[prefix.Length..];
@@ -405,7 +370,7 @@ static void PurgeStaleSetupUiFolders(string tempRoot, string keepFolder)
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
             return false;
         }
     }

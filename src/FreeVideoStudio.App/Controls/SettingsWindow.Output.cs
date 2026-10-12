@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using Avalonia;
 using Avalonia.Interactivity;
@@ -234,8 +231,8 @@ public partial class SettingsWindow
         if (string.Equals(_previousMergerOutputDir, _pendingMergerOutputDir, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
-            new FreeVideoStudio.Core.Ipc.StateTransferStore(_paths)
-                .UpdatePropertiesSync(new System.Text.Json.Nodes.JsonObject
+            FreeVideoStudio.Core.Ipc.SessionStateWriter.For(_paths)
+                .Enqueue(new System.Text.Json.Nodes.JsonObject
                 {
                     ["MergerOutputDirectory"] = _pendingMergerOutputDir ?? ""
                 });

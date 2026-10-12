@@ -1,8 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
-using System.IO.Compression;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Principal;
@@ -46,7 +42,14 @@ internal static class UpgradeInstallWorker
                 await channel.SendAsync("recovered").ConfigureAwait(false);
                 return 0;
             }
+            string? smartFolder = null;
+            if (mode.StartsWith("install|", StringComparison.Ordinal))
+            {
+                smartFolder = mode["install|".Length..];
+                mode = "install";
+            }
             if (mode != "install") throw new IOException("Unknown installation request.");
+            SmartUpdateManifest? smart = smartFolder is null ? null : LoadVerifiedSmartUpdate(smartFolder);
             string[] roots = InstallDiscovery.FindRoots();
             InstallDiscovery.EnsureIdle(roots, Environment.ProcessId);
             transaction = DirectoryUpgrade.Create(InstallDiscovery.Store, InstallDiscovery.Destination,
@@ -59,32 +62,39 @@ internal static class UpgradeInstallWorker
                 ["roots"] = new JsonArray(roots.Select(p => (JsonNode?)JsonValue.Create(p)).ToArray())
             }.ToJsonString()).ConfigureAwait(false);
             await channel.ExpectAsync("begin").ConfigureAwait(false);
-            // UPGRADEUX_01 — every long step below reports "phase|fraction" to the broker, which
-            // shows it to the user. Before this, extraction, copying and hashing ran for a minute
-            // or more with nothing on screen.
             var relay = new ProgressRelay(channel);
             await relay.StepAsync("unpack").ConfigureAwait(false);
-            using Stream payload = typeof(UpgradeInstallWorker).Assembly.GetManifestResourceStream("FreeVideoStudio.App.payload.zip")
-                ?? throw new IOException("This file does not contain a full installation payload. Download the full installer.");
-            long unpacked;
-            using (var archive = new ZipArchive(payload, ZipArchiveMode.Read, leaveOpen: true)) unpacked = archive.Entries.Sum(x => x.Length);
-            payload.Position = 0;
-            InstallDiscovery.EnsureSpace(InstallDiscovery.Destination, roots, checked(unpacked * 2));
             string extracted = Path.Combine(transaction.DirectoryPath, "payload");
-            string? reuseRoot = InstallDiscovery.ReuseRoot(roots);   // NOSPACE_01
-            await relay.RunAsync("unpack", report => InstallPayload.Extract(payload, extracted, reuseRoot, report)).ConfigureAwait(false);
+            string? reuseRoot = InstallDiscovery.ReuseRoot(roots);
+            if (smart is not null)
+            {
+                long downloadedBytes = UpgradeFiles.Files(smartFolder!).Sum(f => new FileInfo(f).Length);
+                InstallDiscovery.EnsureSpace(InstallDiscovery.Destination, [], downloadedBytes);
+                await relay.RunAsync("unpack", report => InstallPayload.ExtractFromSmartUpdate(smart, smartFolder!, extracted,
+                    new[] { reuseRoot }.Concat(roots).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase), report)).ConfigureAwait(false);
+            }
+            else
+            {
+                throw new IOException("This program is not an installer. Download FreeVideoStudio-Setup.exe to install Free Video Studio.");
+            }
             await relay.RunAsync("install", report => transaction.Prepare(candidate =>
             {
                 string[] newFiles = UpgradeFiles.Files(extracted).ToArray();
                 for (int i = 0; i < newFiles.Length; i++)
                 {
-                    UpgradeFiles.CopyVerified(newFiles[i], Path.Combine(candidate, Path.GetRelativePath(extracted, newFiles[i])), overwrite: true);
-                    report(0.6 + 0.2 * (i + 1) / newFiles.Length);
+                    string target = Path.Combine(candidate, Path.GetRelativePath(extracted, newFiles[i]));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Move(newFiles[i], target, overwrite: true);
+                    report(0.3 + 0.2 * (i + 1) / newFiles.Length);
                 }
-                UpgradeFiles.CopyVerified(Path.Combine(candidate, InstallPayload.ExecutableName), Path.Combine(candidate, "Uninstall.exe"), overwrite: true);
-                InstallPayload.Verify(candidate, f => report(0.8 + 0.2 * f));
-            }, relative => !LegacyProductIdentity.ExecutableNames.Contains(relative, StringComparer.OrdinalIgnoreCase),
-               f => report(0.6 * f))).ConfigureAwait(false);
+                string exe = Path.Combine(candidate, InstallPayload.ExecutableName), uninstall = Path.Combine(candidate, "Uninstall.exe");
+                if (File.Exists(uninstall)) File.Delete(uninstall);
+                if (!HardLink.TryCreate(uninstall, exe)) UpgradeFiles.CopyVerified(exe, uninstall, overwrite: true);
+                InstallPayload.Verify(candidate, f => report(0.5 + 0.5 * f));
+            }, relative => !LegacyProductIdentity.ExecutableNames.Contains(relative, StringComparer.OrdinalIgnoreCase)
+                           && !relative.Equals("Uninstall.exe", StringComparison.OrdinalIgnoreCase)
+                           && !File.Exists(Path.Combine(extracted, relative)),
+               f => report(0.3 * f))).ConfigureAwait(false);
             InstallDiscovery.EnsureIdle(roots, Environment.ProcessId);
             await relay.StepAsync("switch").ConfigureAwait(false);
             transaction.Activate();
@@ -181,6 +191,27 @@ internal static class UpgradeInstallWorker
         }
     }
 
+    /// <summary>
+    /// DIST-SMART — the elevated side NEVER trusts what the unelevated updater checked. It re-reads the
+    /// manifest and signature from the staging folder and verifies the signature itself, against the
+    /// pinned publisher root (or, for a publicly trusted certificate, against its OWN signer).
+    /// </summary>
+    private static SmartUpdateManifest LoadVerifiedSmartUpdate(string folder)
+    {
+        UpgradeFiles.RequirePlainPath(folder);
+        byte[] json = File.ReadAllBytes(Path.Combine(folder, SmartUpdateManifest.FileName));
+        byte[] signature = File.ReadAllBytes(Path.Combine(folder, SmartUpdateManifest.SignatureFileName));
+        string? self = OperatingSystem.IsWindows() ? AuthenticodeVerifier.Inspect(Environment.ProcessPath ?? string.Empty) is { ChainValid: true } own
+            ? own.Thumbprint : null : null;
+        if (!SmartUpdateManifest.VerifySignature(json, signature, self, out string detail))
+            throw new IOException("The update could not be verified, so nothing was installed. " + detail);
+        SmartUpdateManifest manifest = SmartUpdateManifest.Parse(json);
+        if (!DeploymentLifecycle.TryParseVersion(manifest.Version, out Version expected) ||
+            !DeploymentLifecycle.TryParseVersion(DeploymentLifecycle.GetCurrentVersion(), out Version mine) || expected != mine)
+            throw new IOException("The update files belong to a different version than this installer. Nothing was installed.");
+        return manifest;
+    }
+
     private static async Task RunProbeAsync()
     {
         using var process = Process.Start(new ProcessStartInfo(DeploymentFootprint.InstallPath, "--upgrade-probe")
@@ -225,9 +256,6 @@ internal static class UpgradeInstallWorker
             string path = Path.Combine(directory, "journal.json");
             if (!File.Exists(path)) continue;
             JsonObject journal = AtomicJsonFile.ReadObject(path) ?? throw new IOException("An installation recovery record is unreadable. Backups were preserved.");
-            // NOSPACE_01 — journals written before the move to the space-free folder name the spaced
-            // folder as their destination. They are still ours and must still recover and prune;
-            // rejecting them would block every future install on that machine.
             string destination = UpgradeFiles.FullPath(journal["Destination"]!.GetValue<string>());
             if (!InstallDiscovery.KnownDestinations.Contains(destination, StringComparer.OrdinalIgnoreCase))
                 throw new IOException("Unexpected destination in protected installation journal.");
@@ -255,14 +283,18 @@ internal static class UpgradeInstallWorker
         if (!ownsInstallerGate && !gate.WaitOne(0)) return 2;
         try
         {
-            foreach (var (transaction, roots) in Transactions())
+            var all = Transactions().ToList();
+            DateTimeOffset? newest = all.Where(x => x.Transaction.Phase is "Committed" or "Pruned")
+                .Select(x => x.Transaction.ConfirmedAt).Max();
+            foreach (var (transaction, roots) in all)
             {
                 if (transaction.Phase is "Committed" or "Pruned")
                 {
                     await new UpgradeRegistration(true, transaction.DirectoryPath, roots).RemoveLegacyAsync().ConfigureAwait(false);
                     UpgradeFiles.DeleteTree(Path.Combine(transaction.DirectoryPath, "payload"), transaction.DirectoryPath);
                 }
-                transaction.PruneBackup(DateTimeOffset.UtcNow);
+                transaction.PruneBackup(DateTimeOffset.UtcNow,
+                    supersededByNewer: newest is { } latest && transaction.ConfirmedAt is { } at && at < latest);
             }
             string xml = await TaskCommandAsync("/Query", "/TN", LegacyProductIdentity.CompactName, "/XML").ConfigureAwait(false);
             var oldExecutables = Transactions().SelectMany(x => x.Roots)
@@ -271,8 +303,9 @@ internal static class UpgradeInstallWorker
             if (!string.IsNullOrWhiteSpace(xml) && System.Xml.Linq.XDocument.Parse(xml).Descendants()
                     .Where(x => x.Name.LocalName == "Command").Any(x => oldExecutables.Contains(x.Value.Trim('"'))))
                 _ = await TaskCommandAsync("/Delete", "/TN", LegacyProductIdentity.CompactName, "/F").ConfigureAwait(false);
-            _ = await TaskCommandAsync("/Create", "/TN", DeploymentFootprint.ScheduledTaskName, "/SC", "DAILY", "/ST", "12:00",
-                "/RU", "SYSTEM", "/RL", "HIGHEST", "/TR", $"\"{DeploymentFootprint.InstallPath}\" --upgrade-maintenance", "/F").ConfigureAwait(false);
+            string ownTask = await TaskCommandAsync("/Query", "/TN", DeploymentFootprint.ScheduledTaskName, "/XML").ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(ownTask))
+                _ = await TaskCommandAsync("/Delete", "/TN", DeploymentFootprint.ScheduledTaskName, "/F").ConfigureAwait(false);
             return 0;
         }
         catch (Exception ex) { RuntimeLog.WarnThrottled("Upgrade maintenance", ex.Message); return 1; }

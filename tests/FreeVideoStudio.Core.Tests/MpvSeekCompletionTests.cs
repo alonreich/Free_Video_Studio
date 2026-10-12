@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using FreeVideoStudio.Core.Media;
@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-// Opt-in native regression: FVS_TEST_NATIVE_MPV=1 dotnet test --filter MpvSeekCompletionTests.
 public sealed class NativeMpvTheoryAttribute : TheoryAttribute
 {
     public NativeMpvTheoryAttribute()
@@ -25,7 +24,6 @@ public sealed class MpvSeekCompletionTests
     public async Task PausedSeek_CompletesOnlyAfterTheRequestedPositionIsReady(string mode)
     {
         string root = FindRoot();
-        // Load by absolute path without occupying the assembly's DllImportResolver slot.
         NativeLibrary.Load(Path.Combine(root, "binaries", "libmpv-2.dll"));
         string dir = Path.Combine(Path.GetTempPath(), "FvsSeekTest_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -70,8 +68,6 @@ public sealed class MpvSeekCompletionTests
             await player.SendCommandAsync("seek", 6.75, "absolute+exact");
             var result = await completed.Task.WaitAsync(TimeSpan.FromSeconds(15));
             Assert.Equal("no", result.Seeking);
-            // The paused audio-only clock includes output buffering; it need not
-            // equal the target until playback resumes. Video exposes the decoded frame.
             if (mode != "audio")
             {
                 Assert.InRange(result.Position, 6.75, 6.80);
@@ -82,7 +78,6 @@ public sealed class MpvSeekCompletionTests
             await player.SetPropertyAsync("pause", "no");
             await WaitUntil(() => player.CurrentTime > 7.0);
 
-            // A burst of marker moves must settle on the latest target, then play through it.
             await player.SetPropertyAsync("pause", "yes");
             for (int i = 0; i < 20; i++)
                 await player.SendCommandAsync("seek", 1 + i * 0.1, "absolute+exact");
@@ -93,8 +88,6 @@ public sealed class MpvSeekCompletionTests
 
             if (mode == "merger-edl")
             {
-                // Removing the custom cover restores the first 0.1 s of the clip.
-                // Reload at the same source moment, then resume beyond that point.
                 await player.SetPropertyAsync("pause", "yes");
                 double sourcePosition = player.CurrentTime + 0.1;
                 await player.LoadFileAsync(clip, sourcePosition);
@@ -104,7 +97,6 @@ public sealed class MpvSeekCompletionTests
                 await WaitUntil(() => player.CurrentTime > sourcePosition + 0.2);
             }
 
-            // Rejected commands and a stop during a seek must release the gate too.
             await player.SendCommandAsync("seek", "not-a-number", "absolute+exact");
             Assert.False(player.IsSeeking);
             await player.SendCommandAsync("seek", 6.75, "absolute+exact");

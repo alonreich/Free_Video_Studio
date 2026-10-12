@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
@@ -10,26 +7,28 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// LANES_01 — THE MERGER'S FILMSTRIP AND WAVEFORM FILL IN LEFT→RIGHT, IN THE BACKGROUND (P5, D9).
-//
-// The planner cuts the merged timeline into one tile per clip (x span on the lane + that clip's
-// kept source window). The runner starts tiles strictly in that left→right order with bounded
-// parallelism, and a new run (queue changed, lane resized) cancels the old one, so stale work never
-// competes with current work. Both are pure/UI-free and unit-tested; the window only paints.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>One clip as a lane sees it.</summary>
 public readonly record struct LaneClip(
     int Index, string Path, double KeepStartSec, double KeepEndSec,
     double MergedStartSec, double MergedEndSec, long SizeBytes, long WriteTicks);
 
-/// <summary>One unit of lane work: a clip's slice of the lane.</summary>
+/// <summary>
+/// One unit of lane work: a clip's slice of the lane.
+/// LANEINSTANCE_01 — two identities, never confused:
+/// <see cref="CacheKey"/> is the SOURCE MEDIA (file identity + kept window): it keys the decoded strip /
+/// peaks, the disk cache and the shared ffmpeg job, so identical occurrences share ONE decode.
+/// <see cref="InstanceKey"/> is the TIMELINE OCCURRENCE: it keys the presenters' tiles, layout and leases,
+/// so the same clip queued twice is drawn twice.
+/// </summary>
 public readonly record struct LaneTile(
     int ClipIndex, string Path, double StartSec, double DurationSec,
-    double X0, double X1, int Frames, int WidthPx, string CacheKey)
+    double X0, double X1, int Frames, int WidthPx, string CacheKey, string InstanceKey = "")
 {
     public double Width => X1 - X0;
+
+    /// <summary>LANEINSTANCE_01 — the occurrence identity (falls back to the source key for hand-built tiles).</summary>
+    public string Occurrence => string.IsNullOrEmpty(InstanceKey) ? CacheKey : InstanceKey;
 }
 
 public static class LanePlanner
@@ -44,11 +43,19 @@ public static class LanePlanner
     /// width: a filmstrip clip always has the same <see cref="ThumbGrid"/> frames and a waveform the same
     /// peaks, so a resize or a reorder is a cache hit and only re-places what is already there.
     /// </summary>
+    /// <remarks>
+    /// LANEINSTANCE_01 — every tile also gets a unique <see cref="LaneTile.InstanceKey"/>: the clip's queue
+    /// index (validated unique within this plan — a repeated index is disambiguated by its ordinal, never
+    /// merged) joined with its <see cref="LaneTile.CacheKey"/>. Because the source key is part of the
+    /// occurrence key, an index that is reused by a DIFFERENT clip after a reorder/insert/remove can never
+    /// keep the previous clip's tile.
+    /// </remarks>
     public static IReadOnlyList<LaneTile> Plan(IReadOnlyList<LaneClip> clips, double totalMergedSec, double laneWidthPx, double tileWidthPx, string kind)
     {
         var tiles = new List<LaneTile>(clips.Count);
         if (totalMergedSec <= 0 || laneWidthPx <= 0) return tiles;
         var ci = CultureInfo.InvariantCulture;
+        var seenIndex = new Dictionary<int, int>();
         foreach (var c in clips)
         {
             double x0 = c.MergedStartSec / totalMergedSec * laneWidthPx;
@@ -61,7 +68,10 @@ public static class LanePlanner
             string key = string.Join("|",
                 kind, c.Path.ToUpperInvariant(), c.SizeBytes.ToString(ci), c.WriteTicks.ToString(ci),
                 c.KeepStartSec.ToString("F3", ci), dur.ToString("F3", ci), frames.ToString(ci));
-            tiles.Add(new LaneTile(c.Index, c.Path, c.KeepStartSec, dur, x0, x1, frames, width, key));
+            int ordinal = seenIndex.TryGetValue(c.Index, out int seen) ? seen + 1 : 0;
+            seenIndex[c.Index] = ordinal;
+            string instance = string.Concat(c.Index.ToString(ci), "#", ordinal.ToString(ci), "|", key);
+            tiles.Add(new LaneTile(c.Index, c.Path, c.KeepStartSec, dur, x0, x1, frames, width, key, instance));
         }
         tiles.Sort((a, b) => a.X0.CompareTo(b.X0));
         return tiles;
@@ -140,9 +150,7 @@ public sealed class ProgressiveLaneRunner : IDisposable
             foreach (var item in items)
             {
                 await slots.WaitAsync(token).ConfigureAwait(false);
-                // A slot can be granted in the same instant the run is superseded: re-check.
                 if (token.IsCancellationRequested) { slots.Release(); break; }
-                // Invoked directly (not Task.Run) so every item's synchronous start runs in list order.
                 running.Add(RunOneAsync(item, work, generation, token, slots));
             }
         }

@@ -1,4 +1,4 @@
-using Avalonia.Headless.XUnit;
+﻿using Avalonia.Headless.XUnit;
 using FreeVideoStudio.App.Abstractions;
 using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.App.Services;
@@ -47,7 +47,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
         clock.Advance(TimeSpan.FromSeconds(ProjectSession.AutosaveIntervalSeconds + 1));
         int callingThread = Environment.CurrentManagedThreadId;
 
-        session.AutosaveTick();   // must return while the store is still blocked
+        session.AutosaveTick();
 
         Assert.True(store.Entered.Wait(TimeSpan.FromSeconds(10)), "The background write never started.");
         Assert.True(session.IsDirty, "Dirty must not clear before the write has landed.");
@@ -58,7 +58,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
 
         Assert.False(session.IsDirty);
         Assert.Empty(faults.Fatals);
-        Assert.Equal(2, store.SaveCount);   // the initial Save As + the autosave
+        Assert.Equal(2, store.SaveCount);
     }
 
     [AvaloniaFact]
@@ -92,7 +92,6 @@ public sealed class AutosaveBackgroundTests : IDisposable
         session.AutosaveTick();
         Assert.True(store.Entered.Wait(TimeSpan.FromSeconds(10)));
 
-        // An edit lands while the snapshot is on its way to disk.
         _vm!.IsPortraitMode = !_vm.IsPortraitMode;
         session.PushEdit("toggle portrait");
 
@@ -102,7 +101,6 @@ public sealed class AutosaveBackgroundTests : IDisposable
         Assert.True(session.IsDirty, "The file on disk is behind the screen; dirty must survive.");
     }
 
-    // ── harness ──────────────────────────────────────────────────────────────────────────────
 
     private MainViewModel? _vm;
 
@@ -125,7 +123,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
             sidecar: new UndoSidecarStore(Path.Combine(_root, "History")));
 
         session.BeginHistory();
-        Assert.True(await session.SaveAsAsync());   // binds CurrentPath through the real write path
+        Assert.True(await session.SaveAsAsync());
 
         _vm.IsPortraitMode = !_vm.IsPortraitMode;
         session.PushEdit("toggle portrait");
@@ -192,5 +190,93 @@ public sealed class AutosaveBackgroundTests : IDisposable
         private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         public DateTimeOffset UtcNow => _now;
         public void Advance(TimeSpan by) => _now += by;
+    }
+
+
+    private sealed class GatedCommit
+    {
+        public readonly TaskCompletionSource Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly List<System.Text.Json.Nodes.JsonObject> Batches = new();
+        public int Calls;
+        public async Task<bool> Commit(System.Text.Json.Nodes.JsonObject batch, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            await Gate.Task;
+            lock (Batches) Batches.Add(batch);
+            return true;
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task WindowClose_OwnerHung_DispatcherKeepsProcessing_AndTheFinalSnapshotIsCommitted()
+    {
+        var commit = new GatedCommit();
+        var writer = new FreeVideoStudio.Core.Ipc.SessionStateWriter(commit.Commit);
+        writer.Prime(new System.Text.Json.Nodes.JsonObject { ["schema_version"] = 1 });
+        var window = new Avalonia.Controls.Window { Width = 800, Height = 600 };
+        window.Show();
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            WindowBoundsHelper.SaveBoundsOnClose(window, "MainWindowBounds", writer);
+            sw.Stop();
+            Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(500), $"Close-time save blocked the dispatcher for {sw.ElapsedMilliseconds} ms.");
+
+            bool ran = false;
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => ran = true, Avalonia.Threading.DispatcherPriority.Background)
+                .GetTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(ran, "The dispatcher stopped processing while the owner was hung.");
+            Assert.Equal(800.0, writer.ReadSnapshot()["MainWindowBounds"]!["Width"]!.GetValue<double>());
+
+            window.Width = 1024;
+            WindowBoundsHelper.SaveBoundsOnClose(window, "MainWindowBounds", writer);
+
+            commit.Gate.SetResult();
+            Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+            lock (commit.Batches)
+                Assert.Equal(1024.0, commit.Batches[^1]["MainWindowBounds"]!["Width"]!.GetValue<double>());
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task WindowClose_DeferredCloseReentry_IdenticalSnapshotIsNotCommittedTwice()
+    {
+        var commit = new GatedCommit();
+        commit.Gate.SetResult();
+        var writer = new FreeVideoStudio.Core.Ipc.SessionStateWriter(commit.Commit);
+        var window = new Avalonia.Controls.Window { Width = 640, Height = 480 };
+        window.Show();
+        try
+        {
+            WindowBoundsHelper.SaveBoundsOnClose(window, "SettingsBounds", writer);
+            Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+            int afterFirst = commit.Calls;
+
+            WindowBoundsHelper.SaveBoundsOnClose(window, "SettingsBounds", writer);
+            Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+
+            Assert.Equal(1, afterFirst);
+            Assert.Equal(afterFirst, commit.Calls);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task WindowClose_UnacknowledgedSave_IsReportedNotSilentlyDropped()
+    {
+        int failures = 0;
+        var writer = new FreeVideoStudio.Core.Ipc.SessionStateWriter((_, _) => Task.FromResult(false));
+        writer.CommitFailed += _ => Interlocked.Increment(ref failures);
+        var window = new Avalonia.Controls.Window { Width = 700, Height = 500 };
+        window.Show();
+        try
+        {
+            WindowBoundsHelper.SaveBoundsOnClose(window, "CropToolBounds", writer);
+            Assert.False(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(Volatile.Read(ref failures) >= 1);
+            Assert.True(writer.HasUnacknowledgedChanges, "An unacknowledged close-time save must stay queued for the final flush.");
+        }
+        finally { window.Close(); }
     }
 }

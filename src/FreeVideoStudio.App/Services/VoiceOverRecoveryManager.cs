@@ -1,8 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -135,7 +131,7 @@ internal sealed class FileVoiceOverRecoveryStore : IVoiceOverRecoveryStore
             try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1); }
             catch (IOException ex) when (DateTime.UtcNow < deadline)
             {
-                RuntimeLog.SwallowedThrottled(ex);   // another process holds the folder lock; retry until the deadline
+                RuntimeLog.SwallowedThrottled(ex);
                 System.Threading.Thread.Sleep(25);
             }
         }
@@ -147,7 +143,6 @@ internal sealed class FileVoiceOverRecoveryStore : IVoiceOverRecoveryStore
     {
         string dir = Path.GetDirectoryName(path) ?? "";
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        // VORECOVERY_01 — a per-write temp name: two writers can never share or clobber one ".tmp".
         string tmpPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -168,7 +163,7 @@ internal sealed class FileVoiceOverRecoveryStore : IVoiceOverRecoveryStore
     private static void TryDeleteTemp(string tmpPath)
     {
         try { if (File.Exists(tmpPath)) File.Delete(tmpPath); }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); }   // the original write failure is rethrown to the caller
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
     public void DeleteManifest(string path)
@@ -201,7 +196,7 @@ internal sealed class FileVoiceOverRecoveryStore : IVoiceOverRecoveryStore
         }
         catch (Exception ex)
         {
-            RuntimeLog.Swallowed(ex);   // surfaced to the user as the verdict's Error
+            RuntimeLog.Swallowed(ex);
             return new RecoveryAudioVerdict(false, 0, $"Corrupt audio file: {ex.Message}");
         }
     }
@@ -264,7 +259,7 @@ internal sealed class VoiceOverRecoveryManager
         try { return Path.GetFullPath(videoPath.Trim()); }
         catch (Exception ex)
         {
-            RuntimeLog.Swallowed(ex);   // an unusable path is treated as "no video", which is isolated under the unbound key
+            RuntimeLog.Swallowed(ex);
             return "";
         }
     }
@@ -288,7 +283,6 @@ internal sealed class VoiceOverRecoveryManager
         return path;
     }
 
-    // ───────────────────────────── register ─────────────────────────────
 
     private PendingFailedTake AddFailedTake(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason)
     {
@@ -315,7 +309,6 @@ internal sealed class VoiceOverRecoveryManager
         return PersistAsync();
     }
 
-    // ───────────────────────────── persistence ─────────────────────────────
 
     private sealed record TakeRecord(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
         double TrimRightSec, bool IsMuted, string Reason, RecoveryErrorKind ErrorKind, TakeRecoveryState State);
@@ -325,11 +318,6 @@ internal sealed class VoiceOverRecoveryManager
     private sealed record PersistPlan(long Generation, string SessionId, string CanonicalVideo, string Directory,
         List<PathPlan> Paths, List<(string Id, TakeRecoveryState State)> Terminal);
 
-    // ── VORECOVERY_02: durable terminal resolutions ("tombstones") ──
-    // A commit/discard is recorded in voiceover_tombstones_{videoKey}.json BEFORE the take's record
-    // leaves its manifest. Every write and every discovery consults it, so a stale snapshot (a
-    // manager that loaded the take earlier and still believes it Pending) can never recreate a
-    // resolved take — not even after its manifest was deleted. Entries expire after 30 days.
     internal static readonly TimeSpan TombstoneRetention = TimeSpan.FromDays(30);
 
     internal static string TombstonePath(string directory, string canonicalVideo)
@@ -339,7 +327,7 @@ internal sealed class VoiceOverRecoveryManager
     {
         var map = new Dictionary<string, (TakeRecoveryState, DateTime)>(StringComparer.Ordinal);
         if (!store.ManifestExists(path)) return map;
-        using var doc = JsonDocument.Parse(store.ReadManifest(path));   // unreadable → throw → caller fails truthfully
+        using var doc = JsonDocument.Parse(store.ReadManifest(path));
         if (doc.RootElement.TryGetProperty("resolved", out var resolved) && resolved.ValueKind == JsonValueKind.Object)
         {
             foreach (var entry in resolved.EnumerateObject())
@@ -424,7 +412,7 @@ internal sealed class VoiceOverRecoveryManager
     {
         var store = _store;
         var result = await Task.Run(() => ExecutePlan(plan, store));
-        ApplyResolvedElsewhere(result);   // back on the caller's context (UI thread in production)
+        ApplyResolvedElsewhere(result);
         LastStoreResult = result;
         return result;
     }
@@ -459,7 +447,6 @@ internal sealed class VoiceOverRecoveryManager
             }
             using (crossProcessLock)
             {
-                // 1. Terminal resolutions are made durable FIRST. If that fails, no record is removed.
                 string tombPath = TombstonePath(plan.Directory, plan.CanonicalVideo);
                 Dictionary<string, (TakeRecoveryState State, DateTime Utc)> tombs;
                 try
@@ -486,11 +473,8 @@ internal sealed class VoiceOverRecoveryManager
                     return new RecoveryStoreResult(false, $"Recovery resolution record could not be saved ({ex.Message})");
                 }
 
-                // 2. Manifests: merge by id; resolved ids never survive or come back.
                 foreach (var p in plan.Paths)
                 {
-                    // Ordering guard is PER MANAGER: it only stops this manager's older snapshot from
-                    // overwriting its own newer one. Cross-manager conflicts are decided by step 1.
                     string genKey = plan.SessionId + "|" + p.Path;
                     if (LastWrittenGeneration.TryGetValue(genKey, out long written) && written > plan.Generation)
                         continue;
@@ -502,7 +486,7 @@ internal sealed class VoiceOverRecoveryManager
                         if (store.ManifestExists(p.Path))
                         {
                             string existing = store.ReadManifest(p.Path);
-                            using var doc = JsonDocument.Parse(existing);   // unreadable → throw → file left untouched
+                            using var doc = JsonDocument.Parse(existing);
                             var root = doc.RootElement;
                             if (!p.IsOwn)
                             {
@@ -514,7 +498,7 @@ internal sealed class VoiceOverRecoveryManager
                                 foreach (var item in arr.EnumerateArray())
                                 {
                                     string id = EntryId(item);
-                                    if (id.Length > 0 && (p.HeldIds.Contains(id) || tombs.ContainsKey(id))) continue;   // ours, or resolved
+                                    if (id.Length > 0 && (p.HeldIds.Contains(id) || tombs.ContainsKey(id))) continue;
                                     preserved.Add(item.Clone());
                                 }
                             }
@@ -523,7 +507,7 @@ internal sealed class VoiceOverRecoveryManager
                         var durable = new List<TakeRecord>(p.Durable.Count);
                         foreach (var d in p.Durable)
                         {
-                            if (tombs.TryGetValue(d.Id, out var tomb)) resolvedElsewhere[d.Id] = tomb.State;   // stale: rejected
+                            if (tombs.TryGetValue(d.Id, out var tomb)) resolvedElsewhere[d.Id] = tomb.State;
                             else durable.Add(d);
                         }
 
@@ -584,7 +568,6 @@ internal sealed class VoiceOverRecoveryManager
 
     private static double Finite(double v) => double.IsFinite(v) ? v : 0.0;
 
-    // ───────────────────────────── discovery ─────────────────────────────
 
     private sealed record LoadedManifest(string Path, List<LoadedTake> Takes);
     private sealed record LoadedTake(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
@@ -610,8 +593,6 @@ internal sealed class VoiceOverRecoveryManager
             errors.Add($"Recovery folder could not be read: {ex.Message}");
         }
 
-        // VORECOVERY_02 — a take already committed/discarded is never adopted again, even if a
-        // manifest still lists it (e.g. its cleanup write failed).
         var tombs = new Dictionary<string, (TakeRecoveryState State, DateTime Utc)>(StringComparer.Ordinal);
         try { tombs = ReadTombstones(store, TombstonePath(baseDir, canonicalCurrent)); }
         catch (Exception ex)
@@ -631,7 +612,6 @@ internal sealed class VoiceOverRecoveryManager
                     throw new JsonException($"unsupported schema version {sv.GetInt32()}");
 
                 string manifestVideo = root.TryGetProperty("videoPath", out var vp) && vp.ValueKind == JsonValueKind.String ? vp.GetString() ?? "" : "";
-                // Exact identity: both unbound, or the same canonical video. Never cross-adopt.
                 if (!string.Equals(canonicalCurrent, CanonicalVideo(manifestVideo), StringComparison.OrdinalIgnoreCase)) continue;
 
                 var takes = new List<LoadedTake>();
@@ -639,11 +619,11 @@ internal sealed class VoiceOverRecoveryManager
                 {
                     foreach (var item in arr.EnumerateArray())
                     {
-                        if (item.ValueKind != JsonValueKind.Object) continue;   // preserved verbatim by the merge-on-write
+                        if (item.ValueKind != JsonValueKind.Object) continue;
                         string id = EntryId(item);
                         string wav = Str(item, "wavPath");
-                        if (id.Length == 0 || wav.Length == 0) continue;     // unidentifiable entry: preserved verbatim, never adopted
-                        if (tombs.ContainsKey(id)) continue;                 // resolved elsewhere: never resurrected
+                        if (id.Length == 0 || wav.Length == 0) continue;
+                        if (tombs.ContainsKey(id)) continue;
                         double start = Num(item, "startSec"), end = Num(item, "endSec");
                         bool timingValid = double.IsFinite(start) && double.IsFinite(end) && start >= 0;
                         takes.Add(new LoadedTake(id, wav,
@@ -689,12 +669,12 @@ internal sealed class VoiceOverRecoveryManager
         _loadErrors.AddRange(batch.Errors);
         foreach (var manifest in batch.Manifests)
         {
-            _trackedManifestFiles.Add(manifest.Path);   // only READABLE manifests become rewritable
+            _trackedManifestFiles.Add(manifest.Path);
             foreach (var t in manifest.Takes)
             {
                 if (_pendingFailedTakes.Exists(x => x.Id == t.Id ||
                         string.Equals(x.Session.WavPath, t.WavPath, StringComparison.OrdinalIgnoreCase)))
-                    continue;   // idempotent: repeated discovery never duplicates a take
+                    continue;
                 var session = new VoiceOverWindow.VoiceOverSession
                 {
                     WavPath = t.WavPath, StartSec = t.StartSec, EndSec = t.EndSec,
@@ -707,7 +687,7 @@ internal sealed class VoiceOverRecoveryManager
                 _pendingFailedTakes.Add(new PendingFailedTake(session, null, reason, t.Id)
                 {
                     SourceManifestPath = manifest.Path,
-                    State = TakeRecoveryState.Pending,   // a durable record is uncommitted by definition
+                    State = TakeRecoveryState.Pending,
                     ErrorKind = kind
                 });
             }
@@ -737,7 +717,6 @@ internal sealed class VoiceOverRecoveryManager
         finally { IsOperationInFlight = false; }
     }
 
-    // ───────────────────────────── recover ─────────────────────────────
 
     private List<PendingFailedTake> BeginValidation()
     {
@@ -753,7 +732,7 @@ internal sealed class VoiceOverRecoveryManager
         string? lastError = null;
         foreach (var (take, verdict) in verdicts)
         {
-            if (take.State != TakeRecoveryState.Validating) continue;   // resolved elsewhere meanwhile
+            if (take.State != TakeRecoveryState.Validating) continue;
             if (!verdict.IsValid)
             {
                 take.FailureReason = verdict.Error ?? "Audio could not be validated";
@@ -770,14 +749,14 @@ internal sealed class VoiceOverRecoveryManager
             {
                 if (!publish(take.Session))
                     throw new InvalidOperationException("the voiceover session no longer accepts takes");
-                take.State = TakeRecoveryState.RecoveredInSession;   // durable until Commit or Discard
+                take.State = TakeRecoveryState.RecoveredInSession;
                 recovered++;
             }
             catch (Exception ex)
             {
                 RuntimeLog.Fail("VoiceOver", $"VORECOVERY_01 recovered take publication rejected: {ex.Message}");
                 take.FailureReason = $"Publication rejected: {ex.Message}";
-                take.ErrorKind = RecoveryErrorKind.Publication;   // NOT a corrupt-audio diagnosis
+                take.ErrorKind = RecoveryErrorKind.Publication;
                 take.State = TakeRecoveryState.Pending;
                 failed++;
                 lastError = take.FailureReason;
@@ -841,7 +820,6 @@ internal sealed class VoiceOverRecoveryManager
         finally { IsOperationInFlight = false; }
     }
 
-    // ───────────────────────────── discard ─────────────────────────────
 
     public bool DiscardTakes(IVoiceCaptureSession capture, out string? error)
     {
@@ -900,7 +878,7 @@ internal sealed class VoiceOverRecoveryManager
         string? deleteError = null;
         for (int i = 0; i < targets.Count; i++)
         {
-            if (outcomes[i] == null) targets[i].State = TakeRecoveryState.Discarded;   // explicit, proven deletion only
+            if (outcomes[i] == null) targets[i].State = TakeRecoveryState.Discarded;
             else deleteError = outcomes[i];
         }
         var stored = persist();
@@ -919,15 +897,12 @@ internal sealed class VoiceOverRecoveryManager
     public Task<(bool Success, string? Error)> DiscardPendingTakeAsync(IVoiceCaptureSession capture, PendingFailedTake take)
         => DiscardAsync(capture, new List<PendingFailedTake> { take });
 
-    // ───────────────────────────── commit ─────────────────────────────
 
     private void MarkCommitted(IEnumerable<string> committedWavPaths)
     {
         var set = new HashSet<string>(committedWavPaths, StringComparer.OrdinalIgnoreCase);
         foreach (var take in _pendingFailedTakes)
         {
-            // Only takes that are actually IN the committed snapshot. Pending takes block Apply and
-            // takes of other sessions are not held here, so neither can be swept by a commit.
             if (take.State == TakeRecoveryState.RecoveredInSession && set.Contains(take.Session.WavPath))
                 take.State = TakeRecoveryState.Committed;
         }

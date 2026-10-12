@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -123,9 +120,6 @@ public sealed record RuntimePayloadManifest(string Fingerprint, int FileCount, l
         }
         catch (Exception ex)
         {
-            // An unreadable manifest means "I cannot prove the runtime matches", which resolves to
-            // the full installer. Degrading to a bigger download is always safe; degrading to a
-            // smaller one is not.
             CoreLogger.Swallowed(ex);
             return null;
         }

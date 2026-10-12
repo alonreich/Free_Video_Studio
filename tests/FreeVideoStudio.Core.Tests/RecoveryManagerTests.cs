@@ -62,7 +62,6 @@ public class RecoveryManagerTests : IDisposable
     [Fact]
     public void SaveState_PreservesExistingGranularSession()
     {
-        // 1. Initial state with granular_session written (as happens while editor is open)
         var initialState = new JsonObject
         {
             ["loadedVideoPath"] = "C:\\test\\video.mp4",
@@ -80,7 +79,6 @@ public class RecoveryManagerTests : IDisposable
 
         _recovery.SaveState(initialState);
 
-        // 2. An app-level background save happens (which does not have granular_session in its payload)
         var appSaveState = new JsonObject
         {
             ["loadedVideoPath"] = "C:\\test\\video.mp4",
@@ -90,7 +88,6 @@ public class RecoveryManagerTests : IDisposable
 
         _recovery.SaveState(appSaveState);
 
-        // 3. Load state and verify granular_session survived untouched
         var reloaded = _recovery.LoadState();
         Assert.NotNull(reloaded);
         Assert.True(reloaded.ContainsKey("granular_session"));
@@ -176,14 +173,13 @@ public class RecoveryManagerTests : IDisposable
         Assert.Equal(5800, item["zoom_end_ms"]?.GetValue<double>());
     }
 
-    // ── WRITEORDER_01 ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void WriteOrder_AQueuedSaveThatLosesTheRaceToAClearIsDropped()
     {
-        long queued = RecoveryManager.ReserveVersionForTests();   // SaveStateAsync queued first...
-        _recovery.ClearState();                                    // ...the user undoes to empty...
-        _recovery.ApplySaveForTests(new JsonObject { ["stale"] = true }, queued);   // ...then the pool runs it
+        long queued = RecoveryManager.ReserveVersionForTests();
+        _recovery.ClearState();
+        _recovery.ApplySaveForTests(new JsonObject { ["stale"] = true }, queued);
 
         Assert.False(File.Exists(_paths.RecoveryStateFile));
     }
@@ -191,7 +187,7 @@ public class RecoveryManagerTests : IDisposable
     [Fact]
     public void WriteOrder_OrderingSpansInstances()
     {
-        var other = new RecoveryManager(_paths);   // e.g. ProjectRecoveryService vs MainWindow._recovery
+        var other = new RecoveryManager(_paths);
         long queued = RecoveryManager.ReserveVersionForTests();
         other.SaveState(new JsonObject { ["newer"] = true });
         _recovery.ApplySaveForTests(new JsonObject { ["older"] = true }, queued);
@@ -212,5 +208,231 @@ public class RecoveryManagerTests : IDisposable
         var loaded = _recovery.LoadState()!;
         Assert.True(loaded.ContainsKey("main"));
         Assert.NotNull(loaded["granular_session"]);
+    }
+
+
+    private const int DeadPid = 2147483645;
+
+    private byte[] WriteSnapshot()
+    {
+        _recovery.SaveState(new JsonObject { ["loadedVideoPath"] = "C:\\test\\video.mp4", ["trimStartMs"] = 1234.0 });
+        return File.ReadAllBytes(_paths.RecoveryStateFile);
+    }
+
+    /// <summary>Rewrites the live restore marker as if its owner process had died, keeping the attempt number.</summary>
+    private void KillRestoreOwner()
+    {
+        string[] parts = File.ReadAllText(_paths.SafeModeSentinelFile).Trim().Split(':');
+        parts[0] = DeadPid.ToString();
+        File.WriteAllText(_paths.SafeModeSentinelFile, string.Join(":", parts));
+    }
+
+    [Fact]
+    public void RestoreCrash_DeadRestoreOwner_PreservesSnapshotBytes_ClearsOnlyTheMarker()
+    {
+        byte[] before = WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, $"{DeadPid}:638000000000000000:1");
+        File.WriteAllText(_paths.AppSessionLockFile, $"{DeadPid}:638000000000000000");
+
+        var next = new RecoveryManager(_paths);
+        Assert.True(next.CheckFault());
+        Assert.True(next.RestoreCrashDetected);
+        Assert.Equal(1, next.CrashedRestoreAttempts);
+        Assert.False(File.Exists(_paths.SafeModeSentinelFile));
+        Assert.True(File.Exists(_paths.RecoveryStateFile));
+        Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+        Assert.NotNull(next.LoadState());
+    }
+
+    [Fact]
+    public void RestoreCrash_DetectedEvenWithoutSessionLock()
+    {
+        byte[] before = WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, $"{DeadPid}:638000000000000000:1");
+
+        var next = new RecoveryManager(_paths);
+        Assert.True(next.CheckFault());
+        Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+    }
+
+    [Fact]
+    public void RestoreCrash_LegacyOwnerlessMarker_OldEnough_PreservesSnapshot()
+    {
+        byte[] before = WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, "");
+        File.SetLastWriteTimeUtc(_paths.SafeModeSentinelFile, DateTime.UtcNow.AddHours(-1));
+
+        var next = new RecoveryManager(_paths);
+        Assert.False(next.IsSafeModeActive());
+        Assert.Equal(1, next.CrashedRestoreAttempts);
+        Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+    }
+
+    [Fact]
+    public void RestoreCrash_LiveOwner_IsHonoured_AndNothingIsTouched()
+    {
+        byte[] before = WriteSnapshot();
+        Assert.True(_recovery.ActivateSafeMode());
+
+        var other = new RecoveryManager(_paths);
+        Assert.True(other.IsSafeModeActive());
+        Assert.False(other.CheckFault());
+        Assert.False(other.RestoreCrashDetected);
+        Assert.True(File.Exists(_paths.SafeModeSentinelFile));
+        Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+    }
+
+    [Fact]
+    public void RestoreCrash_Repeated_CountsUp_AndStopsRetryingAtTheLimit()
+    {
+        byte[] before = WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, $"{DeadPid}:638000000000000000:1");
+
+        for (int attempt = 1; attempt <= RecoveryManager.MaxRestoreAttempts; attempt++)
+        {
+            var launch = new RecoveryManager(_paths);
+            Assert.True(launch.CheckFault());
+            Assert.Equal(attempt, launch.CrashedRestoreAttempts);
+            Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+
+            if (attempt < RecoveryManager.MaxRestoreAttempts)
+            {
+                Assert.True(launch.CanRetryRestore);
+                Assert.True(launch.ActivateSafeMode());
+                KillRestoreOwner();
+            }
+            else
+            {
+                Assert.False(launch.CanRetryRestore);
+                Assert.False(launch.ActivateSafeMode());
+                Assert.False(File.Exists(_paths.SafeModeSentinelFile));
+
+                Assert.True(launch.QuarantineSnapshot());
+                Assert.False(File.Exists(_paths.RecoveryStateFile));
+                Assert.Equal(before, File.ReadAllBytes(launch.QuarantinedSnapshotFile!));
+            }
+        }
+    }
+
+    [Fact]
+    public void RestoreCrash_OneAttemptPerProcess()
+    {
+        WriteSnapshot();
+        Assert.True(_recovery.ActivateSafeMode());
+        Assert.False(_recovery.CanRetryRestore);
+        Assert.False(_recovery.ActivateSafeMode());
+    }
+
+    [Fact]
+    public void RestoreCrash_SuccessfulRetry_ClearsStreak_KeepsSnapshot()
+    {
+        byte[] before = WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, $"{DeadPid}:638000000000000000:1");
+
+        var launch = new RecoveryManager(_paths);
+        Assert.True(launch.CheckFault());
+        Assert.True(launch.ActivateSafeMode());
+        Assert.StartsWith($"{Environment.ProcessId}:", File.ReadAllText(_paths.SafeModeSentinelFile));
+        Assert.EndsWith(":2", File.ReadAllText(_paths.SafeModeSentinelFile).Trim());
+
+        Assert.NotNull(launch.LoadState());
+        launch.DeactivateSafeMode();
+
+        Assert.False(launch.RestoreCrashDetected);
+        Assert.False(File.Exists(_paths.SafeModeSentinelFile));
+        Assert.Equal(before, File.ReadAllBytes(_paths.RecoveryStateFile));
+        Assert.False(new RecoveryManager(_paths).CheckFault());
+    }
+
+    [Fact]
+    public void RestoreCrash_ExplicitDiscard_IsTheOnlyDelete_AndBeatsAQueuedSave()
+    {
+        WriteSnapshot();
+        File.WriteAllText(_paths.SafeModeSentinelFile, $"{DeadPid}:638000000000000000:1");
+        var launch = new RecoveryManager(_paths);
+        Assert.True(launch.CheckFault());
+        Assert.True(File.Exists(_paths.RecoveryStateFile));
+
+        long queued = RecoveryManager.ReserveVersionForTests();
+        launch.DiscardRecoveryState();
+        launch.ApplySaveForTests(new JsonObject { ["stale"] = true }, queued);
+
+        Assert.False(File.Exists(_paths.RecoveryStateFile));
+        Assert.False(launch.RestoreCrashDetected);
+    }
+
+    [Fact]
+    public void RestoreCrash_QuarantineBeatsAQueuedSave()
+    {
+        byte[] before = WriteSnapshot();
+        long queued = RecoveryManager.ReserveVersionForTests();
+        Assert.True(_recovery.QuarantineSnapshot());
+        _recovery.ApplySaveForTests(new JsonObject { ["stale"] = true }, queued);
+
+        Assert.False(File.Exists(_paths.RecoveryStateFile));
+        Assert.Equal(before, File.ReadAllBytes(_recovery.QuarantinedSnapshotFile!));
+    }
+
+    [Fact]
+    public void RestoreFail_SecondQuarantineNeverOverwritesTheFirst()
+    {
+        byte[] first = WriteSnapshot();
+        Assert.True(_recovery.QuarantineSnapshot());
+        string firstPath = _recovery.QuarantinedSnapshotFile!;
+
+        _recovery.SaveState(new JsonObject { ["second"] = true });
+        byte[] second = File.ReadAllBytes(_paths.RecoveryStateFile);
+        Assert.True(_recovery.QuarantineSnapshot());
+        string secondPath = _recovery.QuarantinedSnapshotFile!;
+
+        Assert.NotEqual(firstPath, secondPath);
+        Assert.Equal(first, File.ReadAllBytes(firstPath));
+        Assert.Equal(second, File.ReadAllBytes(secondPath));
+    }
+
+    [Fact]
+    public void RestoreFail_NothingToQuarantine_ReturnsFalse()
+    {
+        Assert.False(_recovery.QuarantineSnapshot());
+        Assert.Null(_recovery.QuarantinedSnapshotFile);
+    }
+
+    /// <summary>RESTOREFAIL_01 regression sentinel: a failed (non-crashing) restore must not ClearState() a valid snapshot.</summary>
+    [Fact]
+    public void RestoreFail_RegressionSentinel_RestorePathNeverClearsAfterApplyOrException()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "FreeVideoStudio.sln"))) dir = Path.GetDirectoryName(dir)!;
+        Assert.NotNull(dir);
+        string src = File.ReadAllText(Path.Combine(dir!, "src", "FreeVideoStudio.App", "MainWindow.Restore.cs"));
+
+        int apply = src.IndexOf("OpenDocument(document", StringComparison.Ordinal);
+        Assert.True(apply >= 0);
+        string afterApply = src.Substring(apply);
+        int finallyAt = afterApply.IndexOf("finally", StringComparison.Ordinal);
+        Assert.True(finallyAt > 0);
+        string applyToFinally = afterApply.Substring(0, finallyAt);
+
+        Assert.Contains("RESTOREFAIL_01", applyToFinally);
+        Assert.DoesNotContain("ClearState()", applyToFinally);
+    }
+
+    /// <summary>RESTORECRASH_01 regression sentinel: the stale-owner branch must never delete the snapshot again.</summary>
+    [Fact]
+    public void RestoreCrash_RegressionSentinel_StaleOwnerBranchNeverDeletesSnapshot()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "FreeVideoStudio.sln"))) dir = Path.GetDirectoryName(dir)!;
+        Assert.NotNull(dir);
+        string src = File.ReadAllText(Path.Combine(dir!, "src", "FreeVideoStudio.Core", "Infrastructure", "RecoveryManager.cs"));
+
+        int start = src.IndexOf("public bool IsSafeModeActive()", StringComparison.Ordinal);
+        int end = src.IndexOf("private static bool TryParseOwner", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        string body = src.Substring(start, end - start);
+
+        Assert.Contains("RESTORECRASH_01", body);
+        Assert.DoesNotContain("RecoveryStateFile", body);
+        Assert.DoesNotContain("AppSessionLockFile", body);
     }
 }

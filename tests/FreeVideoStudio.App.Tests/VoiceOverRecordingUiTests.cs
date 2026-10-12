@@ -1,9 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -76,7 +71,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         using var session = LiveCaptureDriver.NewSession(devices);
         var (window, clock) = NewWindow(session);
 
-        devices.OpenGate.Reset();   // hold waveInOpen so STARTING MIC is observable
+        devices.OpenGate.Reset();
         clock.Time = 5; clock.Paused = true;
         window.TriggerStartRecordingAndPlayback();
 
@@ -88,7 +83,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
 
         window.TriggerTimerTick();
         clock.Paused = false; clock.Time = 5.02;
-        window.TriggerTimerTick();   // clock moved → open queued, and held by the gate
+        window.TriggerTimerTick();
         await LiveCaptureDriver.PumpUntil(() => session.State == VoiceCaptureState.StartingRecording, "open queued");
         window.TriggerRefreshRecordingIndicator();
         Assert.Equal("STARTING MIC", Status(window));
@@ -97,12 +92,11 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         devices.OpenGate.Set();
         await LiveCaptureDriver.PumpUntil(() => session.State == VoiceCaptureState.Recording && window.CurrentRecordingIndicator?.Phase == RecordingPhase.WaitingForAudio, "device open");
 
-        // The device is OPEN, but nothing has been captured: not red, not REC, and the timeline has no block.
         Assert.Equal("WAITING FOR AUDIO", Status(window));
         Assert.Equal("NO AUDIO YET", Badge(window));
         Assert.False(window.CurrentRecordingIndicator!.Value.IsLive);
         Assert.DoesNotContain("recording", window.RecordingLightControl!.Classes);
-        Assert.True(window.CurrentRecordingIndicator!.Value.MicShowsStop);   // pressing the button now stops
+        Assert.True(window.CurrentRecordingIndicator!.Value.MicShowsStop);
         window.TriggerTimerTick();
         Assert.Equal(RecordingPhase.WaitingForAudio, Phase(window));
 
@@ -133,12 +127,10 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.Contains("pulse", window.RecordingLightControl!.Classes);
         Assert.Contains("recording", window.MicRecordButtonControl!.Classes);
 
-        // The video clock runs on, but no audio arrives: the captured clock must NOT move.
         clock.Time += 5;
         window.TriggerTimerTick();
         Assert.Equal("REC 0:02.0", Badge(window));
 
-        // Short "it started" pulse only: after the limit the lamp is static red, still RECORDING.
         VoiceOverWindow.RecordingPulseLimit = TimeSpan.FromMilliseconds(30);
         await Task.Delay(60);
         window.TriggerRefreshRecordingIndicator();
@@ -156,7 +148,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         var (window, clock) = NewWindow(session);
 
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(window, devices, clock, startAt: 3);
-        LiveCaptureDriver.Deliver(recorder, clock, seconds: 1.0, amplitude: 0f);   // digital silence, delivered
+        LiveCaptureDriver.Deliver(recorder, clock, seconds: 1.0, amplitude: 0f);
         await LiveCaptureDriver.PumpUntil(() => session.Health == MicrophoneHealth.SilentData, "silent data");
         window.TriggerTimerTick();
 
@@ -180,17 +172,16 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         FloatingNotice.NoticeHookForTesting = (_, text, kind) => notices.Add((text, kind));
 
         await LiveCaptureDriver.ArmAndOpenAsync(window, devices, clock, startAt: 8);
-        for (int i = 0; i < 10; i++) { clock.Time += 0.05; window.TriggerTimerTick(); }   // video rolls, device silent-dead
+        for (int i = 0; i < 10; i++) { clock.Time += 0.05; window.TriggerTimerTick(); }
         Assert.Equal(RecordingPhase.WaitingForAudio, Phase(window));
         Assert.False(window.CurrentRecordingIndicator!.Value.IsLive);
-        // The video rolled for half a second, but no audio exists: the block has zero width and is not drawn.
         window.UpdateLayout();
         window.TriggerTimerTick();
         Assert.NotNull(window.LiveRegionPixels);
         Assert.Equal(window.LiveRegionPixels!.Value.X1, window.LiveRegionPixels!.Value.X2, 6);
         Assert.False(window.LiveRegionVisual!.IsVisible);
 
-        window.TriggerToggleRecord();   // stop
+        window.TriggerToggleRecord();
         await LiveCaptureDriver.PumpUntil(() => !session.HasPendingFinalizations && window.FinalizingTakeCount == 0, "drain verdict");
         window.TriggerRefreshRecordingIndicator();
 
@@ -223,7 +214,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.DoesNotContain("pulse", window.RecordingLightControl!.Classes);
         Assert.DoesNotContain("pulse", window.MicRecordButtonControl!.Classes);
 
-        // A buffer still in the old driver's hands after pause must change nothing.
         first.Deliver(LiveCaptureDevices.Pcm(0.5, 0.9f));
         for (int i = 0; i < 5; i++) window.TriggerTimerTick();
         Assert.Equal("PAUSED 0:01.0", Badge(window));
@@ -232,9 +222,8 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
 
         await LiveCaptureDriver.PumpUntil(() => window.Sessions.Count == 1 && window.FinalizingTakeCount == 0, "first segment saved");
         window.TriggerRefreshRecordingIndicator();
-        Assert.Equal("PAUSED", Status(window));   // still in the run: a saved segment does not end it
+        Assert.Equal("PAUSED", Status(window));
 
-        // Seek while paused, then resume: the new part is anchored where the video now is.
         clock.Time = 30;
         window.TriggerToggleRecordPause();
         Assert.Equal(RecordingPhase.Arming, Phase(window));
@@ -246,9 +235,9 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         LiveCaptureDriver.Deliver(second, clock, seconds: 0.5, amplitude: 0.5f);
         await LiveCaptureDriver.PumpUntil(() => session.Health == MicrophoneHealth.AudibleData, "second audible");
         window.TriggerTimerTick();
-        Assert.Equal("REC 0:01.5", Badge(window));   // the run's captured total continues, it does not restart
+        Assert.Equal("REC 0:01.5", Badge(window));
 
-        window.TriggerToggleRecord();   // stop
+        window.TriggerToggleRecord();
         Assert.False(window.CurrentRecordingIndicator!.Value.IsLive);
         Assert.Contains(window.CurrentRecordingIndicator!.Value.Phase, new[] { RecordingPhase.SavingTake, RecordingPhase.TakeSaved });
         await LiveCaptureDriver.PumpUntil(() => window.Sessions.Count == 2 && !session.HasPendingFinalizations, "second segment saved");
@@ -261,7 +250,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.Equal(0.5, window.Sessions[1].EndSec - window.Sessions[1].StartSec, 3);
         Assert.NotEqual(window.Sessions[0].WavPath, window.Sessions[1].WavPath);
 
-        // After the notice, READY returns only because the idle microphone really delivers again.
         await Task.Delay(60);
         await LiveCaptureDriver.PumpUntil(() => session.State == VoiceCaptureState.Monitoring, "monitor back");
         window.TriggerTimerTick();
@@ -300,7 +288,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.Equal(1.5, kept.EndSec - kept.StartSec, 3);
         Assert.True(File.Exists(kept.WavPath));
         window.TriggerTimerTick();
-        Assert.Equal("MIC ERROR", Status(window));   // a saved partial take does not paint over the fault
+        Assert.Equal("MIC ERROR", Status(window));
     }
 
     [AvaloniaFact]
@@ -315,11 +303,11 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         await LiveCaptureDriver.PumpUntil(() => session.Health == MicrophoneHealth.AudibleData, "audible");
         window.TriggerTimerTick();
 
-        devices.StopGate.Reset();   // hold the drain: Apply must wait for it
+        devices.StopGate.Reset();
         var first = window.ApplyAndCloseAsync();
         var seen = new List<string> { Status(window) };
         var second = window.ApplyAndCloseAsync();
-        Assert.True(second.IsCompleted);   // single-flight: the second press is refused at once
+        Assert.True(second.IsCompleted);
 
         for (int i = 0; i < 10; i++)
         {
@@ -363,7 +351,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
 
         bool closed = false;
         window.Closed += (_, _) => closed = true;
-        window.IsSafeToClose = true;   // no discard prompt: this test is about teardown, not the dialog
+        window.IsSafeToClose = true;
         window.Close();
         await LiveCaptureDriver.PumpUntil(() => closed, "window closed");
 
@@ -375,7 +363,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.DoesNotContain("pulse", window.RecordingLightControl!.Classes);
         string statusAtClose = Status(window);
 
-        // The device open finishes AFTER the window closed: its verdict must not reach the controls.
         devices.OpenGate.Set();
         await LiveCaptureDriver.PumpUntil(() => devices.Recorder is { Disposed: true }, "orphan open closed");
         window.TriggerTimerTick();
@@ -398,7 +385,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         var (window, clock) = NewWindow(session);
         window.Width = 1280; window.Height = 800;
         window.Show();
-        window.ThumbLoadingOverlayControl!.IsVisible = true;   // "Generating Frames..." still running
+        window.ThumbLoadingOverlayControl!.IsVisible = true;
 
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(window, devices, clock, startAt: 10);
         LiveCaptureDriver.Deliver(recorder, clock, seconds: 6.0, amplitude: 0.6f);
@@ -416,7 +403,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.True(region.Bounds.Width > 10, $"region width {region.Bounds.Width}");
         Assert.True(window.LiveLabelVisual!.IsVisible);
 
-        // Paint order exactly as the renderer orders siblings: ZIndex, then declaration order.
         var order = lane.GetVisualChildren()
             .Select((v, i) => (Visual: v, Index: i))
             .OrderBy(x => x.Visual.ZIndex).ThenBy(x => x.Index)
@@ -424,7 +410,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.True(order.IndexOf(live) > order.IndexOf(overlay), "live recording canvas must paint after the loading overlay");
         Assert.True(order.IndexOf(window.FindControl<Canvas>("TakeOverlayCanvas")!) > order.IndexOf(overlay), "saved takes must paint after the loading overlay");
 
-        // And they genuinely overlap on screen (same lane cell, region inside the overlay's rect).
         var regionRect = new Rect(region.Bounds.Size).TransformToAABB(region.TransformToVisual(lane)!.Value);
         var overlayRect = overlay.Bounds;
         Assert.True(overlayRect.Intersects(regionRect), $"overlay {overlayRect} region {regionRect}");

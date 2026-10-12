@@ -1,56 +1,25 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media.Native;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// LIBAVPROBE_01 — THE ONLY FILE IN THE PRODUCT THAT TOUCHES A LIBAV POINTER.
-//
-// Source of truth: FFmpeg git commit 1e5c65f5392b7d4daca0282840750987fef0a582
-// ("avutil/dict: fix memleak in av_dict_set()", 2025-04-07), the revision behind the bundled
-// build N-119166-g1e5c65f539-20250408 (Lavf 62.0.100, Lavc 62.0.101, Lavu 60.1.100).
-// NOT FFmpeg 8.0 and NOT FFmpeg.AutoGen. Every offset below was produced by compiling that
-// revision's public headers with x86_64-w64-mingw32-gcc (the Win64 ABI the DLLs were built for)
-// and reading offsetof()/sizeof() back out of the object file. Every imported symbol was checked
-// against the export tables of binaries\avformat-62.dll, avcodec-62.dll and avutil-60.dll
-// (objdump -p; see LibAv.Imports for the list).
-//
-// ⚠️ A WRONG OFFSET IS A SILENT WRONG ANSWER OR AN ACCESS VIOLATION, SO THREE GUARDS STAND IN FRONT
-// OF EVERY READ (LibAvLibrary.TryEnsureLoaded + LibAvMediaBackend.ValidateLayout):
-//   1. avformat/avcodec/avutil_version() must report EXACTLY the major.minor these offsets came
-//      from (micro may differ: micro bumps do not change public struct layout).
-//   2. AVFormatContext.av_class must equal avformat_get_class(), and every AVStream.av_class must
-//      equal av_stream_get_class() — a shifted layout reads garbage there first.
-//   3. AVStream.index must equal its slot and AVStream.codecpar must be non-null.
-// Any guard failing disables the native backend for the process; MediaMetadataProbe then uses the
-// ffprobe subprocess exactly as before. A newer FFmpeg drop therefore DEGRADES TO THE OLD PATH,
-// it never misreads.
-//
-// Why unsafe: libav's API is pointer-to-struct and the entry points are unmanaged function pointers
-// (see LibAv). The alternative (FFmpeg.AutoGen-style generated bindings) targets a different FFmpeg
-// ABI and uses reflection-era marshalling. Pointer reads are
-// confined to the *View structs below and to LibAvMediaBackend; no pointer leaves this namespace.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Constants copied from the 1e5c65f539 headers (values verified by compiling them).</summary>
 internal static class LibAvConstants
 {
-    public const long AV_NOPTS_VALUE = long.MinValue;           // libavutil/avutil.h
-    public const int AV_TIME_BASE = 1_000_000;                  // libavutil/avutil.h
-    public const int AVMEDIA_TYPE_VIDEO = 0;                    // enum AVMediaType
+    public const long AV_NOPTS_VALUE = long.MinValue;
+    public const int AV_TIME_BASE = 1_000_000;
+    public const int AVMEDIA_TYPE_VIDEO = 0;
     public const int AVMEDIA_TYPE_AUDIO = 1;
-    public const int AVCOL_RANGE_UNSPECIFIED = 0;               // libavutil/pixfmt.h
+    public const int AVCOL_RANGE_UNSPECIFIED = 0;
     public const int AVCOL_PRI_UNSPECIFIED = 2;
     public const int AVCOL_TRC_UNSPECIFIED = 2;
     public const int AVCOL_SPC_UNSPECIFIED = 2;
-    public const int AV_DICT_DONT_OVERWRITE = 16;               // libavutil/dict.h
-    public const int AV_LOG_QUIET = -8;                         // libavutil/log.h
-    public const int AVERROR_EXIT = -1414092869;                // FFERRTAG('E','X','I','T')
+    public const int AV_DICT_DONT_OVERWRITE = 16;
+    public const int AV_LOG_QUIET = -8;
+    public const int AVERROR_EXIT = -1414092869;
     public const int AVERROR_ENOMEM = -12;
 
     /// <summary>AV_VERSION_INT(major, minor, 0) — the version guard ignores micro.</summary>
@@ -61,23 +30,22 @@ internal static class LibAvConstants
     public static readonly uint ExpectedAvCodec = Version(62, 0);
     public static readonly uint ExpectedAvUtil = Version(60, 1);
 
-    // ── LIBAVFRAME_01 — single-frame decode tier (values read back from the compiled 1e5c65f539 headers) ──
-    public static readonly uint ExpectedSwScale = Version(9, 0);   // libswscale/version*.h: 9.0.100
-    public const int AVERROR_EOF = -541478725;                   // FFERRTAG('E','O','F',' ')
-    public const int AVERROR_EAGAIN = -11;                       // AVERROR(EAGAIN), Win64 CRT errno 11
-    public const int AV_PIX_FMT_NONE = -1;                       // enum AVPixelFormat
+    public static readonly uint ExpectedSwScale = Version(9, 0);
+    public const int AVERROR_EOF = -541478725;
+    public const int AVERROR_EAGAIN = -11;
+    public const int AV_PIX_FMT_NONE = -1;
     public const int AV_PIX_FMT_BGRA = 28;
     public const int AV_PIX_FMT_RGB24 = 2;
-    public const int AV_FRAME_DATA_DISPLAYMATRIX = 6;            // enum AVFrameSideDataType
-    public const int AV_PKT_DATA_FRAME_CROPPING = 36;            // enum AVPacketSideDataType
-    public const int AV_FRAME_FLAG_INTERLACED = 8;               // AV_FRAME_FLAG_INTERLACED (1 << 3)
-    public const int AVCHROMA_LOC_UNSPECIFIED = 0;               // enum AVChromaLocation
-    public const int AVDISCARD_DEFAULT = 0;                      // enum AVDiscard
+    public const int AV_FRAME_DATA_DISPLAYMATRIX = 6;
+    public const int AV_PKT_DATA_FRAME_CROPPING = 36;
+    public const int AV_FRAME_FLAG_INTERLACED = 8;
+    public const int AVCHROMA_LOC_UNSPECIFIED = 0;
+    public const int AVDISCARD_DEFAULT = 0;
     public const int AVDISCARD_ALL = 48;
-    public const int AV_DISPOSITION_DEFAULT = 1;                 // libavformat/avformat.h
+    public const int AV_DISPOSITION_DEFAULT = 1;
     public const int AV_DISPOSITION_ATTACHED_PIC = 1024;
     public const int AVSTREAM_EVENT_FLAG_NEW_PACKETS = 2;
-    public const int AVFMT_SEEK_TO_PTS = 0x4000000;              // AVInputFormat.flags
+    public const int AVFMT_SEEK_TO_PTS = 0x4000000;
     public const int AV_CODEC_ID_NONE = 0;
 }
 
@@ -97,15 +65,15 @@ internal struct AVRational
 internal unsafe struct AVFormatContextView
 {
     [FieldOffset(0)] public void* av_class;
-    [FieldOffset(8)] public AVInputFormatView* iformat;   // LIBAVFRAME_01 (read only)
+    [FieldOffset(8)] public AVInputFormatView* iformat;
     [FieldOffset(44)] public uint nb_streams;
     [FieldOffset(48)] public void** streams;
-    [FieldOffset(96)] public long start_time;           // LIBAVFRAME_01 — AV_TIME_BASE units, AV_NOPTS_VALUE if unknown
-    [FieldOffset(104)] public long duration;            // AV_TIME_BASE units, AV_NOPTS_VALUE if unknown
+    [FieldOffset(96)] public long start_time;
+    [FieldOffset(104)] public long duration;
     [FieldOffset(112)] public long bit_rate;
-    [FieldOffset(192)] public void* metadata;           // AVDictionary*
-    [FieldOffset(216)] public delegate* unmanaged[Cdecl]<void*, int> interrupt_callback;   // AVIOInterruptCB.callback
-    [FieldOffset(224)] public void* interrupt_opaque;                                      // AVIOInterruptCB.opaque
+    [FieldOffset(192)] public void* metadata;
+    [FieldOffset(216)] public delegate* unmanaged[Cdecl]<void*, int> interrupt_callback;
+    [FieldOffset(224)] public void* interrupt_opaque;
 }
 
 /// <summary>Read-only VIEW of struct AVStream (sizeof = 216 on Win64).</summary>
@@ -117,10 +85,10 @@ internal unsafe struct AVStreamView
     [FieldOffset(16)] public AVCodecParametersView* codecpar;
     [FieldOffset(32)] public AVRational time_base;
     [FieldOffset(48)] public long duration;
-    [FieldOffset(64)] public int disposition;           // LIBAVFRAME_01 — AV_DISPOSITION_* bit field
-    [FieldOffset(68)] public int discard;               // LIBAVFRAME_01 — enum AVDiscard; the ONLY AVStream field ever written
+    [FieldOffset(64)] public int disposition;
+    [FieldOffset(68)] public int discard;
     [FieldOffset(88)] public AVRational avg_frame_rate;
-    [FieldOffset(200)] public int event_flags;          // LIBAVFRAME_01 — AVSTREAM_EVENT_FLAG_*
+    [FieldOffset(200)] public int event_flags;
 }
 
 /// <summary>LIBAVFRAME_01 — read-only VIEW of the public head of struct AVInputFormat (libavformat/avformat.h).</summary>
@@ -128,18 +96,18 @@ internal unsafe struct AVStreamView
 internal unsafe struct AVInputFormatView
 {
     [FieldOffset(0)] public byte* name;
-    [FieldOffset(16)] public int flags;                 // AVFMT_* (AVFMT_SEEK_TO_PTS)
+    [FieldOffset(16)] public int flags;
 }
 
 /// <summary>Read-only VIEW of struct AVCodecParameters (libavcodec/codec_par.h, sizeof = 176 on Win64).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 176)]
 internal unsafe struct AVCodecParametersView
 {
-    [FieldOffset(0)] public int codec_type;             // enum AVMediaType
-    [FieldOffset(4)] public int codec_id;               // LIBAVFRAME_01 — enum AVCodecID
-    [FieldOffset(32)] public void* coded_side_data;     // LIBAVFRAME_01 — AVPacketSideData* (passed back to libav only)
-    [FieldOffset(40)] public int nb_coded_side_data;    // LIBAVFRAME_01
-    [FieldOffset(44)] public int format;                // enum AVPixelFormat for video
+    [FieldOffset(0)] public int codec_type;
+    [FieldOffset(4)] public int codec_id;
+    [FieldOffset(32)] public void* coded_side_data;
+    [FieldOffset(40)] public int nb_coded_side_data;
+    [FieldOffset(44)] public int format;
     [FieldOffset(48)] public long bit_rate;
     [FieldOffset(72)] public int width;
     [FieldOffset(76)] public int height;
@@ -147,7 +115,7 @@ internal unsafe struct AVCodecParametersView
     [FieldOffset(104)] public int color_primaries;
     [FieldOffset(108)] public int color_trc;
     [FieldOffset(112)] public int color_space;
-    [FieldOffset(120)] public int video_delay;          // LIBAVFRAME_01 — ffmpeg's -ss dts heuristic reads it
+    [FieldOffset(120)] public int video_delay;
 }
 
 /// <summary>
@@ -173,17 +141,17 @@ internal unsafe struct AVPacketView
 [StructLayout(LayoutKind.Explicit, Size = 416)]
 internal unsafe struct AVFrameView
 {
-    [FieldOffset(0)] public fixed long data[8];         // uint8_t *data[AV_NUM_DATA_POINTERS] (read as addresses)
+    [FieldOffset(0)] public fixed long data[8];
     [FieldOffset(64)] public fixed int linesize[8];
-    [FieldOffset(96)] public void* extended_data;       // == &data[0] for video — layout guard
+    [FieldOffset(96)] public void* extended_data;
     [FieldOffset(104)] public int width;
     [FieldOffset(108)] public int height;
-    [FieldOffset(116)] public int format;               // enum AVPixelFormat
+    [FieldOffset(116)] public int format;
     [FieldOffset(124)] public AVRational sample_aspect_ratio;
     [FieldOffset(136)] public long pts;
     [FieldOffset(144)] public long pkt_dts;
     [FieldOffset(152)] public AVRational time_base;
-    [FieldOffset(276)] public int flags;                // AV_FRAME_FLAG_*
+    [FieldOffset(276)] public int flags;
     [FieldOffset(280)] public int color_range;
     [FieldOffset(284)] public int color_primaries;
     [FieldOffset(288)] public int color_trc;
@@ -244,7 +212,6 @@ internal unsafe struct AVDictionaryEntryView
 /// </summary>
 internal static unsafe class LibAv
 {
-    // avformat-62.dll
     private static delegate* unmanaged[Cdecl]<uint> _avformat_version;
     private static delegate* unmanaged[Cdecl]<AVFormatContextView*> _avformat_alloc_context;
     private static delegate* unmanaged[Cdecl]<AVFormatContextView*, void> _avformat_free_context;
@@ -253,9 +220,7 @@ internal static unsafe class LibAv
     private static delegate* unmanaged[Cdecl]<AVFormatContextView**, void> _avformat_close_input;
     private static delegate* unmanaged[Cdecl]<void*> _avformat_get_class;
     private static delegate* unmanaged[Cdecl]<void*> _av_stream_get_class;
-    // avcodec-62.dll
     private static delegate* unmanaged[Cdecl]<uint> _avcodec_version;
-    // avutil-60.dll
     private static delegate* unmanaged[Cdecl]<uint> _avutil_version;
     private static delegate* unmanaged[Cdecl]<int, void> _av_log_set_level;
     private static delegate* unmanaged[Cdecl]<void**, byte*, byte*, int, int> _av_dict_set;
@@ -293,7 +258,7 @@ internal static unsafe class LibAv
     internal static void Bind(IReadOnlyDictionary<string, nint> modules)
     {
         nint E(string lib, string sym) => NativeLibrary.GetExport(modules[lib], sym);
-        var t = Imports.Select(i => E(i.Library, i.Symbol)).ToArray();   // resolve ALL before assigning ANY
+        var t = Imports.Select(i => E(i.Library, i.Symbol)).ToArray();
         int k = 0;
         _avformat_version = (delegate* unmanaged[Cdecl]<uint>)t[k++];
         _avformat_alloc_context = (delegate* unmanaged[Cdecl]<AVFormatContextView*>)t[k++];
@@ -387,8 +352,8 @@ internal sealed unsafe class InterruptStateHandle : SafeHandle
     [StructLayout(LayoutKind.Sequential)]
     private struct State
     {
-        public int Cancelled;             // 1 = abort at the next libav I/O check
-        public long DeadlineTimestamp;    // Stopwatch timestamp; 0 = no deadline
+        public int Cancelled;
+        public long DeadlineTimestamp;
     }
 
     private InterruptStateHandle() : base(IntPtr.Zero, ownsHandle: true) { }
@@ -488,10 +453,8 @@ internal sealed unsafe class FormatContextHandle : SafeHandle
 /// </summary>
 internal static unsafe class LibAvFrame
 {
-    // avformat-62.dll
     private static delegate* unmanaged[Cdecl]<AVFormatContextView*, int, long, long, long, int, int> _avformat_seek_file;
     private static delegate* unmanaged[Cdecl]<AVFormatContextView*, AVPacketView*, int> _av_read_frame;
-    // avcodec-62.dll
     private static delegate* unmanaged[Cdecl]<int, void*> _avcodec_find_decoder;
     private static delegate* unmanaged[Cdecl]<void*, void*> _avcodec_alloc_context3;
     private static delegate* unmanaged[Cdecl]<void**, void> _avcodec_free_context;
@@ -504,14 +467,12 @@ internal static unsafe class LibAvFrame
     private static delegate* unmanaged[Cdecl]<AVPacketView**, void> _av_packet_free;
     private static delegate* unmanaged[Cdecl]<AVPacketView*, void> _av_packet_unref;
     private static delegate* unmanaged[Cdecl]<void*, int, int, AVPacketSideDataView*> _av_packet_side_data_get;
-    // avutil-60.dll
     private static delegate* unmanaged[Cdecl]<AVFrameView*> _av_frame_alloc;
     private static delegate* unmanaged[Cdecl]<AVFrameView**, void> _av_frame_free;
     private static delegate* unmanaged[Cdecl]<AVFrameView*, void> _av_frame_unref;
     private static delegate* unmanaged[Cdecl]<AVFrameView*, AVFrameView*, int> _av_frame_copy_props;
     private static delegate* unmanaged[Cdecl]<AVFrameView*, int, AVFrameSideDataView*> _av_frame_get_side_data;
     private static delegate* unmanaged[Cdecl]<void*, byte*, long, int, int> _av_opt_set_int;
-    // swscale-9.dll
     private static delegate* unmanaged[Cdecl]<uint> _swscale_version;
     private static delegate* unmanaged[Cdecl]<void*> _sws_alloc_context;
     private static delegate* unmanaged[Cdecl]<void**, void> _sws_free_context;
@@ -538,7 +499,7 @@ internal static unsafe class LibAvFrame
     internal static void Bind(IReadOnlyDictionary<string, nint> modules)
     {
         nint E(string lib, string sym) => NativeLibrary.GetExport(modules[lib], sym);
-        var t = Imports.Select(i => E(i.Library, i.Symbol)).ToArray();   // resolve ALL before assigning ANY
+        var t = Imports.Select(i => E(i.Library, i.Symbol)).ToArray();
         int k = 0;
         _avformat_seek_file = (delegate* unmanaged[Cdecl]<AVFormatContextView*, int, long, long, long, int, int>)t[k++];
         _av_read_frame = (delegate* unmanaged[Cdecl]<AVFormatContextView*, AVPacketView*, int>)t[k++];

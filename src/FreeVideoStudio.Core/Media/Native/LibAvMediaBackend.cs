@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -80,7 +77,7 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
 {
     public static LibAvMediaBackend Instance { get; } = new();
 
-    private static int _layoutBroken;   // 1 = a layout guard failed once; backend disabled for the process
+    private static int _layoutBroken;
 
     /// <summary>True when the libraries loaded and passed the version guard (loads them on first call).</summary>
     public static bool TryInitialize(string? ffprobePath, out string detail)
@@ -114,8 +111,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
             ? Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency)
             : 0;
 
-        // The blocking libav calls run on a pool thread; every native resource is created and
-        // released inside ProbeBlocking on that thread, so awaiting it is the ownership boundary.
         return await Task.Run(() => ProbeBlocking(mediaPath, deadline, cancellationToken), CancellationToken.None)
             .ConfigureAwait(false);
     }
@@ -160,14 +155,11 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         int err;
         try
         {
-            // fftools/ffprobe.c open_input_file() and fftools/ffmpeg_demux.c ifile_open(): scan_all_pmts=1 unless the user set it.
             LibAv.av_dict_set(&options, "scan_all_pmts", "1", LibAvConstants.AV_DICT_DONT_OVERWRITE);
             err = LibAv.avformat_open_input(&raw, mediaPath, null, &options);
         }
         catch
         {
-            // Marshalling failed before libav took the context (e.g. an unpaired surrogate in the
-            // path). libav never saw it, so it is ours to free. Re-thrown, not swallowed.
             if (raw != null) LibAv.avformat_free_context(raw);
             throw;
         }
@@ -178,7 +170,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
 
         if (err < 0)
         {
-            // demux.c `fail:` — libav freed the context and set raw = NULL. Nothing to release.
             ThrowIfInterrupted(err, interrupt, token);
             error = $"avformat_open_input: {LibAv.ErrorText(err)}";
             return null;
@@ -273,7 +264,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
 
     private static unsafe void AddColor(JsonObject s, string key, int value, int unspecified, byte* name)
     {
-        // ffprobe print_color_*: "unknown" (an optional field, hidden in JSON) when UNSPECIFIED or unnamed.
         if (value == unspecified || name == null) return;
         s[key] = LibAv.Utf8(name);
     }
@@ -295,7 +285,7 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         {
             string? key = LibAv.Utf8(e->key);
             if (key == null) continue;
-            tags[key] = LibAv.Utf8(e->value) ?? string.Empty;   // duplicate keys: last wins
+            tags[key] = LibAv.Utf8(e->value) ?? string.Empty;
         }
         return tags;
     }

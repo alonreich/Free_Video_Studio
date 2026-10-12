@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.Core.Abstractions;

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using NAudio.Wave;
 using NAudio.Dsp;
 using System;
@@ -29,9 +26,6 @@ public class VoiceRecorder : IDisposable
     /// <summary>How long StopRecording waits for NAudio to hand over its final buffers.</summary>
     private const int StopDrainTimeoutMs = 2000;
 
-    // VODIAG_01 — capture accounting. Without these the only evidence a failed recording leaves
-    // behind is a WAV that may or may not exist, which cannot tell "the mic never opened" apart
-    // from "the mic opened and Windows fed it digital silence" (microphone privacy blocked).
     private long _bytesCaptured;
     private float _peakSeen;
     private int _buffersSeen;
@@ -180,7 +174,7 @@ public class VoiceRecorder : IDisposable
             catch (System.Exception swallowed)
             {
                 deviceLabel = "(name unavailable)";
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             }
             CoreLogger.Info("VoiceRecorder",
                 $"Capture started on device {_waveIn.DeviceNumber} '{deviceLabel}' at {_waveIn.WaveFormat.SampleRate}Hz/{_waveIn.WaveFormat.Channels}ch -> '{Path.GetFileName(_outputPath)}'.");
@@ -204,7 +198,6 @@ public class VoiceRecorder : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs a)
     {
-        // MICHEALTH_01 — Ignore stale callbacks from replaced devices
         if (sender != _waveIn) return;
 
         try
@@ -235,13 +228,12 @@ public class VoiceRecorder : IDisposable
             if (max > _peakSeen) _peakSeen = max;
             VolumeChanged?.Invoke(this, max);
 
-            // SPECTRUM_01 — same data path as the idle monitor: real samples, real format.
             if (PcmAvailable is { } pcm && sender is WaveIn source)
                 pcm.Invoke(this, new PcmBuffer(a.Buffer, a.BytesRecorded, MicLevelMonitor.ToCaptureFormat(source.WaveFormat)));
         }
         catch (ObjectDisposedException swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
         }
         catch (Exception ex)
         {
@@ -251,7 +243,6 @@ public class VoiceRecorder : IDisposable
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
-        // MICHEALTH_01 — Ignore stale callbacks from replaced devices
         if (sender != _waveIn) return;
 
         _isRecording = false;

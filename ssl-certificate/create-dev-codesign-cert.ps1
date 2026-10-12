@@ -1,9 +1,16 @@
 # SIGNLOCAL_01 - (re)creates the FVS local development code-signing certificate on Windows.
 # Output (next to this script): fvs-dev-root-ca.cer, fvs-codesign.pfx, fvs-codesign.password.txt
-# The root's private key is not kept: a new leaf is made by re-running this script.
+# Normally never needed: the build renews the leaf from the kept root key (UPDATEPIN_02).
 # Run:  powershell -ExecutionPolicy Bypass -File .\ssl-certificate\create-dev-codesign-cert.ps1
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+# UPDATEPIN_02 - the app pins THIS root (PublisherRoot.cs). A new root cuts every installed copy off
+# from automatic updates. The build renews the signing leaf from the existing root by itself, so this
+# script refuses to run while the root exists. Only -IReallyWantANewRoot overrides it.
+if ((Test-Path (Join-Path $here 'fvs-dev-root-ca.cer')) -and ($args -notcontains '-IReallyWantANewRoot')) {
+    Write-Host 'REFUSED: the publisher root already exists and is pinned in the app. Nothing to do: the build renews the signing certificate by itself (UPDATEPIN_02).'
+    exit 1
+}
 $bytes = New-Object byte[] 24; (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
 $password = [Convert]::ToBase64String($bytes) -replace '[/+=]', ''
 $secure = ConvertTo-SecureString $password -AsPlainText -Force

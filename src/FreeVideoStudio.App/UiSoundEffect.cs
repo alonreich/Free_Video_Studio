@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Threading;
@@ -179,8 +176,6 @@ public static class UiSoundEffect
         if (i < 0 || i >= CueCount) return;
         if (_shutdown || _engineFailed) return;
         if (Volatile.Read(ref _suppressionDepth) > 0) return;
-        // UISND_03 — the suite's shared mute silences the app's own sounds too (when the Windows
-        // session carries the master, its mute already does; this covers the fallback).
         if (FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMuted) return;
         if (Volatile.Read(ref _activeVoices) >= MaxConcurrentVoices) return;
 
@@ -206,7 +201,7 @@ public static class UiSoundEffect
         catch (System.Exception swallowed)
         {
             Interlocked.Decrement(ref _activeVoices);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
         }
     }
 
@@ -237,7 +232,7 @@ public static class UiSoundEffect
         }
         catch (System.Exception swallowed2)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
             return true;
         }
     }
@@ -264,7 +259,7 @@ public static class UiSoundEffect
         catch (Exception ex)
         {
             SafeLog("UI sound playback failed: " + ex.Message);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
         finally
         {
@@ -298,7 +293,7 @@ public static class UiSoundEffect
         catch (Exception ex)
         {
             SafeLog($"UI sound decode failed for {ResourceNames[cueIndex]}: {ex.Message}");
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return null;
         }
     }
@@ -311,7 +306,7 @@ public static class UiSoundEffect
 
         try
         {
-            if (WaveOut.DeviceCount <= 0)   // AOTCLEAN_02 — WaveOut (umbrella package) is gone; same winmm call
+            if (WaveOut.DeviceCount <= 0)
             {
                 _engineFailed = true;
                 SafeLog("No audio output device present - UI sounds disabled for this session.");
@@ -323,7 +318,6 @@ public static class UiSoundEffect
 
             _volume = new VolumeSampleProvider(_mixer) { Volume = 1f };
 
-            // UISND_02 — 50 ms (3 x ~17 ms buffers) instead of 150 ms: a click is heard WITH the press.
             _output = new WaveOut { BufferMilliseconds = 17, NumberOfBuffers = 3 };
             _output.Init(_volume);
             _output.Play();
@@ -334,18 +328,11 @@ public static class UiSoundEffect
             _engineFailed = true;
             TearDownLocked();
             SafeLog("UI sound engine could not start - UI sounds disabled for this session: " + ex.Message);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
             return false;
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // UISND_01 — THE OUTPUT IS CLOSED WHEN IDLE. The mixer runs with ReadFully, so an open
-    // WaveOut streams SILENCE forever: an audio stream that never ends, which Windows reports as
-    // "An audio stream is currently in use" (powercfg /requests) and which can keep the machine from
-    // sleeping. The device is now released IdleCloseMs after the last sound finished and reopened on
-    // the next click (EnsureEngineLocked).
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     private const int IdleCloseMs = 2000;
     private static Timer? _idleTimer;
 

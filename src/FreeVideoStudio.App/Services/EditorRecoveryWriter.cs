@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Threading.Channels;
 
 namespace FreeVideoStudio.App.Services;
@@ -19,7 +16,7 @@ public sealed class EditorRecoveryWriter
         {
             await foreach (var snapshot in _pending.Reader.ReadAllAsync())
                 TryWrite(snapshot);
-            TryWrite(null); // Always after outstanding saves; a delayed save cannot reopen the session.
+            TryWrite(null);
 
             void TryWrite(JsonObject? snapshot)
             {

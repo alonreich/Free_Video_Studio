@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -42,20 +39,6 @@ namespace FreeVideoStudio.App;
 /// </summary>
 public partial class GranularSpeedEditorWindow
 {
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // UNDO_01 — UNDO / REDO FOR THIS EDITOR.
-    //
-    // ⚠️ MEMORY IS THE WHOLE DESIGN PROBLEM HERE, SO READ THIS BEFORE CHANGING ANY OF IT.
-    //   (U1) A SNAPSHOT IS PLAIN DATA, NEVER A CONTROL OR A STREAM. GranularEditorSnapshot lives in
-    //        Core, which cannot reference Avalonia: it holds value types and immutable arrays of
-    //        records — never _videoHost, the IPC client, NAudio readers, bitmaps or canvases.
-    //   (U2) HARD CAP, ENFORCED ON PUSH. 40 entries (GranularEditHistory.MaxDepth).
-    //   (U3) REDO IS TRUNCATED ON EVERY NEW EDIT.
-    //   (U4) NO-OPS ARE NOT RECORDED.
-    //
-    // Restoring a snapshot deliberately does NOT touch the video position, the zoom overlay or the
-    // playback state — only project data. Undo must never yank the playhead around.
-    // ══════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
     /// UNDO_02 — ends the current gesture, so the next change starts a new undo entry even if it
@@ -63,12 +46,9 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private void EndUndoGesture()
     {
-        _edit.EndGesture();   // EDITSTATE_01 — a no-op while a restore is being applied
+        _edit.EndGesture();
         RefreshUndoRedoButtons();
 
-        // RECOVERY_03 — every settled drag (segment, zoom, freeze, meme) funnels through here on
-        // pointer release; arming the snapshot at gesture END captures the settled state, not the
-        // pre-drag one that PushUndo recorded when the gesture began.
         ScheduleGranularRecoverySave();
     }
 
@@ -86,16 +66,15 @@ public partial class GranularSpeedEditorWindow
     /// <summary>EDITSTATE_01 — every recorded checkpoint, from a gesture here or a session command.</summary>
     private void OnEditCheckpointed(bool burnedRedo)
     {
-        // (U3) a new edit invalidates every redo branch.
         if (burnedRedo) RuntimeLog.Info("UNDO", "New edit after undo — the redo branch is discarded.");
 
         RefreshUndoRedoButtons();
-        ScheduleGranularRecoverySave();   // RECOVERY_03 — debounced live snapshot after every undoable change
+        ScheduleGranularRecoverySave();
     }
 
     private void PerformUndo()
     {
-        if (_edit.Undo() is not { } step)   // EDITSTATE_01 — the session restores the data
+        if (_edit.Undo() is not { } step)
         {
             RefreshUndoRedoButtons();
             ShowUndoNotice("Nothing left to undo", "UndoBtn");
@@ -109,7 +88,6 @@ public partial class GranularSpeedEditorWindow
             $"Depth now undo={_edit.History.UndoCount} redo={_edit.History.RedoCount}.");
 
         RefreshAfterRestore();
-        // UNDOHINT_01 / UNDO_02 (rules 6+7) — say what came BACK, beside the button that did it.
         ShowUndoNotice($"{GranularEditSession.DescribeRestore(step.From, step.To, step.Label)} — Ctrl+Y to redo", "UndoBtn");
     }
 
@@ -144,8 +122,6 @@ public partial class GranularSpeedEditorWindow
             {
                 InvalidateMemeTimelines();
 
-                // MEME_07 — an undo that moves, adds or removes a meme changes the preview just as
-                // much as making the edit did, so it goes through the same rebuild stall.
                 _memeCaretSticky = false;
                 _ = RefreshMemePreviewAsync("Re-timing your video after the undo...");
 
@@ -154,8 +130,6 @@ public partial class GranularSpeedEditorWindow
 
                 if (_zoomModeActive) ExitZoomMode();
 
-                // UNDO_01 — same reason as CUT_03: the restored lists are not visible until the
-                // pane is rebuilt from them.
                 RefreshSegmentList();
                 UpdateDeleteButtonVisibility();
                 RedrawTimeline();
@@ -164,8 +138,6 @@ public partial class GranularSpeedEditorWindow
             catch (Exception ex) { RuntimeLog.Fail("UNDO", ex); }
         }
 
-        // RECOVERY_03 — undo/redo rewrites the persisted truth too; without this a force-kill right
-        // after Ctrl+Z would restore the state the user had just taken back.
         ScheduleGranularRecoverySave();
     }
 
@@ -178,7 +150,6 @@ public partial class GranularSpeedEditorWindow
         var hint = this.FindControl<TextBlock>("UndoHintText");
         if (hint == null) return;
 
-        // UNDO_02 (rule 5) — SHOW BOTH WHEN BOTH ARE POSSIBLE.
         string? undo = _edit.History.NextUndoLabel;
         string? redo = _edit.History.NextRedoLabel;
 
@@ -227,7 +198,6 @@ public partial class GranularSpeedEditorWindow
         if (u != null)
         {
             u.IsEnabled = undo != null;
-            // UNDO_02 (rule 8) — name the action so hovering answers "what will this take back?"
             ToolTip.SetTip(u, undo != null
                 ? $"Undo “{undo}”  (Ctrl+Z)"
                 : "Nothing to undo yet (Ctrl+Z)");
@@ -249,8 +219,6 @@ public partial class GranularSpeedEditorWindow
         var r = this.FindControl<Button>("RedoBtn");
         if (r != null) r.AddHandler(Button.ClickEvent, (_, _) => PerformRedo());
 
-        // Ctrl+Z / Ctrl+Y. Tunnel so the shortcut works wherever focus happens to be, and marked
-        // Handled so a focused text field cannot also act on it. (Unchanged by UNDO_26.)
         this.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
             if (e.KeyModifiers != KeyModifiers.Control) return;
@@ -315,8 +283,6 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private void AdoptParkedHistory()
     {
-        // EDITSTATE_01 — the session owns the slot and the identity proof (same clip AND same
-        // revision only). MERGEEDIT_02 — a merge has no clip identity and never parks.
         if (_edit.AdoptParkedHistory()) RefreshUndoRedoButtons();
     }
 

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -28,7 +25,6 @@ public sealed class VoiceOverApplyTests : IDisposable
     public VoiceOverApplyTests()
     {
         Directory.CreateDirectory(_tempDir);
-        // VORECOVERY_01 — isolated recovery storage BEFORE any production window is constructed.
         VoiceOverWindow.RecoveryDirectorySeam = () => _tempDir;
         VoiceOverWindow.RecoveryStoreSeam = null;
     }
@@ -99,12 +95,10 @@ public sealed class VoiceOverApplyTests : IDisposable
             EndSec = 1.0
         });
 
-        // 1. When an apply is already marked in-flight, second call must return immediately
         window.IsApplyingInFlight = true;
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.Null(window.Result);
 
-        // 2. When guard is clear, apply proceeds
         window.IsApplyingInFlight = false;
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window.Result);
@@ -133,11 +127,8 @@ public sealed class VoiceOverApplyTests : IDisposable
         {
             await window.ApplyAndCloseAsync().WaitAsync(Timeout);
 
-            // Transaction rolled back:
             Assert.Null(window.Result);
-            // Original file preserved untouched:
             Assert.True(File.Exists(originalWav));
-            // Controls restored to usable state:
             Assert.False(window.IsApplyingInFlight);
             Assert.True(window.ApplyButtonControl?.IsEnabled);
             Assert.Equal("APPLY & CLOSE", window.ApplyButtonControl?.Content);
@@ -189,13 +180,11 @@ public sealed class VoiceOverApplyTests : IDisposable
         using var session = new VoiceCaptureSession(devices, a => a());
         var window = new VoiceOverWindow(session);
 
-        // Close while applying must be cancelled
         window.IsApplyingInFlight = true;
         var e = new CancelEventArgs();
         window.TriggerClosing(e);
         Assert.True(e.Cancel);
 
-        // Safe to close after apply completes
         window.IsApplyingInFlight = false;
         window.IsSafeToClose = true;
         var e2 = new CancelEventArgs();
@@ -245,7 +234,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         using var session = new VoiceCaptureSession(devices, a => Avalonia.Threading.Dispatcher.UIThread.Post(a));
         var window = new VoiceOverWindow(session);
 
-        // 1. Supply one existing take
         string wav1 = CreateTestWav("take_existing.wav", 1.0);
         window.Sessions.Add(new VoiceOverWindow.VoiceOverSession
         {
@@ -254,7 +242,6 @@ public sealed class VoiceOverApplyTests : IDisposable
             EndSec = 1.0
         });
 
-        // 2. Start a second take whose finalization will block
         string wav2 = CreateTestWav("take_delayed.wav", 1.0);
         var open = session.StartRecordingAsync(wav2, 0, _ => { });
         Assert.NotNull(open);
@@ -272,31 +259,23 @@ public sealed class VoiceOverApplyTests : IDisposable
 
         try
         {
-            // Apply while drain is blocked
             await window.ApplyAndCloseAsync().WaitAsync(Timeout);
 
-            // Assert commit aborted: no result, window did NOT close
             Assert.Null(window.Result);
             Assert.False(window.IsSafeToClose);
             Assert.False(window.IsApplyingInFlight);
-            // Existing take preserved
             Assert.Single(window.Sessions);
 
-            // 3. Now release the blocked finalization
             devices.ReleaseGate.Set();
 
-            // Wait for finalization to settle and post CompleteTake to UI thread
             await session.WhenFinalizationsSettled().WaitAsync(Timeout);
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { });
 
-            // The second take is now added to sessions
             Assert.Equal(2, window.Sessions.Count);
 
-            // 4. Retry Apply now that device operation settled
             VoiceOverWindow.CaptureDrainTimeout = TimeSpan.FromSeconds(5);
             await window.ApplyAndCloseAsync().WaitAsync(Timeout);
 
-            // Both takes committed successfully!
             Assert.NotNull(window.Result);
             Assert.Equal(2, window.Result!.VoiceOverTakes.Count);
             Assert.True(window.IsSafeToClose);
@@ -343,24 +322,19 @@ public sealed class VoiceOverApplyTests : IDisposable
         {
             var applyTask = window.ApplyAndCloseAsync();
 
-            // Wait until Apply reaches the trim runner and suspends
             await trimStarted.Task.WaitAsync(Timeout);
 
             Assert.True(window.IsApplyingInFlight);
 
-            // 1. Attempt to start recording via trigger -> refused
             window.TriggerToggleRecord();
             Assert.False(window.IsRecordingLive);
 
-            // 2. Attempt to start recording via StartRecordingAndPlayback -> refused
             window.TriggerStartRecordingAndPlayback();
             Assert.False(window.IsRecordingLive);
 
-            // 3. Attempt to pause/resume recording -> refused
             window.TriggerToggleRecordPause();
             Assert.False(window.IsRecordingLive);
 
-            // 4. Attempt to delete session via TimelineSurface_KeyDown -> refused
             window.SelectedSession = initialSession;
             var deleteKeyArgs = new Avalonia.Input.KeyEventArgs
             {
@@ -368,20 +342,16 @@ public sealed class VoiceOverApplyTests : IDisposable
                 Key = Avalonia.Input.Key.Delete
             };
             window.TriggerTimelineKeyDown(deleteKeyArgs);
-            Assert.Single(window.Sessions); // Still present
+            Assert.Single(window.Sessions);
 
-            // 5. Attempt adversarial live object mutation: change StartSec on the live session object
             initialSession.StartSec = 999.0;
 
-            // 6. Release trim seam so persistence can finish
             trimGate.SetResult();
             await applyTask.WaitAsync(Timeout);
 
-            // Result must be committed from the snapshot captured at the start of transaction
             Assert.NotNull(window.Result);
             Assert.Single(window.Result!.VoiceOverTakes);
             var committedTake = window.Result.VoiceOverTakes[0];
-            // The snapshot had RenderStartSec = 1.0 + 0.5 = 1.5, NOT 999.0 + 0.5 = 999.5
             Assert.Equal(1.5, committedTake.StartSec);
             Assert.True(File.Exists(committedTake.Path));
         }
@@ -424,22 +394,17 @@ public sealed class VoiceOverApplyTests : IDisposable
 
         try
         {
-            // Apply while drain is blocked -> times out
             await window.ApplyAndCloseAsync().WaitAsync(Timeout);
 
-            // Assert button shows DRAINING...
             Assert.Null(window.Result);
             Assert.False(window.IsApplyingInFlight);
             Assert.Equal("DRAINING...", window.ApplyButtonControl?.Content);
 
-            // Now release the blocked recorder drain
             devices.ReleaseGate.Set();
 
-            // Wait for session finalizations to settle
             await session.WhenFinalizationsSettled().WaitAsync(Timeout);
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { });
 
-            // Button content MUST automatically restore to "APPLY & CLOSE" without another click
             Assert.Equal("APPLY & CLOSE", window.ApplyButtonControl?.Content);
             Assert.True(window.ApplyButtonControl?.IsEnabled);
         }
@@ -465,7 +430,6 @@ public sealed class VoiceOverApplyTests : IDisposable
             EndSec = 1.0
         });
 
-        // First apply succeeds
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window.Result);
         var originalResult = window.Result!;
@@ -473,10 +437,8 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.True(window.IsCommitted);
         Assert.True(window.IsSafeToClose);
 
-        // While close is deferred, attempt repeated ApplyAndCloseAsync
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
 
-        // Result MUST remain intact and not reset to null!
         Assert.NotNull(window.Result);
         Assert.Same(originalResult, window.Result);
         Assert.Equal(originalPath, window.Result!.VoiceOverWavPath);
@@ -505,7 +467,6 @@ public sealed class VoiceOverApplyTests : IDisposable
             await window.ApplyAndCloseAsync().WaitAsync(Timeout);
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { });
 
-            // Must preserve actionable failure detail, NOT generic ready text!
             var hint = window.HintTextControl;
             Assert.NotNull(hint);
             Assert.Contains("audit-disk-failure", hint!.Text);
@@ -553,7 +514,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         using var session = new VoiceCaptureSession(devices, a => a());
         var window = new VoiceOverWindow(session);
 
-        // Add an existing valid take to window.Sessions
         string validWav = CreateTestWav("take_valid.wav", 2.0);
         var validTake = new VoiceOverWindow.VoiceOverSession
         {
@@ -563,7 +523,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         };
         window.Sessions.Add(validTake);
 
-        // Simulate a new take whose finalization failed
         string failedWav = CreateTestWav("take_failed.wav", 1.5);
         var failedTake = new VoiceOverWindow.VoiceOverSession
         {
@@ -611,9 +570,8 @@ public sealed class VoiceOverApplyTests : IDisposable
             EndSec = 0
         };
 
-        // Capture had an interruption error, but endpoint was released and file finalized safely
         var outcome = new CapturedTake(
-            Bytes: 44100 * 3, // ~1.5s
+            Bytes: 44100 * 3,
             Buffers: 15,
             Peak: 0.6f,
             IsSuccess: false,
@@ -641,7 +599,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         using var session = new VoiceCaptureSession(devices, a => a());
         var window = new VoiceOverWindow(session);
 
-        // 1. Take 1 fails finalization (unreleased endpoint)
         string failedWav = CreateTestWav("take_failed.wav", 1.0);
         var failedTake = new VoiceOverWindow.VoiceOverSession
         {
@@ -665,7 +622,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.Single(window.PendingFailedTakes);
         Assert.Empty(window.Sessions);
 
-        // 2. Take 2 succeeds completely
         string successWav = CreateTestWav("take_success.wav", 2.0);
         var successTake = new VoiceOverWindow.VoiceOverSession
         {
@@ -684,22 +640,18 @@ public sealed class VoiceOverApplyTests : IDisposable
         );
         window.TriggerCompleteTake(successTake, micWasOpen: true, capturedBytes: 44100 * 4, capturedBuffers: 20, capturedPeak: 0.7f, isTakeValid: true, takeOutcome: successOutcome);
 
-        // Subsequent success must NOT erase the pending failed take!
         Assert.Single(window.Sessions);
         Assert.True(window.HasUnresolvedFailedTakes);
 
-        // 3. Apply must be blocked by the unresolved failed take!
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.Null(window.Result);
         Assert.False(window.IsCommitted);
         Assert.True(File.Exists(failedWav), "Failed take WAV must be preserved.");
         Assert.True(File.Exists(successWav), "Successful take WAV must be preserved.");
 
-        // 4. Discard the failed take
         await window.DiscardAllPendingTakes();
         Assert.False(window.HasUnresolvedFailedTakes);
 
-        // 5. Apply now succeeds
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window.Result);
         Assert.True(window.IsCommitted);
@@ -713,32 +665,27 @@ public sealed class VoiceOverApplyTests : IDisposable
         var window = new VoiceOverWindow(session);
         window.TestManifestDirectory = _tempDir;
 
-        // 1. Success take
         string successWav = CreateTestWav("take_ok.wav", 1.5);
         var successTake = new VoiceOverWindow.VoiceOverSession { WavPath = successWav, StartSec = 0.0, EndSec = 1.5 };
         var okOutcome = new CapturedTake(44100 * 3, 15, 0.5f, IsSuccess: true, EndpointReleased: true, FileFinalized: true, Error: null);
         window.TriggerCompleteTake(successTake, micWasOpen: true, capturedBytes: 44100 * 3, capturedBuffers: 15, capturedPeak: 0.5f, isTakeValid: true, takeOutcome: okOutcome);
 
-        // 2. Failed take
         string failedWav = CreateTestWav("take_bad.wav", 1.0);
         var failedTake = new VoiceOverWindow.VoiceOverSession { WavPath = failedWav, StartSec = 1.5, EndSec = 2.5 };
         var badOutcome = new CapturedTake(44100 * 2, 10, 0.4f, IsSuccess: false, EndpointReleased: true, FileFinalized: false, Error: new InvalidOperationException("Failed take"));
         window.TriggerCompleteTake(failedTake, micWasOpen: true, capturedBytes: 44100 * 2, capturedBuffers: 10, capturedPeak: 0.4f, isTakeValid: false, takeOutcome: badOutcome);
         await window.RecoveryManager.WhenStoreIdle();
 
-        // Verify UI controls reflect unresolved failed take
         Assert.True(window.HasUnresolvedFailedTakes);
         Assert.NotNull(window.DiscardFailedTakesButtonControl);
         Assert.True(window.DiscardFailedTakesButtonControl!.IsVisible);
         Assert.NotNull(window.RecoverFailedTakesButtonControl);
         Assert.True(window.RecoverFailedTakesButtonControl!.IsVisible);
 
-        // Apply is blocked
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.Null(window.Result);
         Assert.False(window.IsCommitted);
 
-        // 3. User clicks Discard button
         bool discardResult = await window.DiscardFailedTakesAction();
         Assert.True(discardResult);
         Assert.False(window.HasUnresolvedFailedTakes);
@@ -746,7 +693,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.False(window.RecoverFailedTakesButtonControl.IsVisible);
         Assert.False(File.Exists(failedWav), "Discarded audio file must be deleted upon proven endpoint release.");
 
-        // 4. Apply now unblocks and succeeds
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window.Result);
         Assert.True(window.IsCommitted);
@@ -761,7 +707,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         var window = new VoiceOverWindow(session);
         window.TestManifestDirectory = _tempDir;
 
-        // Take completed with non-zero audio (> 44 bytes), but flagged with finalization error
         string wavPath = CreateTestWav("take_to_recover.wav", 2.0);
         var sessionTake = new VoiceOverWindow.VoiceOverSession { WavPath = wavPath, StartSec = 0.5, EndSec = 2.5 };
         var outcome = new CapturedTake(44100 * 4, 20, 0.7f, IsSuccess: false, EndpointReleased: true, FileFinalized: false, Error: new InvalidOperationException("Dropped packet"));
@@ -772,7 +717,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.Empty(window.Sessions);
         Assert.True(window.RecoverFailedTakesButtonControl!.IsVisible);
 
-        // User clicks Recover button
         bool recovered = await window.RecoverFailedTakesAction();
         Assert.True(recovered);
         Assert.False(window.HasUnresolvedFailedTakes);
@@ -780,7 +724,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.Equal(wavPath, window.Sessions[0].WavPath);
         Assert.False(window.RecoverFailedTakesButtonControl.IsVisible);
 
-        // Apply commits the recovered session
         await window.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window.Result);
         Assert.True(window.IsCommitted);
@@ -814,7 +757,6 @@ public sealed class VoiceOverApplyTests : IDisposable
 
         Assert.True(window.HasUnresolvedFailedTakes);
 
-        // Attempting to discard must be rejected while endpoint is unreleased
         bool discarded = await window.DiscardFailedTakesAction();
         Assert.False(discarded);
         Assert.True(File.Exists(wavPath), "File deletion must be rejected when endpoint release is unproven.");
@@ -840,7 +782,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         string manifestContent = File.ReadAllText(manifestPath);
         Assert.Contains(Path.GetFileName(wavPath), manifestContent);
 
-        // Now simulate reopening a fresh window
         using var session2 = new VoiceCaptureSession(devices, a => a());
         var window2 = new VoiceOverWindow(session2);
         window2.TestManifestDirectory = _tempDir;
@@ -851,14 +792,12 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.Equal(wavPath, window2.PendingFailedTakes[0].Session.WavPath);
         Assert.True(window2.RecoverFailedTakesButtonControl!.IsVisible);
 
-        // Operator recovers the take in window2
         bool recovered = await window2.RecoverFailedTakesAction();
         Assert.True(recovered);
         Assert.Single(window2.Sessions);
         Assert.False(window2.HasUnresolvedFailedTakes);
         Assert.True(File.Exists(manifestPath), "Manifest must remain durable while take is recovered but not yet committed.");
 
-        // Apply commits the recovered session and removes the recovery manifest
         await window2.ApplyAndCloseAsync().WaitAsync(Timeout);
         Assert.NotNull(window2.Result);
         Assert.True(window2.IsCommitted);
@@ -873,7 +812,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         var window = new VoiceOverWindow(session);
         window.TestManifestDirectory = _tempDir;
 
-        // Truncated file (< 44 bytes)
         string truncatedPath = Path.Combine(_tempDir, "truncated_take.wav");
         File.WriteAllBytes(truncatedPath, new byte[20]);
 
@@ -884,7 +822,6 @@ public sealed class VoiceOverApplyTests : IDisposable
 
         Assert.True(window.HasUnresolvedFailedTakes);
 
-        // Attempt recovery
         bool recovered = await window.RecoverFailedTakesAction();
         Assert.False(recovered, "Recovery must fail for truncated audio.");
         Assert.True(File.Exists(truncatedPath), "Truncated take audio file must NEVER be deleted during recovery attempt.");
@@ -892,7 +829,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.Empty(window.Sessions);
         Assert.NotNull(window.LastApplyErrorMessage);
 
-        // Now test corrupted header (non-RIFF, 128 bytes of garbage)
         string corruptPath = Path.Combine(_tempDir, "corrupt_take.wav");
         File.WriteAllBytes(corruptPath, new byte[128]);
 
@@ -914,11 +850,9 @@ public sealed class VoiceOverApplyTests : IDisposable
         var window = new VoiceOverWindow(session);
         window.TestManifestDirectory = _tempDir;
 
-        // Valid WAV header (44 bytes) but 0 audio data bytes (0 samples, 0 duration)
         string zeroWav = Path.Combine(_tempDir, "zero_sample.wav");
         using (var writer = new WaveFileWriter(zeroWav, new WaveFormat(44100, 16, 1)))
         {
-            // Write 0 samples
         }
 
         var failedTake = new VoiceOverWindow.VoiceOverSession { WavPath = zeroWav, StartSec = 0.0, EndSec = 0.0 };
@@ -952,7 +886,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         string manifestPath = window1.GetRecoveryManifestPath();
         Assert.True(File.Exists(manifestPath));
 
-        // Reopen in window2
         using var session2 = new VoiceCaptureSession(devices, a => a());
         var window2 = new VoiceOverWindow(session2);
         window2.TestManifestDirectory = _tempDir;
@@ -975,7 +908,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         File.WriteAllText(videoA, "dummy video a");
         File.WriteAllText(videoB, "dummy video b");
 
-        // Window for Video A
         using var sessionA = new VoiceCaptureSession(devices, a => a());
         var windowA = new VoiceOverWindow(sessionA, videoA, 0.0);
         windowA.TestManifestDirectory = _tempDir;
@@ -989,17 +921,14 @@ public sealed class VoiceOverApplyTests : IDisposable
         string manifestA = windowA.GetRecoveryManifestPath();
         Assert.True(File.Exists(manifestA));
 
-        // Window for Video B in the same test directory
         using var sessionB = new VoiceCaptureSession(devices, a => a());
         var windowB = new VoiceOverWindow(sessionB, videoB, 0.0);
         windowB.TestManifestDirectory = _tempDir;
         windowB.CheckAndOfferReopenRecovery();
 
-        // Window B must NOT inherit Video A's failed take!
         Assert.False(windowB.HasUnresolvedFailedTakes, "Video B must not discover Video A's failed takes despite identical file name.");
         Assert.Empty(windowB.PendingFailedTakes);
 
-        // Window A re-opened must discover it
         using var sessionA2 = new VoiceCaptureSession(devices, a => a());
         var windowA2 = new VoiceOverWindow(sessionA2, videoA, 0.0);
         windowA2.TestManifestDirectory = _tempDir;
@@ -1028,7 +957,6 @@ public sealed class VoiceOverApplyTests : IDisposable
         Assert.True(window.DiscardFailedTakesButtonControl!.IsVisible);
         Assert.True(window.RecoverFailedTakesButtonControl!.IsVisible);
 
-        // Discard via DiscardFailedTakesAction
         bool discarded = await window.DiscardFailedTakesAction();
         Assert.True(discarded);
         Assert.False(File.Exists(wavPath), "Discard must delete the audio file.");

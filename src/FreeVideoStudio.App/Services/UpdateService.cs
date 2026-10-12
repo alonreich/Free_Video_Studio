@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -51,16 +48,23 @@ namespace FreeVideoStudio.App.Services;
 ///   the Settings checkbox always tells the truth about the feature's state.
 ///
 /// HOW IT INSTALLS:
-/// * Downloads to %TEMP%\FVS_AutoUpdate\&lt;tag&gt;\, verifies the SHA-256 against GitHub's
+/// * Downloads to %LOCALAPPDATA%\FreeVideoStudioUpdates\Downloads\&lt;tag&gt;\ (NOTEMPEXEC_01), verifies the SHA-256 against GitHub's
 ///   published digest and REFUSES to run anything that does not match.
 /// * Launches the downloaded installer, which waits for this app to close (--wait-pid), then the
 ///   user chooses "Restart &amp; update now" or "Update when I close the app" (UPDATEUX_04). The
 ///   installer shows its own progress window from the moment the app closes (UPGRADEUX_01).
 /// </summary>
-internal static class UpdateService
+internal static partial class UpdateService
 {
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
-    private const string ExpectedAssetName = "FreeVideoStudio.exe";
+    /// <summary>
+    /// NODROPPER_01 — the full installer is an Inno Setup package. Releases also carry the same bytes
+    /// as <see cref="LegacyFullAssetName"/> so copies released before the change still find an installer;
+    /// this build prefers the setup name and accepts the old one.
+    /// </summary>
+    internal const string SetupAssetName = "FreeVideoStudio-Setup.exe";
+    private const string LegacyFullAssetName = "FreeVideoStudio.exe";
+    private const string ExpectedAssetName = SetupAssetName;
 
     /// <summary>
     /// SYS-PAYLOADSPLIT — the app-only update package, when a release publishes one.
@@ -118,7 +122,6 @@ internal static class UpdateService
         "github-releases.githubusercontent.com"
     };
     private const string UserAgent = "FreeVideoStudio-Updater";
-    private const string DownloadFolderRootName = "FVS_AutoUpdate";
     private const string LastCheckFile = "update_last_check_utc.txt";
     private const string SkippedTagFile = "update_skipped_tag.txt";
 
@@ -128,9 +131,14 @@ internal static class UpdateService
     /// <summary>UPDATEUX_02 — the "typical home connection" behind the time estimate (~20 Mbit/s).</summary>
     private const double TypicalBytesPerSecond = 2.5 * 1024 * 1024;
 
-    private const string ReleasesPageUrl = "https://github.com/alonreich/Free_Video_Studio/releases/latest";
 
-    private static readonly TimeSpan StartupGracePeriod = TimeSpan.FromSeconds(2);
+    /// <summary>
+    /// UPDATECONSENT_01 — nothing touches the network at startup. The first automatic check waits five
+    /// minutes after the window opens (and only after the user agreed to automatic checks): an unknown
+    /// program that phones home and downloads executables the moment it starts is what downloader malware
+    /// does, and antivirus behaviour engines score it that way.
+    /// </summary>
+    internal static readonly TimeSpan StartupGracePeriod = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan MinimumIntervalBetweenChecks = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
@@ -148,8 +156,20 @@ internal static class UpdateService
         string? AppOnlySha256Hex = null,
         long AppOnlySize = 0,
         string? RuntimeManifestUrl = null,
-        string? PageUrl = null)
+        string? PageUrl = null,
+        IReadOnlyDictionary<string, string>? Assets = null)
     {
+        /// <summary>DIST-SMART — the URL of a named release asset, when the release published it.</summary>
+        public bool TryGetAsset(string name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? url)
+        {
+            url = null;
+            return Assets is not null && Assets.TryGetValue(name, out url) && !string.IsNullOrWhiteSpace(url);
+        }
+
+        /// <summary>DIST-SMART — the URL of a named asset; a missing one means the release is incomplete.</summary>
+        public string AssetUrl(string name) => TryGetAsset(name, out string? url) ? url
+            : throw new IOException($"The release is missing the file {name}.");
+
         /// <summary>SYS-PAYLOADSPLIT — true when this release published a small app-only package.</summary>
         public bool HasAppOnlyPackage => !string.IsNullOrWhiteSpace(AppOnlyUrl) && AppOnlySize > 0;
 
@@ -175,39 +195,36 @@ internal static class UpdateService
     /// </summary>
     public static async Task RunStartupCheckAsync(Window owner)
     {
-        // The master switch. OFF means: no network call, no prompt, no nag — ever.
         if (Environment.GetCommandLineArgs().Contains("--upgrade-health")) return;
-        if (!SettingsManager.Instance.AutoUpdateChecks)
-        {
-            RuntimeLog.Info("UPDATE", "Update checks are disabled in Settings; staying silent.");
-            return;
-        }
 
-        // dev.cmd runs with FVS_DEV_LOG_DIR set; a developer's machine must never be offered
-        // a GitHub release against its own local build. DEVUPDATE_01: when dev.cmd also names a
-        // local source (.\compiled), the SAME flow runs against that folder instead.
         if (RuntimeLog.IsDevMode && DevReleaseFolder is null)
         {
             RuntimeLog.Info("UPDATE", "Dev mode detected; update check skipped.");
             return;
         }
 
-        // Let the window settle first — the suggestor must never compete with startup work
-        // or recovery prompts for the user's attention.
+        if (!SettingsManager.Instance.UpdateConsentAsked && !await AskUpdateConsentAsync(owner).ConfigureAwait(false))
+            return;
+
+        if (!SettingsManager.Instance.AutoUpdateChecks)
+        {
+            RuntimeLog.Info("UPDATE", "Update checks are disabled in Settings; staying silent.");
+            return;
+        }
+
         try
         {
-            await Task.Delay(StartupGracePeriod).ConfigureAwait(false);
+            await Task.Delay(DevReleaseFolder is null ? StartupGracePeriod : TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
         catch (System.Exception swallowed4)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed4);
             return;
         }
 
         bool ownerStillVisible = await Dispatcher.UIThread.InvokeAsync(() => owner.IsVisible);
         if (!ownerStillVisible) return;
 
-        // DEVUPDATE_01 — every dev launch checks .\compiled; a local folder needs no rate limit.
         if (DevReleaseFolder is null && !ThrottlePermitsCheck()) return;
 
         if (Interlocked.CompareExchange(ref _checkInProgress, 1, 0) != 0)
@@ -234,8 +251,6 @@ internal static class UpdateService
                 return;
             }
 
-            // STRICTLY newer only. Equal ("already have it") and older ("running a newer build")
-            // are the two false positives this feature must never produce.
             if (remote.CompareTo(local) <= 0)
             {
                 RuntimeLog.Info("UPDATE", $"Already up to date (installed {local}, latest {remote}).");
@@ -253,8 +268,8 @@ internal static class UpdateService
                 return;
             }
 
-            RecordResult($"Version {remote} is available (you have {local}).");
-            await AskAndActAsync(owner, release, local, statusCallback: null).ConfigureAwait(false);
+            RecordResult($"Version {remote} is available (you have {local}). Downloading it in the background…");
+            StartBackgroundUpdate(owner, release);
         }
         catch (Exception ex)
         {
@@ -264,6 +279,43 @@ internal static class UpdateService
         finally
         {
             _ = Interlocked.Exchange(ref _checkInProgress, 0);
+        }
+    }
+
+    /// <summary>
+    /// UPDATECONSENT_01 — asks ONCE, on a launch after installation, whether Free Video Studio may check
+    /// GitHub for updates by itself. Until it is answered nothing is sent. The answer is stored in
+    /// settings (UpdateConsentAsked + AutoUpdateChecks) and can be changed in Settings › About; Help ›
+    /// Check for Updates always works. Returns true when automatic checks are allowed now. Closing the
+    /// question without answering counts as "not now" and it is asked again on the next start.
+    /// </summary>
+    private static async Task<bool> AskUpdateConsentAsync(Window owner)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            bool? allowed = await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                if (!owner.IsVisible) return (bool?)null;
+                bool yes = await ConfirmDialogWindow.AskAsync(owner,
+                    "Free Video Studio can check GitHub for a newer version by itself, a few minutes after it starts. "
+                    + "When one exists it is downloaded in the background and you choose when it is installed."
+                    + Environment.NewLine + Environment.NewLine
+                    + "You can change this any time in Settings › About.",
+                    "Check for updates automatically?", "Yes, check for updates", "No, I'll check myself");
+                return (bool?)yes;
+            });
+            if (allowed is null) return false;
+            SettingsManager.SetUpdateConsent(allowed.Value);
+            RuntimeLog.Info("UPDATE", allowed.Value
+                ? "UPDATECONSENT_01: the user allowed automatic update checks."
+                : "UPDATECONSENT_01: the user declined automatic update checks.");
+            return allowed.Value;
+        }
+        catch (Exception ex) when (ex is TaskCanceledException or InvalidOperationException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return false;
         }
     }
 
@@ -322,9 +374,10 @@ internal static class UpdateService
                 return;
             }
 
-            RecordResult($"Version {remote} is available (you have {local}).");
-            statusCallback?.Invoke($"Update available: {release.Tag}. Preparing the details…");
-            await AskAndActAsync(owner, release, local, statusCallback).ConfigureAwait(false);
+            RecordResult($"Version {remote} is available (you have {local}). Downloading it in the background…");
+            if (string.Equals(GetSkippedVersion(), release.Tag, StringComparison.OrdinalIgnoreCase)) ClearSkippedVersion();
+            statusCallback?.Invoke($"Version {remote} found — downloading in the background. Watch the corner of the main window.");
+            StartBackgroundUpdate(owner, release);
         }
         catch (Exception ex)
         {
@@ -342,82 +395,7 @@ internal static class UpdateService
         }
     }
 
-    /// <summary>
-    /// Shows the "new version" question with its size, time and self-install ability resolved
-    /// first (UPDATEUX_02, UPDATEUX_05), then acts on the answer. Shared by both checks.
-    /// </summary>
-    private static async Task AskAndActAsync(Window owner, UpdateRelease release, Version local, Action<string>? statusCallback)
-    {
-        bool canInstallItself = AuthenticodeVerifier.CanVerifyUpdates(Environment.ProcessPath, out string trustDetail);
-        string? sizeText = null;
-        if (canInstallItself)
-        {
-            bool small = await RuntimeAlreadyMatchesAsync(release, verifyInstalledBytes: false, CancellationToken.None).ConfigureAwait(false);
-            sizeText = DescribeDownload(small ? release.AppOnlySize : release.Size);
-        }
-        else
-        {
-            RuntimeLog.Info("UPDATE", "This copy cannot verify updates by itself; offering the download page instead. " + trustDetail);
-        }
-
-        // Same UI-thread marshalling pattern MainWindow uses (Post + completion source):
-        // DispatcherOperation shapes differ per InvokeAsync overload, so we don't touch them.
-        var choiceReady = new TaskCompletionSource<UpdateChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Dispatcher.UIThread.Post(async () =>
-        {
-            try { choiceReady.SetResult(await UpdateAvailableWindow.AskAsync(owner, local, release.Tag, release.ReleaseNotes, sizeText, canInstallItself)); }
-            catch (Exception ex)
-            {
-                choiceReady.SetException(ex);
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
-            }
-        });
-        UpdateChoice choice = await choiceReady.Task.ConfigureAwait(false);
-
-        switch (choice)
-        {
-            case UpdateChoice.SkipThisVersion:
-                UiStateStore.WriteText(SkippedTagFile, release.Tag);
-                RuntimeLog.Info("UPDATE", $"User skipped {release.Tag}. Only a strictly newer release will be offered again.");
-                RecordResult($"Version {release.Tag.TrimStart('v', 'V')} is available — you chose to skip it.");
-                statusCallback?.Invoke($"Skipped {release.Tag}");
-                break;
-
-            case UpdateChoice.NeverTellMeAgain:
-                SettingsManager.SetAutoUpdateChecks(false);
-                RuntimeLog.Info("UPDATE", "User chose 'never tell me about updates again' — Settings checkbox now reflects OFF.");
-                statusCallback?.Invoke("Auto updates disabled in Settings.");
-                break;
-
-            case UpdateChoice.UpdateNow when !canInstallItself:
-                OpenReleasePage(owner, release);
-                statusCallback?.Invoke("Opened the download page in your browser.");
-                break;
-
-            case UpdateChoice.UpdateNow:
-                statusCallback?.Invoke("Downloading the update…");
-                await DownloadVerifyLaunchAsync(owner, release).ConfigureAwait(false);
-                break;
-
-            default:
-                // NotNow ("Remind me later") / Dismissed: nothing is stored; a later start offers it again.
-                statusCallback?.Invoke("Update postponed. You will be reminded next time the app starts.");
-                break;
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // DEVUPDATE_01 — THE DEV UPDATE SOURCE.
-    //
-    // dev.cmd sets FVS_DEV_UPDATE_SOURCE to the repository root. In dev mode (FVS_DEV_LOG_DIR also
-    // set) the updater then treats .\compiled\FreeVideoStudio.exe — what dev_build.cmd produces —
-    // as "the latest release": its version, size and SHA-256 stand in for the GitHub release JSON,
-    // and everything after that is the production flow unchanged (question, download window, hash,
-    // publisher check, Restart & update, installer window, first-launch notice).
-    //
     // ⚠️ Both variables are required, and a file:// URL is accepted ONLY while they are. A release
-    // JSON from GitHub can never name a local file: production keeps its pinned-host rule.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     internal const string DevUpdateSourceVariable = "FVS_DEV_UPDATE_SOURCE";
 
     private static readonly string[] DevOnlyEnvironment =
@@ -437,7 +415,7 @@ internal static class UpdateService
     }
 
     /// <summary>The local file behind a dev download URL, or null for a normal (GitHub) URL.</summary>
-    private static string? LocalDevSourcePath(string url)
+    internal static string? LocalDevSourcePath(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || !uri.IsFile) return null;
         if (DevReleaseFolder is null)
@@ -446,13 +424,13 @@ internal static class UpdateService
     }
 
     /// <summary>
-    /// DEVUPDATE_01 — reads .\compiled\FreeVideoStudio.exe as if it were the GitHub release. The
+    /// DEVUPDATE_01 — reads .\compiled\FreeVideoStudio-Setup.exe as if it were the GitHub release. The
     /// SHA-256 is taken now, like GitHub's published digest; if the file is rebuilt before the
     /// download finishes, the check fails exactly as a tampered download would.
     /// </summary>
     internal static async Task<(UpdateRelease? Release, string Problem)> QueryLocalDevReleaseAsync(string repoRoot)
     {
-        string exe = Path.Combine(repoRoot, "compiled", ExpectedAssetName);
+        string exe = Path.Combine(repoRoot, "compiled", SetupAssetName);
         if (!File.Exists(exe))
             return (null, "DEV: no local build in .\\compiled yet. Run dev_build.cmd to make one.");
         try
@@ -470,9 +448,33 @@ internal static class UpdateService
             }).ConfigureAwait(false);
 
             string notes = $"DEV MODE — local build from .\\compiled, built {file.LastWriteTime:yyyy-MM-dd HH:mm}.\n"
-                         + "This update comes from your own folder, not from GitHub. Everything after this question is the production flow.";
-            RuntimeLog.Info("UPDATE", $"DEV update source: {exe} (version {version}, {RuntimePayloadManifest.FormatBytes(file.Length)}).");
-            return (new UpdateRelease("v" + version, new Uri(exe).AbsoluteUri, sha256, file.Length, notes), string.Empty);
+                         + "This update comes from your own folder, not from GitHub. Everything after this is the production flow.";
+
+            var assets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [ExpectedAssetName] = new Uri(exe).AbsoluteUri };
+            string releaseAssets = Path.Combine(repoRoot, "obj", "ReleaseAssets");
+            foreach (string name in new[] { AppOnlyAssetName, RuntimeManifestAssetName, SmartUpdateManifest.FileName, SmartUpdateManifest.SignatureFileName })
+            {
+                string path = Path.Combine(releaseAssets, name);
+                if (File.Exists(path)) assets[name] = new Uri(path).AbsoluteUri;
+            }
+            string smartAssets = Path.Combine(releaseAssets, "smart");
+            if (Directory.Exists(smartAssets))
+                foreach (string path in Directory.GetFiles(smartAssets)) assets[Path.GetFileName(path)] = new Uri(path).AbsoluteUri;
+
+            string? appOnlyUrl = null, appOnlySha = null;
+            long appOnlySize = 0;
+            string appOnlyPath = Path.Combine(releaseAssets, AppOnlyAssetName);
+            if (assets.ContainsKey(AppOnlyAssetName) && File.GetLastWriteTimeUtc(appOnlyPath) >= file.LastWriteTimeUtc.AddMinutes(-30))
+            {
+                appOnlyUrl = assets[AppOnlyAssetName];
+                appOnlySize = new FileInfo(appOnlyPath).Length;
+                appOnlySha = await Task.Run(() => SmartUpdateManifest.Sha256Hex(appOnlyPath)).ConfigureAwait(false);
+            }
+            assets.TryGetValue(RuntimeManifestAssetName, out string? runtimeUrl);
+
+            RuntimeLog.Info("UPDATE", $"DEV update source: {exe} (version {version}, {RuntimePayloadManifest.FormatBytes(file.Length)}, {assets.Count} assets).");
+            return (new UpdateRelease("v" + version, new Uri(exe).AbsoluteUri, sha256, file.Length, notes,
+                appOnlyUrl, appOnlySha, appOnlySize, runtimeUrl, null, assets), string.Empty);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -488,26 +490,6 @@ internal static class UpdateService
         double seconds = bytes / TypicalBytesPerSecond;
         string time = seconds < 60 ? "less than a minute" : $"about {Math.Ceiling(seconds / 60):0} minute{(seconds > 60 ? "s" : "")}";
         return $"Download size: {RuntimePayloadManifest.FormatBytes(bytes)} — {time} on a typical home connection.";
-    }
-
-    /// <summary>UPDATEUX_05 — opens the release page for a copy that cannot install updates itself.</summary>
-    private static void OpenReleasePage(Window owner, UpdateRelease release)
-    {
-        string url = !string.IsNullOrWhiteSpace(release.PageUrl) && Uri.TryCreate(release.PageUrl, UriKind.Absolute, out Uri? page)
-                     && page.Scheme == Uri.UriSchemeHttps && string.Equals(page.Host, "github.com", StringComparison.OrdinalIgnoreCase)
-            ? release.PageUrl!
-            : ReleasesPageUrl;
-        try
-        {
-            _ = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            FloatingNotice.Info(owner, "The download page is opening in your browser.");
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            RuntimeLog.Fail("UPDATE", "Could not open the release page: " + ex.Message);
-            Dispatcher.UIThread.Post(() => NativeDialog.ShowError(
-                "Your browser could not be opened. Please visit this page to download the new version:\r\n\r\n" + url, "Free Video Studio Update"));
-        }
     }
 
     /// <summary>UPDATEUX_06 — remembers when the last check ran and what it found.</summary>
@@ -560,7 +542,7 @@ internal static class UpdateService
         try { return UiStateStore.ReadText(SkippedTagFile).Trim(); }
         catch (System.Exception swallowed6)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6);
             return string.Empty;
         }
     }
@@ -618,7 +600,6 @@ internal static class UpdateService
                 return (null, "The latest release on GitHub has no version number.");
             }
 
-            // /releases/latest never returns drafts or prereleases; this is defense in depth.
             if (root?["draft"]?.GetValue<bool>() == true || root?["prerelease"]?.GetValue<bool>() == true)
             {
                 RuntimeLog.Info("UPDATE", "Latest release is a draft/prerelease; staying silent.");
@@ -628,16 +609,21 @@ internal static class UpdateService
             JsonNode? asset = null;
             JsonNode? appOnlyAsset = null;
             string? runtimeManifestUrl = null;
+            var assets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (JsonNode? candidate in root?["assets"]?.AsArray() ?? [])
             {
                 string? name = candidate?["name"]?.GetValue<string>();
                 if (name is null) continue;
+                string? assetUrl = candidate?["browser_download_url"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(assetUrl) && IsAllowedAssetUrl(assetUrl)) assets[name] = assetUrl;
 
-                if (name.Equals(ExpectedAssetName, StringComparison.OrdinalIgnoreCase))
+                if (name.Equals(SetupAssetName, StringComparison.OrdinalIgnoreCase))
                     asset = candidate;
+                else if (name.Equals(LegacyFullAssetName, StringComparison.OrdinalIgnoreCase))
+                    asset ??= candidate;
                 else if (name.Equals(AppOnlyAssetName, StringComparison.OrdinalIgnoreCase))
-                    appOnlyAsset = candidate;          // SYS-PAYLOADSPLIT
+                    appOnlyAsset = candidate;
                 else if (name.Equals(RuntimeManifestAssetName, StringComparison.OrdinalIgnoreCase))
                     runtimeManifestUrl = candidate?["browser_download_url"]?.GetValue<string>();
             }
@@ -649,22 +635,18 @@ internal static class UpdateService
                 return (null, $"The latest release ({tag}) has no installer attached yet.");
             }
 
-            // UPDATETRUST_01 — refuse an asset URL that is not HTTPS to a pinned GitHub host.
             if (!IsAllowedAssetUrl(url!))
             {
                 RuntimeLog.Fail("UPDATE", $"Release {tag} points its asset at an unexpected location; refusing to download it.");
                 return (null, $"The latest release ({tag}) points to an unexpected download location, so it was ignored for safety.");
             }
 
-            // UPDATETRUST_01 — the tag becomes a directory name below. Reject it here, while we can
-            // still stay silent, rather than at download time.
             if (!TrySanitizeTagForPath(tag!, out _))
             {
                 RuntimeLog.Fail("UPDATE", $"Release tag '{tag}' is not usable as a folder name; staying silent.");
                 return (null, $"The latest release has an unusable version name ('{tag}').");
             }
 
-            // digest looks like "sha256:<hex>" — the publisher already trusts this exact value.
             string? digest = asset?["digest"]?.GetValue<string>();
             string? sha256 = null;
             if (!string.IsNullOrEmpty(digest))
@@ -675,9 +657,6 @@ internal static class UpdateService
 
             long size = asset?["size"]?.GetValue<long>() ?? 0;
 
-            // SYS-PAYLOADSPLIT — the small package is optional. A release that does not publish one
-            // behaves exactly as before, which is what makes this safe to ship ahead of the build
-            // change that starts producing it.
             string? appOnlyUrl = appOnlyAsset?["browser_download_url"]?.GetValue<string>();
             if (!string.IsNullOrWhiteSpace(appOnlyUrl) && !IsAllowedAssetUrl(appOnlyUrl!))
             {
@@ -704,7 +683,8 @@ internal static class UpdateService
                 appOnlySha,
                 appOnlyAsset?["size"]?.GetValue<long>() ?? 0,
                 runtimeManifestUrl,
-                root?["html_url"]?.GetValue<string>()), string.Empty);
+                root?["html_url"]?.GetValue<string>(),
+                assets), string.Empty);
         }
         catch (Exception ex)
         {
@@ -719,10 +699,6 @@ internal static class UpdateService
         version = new Version(0, 0);
         try
         {
-            // DEVUPDATE_01 — in dev the question is the production one: "is the build in .\compiled
-            // newer than the copy INSTALLED on this machine?" The dev app itself is stamped by the
-            // same dev_build.cmd run that made .\compiled, so comparing against it would always
-            // say "up to date". Nothing installed yet counts as 0.0: everything is newer.
             if (DevReleaseFolder is not null)
             {
                 string installed = DeploymentFootprint.InstallPath;
@@ -743,7 +719,7 @@ internal static class UpdateService
         }
         catch (System.Exception swallowed3)
         {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);
             return false;
         }
     }
@@ -768,18 +744,17 @@ internal static class UpdateService
     /// always passes true, so the size estimate can never pick the package that is fetched.</param>
     private static async Task<bool> RuntimeAlreadyMatchesAsync(UpdateRelease release, bool verifyInstalledBytes, CancellationToken cancel)
     {
-        if (!DeploymentFootprint.IsRunningFromInstallPath()) return false;
+        string installedFolder = DevReleaseFolder is not null ? DeploymentFootprint.InstallFolder : AppContext.BaseDirectory;
+        if (DevReleaseFolder is null && !DeploymentFootprint.IsRunningFromInstallPath()) return false;
+        if (!File.Exists(Path.Combine(installedFolder, InstallPayload.ManifestName))) return false;
         if (!release.HasAppOnlyPackage || string.IsNullOrWhiteSpace(release.AppOnlySha256Hex) || string.IsNullOrWhiteSpace(release.RuntimeManifestUrl))
             return false;
 
         try
         {
-            // UPDATEUX_03 — hashing every installed file takes seconds; it now runs while the
-            // download window already says "Checking which parts of the update you need…".
             if (verifyInstalledBytes)
-                await Task.Run(() => InstallPayload.Verify(AppContext.BaseDirectory), cancel).WaitAsync(cancel).ConfigureAwait(false);
-            var installed = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.Read(
-                AppContext.BaseDirectory);
+                await Task.Run(() => InstallPayload.Verify(installedFolder), cancel).WaitAsync(cancel).ConfigureAwait(false);
+            var installed = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.Read(installedFolder);
             if (installed is null)
             {
                 RuntimeLog.Info("UPDATE",
@@ -790,7 +765,9 @@ internal static class UpdateService
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
             cts.CancelAfter(ProbeTimeout);
-            string json = await Http.GetStringAsync(release.RuntimeManifestUrl!, cts.Token).ConfigureAwait(false);
+            string json = LocalDevSourcePath(release.RuntimeManifestUrl!) is { } localManifest
+                ? await File.ReadAllTextAsync(localManifest, cts.Token).ConfigureAwait(false)
+                : await Http.GetStringAsync(release.RuntimeManifestUrl!, cts.Token).ConfigureAwait(false);
 
             var advertised = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromJson(
                 JsonNode.Parse(json)?.AsObject());
@@ -809,8 +786,6 @@ internal static class UpdateService
         }
         catch (OperationCanceledException)
         {
-            // A cancel is not a fault (FAULTTIER_01) and is not a reason to pick the small package.
-            // A USER cancel must still stop the update, so it is re-thrown to the download flow.
             cancel.ThrowIfCancellationRequested();
             return false;
         }
@@ -822,368 +797,9 @@ internal static class UpdateService
         }
     }
 
-    private static async Task DownloadVerifyLaunchAsync(Window owner, UpdateRelease release)
-    {
-        PurgeOldDownloadFolders();
-
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // UPDATETRUST_01 — THE TAG IS UNTRUSTED INPUT AND IT IS ABOUT TO BECOME A DIRECTORY NAME.
-        //
-        // WHAT WAS WRONG: this was Path.Combine(GetTempPath(), DownloadFolderRootName, release.Tag)
-        // with release.Tag straight out of the GitHub JSON. The only gate upstream is
-        // DeploymentLifecycle.TryParseVersion, which does TrimStart('v','V') then
-        // TakeWhile(IsDigit || '.') — it validates a PREFIX and silently discards the rest. So
-        // "9.9.9\..\..\Microsoft\Windows\Start Menu\Programs\Startup" parses happily as 9.9.9 and
-        // was then used verbatim as a folder name. Path.Combine does not reject "..", so the .exe
-        // landed wherever the tag pointed — a persistence primitive, one JSON field wide.
-        //
-        // The fix rejects rather than strips (a stripped traversal silently collides with another
-        // release's folder) and then ASSERTS containment on the resolved path, so even a sanitiser
-        // bug cannot put a file outside the download root.
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        if (!TrySanitizeTagForPath(release.Tag, out string tagFolderName))
-        {
-            RuntimeLog.Fail("UPDATE", $"Refusing to download release '{release.Tag}': the tag is not a usable folder name.");
-            return;
-        }
-
-        string downloadRoot = Path.Combine(Path.GetTempPath(), DownloadFolderRootName);
-        string folder = Path.Combine(downloadRoot, tagFolderName);
-
-        string resolvedRoot = Path.GetFullPath(downloadRoot);
-        string resolvedFolder = Path.GetFullPath(folder);
-        if (!resolvedFolder.StartsWith(
-                resolvedRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            RuntimeLog.Fail("UPDATE", "Refusing to download: the resolved update folder escapes the download root.");
-            return;
-        }
-
-        folder = resolvedFolder;
-        folder = Path.Combine(folder, Guid.NewGuid().ToString("N"));
-        bool appOnly = false;
-        string finalPath = Path.Combine(folder, ExpectedAssetName);
-        string executablePath = finalPath;
-        string partPath = finalPath + ".part";
-        Directory.CreateDirectory(folder);
-
-        using var cts = new CancellationTokenSource();
-        var vm = new UpdateDownloadViewModel();
-        var readyChoice = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        vm.CancelRequested += () =>
-        {
-            vm.Stage("Cancelling…", "Stopping the update. Your current version is not changed.", null, canCancel: false);
-            cts.Cancel();
-        };
-        vm.ReadyChoice += restartNow => readyChoice.TrySetResult(restartNow);
-        UpdateDownloadWindow? progressWindow = null;
-        Task dialogTask = Task.CompletedTask;
-        var dialogShown = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Dispatcher.UIThread.Post(() =>
-        {
-            try
-            {
-                progressWindow = new UpdateDownloadWindow { DataContext = vm };
-                dialogTask = progressWindow.ShowDialog(owner);
-                dialogShown.SetResult(null);
-            }
-            catch (Exception ex)
-            {
-                dialogShown.SetException(ex);
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
-            }
-        });
-        await dialogShown.Task.ConfigureAwait(false);
-
-        bool handedOff = false;
-        try
-        {
-            // UPDATEUX_03 — the window is already open and says what is happening while the
-            // installed files are hashed. This used to run BEFORE the window appeared: seconds of
-            // nothing after the user clicked "Yes".
-            // SYS-PAYLOADSPLIT — resolved here, once, before anything is fetched, so the size the user
-            // is told about below is the size that is actually downloaded.
-            appOnly = await RuntimeAlreadyMatchesAsync(release, verifyInstalledBytes: true, cts.Token).ConfigureAwait(false);
-            if (appOnly)
-            {
-                RuntimeLog.Info("UPDATE",
-                    $"Update {release.Tag}: app-only package selected "
-                  + $"({release.DescribeDownloadSize(true)} rather than {release.DescribeDownloadSize(false)}).");
-            }
-            finalPath = Path.Combine(folder, appOnly ? AppOnlyAssetName : ExpectedAssetName);
-            executablePath = finalPath;
-            partPath = finalPath + ".part";
-            string downloadUrl = appOnly ? release.AppOnlyUrl! : release.DownloadUrl;
-            string? expectedHash = appOnly ? release.AppOnlySha256Hex : release.Sha256Hex;
-            string sizeText = release.DescribeDownloadSize(appOnly);
-            string? localSource = LocalDevSourcePath(downloadUrl);
-            Dispatcher.UIThread.Post(() => vm.Stage("Downloading the new version…",
-                localSource != null ? $"DEV: copying from .\\compiled ({sizeText})…" : $"Connecting to GitHub… ({sizeText} to download)",
-                0, canCancel: true));
-
-            // DEVUPDATE_01 — the dev source is read from disk with the same loop, the same progress,
-            // the same hash check and the same publisher check as a GitHub download.
-            using HttpResponseMessage? response = localSource != null ? null
-                : await Http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
-            response?.EnsureSuccessStatusCode();
-            long total = localSource != null ? new FileInfo(localSource).Length
-                : response!.Content.Headers.ContentLength ?? (appOnly ? release.AppOnlySize : release.Size);
-
-            await using Stream source = localSource != null
-                ? new FileStream(localSource, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1024 * 1024, useAsync: true)
-                : await response!.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
-            await using var target = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 1024 * 1024);
-            byte[] buffer = new byte[1024 * 1024];
-            long copied = 0;
-            DateTime lastReport = DateTime.MinValue;
-            var meter = new DownloadMeter();
-
-            // Network guard: 45-second per-chunk read stall timeout to prevent hanging indefinitely
-            while (true)
-            {
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-                readCts.CancelAfter(TimeSpan.FromSeconds(45));
-
-                int read;
-                try
-                {
-                    read = await source.ReadAsync(buffer, readCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!cts.IsCancellationRequested)
-                {
-                    // UPDATEUX_03 — a stall used to look exactly like the user pressing Cancel: the
-                    // window vanished and nothing was said. It is a failure, and it is reported.
-                    throw new IOException("The download stopped receiving data for 45 seconds. Please check your internet connection and try again.");
-                }
-                if (read <= 0) break;
-
-                await target.WriteAsync(buffer.AsMemory(0, read), cts.Token).ConfigureAwait(false);
-                copied += read;
-                meter.Add(copied);
-                if ((DateTime.UtcNow - lastReport).TotalMilliseconds >= 250)
-                {
-                    lastReport = DateTime.UtcNow;
-                    ReportDownloadProgress(vm, copied, total, meter.BytesPerSecond);
-                }
-            }
-            await target.FlushAsync(cts.Token).ConfigureAwait(false);
-            await target.DisposeAsync().ConfigureAwait(false);
-            ReportDownloadProgress(vm, copied, total > 0 ? total : copied, meter.BytesPerSecond);
-
-            // UPDATEUX_03 — the safety check takes seconds on a large file. It used to sit at "100%"
-            // with an enabled Cancel button that could not act. It is a named stage now.
-            Dispatcher.UIThread.Post(() => vm.Stage("Checking the download is safe…",
-                "Making sure the file arrived complete, unchanged and signed by the publisher. This takes a few seconds.",
-                null, canCancel: false));
-
-            if (string.IsNullOrWhiteSpace(expectedHash))
-            {
-                throw new InvalidOperationException("The release has no published fingerprint, so the download cannot be verified. Nothing was installed.");
-            }
-
-            string actualHash;
-            await using (FileStream verifyStream = File.OpenRead(partPath))
-            {
-                actualHash = Convert.ToHexString(SHA256.HashData(verifyStream)).ToLowerInvariant();
-            }
-
-            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("The downloaded file does not match the fingerprint the publisher uploaded. The file was deleted and nothing was installed.");
-            }
-
-            File.Move(partPath, finalPath, overwrite: true);
-
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // UPDATETRUST_01 — RE-HASH THE PATH WE ARE ACTUALLY GOING TO EXECUTE.
-            //
-            // The hash above was computed over partPath; the file then got RENAMED and a DIFFERENT
-            // path is launched below. That rename window was a time-of-check/time-of-use gap: the
-            // bytes that were verified and the bytes that run were never proven to be the same
-            // bytes. Re-hashing finalPath costs one sequential read of a file already in the page
-            // cache and closes the gap completely.
-            // ══════════════════════════════════════════════════════════════════════════════════
-            string finalHash;
-            await using (FileStream finalStream = File.OpenRead(finalPath))
-            {
-                finalHash = Convert.ToHexString(SHA256.HashData(finalStream)).ToLowerInvariant();
-            }
-
-            if (!string.Equals(finalHash, expectedHash, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("The installer changed on disk after it was verified. Nothing was installed.");
-            }
-
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // UPDATETRUST_01 — PROVE THE PUBLISHER, NOT JUST THE BYTES.
-            //
-            // The SHA-256 above and the URL it validates come out of the SAME JSON document. That
-            // pair proves transport integrity and nothing more: whoever can produce that response
-            // controls both halves at once. This is the only check that asks "did WE sign this?",
-            // and it runs on the exact path about to be executed with elevation.
-            //
-            // See AuthenticodeVerifier for why the anchor is the running process rather than a
-            // hardcoded thumbprint, and why an unsigned running build degrades to hash-only
-            // LOUDLY instead of failing closed.
-            // ══════════════════════════════════════════════════════════════════════════════════
-            if (appOnly)
-                executablePath = ExtractCompactInstaller(finalPath, folder);
-            var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(
-                executablePath, Environment.ProcessPath, out string trustDetail);
-
-            switch (verdict)
-            {
-                case AuthenticodeVerifier.TrustVerdict.Rejected:
-                    TryDeleteFile(finalPath);
-                    throw new InvalidOperationException(
-                        "The downloaded installer failed its signature check and was deleted. Nothing was installed." +
-                        Environment.NewLine + trustDetail);
-
-                // ══════════════════════════════════════════════════════════════════════════
-                // UPDATETRUST_02 — NoAnchor IS A REFUSAL, NOT A WARNING.
-                //
-                // This branch used to log one line and fall through to Process.Start with
-                // --install --auto-update, i.e. it executed the downloaded binary elevated on the
-                // strength of a SHA-256 read out of the same GitHub JSON document that supplied
-                // the URL. That hash proves transport integrity and nothing else. Anyone able to
-                // produce that response body — a compromised repo or CI token, a TLS-terminating
-                // proxy, a mis-issued certificate — controls the payload AND the fingerprint that
-                // validates it, in one move.
-                //
-                // AuthenticodeVerifier's own class comment names this as the attack it exists to
-                // close. Keeping a fall-through for unsigned builds meant it was never closed in
-                // production, because production WAS the unsigned build (SIGNMANDATE_01).
-                //
-                // Refusing costs the one thing a warning was protecting: in-app auto-update for
-                // installs that are themselves unsigned. That is a real regression and it is the
-                // correct trade — the user is told exactly what happened and sent to the release
-                // page to install the signed build by hand, ONCE. From then on they have an
-                // anchor and auto-update works normally and verifiably.
-                //
-                // FVS_ALLOW_UNSIGNED_UPDATE=1 restores the old behaviour for developers testing
-                // the update path against unsigned local builds. It is read from the environment
-                // on purpose: it cannot be set by a downloaded payload, a settings file or a
-                // server response, so nothing an attacker controls can re-open this door.
-                // ══════════════════════════════════════════════════════════════════════════
-                case AuthenticodeVerifier.TrustVerdict.NoAnchor:
-                    if (!string.Equals(Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED_UPDATE"), "1", StringComparison.Ordinal))
-                    {
-                        TryDeleteFile(finalPath);
-                        RuntimeLog.Fail("UPDATE",
-                            "REFUSED — " + trustDetail +
-                            " The installer was deleted rather than executed with elevation on an unverifiable fingerprint (UPDATETRUST_02).");
-                        throw new InvalidOperationException(
-                            "This build is not digitally signed, so the downloaded update could not be checked against a publisher." +
-                            Environment.NewLine + Environment.NewLine +
-                            "Nothing was installed and the download was deleted. To update safely, download the latest release " +
-                            "manually from the project's releases page and run it once — after that, updates will verify and " +
-                            "install automatically.");
-                    }
-
-                    RuntimeLog.Fail("UPDATE",
-                        "SIGNATURE CHECK SKIPPED — " + trustDetail +
-                        " FVS_ALLOW_UNSIGNED_UPDATE=1 is set, so the update was accepted on its published fingerprint alone. " +
-                        "DEVELOPER OVERRIDE — never set this on an end-user machine.");
-                    break;
-
-                default:
-                    RuntimeLog.Info("UPDATE", "Publisher check passed: " + trustDetail);
-                    break;
-            }
-
-            // Honour a Cancel clicked during verification/handoff — never install past a cancel.
-            cts.Token.ThrowIfCancellationRequested();
-
-            RuntimeLog.Info("UPDATE", $"Download of {release.Tag} verified (sha256 {finalHash[..12]}…). Handing off to installer with --auto-update.");
-
-            // The installer waits (--wait-pid) until this app closes, then shows its own progress
-            // window (UPGRADEUX_01). Windows will still show its own UAC consent once — that is OS
-            // security and cannot (and should not) be bypassed by any app.
-            var installer = new ProcessStartInfo(executablePath) { UseShellExecute = DevReleaseFolder is null };
-            if (DevReleaseFolder is not null)
-            {
-                // DEVUPDATE_01 — the installer must behave exactly like production: install to
-                // Program Files, keep the REAL settings, start the installed app normally. So none
-                // of dev.cmd's sandbox variables may leak into it or into the app it starts.
-                foreach (string name in DevOnlyEnvironment) installer.Environment.Remove(name);
-            }
-            installer.ArgumentList.Add("--install");
-            installer.ArgumentList.Add("--auto-update");
-            installer.ArgumentList.Add("--source-current");
-            installer.ArgumentList.Add("--wait-pid");
-            installer.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
-            _ = Process.Start(installer) ?? throw new IOException("Could not start the update.");
-            handedOff = true;
-
-            // UPDATEUX_04 — a choice, not "close the app yourself when you are done".
-            Dispatcher.UIThread.Post(vm.Ready);
-            bool restartNow = await readyChoice.Task.ConfigureAwait(false);
-            await Dispatcher.UIThread.InvokeAsync(() => CloseProgressWindow(progressWindow));
-            if (restartNow)
-            {
-                RuntimeLog.Info("UPDATE", "User chose Restart & update now; closing the app normally (unsaved work is asked about first).");
-                Dispatcher.UIThread.Post(() => RestartToUpdate(owner));
-            }
-            else
-            {
-                RuntimeLog.Info("UPDATE", "User chose to update when the app closes; the installer is waiting.");
-                FloatingNotice.Info(owner, "The update will install by itself when you close Free Video Studio.");
-            }
-        }
-        catch (Exception ex) when (handedOff)
-        {
-            // The installer is already running and waiting for this app to close; the update
-            // will still happen. Nothing here may delete the file it is running from.
-            RuntimeLog.Fail("UPDATE", $"After hand-off to the installer: {ex.Message}");
-        }
-        catch (OperationCanceledException)
-        {
-            RuntimeLog.Info("UPDATE", "Update download cancelled by the user; current install untouched.");
-            FloatingNotice.Info(owner, "Update cancelled — nothing was changed. The app will offer it again on a later start.");
-            TryDeleteFile(partPath);
-            // UPDATETRUST_01 — a cancel after the rename must not leave a runnable installer behind.
-            TryDeleteFile(finalPath);
-            if (executablePath != finalPath) TryDeleteFile(executablePath);
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Fail("UPDATE", $"Update download/verify failed: {ex.Message}");
-            TryDeleteFile(partPath);
-            // UPDATETRUST_01 — every rejection path removes the artifact, including one rejected
-            // AFTER the rename (bad re-hash, failed signature check).
-            TryDeleteFile(finalPath);
-            if (executablePath != finalPath) TryDeleteFile(executablePath);
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                NativeDialog.ShowError(
-                    "The update could not be downloaded." + Environment.NewLine + Environment.NewLine +
-                    $"Reason: {ex.Message}" + Environment.NewLine + Environment.NewLine +
-                    "Your current version was not changed. The app will offer the update again on a later start.",
-                    "Update Failed");
-            });
-        }
-        finally
-        {
-            Dispatcher.UIThread.Post(() => CloseProgressWindow(progressWindow));
-        }
-
-        await dialogTask.ConfigureAwait(false);
-    }
-
-    private static void CloseProgressWindow(UpdateDownloadWindow? window)
-    {
-        if (window is null) return;
-        try
-        {
-            window.ClosingByUpdater = true;
-            if (window.IsVisible) window.Close();
-        }
-        catch (System.Exception swallowed5)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed5);   // FAULTTIER_02 — no failure is silent.
-        }
-    }
+    /// <summary>D1 / SYS-PAYLOADSPLIT — the app-only package decision, with the installed bytes verified.</summary>
+    internal static Task<bool> RuntimeMatchesForCompactAsync(UpdateRelease release, CancellationToken cancel)
+        => RuntimeAlreadyMatchesAsync(release, verifyInstalledBytes: true, cancel);
 
     /// <summary>
     /// UPDATEUX_04 — "Restart &amp; update now". Closes the app through its NORMAL close path, so a
@@ -1206,8 +822,6 @@ internal static class UpdateService
             return;
         }
 
-        // While the "save your work?" question is open the main window is not active; once the user
-        // answers "keep working" it becomes active again and is still visible.
         DateTime giveUp = DateTime.UtcNow.AddMinutes(2);
         var poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         poll.Tick += (_, _) =>
@@ -1220,32 +834,14 @@ internal static class UpdateService
         poll.Start();
     }
 
-    /// <summary>UPDATEUX_03 — download speed averaged over the last few seconds, for "time left".</summary>
-    private sealed class DownloadMeter
-    {
-        private readonly Queue<(DateTime At, long Bytes)> _samples = new();
-
-        public double BytesPerSecond { get; private set; }
-
-        public void Add(long totalBytes)
-        {
-            DateTime now = DateTime.UtcNow;
-            _samples.Enqueue((now, totalBytes));
-            while (_samples.Count > 2 && now - _samples.Peek().At > TimeSpan.FromSeconds(5)) _samples.Dequeue();
-            (DateTime firstAt, long firstBytes) = _samples.Peek();
-            double seconds = (now - firstAt).TotalSeconds;
-            if (seconds >= 0.5) BytesPerSecond = (totalBytes - firstBytes) / seconds;
-        }
-    }
-
     internal static string ExtractCompactInstaller(string archivePath, string folder)
     {
         using var archive = System.IO.Compression.ZipFile.OpenRead(archivePath);
-        if (archive.Entries.Count != 1 || archive.Entries[0].FullName != ExpectedAssetName ||
+        if (archive.Entries.Count != 1 || archive.Entries[0].FullName != InstallPayload.ExecutableName ||
             archive.Entries[0].Length is < 1 or > 512L * 1024 * 1024 ||
             ((archive.Entries[0].ExternalAttributes >> 16) & 0xF000) == 0xA000)
             throw new IOException("The small update package has unexpected contents. Download the full installer.");
-        string path = Path.Combine(folder, ExpectedAssetName);
+        string path = Path.Combine(folder, InstallPayload.ExecutableName);
         using var input = archive.Entries[0].Open();
         using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         input.CopyTo(output);
@@ -1253,14 +849,7 @@ internal static class UpdateService
         return path;
     }
 
-    /// <summary>UPDATEUX_03 — "43%  ·  140 of 322 MB  ·  3.1 MB/s  ·  about 1 min left".</summary>
-    private static void ReportDownloadProgress(UpdateDownloadViewModel vm, long copied, long total, double bytesPerSecond)
-    {
-        double? fraction = total > 0 ? Math.Clamp((double)copied / total, 0, 1) : null;
-        string text = DescribeDownloadProgress(copied, total, bytesPerSecond);
-        Dispatcher.UIThread.Post(() => vm.Stage("Downloading the new version…", text, fraction, canCancel: true));
-    }
-
+    /// <summary>UPDATEUX_03 — "43%  ·  140 of 322 MB  ·  1.0 MB/s  ·  about 4 min left".</summary>
     internal static string DescribeDownloadProgress(long copied, long total, double bytesPerSecond)
     {
         const double Mb = 1024 * 1024;
@@ -1336,7 +925,6 @@ internal static class UpdateService
         string candidate = tag!.Trim();
         if (candidate.Length == 0 || candidate.Length > 64) return false;
 
-        // Leading/trailing dots and any ".." run are traversal or Windows-illegal names.
         if (candidate.StartsWith('.') || candidate.EndsWith('.')) return false;
         if (candidate.Contains("..", StringComparison.Ordinal)) return false;
 
@@ -1349,7 +937,6 @@ internal static class UpdateService
             if (!ok) return false;
         }
 
-        // Reserved Windows device names, with or without an extension.
         string stem = candidate;
         int dot = stem.IndexOf('.');
         if (dot >= 0) stem = stem[..dot];
@@ -1369,24 +956,4 @@ internal static class UpdateService
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
     };
 
-    private static void PurgeOldDownloadFolders()
-    {
-        try
-        {
-            string root = Path.Combine(Path.GetTempPath(), DownloadFolderRootName);
-            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.WarnThrottled("UPDATE", $"Could not purge old update downloads: {ex.Message}");
-        }
-    }
-
-    private static void TryDeleteFile(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch (System.Exception swallowed2)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
-        }
-    }
 }

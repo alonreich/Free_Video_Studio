@@ -30,7 +30,6 @@ public sealed class SharedHistoryWiringTests
 
     private static int Count(string text, string pattern) => Regex.Matches(text, pattern).Count;
 
-    // ── shared engine only ─────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void NoWindowOwnsAPrivateHistoryEngineAnyMore()
@@ -51,7 +50,6 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("UndoStack<MusicWizardSnapshot>", Src("MusicWizardWindow.History.cs"));
     }
 
-    // ── CROP (10–14) ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T10_T11_Crop_PointerGestureRecordsOnceOnRelease_NeverWhileMoving()
@@ -62,7 +60,7 @@ public sealed class SharedHistoryWiringTests
 
         string released = Body(code, "Item_PointerReleased");
         Assert.Equal(1, Count(released, @"\bPushHistory\s*\("));
-        Assert.Contains("CropHistoryLabels.ForPointerGesture(", released);   // "move crop" / "resize HUD"
+        Assert.Contains("CropHistoryLabels.ForPointerGesture(", released);
     }
 
     [Fact]
@@ -84,12 +82,11 @@ public sealed class SharedHistoryWiringTests
     public void T14_Crop_EveryRecordedEditIsLabelled()
     {
         string code = Src("CropToolWindow.axaml.cs") + Src("CropToolWindow.History.cs");
-        Assert.DoesNotMatch(@"\bPushHistory\s*\(\s*\)", code);   // no unlabelled step
+        Assert.DoesNotMatch(@"\bPushHistory\s*\(\s*\)", code);
         Assert.Contains("NextUndoLabel", Src("CropToolWindow.History.cs"));
         Assert.Contains("NextRedoLabel", Src("CropToolWindow.History.cs"));
     }
 
-    // ── GRANULAR (15–19) ───────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T16_Granular_EveryGestureCallSiteKeepsItsCoalesceKey()
@@ -104,18 +101,16 @@ public sealed class SharedHistoryWiringTests
     public void T17_T19_Granular_ParkOnCloseAndApplyBoundaryStayInPlace()
     {
         string code = Src("GranularSpeedEditorWindow.axaml.cs");
-        Assert.Contains("ClearUndoHistory(\"changes applied\")", code);          // the APPLY boundary
-        Assert.Contains("ParkHistoryForReopen();", Body(code, "OnClosed"));      // UNDO_25
+        Assert.Contains("ClearUndoHistory(\"changes applied\")", code);
+        Assert.Contains("ParkHistoryForReopen();", Body(code, "OnClosed"));
         Assert.Contains("AdoptParkedHistory();", code);
 
-        // EDITSTATE_01 — the identity proof moved to the edit session with the history it guards.
         string history = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.Core", "Editing", "GranularEditSession.History.cs"));
-        Assert.Contains("TryAdopt(parked, HistoryKey, opening)", history);       // clip + revision identity
-        Assert.Contains("IsMergeMode", Src("../FreeVideoStudio.Core/Editing/GranularEditSession.cs").Split("HistoryKey =>")[1]);   // merge mode never parks
+        Assert.Contains("TryAdopt(parked, HistoryKey, opening)", history);
+        Assert.Contains("IsMergeMode", Src("../FreeVideoStudio.Core/Editing/GranularEditSession.cs").Split("HistoryKey =>")[1]);
         Assert.Contains("_edit.AdoptParkedHistory()", Src("GranularSpeedEditorWindow.History.cs"));
     }
 
-    // ── MUSIC (6–9) ────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T08_T09_Music_ShortcutsGoThroughTheSharedTable_AndYieldToTextInput()
@@ -123,7 +118,7 @@ public sealed class SharedHistoryWiringTests
         string key = Body(Src("MusicWizardWindow.History.cs"), "WizardHistoryKeyDown");
         Assert.Contains("HistoryShortcut.Classify(", key);
         Assert.Contains("KeyboardFocusPolicy.IsTextInputFocused(", key);
-        Assert.Contains("HistoryCommand.None) return;", key);   // returns WITHOUT e.Handled, so the TextBox keeps Ctrl+Z
+        Assert.Contains("HistoryCommand.None) return;", key);
     }
 
     [Fact]

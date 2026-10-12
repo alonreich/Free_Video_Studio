@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -84,8 +81,6 @@ public static class AiHudResponseParser
         }
         catch (JsonException ex)
         {
-            // Recoverable HERE because the caller owns the user-facing outcome: the coordinator
-            // reports a malformed AI answer as Degraded and keeps the local candidates.
             Faults.Recoverable("CROP", "AI HUD answer was not valid JSON.", ex);
             return new AiHudParseResult(Array.Empty<AiHudCandidate>(), 0, "malformed JSON: " + ex.Message);
         }
@@ -124,7 +119,6 @@ public static class AiHudResponseParser
                     rejected++;
             }
 
-            // Deterministic order: confidence desc, then geometry, then label (ordinal).
             List<AiHudCandidate> ordered = accepted
                 .OrderByDescending(c => c.Confidence)
                 .ThenBy(c => c.NormalizedY)

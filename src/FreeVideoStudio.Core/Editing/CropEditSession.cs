@@ -1,12 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -64,7 +56,6 @@ public sealed class CropEditSession
         History = new UndoStack<CropLayoutSnapshot>(CropLayoutSnapshot.Empty);
     }
 
-    // ── capture resolution ──────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// RESGUESS_01 — these are a PLACEHOLDER, not a fact, until <see cref="CaptureResolutionKnown"/>.
@@ -79,7 +70,6 @@ public sealed class CropEditSession
     /// <summary>RESGUESS_01 — true once a real video or snapshot has reported its dimensions.</summary>
     public bool CaptureResolutionKnown { get; set; }
 
-    // ── layers & logical selection ──────────────────────────────────────────────────────────
 
     /// <summary>Every placed element, in the order they were placed.</summary>
     public IReadOnlyList<CropLayer> Layers => _layers;
@@ -114,7 +104,6 @@ public sealed class CropEditSession
     /// <summary>Unsaved work exists (CROPUNSAVED_01).</summary>
     public bool Dirty { get; set; }
 
-    // ── profile ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// GATE_01 — the profile this session is editing, or null before one has been chosen. Null is
@@ -150,18 +139,12 @@ public sealed class CropEditSession
         if (name.Length == 0) return "Enter a name — spaces alone will not do.";
         if (name.Length > MaxProfileNameLength) return $"Too long. Keep it under {MaxProfileNameLength} characters.";
 
-        // The name becomes a file name on disk, so anything the file system rejects is rejected
-        // here, in words, rather than as a failed save after the click.
         if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return "Remove these characters: \\ / : * ? \" < > |";
 
-        // An all-dots name would resolve to "." or ".." on disk.
         if (name.All(ch => ch == '.')) return "A name made only of dots will not work. Use some letters.";
 
-        // NOMASK_01 — the reserved built-in.
         if (_isReservedProfileName(name)) return $"\"{name}\" is a reserved built-in profile. Choose another name.";
 
-        // NOT a nicety: the profile writer does not check for an existing file, so SAVE AS NEW onto
-        // a taken name silently REPLACED that profile.
         if (ExistingProfileNames.Contains(name))
             return $"\"{name}\" already exists. Pick another name — SAVE AS NEW never replaces a profile.";
 
@@ -174,7 +157,6 @@ public sealed class CropEditSession
     /// </summary>
     public bool CanSave => ActiveProfile != null && Dirty && (_layers.Count > 0 || DeletedRoleKeys.Count > 0);
 
-    // ── the element catalogue ───────────────────────────────────────────────────────────────
 
     /// <summary>The five built-in elements. Custom ones live in <see cref="CustomRoles"/>.</summary>
     public static IReadOnlyList<CropHudRole> BuiltInRoles { get; } =
@@ -284,7 +266,6 @@ public sealed class CropEditSession
         return TryGetRole(key, out CropHudRole role) ? role : BuiltInRoles[0];
     }
 
-    // ── geometry rules (CoordinateMath does the maths) ──────────────────────────────────────
 
     public CropSourceRect ClampSourceRect(CropSourceRect rect) => ClampSourceRect(rect, SnapshotWidth, SnapshotHeight);
 
@@ -363,7 +344,6 @@ public sealed class CropEditSession
         (layer.X, layer.Y) = ClampOverlay(layer.X, layer.Y, layer.Width, layer.Height);
     }
 
-    // ── commands ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Commits a selection as <paramref name="role"/> (a drawn box or an accepted Magic Wand
@@ -500,7 +480,6 @@ public sealed class CropEditSession
         return removed;
     }
 
-    // ── history (UNDO_27) ───────────────────────────────────────────────────────────────────
 
     /// <summary>UNDO_27 — the Crop Tool's history: committed layout only, never candidates.</summary>
     public UndoStack<CropLayoutSnapshot> History { get; }

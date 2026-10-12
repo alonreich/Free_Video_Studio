@@ -1,9 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -45,7 +40,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    // Distinct per-theme colours so the test can tell which dictionary answered.
     private static readonly Dictionary<string, (Color Dark, Color Light)> Tokens = new()
     {
         [MicrophoneSpectrumControl.BackgroundBrushKey] = (Color.FromRgb(1, 1, 1), Color.FromRgb(2, 2, 2)),
@@ -107,7 +101,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         for (double end = t + seconds; t < end; t += 0.05) meter.Advance(s, t);
     }
 
-    // ── layout ───────────────────────────────────────────────────────────────────────────────
 
     [AvaloniaFact]
     public void Meter_HasANonZeroDrawingArea()
@@ -136,12 +129,12 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         for (int i = 0; i < bars.Count; i++)
         {
             Assert.Equal(i, bars[i].BandIndex);
-            Assert.Equal(width, bars[i].Slot.Width, 6);                        // narrow, equal bars
-            Assert.Equal(bars[0].Slot.Bottom, bars[i].Slot.Bottom, 6);         // common baseline
+            Assert.Equal(width, bars[i].Slot.Width, 6);
+            Assert.Equal(bars[0].Slot.Bottom, bars[i].Slot.Bottom, 6);
             if (i > 0) Assert.Equal(gap, bars[i].Slot.X - bars[i - 1].Slot.Right, 6);
             if (bars[i].Segments.Count > 0)
             {
-                Assert.Equal(bars[i].Slot.Bottom, bars[i].Segments[0].Rect.Bottom, 6);   // grows from the bottom
+                Assert.Equal(bars[i].Slot.Bottom, bars[i].Segments[0].Rect.Bottom, 6);
                 for (int k = 1; k < bars[i].Segments.Count; k++)
                     Assert.Equal(bars[i].Segments[k - 1].Rect.Top, bars[i].Segments[k].Rect.Bottom, 6);
                 Assert.Equal(bars[i].Slot.Bottom - levels[i] * bars[i].Slot.Height, bars[i].LitTop, 6);
@@ -162,7 +155,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         Assert.Equal(new[] { SpectrumZone.Normal, SpectrumZone.Warning }, bars[2].Segments.Select(s => s.Zone));
         Assert.Equal(new[] { SpectrumZone.Normal, SpectrumZone.Warning, SpectrumZone.Peak }, bars[3].Segments.Select(s => s.Zone));
 
-        // Thresholds are dBFS: warning from -18, red from -6 on the -60..0 scale.
         Assert.Equal(0.7, MicrophoneSpectrumControl.WarningLevel, 9);
         Assert.Equal(0.9, MicrophoneSpectrumControl.PeakLevel, 9);
         var full = bars[3];
@@ -220,7 +212,7 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
             Settle(meter, ToneSnapshot(1000, 0.5), ref t);
             var wide = MicrophoneSpectrumControl.ComputeBars(meter.Bounds.Size, meter.DisplayedLevels);
 
-            meter.Width = 140;    // the transport row's MinWidth=140 track at the 980px window floor
+            meter.Width = 140;
             window.UpdateLayout();
             Assert.Equal(140, meter.Bounds.Width, 3);
             var narrow = MicrophoneSpectrumControl.ComputeBars(meter.Bounds.Size, meter.DisplayedLevels);
@@ -235,7 +227,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         finally { window.Close(); }
     }
 
-    // ── theme ────────────────────────────────────────────────────────────────────────────────
 
     [AvaloniaFact]
     public void Brushes_ResolveInTheControlsOwnThemeContext()
@@ -299,7 +290,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         }
     }
 
-    // ── motion only from fresh input ─────────────────────────────────────────────────────────
 
     [AvaloniaFact]
     public void StaleSnapshot_DecaysToEmpty_AndStopsAnimating()
@@ -312,7 +302,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
             Settle(meter, tone, ref t);
             Assert.True(meter.DisplayedLevels.Max() > 0.6);
 
-            // The same snapshot keeps being offered (callbacks stopped): bars must fall, then stop.
             Settle(meter, tone, ref t, 3.0);
             Assert.All(meter.DisplayedLevels, l => Assert.Equal(0.0, l));
             Assert.True(meter.IsSettled);
@@ -337,7 +326,7 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
             Assert.True(previous > 0.6);
             for (int i = 0; i < 60; i++)
             {
-                meter.Advance(null, t += 0.05);   // the window passes null once the source faults
+                meter.Advance(null, t += 0.05);
                 Assert.True(meter.DisplayedLevels.Max() <= previous + 1e-12);
                 previous = meter.DisplayedLevels.Max();
             }
@@ -346,7 +335,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         finally { window.Close(); }
     }
 
-    // ── the studio wiring ────────────────────────────────────────────────────────────────────
 
     [AvaloniaFact]
     public async Task VoiceOverWindow_FeedsTheMeterFromTheSession_AndDropsItOnFault()
@@ -361,7 +349,7 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
 
             await session.StartMonitorAsync(0).WaitAsync(TimeSpan.FromSeconds(10));
             window.TriggerUpdateSpectrumMeter();
-            Assert.Null(meter!.LastInput);                    // open but nothing heard: no fake motion
+            Assert.Null(meter!.LastInput);
 
             devices.Monitor!.RaisePcm(ToneSnapshotPcm(700));
             window.TriggerUpdateSpectrumMeter();

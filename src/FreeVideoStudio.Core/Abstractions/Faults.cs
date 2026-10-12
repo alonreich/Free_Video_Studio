@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Threading;
 
@@ -94,7 +91,6 @@ public static class Faults
         IsInstalled = false;
     }
 
-    // ── The three tiers, as one-liners a catch block can actually use ───────────────────────
 
     /// <summary>
     /// The user's outcome is unchanged. DEBUG breadcrumb only, nothing on screen.
@@ -140,7 +136,6 @@ public static class Faults
             }
             catch (Exception)
             {
-                // Nothing left to escalate to. Returning is the only correct action.
             }
         }
     }

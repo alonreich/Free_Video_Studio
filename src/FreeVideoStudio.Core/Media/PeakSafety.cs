@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Globalization;
 
@@ -71,13 +68,19 @@ public static class PeakSafety
                ":knee=2:makeup=1:detection=peak";
     }
 
-    /// <summary>The always-on true-peak safety limiter (no leading comma, no labels).</summary>
+    /// <summary>
+    /// The always-on true-peak safety limiter (no leading comma, no labels).
+    /// AVSYNC_03 — <c>latency=1</c> IS LOAD-BEARING. <c>alimiter</c> looks ahead by its attack time
+    /// and, without delay compensation, emits every sample that much late: the whole mix trailed the
+    /// video by exactly 1.0 ms (measured with the bundled FFmpeg: 1 kHz bursts at n s decoded at
+    /// n + 0.0010 s through this chain, n + 0.0000 s with <c>latency=1</c>; identical sample count).
+    /// </summary>
     public static string SafetyLimiterFilter(int outputSampleRate = 48000)
     {
         var ci = CultureInfo.InvariantCulture;
         return $"aresample={OversampleRate}," +
                $"alimiter=limit={SafetyLimiterLimitDb.ToString("F1", ci)}dB:attack=1:release=50" +
-               ":level_in=1:level_out=1:level=disabled," +
+               ":level_in=1:level_out=1:level=disabled:latency=1," +
                $"aresample={outputSampleRate}";
     }
 }

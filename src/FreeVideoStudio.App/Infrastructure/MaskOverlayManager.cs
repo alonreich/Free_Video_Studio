@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -69,10 +66,6 @@ public static class MaskOverlayManager
         {
             var pPath = Path.Combine(ProfilesDirectory, p + ".json");
 
-            // NOMASK_01 — the reserved profile is SELF-HEALING, not merely seeded-if-absent.
-            // Every other profile is the user's to shape; this one is a guarantee ("no HUD, ever"),
-            // so a file that has drifted — hand-edited, or written by a build before the write
-            // guards below existed — is rewritten from CreateNoMask rather than trusted.
             if (IsNoMask(p))
             {
                 JsonObject? existing = null;
@@ -91,8 +84,6 @@ public static class MaskOverlayManager
                 continue;
             }
 
-            // FORTNITEDEFAULT_02 — seed Fortnite from the shipped layout, never from whichever
-            // profile last occupied the shared config. Preserve valid user edits to this profile.
             if (p == "Fortnite" && File.Exists(pPath))
             {
                 var existing = AtomicJsonFile.ReadObject(pPath);
@@ -113,8 +104,6 @@ public static class MaskOverlayManager
 
         if (!File.Exists(ApplicationPaths.CreateDefault().CropCoordinatesFile))
         {
-            // CROPFIRSTBOOT_01 — ApplyProfile calls EnsureDefaults. Seed the missing live
-            // document directly so a fresh install cannot recurse before its first write.
             var activeName = SanitizeProfileName(SettingsManager.Instance.ActiveMaskOverlay);
             var active = activeName == null ? null
                 : AtomicJsonFile.ReadObject(Path.Combine(ProfilesDirectory, activeName + ".json"));
@@ -209,11 +198,6 @@ public static class MaskOverlayManager
             var active = SettingsManager.Instance.ActiveMaskOverlay;
             if (string.IsNullOrWhiteSpace(active)) return false;
 
-            // NOMASK_01 — NEVER write the live crop config back into the reserved profile.
-            // This method exists so Crop Tools edits follow the active profile. The Main App
-            // blocks Crop Tools while the reserved profile is active, but this is the last line
-            // of defence: one save through here would bake HUD layers into "No Mask Profile"
-            // permanently, and the name would be a lie from then on.
             if (IsNoMask(active))
             {
                 RuntimeLog.Info("MASK PROFILE", $"'{active}' is read-only. Live crop config NOT written back to it.");
@@ -246,9 +230,6 @@ public static class MaskOverlayManager
         string? safeName = SanitizeProfileName(newName);
         if (safeName == null) return;
 
-        // NOMASK_01 — the reserved name cannot be claimed by a user-created profile. Without this,
-        // "Create new overlay" named "No Mask Profile" would snapshot the CURRENT crop config over
-        // the reserved file and hand the user a fully-masked profile wearing the no-mask name.
         if (IsNoMask(safeName))
         {
             RuntimeLog.Info("MASK PROFILE", $"'{safeName}' is a reserved profile name. Creation refused.");

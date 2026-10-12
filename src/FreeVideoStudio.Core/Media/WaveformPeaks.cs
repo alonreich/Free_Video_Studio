@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -50,8 +47,26 @@ public static class WaveformPeaks
         return peaks;
     }
 
-    /// <summary>Reads the window's audio once and returns its peaks; null when there is no audio or ffmpeg fails.</summary>
-    public static async Task<float[]?> ExtractAsync(string ffmpegPath, string path, double startSec, double durationSec, CancellationToken ct)
+    /// <summary>
+    /// PCMSTREAM_01 — <see cref="Reduce"/> over a PCM16LE stream in bounded memory. Pass 1 streams the
+    /// samples through a 64 KiB buffer into <see cref="PcmScratch"/> (memory-capped, spills to a temp
+    /// file) while counting them; pass 2 replays them with the FINAL count, so the bucket mapping —
+    /// including a stream shorter than requested — is identical to the one-shot reduce.
+    /// Returns null when the stream holds no whole sample.
+    /// </summary>
+    public static async Task<float[]?> ReduceStreamAsync(Stream pcm, int count, CancellationToken ct)
+    {
+        using var scratch = new PcmScratch();
+        long n = await PcmStream.PumpAsync(pcm, scratch, ct).ConfigureAwait(false);
+        if (n <= 0) return null;
+
+        var reducer = new PeakBucketReducer(count, n);
+        await scratch.ReplayAsync(reducer, ct).ConfigureAwait(false);
+        return reducer.Peaks;
+    }
+
+    /// <summary>Builds the ffmpeg invocation that decodes the window to <see cref="SampleRate"/> Hz mono s16le.</summary>
+    public static ProcessStartInfo BuildStartInfo(string ffmpegPath, string path, double startSec, double durationSec)
     {
         var ci = CultureInfo.InvariantCulture;
         var psi = new ProcessStartInfo
@@ -71,39 +86,33 @@ public static class WaveformPeaks
             "-vn", "-sn", "-dn", "-ac", "1", "-ar", SampleRate.ToString(ci),
             "-f", "s16le", "-acodec", "pcm_s16le", "-",
         }) psi.ArgumentList.Add(a);
+        return psi;
+    }
 
-        Process? p = null;
+    /// <summary>
+    /// Reads the window's audio once and returns its peaks; null when there is no audio or ffmpeg fails.
+    /// PCMSTREAM_01/02 — stdout is reduced while it streams (bounded memory), stderr is drained
+    /// concurrently, and cancellation kills and reaps the child before the exception surfaces.
+    /// </summary>
+    public static async Task<float[]?> ExtractAsync(string ffmpegPath, string path, double startSec, double durationSec, CancellationToken ct)
+    {
+        float[]? peaks = null;
         try
         {
-            p = Process.Start(psi);
-            if (p == null) return null;
-            try { ChildProcessTracker.AddProcess(p); } catch (Exception ex) { CoreLogger.Swallowed(ex); }
-            var err = p.StandardError.ReadToEndAsync(ct);
-            using var ms = new MemoryStream();
-            await p.StandardOutput.BaseStream.CopyToAsync(ms, ct).ConfigureAwait(false);
-            await p.WaitForExitAsync(ct).ConfigureAwait(false);
-            _ = await err.ConfigureAwait(false);
-            if (ms.Length < 2) return null;
-
-            var bytes = ms.GetBuffer();
-            int n = (int)(ms.Length / 2);
-            var samples = new short[n];
-            Buffer.BlockCopy(bytes, 0, samples, 0, n * 2);
-            return Reduce(samples, PeakCount(durationSec));
+            var result = await FfmpegPcmPipe.RunAsync(
+                BuildStartInfo(ffmpegPath, path, startSec, durationSec),
+                async (stdout, token) => peaks = await ReduceStreamAsync(stdout, PeakCount(durationSec), token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            return result.Started ? peaks : null;
         }
         catch (OperationCanceledException)
         {
-            try { if (p is { HasExited: false }) p.Kill(true); } catch (Exception ex) { CoreLogger.Swallowed(ex); }
             throw;
         }
         catch (Exception ex)
         {
             CoreLogger.Swallowed(ex);
             return null;
-        }
-        finally
-        {
-            p?.Dispose();
         }
     }
 

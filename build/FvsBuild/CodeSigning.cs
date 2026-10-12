@@ -1,4 +1,7 @@
-﻿namespace FvsBuild;
+﻿using System.Security.Cryptography.X509Certificates;
+using FreeVideoStudio.Core.Infrastructure;
+
+namespace FvsBuild;
 
 /// <summary>
 /// SIGNMANDATE_01 - Authenticode signing. Set FVS_SIGN_PFX and FVS_SIGN_PASS to activate; the
@@ -59,20 +62,28 @@ internal static class CodeSigning
         string? pfx = Environment.GetEnvironmentVariable("FVS_SIGN_PFX");
         string? password = Environment.GetEnvironmentVariable("FVS_SIGN_PASS");
         bool localDev = false;
+        EnsureLocalLeaf(log);
         if (string.IsNullOrEmpty(pfx) && File.Exists(LocalPfx) && File.Exists(LocalPasswordFile))
         {
-            // SIGNLOCAL_01 — no release certificate configured, but the repository carries the
-            // developer's own. Sign with it; the publish step refuses to ship the result.
             pfx = Path.GetFullPath(LocalPfx);
             password = File.ReadAllText(LocalPasswordFile).Trim();
             localDev = true;
-            log.Info("[Sign] FVS_SIGN_PFX not set: using the local development certificate " + LocalPfx + ".");
-            log.Info("[Sign] It is trusted on THIS machine only. Other users: update notification yes, in-app install no (SIGNLOCAL_02).");
+            log.Info("[Sign] FVS_SIGN_PFX not set: using the repository publisher certificate " + LocalPfx + ".");
+            log.Info("[Sign] Every installed copy trusts it through the built-in publisher root (UPDATEPIN_01): in-app updates");
+            log.Info("[Sign] install for everyone. Windows SmartScreen still shows 'unknown publisher' on a FIRST download.");
+
+            using X509Certificate2? leaf = LoadSigningCertificate(pfx, password);
+            if (leaf is null || !PublisherRoot.Vouches(leaf, out string pinDetail))
+            {
+                log.Error("ERROR: " + LocalPfx + " does not chain to the publisher root built into the app (PublisherRoot.cs).");
+                log.Error("       Installed copies would refuse every update signed with it. Restore the original");
+                log.Error("       ssl-certificate files, or issue a new leaf from the SAME root (UPDATEPIN_01).");
+                return false;
+            }
         }
 
         if (string.IsNullOrEmpty(pfx))
         {
-            // SIGNMANDATE_01 - the deliberate, acknowledged escape hatch.
             bool acknowledged = string.Equals(
                 Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED"), "1", StringComparison.Ordinal);
 
@@ -103,8 +114,6 @@ internal static class CodeSigning
         }
         password ??= string.Empty;
 
-        // signtool.exe is NOT on PATH in a plain shell - it lives in the Windows SDK.
-        // Probe PATH first, then fall back to the newest x64 SDK copy.
         string? signtool = Cli.FindOnPath("signtool.exe") ?? FindWindowsKitsSigntool();
         if (signtool is null)
         {
@@ -139,6 +148,122 @@ internal static class CodeSigning
         return true;
     }
 
+    /// <summary>
+    /// DIST-SMART / UPDATEPIN_01 — the certificate (with its private key) that signs update.json.
+    /// The REPOSITORY certificate first, because installed copies trust only the pinned root
+    /// (PublisherRoot) for the list — even when the program itself is signed with a bought
+    /// certificate via FVS_SIGN_PFX. FVS_SIGN_PFX is the fallback. Null when the build is unsigned.
+    /// </summary>
+    public static X509Certificate2? LoadManifestSigner()
+    {
+        string? pfx = Environment.GetEnvironmentVariable("FVS_SIGN_PFX");
+        string? password = Environment.GetEnvironmentVariable("FVS_SIGN_PASS");
+        if (File.Exists(LocalPfx) && File.Exists(LocalPasswordFile))
+        {
+            pfx = Path.GetFullPath(LocalPfx);
+            password = File.ReadAllText(LocalPasswordFile).Trim();
+        }
+        return string.IsNullOrEmpty(pfx) || !File.Exists(pfx) ? null : LoadSigningCertificate(pfx, password ?? string.Empty);
+    }
+
+    public const string LocalRootCertificate = @"ssl-certificate\fvs-dev-root-ca.cer";
+    public const string LocalRootKey = @"ssl-certificate\fvs-dev-root-ca.key.pem";
+
+    /// <summary>
+    /// UPDATEPIN_02 — NO HUMAN STEP, EVER. The publisher LEAF certificate expires (3 years); the ROOT
+    /// pinned in every installed copy (PublisherRoot) does not change. When the leaf is missing,
+    /// unreadable, not from the pinned root, or within 90 days of expiry, a new leaf is issued from
+    /// the same root (its key is ssl-certificate\fvs-dev-root-ca.key.pem, never in git) and written
+    /// to fvs-codesign.pfx under the SAME password (which also unlocks the root key). The old file is
+    /// kept as a dated backup.
+    /// Installed copies accept the new leaf at once, because they trust the ROOT, not the leaf.
+    /// Without the root key nothing is changed and the existing rules apply.
+    /// </summary>
+    public static void EnsureLocalLeaf(BuildLog log)
+    {
+        try
+        {
+            if (File.Exists(LocalPfx) && File.Exists(LocalPasswordFile))
+            {
+                using X509Certificate2? current = LoadSigningCertificate(LocalPfx, File.ReadAllText(LocalPasswordFile).Trim());
+                if (current is not null && current.NotAfter > DateTime.Now.AddDays(90) && PublisherRoot.Vouches(current, out _))
+                    return;
+            }
+            if (!File.Exists(LocalRootCertificate) || !File.Exists(LocalRootKey))
+            {
+                log.Warn("[Sign] The publisher leaf needs renewing, but the root key is not here (" + LocalRootKey + "). Skipped.");
+                return;
+            }
+
+            using X509Certificate2 rootPublic = X509CertificateLoader.LoadCertificateFromFile(LocalRootCertificate);
+            if (!string.Equals(rootPublic.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256),
+                    PublisherRoot.Sha256Thumbprint, StringComparison.OrdinalIgnoreCase))
+            {
+                log.Error("[Sign] " + LocalRootCertificate + " is not the root built into the app; a leaf will NOT be issued from it.");
+                return;
+            }
+            string password = File.Exists(LocalPasswordFile) ? File.ReadAllText(LocalPasswordFile).Trim() : string.Empty;
+            string rootPem = File.ReadAllText(LocalRootKey);
+            using var rootKey = System.Security.Cryptography.RSA.Create();
+            if (rootPem.Contains("ENCRYPTED", StringComparison.Ordinal)) rootKey.ImportFromEncryptedPem(rootPem, password);
+            else rootKey.ImportFromPem(rootPem);
+            using X509Certificate2 root = rootPublic.CopyWithPrivateKey(rootKey);
+
+            using var leafKey = System.Security.Cryptography.RSA.Create(3072);
+            var request = new CertificateRequest("CN=Alon Reich (FVS local development), O=Alon Reich, C=IL", leafKey,
+                System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+                new System.Security.Cryptography.OidCollection { new("1.3.6.1.5.5.7.3.3") }, false));
+            request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+            request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(root, true, false));
+
+            DateTimeOffset notBefore = DateTimeOffset.Now.AddDays(-1);
+            DateTimeOffset notAfter = DateTimeOffset.Now.AddYears(3);
+            if (notAfter > root.NotAfter) notAfter = root.NotAfter.AddDays(-1);
+            byte[] serial = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+            serial[0] &= 0x7F;
+            using X509Certificate2 issued = request.Create(root, notBefore, notAfter, serial);
+            using X509Certificate2 leaf = issued.CopyWithPrivateKey(leafKey);
+
+            if (string.IsNullOrEmpty(password))
+                password = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))
+                    .Replace("/", "").Replace("+", "").Replace("=", "");
+            var bundle = new X509Certificate2Collection { leaf, rootPublic };
+            byte[] pfxBytes = bundle.Export(X509ContentType.Pkcs12, password)
+                ?? throw new System.Security.Cryptography.CryptographicException("The certificate could not be exported.");
+
+            if (File.Exists(LocalPfx))
+                File.Copy(LocalPfx, LocalPfx + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture), overwrite: true);
+            if (File.Exists(LocalPasswordFile))
+                File.Copy(LocalPasswordFile, LocalPasswordFile + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture), overwrite: true);
+            File.WriteAllBytes(LocalPfx, pfxBytes);
+            File.WriteAllText(LocalPasswordFile, password);
+            log.Success($"[Sign] Issued a new publisher leaf from the pinned root (valid to {notAfter:yyyy-MM-dd}). Installed copies accept it as is.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException or ArgumentException)
+        {
+            log.Warn("[Sign] Could not renew the publisher leaf: " + ex.Message);
+        }
+    }
+
+    private static X509Certificate2? LoadSigningCertificate(string pfx, string password)
+    {
+        try
+        {
+            X509Certificate2Collection all = X509CertificateLoader.LoadPkcs12CollectionFromFile(
+                pfx, password, X509KeyStorageFlags.EphemeralKeySet);
+            X509Certificate2? leaf = all.FirstOrDefault(c => c.HasPrivateKey);
+            foreach (X509Certificate2 other in all) if (!ReferenceEquals(other, leaf)) other.Dispose();
+            return leaf;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return null;
+        }
+    }
+
     private static string? FindWindowsKitsSigntool()
     {
         string root = Path.Combine(
@@ -148,7 +273,6 @@ internal static class CodeSigning
         {
             return null;
         }
-        // Version directories sort naturally (10.0.26100.0 > 10.0.22621.0), newest first.
         foreach (string versionDir in Directory.EnumerateDirectories(root).OrderByDescending(p => p, StringComparer.OrdinalIgnoreCase))
         {
             string candidate = Path.Combine(versionDir, "x64", "signtool.exe");

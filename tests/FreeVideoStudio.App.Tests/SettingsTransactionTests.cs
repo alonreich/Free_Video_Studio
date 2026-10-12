@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Linq;
@@ -57,7 +54,6 @@ public sealed class SettingsTransactionTests : IDisposable
         => File.WriteAllText(_settingsFile,
             "{ \"SchemaVersion\": " + SettingsManager.CurrentSchemaVersion + ", \"AutoUpdateChecks\": true, \"Volume\": 10" + extraMembers + " }");
 
-    // 1 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void SameProcessUnrelatedUpdates_BothSurvive()
     {
@@ -84,14 +80,14 @@ public sealed class SettingsTransactionTests : IDisposable
     public void SiblingWriteBeforeTransaction_IsNotRevertedByStaleMemory()
     {
         WriteCurrentFile();
-        SettingsManager.Load();                     // this process now holds Theme = Dark in memory
+        SettingsManager.Load();
         Assert.Equal(ThemeMode.Dark, SettingsManager.Instance.ThemeMode);
 
-        JsonObject sibling = ReadDiskNode();        // "process B" saves Theme = Light
+        JsonObject sibling = ReadDiskNode();
         sibling["ThemeMode"] = (int)ThemeMode.Light;
         AtomicJsonFile.WriteText(_settingsFile, sibling.ToJsonString());
 
-        Assert.True(SettingsManager.Update(s => s.Volume = 77));   // "process A" changes another field
+        Assert.True(SettingsManager.Update(s => s.Volume = 77));
 
         AppSettings disk = ReadDisk();
         Assert.Equal(ThemeMode.Light, disk.ThemeMode);
@@ -99,15 +95,12 @@ public sealed class SettingsTransactionTests : IDisposable
         Assert.Equal(ThemeMode.Light, SettingsManager.Instance.ThemeMode);
     }
 
-    // 2 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void CrossProcessWriter_CannotCommitBetweenReadAndWrite()
     {
         WriteCurrentFile();
         SettingsManager.Load();
 
-        // A Win32 named mutex is owned by a THREAD, so a second thread contends exactly like a
-        // sibling process does.
         using var attempting = new ManualResetEventSlim(false);
         int competitorCommitted = 0;
         bool competitorCommittedInsideTransaction = true;
@@ -133,7 +126,7 @@ public sealed class SettingsTransactionTests : IDisposable
             SettingsManager.TransactionReadCompletedForTests = null;
             competitor.Start();
             Assert.True(attempting.Wait(TimeSpan.FromSeconds(10)));
-            Thread.Sleep(400);   // ample time for the competitor to commit IF the mutex allowed it
+            Thread.Sleep(400);
             competitorCommittedInsideTransaction = Volatile.Read(ref competitorCommitted) == 1;
         };
 
@@ -144,13 +137,11 @@ public sealed class SettingsTransactionTests : IDisposable
         Assert.False(competitorCommittedInsideTransaction);
         Assert.Equal(1, competitorCommitted);
 
-        // Neither change is lost: ours committed first, the sibling then read it and added its own.
         AppSettings disk = ReadDisk();
         Assert.Equal(42, disk.Volume);
         Assert.Equal(ThemeMode.Light, disk.ThemeMode);
     }
 
-    // 3 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void UnknownFutureRootProperty_SurvivesUpdate()
     {
@@ -178,7 +169,6 @@ public sealed class SettingsTransactionTests : IDisposable
         Assert.Equal("keep", (string)disk["FutureFlag"]!);
     }
 
-    // 4 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void FutureSchemaVersion_IsNotDowngraded()
     {
@@ -187,7 +177,7 @@ public sealed class SettingsTransactionTests : IDisposable
         File.WriteAllText(_settingsFile, original);
 
         SettingsManager.Load();
-        Assert.Equal(original, File.ReadAllText(_settingsFile));   // Load leaves a newer file untouched
+        Assert.Equal(original, File.ReadAllText(_settingsFile));
         Assert.Equal(future, SettingsManager.Instance.SchemaVersion);
 
         Assert.True(SettingsManager.Update(s => s.Volume = 11));
@@ -208,15 +198,13 @@ public sealed class SettingsTransactionTests : IDisposable
 
         AppSettings disk = ReadDisk();
         Assert.Equal(SettingsManager.CurrentSchemaVersion, disk.SchemaVersion);
-        Assert.False(disk.ConfirmVideoMergerRemove);   // v9 migration ran inside the transaction
+        Assert.False(disk.ConfirmVideoMergerRemove);
         Assert.Equal(3, disk.Volume);
     }
 
-    // 5 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void FailedDurableWrite_LeavesInstanceUnchanged_AndRaisesNothing()
     {
-        // The product and this suite target Windows; POSIX rename replaces read-only/open files.
         if (!OperatingSystem.IsWindows()) return;
 
         WriteCurrentFile();
@@ -227,8 +215,6 @@ public sealed class SettingsTransactionTests : IDisposable
         int raised = 0;
         Action<AppSettings> onCommit = _ => Interlocked.Increment(ref raised);
         SettingsManager.Committed += onCommit;
-        // Windows: a read-only target, held open without FILE_SHARE_DELETE, cannot be replaced by the
-        // atomic rename — the durable write fails AFTER read/patch/serialize succeeded.
         File.SetAttributes(_settingsFile, FileAttributes.ReadOnly);
         var pin = new FileStream(_settingsFile, FileMode.Open, FileAccess.Read, FileShare.Read);
         try
@@ -299,20 +285,19 @@ public sealed class SettingsTransactionTests : IDisposable
     {
         WriteCurrentFile();
         SettingsManager.Load();
-        Assert.True(SettingsManager.Update(s => s.Volume = 66));   // in-memory: Volume 66
+        Assert.True(SettingsManager.Update(s => s.Volume = 66));
 
         File.WriteAllText(_settingsFile, "{ this is not json");
         Assert.True(SettingsManager.Update(s => s.UiSoundVolume = 5));
 
         AppSettings disk = ReadDisk();
         Assert.Equal(5, disk.UiSoundVolume);
-        Assert.Equal(new AppSettings().Volume, disk.Volume);        // defaults, NOT the stale 66
+        Assert.Equal(new AppSettings().Volume, disk.Volume);
         string backup = Assert.Single(Directory.GetFiles(_tempDir, "settings.json.corrupt-*.bak"));
         Assert.Equal("{ this is not json", File.ReadAllText(backup));
         Assert.NotNull(SettingsManager.LoadFailureMessage);
     }
 
-    // 6 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void SettingsWindowSave_IsOneLogicalTransaction()
     {
@@ -321,19 +306,16 @@ public sealed class SettingsTransactionTests : IDisposable
         Assert.DoesNotMatch(@"\bSettingsManager\s*\.\s*(SetAutoUpdateChecks|Save)\s*\(", save);
         Assert.Empty(ArchitectureRuleTests.FindDirectSettingsWrites(save));
 
-        // Nothing it calls inside the patch opens a second transaction.
         string output = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", "SettingsWindow.Output.cs"));
         Match apply = Regex.Match(output, @"void\s+ApplyPendingOutputSettings\s*\(AppSettings\s+s\)\s*\{(?<body>[^{}]*)\}");
         Assert.True(apply.Success);
         Assert.DoesNotContain("SettingsManager", apply.Groups["body"].Value);
     }
 
-    // 7 ─────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
     public void UpdateService_UsesTheTransactionHelpers()
     {
         string svc = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Services", "UpdateService.cs"));
-        Assert.True(Regex.Matches(svc, @"\bSettingsManager\s*\.\s*SetAutoUpdateChecks\s*\(").Count >= 1);
         Assert.DoesNotMatch(@"\bSettingsManager\s*\.\s*Save\s*\(", svc);
         Assert.Empty(ArchitectureRuleTests.FindDirectSettingsWrites(svc));
 

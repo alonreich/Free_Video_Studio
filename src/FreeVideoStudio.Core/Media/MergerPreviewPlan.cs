@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
@@ -136,7 +131,6 @@ public sealed class MergerPreviewPlan
         }
         var plan = new MergerPreviewPlan(steps, tl.TotalMergedFrames / (double)CompositeTimeline.MergeFps, effects);
 
-        // MEMEMODE_01 — corner overlays: anchored where the user put them, D seconds of gameplay long.
         var corners = new List<CornerOverlaySpan>();
         foreach (var c in tl.Clips)
         {
@@ -214,7 +208,6 @@ public sealed class MergerPreviewPlan
             if (mergedSec >= s.MergedStartSec - Eps && mergedSec < s.MergedEndSec - Eps)
             {
                 double resume = s.MergedEndSec;
-                // Back-to-back cuts across a clip boundary: keep jumping.
                 var next = CutResumeAt(resume + Eps * 2);
                 return next ?? resume;
             }

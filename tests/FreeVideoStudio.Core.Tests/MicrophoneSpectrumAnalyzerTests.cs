@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +17,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
     private const int Rate = 44100;
     private static readonly PcmCaptureFormat Mono16 = PcmCaptureFormat.ProductionMicrophone;
 
-    // ── generators ───────────────────────────────────────────────────────────────────────────
 
     private static double[] Tone(int samples, int rate, params (double Hz, double Amp)[] parts)
     {
@@ -74,18 +70,16 @@ public sealed class MicrophoneSpectrumAnalyzerTests
           + $"or an adjacent band; peaked in {actual} ({s.Bands[actual].LowHz:0}-{s.Bands[actual].HighHz:0} Hz).");
     }
 
-    // ── silence ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void DigitalSilence_IsFiniteFloorInEveryBand()
     {
-        var s = Analyze(new byte[Rate * 2]);   // 1 s of zeros
+        var s = Analyze(new byte[Rate * 2]);
         Assert.All(s.BandDbfs, d => Assert.Equal(MicrophoneSpectrumAnalyzer.SilenceDb, d));
         Assert.All(s.BandDbfs, d => Assert.True(double.IsFinite(d)));
         Assert.All(s.Levels, l => Assert.Equal(0.0, l));
     }
 
-    // ── single tones ─────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(125.0)]
@@ -95,7 +89,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
     {
         var s = Analyze(Pcm16(Tone(Rate / 2, Rate, (hz, 0.5))));
         AssertPeakNear(s, hz);
-        // The tone must stand far above bands an octave+ away (not a global level painted everywhere).
         int peak = s.PeakBandIndex;
         foreach (var b in s.Bands.Where(b => b.HighHz < hz / 2.5 || b.LowHz > hz * 2.5))
             Assert.True(s.BandDbfs[b.Index] < s.BandDbfs[peak] - 40, $"band {b.Index} leaked: {s.BandDbfs[b.Index]:0.0} dB");
@@ -116,7 +109,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         var low = Analyze(Pcm16(Tone(Rate / 2, Rate, (150, 0.05))));
         var high = Analyze(Pcm16(Tone(Rate / 2, Rate, (6000, 0.05))));
         Assert.True(high.PeakBandIndex - low.PeakBandIndex >= 15, $"{low.PeakBandIndex} vs {high.PeakBandIndex}");
-        // Where one is lit, the other is dark.
         Assert.True(low.Levels[low.PeakBandIndex] > 0.4);
         Assert.Equal(0.0, high.Levels[low.PeakBandIndex], 3);
         Assert.Equal(0.0, low.Levels[high.PeakBandIndex], 3);
@@ -134,12 +126,10 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.InRange(near4k, 20 * Math.Log10(0.3) - 3.5, 20 * Math.Log10(0.3) + 0.5);
         Assert.True(s.BandDbfs[b1k] < near250 - 50, $"1 kHz between the tones should be dark: {s.BandDbfs[b1k]:0.0} dB");
 
-        // The two loudest bands sit at the two tones, not at one global level.
         var top2 = s.BandDbfs.Select((d, i) => (d, i)).OrderByDescending(t => t.d).Take(2).Select(t => t.i).OrderBy(i => i).ToArray();
         Assert.True(Math.Abs(top2[0] - b250) <= 1 && Math.Abs(top2[1] - b4k) <= 1, $"{top2[0]},{top2[1]} vs {b250},{b4k}");
     }
 
-    // ── calibration ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void FullScaleSineAtBandCentre_ReadsZeroDbfs()
@@ -160,7 +150,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         var half = Analyze(Pcm16(Tone(Rate / 2, Rate, (hz, 0.25))));
         int b = full.PeakBandIndex;
         Assert.Equal(b, half.PeakBandIndex);
-        // Tolerance ±0.25 dB: the relationship is exact up to 16-bit quantisation noise.
         Assert.InRange(half.BandDbfs[b] - full.BandDbfs[b], -6.02 - 0.25, -6.02 + 0.25);
     }
 
@@ -169,7 +158,7 @@ public sealed class MicrophoneSpectrumAnalyzerTests
     {
         double[] square = new double[Rate / 2];
         for (int n = 0; n < square.Length; n++) square[n] = (n / 50) % 2 == 0 ? 1.0 : -1.0;
-        double[] overdriven = Tone(Rate / 2, Rate, (440, 4.0));   // clamped to full scale by Pcm16
+        double[] overdriven = Tone(Rate / 2, Rate, (440, 4.0));
 
         foreach (var pcm in new[] { Pcm16(square), Pcm16(overdriven) })
         {
@@ -179,7 +168,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
             Assert.Equal(1.0, s.Levels.Max());
         }
 
-        // Float input beyond ±1, NaN and infinity: still finite and clamped.
         var f = new PcmCaptureFormat(Rate, 1, 32, PcmSampleEncoding.IeeeFloat);
         var wild = Tone(Rate / 2, Rate, (440, 30.0));
         wild[100] = double.NaN; wild[200] = double.PositiveInfinity;
@@ -188,7 +176,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.All(fs.Levels, l => Assert.InRange(l, 0.0, 1.0));
     }
 
-    // ── callback boundaries ──────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData(1)]
@@ -207,7 +194,7 @@ public sealed class MicrophoneSpectrumAnalyzerTests
             split.Process(pcm.AsSpan(o, Math.Min(chunk, pcm.Length - o)));
 
         Assert.Equal(pcm.Length / 2, whole.FramesConsumed);
-        Assert.Equal(whole.FramesConsumed, split.FramesConsumed);   // no sample vanished between packets
+        Assert.Equal(whole.FramesConsumed, split.FramesConsumed);
         Assert.Equal(0, split.CarriedBytes);
         Assert.Equal(whole.Latest!.Sequence, split.Latest!.Sequence);
         for (int i = 0; i < whole.Latest.BandDbfs.Length; i++)
@@ -230,20 +217,17 @@ public sealed class MicrophoneSpectrumAnalyzerTests
     public void WindowsAreCompleteAndHopped_NotOnePerPacket()
     {
         var a = new MicrophoneSpectrumAnalyzer(Mono16);
-        // 50 ms packets (the production buffer size) until the first window exists: no analysis yet.
         byte[] packet = new byte[2205 * 2];
-        int analyses = a.Process(packet);   // 2205 frames < 4096
+        int analyses = a.Process(packet);
         Assert.Equal(0, analyses);
         Assert.Null(a.Latest);
-        analyses = a.Process(packet);       // 4410 frames: one complete window
+        analyses = a.Process(packet);
         Assert.Equal(1, analyses);
-        // Thereafter one analysis per HopSize frames, regardless of packet size.
         int total = 0;
         for (int i = 0; i < 40; i++) total += a.Process(packet);
-        Assert.Equal((4410 + 40 * 2205 - 4096) / a.HopSize, total);   // 86 hops after the first window
+        Assert.Equal((4410 + 40 * 2205 - 4096) / a.HopSize, total);
     }
 
-    // ── format and reset ─────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Reset_RemovesTheOldTone()
@@ -274,7 +258,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         a.Process(Pcm16(Tone(24000, 48000, (1000, 0.5))));
         AssertPeakNear(a.Latest!, 1000);
 
-        // A low sample rate clamps the top band strictly below Nyquist.
         var f16 = new PcmCaptureFormat(16000, 1, 16, PcmSampleEncoding.Pcm);
         a.Reconfigure(f16);
         Assert.True(a.Bands[^1].HighHz < 8000, $"{a.Bands[^1].HighHz}");
@@ -297,8 +280,8 @@ public sealed class MicrophoneSpectrumAnalyzerTests
                 Assert.True(bands[i].FirstBin <= bands[i].LastBin);
                 if (i > 0)
                 {
-                    Assert.Equal(bands[i - 1].HighHz, bands[i].LowHz, 9);       // contiguous Hz ranges
-                    Assert.Equal(bands[i - 1].LastBin + 1, bands[i].FirstBin);  // no bin shared or skipped
+                    Assert.Equal(bands[i - 1].HighHz, bands[i].LowHz, 9);
+                    Assert.Equal(bands[i - 1].LastBin + 1, bands[i].FirstBin);
                 }
             }
         }
@@ -308,11 +291,10 @@ public sealed class MicrophoneSpectrumAnalyzerTests
     public void LowBandsNarrowerThanABin_AreWidenedNotDuplicated()
     {
         var a = new MicrophoneSpectrumAnalyzer(Mono16);
-        // Pure log spacing 60 Hz..16 kHz in 40 bands makes the first band ~8.5 Hz, under one 10.77 Hz bin.
         double pureLogFirst = 60 * Math.Pow(16000.0 / 60, 1.0 / 40) - 60;
         Assert.True(pureLogFirst < a.BinWidthHz);
         Assert.Equal(a.BinWidthHz, a.Bands[0].HighHz - a.Bands[0].LowHz, 6);
-        Assert.Equal(a.Bands[0].FirstBin, a.Bands[0].LastBin);   // exactly one bin, honestly
+        Assert.Equal(a.Bands[0].FirstBin, a.Bands[0].LastBin);
     }
 
     [Fact]
@@ -333,7 +315,7 @@ public sealed class MicrophoneSpectrumAnalyzerTests
             Assert.Throws<NotSupportedException>(() => new MicrophoneSpectrumAnalyzer(f));
             var a = new MicrophoneSpectrumAnalyzer(Mono16);
             Assert.Throws<NotSupportedException>(() => a.Reconfigure(f));
-            Assert.Equal(Mono16, a.Format);   // a refused format leaves the analyzer on its old one
+            Assert.Equal(Mono16, a.Format);
         }
     }
 
@@ -351,7 +333,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.Equal(mono.BandDbfs[mono.PeakBandIndex], stereoF.BandDbfs[mono.PeakBandIndex], 1);
     }
 
-    // ── bounded state ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void State_StaysBoundedOverManyCallbacks()
@@ -359,7 +340,7 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         var a = new MicrophoneSpectrumAnalyzer(Mono16);
         int before = a.StateElementCount;
         byte[] packet = Pcm16(Tone(2205, Rate, (440, 0.3)));
-        for (int i = 0; i < 3000; i++)   // ~150 s of production 50 ms callbacks
+        for (int i = 0; i < 3000; i++)
         {
             a.Process(i % 3 == 0 ? packet.AsSpan(0, packet.Length - 1) : packet);
             Assert.InRange(a.CarriedBytes, 0, Mono16.BlockAlign - 1);
@@ -368,7 +349,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.Equal(MicrophoneSpectrumAnalyzer.DefaultBandCount, a.Latest!.Levels.Length);
     }
 
-    // ── ballistics ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Ballistics_AttackFast_ReleaseToZero_WhenSnapshotsStop()
@@ -379,11 +359,10 @@ public sealed class MicrophoneSpectrumAnalyzerTests
 
         double t = 0;
         m.Update(tone, t);
-        for (int i = 0; i < 4; i++) { t += 0.05; m.Update(tone, t); }   // same snapshot, still fresh
+        for (int i = 0; i < 4; i++) { t += 0.05; m.Update(tone, t); }
         Assert.InRange(m.Levels[b], tone.Levels[b] - 0.01, tone.Levels[b] + 1e-9);
         Assert.False(m.IsSettled);
 
-        // No new snapshot for longer than StaleAfterSeconds: bars release, then settle at zero.
         for (int i = 0; i < 60; i++) { t += 0.05; m.Update(tone, t); }
         Assert.All(m.Levels, l => Assert.Equal(0.0, l));
         Assert.True(m.IsSettled);
@@ -404,7 +383,7 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         for (double t = 0.15; t < 3; t += 0.05)
         {
             m.Update(null, t);
-            Assert.True(m.Levels.Max() <= previous + 1e-12);   // monotonic release, no motion
+            Assert.True(m.Levels.Max() <= previous + 1e-12);
             previous = m.Levels.Max();
         }
         Assert.Equal(0.0, previous);

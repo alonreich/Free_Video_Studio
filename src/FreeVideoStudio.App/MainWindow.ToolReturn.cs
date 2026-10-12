@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -107,7 +101,7 @@ public partial class MainWindow
         try { _musicPreviewIpcClient?.Dispose(); }
         catch (Exception ex) { RuntimeLog.Fail("UI", $"Music preview teardown reported: {ex.Message}"); }
         _musicPreviewIpcClient = null;
-        DisposePreviewMix();   // PREVIEWMIX_01
+        DisposePreviewMix();
         return result;
     }
 
@@ -175,8 +169,8 @@ public partial class MainWindow
         parent.Children.Insert(index, host);
 
         _videoHost = host;
-        _musicPreviewIpcClient = null;   // disposed with the pipeline; recreated on next use
-        _liveGameFilter = null;          // PEAKSAFE_01 — the new player has no audio filter yet
+        _musicPreviewIpcClient = null;
+        _liveGameFilter = null;
         _isSeeking = false;
         _nextSeekTarget = null;
         _videoPipelineShutDown = false;

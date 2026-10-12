@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -125,7 +122,7 @@ internal static unsafe partial class TaskbarProgress
             {
                 _unavailable = true;
                 SafeLog($"Taskbar progress unavailable: {ex.GetType().Name}: {ex.Message}");
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                 return false;
             }
         }

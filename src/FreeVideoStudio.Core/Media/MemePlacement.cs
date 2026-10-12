@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 
@@ -125,7 +122,6 @@ public sealed record MemePlacement(
 
         foreach (var p in placements)
         {
-            // MEMEMODE_01 — a corner overlay adds ZERO output seconds: it is not an insertion.
             if (p.IsCornerOverlay || p.DurationSec <= 0.001) continue;
             result.Add(new OutputTimeline.Insertion(p.AtSourceSecRelative, p.DurationSec, p.Id));
         }

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -47,8 +44,8 @@ public sealed class PreviewParityAppTests
         string mix = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "MainWindow.PreviewMix.cs"));
         Assert.Contains("ComposeExportPayloadAsync(", mix);
         Assert.Contains("MainMediaController.RenderAudioPreviewAsync(", mix);
-        Assert.Contains("_mixGate.TryComplete(", mix);   // PREVIEWMIX_02 — completion goes through the gate
-        Assert.DoesNotContain("af=", mix.Replace("\"af\"", ""));   // the mix player carries no filter of its own
+        Assert.Contains("_mixGate.TryComplete(", mix);
+        Assert.DoesNotContain("af=", mix.Replace("\"af\"", ""));
     }
 
     private static CornerMemeSpan Span(string id, double s, double e) =>
@@ -59,7 +56,7 @@ public sealed class PreviewParityAppTests
     {
         var spans = new[] { Span("a", 1, 6), Span("b", 3, 8), Span("c", 9, 10) };
         Assert.Equal(new[] { "a", "b" }, CornerMemeOverlayPresenter.ActiveAt(spans, 4.0).Select(s => s.Meme.Id));
-        Assert.Equal(new[] { "b" }, CornerMemeOverlayPresenter.ActiveAt(spans, 6.0).Select(s => s.Meme.Id));   // half-open end
+        Assert.Equal(new[] { "b" }, CornerMemeOverlayPresenter.ActiveAt(spans, 6.0).Select(s => s.Meme.Id));
         Assert.Empty(CornerMemeOverlayPresenter.ActiveAt(spans, 8.5));
     }
 }

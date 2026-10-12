@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Abstractions;
@@ -79,8 +73,6 @@ public sealed class ExportCoordinator : IExportCoordinator
 
         RaiseStateChanged(ExportState.Running);
 
-        // The runner is invoked synchronously on the caller's thread so a UI runner starts on the
-        // UI thread, exactly as ProcessVideoCoreAsync always did.
         _ = RunSessionAsync(request, cts, settled);
         return settled.Task;
     }
@@ -100,8 +92,6 @@ public sealed class ExportCoordinator : IExportCoordinator
             }
             catch (Exception ex)
             {
-                // A registered callback threw (ProcessWorker.Cancel is itself guarded, so this is a
-                // defect elsewhere). The token IS cancelled; the session still unwinds to Idle.
                 _faults.Degraded(Area,
                     "Stopping the export hit an error. It is still being stopped; the editor keeps working.", ex);
             }
@@ -151,9 +141,6 @@ public sealed class ExportCoordinator : IExportCoordinator
         }
         catch (Exception ex)
         {
-            // Not swallowed: returned in ExportCompletion.Error, which the caller surfaces to the user
-            // (MainWindow: ErrorReporter "Export failed"). This breadcrumb records it in the fault
-            // counters even if a future caller forgets to.
             outcome = ExportOutcome.Failed;
             error = ex;
             _faults.Recoverable(Area, $"Export runner ({request.Origin}) threw; returned to the caller as Failed.", ex);
@@ -177,8 +164,6 @@ public sealed class ExportCoordinator : IExportCoordinator
             _state = ExportState.Idle;
         }
 
-        // Disposed only now: every registration the runner took on this token is released by the
-        // time its Task has completed, and Cancel can no longer reach it (cleared under the gate).
         try { cts.Dispose(); }
         catch (Exception ex) { _faults.Recoverable(Area, "CancellationTokenSource.Dispose threw after the export finished.", ex); }
 

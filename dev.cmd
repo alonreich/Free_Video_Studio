@@ -7,6 +7,7 @@ set "CONFIG=Debug"
 set "RUNTIME=win-x64"
 set "DOTNET_WATCH_SUPPRESS_EMOJIS=1"
 set "REPO_ROOT=%CD%"
+set "DEV_FULL="
 
 REM Sandbox the developer config to prevent corrupting the real installed app settings.
 REM DEVDATA_01 - the sandbox lives in %LOCALAPPDATA%, NOT in %TMP%. Windows Storage Sense and
@@ -48,17 +49,20 @@ if /I "%~1"=="build" goto BUILD
 if /I "%~1"=="restore" goto RESTORE
 if /I "%~1"=="clean" goto CLEAN
 if /I "%~1"=="fresh" goto FRESH
+if /I "%~1"=="rebuild" goto REBUILD
 if /I "%~1"=="trace" goto TRACE
 
 echo Unknown option: %1
 echo.
 echo Usage:
-echo   dev          Hot reload mode. App stays open, UI updates on save. (Performs clean first)
+echo   dev          Hot reload mode. App stays open, UI updates on save.
+echo                Incremental: only what changed is rebuilt - DEVFAST_01.
+echo   dev rebuild  Like 'dev', but deletes every bin/obj first - full rebuild.
 echo   dev run      Single Debug launch. (Incremental, fast)
 echo   dev build    Build only, no run. (Incremental, fast)
 echo   dev fresh    Like 'dev', but ALSO wipes the sandboxed config/state
-echo                so the app boots as if freshly installed. The Gemini key and
-echo                AI settings are kept.
+echo                so the app boots as if freshly installed, and rebuilds fully.
+echo                The Gemini key and AI settings are kept.
 echo   dev restore  Restore NuGet packages after project/package changes.
 echo   dev clean    Clean Debug output.
 echo   dev trace    Like 'dev', but writes the log to .devlogs\ INSIDE the repo so
@@ -85,12 +89,24 @@ goto WATCH
 :FRESH
 call :WIPE_DEV_DATA
 call :DEV_SANDBOX
+set "DEV_FULL=1"
+goto WATCH
+
+:REBUILD
+set "DEV_FULL=1"
 goto WATCH
 
 :WATCH
-echo Cleaning project to ensure watch mode doesn't get stuck...
+REM DEVFAST_01 - the default run is INCREMENTAL. Wiping every bin/obj and running dotnet clean
+REM on every launch cost ~30 s of full restore + rebuild each time. KILL_STALE above already
+REM removes the only real cause of a stale binary - a running process locking bin. MSBuild
+REM rebuilds whatever changed. 'dev rebuild' and 'dev fresh' still wipe everything.
+if "%DEV_FULL%"=="1" goto WATCH_FULL
+echo [DEV] Incremental build - only changed files are rebuilt. Use 'dev rebuild' for a full wipe.
+goto WATCH_START
+:WATCH_FULL
 call :NUKE_BUILD
-dotnet clean "%PROJECT%" -c %CONFIG% -r %RUNTIME% -consoleLoggerParameters:Summary >nul
+:WATCH_START
 
 echo Starting HOT RELOAD watch mode...
 echo   NOTE: hot reload cannot apply structural edits (new fields, new methods,
@@ -186,8 +202,6 @@ dotnet build-server shutdown >nul 2>nul
 taskkill /F /IM VBCSCompiler.exe >nul 2>nul
 taskkill /F /IM MSBuild.exe >nul 2>nul
 
-REM Give Windows a moment to release the file handles before bin/obj are deleted.
-ping -n 2 127.0.0.1 >nul 2>nul
 goto :EOF
 
 REM ======================================================================
@@ -231,6 +245,8 @@ REM ======================================================================
 :NUKE_BUILD
 echo [DEV] Wiping build caches (bin/obj for every project) for a guaranteed-fresh build...
 dotnet build-server shutdown >nul 2>nul
+REM Give Windows a moment to release the file handles before bin/obj are deleted.
+ping -n 2 127.0.0.1 >nul 2>nul
 for /d /r "%REPO_ROOT%\src" %%D in (bin obj) do if exist "%%D" rd /s /q "%%D" 2>nul
 if exist "%REPO_ROOT%\tests" for /d /r "%REPO_ROOT%\tests" %%D in (bin obj) do if exist "%%D" rd /s /q "%%D" 2>nul
 goto :EOF

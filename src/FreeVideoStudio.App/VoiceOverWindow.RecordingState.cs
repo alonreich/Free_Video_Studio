@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using Avalonia;
@@ -17,20 +10,6 @@ using Path = Avalonia.Controls.Shapes.Path;
 
 namespace FreeVideoStudio.App;
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// VOREC_01 — ONE AUTHORITATIVE ANSWER TO "IS THIS STUDIO RECORDING?" (docs/02 AUD-VOICEOVER).
-//
-// The status word, the REC lamp, the badge, the mic button and the live timeline block used to be
-// written from seven places (start, open callback, pause, resume, stop, fault, "no mic"), and the
-// open callback declared RECORDING the moment waveInOpen returned — before a single buffer had
-// arrived. A dead microphone therefore looked exactly like a live one, which is the field failure
-// (log 2026-10-05: success-looking lines, then 0 buffers, then a discarded take).
-//
-// Now: ResolveRecordingIndicator is a PURE function of the window's flags and the capture
-// session's own truth (VoiceCaptureState, MICHEALTH_01 health, VOLIVE_01 live take), and
-// RefreshRecordingIndicator is the ONLY writer of those controls (QUALITY_04: one writer).
-// RECORDING (red) requires delivered buffers — silence counts, nothing-at-all does not.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 
 /// <summary>VOREC_01 — every state the recording indicator can show.</summary>
 internal enum RecordingPhase
@@ -190,11 +169,6 @@ public partial class VoiceOverWindow
         _liveRecordingCanvas = this.FindControl<Canvas>("LiveRecordingCanvas");
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // THE PURE RESOLUTION. Order is priority: closing > applying > an active take > a latched
-    // failure > a take still draining > "take saved" > readiness. READY is exactly the VOMON_02
-    // lamp predicate — never a default.
-    // ══════════════════════════════════════════════════════════════════════════════════════
     internal static RecordingIndicator ResolveRecordingIndicator(in RecordingIndicatorInputs i)
     {
         string clock = FormatCaptureClock(i.CapturedSeconds);
@@ -268,8 +242,6 @@ public partial class VoiceOverWindow
         Health: _capture.Health,
         MonitorOpen: _capture.IsMonitorOpen,
         ReadyLampLit: _readyLampLit,
-        // The session's own drain count only: a verdict that never arrives (post refused at shutdown)
-        // can then never pin the word at SAVING TAKE…; the frozen drawing is cleared with the verdict.
         HasPendingFinalizations: _capture.HasPendingFinalizations,
         LatchedFailure: _latchedFailure,
         TakeRecentlySaved: DateTime.UtcNow - _lastTakeSavedUtc < TakeSavedNoticeDuration,
@@ -289,7 +261,6 @@ public partial class VoiceOverWindow
 
         if (ind.IsLive && (_shownIndicator?.IsLive != true || _liveSinceUtc == DateTime.MinValue)) _liveSinceUtc = DateTime.UtcNow;
         if (!ind.IsLive) _liveSinceUtc = DateTime.MinValue;
-        // The pulse is a short "it started" cue; a static red lamp + text + clock carries the state after it.
         bool pulse = ind.IsLive && DateTime.UtcNow - _liveSinceUtc < RecordingPulseLimit;
 
         if (_shownIndicator is { } shown && shown == ind && pulse == _shownPulse) return;
@@ -301,7 +272,6 @@ public partial class VoiceOverWindow
             if (_shownStatusKey != ind.StatusBrushKey) { _shownStatusKey = ind.StatusBrushKey; BindDynamicBrush(_recordingStatusText, TextBlock.ForegroundProperty, ind.StatusBrushKey); }
         }
 
-        // The badge is a pill: solid red with light text while live, plain text otherwise.
         string badgeFg = ind.IsLive ? "AppOnAccentTextBrush"
             : ind.Phase is RecordingPhase.Ready or RecordingPhase.Closed or RecordingPhase.Connecting or RecordingPhase.PreviewLoading or RecordingPhase.CheckingMic or RecordingPhase.NoMic or RecordingPhase.PreviewOff or RecordingPhase.MicUnavailable
                 ? "AppTextMutedBrush"
@@ -324,8 +294,6 @@ public partial class VoiceOverWindow
             });
         }
 
-        // The lamp's SHAPE carries the state too: dot = live (dim dot = idle), ring = in progress,
-        // two bars = paused, triangle = failed, tick = saved.
         if (_recordingLight != null)
         {
             var (data, filled) = GlyphGeometry(ind.Glyph);
@@ -395,9 +363,6 @@ public partial class VoiceOverWindow
     private static void BindDynamicBrush(AvaloniaObject target, AvaloniaProperty property, string key)
         => target[!property] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(key);
 
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // TRANSITIONS — every path that changes recording state calls these, then the one writer.
-    // ══════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>VOREC_01 — a new recording run: elapsed starts at zero, stale verdicts are cleared.</summary>
     private void BeginRecordingRun()
@@ -472,26 +437,10 @@ public partial class VoiceOverWindow
         _recordPaused = false;
         LatchRecordingFailure(_capture.HasInputDevice ? label : "NO MIC");
         UpdateTransportState();
-        StartMicMonitor();   // VOMON_01
+        StartMicMonitor();
         UpdateApplyState(message);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // VOREC_02 — THE TAKE'S EXTENT IS MAPPED, NOT ADDED (docs/01 TL-OUTPUTTIMELINE).
-    //
-    // A take's WAV runs in OUTPUT time: the preview plays each speed segment at its speed, holds
-    // freezes in real time and skips cuts, and the microphone records wall-clock seconds. The
-    // studio's axis is SOURCE time. `EndSec = StartSec + wavSeconds` was therefore only right at
-    // 1x with no freeze: at 2x a 10 s take covers 20 s of source but was drawn (and previewed)
-    // over 10; at 0.5x it was drawn over 20 s of picture that only 5 s of voice exist for, and
-    // Apply's trim maths (a difference of two SourceToOutput calls) cut the wrong amount.
-    //
-    // The export anchor is unchanged: a take is placed at granularTimeMapper(RenderStartSec) and
-    // its audio runs in output time. Only the END (and therefore the drawn width, the preview's
-    // play window and the trim conversion) now come from the same OutputTimeline round trip:
-    //     EndSec = trimStart + OutputToSourceRelative(SourceToOutput(StartSec) + wavSeconds)
-    // ⚠️ MEME_06 still holds: `_timeline` is meme-blind on purpose — do not add memes here.
-    // ══════════════════════════════════════════════════════════════════════════════════════
     private double SourceEndForCapturedAudio(double startAbsSec, double capturedSec)
     {
         if (!(capturedSec > 0) || double.IsInfinity(capturedSec)) return startAbsSec;
@@ -508,20 +457,11 @@ public partial class VoiceOverWindow
     /// </summary>
     private void BuildStudioTimeline(double effectiveDuration)
     {
-        // CUTS_02 — without the last argument every take recorded after a deleted section is
-        // exported late by exactly the amount that was removed.
         _timeline = FreeVideoStudio.Core.Media.OutputTimeline.Create(
             effectiveDuration * 1000.0,
             _speedSegments,
             _baseSpeed,
             _trimStartSec * 1000.0,
-            // ⚠️ MEME_06 — MEMES ARE DELIBERATELY OMITTED. DO NOT ADD THEM.
-            // This timeline is used by ApplyAndClose to work out how much of a take's WAV to trim
-            // off each end, as the DIFFERENCE between two SourceToOutput calls. A meme sitting
-            // between those two instants would add its whole length to that difference and ffmpeg
-            // would cut seconds of real speech off the take. The export positions takes around
-            // memes itself (ProcessWorker's MemeTimeInsertedBefore), so this window stays
-            // meme-blind and self-consistent: its preview does not play memes either.
             null,
             FreeVideoStudio.Core.Media.CutRange.ToClipRelative(_cuts, _trimStartSec * 1000.0));
     }
@@ -536,15 +476,6 @@ public partial class VoiceOverWindow
         return false;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════
-    // VOREC_03 — THE LIVE BLOCK ON THE FILM LANE (retained visuals, created once).
-    //
-    // It lives on its own canvas DECLARED AFTER ThumbLoadingOverlay (SLIDER_09: among siblings,
-    // declaration order is the paint order), so it is visible while frames are still generating.
-    // Width = captured audio mapped through VOREC_02, so it grows only while audio really arrives
-    // and freezes on pause. Inside it: the live envelope (VOLIVE_01) and a REC label with the
-    // captured time. Segments that are draining stay drawn, frozen, until their verdict lands.
-    // ══════════════════════════════════════════════════════════════════════════════════════
     private void EnsureLiveRecordingVisuals()
     {
         var lane = _liveRecordingCanvas;
@@ -597,7 +528,6 @@ public partial class VoiceOverWindow
             _liveAnchorLine!.IsVisible = false;
             _liveEnvelopePath!.IsVisible = false;
             LiveRegionPixels = null;
-            // Paused: the label stays, static, on the last segment so the lane says why nothing grows.
             if (_isRecording && _recordPaused && _finalizingTakes.Count + _sessions.Count > 0 && ind is { } p)
                 PlaceLiveLabel(p.Badge, _lastLiveLabelX, width, height);
             else _liveLabel.IsVisible = false;
@@ -648,7 +578,6 @@ public partial class VoiceOverWindow
         if (_liveLabelText.Text != label) _liveLabelText.Text = label;
         _liveLabel.IsVisible = true;
         double w = _liveLabel.DesiredSize.Width > 0 ? _liveLabel.DesiredSize.Width : 70;
-        // Lane-adjacent: just right of the growing edge; flipped inside when it would leave the lane.
         double left = anchorX + 4 + w <= width ? anchorX + 4 : Math.Max(0, anchorX - w - 4);
         Canvas.SetLeft(_liveLabel, left);
         Canvas.SetTop(_liveLabel, 2);
@@ -710,7 +639,7 @@ public partial class VoiceOverWindow
             int to = Math.Max(from + 1, (int)((long)(c + 1) * peaks.Length / columns));
             float p = 0;
             for (int k = from; k < to && k < peaks.Length; k++) if (peaks[k] > p) p = peaks[k];
-            double half = Math.Max(0.5, p * maxHalf);   // silence draws a flat line, never a fake shape
+            double half = Math.Max(0.5, p * maxHalf);
             double xx = left + (c + 0.5) * step;
             ctx.BeginFigure(new Point(xx, centre - half), false);
             ctx.LineTo(new Point(xx, centre + half));

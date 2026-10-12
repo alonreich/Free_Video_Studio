@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -48,7 +42,6 @@ public partial class MainWindow
             SourceColor = _fidelityColor,
             RenderedMixFailed = _mixGate.CurrentSignature != null && _mixGate.CurrentSignature == _mixGate.FailedSignature,
             CornerMemeBeyondPreviewFrames = corners.Any(c => !IsStillImage(c.FilePath) && c.DurationSec > Infrastructure.CornerMemeFrames.MaxSeconds),
-            // The rendered mix carries corner-meme sound in this window (PREVIEWMIX_01); a failed mix is reported above.
             CornerMemeSoundNotPreviewed = false,
         });
 

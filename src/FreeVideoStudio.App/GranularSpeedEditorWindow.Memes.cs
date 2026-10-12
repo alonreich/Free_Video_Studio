@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -53,8 +46,6 @@ public partial class GranularSpeedEditorWindow
     {
         if (string.IsNullOrWhiteSpace(_edit.VideoPath)) return;
 
-        // MEMEPICK_01/02 + MEMEMODE_01 — one modal screen: choose the meme, then FULL SCREEN or
-        // CORNER OVERLAY (corner, size, sound).
         var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _edit.IsMobileFormat,
             latest => AvailableMemes = latest);
         if (pick == null) return;
@@ -69,7 +60,6 @@ public partial class GranularSpeedEditorWindow
         double rawSourceRelSec = Math.Max(0, _playheadMs / 1000.0);
         bool corner = pick.Mode == MemePresentationMode.CornerOverlay;
 
-        // MEMEMODE_01 — corner: anywhere the gameplay survives; full screen: D8 / D7 / separation.
         var anchor = _edit.ResolveNewMemeAnchor(OutTimeline(), rawSourceRelSec, pick.Mode, out double at);
         if (!anchor.Ok)
         {
@@ -84,7 +74,7 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
-        var placed = _edit.AddMeme(picked.FullPath, at, duration, pick.Mode, pick.Corner, pick.Size, pick.PlaySound);   // UNDO_02 inside
+        var placed = _edit.AddMeme(picked.FullPath, at, duration, pick.Mode, pick.Corner, pick.Size, pick.PlaySound);
         string id = placed.Id;
 
         bool moved = Math.Abs(at - rawSourceRelSec) > 0.01;
@@ -96,8 +86,8 @@ public partial class GranularSpeedEditorWindow
         _gameplayTimelineCache.Clear();
         RedrawTimeline();
         UpdateMemeButtonsState();
-        if (!corner) ShowMemeLandingFrame(id);                                       // MEME_08
-        await RefreshMemePreviewAsync("Fitting the meme into your video...");        // MEME_07
+        if (!corner) ShowMemeLandingFrame(id);
+        await RefreshMemePreviewAsync("Fitting the meme into your video...");
 
         Notify(corner
             ? "Corner meme added — the video length stays the same"
@@ -132,8 +122,6 @@ public partial class GranularSpeedEditorWindow
                 if (duration <= 0.01) { NotifyError("That meme's length could not be read, so nothing changed."); return; }
             }
 
-            // EDITSTATE_01 — going full screen re-applies D7/D8 against every OTHER full-screen meme;
-            // one undo step for every property that changed, none when nothing did (U4).
             var changed = _edit.UpdateMeme(memeId, pick.Item.FullPath, duration, pick.Mode, pick.Corner, pick.Size,
                 pick.PlaySound, Math.Max(0.001, GetDuration()) * 1000, out var before, out var updated);
             if (!changed.Ok) { NotifyError(changed.Error!); return; }

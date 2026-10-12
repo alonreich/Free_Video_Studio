@@ -92,7 +92,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     {
         MaskOverlayManager.EnsureDefaults();
         SettingsManager.Instance.ActiveMaskOverlay = "Blocked";
-        Directory.CreateDirectory(Profile("Blocked")); // A directory cannot be replaced by a JSON file.
+        Directory.CreateDirectory(Profile("Blocked"));
         Assert.False(MaskOverlayManager.SyncActiveProfileFromCurrentConfig());
     }
 
@@ -152,8 +152,8 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     [InlineData(false)]
     public async Task AddingHudRestoresTemporaryZoomAndPreservesManualZoom(bool temporaryZoom)
     {
-        var window = new CropToolWindow(); // Never shown: no native video player is started.
-        var source = new FreeVideoStudio.Core.Editing.CropSourceRect(1500, 900, 160, 80);   // EDITSTATE_01 — a Core type now
+        var window = new CropToolWindow();
+        var source = new FreeVideoStudio.Core.Editing.CropSourceRect(1500, 900, 160, 80);
         Set(window, "_sourceSelection", source);
         string snapshot = Path.Combine(_root, "frame.png");
         using (var bitmap = new SKBitmap(1920, 1080))
@@ -166,8 +166,8 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         await (Task)Invoke(window, "AddCurrentSelection", role)!;
         var edit = (FreeVideoStudio.Core.Editing.CropEditSession)Get(window, "_edit")!;
         Assert.True(edit.Dirty);
-        Assert.Single(edit.Layers);                       // the commit reached the logical state
-        Assert.Equal(role.Key, edit.SelectedRoleKey);     // selected by identity
+        Assert.Single(edit.Layers);
+        Assert.Equal(role.Key, edit.SelectedRoleKey);
         Assert.Null(Get(window, "_sourceSelection"));
         Assert.Null(Get(window, "_preZoomState"));
         Assert.Equal(temporaryZoom ? 0.5 : 2.0, (double)Invoke(window, "CurrentZoom")!);

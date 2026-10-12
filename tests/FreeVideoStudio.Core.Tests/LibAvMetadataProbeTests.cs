@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -28,7 +25,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         _out = output;
     }
 
-    // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     public sealed class Fixtures : IAsyncLifetime
     {
@@ -71,28 +67,22 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             await Gen("timing-tag.mp4", [.. v320, .. sine, "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
                 "-metadata", "fvs_timing=v=2;fps=30/1;intro=3;fadein=0;fadeout=15", "-metadata", "fvs_intro_sec=0.100",
                 "-movflags", "+faststart+use_metadata_tags"]);
-            // Two video + two audio streams: the second video is larger, so "first video" vs "best video" would differ.
             await Gen("two-video-two-audio.mkv", ["-f", "lavfi", "-i", "testsrc2=size=160x90:rate=25", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=50",
                 .. sine, "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100",
                 "-map", "0:v", "-map", "1:v", "-map", "2:a", "-map", "3:a", "-t", "1", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac"]);
-            // Audio with an attached picture (cover art) — ffprobe lists it as a VIDEO stream.
             await Gen("cover-art.mp3", [.. sine, "-f", "lavfi", "-i", "color=c=red:size=64x64", "-map", "0:a", "-map", "1:v", "-t", "1",
                 "-frames:v", "1", "-c:a", "libmp3lame", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic", "-id3v2_version", "3"]);
             await Gen("still.png", ["-f", "lavfi", "-i", "color=c=blue:size=200x100", "-frames:v", "1"]);
 
             if (Valid.TryGetValue("av.mp4", out string? src))
             {
-                // Stream-copy remuxes, so the metadata is carried WITHOUT re-encoding:
-                // a display-matrix rotation (side data only; pixels stay 320x180) …
                 await Gen("rotated-90.mp4", ["-display_rotation:v:0", "90", "-i", src, "-c", "copy"]);
-                // … and an HDR10 + full-range VUI written straight into the H.264 SPS.
                 await Gen("hdr-tags-fullrange.mp4", ["-i", src, "-c", "copy", "-bsf:v",
                     "h264_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9:video_full_range_flag=1"]);
             }
 
             if (Valid.TryGetValue("av.mp4", out string? av))
             {
-                // Unicode path (UTF-8 → libav → wide on Windows) — Hebrew + symbol.
                 string uni = Path.Combine(Work, "קליפ בדיקה ✓.mp4");
                 File.Copy(av, uni);
                 Valid["unicode-path"] = uni;
@@ -107,7 +97,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             }
             if (Valid.TryGetValue("timing-tag.mp4", out string? fast))
             {
-                // faststart: moov first, so a truncated tail still opens — a partially readable file.
                 byte[] bytes = await File.ReadAllBytesAsync(fast);
                 string partial = Path.Combine(Work, "faststart-truncated-tail.mp4");
                 await File.WriteAllBytesAsync(partial, bytes[..(bytes.Length * 2 / 3)]);
@@ -121,7 +110,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             Invalid["empty.mp4"] = empty;
             Invalid["missing.mp4"] = Path.Combine(Work, "does-not-exist.mp4");
 
-            // Representative repository media (real-world encoders/containers).
             foreach (string sub in new[] { "meme" })
             {
                 string d = Path.Combine(Root, sub);
@@ -143,7 +131,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         }
     }
 
-    // ── parity ──────────────────────────────────────────────────────────────────────────────
 
     private static readonly string[] StreamKeys =
         { "index", "codec_type", "width", "height", "pix_fmt", "color_range", "color_space", "color_transfer", "color_primaries", "avg_frame_rate", "duration", "bit_rate" };
@@ -179,10 +166,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         {
             string? a = Str(nt?[k]), b = Str(ft?[k]);
             if (a == b) continue;
-            // KNOWN, PRE-EXISTING: AsyncProcessRunner decodes ffprobe's UTF-8 stdout with the console
-            // OEM code page, so NON-ASCII tag text arrives as mojibake on the subprocess path. libav
-            // returns the real UTF-8. No consumer reads such a tag (only fvs_timing / fvs_intro_sec,
-            // both ASCII), so this is recorded, not failed. ASCII tags must match exactly.
             if (a != null && b != null && a.Any(c => c > 127)) { KnownDifferences.Add($"{name}: tags.{k} non-ASCII (ffprobe stdout code page)"); continue; }
             diffs.Add($"{name}: format.tags.{k} native '{a}' vs ffprobe '{b}'");
         }
@@ -239,10 +222,8 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         Assert.False(await (await P("video-only.mp4")).HasAudioAsync());
         Assert.Equal((0, 0), await (await P("audio-only.m4a")).GetResolutionAsync());
 
-        // First video stream wins (not the largest), exactly as before.
         Assert.Equal((160, 90), await (await P("two-video-two-audio.mkv")).GetResolutionAsync());
 
-        // Attached picture is still a video stream to the existing accessors.
         Assert.Equal((64, 64), await (await P("cover-art.mp3")).GetResolutionAsync());
 
         var hdr = await (await P("hdr-tags-fullrange.mp4")).GetVideoColorInfoAsync();
@@ -256,11 +237,8 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         Assert.NotNull(timing);
         Assert.Equal(3, timing!.Value.IntroFrames);
 
-        // Rotation is NOT applied to width/height by ffprobe -show_streams, and nothing consumes it.
-        // The fixture really carries a display matrix (ffprobe reports it as side data) …
         var rotatedRaw = await new MediaProber(_fx.FfprobePath, _fx.Valid["rotated-90.mp4"], MediaProbeBackend.Ffprobe).ProbeAsync();
         Assert.Contains("\"rotation\"", rotatedRaw["streams"]![0]!["side_data_list"]?.ToJsonString() ?? string.Empty);
-        // … and both backends still report the coded size, which is what every caller has always received.
         Assert.Equal((320, 180), await (await P("rotated-90.mp4")).GetResolutionAsync());
 
         var fps = (await (await P("ntsc-59.94.mp4")).ProbeAsync())["streams"]![0]!["avg_frame_rate"]!.ToString();
@@ -279,7 +257,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         Assert.True((await MediaMetadataProbe.ProbeAsync(_fx.FfprobePath, _fx.Valid["av.mp4"], TimeSpan.FromSeconds(15), default, MediaProbeBackend.Native)).Ok);
     }
 
-    // ── cancellation / timeout ──────────────────────────────────────────────────────────────
 
     [WindowsOnlyFact]
     public async Task PreCancelledTokenIsCancellationNotFailure()
@@ -293,8 +270,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
     [WindowsOnlyFact]
     public async Task ExpiredDeadlineAbortsThroughTheInterruptCallback()
     {
-        // A 1-tick budget has already passed when libav performs its first read, so AVIOInterruptCB
-        // must stop avformat_open_input with AVERROR_EXIT and the probe must surface a timeout.
         var sw = Stopwatch.StartNew();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             MediaMetadataProbe.ProbeAsync(_fx.FfprobePath, _fx.Valid["av.mp4"], TimeSpan.FromTicks(1), CancellationToken.None, MediaProbeBackend.Native));
@@ -328,7 +303,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         AssertNotLocked(clip);
     }
 
-    // ── fallback ────────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeNative(NativeProbeStatus status, bool throwCancel = false) : INativeMediaBackend
     {
@@ -369,7 +343,7 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             Assert.False(r.Ok);
             Assert.Equal("ffprobe", r.Backend);
             Assert.NotEqual(0, r.ExitCode);
-            Assert.Equal(1, fake.Calls);   // no second native attempt after ffprobe failed
+            Assert.Equal(1, fake.Calls);
         }
         finally { MediaMetadataProbe.NativeOverride = null; }
     }
@@ -380,7 +354,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         MediaMetadataProbe.NativeOverride = new FakeNative(NativeProbeStatus.Unavailable);
         try
         {
-            // A non-existent ffprobe proves no subprocess was attempted (it would throw Win32Exception).
             var r = await MediaMetadataProbe.ProbeAsync(Path.Combine(_fx.Work, "no-ffprobe.exe"), _fx.Valid["av.mp4"], TimeSpan.FromSeconds(5), default, MediaProbeBackend.Native);
             Assert.False(r.Ok);
             MediaMetadataProbe.NativeOverride = new FakeNative(NativeProbeStatus.Ok, throwCancel: true);
@@ -411,7 +384,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         }
     }
 
-    // ── stress / resources ──────────────────────────────────────────────────────────────────
 
     private static void AssertNotLocked(string path)
     {
@@ -441,7 +413,7 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             return (me.PrivateMemorySize64, me.HandleCount);
         }
 
-        await Round(50);   // warm-up: libav one-time tables, JIT, thread pool
+        await Round(50);
         var baseline = Sample();
         var samples = new List<(long, int)>();
         for (int block = 0; block < 5; block++)

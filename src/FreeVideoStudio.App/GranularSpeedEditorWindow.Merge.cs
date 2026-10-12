@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -60,7 +54,6 @@ public partial class GranularSpeedEditorWindow
         Title = $"{Title} — {_mergeSource.Clips.Count} clips merged";
         if (_segmentCanvas != null)
         {
-            // The segment canvas is cleared and rebuilt on every redraw: rebuilding is our cue.
             _segmentCanvas.Children.CollectionChanged += (_, _) => QueueMergeDividers();
             _segmentCanvas.SizeChanged += (_, _) => QueueMergeDividers();
         }
@@ -203,7 +196,7 @@ public partial class GranularSpeedEditorWindow
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
             };
-            _frameLaneHost.SizeChanged += (_, _) => QueueRelayoutFrameLane();   // LAYOUTLOOP_02
+            _frameLaneHost.SizeChanged += (_, _) => QueueRelayoutFrameLane();
             laneGrid.Children.Clear();
             laneGrid.Children.Add(_frameLaneHost);
         }

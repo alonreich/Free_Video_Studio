@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Infrastructure;
@@ -181,9 +178,13 @@ public sealed class DirectoryUpgrade
         Persist();
     }
 
-    public bool PruneBackup(DateTimeOffset now)
+    /// <param name="supersededByNewer">ONEBACKUP_01 — a NEWER update has been committed since this one.
+    /// Its backup is then removed regardless of age: only the latest previous version is kept, which is
+    /// all a rollback ever needs. Every update used to leave a full copy for 30 days.</param>
+    public bool PruneBackup(DateTimeOffset now, bool supersededByNewer = false)
     {
-        if (Phase != "Committed" || ConfirmedAt is not { } at || now - at < TimeSpan.FromDays(RetentionDays)) return false;
+        if (Phase != "Committed" || ConfirmedAt is not { } at) return false;
+        if (!supersededByNewer && now - at < TimeSpan.FromDays(RetentionDays)) return false;
         foreach (UpgradeOriginal original in _journal.Originals)
             UpgradeFiles.DeleteTree(Path.Combine(_directory, original.Backup), _directory);
         _journal.Phase = "Pruned";

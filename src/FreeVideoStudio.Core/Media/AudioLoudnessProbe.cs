@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -105,9 +102,6 @@ public static class AudioLoudnessProbe
     {
         if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath)) return null;
 
-        // PREVIEWMIX_01 — the live preview re-renders the mix after every edit, and each render
-        // would otherwise re-measure the same gameplay window and the same memes. Readings are
-        // cached per (file, size, write time, window); a changed file is a new key.
         string cacheKey;
         try
         {
@@ -140,10 +134,6 @@ public static class AudioLoudnessProbe
         double segmentDurationSec)
     {
 
-        // BEDSEG_01 — MEASURE THE MATERIAL THAT WILL ACTUALLY BE HEARD: the exported range of the
-        // gameplay, or the kept window of a Merger clip. A window is only used when it is long
-        // enough for EBU R128 integrated loudness to mean anything; below MinSegmentSec the gating
-        // leaves too little material, so the whole file is measured instead.
         bool useSegment = segmentDurationSec >= MinSegmentSec && segmentStartSec >= 0;
 
         Process? process = null;
@@ -156,7 +146,6 @@ public static class AudioLoudnessProbe
 
             if (useSegment)
             {
-                // Before -i, so the decoder seeks instead of decoding and discarding.
                 args.Add("-ss");
                 args.Add(segmentStartSec.ToString("F3", CultureInfo.InvariantCulture));
                 args.Add("-t");
@@ -166,8 +155,6 @@ public static class AudioLoudnessProbe
             args.AddRange(new[]
             {
                 "-i", inputPath,
-                // Analysis only: the targets are loudnorm's defaults and irrelevant — input_* are
-                // properties of the SOURCE, and the processed audio goes to the null muxer.
                 "-af", "loudnorm=print_format=json",
                 "-vn", "-sn", "-dn",
                 "-f", "null", "-"
@@ -261,7 +248,7 @@ public static class AudioLoudnessProbe
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return null;
         }
     }
@@ -277,7 +264,7 @@ public static class AudioLoudnessProbe
         }
         catch (System.Exception swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return false;
         }
     }

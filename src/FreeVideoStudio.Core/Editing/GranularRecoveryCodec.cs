@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
@@ -42,7 +39,7 @@ public static class GranularRecoveryCodec
         var segments = new JsonArray();
         foreach (var seg in s.Segments)
         {
-            segments.AddNode(new JsonObject   // AOTSAFETY_02
+            segments.AddNode(new JsonObject
             {
                 ["start_ms"] = seg.StartMs,
                 ["end_ms"] = seg.EndMs,
@@ -60,7 +57,7 @@ public static class GranularRecoveryCodec
 
         var cuts = new JsonArray();
         foreach (var c in s.Cuts)
-            cuts.AddNode(new JsonObject { ["start_ms"] = c.StartMs, ["end_ms"] = c.EndMs });   // AOTSAFETY_02
+            cuts.AddNode(new JsonObject { ["start_ms"] = c.StartMs, ["end_ms"] = c.EndMs });
 
         var memes = new JsonArray();
         foreach (var m in s.Memes)
@@ -72,8 +69,8 @@ public static class GranularRecoveryCodec
                 ["duration_sec"] = m.DurationSec,
                 ["id"] = m.Id
             };
-            MemePresentationJson.Write(memeObj, m);   // MEMEMODE_01
-            memes.AddNode(memeObj);   // AOTSAFETY_02
+            MemePresentationJson.Write(memeObj, m);
+            memes.AddNode(memeObj);
         }
 
         return new JsonObject
@@ -105,7 +102,6 @@ public static class GranularRecoveryCodec
         if (!GetJsonBool(node["open"], false)) return false;
         if (GetJsonIntOrNull(node["schema_version"]) != SchemaVersion) return false;
 
-        // Session identity: same file, same trim window (1ms tolerance for the double round-trip).
         string? videoPath = GetJsonString(node["video_path"]);
         if (string.IsNullOrEmpty(videoPath) ||
             !string.Equals(videoPath, s.VideoPath, StringComparison.OrdinalIgnoreCase)) return false;
@@ -157,11 +153,11 @@ public static class GranularRecoveryCodec
             {
                 if (n is not JsonObject o) continue;
                 string? file = GetJsonString(o["file_path"]);
-                if (file != null) file = MigrationPathResolver.ResolveSavedFile(file);   // MEMEFOLDER_02
+                if (file != null) file = MigrationPathResolver.ResolveSavedFile(file);
                 double at = GetJsonDouble(o["at_source_sec_relative"], -1);
                 double dur = GetJsonDouble(o["duration_sec"], 0);
                 if (string.IsNullOrEmpty(file) || at < 0 || dur <= 0) continue;
-                memes.Add(MemePresentationJson.Apply(o, new MemePlacement(file!, at, dur,   // MEMEMODE_01
+                memes.Add(MemePresentationJson.Apply(o, new MemePlacement(file!, at, dur,
                     GetJsonString(o["id"]) is string id && id.Length > 0 ? id : MemePlacement.NewId(i))));
                 i++;
             }

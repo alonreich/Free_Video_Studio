@@ -1,9 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -116,7 +111,6 @@ public sealed class VoiceOverTimelineTests : IDisposable
             samples++;
         }
 
-        // EnforceTrimEndStop finalised the take at MARK END: one take, inside the trim, not negative.
         Assert.False(w.IsRecordingLive);
         rig.Clock.Paused = true;
         await LiveCaptureDriver.PumpUntil(() => w.Sessions.Count == 1 && !rig.Session.HasPendingFinalizations, "auto-stopped take saved");
@@ -132,10 +126,10 @@ public sealed class VoiceOverTimelineTests : IDisposable
     [InlineData(2.0)]
     public async Task AlteredSpeed_CapturedDuration_Anchor_RegionEnd_AndApplyTrim_AllAgree(double speed)
     {
-        var meme = new MemePlacement("meme.mp4", 5.0, 3.0, "meme-1");   // must NOT reach the studio timeline (MEME_06)
+        var meme = new MemePlacement("meme.mp4", 5.0, 3.0, "meme-1");
         var rig = NewRig(0, 60, baseSpeed: speed, memes: new[] { meme });
         var w = rig.Window;
-        Assert.Equal(60.0 / speed, w.StudioTimeline!.TotalOutputSeconds, 6);   // meme-blind: no 3 s insertion
+        Assert.Equal(60.0 / speed, w.StudioTimeline!.TotalOutputSeconds, 6);
 
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(w, rig.Devices, rig.Clock, startAt: 10);
         double start = w.CurrentSession!.StartSec;
@@ -143,20 +137,18 @@ public sealed class VoiceOverTimelineTests : IDisposable
         await LiveCaptureDriver.PumpUntil(() => rig.Session.Health == MicrophoneHealth.AudibleData, "audible");
         Tick(w);
 
-        // While recording: 4 s of captured audio covers 4 × speed seconds of source picture.
         Assert.Equal("REC 0:04.0", w.RecordingBadgeTextControl!.Text);
         var live = w.LiveRegionPixels!.Value;
         Assert.Equal(PixelFor(w, start + 4.0 * speed, 0, 60), live.X2, 3);
 
         await StopAndSettleAsync(rig, 1);
         var take = w.Sessions[0];
-        Assert.Equal(start, take.StartSec, 9);                         // the anchor is untouched
-        Assert.Equal(start + 4.0 * speed, take.EndSec, 3);              // mapped, not StartSec + wavSeconds
-        Assert.Equal(live.X2, PixelFor(w, take.EndSec, 0, 60), 0);     // the saved block ends where the live one did
+        Assert.Equal(start, take.StartSec, 9);
+        Assert.Equal(start + 4.0 * speed, take.EndSec, 3);
+        Assert.Equal(live.X2, PixelFor(w, take.EndSec, 0, 60), 0);
         var tl = w.StudioTimeline!;
-        Assert.Equal(4.0, tl.SourceToOutput(take.EndSec) - tl.SourceToOutput(take.StartSec), 3);   // == WAV seconds
+        Assert.Equal(4.0, tl.SourceToOutput(take.EndSec) - tl.SourceToOutput(take.StartSec), 3);
 
-        // Apply: trim one second of AUDIO off the front (expressed, as the handles do, in source time).
         take.TrimLeftSec = 1.0 * speed;
         var trims = new List<(string Ss, string T)>();
         VoiceOverWindow.TrimRunnerSeam = (psi, _) =>
@@ -168,33 +160,32 @@ public sealed class VoiceOverTimelineTests : IDisposable
         await w.ApplyAndCloseAsync().WaitAsync(LiveCaptureDriver.Timeout);
 
         var (ss, t) = Assert.Single(trims);
-        Assert.Equal(1.0, double.Parse(ss, CultureInfo.InvariantCulture), 3);   // seconds of WAV removed
-        Assert.Equal(3.0, double.Parse(t, CultureInfo.InvariantCulture), 3);    // seconds of WAV kept
+        Assert.Equal(1.0, double.Parse(ss, CultureInfo.InvariantCulture), 3);
+        Assert.Equal(3.0, double.Parse(t, CultureInfo.InvariantCulture), 3);
         var persisted = Assert.Single(w.Result!.VoiceOverTakes);
-        Assert.Equal(take.RenderStartSec, persisted.StartSec, 9);               // export anchor = RenderStartSec, unchanged rule
+        Assert.Equal(take.RenderStartSec, persisted.StartSec, 9);
         Assert.Equal(1.0, tl.SourceToOutput(persisted.StartSec) - tl.SourceToOutput(take.StartSec), 3);
     }
 
     [AvaloniaFact]
     public async Task FreezeHold_KeepsCapturing_RegionHoldsStill_AndTheTakeIsKeptWithAPositiveSpan()
     {
-        // A 2 s hold of the frame at source 20 s.
         var rig = NewRig(0, 60, segments: new[] { new SpeedSegment(20000, 22000, 0) });
         var w = rig.Window;
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(w, rig.Devices, rig.Clock, startAt: 17.98);
-        double start = w.CurrentSession!.StartSec;   // 18.00
+        double start = w.CurrentSession!.StartSec;
         Assert.Equal(18.0, start, 6);
 
-        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f);   // video reaches 20.00
+        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f);
         await LiveCaptureDriver.PumpUntil(() => rig.Session.Health == MicrophoneHealth.AudibleData, "audible");
         Tick(w);
         var atHoldStart = w.LiveRegionPixels!.Value;
-        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f, speed: 0);   // the picture holds; the voice goes on
+        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f, speed: 0);
         Tick(w);
         var atHoldEnd = w.LiveRegionPixels!.Value;
-        Assert.Equal(RecordingPhase.Recording, w.CurrentRecordingIndicator!.Value.Phase);   // still recording during a hold
-        Assert.Equal("REC 0:04.0", w.RecordingBadgeTextControl!.Text);                      // captured time kept counting
-        Assert.Equal(atHoldStart.X2, atHoldEnd.X2, 3);                                        // no source time passed
+        Assert.Equal(RecordingPhase.Recording, w.CurrentRecordingIndicator!.Value.Phase);
+        Assert.Equal("REC 0:04.0", w.RecordingBadgeTextControl!.Text);
+        Assert.Equal(atHoldStart.X2, atHoldEnd.X2, 3);
         LiveCaptureDriver.Deliver(recorder, rig.Clock, 1.0, 0.5f);
         Tick(w);
         Assert.True(w.LiveRegionPixels!.Value.X2 > atHoldEnd.X2);
@@ -202,15 +193,14 @@ public sealed class VoiceOverTimelineTests : IDisposable
         await StopAndSettleAsync(rig, 1);
         var take = w.Sessions[0];
         Assert.Equal(start, take.StartSec, 9);
-        Assert.Equal(21.0, take.EndSec, 2);   // 2 s to the hold + 2 s hold + 1 s after it
+        Assert.Equal(21.0, take.EndSec, 2);
         Assert.Equal(5.0, w.StudioTimeline!.SourceToOutput(take.EndSec) - w.StudioTimeline.SourceToOutput(take.StartSec), 2);
 
-        // A take that ends INSIDE a hold, having started a hair before it: real speech, tiny source span.
         string wav = Path.Combine(_root, "hold.wav");
         File.WriteAllBytes(wav, new byte[100]);
         var edge = new VoiceOverWindow.VoiceOverSession { WavPath = wav, StartSec = 19.99 };
         w.TriggerCompleteTake(edge, micWasOpen: true, capturedBytes: 88200, capturedBuffers: 20, capturedPeak: 0.5f);
-        Assert.False(w.LastTakeWasRejected);   // judged on captured audio (1 s), not on its 0.01 s of source
+        Assert.False(w.LastTakeWasRejected);
         Assert.Contains(edge, w.Sessions);
         Assert.True(edge.EndSec > edge.StartSec);
         Assert.Equal(20.0, edge.EndSec, 3);
@@ -230,9 +220,9 @@ public sealed class VoiceOverTimelineTests : IDisposable
         rig.Clock.Paused = true;
         await LiveCaptureDriver.PumpUntil(() => w.Sessions.Count == 1 && w.FinalizingTakeCount == 0, "first saved");
         Tick(w);
-        Assert.Null(w.LiveRegionPixels);   // nothing grows while paused
+        Assert.Null(w.LiveRegionPixels);
 
-        rig.Clock.Time = 3;   // seek BACK while paused
+        rig.Clock.Time = 3;
         w.TriggerToggleRecordPause();
         Tick(w);
         rig.Clock.Paused = false; rig.Clock.Time = 3.02;
@@ -258,9 +248,9 @@ public sealed class VoiceOverTimelineTests : IDisposable
         var rig = NewRig(0, 60, cuts: new[] { new CutRange(30000, 32000) });
         var w = rig.Window;
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(w, rig.Devices, rig.Clock, startAt: 28);
-        double start = w.CurrentSession!.StartSec;   // 28.02
-        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f);   // up to the cut
-        rig.Clock.Time = 32.02;                                       // the preview skips the deleted footage in one seek (CUTS_02)
+        double start = w.CurrentSession!.StartSec;
+        LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f);
+        rig.Clock.Time = 32.02;
         LiveCaptureDriver.Deliver(recorder, rig.Clock, 2.0, 0.5f);
         await LiveCaptureDriver.PumpUntil(() => rig.Session.Health == MicrophoneHealth.AudibleData, "audible");
         Tick(w);
@@ -317,7 +307,6 @@ public sealed class VoiceOverTimelineTests : IDisposable
     [AvaloniaFact]
     public async Task LiveEnvelope_IsBounded_AndNeverBecomesAPerSampleStreamOfUiObjects()
     {
-        // 1. The meter: thirty minutes of 50 ms buffers never stores more than MaxBuckets values.
         var meter = new LiveTakeMeter();
         var buffer = LiveCaptureDevices.Pcm(0.05, 0.25f);
         for (int i = 0; i < 36000; i++) meter.Append(new PcmBuffer(buffer, buffer.Length, PcmCaptureFormat.ProductionMicrophone));
@@ -328,7 +317,6 @@ public sealed class VoiceOverTimelineTests : IDisposable
         Assert.Equal(36000, snap.Buffers);
         Assert.Equal(0.25f, snap.MaxPeak, 3);
 
-        // Chunking does not change the result (odd byte splits included).
         var whole = new LiveTakeMeter();
         var split = new LiveTakeMeter();
         var pcm = new byte[44100 * 2];
@@ -336,7 +324,7 @@ public sealed class VoiceOverTimelineTests : IDisposable
         whole.Append(new PcmBuffer(pcm, pcm.Length, PcmCaptureFormat.ProductionMicrophone));
         for (int off = 0; off < pcm.Length;)
         {
-            int n = Math.Min(pcm.Length - off, 777);   // odd: frames straddle callbacks
+            int n = Math.Min(pcm.Length - off, 777);
             var part = new byte[n];
             Array.Copy(pcm, off, part, 0, n);
             split.Append(new PcmBuffer(part, n, PcmCaptureFormat.ProductionMicrophone));
@@ -346,9 +334,8 @@ public sealed class VoiceOverTimelineTests : IDisposable
         Assert.Equal(whole.Snapshot().Peaks, split.Snapshot().Peaks);
         whole.Freeze();
         whole.Append(new PcmBuffer(pcm, pcm.Length, PcmCaptureFormat.ProductionMicrophone));
-        Assert.Equal(1.0, whole.Snapshot().CapturedSeconds, 9);   // frozen: late buffers ignored
+        Assert.Equal(1.0, whole.Snapshot().CapturedSeconds, 9);
 
-        // 2. The session: hundreds of buffers cause no per-buffer dispatch to the UI.
         int posts = 0;
         var devices = new LiveCaptureDevices();
         using var session = new VoiceCaptureSession(devices, work => { Interlocked.Increment(ref posts); Dispatcher.UIThread.Post(work); });
@@ -361,12 +348,10 @@ public sealed class VoiceOverTimelineTests : IDisposable
         window.UpdateLayout();
         var recorder = await LiveCaptureDriver.ArmAndOpenAsync(window, devices, clock, startAt: 2);
         int postsBefore = Volatile.Read(ref posts);
-        LiveCaptureDriver.Deliver(recorder, clock, 30.0, 0.5f);   // 600 buffers
+        LiveCaptureDriver.Deliver(recorder, clock, 30.0, 0.5f);
         await LiveCaptureDriver.PumpUntil(() => session.Health == MicrophoneHealth.AudibleData, "audible");
         Assert.True(Volatile.Read(ref posts) - postsBefore <= 2, $"{Volatile.Read(ref posts) - postsBefore} posts for 600 buffers");
 
-        // 3. The window: the live visuals are a fixed set of retained objects; the envelope draws
-        //    at most one column per pixel of the block, however many buffers arrived.
         Tick(window);
         int children = window.LiveRecordingCanvasControl!.Children.Count;
         for (int i = 0; i < 20; i++)

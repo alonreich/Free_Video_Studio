@@ -1,11 +1,8 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
-using FreeVideoStudio.Core.Media;   // Frac, CoordinateMath
+using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Editing;
 
@@ -128,7 +125,7 @@ internal static class CropConfigJson
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return fallback;
         }
     }

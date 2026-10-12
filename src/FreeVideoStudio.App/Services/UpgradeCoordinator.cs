@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -35,30 +32,52 @@ internal static class UpgradeCoordinator
     /// </summary>
     internal const string StageArgument = "--upgrade-stage";
 
-    private static string StageRoot => Path.Combine(Path.GetTempPath(), "FVS_Upgrade");
+    /// <summary>
+    /// DIST-SMART — "build the new version from this folder": the signed update.json and the files
+    /// whose content changed. Set by the in-app updater, never by a double-clicked installer.
+    /// </summary>
+    internal const string SmartArgument = "--smart-update";
+
+    /// <summary>
+    /// The smart-update folder, or null. Accepted only when it holds update.json AND it is inside the
+    /// update downloads folder (<see cref="DeploymentFootprint.UpdateDownloadsRoot"/>; the old
+    /// <c>%TEMP%\FVS_AutoUpdate</c> for updaters released before NOTEMPEXEC_01), or it is the folder
+    /// this program itself runs from — the Inno Setup installer unpacks the program, its files and the
+    /// signed list together (NODROPPER_01). This is a convenience check; the worker's signature check decides.
+    /// </summary>
+    internal static string? SmartFromArgs(string[] args)
+    {
+        int index = Array.FindIndex(args, a => a.Equals(SmartArgument, StringComparison.OrdinalIgnoreCase));
+        if (index < 0 || index + 1 >= args.Length) return null;
+        try
+        {
+            string folder = Path.GetFullPath(args[index + 1]);
+            string? self = Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty);
+            bool besideSelf = !string.IsNullOrEmpty(self) &&
+                string.Equals(Path.GetFullPath(self).TrimEnd('\\', '/'), folder.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+            bool accepted = besideSelf
+                || UpgradeFiles.IsWithin(folder, Path.GetFullPath(DeploymentFootprint.UpdateDownloadsRoot))
+                || UpgradeFiles.IsWithin(folder, Path.GetFullPath(DeploymentFootprint.LegacyUpdateDownloadsRoot));
+            if (!accepted || !File.Exists(Path.Combine(folder, SmartUpdateManifest.FileName))) return null;
+            UpgradeFiles.RequirePlainPath(folder);
+            return folder;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Info("Upgrade", "Ignored an invalid smart-update folder argument: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>NOTEMPEXEC_01 — the worker copy is staged under the per-user updates folder, not %TEMP%.</summary>
+    internal static string StageRoot => DeploymentFootprint.UpdateStageRoot;
 
     public static async Task<int> LaunchAsync(string[] args, bool recovery = false)
     {
         string stage = Path.Combine(StageRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(stage);
+        SweepLegacyTempStages();
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // UPGRADEUX_06 — NO SILENT COPY BEFORE THE WINDOW.
-        //
-        // The launcher used to copy its whole executable (322 MB for the full installer) into the
-        // staging folder and verify it BEFORE starting the broker, so a double-clicked installer
-        // showed nothing at all for seconds (longer on a slow disk).
-        //
-        // The copy still happens — the ELEVATED worker must start from a fresh folder only this
-        // update writes to, never from Downloads, where a planted DLL would be loaded into an
-        // administrator process. But it now happens INSIDE the broker, after its window is up (or
-        // while the user is still working, for an in-app update). Only the two small window
-        // libraries are staged here first.
-        //
-        // The broker itself is still started from a staged copy when this executable lives where
-        // the update will replace it: the installed app (recovery), or any install root (a copy of
-        // the installer sitting inside an old program folder). A running executable cannot be moved.
-        // ══════════════════════════════════════════════════════════════════════════════════════
         bool stageBroker = DeploymentFootprint.IsRunningFromInstallPath() || RunsFromAnInstallRoot();
         string executable = Environment.ProcessPath!;
         if (stageBroker)
@@ -90,10 +109,24 @@ internal static class UpgradeCoordinator
     }
 
     /// <summary>
+    /// NOTEMPEXEC_01 — staging folders a version before this change left in <c>%TEMP%\FVS_Upgrade</c>.
+    /// Best effort: a folder still in use is left for the uninstaller or the next run.
+    /// </summary>
+    private static void SweepLegacyTempStages()
+    {
+        try
+        {
+            if (Directory.Exists(DeploymentFootprint.LegacyUpdateStageRoot))
+                Directory.Delete(DeploymentFootprint.LegacyUpdateStageRoot, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
+    }
+
+    /// <summary>
     /// UPGRADEUX_01 — the broker draws a window, so it needs the two native UI libraries beside its
-    /// staged copy. Sources, in order: beside this executable (the installed app), the embedded
-    /// payload (the full installer), the installed program folder (the compact installer, whose
-    /// payload carries the app only — the runtime fingerprint guarantees those libraries match).
+    /// staged copy. Sources, in order: beside this executable (the installed app, or the Inno Setup
+    /// installer's unpacked release — NODROPPER_01), then the installed program folder. There is no
+    /// embedded payload to take them from any more.
     /// A miss is not an error: the broker then runs without a window and uses message boxes.
     /// </summary>
     /// <summary>
@@ -118,7 +151,7 @@ internal static class UpgradeCoordinator
 
     /// <summary>
     /// UPGRADEUX_06 — the staging folder the launcher created, or null. Accepted only as a direct child
-    /// of <c>%TEMP%\FVS_Upgrade</c>, so an argument can never point the worker somewhere else.
+    /// of <see cref="StageRoot"/>, so an argument can never point the worker somewhere else.
     /// </summary>
     internal static string? StageFromArgs(string[] args)
     {
@@ -159,7 +192,6 @@ internal static class UpgradeCoordinator
             if (File.Exists(source)) UpgradeFiles.CopyVerified(source, Path.Combine(stage, dll));
         }
         if (names.All(dll => File.Exists(Path.Combine(stage, dll)))) return;
-        DeploymentLifecycle.ExtractAvaloniaDependencies(stage);
         foreach (string dll in names)
         {
             string target = Path.Combine(stage, dll), installed = Path.Combine(DeploymentFootprint.InstallFolder, dll);
@@ -179,18 +211,11 @@ internal static class UpgradeCoordinator
         UpgradeKind kind = recovery ? UpgradeKind.Recovery : DetectKind();
         progress.Begin(kind, waitsForApp);
 
-        // UPGRADEUX_06 — the worker copy is made in the background from the first moment: while the
-        // user is still working (in-app update) or while the window shows the first steps.
         string? stage = StageFromArgs(args);
         Task<string> workerExecutable = stage is null
             ? Task.FromResult(Environment.ProcessPath!)
             : Task.Run(() => PrepareWorkerCopy(stage));
 
-        // UPGRADE_02 — the window stays hidden while the user is still working; it appears the
-        // moment the app that started this update has closed (UPGRADEUX_01).
-        // UPGRADEUX_04 — the wait happens BEFORE the per-user gate is taken. Holding the gate while
-        // the user kept working made every Video Merger / Crop Tool launched in the meantime fail at
-        // startup with "An update is finishing for this Windows account".
         if (waitsForApp) progress.Step(UpgradeStep.CloseOldVersion, "Waiting for Free Video Studio to close…");
         try { await WaitForSourceExitAsync(args).ConfigureAwait(false); }
         catch (InvalidOperationException gone) { RuntimeLog.Swallowed(gone); }
@@ -199,7 +224,6 @@ internal static class UpgradeCoordinator
         using var gate = new Semaphore(1, 1, UserGate);
         if (!gate.WaitOne(0))
         {
-            // UPGRADEUX_04 — this used to exit with code 2 and no word to the user.
             await progress.FailedAsync("Another update is already running",
                 "Free Video Studio is already being installed or updated in another window. Please wait for it to finish.")
                 .ConfigureAwait(false);
@@ -220,7 +244,6 @@ internal static class UpgradeCoordinator
 
             if (!recovery)
             {
-                // UPGRADEUX_03 — ask the user to close any open copy BEFORE Windows is asked.
                 progress.Step(UpgradeStep.CheckNothingOpen);
                 string[] knownRoots = InstallDiscovery.FindRoots();
                 previousVersion = ReadInstalledVersion(knownRoots);
@@ -235,7 +258,6 @@ internal static class UpgradeCoordinator
                 progress.Step(UpgradeStep.CheckNothingOpen, "Getting the installer ready… (a few seconds)");
             string workerPath = await workerExecutable.ConfigureAwait(false);
 
-            // UPGRADEUX_02 — explain the Windows prompt before it appears.
             progress.Step(UpgradeStep.Permission, UpgradeText.PermissionDetail(kind));
             listener.Start();
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -255,7 +277,8 @@ internal static class UpgradeCoordinator
             }
             channel = await AcceptAsync(listener, token).ConfigureAwait(false);
             channel.Progress = detail => ReportWorkerProgress(progress, detail);
-            await channel.SendAsync("mode", recovery ? "recover" : "install").ConfigureAwait(false);
+            string? smart = recovery ? null : SmartFromArgs(args);
+            await channel.SendAsync("mode", recovery ? "recover" : smart is null ? "install" : "install|" + smart).ConfigureAwait(false);
             if (recovery)
             {
                 progress.Step(UpgradeStep.Settings, "Putting your files and settings back in order…");
@@ -273,8 +296,6 @@ internal static class UpgradeCoordinator
             string[] roots = ready["roots"]!.AsArray().Select(x => x!.GetValue<string>()).ToArray();
             if (kind != UpgradeKind.Install) progress.Step(UpgradeStep.Settings);
             await RecoverUserSessionAsync().ConfigureAwait(false);
-            // NOSPACE_01 — the spaced CURRENT-brand folder is not a previous brand: moving it must not
-            // make a previous brand's leftover settings win over the user's current ones.
             bool preferLegacy = !args.Contains("--source-current", StringComparer.OrdinalIgnoreCase) &&
                 roots.Any(p => !InstallDiscovery.KnownDestinations.Contains(UpgradeFiles.FullPath(p), StringComparer.OrdinalIgnoreCase));
             Directory.CreateDirectory(Store);
@@ -325,7 +346,7 @@ internal static class UpgradeCoordinator
         }
         catch (Exception ex)
         {
-            if (workerExecutable.IsFaulted) RuntimeLog.Swallowed(workerExecutable.Exception!);   // observed, never unobserved
+            if (workerExecutable.IsFaulted) RuntimeLog.Swallowed(workerExecutable.Exception!);
             if (ex is OperationCanceledException) RuntimeLog.Info("Upgrade", "Stopped by the user before anything changed: " + ex.Message);
             else RuntimeLog.Fail("Upgrade", ex.ToString());
             bool committed = session?["machine"] is JsonValue m && IsMachineCommitted(m.GetValue<string>());
@@ -358,7 +379,6 @@ internal static class UpgradeCoordinator
                 return 1;
             }
 
-            // UPGRADEUX_04 — say what happened in plain words, and put the user back where they were.
             bool reopened = waitsForApp && !cancelled && TryReopenPreviousVersion(worker);
             string reopenedLine = reopened ? Environment.NewLine + Environment.NewLine + "Your previous version has been opened again." : string.Empty;
             string title, message;
@@ -412,7 +432,6 @@ internal static class UpgradeCoordinator
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
-            // The same check runs again below and reports properly; this is only the window title.
             RuntimeLog.Info("Upgrade", "Could not tell install from update for the title: " + ex.Message);
             return UpgradeKind.Update;
         }
@@ -464,7 +483,7 @@ internal static class UpgradeCoordinator
                 if (mine.Count == 0 && !other) return true;
                 RunningAppChoice choice = await progress.AskToCloseRunningAppAsync(mine.Count, other).ConfigureAwait(false);
                 if (choice == RunningAppChoice.Cancel) return false;
-                if (mine.Count == 0) continue;   // "Try again" for another account's copy.
+                if (mine.Count == 0) continue;
 
                 progress.Step(UpgradeStep.CheckNothingOpen,
                     "Closing Free Video Studio… If it asks whether to save your work, answer it first.");
@@ -473,7 +492,6 @@ internal static class UpgradeCoordinator
                     try { process.CloseMainWindow(); }
                     catch (InvalidOperationException ex) { RuntimeLog.Swallowed(ex); }
                 }
-                // Give the user time to answer a save question; ask again if it is still open.
                 DateTime deadline = DateTime.UtcNow.AddMinutes(2);
                 while (DateTime.UtcNow < deadline && mine.Any(p => !HasExited(p)))
                     await Task.Delay(500).ConfigureAwait(false);
@@ -641,7 +659,7 @@ internal static class UpgradeCoordinator
                     await TryApplyShellAsync(shell, session).ConfigureAwait(false);
                     await TryRemoveShellAsync(shell, session).ConfigureAwait(false);
                 }
-                await RetargetAfterLaterMachineMoveAsync(session).ConfigureAwait(false);   // NOSPACE_01
+                await RetargetAfterLaterMachineMoveAsync(session).ConfigureAwait(false);
             }
             else
             {
@@ -715,7 +733,6 @@ internal static class UpgradeCoordinator
         {
             start.ArgumentList.Add("--upgrade-health"); start.ArgumentList.Add(port.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             start.ArgumentList.Add(token!);
-            // UPGRADEUX_05 — lets the new app say "Updated from X to Y" (or "Installed").
             start.ArgumentList.Add(UpgradeFinishedNotice.KindArgument);
             start.ArgumentList.Add(kind == UpgradeKind.Install ? "install" : "update");
             if (!string.IsNullOrWhiteSpace(previousVersion))

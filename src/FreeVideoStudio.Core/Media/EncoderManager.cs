@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.Core.Infrastructure;
@@ -153,7 +150,7 @@ public class EncoderManager
         }
         catch (System.Exception swallowed)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             return Frac.FromString(defaultFps);
         }
     }
@@ -203,7 +200,7 @@ public class EncoderManager
         }
         catch (System.Exception swallowed2)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return [];
         }
     }
@@ -255,7 +252,6 @@ public class EncoderManager
         var fpsValue = FpsFraction(fpsExpr);
 
         var vcodec = new List<string> { "-c:v", encoderName };
-        // COLOR_01 — every delivered file states what it is: SDR BT.709, TV range.
         vcodec.AddRange(ExportColorPolicy.OutputTagArgs);
         int gop = (int)(fpsValue * new Frac(2, 1) + new Frac(1, 2)).ToDouble();
         int keyintMin = (int)(fpsValue + new Frac(1, 2)).ToDouble();

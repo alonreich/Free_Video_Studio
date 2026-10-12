@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 using Microsoft.Win32;
 
@@ -38,8 +35,6 @@ internal static class InstallDiscovery
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Destination };
         foreach (Environment.SpecialFolder parent in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
         {
-            // NOSPACE_01 — the spaced current-brand folder is a legacy root too: the install moves it
-            // to the space-free Destination exactly like a previous-brand folder.
             foreach (string name in new[] { LegacyProductIdentity.DisplayName, LegacyProductIdentity.CompactName, DeploymentFootprint.LegacyInstallFolderName })
             {
                 string path = Path.Combine(Environment.GetFolderPath(parent), name);

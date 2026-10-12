@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
 
@@ -26,8 +23,6 @@ public partial class SettingsWindow : Window
             kb.AggressiveVolumeUp = _pendingKeys["AggressiveVolumeUp"];
             kb.AggressiveVolumeDown = _pendingKeys["AggressiveVolumeDown"];
 
-            // DUCKSTRENGTH_01 — the Music vs. game sound switches and handles. AudioProtection is the
-            // legacy master switch; kept true while either helper is on.
             _pendingDefaults.DuckingEnabled = Mix.DuckingEnabled;
             _pendingDefaults.CarvingEnabled = Mix.CarvingEnabled;
             _pendingDefaults.DuckingStrength = Mix.DuckingStrengthValue;
@@ -52,6 +47,7 @@ public partial class SettingsWindow : Window
             {
                 AutoUpdateChecks = autoCheckCb.IsChecked.Value;
             }
+            if (s.AutoUpdateChecks != AutoUpdateChecks) s.UpdateConsentAsked = true;
             s.AutoUpdateChecks = AutoUpdateChecks;
             s.MergerThumbnailScraper = MergerThumbnailScraper;
             s.MergerMatchClipLoudness = MergerMatchClipLoudness;
@@ -99,8 +95,8 @@ public partial class SettingsWindow : Window
 
         try
         {
-            new FreeVideoStudio.Core.Ipc.StateTransferStore(_paths)
-                .UpdatePropertiesSync(new System.Text.Json.Nodes.JsonObject
+            FreeVideoStudio.Core.Ipc.SessionStateWriter.For(_paths)
+                .Enqueue(new System.Text.Json.Nodes.JsonObject
                 {
                     ["CustomMusicDirectory"] = _pendingMusicFolder
                 });

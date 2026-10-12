@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -41,7 +41,6 @@ public class CropEditSessionTests
         return layer;
     }
 
-    // ── 7 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T07_ConstructibleWithoutAWindow()
@@ -56,7 +55,6 @@ public class CropEditSessionTests
         Assert.Equal(5, s.AllRoles.Count());
     }
 
-    // ── 8 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T08_LayoutCaptureApplyRoundtrip()
@@ -75,7 +73,6 @@ public class CropEditSessionTests
         Assert.True(other.Dirty);
     }
 
-    // ── 9 ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T09_LayerOrderRoundtrip_AndOnePressIsOnePlace()
@@ -93,7 +90,7 @@ public class CropEditSessionTests
         Assert.Equal(before[1], swapped.Neighbour.RoleKey);
         Assert.Equal(new[] { before[1], before[0], before[2] }, s.PaintOrder.Select(l => l.RoleKey));
         Assert.Equal(s.PaintOrder.Select(l => l.RoleKey).Reverse(), s.ListOrder.Select(l => l.RoleKey));
-        Assert.Equal(new[] { 1, 2, 3 }, s.PaintOrder.Select(l => l.Z));    // ZCOLLIDE_01 — never a duplicate
+        Assert.Equal(new[] { 1, 2, 3 }, s.PaintOrder.Select(l => l.Z));
 
         var restored = New();
         restored.ApplySnapshot(s.Capture());
@@ -104,10 +101,9 @@ public class CropEditSessionTests
         Assert.Equal(before, s.PaintOrder.Select(l => l.RoleKey));
 
         s.SelectedRoleKey = s.PaintOrder.Last().RoleKey;
-        Assert.Null(s.MoveSelectedLayer(+1));                               // already on top
+        Assert.Null(s.MoveSelectedLayer(+1));
     }
 
-    // ── 10 ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T10_SelectionIsIdentity_SurvivesARestoreThatRebuildsEveryLayer()
@@ -115,24 +111,22 @@ public class CropEditSessionTests
         var s = New();
         var loot = Place(s, "loot", new CropSourceRect(1500, 900, 160, 80));
         Place(s, "stats", new CropSourceRect(1700, 20, 200, 200));
-        s.SelectedRoleKey = "LOOT";                    // KEYCASE_01 — identity ignores case
+        s.SelectedRoleKey = "LOOT";
         Assert.Same(loot, s.Selected);
 
         s.Layers.Single(l => l.RoleKey == "stats").X += 25;
         s.Record(CropHistoryLabels.MoveCrop);
         s.Step(undo: true);
 
-        Assert.NotSame(loot, s.Selected);              // every layer object is new…
-        Assert.Equal("loot", s.Selected!.RoleKey);     // …the selection is the same element
+        Assert.NotSame(loot, s.Selected);
+        Assert.Equal("loot", s.Selected!.RoleKey);
 
-        // An undo that removes the selected element drops the selection rather than dangling.
         s.SelectedRoleKey = "stats";
-        s.Step(undo: true);                            // back before "stats" was added
+        s.Step(undo: true);
         Assert.Null(s.Selected);
         Assert.Null(s.SelectedRoleKey);
     }
 
-    // ── 11 ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T11_ProfilePersistence_WriteThenReadIsTheSameLayout()
@@ -156,12 +150,12 @@ public class CropEditSessionTests
         {
             var a = s.FindLayer(key)!;
             var b = reopened.FindLayer(key)!;
-            Assert.Equal(a.SourceRect, b.SourceRect);        // crops_source read back verbatim (no drift)
+            Assert.Equal(a.SourceRect, b.SourceRect);
             Assert.Equal((a.X, a.Y, a.Z), (b.X, b.Y, b.Z));
             Assert.True(b.FromSavedConfig);
             Assert.True(b.GeometryVerified);
         }
-        Assert.Contains(reopened.CustomRoles, r => r.Key == "own_ammo");   // ROLEPOPUP_01 — custom element reopens
+        Assert.Contains(reopened.CustomRoles, r => r.Key == "own_ammo");
     }
 
     [Fact]
@@ -171,13 +165,12 @@ public class CropEditSessionTests
         Place(s, "loot", new CropSourceRect(1500, 900, 160, 80));
         s.SelectedRoleKey = "loot";
         s.DeleteSelected();
-        Assert.True(s.CanSave);                                         // EMPTYSAVE_01
+        Assert.True(s.CanSave);
 
         JsonObject config = CropConfigDefaults.Create();
         CropProfileCodec.WriteLayers(config, s);
         Assert.Equal(new[] { 0, 0, 0, 0 }, config["crops_1080p"]!["loot"]!.AsArray().Select(n => n!.GetValue<int>()));
 
-        // RESGUESS_01 — read with no video: unverified; a save writes position/z only.
         var noVideo = new CropEditSession { CaptureResolutionKnown = false, ActiveProfile = "Fortnite" };
         JsonObject stored = CropConfigDefaults.Create();
         string cropBefore = stored["crops_1080p"]!["stats"]!.ToJsonString();
@@ -186,11 +179,10 @@ public class CropEditSessionTests
         Assert.False(stats.GeometryVerified);
         stats.X -= 100;
         Assert.True(CropProfileCodec.WriteLayers(stored, noVideo) > 0);
-        Assert.Equal(cropBefore, stored["crops_1080p"]!["stats"]!.ToJsonString());   // the stored crop is untouched
+        Assert.Equal(cropBefore, stored["crops_1080p"]!["stats"]!.ToJsonString());
         Assert.Equal(CropEditSession.ClampOverlay(stats.X, stats.Y, stats.Width, stats.Height).x,
-            stored["overlays"]!["stats"]!["x"]!.GetValue<int>());                     // the move IS saved
+            stored["overlays"]!["stats"]!["x"]!.GetValue<int>());
 
-        // A real frame arrives: now it may be verified.
         noVideo.CaptureResolutionKnown = true;
         Assert.True(noVideo.TryVerifyGeometry(stats));
         Assert.True(stats.GeometryVerified);
@@ -203,15 +195,15 @@ public class CropEditSessionTests
         Place(s, "loot", new CropSourceRect(1500, 900, 160, 80));
         s.SelectedRoleKey = "loot";
         s.DeleteSelected();
-        s.ResetWorking(tombstonePlacedElements: false);                 // a profile switch
-        Assert.Empty(s.DeletedRoleKeys);                                // DELETESET_01
+        s.ResetWorking(tombstonePlacedElements: false);
+        Assert.Empty(s.DeletedRoleKeys);
         Assert.False(s.Dirty);
 
         Place(s, "stats", new CropSourceRect(1700, 20, 200, 200));
-        s.ResetWorking(tombstonePlacedElements: true);                  // RESET
+        s.ResetWorking(tombstonePlacedElements: true);
         Assert.Contains("stats", s.DeletedRoleKeys);
         Assert.True(s.Dirty);
-        Assert.False(s.History.CanUndo);                                // a new starting point
+        Assert.False(s.History.CanUndo);
     }
 
     [Fact]
@@ -221,15 +213,14 @@ public class CropEditSessionTests
         s.RefreshExistingProfileNames(new[] { "Fortnite", " Apex " });
         Assert.Null(s.ValidateNewProfileName(""));
         Assert.NotNull(s.ValidateNewProfileName("   "));
-        Assert.NotNull(s.ValidateNewProfileName("fortnite"));            // case-insensitive collision
+        Assert.NotNull(s.ValidateNewProfileName("fortnite"));
         Assert.NotNull(s.ValidateNewProfileName("apex"));
-        Assert.NotNull(s.ValidateNewProfileName("No Mask"));             // NOMASK_01
+        Assert.NotNull(s.ValidateNewProfileName("No Mask"));
         Assert.NotNull(s.ValidateNewProfileName(".."));
         Assert.NotNull(s.ValidateNewProfileName(new string('a', CropEditSession.MaxProfileNameLength + 1)));
         Assert.Null(s.ValidateNewProfileName("Warzone"));
     }
 
-    // ── 12 ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void T12_ACommittedMagicWandCropFlowsIntoTheEdit_AsOneStep_ReplacingItsTwin()
@@ -238,12 +229,11 @@ public class CropEditSessionTests
         Place(s, "loot", new CropSourceRect(100, 100, 50, 50));
         int depth = s.History.UndoCount;
 
-        // What the wand hands over once the user accepts a candidate: a source rect and a role.
         var candidate = new CropSourceRect(1500, 900, 160, 80);
         var layer = s.AddLayer(Role("loot"), candidate, "wand.png", s.ToContent(candidate, null), out var replaced);
         s.Record(CropHistoryLabels.AddElement);
 
-        Assert.Single(replaced);                                        // NODUPES_01 — one element, one entry
+        Assert.Single(replaced);
         Assert.Same(layer, s.Layers.Single());
         Assert.Equal(candidate, layer.SourceRect);
         Assert.Equal("loot", s.SelectedRoleKey);
@@ -255,7 +245,7 @@ public class CropEditSessionTests
     public void T12b_ATwinUnderAnotherKeyIsTombstoned()
     {
         var s = New();
-        var twin = new CropHudRole("loot_area", "Loot Area", 10, -1, -1);   // what the old key-mangling minted
+        var twin = new CropHudRole("loot_area", "Loot Area", 10, -1, -1);
         s.AddLayer(twin, new CropSourceRect(1500, 900, 160, 80), "a.png", (10, 10, 100, 50), out _);
         s.AddLayer(Role("loot"), new CropSourceRect(1500, 900, 160, 80), "b.png", (10, 10, 100, 50), out var replaced);
         Assert.Equal("loot_area", replaced.Single().RoleKey);
@@ -263,7 +253,6 @@ public class CropEditSessionTests
         Assert.Equal("loot", s.Layers.Single().RoleKey);
     }
 
-    // ── 13 / 15 ───────────────────────────────────────────────────────────────────────────────
 
     private static readonly Type[] LogicalStateTypes =
     {
@@ -314,7 +303,6 @@ public class CropEditSessionTests
         int depth = s.History.UndoCount;
         bool dirty = s.Dirty;
 
-        // Scanning and browsing only ASK the session questions; nothing is recorded or stored.
         var guess = s.QuadrantGuess(s.ClampSourceRect(new CropSourceRect(1800, 1000, 400, 400)));
         Assert.True(s.TryGetRole(guess.Key, out _));
 
@@ -327,11 +315,11 @@ public class CropEditSessionTests
     public void RoleCatalogue_NoDuplicateByDisplayName_AndPrettify()
     {
         var s = New();
-        Assert.Equal("loot", s.RegisterCustomRole("Loot Area").Key);      // NODUPES_02
+        Assert.Equal("loot", s.RegisterCustomRole("Loot Area").Key);
         Assert.Equal("Own Ammo", CropEditSession.PrettifyRoleKey("own_ammo"));
         var section = new JsonObject { ["own_ammo"] = new JsonArray(10, 10, 0, 0), ["dead"] = new JsonArray(0, 0, 0, 0) };
         s.AdoptRolesFromConfig(section);
         Assert.True(s.TryGetRole("OWN_AMMO", out _));
-        Assert.False(s.TryGetRole("dead", out _));                       // a tombstone is not an element
+        Assert.False(s.TryGetRole("dead", out _));
     }
 }

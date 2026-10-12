@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Buffers.Binary;
 using System.IO;
@@ -80,10 +77,10 @@ public partial class IpcJsonContext : JsonSerializerContext { }
 
 public static class IpcProtocol
 {
-    public const uint Magic = 0x50535646; // "FVSP" in Little-Endian ('F'=0x46, 'V'=0x56, 'S'=0x53, 'P'=0x50)
+    public const uint Magic = 0x50535646;
     public const byte Version = 1;
     public const int HeaderSize = 10;
-    public const int MaxPayloadSize = 16 * 1024 * 1024; // 16 MB limit
+    public const int MaxPayloadSize = 16 * 1024 * 1024;
 
     private static string? _cachedUserScope;
 
@@ -109,7 +106,7 @@ public static class IpcProtocol
             catch (System.Exception swallowed3)
             {
                 scope = Environment.UserName;
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed3);
             }
 
             _cachedUserScope = scope.Replace('\\', '_').Replace(':', '_').Replace('/', '_');
@@ -181,7 +178,7 @@ public static class IpcProtocol
                 {
                 trusted = string.Equals(impersonated, Environment.UserName, StringComparison.OrdinalIgnoreCase);
                 }
-                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);   // FAULTTIER_02 — no failure is silent.
+                global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             }
 
             return trusted;
@@ -214,7 +211,7 @@ public static class IpcProtocol
         }
         catch (JsonException swallowed4)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);   // FAULTTIER_02 — no failure is silent.
+            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed4);
             return new JsonObject();
         }
     }
@@ -325,6 +322,66 @@ public static class IpcProtocol
         }
 
         return new IpcFrame(opcode, payload);
+    }
+
+    /// <summary>
+    /// IPCDEADLINE_01 — one request/response exchange under ONE end-to-end deadline.
+    ///
+    /// Connect, write AND read share a single linked token that fires after <paramref name="deadline"/>;
+    /// the registration additionally disposes the stream so a peer that accepts the connection and then
+    /// never answers cannot hold the caller past the deadline even if an I/O primitive ignored the
+    /// token. The previous synchronous client bounded only <c>Connect()</c>; its <c>ReadFrame</c> had no
+    /// deadline at all and froze the UI thread forever against a hung peer.
+    /// Returns null on timeout, cancellation, a closed pipe or any I/O failure — never throws.
+    /// </summary>
+    public static async Task<IpcFrame?> ExchangeAsync(
+        Func<NamedPipeClientStream> connect,
+        IpcOpcode request,
+        ReadOnlyMemory<byte> payload,
+        TimeSpan deadline,
+        CancellationToken ct = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(deadline > TimeSpan.Zero ? deadline : TimeSpan.FromMilliseconds(1));
+        NamedPipeClientStream? client = null;
+        try
+        {
+            client = connect();
+            var stream = client;
+            using CancellationTokenRegistration abort = cts.Token.Register(static s =>
+            {
+                try { ((Stream)s!).Dispose(); }
+                catch (Exception ex) { CoreLogger.Swallowed(ex); }
+            }, stream);
+
+            await client.ConnectAsync(cts.Token).ConfigureAwait(false);
+            await WriteFrameAsync(client, request, payload, cts.Token).ConfigureAwait(false);
+            return await ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return null;
+        }
+        catch (ObjectDisposedException ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return null;
+        }
+        catch (TimeoutException ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            CoreLogger.Warn("IpcClient", $"{request} exchange failed: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            client?.Dispose();
+        }
     }
 
     public static void WriteJsonFrame(Stream stream, IpcOpcode opcode, JsonObject? obj)

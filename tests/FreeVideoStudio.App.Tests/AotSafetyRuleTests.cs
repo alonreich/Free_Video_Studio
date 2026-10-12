@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -80,9 +77,9 @@ public sealed class AotSafetyRuleTests
 
     /// <summary>AOTCLEAN_02/03 — the packages whose code NativeAOT cannot run stay out.</summary>
     [Theory]
-    [InlineData("NAudio")]            // umbrella: pulls Wasapi (COM MediaFoundation) and WinForms
+    [InlineData("NAudio")]
     [InlineData("NAudio.Wasapi")]
-    [InlineData("Vortice.Direct3D11")] // SharpGen.Runtime reflection vtables
+    [InlineData("Vortice.Direct3D11")]
     [InlineData("Vortice.DXGI")]
     public void AotHostilePackagesStayOut(string package)
     {

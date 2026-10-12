@@ -1,5 +1,5 @@
 <!-- UPGRADEUX_05 — first launch after an install/update: "Finishing…" then "✓ Updated".
-     Transient and non-persisted (CenterOwner exemption, like UpdateAvailableWindow); not in
+     Transient and non-persisted (CenterOwner exemption, like the other transient dialogs); not in
      WindowBoundsHelper. Non-modal and owned by the main window. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"

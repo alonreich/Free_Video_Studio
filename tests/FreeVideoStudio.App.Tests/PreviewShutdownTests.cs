@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -55,7 +52,6 @@ public sealed class PreviewShutdownTests
         Assert.Equal(PreviewShutdownStatus.Succeeded, r3.Status);
         Assert.Equal(1, Volatile.Read(ref coreExecutions));
 
-        // Re-entry after success returns AlreadyStopped without re-executing core
         var r4 = await coordinator.RunAsync(Core, CancellationToken.None).WaitAsync(Timeout);
         Assert.Equal(PreviewShutdownStatus.AlreadyStopped, r4.Status);
         Assert.True(r4.Succeeded);
@@ -74,13 +70,11 @@ public sealed class PreviewShutdownTests
             return Task.FromResult(PreviewShutdownResult.Failed("Synchronous failure"));
         }
 
-        // 1. Synchronous failure must not wedge _pending
         var r1 = await coordinator.RunAsync(FailingSyncCore, CancellationToken.None).WaitAsync(Timeout);
         Assert.Equal(PreviewShutdownStatus.Failed, r1.Status);
         Assert.Equal(1, Volatile.Read(ref attempts));
         Assert.Null(coordinator.Pending);
 
-        // 2. Retry must be allowed
         var tcs = new TaskCompletionSource<PreviewShutdownResult>();
         Task<PreviewShutdownResult> AsyncRetryCore(CancellationToken ct)
         {
@@ -104,16 +98,13 @@ public sealed class PreviewShutdownTests
     {
         var gates = Enumerable.Range(0, 16).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
-        // Hold gate #5
         Assert.True(gates[5].Wait(0));
         Assert.Equal(0, gates[5].CurrentCount);
 
-        // 1. Quiesce with timeout: gate #5 is held, so it must fail
         var failResult = await PreviewShutdownCoordinator.QuiescePresentGatesAsync(gates, 50, CancellationToken.None);
         Assert.Equal(PreviewShutdownStatus.Failed, failResult.Status);
         Assert.Contains("slot 5", failResult.Reason);
 
-        // 2. Verify all gates 0..4 acquired prior to slot 5 were released in finally
         for (int i = 0; i < 16; i++)
         {
             if (i == 5)
@@ -126,14 +117,11 @@ public sealed class PreviewShutdownTests
             }
         }
 
-        // 3. Release gate #5; now quiescence must succeed
         gates[5].Release();
         var okResult = await PreviewShutdownCoordinator.QuiescePresentGatesAsync(gates, 200, CancellationToken.None);
         Assert.Equal(PreviewShutdownStatus.Succeeded, okResult.Status);
-        // All 16 gates are now acquired (held) by QuiescePresentGatesAsync
         Assert.All(gates, g => Assert.Equal(0, g.CurrentCount));
 
-        // Cleanup
         foreach (var g in gates) g.Release();
     }
 
@@ -145,7 +133,6 @@ public sealed class PreviewShutdownTests
         var releaseStarted = new ManualResetEventSlim(false);
         var blockRelease = new ManualResetEventSlim(false);
 
-        // Simulate detached native teardown on background thread with bounded wait
         int timeoutMs = 200;
         var backgroundWorker = Task.Run(() =>
         {
@@ -156,7 +143,6 @@ public sealed class PreviewShutdownTests
 
         Assert.True(releaseStarted.Wait(TimeSpan.FromSeconds(2)));
 
-        // Heartbeat check on dispatcher while background worker is blocked
         int heartbeatCount = 0;
         var timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(20),
@@ -168,12 +154,10 @@ public sealed class PreviewShutdownTests
         var completed = await Task.WhenAny(backgroundWorker, timeoutTask);
         Assert.Same(timeoutTask, completed);
 
-        // Dispatcher continues pumping while background worker is blocked
         await Task.Delay(100);
         timer.Stop();
         Assert.True(heartbeatCount > 0, "Dispatcher heartbeat was stalled by background teardown wait.");
 
-        // Unblock worker to clean up
         blockRelease.Set();
         await backgroundWorker.WaitAsync(Timeout);
     }
@@ -185,12 +169,10 @@ public sealed class PreviewShutdownTests
         var normalWorker = Task.Delay(20);
         var hungWorker = new TaskCompletionSource().Task;
 
-        // All finish
         var okResult = await PreviewShutdownCoordinator.QuiesceAsync(
             new[] { finishedWorker, normalWorker }, 200, CancellationToken.None);
         Assert.Equal(PreviewShutdownStatus.Succeeded, okResult.Status);
 
-        // Hung worker
         var failResult = await PreviewShutdownCoordinator.QuiesceAsync(
             new[] { finishedWorker, hungWorker }, 50, CancellationToken.None);
         Assert.Equal(PreviewShutdownStatus.FailedWorkerDidNotStop, failResult.Status);
@@ -200,7 +182,6 @@ public sealed class PreviewShutdownTests
     [Fact]
     public void HandleAbandonment_ProtectsHandleFromDestructionBeneathLiveThread()
     {
-        // VOAPPLY_04: When MpvIpcClient.IsHandleAbandoned is true, caller must not free native handle.
         using var client = new MpvIpcClient();
         Assert.False(client.IsHandleAbandoned);
     }
@@ -212,31 +193,24 @@ public sealed class PreviewShutdownTests
         var pendingTcs = new TaskCompletionSource<PreviewShutdownResult>();
         host.ActiveNativeReleaseTask = pendingTcs.Task;
 
-        // Verify initial state: all 16 gates free (count == 1)
         Assert.All(host.PresentGates, g => Assert.Equal(1, g.CurrentCount));
 
-        // 1. First shutdown attempt with short cancellation token (50ms)
         using var cts1 = new CancellationTokenSource(50);
         var r1 = await host.ShutdownAsync(cts1.Token);
         Assert.False(r1.Succeeded);
         Assert.Equal(PreviewShutdownStatus.Failed, r1.Status);
 
-        // Crucial invariant: gates were NOT stranded by the timed-out retry
         Assert.All(host.PresentGates, g => Assert.Equal(1, g.CurrentCount));
 
-        // 2. Second timeout retry
         using var cts2 = new CancellationTokenSource(50);
         var r2 = await host.ShutdownAsync(cts2.Token);
         Assert.False(r2.Succeeded);
         Assert.Equal(PreviewShutdownStatus.Failed, r2.Status);
 
-        // Gates still NOT stranded
         Assert.All(host.PresentGates, g => Assert.Equal(1, g.CurrentCount));
 
-        // 3. Complete native release successfully
         pendingTcs.SetResult(PreviewShutdownResult.Ok);
 
-        // 4. Retry succeeds and observes completion without gate stranding
         using var cts3 = new CancellationTokenSource(500);
         var r3 = await host.ShutdownAsync(cts3.Token);
         Assert.True(r3.Succeeded);
@@ -251,22 +225,18 @@ public sealed class PreviewShutdownTests
         var pendingTcs = new TaskCompletionSource<PreviewShutdownResult>();
         host.ActiveNativeReleaseTask = pendingTcs.Task;
 
-        // 1. Initial attempt times out
         using var cts1 = new CancellationTokenSource(50);
         var r1 = await host.ShutdownAsync(cts1.Token);
         Assert.False(r1.Succeeded);
 
-        // 2. Detached native task completes with failure
         pendingTcs.SetResult(PreviewShutdownResult.Failed("Driver context crash"));
 
-        // 3. Subsequent retry truthfully returns failure
         using var cts2 = new CancellationTokenSource(500);
         var r2 = await host.ShutdownAsync(cts2.Token);
         Assert.False(r2.Succeeded);
         Assert.Equal(PreviewShutdownStatus.Failed, r2.Status);
         Assert.Contains("Driver context crash", r2.Reason);
 
-        // All presentation gates remain completely unstranded
         Assert.All(host.PresentGates, g => Assert.Equal(1, g.CurrentCount));
     }
 
@@ -277,7 +247,6 @@ public sealed class PreviewShutdownTests
         var pendingTcs = new TaskCompletionSource<PreviewShutdownResult>();
         host.ActiveNativeReleaseTask = pendingTcs.Task;
 
-        // Concurrent callers await the existing native release task
         var t1 = host.ShutdownAsync(CancellationToken.None);
         var t2 = host.ShutdownAsync(CancellationToken.None);
 
@@ -300,7 +269,6 @@ public sealed class PreviewShutdownTests
         var invoker = new TrackingTeardownInvoker();
         host.NativeTeardownInvoker = invoker;
 
-        // Sub-case 1: WglMakeCurrent failure halts MpvRenderContextFree and FreeNativeLibrary
         invoker.FailWglMakeCurrent = true;
         var detached1 = host.CreateNativeDetachedResourcesForTesting(
             renderContext: 1, hglrc: 2, dummyHdc: 3, dummyHwnd: 4, mpvHandle: 5, openglLibrary: 6);
@@ -313,7 +281,6 @@ public sealed class PreviewShutdownTests
         Assert.False(invoker.FreeNativeLibraryCalled);
         Assert.False(invoker.MpvTerminateDestroyCalled);
 
-        // Sub-case 2: MpvRenderContextFree throwing halts FreeNativeLibrary and MpvTerminateDestroy
         invoker.Reset();
         invoker.ThrowMpvRenderContextFree = true;
         var detached2 = host.CreateNativeDetachedResourcesForTesting(
@@ -326,7 +293,6 @@ public sealed class PreviewShutdownTests
         Assert.False(invoker.FreeNativeLibraryCalled);
         Assert.False(invoker.MpvTerminateDestroyCalled);
 
-        // Sub-case 3: DestroyWindow failure halts MpvTerminateDestroy and FreeNativeLibrary
         invoker.Reset();
         invoker.FailDestroyWindow = true;
         var detached3 = host.CreateNativeDetachedResourcesForTesting(
@@ -562,7 +528,6 @@ public sealed class PreviewShutdownTests
         Assert.True(img3.Disposed, "Remaining asynchronous images must be disposed despite earlier failures.");
         Assert.True(batch.Entries[2].Disposed);
 
-        // On retry, after fixing img1, img2 and img3 must not be re-disposed
         img1.ShouldThrow = false;
         int img2DisposalCount = img2.DisposalCount;
         int img3DisposalCount = img3.DisposalCount;

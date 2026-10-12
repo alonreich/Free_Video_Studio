@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -49,7 +43,6 @@ public readonly record struct SpectrumBarGeometry(int BandIndex, Rect Slot, doub
 /// </summary>
 public sealed class MicrophoneSpectrumControl : Control
 {
-    // ── named theme tokens (AvaloniaApp.axaml, both theme dictionaries) ──
     public const string BackgroundBrushKey = "AppMeterBackgroundBrush";
     public const string UnlitBrushKey = "AppMeterUnlitBrush";
     public const string NormalBrushKey = "AppMeterNormalBrush";
@@ -272,7 +265,6 @@ public sealed class MicrophoneSpectrumControl : Control
         double highX = size.Width - HorizontalPadding - high.Width;
         context.DrawText(high, new Point(highX, baseline));
 
-        // "1 kHz" sits over the bar that actually contains 1 kHz — only when it fits between the ends.
         var list = bands.Count > 0 ? bands : DefaultBands.Value;
         int kHzBand = -1;
         for (int i = 0; i < list.Count; i++) if (list[i].Contains(1000.0)) { kHzBand = i; break; }

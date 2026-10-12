@@ -2,3 +2,5 @@
 *.pfx
 *.key.pem
 *.password.txt
+# UPDATEPIN_02 - backups made when the build renews the signing certificate.
+*.bak-*

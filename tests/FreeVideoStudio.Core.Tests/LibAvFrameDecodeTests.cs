@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using FreeVideoStudio.Core.Media;
@@ -45,16 +42,13 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         _out = output;
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════════════
-    // Pure managed parts — run everywhere.
-    // ════════════════════════════════════════════════════════════════════════════════════════
 
     [Theory]
     [InlineData("0", 0L)]
     [InlineData("0.5", 500_000L)]
     [InlineData("0.000", 0L)]
     [InlineData("12.345", 12_345_000L)]
-    [InlineData("1.2345678", 1_234_567L)]   // av_parse_time truncates past 6 digits
+    [InlineData("1.2345678", 1_234_567L)]
     [InlineData("-0.25", -250_000L)]
     [InlineData("3.", 3_000_000L)]
     [InlineData(".5", 500_000L)]
@@ -72,17 +66,16 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     [Fact]
     public void RescaleMatchesAvRescaleNearInf()
     {
-        Assert.Equal(3, FrameMath.RescaleNearInf(5, 1, 2));        // 2.5 → 3 (half away from zero)
-        Assert.Equal(-3, FrameMath.RescaleNearInf(-5, 1, 2));      // -2.5 → -3
+        Assert.Equal(3, FrameMath.RescaleNearInf(5, 1, 2));
+        Assert.Equal(-3, FrameMath.RescaleNearInf(-5, 1, 2));
         Assert.Equal(2, FrameMath.RescaleNearInf(7, 1, 3));
         Assert.Equal(-7680, FrameMath.RescaleQ(-500_000, 1, 1_000_000, 1, 15360));
-        Assert.Equal(-48000, FrameMath.RescaleQ(-533_333, 1, 1_000_000, 1, 90000));   // -47999.97 → -48000
+        Assert.Equal(-48000, FrameMath.RescaleQ(-533_333, 1, 1_000_000, 1, 90000));
         Assert.Equal(-15, FrameMath.RescaleQ(-500_000, 1, 1_000_000, 1, 30));
-        Assert.Equal(long.MinValue + 1, -FrameMath.RescaleNearInf(long.MaxValue, 1, 1) + 0);   // no overflow at the edge
+        Assert.Equal(long.MinValue + 1, -FrameMath.RescaleNearInf(long.MaxValue, 1, 1) + 0);
     }
 
     [Theory]
-    // repository memes (w x h → scale=160:-2)
     [InlineData(1920, 1080, 160, 90)]
     [InlineData(1080, 1920, 160, 284)]
     [InlineData(854, 480, 160, 90)]
@@ -90,7 +83,7 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     [InlineData(536, 480, 160, 144)]
     [InlineData(1080, 1072, 160, 158)]
     [InlineData(320, 240, 160, 120)]
-    [InlineData(240, 320, 160, 214)]   // 213.33 → av_rescale(160,320,480)=107 → 214
+    [InlineData(240, 320, 160, 214)]
     public void ScaleMinus2MatchesScaleEval(int w, int h, int ew, int eh)
     {
         Assert.True(FrameMath.TryOutputSize(w, h, 160, evenHeight: true, out int ow, out int oh));
@@ -107,7 +100,7 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         static int Conv(double x) => (int)(x * (1 << 16));
         var m = new int[9];
         m[0] = Conv(c); m[1] = Conv(-s); m[3] = Conv(s); m[4] = Conv(c); m[8] = 1 << 30;
-        if (hflip) { m[0] = -m[0]; m[3] = -m[3]; m[6] = -m[6]; }   // av_display_matrix_flip(m, 1, 0)
+        if (hflip) { m[0] = -m[0]; m[3] = -m[3]; m[6] = -m[6]; }
         return m;
     }
 
@@ -115,20 +108,19 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     public void OrientationFollowsFfmpegAutorotate()
     {
         Assert.Equal(FrameOrientation.Identity, FrameOrientation.FromDisplayMatrix(null));
-        Assert.Equal(FrameOrientation.Identity, FrameOrientation.FromDisplayMatrix(new int[9]));          // NaN → no filter
+        Assert.Equal(FrameOrientation.Identity, FrameOrientation.FromDisplayMatrix(new int[9]));
         Assert.Equal(FrameOrientation.Identity, FrameOrientation.FromDisplayMatrix(RotationMatrix(0)));
-        Assert.Equal(new FrameOrientation(1, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(90)));    // transpose=clock
-        Assert.Equal(new FrameOrientation(2, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(-90)));   // transpose=cclock
-        Assert.Equal(new FrameOrientation(-1, true, true, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(180)));    // hflip,vflip
-        Assert.True(FrameOrientation.FromDisplayMatrix(RotationMatrix(45)).Unsupported);                                       // rotate filter → subprocess
+        Assert.Equal(new FrameOrientation(1, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(90)));
+        Assert.Equal(new FrameOrientation(2, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(-90)));
+        Assert.Equal(new FrameOrientation(-1, true, true, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(180)));
+        Assert.True(FrameOrientation.FromDisplayMatrix(RotationMatrix(45)).Unsupported);
         Assert.Equal(new FrameOrientation(-1, true, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(0, hflip: true)));
-        Assert.Equal(new FrameOrientation(0, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(90, hflip: true)));   // cclock_flip
+        Assert.Equal(new FrameOrientation(0, false, false, false), FrameOrientation.FromDisplayMatrix(RotationMatrix(90, hflip: true)));
     }
 
     [Fact]
     public void OrientationRemapsPixelsLikeVfTranspose()
     {
-        // 3x2 image  a b c / d e f  (one uint per pixel)
         uint[] src = { 1, 2, 3, 4, 5, 6 };
         byte[] bytes = new byte[src.Length * 4];
         Buffer.BlockCopy(src, 0, bytes, 0, bytes.Length);
@@ -139,18 +131,17 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
             Buffer.BlockCopy(r, 0, u, 0, r.Length);
             return u;
         }
-        Assert.Equal(new uint[] { 4, 1, 5, 2, 6, 3 }, Run(new(1, false, false, false), out int w1, out int h1));   // clock
+        Assert.Equal(new uint[] { 4, 1, 5, 2, 6, 3 }, Run(new(1, false, false, false), out int w1, out int h1));
         Assert.Equal((2, 3), (w1, h1));
-        Assert.Equal(new uint[] { 3, 6, 2, 5, 1, 4 }, Run(new(2, false, false, false), out _, out _));             // cclock
-        Assert.Equal(new uint[] { 1, 4, 2, 5, 3, 6 }, Run(new(0, false, false, false), out _, out _));             // cclock_flip (= transpose)
-        Assert.Equal(new uint[] { 6, 3, 5, 2, 4, 1 }, Run(new(3, false, false, false), out _, out _));             // clock_flip
-        Assert.Equal(new uint[] { 3, 2, 1, 6, 5, 4 }, Run(new(-1, true, false, false), out _, out _));             // hflip
-        Assert.Equal(new uint[] { 4, 5, 6, 1, 2, 3 }, Run(new(-1, false, true, false), out _, out _));             // vflip
-        Assert.Equal(new uint[] { 6, 5, 4, 3, 2, 1 }, Run(new(-1, true, true, false), out int w2, out int h2));    // 180°
+        Assert.Equal(new uint[] { 3, 6, 2, 5, 1, 4 }, Run(new(2, false, false, false), out _, out _));
+        Assert.Equal(new uint[] { 1, 4, 2, 5, 3, 6 }, Run(new(0, false, false, false), out _, out _));
+        Assert.Equal(new uint[] { 6, 3, 5, 2, 4, 1 }, Run(new(3, false, false, false), out _, out _));
+        Assert.Equal(new uint[] { 3, 2, 1, 6, 5, 4 }, Run(new(-1, true, false, false), out _, out _));
+        Assert.Equal(new uint[] { 4, 5, 6, 1, 2, 3 }, Run(new(-1, false, true, false), out _, out _));
+        Assert.Equal(new uint[] { 6, 5, 4, 3, 2, 1 }, Run(new(-1, true, true, false), out int w2, out int h2));
         Assert.Equal((3, 2), (w2, h2));
     }
 
-    // ── router: fallback policy (fake native decoder, fake subprocess) ──────────────────────────
 
     private sealed class FakeNative(NativeFrameStatus status, Exception? toThrow = null) : INativeFrameDecoder
     {
@@ -248,9 +239,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         finally { Environment.SetEnvironmentVariable(VideoFrameGrabber.BackendEnvironmentVariable, old); }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════════════
-    // Windows: the bundled DLLs vs the bundled ffmpeg.exe.
-    // ════════════════════════════════════════════════════════════════════════════════════════
 
     public sealed class Fixtures : IAsyncLifetime
     {
@@ -280,8 +268,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
                 return null;
             }
 
-            // Top half = 16+12·(N mod 16), bottom half = 16+12·⌊N/16⌋: the frame number N survives any
-            // colour conversion with a ±5-level margin. Lossless (qp 0), B-frames, a keyframe every 30.
             const string counterVf = "format=yuv420p,geq=lum='16+12*if(lt(Y\\,H/2)\\,mod(N\\,16)\\,trunc(N/16))':cb=128:cr=128";
             string? counter = await Gen(Counters, "counter-bframes.mp4", "-f", "lavfi", "-i", "nullsrc=s=320x240:r=30:d=6", "-vf", counterVf,
                 "-c:v", "libx264", "-preset", "fast", "-qp", "0", "-g", "30", "-bf", "3", "-pix_fmt", "yuv420p");
@@ -294,7 +280,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
                 await Gen(Counters, "counter-rotated-90.mp4", "-display_rotation:v:0", "90", "-i", counter, "-c", "copy");
                 await Gen(Counters, "counter-rotated-180.mp4", "-display_rotation:v:0", "180", "-i", counter, "-c", "copy");
                 await Gen(Counters, "counter-rotated-270-hflip.mp4", "-display_rotation:v:0", "270", "-display_hflip:v:0", "-i", counter, "-c", "copy");
-                // Unicode path (UTF-8 → libav → wide on Windows).
                 string uni = Path.Combine(Work, "מונה ✓.mp4");
                 File.Copy(counter, uni);
                 Counters["unicode-path"] = uni;
@@ -404,7 +389,7 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     internal static (int TopLeft, int TopRight, int BottomLeft, int BottomRight) Signature(DecodedVideoFrame f)
     {
         int G(int x, int y) => f.Pixels[y * f.Stride + x * 4 + 1];
-        static int Level(int g) => (int)Math.Round(g * 219.0 / 255.0 / 12.0);   // gray RGB → (Y-16) → step
+        static int Level(int g) => (int)Math.Round(g * 219.0 / 255.0 / 12.0);
         int x1 = f.Width / 4, x2 = 3 * f.Width / 4, y1 = f.Height / 4, y2 = 3 * f.Height / 4;
         return (Level(G(x1, y1)), Level(G(x2, y1)), Level(G(x1, y2)), Level(G(x2, y2)));
     }
@@ -516,7 +501,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
                      .Concat(_fx.Counters.Where(c => c.Key.Contains("rotated", StringComparison.Ordinal))))
         {
             double d = await Duration(path);
-            // GeminiTrackingService's own candidate rule for a whole-clip segment: 15 %, 50 %, 85 %.
             double[] secs = { Math.Max(0.05, 0.15 * d), 0.50 * d, Math.Min(d - 0.05, 0.85 * d) };
             foreach (double s in secs)
             {
@@ -551,7 +535,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     [WindowsOnlyFact]
     public async Task SpecificSemanticsArePreserved()
     {
-        // A clip shorter than 0.5 s: no frame at 0.5 (NoFrame, terminal), a frame at 0 — MemeThumbnailCache's retry rule.
         string shortClip = _fx.Clips["short-0.3s.mp4"];
         Assert.Equal(NativeFrameStatus.NoFrame, (await Native(shortClip, "0.5", 160, true)).Status);
         Assert.Null(await FfmpegThumb(_fx.FfmpegPath, shortClip, "0.5"));
@@ -559,19 +542,14 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         Assert.Equal(NativeFrameStatus.Ok, zero.Status);
         Assert.Equal((160, 90), (zero.Frame!.Width, zero.Frame.Height));
 
-        // 4K source → 160x90 straight out of swscale (no 4K managed buffer).
         var uhd = await Native(_fx.Clips["uhd-4k.mp4"], "0.5", 160, true);
         Assert.Equal(NativeFrameStatus.Ok, uhd.Status);
         Assert.Equal((160, 90, 640), (uhd.Frame!.Width, uhd.Frame.Height, uhd.Frame.Pixels.Length / 90));
 
-        // Rotation is applied (portrait output from a landscape-coded stream), as ffmpeg's autorotate does.
         var rot = await Native(_fx.Counters["counter-rotated-90.mp4"], "1.000");
         Assert.Equal(NativeFrameStatus.Ok, rot.Status);
         Assert.Equal((240, 320), (rot.Frame!.Width, rot.Frame.Height));
 
-        // Real timestamps: a non-keyframe position (GOP 30, so 1.234 s is mid-GOP) selects the frame
-        // ffmpeg selects — frame 37 (1.2333 s) or 38 (1.2667 s) depending on the container start offset —
-        // and never the GOP's keyframe (30).
         var c = await Native(_fx.Counters["counter-bframes.mp4"], "1.234");
         Assert.Equal(NativeFrameStatus.Ok, c.Status);
         var f = await FfmpegThumb(_fx.FfmpegPath, _fx.Counters["counter-bframes.mp4"], "1.234");
@@ -580,10 +558,8 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         Assert.Equal(UprightFrameNumber(f!), UprightFrameNumber(c160.Frame!));
         Assert.InRange(UprightFrameNumber(c.Frame!), 37, 38);
 
-        // No video stream → NoFrame (ffmpeg: no output), not a fault.
         Assert.Equal(NativeFrameStatus.NoFrame, (await Native(_fx.Clips["audio-only.m4a"], "0")).Status);
 
-        // Alpha is opaque.
         Assert.All(Enumerable.Range(0, zero.Frame.Width * zero.Frame.Height), i => Assert.Equal(255, zero.Frame.Pixels[i * 4 + 3]));
     }
 

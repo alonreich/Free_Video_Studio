@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
-using System.Text;
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using Microsoft.Win32;
 
@@ -64,7 +59,6 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
             {
                 string target = await ReadTargetAsync(link).ConfigureAwait(false);
                 if (!probe.OwnsTarget(target)) continue;
-                // An uninstall shortcut is machine-wide and rewritten by the elevated worker.
                 if (string.Equals(Path.GetFileName(target), DeploymentFootprint.UninstallExeName, StringComparison.OrdinalIgnoreCase)) continue;
                 string temporary = link + ".upgrade.lnk";
                 await ShellLinkWriter.CreateAsync(temporary, DeploymentFootprint.InstallPath, InstallDiscovery.Destination,
@@ -345,25 +339,6 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         }
     }
 
-    internal static Task<string> ReadTargetAsync(string path) => RunPowerShellAsync(
-        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('" + path.Replace("'", "''", StringComparison.Ordinal) + "'); [Console]::Write($s.TargetPath)");
-
-    internal static async Task<string> RunPowerShellAsync(string script)
-    {
-        using var process = new Process { StartInfo = new ProcessStartInfo("powershell.exe")
-            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true } };
-        foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes("$ErrorActionPreference='Stop'; " + script)) })
-            process.StartInfo.ArgumentList.Add(argument);
-        process.Start();
-        Task<string> output = process.StandardOutput.ReadToEndAsync(), error = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        try { await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException)
-        {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
-            throw new IOException("Windows shortcut operation timed out.");
-        }
-        if (process.ExitCode != 0) throw new IOException(await error.ConfigureAwait(false));
-        return (await output.ConfigureAwait(false)).Trim();
-    }
+    /// <summary>NOPOWERSHELL_01 — read through the Shell's own COM object, never powershell.exe.</summary>
+    internal static Task<string> ReadTargetAsync(string path) => ShellLinkWriter.ReadTargetAsync(path);
 }

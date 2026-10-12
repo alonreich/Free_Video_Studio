@@ -63,8 +63,11 @@
     <EmbeddedResource Include="Assets\Sounds\error.wav"   LogicalName="UiSound.error.wav" />
   </ItemGroup>
 
+  <!-- NODROPPER_01 — payload.zip is NOT embedded any more. The program used to carry FFmpeg, libmpv,
+       the starter media and a copy of itself as a compressed managed resource and unpack them on first
+       run: the dropper pattern antivirus engines flag. The release is packed by Inno Setup instead
+       (build\installer\FreeVideoStudio.iss). Do not add an EmbeddedResource for any executable payload. -->
   <ItemGroup>
-    <EmbeddedResource Include="payload.zip" Condition="Exists('payload.zip')" />
     <TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
     <TrimmerRootAssembly Include="SkiaSharp" />
     <InternalsVisibleTo Include="FreeVideoStudio.App.Tests" />
@@ -155,15 +158,19 @@
        ⚠️ Product metadata carries ONLY the "Free Video Studio" brand. Game names are third-party
           trademarks and this string is embedded in a binary that is distributed publicly. See
           docs/REBRAND_MIGRATION.md for the complete brand identity.
+       ⚠️ PEIDENTITY_01 — NativeAOT copies the version resource from the managed assembly, so
+          OriginalFilename / InternalName come out as "FreeVideoStudio.dll". FvsBuild (PeIdentity.cs)
+          rewrites both to "FreeVideoStudio.exe" before signing; a binary naming another file is the
+          renamed-binary pattern antivirus scores. app.manifest's version is synchronized too.
        ⚠️ Bump <Version> on every release. AssemblyVersion is pinned to a 1.0.0.0-style major line on
           purpose so assembly binding never breaks between patch releases; FileVersion and
           InformationalVersion carry the real number that users and bug reports see.
        ══════════════════════════════════════════════════════════════════════════════════════════ -->
   <PropertyGroup>
-    <Version>2026.10.10.0926</Version>
-    <AssemblyVersion>2026.10.10.0926</AssemblyVersion>
-    <FileVersion>2026.10.10.0926</FileVersion>
-    <InformationalVersion>2026.10.10.0926</InformationalVersion>
+    <Version>2026.10.12.0921</Version>
+    <AssemblyVersion>2026.10.12.0921</AssemblyVersion>
+    <FileVersion>2026.10.12.0921</FileVersion>
+    <InformationalVersion>2026.10.12.0921</InformationalVersion>
     <Company>Alon Reich</Company>
     <Authors>Alon Reich</Authors>
     <Product>Free Video Studio</Product>

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -332,8 +329,6 @@ public sealed class TimelineViewModel : ViewModelBase
         var speedSegments = BuildExportSpeedSegments();
         if (speedSegments == null || speedSegments.Count == 0) return 0.0;
 
-        // QUALITY_05 — same untrimmed fallback as CalculateEffectiveDurationMs, for the same
-        // reason: these two numbers are subtracted from each other and must describe one timeline.
         double trimStartMs = IsTrimStartSet ? TrimStartMs : 0.0;
         double trimEndMs = (IsTrimEndSet && TrimEndMs > trimStartMs) ? TrimEndMs : LoadedVideoDurationMs;
         double frozenMs = 0.0;
