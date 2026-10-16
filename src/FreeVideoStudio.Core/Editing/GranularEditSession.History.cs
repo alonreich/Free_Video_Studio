@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Immutable;
 using System.Linq;
@@ -68,7 +68,7 @@ public sealed partial class GranularEditSession
         ImmutableArray.CreateRange(Segments),
         ImmutableArray.CreateRange(Cuts),
         ImmutableArray.CreateRange(Memes),
-        BaseSpeed, FreezeTimeMs, FreezeDurationS, SelectedSegmentIndex);
+        BaseSpeed, FreezeTimeMs, FreezeDurationS, SelectedSegmentIndex, CaptionTrack);
 
     /// <summary>
     /// Raised after every recorded checkpoint — by a window call or by any command here — with
@@ -132,6 +132,7 @@ public sealed partial class GranularEditSession
         FreezeDurationS = snap.FreezeDurationS;
 
         SelectedSegmentIndex = snap.SelectedIndex >= 0 && snap.SelectedIndex < Segments.Count ? snap.SelectedIndex : -1;
+        CaptionTrack = snap.CaptionTrack;
         ClearPendingMarks();
     }
 

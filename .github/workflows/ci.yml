@@ -127,6 +127,10 @@ jobs:
         # were enforced by remembering to run them.
         run: dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj -c Release --no-build --logger "trx;LogFileName=app.trx"
 
+      - name: Validate packaging pipeline (stage-only)
+        # Validates that FvsBuild staging, Brotli compression, dependencies, and manifests build without error
+        run: dotnet run --project build/FvsBuild/FvsBuild.csproj -c Release -- --stage-only --dev
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

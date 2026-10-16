@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -206,4 +206,118 @@ public class MergerSessionTests
         Assert.Empty(none.Edl.Clips);
         Assert.Null(none.Edl.Music);
     }
+
+    [Fact]
+    public void QueueRowOps_IdsAt_And_Resolve()
+    {
+        var ids = new ClipIdList();
+        ids.Insert(0, 3);
+        var (id0, id1, id2) = (ids.Ids[0], ids.Ids[1], ids.Ids[2]);
+
+        var selected = QueueRowOps.IdsAt(ids.Ids, new[] { 0, 2 });
+        Assert.Equal(new[] { id0, id2 }, selected);
+
+        var resolved = QueueRowOps.Resolve(ids.Ids, new[] { id2, id0 });
+        Assert.Equal(new[] { 0, 2 }, resolved);
+
+        var missing = QueueRowOps.Resolve(ids.Ids, new[] { id0, Guid.NewGuid() });
+        Assert.Null(missing);
+    }
+
+    [Fact]
+    public void QueueRowOps_CanMove_And_MoveSteps()
+    {
+        // Boundary checks
+        Assert.False(QueueRowOps.CanMove(new[] { 0 }, queueCount: 3, direction: -1));
+        Assert.True(QueueRowOps.CanMove(new[] { 0 }, queueCount: 3, direction: 1));
+        Assert.False(QueueRowOps.CanMove(new[] { 2 }, queueCount: 3, direction: 1));
+        Assert.True(QueueRowOps.CanMove(new[] { 2 }, queueCount: 3, direction: -1));
+
+        // Multiselection touching top boundary
+        Assert.False(QueueRowOps.CanMove(new[] { 0, 2 }, queueCount: 4, direction: -1));
+        Assert.True(QueueRowOps.CanMove(new[] { 0, 2 }, queueCount: 4, direction: 1));
+
+        // Multiselection touching bottom boundary
+        Assert.False(QueueRowOps.CanMove(new[] { 1, 3 }, queueCount: 4, direction: 1));
+        Assert.True(QueueRowOps.CanMove(new[] { 1, 3 }, queueCount: 4, direction: -1));
+
+        // MoveSteps ordering: -1 yields ascending; +1 yields descending
+        var upSteps = QueueRowOps.MoveSteps(new[] { 1, 3 }, direction: -1).ToList();
+        Assert.Equal(new[] { (1, 0), (3, 2) }, upSteps);
+
+        var downSteps = QueueRowOps.MoveSteps(new[] { 0, 2 }, direction: 1).ToList();
+        Assert.Equal(new[] { (2, 3), (0, 1) }, downSteps);
+    }
+
+    [Fact]
+    public void DuplicatePaths_MaintainDistinctClipIds_AndEffects_AcrossMoveAndSync()
+    {
+        var ids = new ClipIdList();
+        ids.Insert(0, 3);
+        var (idA1, idB, idA2) = (ids.Ids[0], ids.Ids[1], ids.Ids[2]);
+        var paths = new[] { @"C:\c\a.mp4", @"C:\c\b.mp4", @"C:\c\a.mp4" };
+
+        var state = new MergerUiState
+        {
+            Paths = paths,
+            Ids = ids.Ids,
+            ScraperEnabled = false,
+            BaseSpeed = 1.0,
+        };
+        var tl = Timeline(state.Paths, scraper: false, thumb: false);
+        var firstEdl = MergerSession.Capture(state, Analysis, FileId, tl, previous: null);
+
+        // Attach effect specifically to second A (idA2)
+        var fx = new EdlEffects { Freezes = new[] { new EdlFreeze(1_000_000, 2) } };
+        var edlWithFx = firstEdl with
+        {
+            Clips = new[] { firstEdl.Clips[0], firstEdl.Clips[1], firstEdl.Clips[2] with { Effects = fx } }
+        };
+
+        // Move second A from index 2 to index 1: queue becomes [A, A, B]
+        ids.Move(2, 1, 1);
+        var movedPaths = new[] { @"C:\c\a.mp4", @"C:\c\a.mp4", @"C:\c\b.mp4" };
+        var movedState = state with { Paths = movedPaths, Ids = ids.Ids };
+        var movedTl = Timeline(movedPaths, scraper: false, thumb: false);
+        var nextEdl = MergerSession.Capture(movedState, Analysis, FileId, movedTl, previous: edlWithFx);
+
+        // idA2 is now at index 1, still carries fx, while idA1 at index 0 has no effects
+        Assert.Equal(idA1, nextEdl.Clips[0].ClipId);
+        Assert.True(nextEdl.Clips[0].Effects.IsEmpty);
+        Assert.Equal(idA2, nextEdl.Clips[1].ClipId);
+        Assert.Equal(fx, nextEdl.Clips[1].Effects);
+        Assert.Equal(idB, nextEdl.Clips[2].ClipId);
+
+        // Simulate undo via SyncQueue: restore edlWithFx
+        var queue = new System.Collections.ObjectModel.ObservableCollection<string>(movedPaths);
+        queue.CollectionChanged += (s, e) => ids.Apply(e, queue.Count);
+        MergerSession.SyncQueue(queue, ids, edlWithFx.Clips);
+
+        Assert.Equal(new[] { @"C:\c\a.mp4", @"C:\c\b.mp4", @"C:\c\a.mp4" }, queue);
+        Assert.Equal(new[] { idA1, idB, idA2 }, ids.Ids);
+    }
+
+    [Fact]
+    public void DuplicatePaths_AdjacentOccurrences_SurviveIndependentRemoval()
+    {
+        var ids = new ClipIdList();
+        ids.Insert(0, 3);
+        var (id1, id2, id3) = (ids.Ids[0], ids.Ids[1], ids.Ids[2]);
+        var queue = new System.Collections.ObjectModel.ObservableCollection<string>
+        {
+            @"C:\c\a.mp4", @"C:\c\a.mp4", @"C:\c\a.mp4"
+        };
+        queue.CollectionChanged += (s, e) => ids.Apply(e, queue.Count);
+
+        // Remove middle occurrence (index 1)
+        queue.RemoveAt(1);
+
+        Assert.Equal(2, queue.Count);
+        Assert.Equal(new[] { @"C:\c\a.mp4", @"C:\c\a.mp4" }, queue);
+        Assert.Equal(new[] { id1, id3 }, ids.Ids);
+        Assert.Equal(0, ids.IndexOf(id1));
+        Assert.Equal(1, ids.IndexOf(id3));
+        Assert.Equal(-1, ids.IndexOf(id2));
+    }
 }
+

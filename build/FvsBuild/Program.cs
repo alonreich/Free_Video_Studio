@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 namespace FvsBuild;
 
@@ -60,12 +60,19 @@ internal static class Program
 
     private static int RunPipeline(BuildLog log, bool noPublish, bool devMode, bool stageOnly, DateTimeOffset started)
     {
-        string buildVersion = DateTime.Now.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
+        string buildVersion = DateTime.UtcNow.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
         string tag = "v" + buildVersion;
         string flavor = devMode ? "Local Dev" : "NativeAOT win-x64";
         SmartUpdateBuilder.IsDevBuild = devMode;
         log.Info($"Build version: {buildVersion}  (tag {tag})");
-        SynchronizeVersionFiles(buildVersion, log);
+        if (!devMode)
+        {
+            SynchronizeVersionFiles(buildVersion, log);
+        }
+        else
+        {
+            log.Info("[VERSION] Skipping disk synchronization of project files in dev mode to preserve clean working tree.");
+        }
 
         try
         {
@@ -136,6 +143,7 @@ internal static class Program
                 return ExitOk;
             }
 
+            // SIGNLOCAL_01 superseded by SIGNLOCAL_02: disclose the local publisher certificate before publishing.
             if (CodeSigning.SignedWithLocalDevCertificate)
             {
                 log.Banner(string.Empty);
@@ -150,6 +158,7 @@ internal static class Program
             log.Banner("###########################################################");
             bool published = GitHubReleasePublisher.Publish(Staging.CompiledExePath, tag, log);
             if (published) SmartUpdateBuilder.MarkReleased(buildVersion, log);
+            // NEWRELEASE_01: prepare the checklist only after a successful public release.
             if (published) ReleaseChecklist.PrepareAndOpen(buildVersion, tag, Staging.CompiledExePath, log);
             log.WriteVerdictAndClose(published ? ExitOk : ExitPublishIncomplete, DateTimeOffset.Now - started);
             if (published)

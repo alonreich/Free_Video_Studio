@@ -1,4 +1,11 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -239,5 +246,13 @@ public partial class GranularSpeedEditorWindow
         if (k != _cornerMemeKey) { _cornerMemeKey = k; _cornerMemes.SetSpans(spans); }
 
         _cornerMemes.Update(game.SourceToOutput(playheadRelMs / 1000.0));
+    }
+
+    /// <summary>CACHEBOUND_05 — detaches and disposes editor corner memes on window close or reset.</summary>
+    private void TeardownEditorCornerMemes()
+    {
+        _cornerMemes?.Dispose();
+        _cornerMemes = null;
+        _cornerMemeKey = "";
     }
 }

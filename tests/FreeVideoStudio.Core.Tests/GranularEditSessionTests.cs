@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Editing;
@@ -360,4 +360,96 @@ public class GranularEditSessionTests
         s.RemoveFreeze();
         Assert.False(s.HasFreeze);
     }
+
+    [Fact]
+    public void SlowZoomGlide_SessionEdgeClampingAndAttemptedConflict()
+    {
+        var s = New(trimStart: 0, trimEnd: 60000);
+        // Two slow zooms:
+        // seg 0: 2000 - 4000 ms (Slow)
+        // seg 1: 6000 - 8000 ms (Slow)
+        s.SeedSegmentsFromAbsolute(new[]
+        {
+            new SpeedSegment(2000, 4000, 1.0, 100, 100, 640, 360, "1920x1080", true),
+            new SpeedSegment(6000, 8000, 1.0, 100, 100, 640, 360, "1920x1080", true)
+        });
+
+        // 1. Edge clamping: dragging seg 1 start towards seg 0 (e.g. proposed 4500ms)
+        // ClampZoomEdgeAgainstSlowNeighbours must clamp to otherEnd + 1000ms = 5000ms
+        double clampedStart = s.ClampZoomEdgeAgainstSlowNeighbours(1, 4500, isStart: true);
+        Assert.Equal(5000.0, clampedStart);
+
+        // 2. Attempted conflict: evaluate availability at proposed (4500ms)
+        var attemptedSeg = s.Segments[1] with { StartMs = 4500, ZoomStartMs = 4500 };
+        var availAttempted = s.GetSlowZoomGlideAvailability(1, overrideSegment: attemptedSeg);
+        Assert.False(availAttempted.IncomingAvailable);
+        Assert.True(availAttempted.IncomingNeighborIsSlow);
+        Assert.Contains("need 1 second of footage between them", availAttempted.GetIncomingExplanation());
+
+        // 3. At clamped position (5000ms): gap is 1000ms, incoming glide fits!
+        var clampedSeg = s.Segments[1] with { StartMs = 5000, ZoomStartMs = 5000 };
+        var availClamped = s.GetSlowZoomGlideAvailability(1, overrideSegment: clampedSeg);
+        Assert.True(availClamped.IncomingAvailable);
+    }
+
+    [Fact]
+    public void SlowZoomGlide_WholeBlockMoveDoesNotUniversallyClamp()
+    {
+        var s = New(trimStart: 0, trimEnd: 60000);
+        // Zoom on block at 5000 - 7000 ms
+        s.SeedSegmentsFromAbsolute(new[]
+        {
+            new SpeedSegment(5000, 7000, 1.0, 100, 100, 640, 360, "1920x1080", true)
+        });
+
+        // Whole block move allows moving to 200 - 2200 ms (near clip start)
+        // The session does not universally block whole-block moves
+        var movedSeg = s.Segments[0] with { StartMs = 200, EndMs = 2200, ZoomStartMs = 200, ZoomEndMs = 2200 };
+        var moveAvail = s.GetSlowZoomGlideAvailability(0, overrideSegment: movedSeg);
+
+        // Incoming glide is unavailable (needs 0.5s, only has 0.2s), but outgoing glide is available (has 57.8s)
+        Assert.False(moveAvail.IncomingAvailable);
+        Assert.True(moveAvail.OutgoingAvailable);
+        Assert.Contains("needs 0.5 seconds of footage", moveAvail.GetIncomingExplanation());
+    }
+
+    [Fact]
+    public void SlowZoomGlide_StyleSwitchAndUndoRedoRoundtrip()
+    {
+        var s = New(trimStart: 0, trimEnd: 60000);
+        // Seg 0: 2000 - 4000 ms (Slow)
+        // Seg 1: 4500 - 6500 ms (Instant zoom)
+        s.SeedSegmentsFromAbsolute(new[]
+        {
+            new SpeedSegment(2000, 4000, 1.0, 100, 100, 640, 360, "1920x1080", true),
+            new SpeedSegment(4500, 6500, 1.0, 100, 100, 640, 360, "1920x1080", false)
+        });
+
+        s.SelectedSegmentIndex = 1;
+        // Switching Seg 1 Instant -> Slow is refused by SlowZoomHasRoom because gap is 500ms (< 1000ms)
+        Assert.False(s.SlowZoomHasRoom(1, out double needSec));
+        Assert.Equal(1.0, needSec);
+
+        // Move seg 1 to 5500 - 7500 ms (gap = 1500ms)
+        s.Checkpoint("move block");
+        s.Segments[1] = s.Segments[1] with { StartMs = 5500, EndMs = 7500, ZoomStartMs = 5500, ZoomEndMs = 7500 };
+
+        // Now SlowZoomHasRoom succeeds
+        Assert.True(s.SlowZoomHasRoom(1, out _));
+        s.Checkpoint("switch to slow");
+        s.Segments[1] = s.Segments[1] with { ZoomSlow = true };
+
+        var avail = s.GetSlowZoomGlideAvailability(1);
+        Assert.True(avail.IncomingAvailable);
+        Assert.True(avail.OutgoingAvailable);
+
+        // Undo switch to slow
+        s.Undo();
+        Assert.False(s.Segments[1].ZoomSlow);
+
+        // Redo
+        s.Redo();
+        Assert.True(s.Segments[1].ZoomSlow);
+    }
 }
+

@@ -2,6 +2,14 @@
 
 Run from the workspace root. No internet or additional test packages are required.
 
+Voiceover picture/audio timing regressions (bundled FFmpeg, CPU only):
+
+```powershell
+dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj --filter "FullyQualifiedName~VoiceOverExportTimingTests" -p:UseSharedCompilation=false
+```
+
+These render the studio proxy and a real `ProcessWorker` export, decode picture flashes and voice pulses, and require agreement within 40 ms. Cases cover 1x, 0.5x, 2x, trim, mixed rates, cuts, freezes, a meme with continuous music, and a two-minute edit. Artifacts and export graphs remain under `artifacts/voice-*`. These synthetic checks do not measure physical microphone or speaker latency. Headless capture tests cover output-clock stalls, complete take retention and review gating.
+
 ```powershell
 dotnet restore tests/MediaPipelineChecks/MediaPipelineChecks.csproj --source binaries -p:NuGetAudit=false
 dotnet run --project tests/MediaPipelineChecks/MediaPipelineChecks.csproj --no-restore

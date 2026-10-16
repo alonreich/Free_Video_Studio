@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -28,12 +28,14 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         Directory.CreateDirectory(_dir);
         VoiceOverWindow.RecoveryDirectorySeam = () => _dir;
         VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => Task.FromResult(true);
     }
 
     public void Dispose()
     {
         VoiceOverWindow.RecoveryDirectorySeam = null;
         VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = null;
         try { Directory.Delete(_dir, recursive: true); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }

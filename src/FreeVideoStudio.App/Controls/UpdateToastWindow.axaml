@@ -40,13 +40,17 @@
                          Foreground="{DynamicResource AppInfoBrush}"
                          Background="{DynamicResource AppPanelBrush}"/>
 
-            <!-- R3 — the ONE question, with TWO buttons. "Restart & update" is the "yes, install it". -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsVisible="{Binding IsReady}">
-                <Button Classes="Secondary" Content="LATER" MinWidth="90" Cursor="Hand"
+            <!-- Update ready: SKIP this version, LATER (deferred on close), or RESTART & UPDATE now. -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" IsVisible="{Binding IsReady}">
+                <Button Classes="Secondary" Content="SKIP" MinWidth="60" Cursor="Hand"
+                        Command="{Binding SkipCommand}"
+                        AutomationProperties.Name="Skip this version"
+                        ToolTip.Tip="Never offer this specific update version again."/>
+                <Button Classes="Secondary" Content="LATER" MinWidth="75" Cursor="Hand"
                         Command="{Binding LaterCommand}"
                         AutomationProperties.Name="Install the update later"
                         ToolTip.Tip="Keep working. The update installs by itself the next time you close Free Video Studio."/>
-                <Button Classes="Success" Content="RESTART &amp; UPDATE" MinWidth="150" Cursor="Hand"
+                <Button Classes="Success" Content="RESTART &amp; UPDATE" MinWidth="145" Cursor="Hand"
                         Command="{Binding RestartCommand}"
                         AutomationProperties.Name="Restart and install the update now"
                         ToolTip.Tip="Closes Free Video Studio (asking you to save first if needed), installs the update and opens it again."/>

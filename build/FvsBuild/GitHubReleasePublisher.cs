@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -32,6 +32,9 @@ internal static class GitHubReleasePublisher
             return false;
         }
 
+        // REBRAND_03 — old-brand clients look for the previous download name in the latest
+        // release. That alias is created here, in a private temp folder, for the duration of the
+        // upload only, so no previous-brand file ever persists in the repository or obj/.
         string aliasDirectory = Path.Combine(Path.GetTempPath(), "fvs-release-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -59,10 +62,10 @@ internal static class GitHubReleasePublisher
             log.Warn("[PUBLISH] A release asset is missing. Nothing was published.");
             return false;
         }
+        string releaseNotes = GetReleaseNotesFromChangelog(tag, log);
         List<string> create = ["release", "create", tag];
         create.AddRange(assets);
-        create.AddRange(["--repo", repo, "--title", $"Free Video Studio {tag}", "--notes",
-            $"Free Video Studio {tag}. Existing settings are preserved during migration.", "--draft"]);
+        create.AddRange(["--repo", repo, "--title", $"Free Video Studio {tag}", "--notes", releaseNotes, "--draft"]);
         if (Cli.RunStreaming("gh", create, log) != 0)
         {
             log.Warn("[PUBLISH] Draft upload failed. The existing latest release is still available.");
@@ -81,7 +84,97 @@ internal static class GitHubReleasePublisher
         }
         log.Success($"SUCCESS: verified release {tag} is now latest.");
         log.Info($"Download: https://github.com/{repo}/releases/latest/download/{Path.GetFileName(exePath)}");
+        PruneOldReleases(repo, keepCount: 5, log);
         return true;
+    }
+
+    internal static string GetReleaseNotesFromChangelog(string tag, BuildLog? log = null)
+    {
+        try
+        {
+            string changelogPath = Path.Combine(Directory.GetCurrentDirectory(), "docs", "CHANGELOG.md");
+            if (!File.Exists(changelogPath))
+            {
+                log?.Warn($"[CHANGELOG] docs/CHANGELOG.md does not exist. Using fallback release notes for {tag}.");
+                return $"Free Video Studio {tag}. Existing settings are preserved during migration.";
+            }
+
+            string[] lines = File.ReadAllLines(changelogPath);
+            string cleanTag = tag.TrimStart('v', 'V');
+            bool inSection = false;
+            var notes = new System.Text.StringBuilder();
+
+            foreach (string line in lines)
+            {
+                if (line.StartsWith("## ", StringComparison.Ordinal))
+                {
+                    if (inSection) break;
+                    if (line.Contains(tag, StringComparison.OrdinalIgnoreCase) || line.Contains(cleanTag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        inSection = true;
+                        continue;
+                    }
+                }
+                else if (inSection)
+                {
+                    notes.AppendLine(line);
+                }
+            }
+
+            string result = notes.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(result)) return result;
+            log?.Warn($"[CHANGELOG] No release notes found for '{tag}' in docs/CHANGELOG.md. Using fallback release notes.");
+        }
+        catch (Exception ex)
+        {
+            log?.Warn($"[CHANGELOG] Failed to read docs/CHANGELOG.md: {ex.Message}");
+        }
+        return $"Free Video Studio {tag}. Existing settings are preserved during migration.";
+    }
+
+    internal static void PruneOldReleases(string repo, int keepCount, BuildLog log)
+    {
+        try
+        {
+            if (!Cli.TryCapture("gh", ["release", "list", "--repo", repo, "--limit", "50", "--json", "tagName,isDraft,createdAt"], out var output))
+            {
+                log.Warn("[PUBLISH] Could not list releases for retention pruning.");
+                return;
+            }
+
+            var releases = JsonNode.Parse(string.Join("\n", output))?.AsArray();
+            if (releases == null) return;
+
+            var publishedReleases = releases
+                .Where(r => r?["isDraft"]?.GetValue<bool>() == false)
+                .Select(r => r?["tagName"]?.GetValue<string>())
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .ToList();
+
+            if (publishedReleases.Count <= keepCount)
+            {
+                log.Info($"[PUBLISH] Retention policy: {publishedReleases.Count} release(s) present (limit {keepCount}). No pruning required.");
+                return;
+            }
+
+            var releasesToDelete = publishedReleases.Skip(keepCount).ToList();
+            log.Info($"[PUBLISH] Retention policy: keeping the latest {keepCount} releases; pruning {releasesToDelete.Count} older release(s)...");
+
+            foreach (var oldTag in releasesToDelete)
+            {
+                if (string.IsNullOrWhiteSpace(oldTag)) continue;
+                log.Info($"[PUBLISH] Pruning older release: {oldTag}");
+                int deleteExit = Cli.RunQuiet("gh", ["release", "delete", oldTag, "--repo", repo, "--yes", "--cleanup-tag"]);
+                if (deleteExit != 0)
+                {
+                    log.Warn($"[PUBLISH] Could not delete old release {oldTag} (exit code {deleteExit}).");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"[PUBLISH] Release retention pruning encountered an error: {ex.Message}");
+        }
     }
 
     /// <summary>NODROPPER_01 — the full-installer name used by every release before the Inno Setup installer.</summary>

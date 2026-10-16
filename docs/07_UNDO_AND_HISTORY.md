@@ -1,5 +1,8 @@
 # SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
 
+## Voiceover timing changes {#UNDO-VOICE-TIMING}
+`MainWindow.VoiceTiming.cs` also follows 02 AUD-VOICEOVER. `VOTIMING_01`: a 350 ms debounce groups timing gestures before the decision. Cancel restores timing and the no-op rule avoids a spurious undo step; Keep commits timing and review flags together. Every take participates in `ProjectAudio` equality. Undo and reapply preserve previously applied WAVs.
+
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
@@ -7,6 +10,7 @@
 | ⚠ `src/FreeVideoStudio.Core/Project/ProjectDocument.cs` | `ProjectDocument` | immutable state carried by the stack | CO-GOVERNED by `06_PROJECT_DOCUMENT_MODEL.md` |
 | ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `PushUndo` / `EndUndoGesture` call sites, `ClearUndoHistory("changes applied")` | the ORIGIN of U1–U4; migrated onto `UndoStack<T>` (UNDO_26) | CO-GOVERNED by `01`, `04`, `05` |
 | ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs` | `GranularSpeedEditorWindow` (Partial) | `PushUndo`, `CaptureSnapshot`, `PerformUndo`, `PerformRedo`, `RestoreSnapshot`, `ClearUndoHistory`, `ParkHistoryForReopen`, `AdoptParkedHistory`, `_parkedHistory`, `_historyBaseline`, `HistoryKey` | CO-GOVERNED by `04` |
+| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs` | `GranularSpeedEditorWindow` (Partial) | `EndAiPreviewLoop`, `BeginAiPreview`, `AIUNDO_01` | un-checkpointed AI preview; ACCEPT checkpoints the original block first | CO-GOVERNED by `01`, `04` |
 | `src/FreeVideoStudio.Core/Undo/GranularEditHistory.cs` | `GranularEditHistory`, `GranularEditorSnapshot`, `ParkedGranularHistory` | `Checkpoint`, `EndGesture`, `Undo`, `Redo`, `Clear`, `Park`, `BelongsTo`, `TryAdopt`, `MaxDepth = 40`, `GestureIdleMs = 700` | Granular adapter onto `UndoStack<T>` (UNDO_26) |
 | `src/FreeVideoStudio.Core/Undo/CropLayoutSnapshot.cs` | `CropLayoutSnapshot`, `CropItemState`, `CropHistoryLabels` | `Create`, `ForPointerGesture` | Crop Tool history state (UNDO_27) |
 | `src/FreeVideoStudio.Core/Undo/MusicWizardSnapshot.cs` | `MusicWizardSnapshot`, `HistoryShortcut`, `HistoryCommand` | `DescribeChange`, `Classify` | Music wizard history state + shared shortcut table (UNDO_28) |
@@ -163,7 +167,7 @@ types by reflection as well.
 
 | Editor | State `T` | Labels | Gestures |
 | :--- | :--- | :--- | :--- |
-| Granular | `GranularEditorSnapshot` (segments, cuts, memes, base speed, freeze; selection carried, NOT compared) | the call sites' own (`add segment`, `change speed`, `move meme`, `delete parts`…) | every existing coalesce key; **700ms** window; `EndUndoGesture` on release |
+| Granular | `GranularEditorSnapshot` (segments, cuts, memes, base speed, freeze, captions; selection carried, NOT compared) | the call sites' own (`add segment`, `change speed`, `move meme`, `delete parts`, `edit caption`, `delete caption`, `move caption`…) | every existing coalesce key; **700ms** window; `EndUndoGesture` on release |
 | Crop Tool | `CropLayoutSnapshot` (committed crops + layout; `DisplayName` carried, not compared) | `CropHistoryLabels`: `move crop`, `resize HUD`, `add HUD element`, `delete HUD element`, `change layer order` | a pointer drag/resize is recorded ONCE, on release, only if it changed something |
 | Music wizard | `MusicWizardSnapshot` (song, auto-fill queue in order, song start, video/music balance, ducking, smooth blend, loop) | `MusicWizardSnapshot.DescribeChange` (`choose song`, `move song start`, `change music balance`…) | fader sweeps, wheel spins, scrubs and keyboard nudges coalesce (900ms default); pointer release ends them |
 
@@ -198,14 +202,27 @@ types by reflection as well.
   `Final` (`GranularEditHistory.BelongsTo`). A different clip, a different project using the same
   file, or any APPLY / main-window edit since, opens on another state: the history is discarded, never
   replayed. Merge mode (`edl://`) has no clip identity and never parks.
-
+* **`AIUNDO_01` — previews are not edits; the commit checkpoints the ORIGINAL.** AI SMART ZOOM's loop
+  preview (and its "Re-frame") writes the candidate block into the session WITHOUT a checkpoint so
+  DISCARD can drop it silently. Because `Checkpoint` records the state BEFORE a change (UNDO_01),
+  ACCEPT must put the original block back, call `PushUndo("apply AI smart zoom")`, and only then write
+  the candidate. Checkpointing with the candidate already in place recorded the AI zoom as the
+  "before" state and Ctrl+Z could never remove it. Any future preview-then-accept flow follows the
+  same order. (`GranularSpeedEditorWindow.AiZoom.cs` `EndAiPreviewLoop`;
+  `AiZoomReviewTests.AcceptingAnAiZoom_CheckpointsTheOriginalBlock`.)
+* **AI Live Commentary Captions follows the exact same `AIUNDO_01` invariant:** generating commentary
+  previews candidate captions directly in libmpv (`AddSubtitlesAsync`) without a checkpoint. On ACCEPT,
+  original caption track is restored first, `PushUndo("apply AI commentary captions")` is called, and only
+  then is the candidate committed, guaranteeing Ctrl+Z cleanly restores previous caption state.
+  Direct cue manipulation (move, resize, edit, delete, single-line regenerate) pushes undo checkpoints
+  with distinct labels ("move caption", "edit caption", "delete caption", "regenerate caption line").
 ## 8. EDITSTATE_01 — Who Owns The State The History Snapshots  {#UNDO-EDITSTATE}
 The history was already shared (§7); the STATE it snapshots still lived in window fields beside
 canvases and timers. It now lives in Core, in types that cannot reference Avalonia:
 
 | Editor | State owner | History it owns | The window keeps |
 | :--- | :--- | :--- | :--- |
-| Granular | `Core/Editing/GranularEditSession` (segments, cuts, memes in both presentation modes, base speed, freeze, zoom on each segment, selection, MARK START/END, dirty, results, recovery values via `GranularRecoveryCodec`) | `GranularEditHistory` (UNDO_26), the parking slot (`GranularHistoryParking`, UNDO_25) | canvases, drags, pointer capture, timers, mpv, filmstrip, timeline CACHES, the AI tracking preview |
+| Granular | `Core/Editing/GranularEditSession` (segments, cuts, memes in both presentation modes, base speed, freeze, zoom on each segment, captions `CaptionTrack`, selection, MARK START/END, dirty, results, recovery values via `GranularRecoveryCodec`) | `GranularEditHistory` (UNDO_26), the parking slot (`GranularHistoryParking`, UNDO_25) | canvases, drags, pointer capture, timers, mpv, filmstrip, timeline CACHES, the AI tracking preview, captions lane |
 | Crop Tool | `Core/Editing/CropEditSession` (layers = `CropLayer`, layer order, selection by role KEY, tombstones, active profile + name rules, element catalogue, capture resolution, dirty; config values via `CropProfileCodec`) | `UndoStack<CropLayoutSnapshot>` (UNDO_27) | element visuals, adorners, handles, hit testing, frozen-frame zoom, the Magic Wand's scan/AI request/candidates |
 
 * **Calling convention is unchanged.** Window gesture handlers still `PushUndo` / `PushHistory` with

@@ -1,5 +1,9 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.IO;
+using System.Threading;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text;
@@ -7,6 +11,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Avalonia.Input;
+using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
@@ -57,13 +62,209 @@ public class AppSettings
     public string ActiveMaskOverlay { get; set; } = "Fortnite";
 
     /// <summary>
-    /// AI SMART ZOOM — Google Gemini API key used for universal subject vision tracking.
-    /// Default empty. Configured via Settings › AI Tracking or the First-Time Setup Wizard.
+    /// CROPEDIT_01 — The last deliberately chosen HUD mask profile edited in Crop Tools.
+    /// Separate from <see cref="ActiveMaskOverlay"/> (which is the playback/export default).
+    /// Default empty. Additive (missing reads as empty), no schema bump.
     /// </summary>
-    public string GeminiApiKey { get; set; } = "";
+    public string LastEditedCropProfile { get; set; } = "";
 
-    /// <summary>AI SMART ZOOM — Gemini vision model name (default "gemini-2.5-flash").</summary>
-    public string GeminiModelName { get; set; } = "gemini-2.5-flash";
+    /// <summary>
+    /// AI SMART ZOOM — Google Gemini API key used for universal subject vision tracking, in CLEAR text,
+    /// in memory only. Default empty. Configured via Settings › AI Tracking or the First-Time Setup Wizard.
+    /// KEYPROTECT_01 (schema 14): never serialized as plain text — see <see cref="GeminiApiKeyStored"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string GeminiApiKey
+    {
+        get
+        {
+            string stored = GeminiApiKeyStored ?? string.Empty;
+            KeyCache? cache = Volatile.Read(ref _keyCache);
+            if (cache == null || !ReferenceEquals(cache.Stored, stored))
+            {
+                cache = new KeyCache(stored, SecretProtector.Unprotect(stored));
+                Volatile.Write(ref _keyCache, cache);
+            }
+            return cache.Clear;
+        }
+        set => GeminiApiKeyStored = SecretProtector.Protect(value?.Trim());
+    }
+
+    /// <summary>
+    /// KEYPROTECT_01 — what settings.json holds under "GeminiApiKey": <c>dpapi1:</c> + a DPAPI blob sealed
+    /// to this Windows user (legacy files: plain text, re-sealed by the v14 migration). Use
+    /// <see cref="GeminiApiKey"/>; this exists only so the serializer can round-trip the sealed form.
+    /// </summary>
+    [JsonPropertyName("GeminiApiKey")]
+    public string GeminiApiKeyStored { get; set; } = "";
+
+    /// <summary>The last stored value and its opened form, swapped as ONE object so threads never mix them.</summary>
+    private sealed record KeyCache(string Stored, string Clear);
+    private KeyCache? _keyCache;
+
+    /// <summary>
+    /// AISETTINGS_01 (docs/05 SYS-AISETTINGS) — Anthropic Claude API key in CLEAR text, in memory only. Default empty.
+    /// KEYPROTECT_01: never serialized as plain text — stored sealed with DPAPI as <see cref="ClaudeApiKeyStored"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string ClaudeApiKey
+    {
+        get
+        {
+            string stored = ClaudeApiKeyStored ?? string.Empty;
+            KeyCache? cache = Volatile.Read(ref _claudeKeyCache);
+            if (cache == null || !ReferenceEquals(cache.Stored, stored))
+            {
+                cache = new KeyCache(stored, SecretProtector.Unprotect(stored));
+                Volatile.Write(ref _claudeKeyCache, cache);
+            }
+            return cache.Clear;
+        }
+        set => ClaudeApiKeyStored = SecretProtector.Protect(value?.Trim());
+    }
+
+    /// <summary>
+    /// KEYPROTECT_01 / AISETTINGS_01 — settings.json representation of ClaudeApiKey: dpapi1: + DPAPI blob.
+    /// </summary>
+    [JsonPropertyName("ClaudeApiKey")]
+    public string ClaudeApiKeyStored { get; set; } = "";
+    private KeyCache? _claudeKeyCache;
+
+    /// <summary>
+    /// AISETTINGS_01 (docs/05 SYS-AISETTINGS) — OpenAI API key in CLEAR text, in memory only. Default empty.
+    /// KEYPROTECT_01: never serialized as plain text — stored sealed with DPAPI as <see cref="OpenAiApiKeyStored"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string OpenAiApiKey
+    {
+        get
+        {
+            string stored = OpenAiApiKeyStored ?? string.Empty;
+            KeyCache? cache = Volatile.Read(ref _openAiKeyCache);
+            if (cache == null || !ReferenceEquals(cache.Stored, stored))
+            {
+                cache = new KeyCache(stored, SecretProtector.Unprotect(stored));
+                Volatile.Write(ref _openAiKeyCache, cache);
+            }
+            return cache.Clear;
+        }
+        set => OpenAiApiKeyStored = SecretProtector.Protect(value?.Trim());
+    }
+
+    /// <summary>
+    /// KEYPROTECT_01 / AISETTINGS_01 — settings.json representation of OpenAiApiKey: dpapi1: + DPAPI blob.
+    /// </summary>
+    [JsonPropertyName("OpenAiApiKey")]
+    public string OpenAiApiKeyStored { get; set; } = "";
+    private KeyCache? _openAiKeyCache;
+
+    /// <summary>Helper to retrieve the clear-text API key for any vendor.</summary>
+    public string GetApiKey(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Google => GeminiApiKey,
+        AiVendor.Anthropic => ClaudeApiKey,
+        AiVendor.OpenAI => OpenAiApiKey,
+        _ => string.Empty,
+    };
+
+    /// <summary>Helper to store the API key for any vendor, sealing it to DPAPI automatically.</summary>
+    public void SetApiKey(AiVendor vendor, string? key)
+    {
+        switch (vendor)
+        {
+            case AiVendor.Google: GeminiApiKey = key ?? string.Empty; break;
+            case AiVendor.Anthropic: ClaudeApiKey = key ?? string.Empty; break;
+            case AiVendor.OpenAI: OpenAiApiKey = key ?? string.Empty; break;
+        }
+    }
+
+    /// <summary>AI usage U1 — Zoom subject discovery (stills to candidate boxes).</summary>
+    public AiUsageConfig AiUsageSubjectDiscovery
+    {
+        get => _aiUsageSubjectDiscovery ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageSubjectDiscovery = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageSubjectDiscovery = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>AI usage U2 — Zoom dense tracking (video clip to tracked trajectory).</summary>
+    public AiUsageConfig AiUsageTracking
+    {
+        get => _aiUsageTracking ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageTracking = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageTracking = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>AI usage U3 — Magic Wand HUD detection (single frame to HUD bounding boxes).</summary>
+    public AiUsageConfig AiUsageMagicWand
+    {
+        get => _aiUsageMagicWand ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageMagicWand = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageMagicWand = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>AI usage U4 — Live commentary captions (video clip to timestamped narrative lines).</summary>
+    public AiUsageConfig AiUsageCommentary
+    {
+        get => _aiUsageCommentary ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageCommentary = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageCommentary = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>Helper to retrieve the per-usage configuration, guaranteeing non-null.</summary>
+    public AiUsageConfig GetUsageConfig(AiUsage usage) => usage switch
+    {
+        AiUsage.SubjectDiscovery => AiUsageSubjectDiscovery,
+        AiUsage.DenseTracking => AiUsageTracking,
+        AiUsage.MagicWand => AiUsageMagicWand,
+        AiUsage.Commentary => AiUsageCommentary,
+        _ => new(AiVendor.Google, GeminiModelName),
+    };
+
+    /// <summary>Helper to set the per-usage configuration.</summary>
+    public void SetUsageConfig(AiUsage usage, AiUsageConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        switch (usage)
+        {
+            case AiUsage.SubjectDiscovery: AiUsageSubjectDiscovery = config; break;
+            case AiUsage.DenseTracking: AiUsageTracking = config; break;
+            case AiUsage.MagicWand: AiUsageMagicWand = config; break;
+            case AiUsage.Commentary: AiUsageCommentary = config; break;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the effective model name for a usage, falling back to vendor defaults if model name is empty.
+    /// </summary>
+    public string GetEffectiveModel(AiUsage usage)
+    {
+        var config = GetUsageConfig(usage);
+        if (!string.IsNullOrWhiteSpace(config.Model)) return config.Model;
+        return config.Vendor switch
+        {
+            AiVendor.Google => string.IsNullOrWhiteSpace(GeminiModelName) ? GeminiClient.DefaultModel : GeminiModelName,
+            AiVendor.Anthropic => ClaudeProvider.DefaultModelName,
+            AiVendor.OpenAI => OpenAiProvider.DefaultModelName,
+            _ => GeminiClient.DefaultModel,
+        };
+    }
+
+    /// <summary>AI SMART ZOOM — Gemini vision model name (default <see cref="FreeVideoStudio.App.Services.GeminiClient.DefaultModel"/>).</summary>
+    public string GeminiModelName { get; set; } = FreeVideoStudio.App.Services.GeminiClient.DefaultModel;
+
+    /// <summary>
+    /// AIGAME_01 — the kind of footage AI SMART ZOOM is looking at (a <see cref="FreeVideoStudio.Core.Media.AiGameProfile"/>
+    /// name). Drives the prompts, the own-character exclusion and the default HUD avoid zones.
+    /// Additive (missing reads as the default), so no schema bump.
+    /// </summary>
+    public string AiTrackingGameProfile { get; set; } = FreeVideoStudio.Core.Media.AiGameProfiles.Default.ToString();
+
+    /// <summary>
+    /// AIZOOMCONSENT_01 — true once the user agreed that AI SMART ZOOM may send still frames and short,
+    /// low-resolution, silent clips of the selected segment to Google Gemini. Default false: the first
+    /// AI SMART ZOOM press explains what is sent and asks. Additive, no schema bump. Never a credential.
+    /// </summary>
+    public bool AiZoomCloudConsent { get; set; }
 
     /// <summary>
     /// AIHUD_05 — true once the user has agreed, in the Crop Tool, that the Magic Wand may send ONE
@@ -72,6 +273,13 @@ public class AppSettings
     /// Holds a yes/no only — never a credential.
     /// </summary>
     public bool AiMagicWandCloudConsent { get; set; }
+
+    /// <summary>
+    /// AICOMMENTARY_CONSENT_01 — true once the user agreed that AI COMMENTARY may send video clips
+    /// and gameplay audio to the configured AI provider. Default false: the first AI COMMENTARY press
+    /// explains what is sent and asks. Additive, no schema bump. Never a credential.
+    /// </summary>
+    public bool AiCommentaryCloudConsent { get; set; }
 
     /// <summary>AI SMART ZOOM — Base tight zoom multiplier (default 2.2x, range 1.5x - 4.0x).</summary>
     public double AiZoomBaseScale { get; set; } = 2.2;
@@ -140,6 +348,22 @@ public class AppSettings
     /// no schema bump: every existing install is asked once too.
     /// </summary>
     public bool UpdateConsentAsked { get; set; }
+
+    /// <summary>
+    /// Master switch for automatically downloading update packages in the background. Default true.
+    /// When false, the updater notifies the user when an update is found instead of downloading automatically.
+    /// </summary>
+    public bool AutoDownloadUpdates { get; set; } = true;
+
+    /// <summary>
+    /// Update delivery channel: "Stable" (default) or "Beta" / "Preview".
+    /// </summary>
+    public string UpdateChannel { get; set; } = "Stable";
+
+    /// <summary>
+    /// Whether to avoid automatic background downloads on metered connections. Default true.
+    /// </summary>
+    public bool AvoidMeteredNetworkUpdates { get; set; } = true;
 
     /// <summary>
     /// ISSUE_13 — the suite is a dark-first video tool and its Light palette is the weaker of the
@@ -282,10 +506,10 @@ public class AppSettings
 
     /// <summary>
     /// VOPROT_02 — the last game-protection choice the user applied, used only under
-    /// <see cref="VoiceProtectionMode.RememberLastChoice"/>. Defaults true, which is what makes
-    /// the checkbox arrive already ticked on a brand-new install.
+    /// <see cref="VoiceProtectionMode.RememberLastChoice"/>. VODEFAULTS_01: new users keep
+    /// gameplay at its chosen level; an explicitly saved choice always wins.
     /// </summary>
-    public bool VoiceProtectGameLast { get; set; } = true;
+    public bool VoiceProtectGameLast { get; set; } = false;
 
     /// <summary>VOPROT_02 — the last music-protection choice the user applied. See above.</summary>
     public bool VoiceProtectMusicLast { get; set; } = true;
@@ -623,6 +847,10 @@ public class DefaultValues
 [JsonSerializable(typeof(VoiceProtectionMode))]
 [JsonSerializable(typeof(ThemeMode))]
 [JsonSerializable(typeof(FontScale))]
+[JsonSerializable(typeof(AiUsageConfig))]
+[JsonSerializable(typeof(AiVendor))]
+[JsonSerializable(typeof(AiReasoningLevel))]
+[JsonSerializable(typeof(AiUsage))]
 public partial class SettingsJsonContext : JsonSerializerContext { }
 
 public static class SettingsManager
@@ -658,10 +886,13 @@ public static class SettingsManager
     ///        AudioProtection on upgrade, so a user who had protection OFF keeps it off) and
     ///        Defaults.DuckingStrength / CarvingStrength (50 = tuned). Values set by the user are
     ///        never reset by a later migration.
+    ///   14 = KEYPROTECT_01 — "GeminiApiKey" on disk changes MEANING: it now holds a DPAPI-sealed value
+    ///        ("dpapi1:…") instead of plain text. A plain-text key from an older file is sealed by the
+    ///        migration and written back on load, so the clear key leaves the disk on first start.
     /// Bump this whenever a field is renamed, removed, or changes meaning, and add the matching
     /// case to <see cref="Migrate"/>. NEVER reuse a number.
     /// </summary>
-    public const int CurrentSchemaVersion = 13;
+    public const int CurrentSchemaVersion = 14;
 
     private static string SettingsPath => Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().ProgramDataRoot, "settings.json");
 
@@ -809,6 +1040,10 @@ public static class SettingsManager
         s.UpdateConsentAsked = true;
     });
 
+    public static bool SetAutoDownloadUpdates(bool enabled) => Update(s => s.AutoDownloadUpdates = enabled);
+    public static bool SetUpdateChannel(string channel) => Update(s => s.UpdateChannel = channel);
+    public static bool SetAvoidMeteredNetworkUpdates(bool avoid) => Update(s => s.AvoidMeteredNetworkUpdates = avoid);
+
     public static void Load()
     {
         LoadFailureMessage = null;
@@ -948,6 +1183,7 @@ public static class SettingsManager
             loaded.AutoUpdateChecks = true;
         }
         Migrate(loaded);
+        bool sealedPlainKey = SealLegacyPlainKey(loaded);
 
         return new PersistedSettings
         {
@@ -956,7 +1192,8 @@ public static class SettingsManager
             PersistedSchemaVersion = schemaBefore,
             UnknownRoot = ExtractUnknownRootProperties(json),
             NeedsPersist = schemaBefore < CurrentSchemaVersion
-                        || (lackedAutoUpdate && schemaBefore <= CurrentSchemaVersion),
+                        || (lackedAutoUpdate && schemaBefore <= CurrentSchemaVersion)
+                        || (sealedPlainKey && schemaBefore <= CurrentSchemaVersion),
         };
     }
 
@@ -1116,8 +1353,8 @@ public static class SettingsManager
 
         if (from < 10)
         {
-            if (loaded.GeminiApiKey is null) loaded.GeminiApiKey = "";
-            if (string.IsNullOrWhiteSpace(loaded.GeminiModelName)) loaded.GeminiModelName = "gemini-2.5-flash";
+            if (loaded.GeminiApiKeyStored is null) loaded.GeminiApiKeyStored = "";
+            if (string.IsNullOrWhiteSpace(loaded.GeminiModelName)) loaded.GeminiModelName = FreeVideoStudio.App.Services.GeminiClient.DefaultModel;
             if (loaded.AiZoomBaseScale <= 0) loaded.AiZoomBaseScale = 2.2;
             if (loaded.AiZoomMinScale <= 0) loaded.AiZoomMinScale = 1.3;
             if (loaded.AiZoomDeadbandPercent <= 0) loaded.AiZoomDeadbandPercent = 2.0;
@@ -1145,7 +1382,55 @@ public static class SettingsManager
             from = 13;
         }
 
+        if (from < 14)
+        {
+            SealLegacyPlainKey(loaded);
+            from = 14;
+        }
+
+        // AISETTINGS_01 (docs/05 SYS-AISETTINGS) — ensure configured custom Gemini model is preserved across usages:
+        if (!string.IsNullOrEmpty(loaded.GeminiModelName) && loaded.GeminiModelName != GeminiClient.DefaultModel)
+        {
+            if (loaded.AiUsageSubjectDiscovery?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageSubjectDiscovery.Model) || loaded.AiUsageSubjectDiscovery.Model == GeminiClient.DefaultModel))
+                loaded.AiUsageSubjectDiscovery.Model = loaded.GeminiModelName;
+            if (loaded.AiUsageTracking?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageTracking.Model) || loaded.AiUsageTracking.Model == GeminiClient.DefaultModel))
+                loaded.AiUsageTracking.Model = loaded.GeminiModelName;
+            if (loaded.AiUsageMagicWand?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageMagicWand.Model) || loaded.AiUsageMagicWand.Model == GeminiClient.DefaultModel))
+                loaded.AiUsageMagicWand.Model = loaded.GeminiModelName;
+        }
+
         loaded.SchemaVersion = from;
+    }
+
+    /// <summary>
+    /// KEYPROTECT_01 / AISETTINGS_01 — plain-text keys (any file, any version: a downgrade-then-upgrade can write one
+    /// back) are sealed. Returns true when something changed and the file must be rewritten.
+    /// </summary>
+    internal static bool SealLegacyPlainKey(AppSettings settings)
+    {
+        bool changed = false;
+        string geminiStored = settings.GeminiApiKeyStored ?? string.Empty;
+        if (geminiStored.Length > 0 && !SecretProtector.IsProtectedForm(geminiStored))
+        {
+            settings.GeminiApiKey = geminiStored;
+            changed = true;
+        }
+
+        string claudeStored = settings.ClaudeApiKeyStored ?? string.Empty;
+        if (claudeStored.Length > 0 && !SecretProtector.IsProtectedForm(claudeStored))
+        {
+            settings.ClaudeApiKey = claudeStored;
+            changed = true;
+        }
+
+        string openAiStored = settings.OpenAiApiKeyStored ?? string.Empty;
+        if (openAiStored.Length > 0 && !SecretProtector.IsProtectedForm(openAiStored))
+        {
+            settings.OpenAiApiKey = openAiStored;
+            changed = true;
+        }
+
+        return changed;
     }
 
     private static string QuarantineCorruptFile(string originalContent)

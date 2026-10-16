@@ -1,4 +1,7 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Forbidden to modify without reading: docs/09_DISTRIBUTION_AND_RELEASE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Net.Http;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -29,6 +32,7 @@ internal static class UpdatePreparer
     public static async Task<PreparedUpdate> PrepareAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
         Report report, CancellationToken cancel)
     {
+        EnsureDiskSpace(folder, release.Size);
         Directory.CreateDirectory(folder);
         try
         {
@@ -44,6 +48,36 @@ internal static class UpdatePreparer
             RuntimeLog.Info("UPDATE", "Smart update unavailable, using the installer instead: " + ex.Message);
         }
         return await DownloadInstallerAsync(http, release, folder, report, cancel).ConfigureAwait(false);
+    }
+
+    private static void EnsureDiskSpace(string folder, long estimatedBytes)
+    {
+        try
+        {
+            string? root = Path.GetPathRoot(Path.GetFullPath(folder));
+            if (string.IsNullOrWhiteSpace(root)) return;
+
+            var drive = new DriveInfo(root);
+            if (!drive.IsReady) return;
+
+            const long safetyMargin = 256L * 1024 * 1024;
+            long requiredBytes = (estimatedBytes > 0 ? estimatedBytes : 350L * 1024 * 1024) + safetyMargin;
+
+            if (drive.AvailableFreeSpace < requiredBytes)
+            {
+                throw new IOException(
+                    $"Not enough free disk space on drive {drive.Name.TrimEnd('\\')} to download and stage the update. " +
+                    $"About {RuntimePayloadManifest.FormatBytes(requiredBytes)} is required, but only {RuntimePayloadManifest.FormatBytes(drive.AvailableFreeSpace)} is available.");
+            }
+        }
+        catch (IOException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Info("UPDATE", $"Disk space pre-flight check bypassed: {ex.Message}");
+        }
     }
 
 
@@ -135,6 +169,7 @@ internal static class UpdatePreparer
                 string partial = target + ".partial";
                 try
                 {
+                    // BINDELTA_02: reconstruct disk-to-disk, then verify length, hash and publisher before promotion.
                     BinaryDelta.ApplyFile(exeOnDisk, patchFile, partial, cancel);
                     if (new FileInfo(partial).Length != exe.Length || UpgradeFiles.Hash(partial) != exe.Sha256)
                         throw new IOException("The patched program file did not match the signed update list.");
@@ -166,7 +201,7 @@ internal static class UpdatePreparer
         Report report, CancellationToken cancel)
     {
         report("Getting the update ready…", "Checking which parts of the update you need…", null);
-        bool appOnly = await UpdateService.RuntimeMatchesForCompactAsync(release, cancel).ConfigureAwait(false);
+        bool appOnly = release.HasAppOnlyPackage && await UpdateService.RuntimeMatchesForCompactAsync(release, cancel).ConfigureAwait(false);
         string url = appOnly ? release.AppOnlyUrl! : release.DownloadUrl;
         string? sha = appOnly ? release.AppOnlySha256Hex : release.Sha256Hex;
         long size = appOnly ? release.AppOnlySize : release.Size;

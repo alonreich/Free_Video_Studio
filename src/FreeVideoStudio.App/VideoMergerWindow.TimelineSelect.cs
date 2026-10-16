@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -302,9 +307,26 @@ public partial class VideoMergerWindow
         _selectWithoutPreview = !preview || before;
         try
         {
-            list.SelectedIndex = index;
+            if (list.Selection is { } sel)
+            {
+                sel.BeginBatchUpdate();
+                try
+                {
+                    sel.Clear();
+                    sel.Select(index);
+                }
+                finally
+                {
+                    sel.EndBatchUpdate();
+                }
+            }
+            else
+            {
+                list.SelectedIndex = index;
+            }
             list.ScrollIntoView(index);
         }
         finally { _selectWithoutPreview = before; }
+        UpdateQueueState();
     }
 }

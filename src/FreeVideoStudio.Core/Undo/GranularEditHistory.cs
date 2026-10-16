@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -28,7 +28,8 @@ public sealed record GranularEditorSnapshot(
     double BaseSpeed,
     double FreezeTimeMs,
     double FreezeDurationS,
-    int SelectedIndex)
+    int SelectedIndex,
+    CaptionTrack? CaptionTrack = null)
 {
     public bool Equals(GranularEditorSnapshot? other)
     {
@@ -40,6 +41,7 @@ public sealed record GranularEditorSnapshot(
         if (Segments.Length != other.Segments.Length) return false;
         if (Cuts.Length != other.Cuts.Length) return false;
         if (Memes.Length != other.Memes.Length) return false;
+        if (!Equals(CaptionTrack, other.CaptionTrack)) return false;
         for (int i = 0; i < Segments.Length; i++)
             if (!Segments[i].Equals(other.Segments[i])) return false;
         for (int i = 0; i < Cuts.Length; i++)
@@ -50,7 +52,7 @@ public sealed record GranularEditorSnapshot(
     }
 
     /// <summary>Consistent with the tolerant <see cref="Equals(GranularEditorSnapshot?)"/>: counts only.</summary>
-    public override int GetHashCode() => HashCode.Combine(Segments.Length, Cuts.Length, Memes.Length);
+    public override int GetHashCode() => HashCode.Combine(Segments.Length, Cuts.Length, Memes.Length, CaptionTrack);
 }
 
 /// <summary>

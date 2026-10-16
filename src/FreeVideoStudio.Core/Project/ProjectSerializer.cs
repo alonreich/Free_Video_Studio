@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
@@ -47,8 +49,12 @@ public static class ProjectSerializer
     private const string KeyAudio = "audio";
     private const string KeyExport = "export";
 
+    // PROJ_11 — schema 2. Both optional on read, so a v1 file loads with them absent.
     private const string KeyMask = "mask";
     private const string KeyMerge = "merge";
+
+    // CAPTIONS_01 — schema 6. Optional on read.
+    private const string KeyCaptions = "captions";
 
     /// <summary>
     /// PROJ_03 — the top-level keys this build understands. Anything else found on read is carried
@@ -59,7 +65,7 @@ public static class ProjectSerializer
     {
         KeyFormat, KeySchema, KeyTitle, KeyCreated, KeyModified, KeySource, KeyBaseSpeed,
         KeyCutStart, KeyTrimmed, KeySegments, KeyCuts, KeyMemes, KeyAudio, KeyExport,
-        KeyMask, KeyMerge,
+        KeyMask, KeyMerge, KeyCaptions,
     };
 
     public static JsonObject Write(ProjectDocument doc)
@@ -149,6 +155,9 @@ public static class ProjectSerializer
             ["voice_over_path"] = doc.Audio.VoiceOverFilePath,
             ["voice_over_at_output_sec"] = doc.Audio.VoiceOverAtOutputSec,
             ["voice_over_volume"] = doc.Audio.VoiceOverVolume,
+            ["voice_over_takes"] = VoiceOverTakeJson.Write(doc.Audio.VoiceOverTakes),
+            ["voice_over_duck_audio"] = doc.Audio.VoiceOverDuckAudio,
+            ["voice_over_protect_music"] = doc.Audio.VoiceOverProtectFromMusic,
         };
 
         root[KeyExport] = new JsonObject
@@ -175,6 +184,13 @@ public static class ProjectSerializer
             JsonArray clips = new();
             foreach (MergeClip c in merge.Clips)
             {
+                // AOTSAFETY_06 — the local is typed JsonNode so this binds to JsonArray.Add(JsonNode?)
+                // and NOT to the generic Add<T>, which carries RequiresUnreferencedCode /
+                // RequiresDynamicCode and would emit IL2026 + IL3050. PROJ-AOT is explicit that trim
+                // and AOT warnings here are FIXED, never suppressed: the warning is the analyser
+                // correctly pointing out that a generic JsonValue.Create path cannot survive
+                // TrimMode=full. The rest of this file already avoids it by construction; this call
+                // site is new, so it had to be told.
                 JsonNode clip = new JsonObject
                 {
                     ["path"] = c.FilePath,
@@ -189,9 +205,15 @@ public static class ProjectSerializer
                 ["base_speed"] = merge.BaseSpeed,
                 ["clips"] = clips,
             };
+            // PROJ_12 — the full edit list, in its own source-generated JSON shape (AOT-safe).
             if (merge.Edl is MergeEdl edl && JsonNode.Parse(edl.ToJson()) is JsonNode edlNode)
                 mergeObj["edl"] = edlNode;
             root[KeyMerge] = mergeObj;
+        }
+
+        if (doc.Captions is { } captions && CaptionTrackJson.Write(captions) is JsonObject captionsObj)
+        {
+            root[KeyCaptions] = captionsObj;
         }
 
         return root;
@@ -301,6 +323,8 @@ public static class ProjectSerializer
                 string? id = ReadString(o, "id", null);
                 if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(id)) continue;
 
+                // MEMEMODE_01 — a meme without the presentation keys (every file before it) is a
+                // full-screen cutaway with sound, exactly what it always was.
                 memes.Add(MemePresentationJson.Apply(o, new MemePlacement(
                     path!,
                     ReadDouble(o, "at_source_sec", 0),
@@ -320,6 +344,9 @@ public static class ProjectSerializer
             VoiceOverFilePath = ReadString(audioObj, "voice_over_path", null),
             VoiceOverAtOutputSec = ReadDouble(audioObj, "voice_over_at_output_sec", 0),
             VoiceOverVolume = ReadDouble(audioObj, "voice_over_volume", 1.0),
+            VoiceOverTakes = VoiceOverTakeJson.Read(audioObj?["voice_over_takes"]),
+            VoiceOverDuckAudio = ReadBool(audioObj, "voice_over_duck_audio", false),
+            VoiceOverProtectFromMusic = ReadBool(audioObj, "voice_over_protect_music", true),
         };
 
         JsonObject? exportObj = root[KeyExport] as JsonObject;
@@ -377,6 +404,8 @@ public static class ProjectSerializer
             unknown[kv.Key] = kv.Value?.DeepClone();
         }
 
+        CaptionTrack? captions = CaptionTrackJson.Read(root[KeyCaptions]);
+
         return new ProjectDocument
         {
             Source = clip,
@@ -388,6 +417,7 @@ public static class ProjectSerializer
             TrimmedDurationMs = ReadDouble(root, KeyTrimmed, 0),
             Mask = mask,
             Merge = merge,
+            Captions = captions,
             Segments = segments,
             Cuts = cuts,
             Memes = memes,

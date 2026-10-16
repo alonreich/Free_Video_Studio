@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
@@ -353,7 +353,7 @@ public class ProjectDocumentTests : IDisposable
         };
 
         JsonObject json = ProjectSerializer.Write(original);
-        Assert.Equal(4, (int)json["schema_version"]!);
+        Assert.Equal(ProjectDocument.SchemaVersion, (int)json["schema_version"]!);
         ProjectDocument? loaded = ProjectSerializer.Read(json, out string? error);
 
         Assert.Null(error);
@@ -729,4 +729,112 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(1, stack.UndoCount);
         Assert.Equal(1.0, stack.Undo()!.BaseSpeed);
     }
+
+    [Fact]
+    public void RoundTrip_PreservesCaptionTrack()
+    {
+        var line1Words = new List<CaptionWord>
+        {
+            new("I've", 10.0, 10.4, 1),
+            new("taken", 10.4, 10.9, 2),
+            new("damage", 10.9, 11.5, 2)
+        };
+
+        var lines = new List<CaptionLine>
+        {
+            new(1, 10.0, 12.0, "I've taken damage", new[] { "damage" }, 0.95, line1Words),
+            new(2, 14.5, 17.0, "Repositioning now", null, 0.98, null)
+        };
+
+        var track = new CaptionTrack(
+            CaptionStyle.Karaoke,
+            CaptionPosition.BottomContent,
+            CaptionTone.Tactical,
+            "en",
+            lines);
+
+        ProjectDocument original = SampleDocument() with { Captions = track };
+
+        JsonObject json = ProjectSerializer.Write(original);
+        ProjectDocument? loaded = ProjectSerializer.Read(json, out string? error);
+
+        Assert.Null(error);
+        Assert.NotNull(loaded);
+        Assert.NotNull(loaded!.Captions);
+
+        var restored = loaded.Captions!;
+        Assert.Equal(CaptionStyle.Karaoke, restored.Style);
+        Assert.Equal(CaptionPosition.BottomContent, restored.Position);
+        Assert.Equal(CaptionTone.Tactical, restored.Tone);
+        Assert.Equal("en", restored.Language);
+        Assert.NotNull(restored.Lines);
+        Assert.Equal(2, restored.Lines!.Count);
+
+        Assert.Equal(1, restored.Lines[0].Id);
+        Assert.Equal(10.0, restored.Lines[0].SourceStartSec);
+        Assert.Equal(12.0, restored.Lines[0].SourceEndSec);
+        Assert.Equal("I've taken damage", restored.Lines[0].Text);
+        Assert.Equal(0.95, restored.Lines[0].Confidence);
+        Assert.NotNull(restored.Lines[0].Emphasis);
+        Assert.Single(restored.Lines[0].Emphasis!);
+        Assert.Equal("damage", restored.Lines[0].Emphasis![0]);
+        Assert.NotNull(restored.Lines[0].Words);
+        Assert.Equal(3, restored.Lines[0].Words!.Count);
+        Assert.Equal("taken", restored.Lines[0].Words![1].Text);
+        Assert.Equal(2, restored.Lines[0].Words![1].Syllables);
+
+        Assert.Equal(2, restored.Lines[1].Id);
+        Assert.Equal("Repositioning now", restored.Lines[1].Text);
+    }
+
+    [Fact]
+    public void Read_LegacyFileWithoutCaptions_LeavesCaptionsNull()
+    {
+        JsonObject json = ProjectSerializer.Write(SampleDocument());
+        json.Remove("captions");
+
+        ProjectDocument? loaded = ProjectSerializer.Read(json, out string? error);
+
+        Assert.Null(error);
+        Assert.NotNull(loaded);
+        Assert.Null(loaded!.Captions);
+    }
+
+    [Fact]
+    public void GranularRecoveryCodec_RoundTrip_PreservesCaptions()
+    {
+        var session = new FreeVideoStudio.Core.Editing.GranularEditSession(
+            @"C:\clips\gameplay.mp4", 0, 60_000,
+            FreeVideoStudio.Core.Editing.GranularHistoryParking.Shared);
+
+        var lines = new List<CaptionLine>
+        {
+            new(42, 5.0, 8.5, "Healing behind cover", new[] { "healing" }, 0.99)
+        };
+        session.CaptionTrack = new CaptionTrack(
+            CaptionStyle.PopIn,
+            CaptionPosition.Top,
+            CaptionTone.Chill,
+            "en",
+            lines);
+
+        JsonObject recoveryNode = FreeVideoStudio.Core.Editing.GranularRecoveryCodec.Build(session, DateTime.UtcNow);
+
+        var restoredSession = new FreeVideoStudio.Core.Editing.GranularEditSession(
+            @"C:\clips\gameplay.mp4", 0, 60_000,
+            FreeVideoStudio.Core.Editing.GranularHistoryParking.Shared);
+
+        bool applied = FreeVideoStudio.Core.Editing.GranularRecoveryCodec.TryApply(recoveryNode, restoredSession);
+
+        Assert.True(applied);
+        Assert.NotNull(restoredSession.CaptionTrack);
+        Assert.Equal(CaptionStyle.PopIn, restoredSession.CaptionTrack!.Style);
+        Assert.Equal(CaptionPosition.Top, restoredSession.CaptionTrack.Position);
+        Assert.Equal(CaptionTone.Chill, restoredSession.CaptionTrack.Tone);
+        Assert.NotNull(restoredSession.CaptionTrack.Lines);
+        Assert.Single(restoredSession.CaptionTrack.Lines!);
+        Assert.Equal(42, restoredSession.CaptionTrack.Lines![0].Id);
+        Assert.Equal("Healing behind cover", restoredSession.CaptionTrack.Lines[0].Text);
+    }
 }
+

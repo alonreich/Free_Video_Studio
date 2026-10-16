@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -667,6 +667,7 @@ public partial class MainWindow
                     e.Pointer.Capture(null);
 
                     SetTrimStart(_trimStartMs);
+                    _trimStartSet = true;
                     RuntimeLog.Info("UI", $"Trim START marker dragged to {TimeSpan.FromMilliseconds(_trimStartMs):hh\\:mm\\:ss\\.ff}.");
 
                     if (ActiveVideoHost?.IpcClient?.IsPaused == true)
@@ -758,6 +759,7 @@ public partial class MainWindow
                 if (_draggingEndMarker) {
                     _draggingEndMarker = false;
                     e.Pointer.Capture(null);
+                    _trimEndSet = true;
                     RuntimeLog.Info("UI", $"Trim END marker dragged to {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
 
                     if (ActiveVideoHost?.IpcClient?.IsPaused == true)

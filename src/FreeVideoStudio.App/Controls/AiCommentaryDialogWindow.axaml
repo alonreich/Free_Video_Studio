@@ -1,0 +1,145 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FreeVideoStudio.App.Controls.AiCommentaryDialogWindow"
+        Title="🎙️ Live Commentary Captions — AI Generation"
+        Width="680" Height="680" MinWidth="600" MinHeight="600"
+        Background="{DynamicResource AppSurfaceBrush}"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="30">
+
+    <Grid>
+        <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
+            <Grid RowDefinitions="30, Auto, *, Auto">
+                <!-- Title Bar -->
+                <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                    <TextBlock Text="🎙️ LIVE COMMENTARY CAPTIONS — AI GENERATION" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                </Border>
+
+                <!-- Header Instruction -->
+                <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="4">
+                    <TextBlock Text="Generate AI Live Commentary" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="Synthesizes live gaming narration synchronized with on-screen gameplay and karaoke-style subtitles."
+                               Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- Configuration Options -->
+                <ScrollViewer Grid.Row="2" Margin="24,0,24,10" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="16">
+
+                        <!-- Tone Selection Group -->
+                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="COMMENTARY TONE &amp; PERSONALITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                <Grid RowDefinitions="Auto, Auto" ColumnDefinitions="*, *">
+                                    <RadioButton Name="ToneHypeRadio" Grid.Row="0" Grid.Column="0" GroupName="CommentaryTone" IsChecked="True" Margin="0,0,8,6">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="🔥 Hype &amp; Celebratory" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="High energy, exciting reactions, hype up good plays" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+
+                                    <RadioButton Name="ToneChillRadio" Grid.Row="0" Grid.Column="1" GroupName="CommentaryTone" Margin="8,0,0,6">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="☕ Chill &amp; Casual" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="Relaxed, calm vibe, casual friend banter" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+
+                                    <RadioButton Name="ToneFunnyRadio" Grid.Row="1" Grid.Column="0" GroupName="CommentaryTone" Margin="0,6,8,0">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="😂 Funny &amp; Sarcastic" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="Witty, highlight fails and humorous moments" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+
+                                    <RadioButton Name="ToneTacticalRadio" Grid.Row="1" Grid.Column="1" GroupName="CommentaryTone" Margin="8,6,0,0">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="🎯 Tactical &amp; Analytical" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="Strategic callouts, damage, repositioning breakdown" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Subtitle Style & Placement -->
+                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid ColumnDefinitions="*, 16, *">
+                                <!-- Animation Style -->
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Text="SUBTITLE STYLE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <RadioButton Name="StyleKaraokeRadio" GroupName="CaptionStyle" IsChecked="True" Content="Karaoke (Word-by-word synced)" ToolTip.Tip="Golden yellow word highlighting in sync with spoken syllables"/>
+                                    <RadioButton Name="StyleCleanRadio" GroupName="CaptionStyle" Content="Clean (Static line subtitles)" ToolTip.Tip="Standard subtitle appearance without word bounce/highlighting"/>
+                                </StackPanel>
+
+                                <!-- Placement -->
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Text="PLACEMENT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <RadioButton Name="PositionBottomRadio" GroupName="CaptionPos" IsChecked="True" Content="Lower Content (Dodges HUD)" ToolTip.Tip="Places captions in lower third, above bottom void, dodging HUD layers"/>
+                                    <RadioButton Name="PositionTopRadio" GroupName="CaptionPos" Content="Top of Screen" ToolTip.Tip="Places captions at the top of the video"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Language & Profile -->
+                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <Grid RowDefinitions="Auto, Auto" ColumnDefinitions="*, 16, *">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="LANGUAGE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <ComboBox Name="LanguageCombo" HorizontalAlignment="Stretch" SelectedIndex="0">
+                                        <ComboBoxItem Content="English"/>
+                                        <ComboBoxItem Content="Spanish"/>
+                                        <ComboBoxItem Content="French"/>
+                                        <ComboBoxItem Content="German"/>
+                                        <ComboBoxItem Content="Japanese"/>
+                                        <ComboBoxItem Content="Korean"/>
+                                        <ComboBoxItem Content="Portuguese"/>
+                                        <ComboBoxItem Content="Hebrew"/>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="2" Spacing="6">
+                                    <TextBlock Text="PERSPECTIVE &amp; GAME PROFILE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <ComboBox Name="ProfileCombo" HorizontalAlignment="Stretch" SelectedIndex="0">
+                                        <ComboBoxItem Content="Third-Person (e.g. Fortnite, GTA)"/>
+                                        <ComboBoxItem Content="First-Person (e.g. COD, Valorant)"/>
+                                        <ComboBoxItem Content="Fortnite (Specific callouts)"/>
+                                        <ComboBoxItem Content="Generic (Any gameplay)"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Timeline Target Scope -->
+                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="TIMELINE RANGE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                <StackPanel Orientation="Horizontal" Spacing="20">
+                                    <RadioButton Name="ScopeAllRadio" GroupName="CommentaryScope" IsChecked="True" Content="Entire Video Timeline"/>
+                                    <RadioButton Name="ScopeSegmentRadio" GroupName="CommentaryScope" Content="Selected Block Only"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Custom Style / Context Notes -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="OPTIONAL NOTES &amp; CUSTOM STYLE HINTS:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
+                            <TextBox Name="CustomNotesText" Watermark="e.g. 'Call me Coach', 'Celebrate goals loudly', 'Focus on sniper shots'..." Height="54" TextWrapping="Wrap" AcceptsReturn="True"/>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Action Footer -->
+                <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="24,10,24,18">
+                    <Button Name="CancelBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
+                            ToolTip.Tip="Close without generating commentary"/>
+                    <Button Name="GenerateBtn" Grid.Column="2" Classes="Success" Content="🎙️ GENERATE COMMENTARY" MinWidth="220" MinHeight="42" Cursor="Hand" IsDefault="True"
+                            ToolTip.Tip="Start generating live commentary captions with the chosen settings"/>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.X509Certificates;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
@@ -52,6 +52,7 @@ internal static class SmartUpdateBuilder
             }
 
             Directory.CreateDirectory(SmartDir);
+            EnsureHistoryFromGitHub(log);
 
             string installManifestText = File.ReadAllText(Path.Combine(stagingDir, InstallPayload.ManifestName));
             InstallFileManifest install = InstallPayload.ReadManifest(stagingDir);
@@ -212,6 +213,49 @@ internal static class SmartUpdateBuilder
             {
                 Console.WriteLine("[Smart] An old patch base could not be removed (kept): " + ex.Message);
             }
+        }
+    }
+
+    private static void EnsureHistoryFromGitHub(BuildLog log)
+    {
+        try
+        {
+            if (Directory.Exists(HistoryDir) && Directory.GetDirectories(HistoryDir).Any())
+                return;
+
+            if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)
+                return;
+
+            if (!Cli.TryCapture("gh", ["release", "list", "--limit", "3", "--json", "tagName,isDraft,isPrerelease"], out var lines))
+                return;
+
+            var array = System.Text.Json.Nodes.JsonNode.Parse(string.Join("\n", lines))?.AsArray();
+            if (array == null) return;
+
+            foreach (var item in array)
+            {
+                if (item?["isDraft"]?.GetValue<bool>() == true) continue;
+                string? tag = item?["tagName"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+
+                string cleanVersion = tag.TrimStart('v', 'V');
+                string folder = Path.Combine(HistoryDir, cleanVersion);
+                Directory.CreateDirectory(folder);
+                string targetExe = Path.Combine(folder, InstallPayload.ExecutableName);
+
+                log.Info($"[Smart] Fetching previous release binary for {tag} to generate binary delta patches...");
+                int exit = Cli.RunQuiet("gh", ["release", "download", tag, "--pattern", InstallPayload.ExecutableName, "--dir", folder, "--clobber"]);
+                if (exit == 0 && File.Exists(targetExe))
+                {
+                    File.WriteAllText(Path.Combine(folder, ReleasedMarker), DateTimeOffset.UtcNow.ToString("O"));
+                    log.Info($"[Smart] Successfully cached previous release binary for {cleanVersion}.");
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"[Smart] Could not fetch prior release binary from GitHub: {ex.Message}");
         }
     }
 }

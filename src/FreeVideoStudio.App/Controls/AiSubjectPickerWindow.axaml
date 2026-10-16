@@ -19,8 +19,9 @@
                 <!-- Row 1: Header Instructions -->
                 <StackPanel Grid.Row="1" Margin="28,16,28,8" Spacing="4">
                     <TextBlock Text="Select the Character to Track" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <TextBlock Text="Gemini scanned 3 different angles across this video segment. Click your target character below to lock the camera onto them."
+                    <TextBlock Name="PickerIntroText" Text="Gemini looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
+                    <TextBlock Name="LookaheadNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                 </StackPanel>
 
                 <!-- Row 2: 3 Multi-Angle Segment Frames -->
@@ -33,7 +34,7 @@
                             </Border>
                             <Grid Grid.Row="1">
                                 <Image Name="Frame1Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame1Canvas" IsHitTestVisible="False"/>
+                                <Canvas Name="Frame1Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
                         </Grid>
                     </Border>
@@ -46,7 +47,7 @@
                             </Border>
                             <Grid Grid.Row="1">
                                 <Image Name="Frame2Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame2Canvas" IsHitTestVisible="False"/>
+                                <Canvas Name="Frame2Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
                         </Grid>
                     </Border>
@@ -59,7 +60,7 @@
                             </Border>
                             <Grid Grid.Row="1">
                                 <Image Name="Frame3Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame3Canvas" IsHitTestVisible="False"/>
+                                <Canvas Name="Frame3Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
                         </Grid>
                     </Border>
@@ -76,12 +77,16 @@
                 </Border>
 
                 <!-- Row 4: Action Footer -->
-                <Grid Grid.Row="4" ColumnDefinitions="Auto, *, Auto" Margin="28,0,28,18">
-                    <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"/>
-                    <TextBlock Name="SelectionStatusText" Grid.Column="1" Text="Click a character card above to select your target."
+                <Grid Grid.Row="4" ColumnDefinitions="Auto, Auto, *, Auto" Margin="28,0,28,18">
+                    <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
+                            ToolTip.Tip="Close without tracking anything."/>
+                    <Button Name="NoneOfTheseBtn" Grid.Column="1" Classes="Secondary" Content="NONE OF THESE — I'LL DRAW A BOX" MinHeight="42" Cursor="Hand" Margin="10,0,0,0"
+                            ToolTip.Tip="Close this list. Draw a zoom box around your target, then press AI SMART ZOOM again."/>
+                    <TextBlock Name="SelectionStatusText" Grid.Column="2" Text="Click a card above to select your target."
                                FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    <Button Name="ConfirmPickerBtn" Grid.Column="2" Classes="Success" Content="LOCK &amp; TRACK TARGET" MinWidth="220" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"/>
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="10,0"/>
+                    <Button Name="ConfirmPickerBtn" Grid.Column="3" Classes="Success" Content="LOCK &amp; TRACK TARGET" MinWidth="220" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"
+                            ToolTip.Tip="Follow the selected target through the whole segment."/>
                 </Grid>
             </Grid>
         </Border>

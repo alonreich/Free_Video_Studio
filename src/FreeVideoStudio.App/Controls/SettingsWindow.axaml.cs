@@ -1,4 +1,7 @@
-﻿using Avalonia;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -7,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
@@ -25,8 +29,11 @@ public partial class SettingsWindow : Window
     private bool _isSafeToClose = false;
 
     private DefaultValues _pendingDefaults = new();
-    private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
+    private readonly ApplicationPaths _paths;
+    private readonly SessionStateWriter _writer;
     private string _pendingMusicFolder = "";
+    private string? _initialMusicFolder;
+    private bool _musicFolderEdited;
 
     private string _pendingMaskOverlay = "";
     /// <summary>G03 — pending value of <see cref="AppSettings.VideoEncoderOverride"/>.</summary>
@@ -43,8 +50,12 @@ public partial class SettingsWindow : Window
     private string _previousActiveMaskOverlay = "";
     private string _previousVideoEncoderOverride = "Auto";
 
-    public SettingsWindow()
+    public SettingsWindow() : this(null, null) { }
+
+    public SettingsWindow(ApplicationPaths? paths, SessionStateWriter? writer = null)
     {
+        _paths = paths ?? ApplicationPaths.CreateDefault();
+        _writer = writer ?? SessionStateWriter.For(_paths);
         InitializeComponent();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
 
@@ -100,6 +111,9 @@ public partial class SettingsWindow : Window
         ConfirmVoiceOverDeleteTake = SettingsManager.Instance.ConfirmVoiceOverDeleteTake;
         ConfirmFinishedDialogExit = SettingsManager.Instance.ConfirmFinishedDialogExit;
         AutoUpdateChecks = SettingsManager.Instance.AutoUpdateChecks;
+        AutoDownloadUpdates = SettingsManager.Instance.AutoDownloadUpdates;
+        AvoidMeteredNetworkUpdates = SettingsManager.Instance.AvoidMeteredNetworkUpdates;
+        UpdateChannel = SettingsManager.Instance.UpdateChannel;
 
         UiSoundsEnabled = SettingsManager.Instance.UiSoundsEnabled;
         UiSoundVolume = SettingsManager.Instance.UiSoundVolume;
@@ -150,6 +164,7 @@ public partial class SettingsWindow : Window
             if (!string.IsNullOrWhiteSpace(value) && !System.IO.Directory.Exists(value))
                 throw new ArgumentException("Folder does not exist.");
             _pendingMusicFolder = value ?? "";
+            _musicFolderEdited = true;
         }
     }
 
@@ -176,6 +191,9 @@ public partial class SettingsWindow : Window
 
     /// <summary>AUTO-UPDATE — pending value of <see cref="AppSettings.AutoUpdateChecks"/> (ships ON).</summary>
     public bool AutoUpdateChecks { get; set; } = true;
+    public bool AutoDownloadUpdates { get; set; } = true;
+    public bool AvoidMeteredNetworkUpdates { get; set; } = true;
+    public string UpdateChannel { get; set; } = "Stable";
     public bool ConfirmFinishedDialogExit { get; set; }
 
     /// <summary>AUDIO_06 — pending value for the UI sound master switch; committed by APPLY.</summary>
@@ -586,13 +604,16 @@ public partial class SettingsWindow : Window
 
         try
         {
-            if (System.IO.File.Exists(_paths.SessionStateFile))
+            var state = _writer.ReadSnapshot();
+            if (state.TryGetPropertyValue("CustomMusicDirectory", out var node) && node != null)
             {
-                var state = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(_paths.SessionStateFile))?.AsObject();
-                if (state != null && state.ContainsKey("CustomMusicDirectory"))
-                {
-                    _pendingMusicFolder = state["CustomMusicDirectory"]?.GetValue<string>() ?? "";
-                }
+                _pendingMusicFolder = node.GetValue<string>() ?? "";
+                _initialMusicFolder = _pendingMusicFolder;
+            }
+            else if (_writer.IsPrimed)
+            {
+                _pendingMusicFolder = "";
+                _initialMusicFolder = "";
             }
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
@@ -604,7 +625,9 @@ public partial class SettingsWindow : Window
         {
             btnFolder.Click += async (s, e) =>
             {
-                string startPath = string.IsNullOrWhiteSpace(_pendingMusicFolder) ? Infrastructure.MemeDirectory.GetMusicRoot() : _pendingMusicFolder;
+                string startPath = string.IsNullOrWhiteSpace(_pendingMusicFolder) || !System.IO.Directory.Exists(_pendingMusicFolder)
+                    ? Infrastructure.MemeDirectory.GetMusicRoot()
+                    : _pendingMusicFolder;
                 var folder = await this.StorageProvider.TryGetFolderFromPathAsync(new Uri(startPath));
                 
                 var result = await this.StorageProvider.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions

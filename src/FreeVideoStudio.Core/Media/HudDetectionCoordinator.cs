@@ -20,6 +20,12 @@ public sealed record HudDetectionRequest(
     int SourceHeight);
 
 /// <summary>
+/// WANDPROGRESSIVE_01 — the offline candidates of run <see cref="Generation"/>, published while the AI
+/// is still thinking so the user can start reviewing them. Suggestions only; nothing is committed.
+/// </summary>
+public sealed record HudLocalPreview(long Generation, IReadOnlyList<HudCandidate> Candidates);
+
+/// <summary>
 /// One Magic Wand run's published answer. Pure data: SUGGESTIONS for the user to pick from.
 /// Nothing in it — and nothing the coordinator does — commits a crop.
 /// </summary>
@@ -96,9 +102,14 @@ public sealed class HudDetectionCoordinator : IDisposable
         CancelQuietly(old);
     }
 
+    /// <param name="localReady">WANDPROGRESSIVE_01 — told once, with the local candidates, when the
+    /// offline scan has finished but the AI has not. Not called when there is no AI request, when the AI
+    /// already answered, or when the run is stale or cancelled. The final result still arrives through
+    /// the return value and still obeys AIHUD_03.</param>
     public async Task<HudDetectionResult?> RunAsync(
         HudDetectionRequest request,
-        IProgress<HudAutoDetector.DetectionProgress>? progress = null)
+        IProgress<HudAutoDetector.DetectionProgress>? progress = null,
+        IProgress<HudLocalPreview>? localReady = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -154,6 +165,8 @@ public sealed class HudDetectionCoordinator : IDisposable
         {
             if (!token.IsCancellationRequested)
                 progress?.Report(new HudAutoDetector.DetectionProgress(99, $"Waiting for {_ai!.ProviderName}'s suggestions…"));
+            if (localReady != null && localSucceeded && !aiTask.IsCompleted && !token.IsCancellationRequested && IsCurrent(generation))
+                localReady.Report(new HudLocalPreview(generation, local));
 
             AiHudDetectionResult? aiResult;
             try

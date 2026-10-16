@@ -21,6 +21,7 @@ public partial class MainWindow
     private void SaveRecoveryState(bool sync = false, bool isUserEdit = true, string label = "edit", string? gestureKey = null)
     {
         if (_isRestoring) return;
+        if (isUserEdit && DeferVoiceTimingChange(sync, label, gestureKey)) return;
         if (isUserEdit) UpdateEstimatedQuality();
 
         if (isUserEdit)
@@ -51,7 +52,7 @@ public partial class MainWindow
             _recoveryWriteBehindTimer.Tick += (_, _) =>
             {
                 _recoveryWriteBehindTimer!.Stop();
-                if (_isRestoring) return;
+                if (_isRestoring || _voiceTimingDecision != null) return;
                 PersistRecoveryStateNow(sync: false);
             };
         }
@@ -116,9 +117,10 @@ public partial class MainWindow
 
     /// <summary>
     /// RECOVERYDOC_01 - the crash-only metadata that travels BESIDE the document: the preview
-    /// volume, thumbnail frame, freeze preview, HUD tool selections, voice-over takes metadata and
+    /// volume, thumbnail frame, freeze preview, HUD tool selections, legacy voice-over metadata and
     /// the music wizard's working state. NONE of this belongs in a saved project (it describes
-    /// this session, not the work - see RecoveryEnvelope.Write and docs/06 PROJ_06), which is
+    /// this session, not the work - see RecoveryEnvelope.Write and docs/06 PROJ_06). Voice-over
+    /// metadata is also in the canonical document; its transient copy supports older recovery readers. This is
     /// exactly why it goes into the envelope's transient object and nowhere else.
     /// </summary>
     private System.Text.Json.Nodes.JsonObject? BuildRecoveryTransientMetadata()
@@ -147,20 +149,7 @@ public partial class MainWindow
 
             if (mainVm.VoiceOverResult != null)
             {
-                var takeArray = new System.Text.Json.Nodes.JsonArray();
-                var takes = mainVm.VoiceOverResult.VoiceOverTakes;
-                if (takes != null)
-                {
-                    foreach (var take in takes)
-                    {
-                        if (take is null || string.IsNullOrWhiteSpace(take.Path) || !System.IO.File.Exists(take.Path)) continue;
-                        takeArray.AddNode(new System.Text.Json.Nodes.JsonObject
-                        {
-                            ["path"] = take.Path,
-                            ["startSec"] = take.StartSec
-                        });
-                    }
-                }
+                var takeArray = FreeVideoStudio.Core.Media.VoiceOverTakeJson.Write(mainVm.VoiceOverResult.VoiceOverTakes);
                 transient["voiceOverTakes"] = takeArray;
                 transient["voiceOverDuckAudio"] = mainVm.VoiceOverResult.DuckAudio;
                 transient["voiceOverProtectFromMusic"] = mainVm.VoiceOverResult.ProtectFromMusic;

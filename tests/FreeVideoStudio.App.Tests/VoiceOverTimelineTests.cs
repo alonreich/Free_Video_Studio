@@ -26,6 +26,22 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class VoiceOverTimelineTests : IDisposable
 {
+    [Theory]
+    [InlineData(0.5, 0)]
+    [InlineData(2, 0.4)]
+    [InlineData(1, 4.5)]
+    public void SampleBudget_UsesEditedBodyAndExactFreezeOffset(double speed, double outputStart)
+    {
+        var plan = new VoiceOverPlaybackPlan(0, 10,
+            [new(2000, 3000, 0.5), new(4000, 6000, 0), new(7000, 9000, 2)], speed,
+            [new(3000, 3500)]);
+        double source = plan.SourceAt(outputStart);
+        double offset = outputStart - plan.OutputAt(source);
+        long frames = VoiceCaptureBudget.FrameCount(plan.Timeline.TotalOutputSeconds, plan.OutputAt(source) + offset, 44100);
+        Assert.Equal((long)Math.Floor((plan.Timeline.TotalOutputSeconds - outputStart) * 44100), frames);
+        Assert.InRange(outputStart + frames / 44100.0,
+            plan.Timeline.TotalOutputSeconds - 1.0 / 44100, plan.Timeline.TotalOutputSeconds);
+    }
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsVoTimeline_" + Guid.NewGuid().ToString("N"));
     private readonly IDisposable _programData;
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.Services;
@@ -75,6 +75,19 @@ public sealed class VersionAndUpdaterTests : IDisposable
         Assert.True(newer.CompareTo(older) > 0);
         Assert.True(older.CompareTo(newer) < 0);
         Assert.Equal(0, older.CompareTo(sameAsOlder));
+    }
+
+    [Theory]
+    [InlineData("v2026.10.14", "v2026.10.14-beta.1", 1)]
+    [InlineData("v2026.10.14-beta.1", "v2026.10.14", -1)]
+    [InlineData("v2026.10.14-beta.2", "v2026.10.14-beta.1", 1)]
+    [InlineData("v2026.10.14-rc.1", "v2026.10.14-beta.9", 1)]
+    [InlineData("2026.10.14", "v2026.10.14", 0)]
+    [InlineData("v2026.10.15", "v2026.10.14", 1)]
+    public void CompareVersions_SemVerPrereleasePrecedence_IsRespected(string a, string b, int expectedSign)
+    {
+        int actual = DeploymentLifecycle.CompareVersions(a, b);
+        Assert.Equal(expectedSign, Math.Sign(actual));
     }
 
     [Fact]
@@ -158,13 +171,16 @@ public sealed class VersionAndUpdaterTests : IDisposable
         Assert.False(vm.IsWorking);
         Assert.Contains("installs by itself the next time you close", vm.Status);
 
-        bool restart = false, later = false;
+        bool restart = false, later = false, skip = false;
         vm.RestartRequested += () => restart = true;
         vm.LaterRequested += () => later = true;
+        vm.SkipRequested += () => skip = true;
         vm.RestartCommand.Execute(null);
         vm.LaterCommand.Execute(null);
+        vm.SkipCommand.Execute(null);
         Assert.True(restart);
         Assert.True(later);
+        Assert.True(skip);
     }
 
     [Fact]

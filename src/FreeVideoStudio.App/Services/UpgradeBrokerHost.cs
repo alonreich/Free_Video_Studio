@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -39,6 +41,8 @@ internal static class UpgradeBrokerHost
         _args = args;
         IsActive = true;
 
+        // UPGRADEUX_06 — started straight from the downloaded installer, the broker finds its two
+        // window libraries in the staging folder the launcher prepared (validated: %TEMP%\FVS_Upgrade).
         string? stage = UpgradeCoordinator.StageFromArgs(args);
         if (stage != null && !NativeHelpers.SetDllDirectory(stage))
             RuntimeLog.Info("Upgrade window", "Could not point the window libraries at the staging folder.");

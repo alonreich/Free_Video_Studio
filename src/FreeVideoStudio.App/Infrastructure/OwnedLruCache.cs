@@ -1,4 +1,7 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -158,6 +161,23 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         lock (_gate)
         {
             if (_byIdentity.TryGetValue(identity, out Entry? e)) RemoveLocked(e, dispose);
+        }
+        DisposeAll(dispose);
+    }
+
+    /// <summary>Retires all entries whose identity starts with <paramref name="prefix"/> (e.g. all windows of a file).</summary>
+    public void RemoveByIdentityPrefix(string prefix)
+    {
+        var dispose = new List<T>();
+        lock (_gate)
+        {
+            var matching = new List<Entry>();
+            foreach (var kvp in _byIdentity)
+            {
+                if (kvp.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    matching.Add(kvp.Value);
+            }
+            foreach (var e in matching) RemoveLocked(e, dispose);
         }
         DisposeAll(dispose);
     }

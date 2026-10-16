@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Infrastructure;
@@ -155,7 +155,11 @@ public sealed class DirectoryUpgrade
         if (Phase is "RolledBack" or "Committed") return;
         if (Phase is "Switching" or "AwaitingConfirmation" or "RollingBack")
         {
-            if (!Directory.Exists(Candidate) && Directory.Exists(Destination) &&
+            var destOriginal = _journal.Originals.FirstOrDefault(o =>
+                string.Equals(UpgradeFiles.FullPath(o.Path), UpgradeFiles.FullPath(Destination), StringComparison.OrdinalIgnoreCase));
+            bool destIsIntactOriginal = destOriginal != null && !Directory.Exists(Path.Combine(_directory, destOriginal.Backup));
+
+            if (!destIsIntactOriginal && Directory.Exists(Destination) &&
                 !Directory.Exists(Path.Combine(_directory, "failed-install")))
             {
                 UpgradeFiles.RequirePlainPath(Destination);
@@ -168,7 +172,20 @@ public sealed class DirectoryUpgrade
                 string backup = Path.Combine(_directory, original.Backup);
                 if (!Directory.Exists(backup)) continue;
                 if (Directory.Exists(original.Path))
-                    throw new IOException($"Rollback stopped to preserve files created at {original.Path}.");
+                {
+                    if (string.Equals(UpgradeFiles.FullPath(original.Path), UpgradeFiles.FullPath(Destination), StringComparison.OrdinalIgnoreCase))
+                    {
+                        UpgradeFiles.RequirePlainPath(Destination);
+                        string failedPath = Path.Combine(_directory, "failed-install");
+                        if (Directory.Exists(failedPath))
+                            failedPath = Path.Combine(_directory, "failed-install-" + Guid.NewGuid().ToString("N"));
+                        Directory.Move(Destination, failedPath);
+                    }
+                    else
+                    {
+                        throw new IOException($"Rollback stopped to preserve files created at {original.Path}.");
+                    }
+                }
                 UpgradeFiles.RequirePlainPath(backup);
                 UpgradeFiles.RequirePlainPath(original.Path);
                 Directory.Move(backup, original.Path);

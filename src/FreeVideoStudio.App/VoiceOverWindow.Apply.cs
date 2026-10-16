@@ -1,7 +1,10 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -9,7 +12,6 @@ using Avalonia.Media;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.Core.Media;
 using static FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools;
-
 namespace FreeVideoStudio.App;
 
 /// <summary>
@@ -26,6 +28,12 @@ public partial class VoiceOverWindow
     internal static FreeVideoStudio.App.Services.IVoiceOverRecoveryStore? RecoveryStoreSeam { get; set; }
     internal static Func<string>? RecoveryDirectorySeam { get; set; }
 
+    /// <summary>VORECOVERY_03 test seam: allows testing deliberate deletion confirmation without blocking UI.</summary>
+    internal static Func<VoiceOverWindow, string, string, Task<bool>>? ConfirmDeleteSeam { get; set; }
+
+    /// <summary>VORECOVERY_03 — true while the delete confirmation dialog is open.</summary>
+    private bool _isConfirmingDelete;
+
     /// <summary>VORECOVERY_01 — a close requested while a recovery operation owns the take list is
     /// deferred, then re-issued when that operation completes (ownership is never abandoned).</summary>
     private bool _closeRequestedDuringRecovery;
@@ -40,7 +48,11 @@ public partial class VoiceOverWindow
         double TrimLeftSec,
         double TrimRightSec,
         double RenderStartSec,
-        bool IsMuted);
+        bool IsMuted,
+        double OutputOffsetSec = 0,
+        double? CapturedDurationSec = null,
+        double RealTrimLeft = 0,
+        double RealTrimRight = 0);
 
     private async void ApplyAndClose() => await ApplyAndCloseAsync();
 
@@ -95,6 +107,11 @@ public partial class VoiceOverWindow
 
             bool duckAudio = _duckAudioCb?.IsChecked == true;
             bool protectFromMusic = _duckMusicCb?.IsChecked == true;
+            if (_sessions.Any(s => !s.IsMuted && s.NeedsTimingReview))
+            {
+                UpdateApplyState("Review the marked takes. Play each one, then choose Keep this timing, or trim or replace it.");
+                return;
+            }
             _ = Task.Run(() => RememberVoiceProtectionChoices(duckAudio, protectFromMusic));
 
             var snapshot = new List<ApplyTakeSnapshot>(_sessions.Count);
@@ -108,7 +125,11 @@ public partial class VoiceOverWindow
                     s.TrimLeftSec,
                     s.TrimRightSec,
                     s.RenderStartSec,
-                    s.IsMuted));
+                    s.IsMuted,
+                    s.OutputOffsetSec,
+                    s.CapturedDurationSec,
+                    SessionTrimLeft(s),
+                    SessionTrimRight(s)));
             }
 
             bool hasValidTake = false;
@@ -159,10 +180,10 @@ public partial class VoiceOverWindow
 
                         if (session.TrimLeftSec > 0 || session.TrimRightSec > 0)
                         {
-                            double realTrimLeft = _timeline != null ? Math.Max(0, _timeline.SourceToOutput(session.StartSec + session.TrimLeftSec) - _timeline.SourceToOutput(session.StartSec)) : session.TrimLeftSec;
-                            double realTrimRight = _timeline != null ? Math.Max(0, _timeline.SourceToOutput(session.EndSec) - _timeline.SourceToOutput(session.EndSec - session.TrimRightSec)) : session.TrimRightSec;
-                            double totalRealDur = _timeline != null ? Math.Max(0, _timeline.SourceToOutput(session.EndSec) - _timeline.SourceToOutput(session.StartSec)) : (session.EndSec - session.StartSec);
-                            double realDur = Math.Max(0.1, totalRealDur - realTrimLeft - realTrimRight);
+                            double realTrimLeft = session.RealTrimLeft;
+                            double realTrimRight = session.RealTrimRight;
+                            double totalRealDur = session.CapturedDurationSec ?? (_timeline != null ? Math.Max(0, _timeline.SourceToOutput(session.EndSec) - _timeline.SourceToOutput(session.StartSec)) : (session.EndSec - session.StartSec));
+                            double realDur = Math.Max(0.001, totalRealDur - realTrimLeft - realTrimRight);
 
                             var startInfo = new System.Diagnostics.ProcessStartInfo
                             {
@@ -178,7 +199,7 @@ public partial class VoiceOverWindow
                             startInfo.ArgumentList.Add("-t");
                             startInfo.ArgumentList.Add(realDur.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                             startInfo.ArgumentList.Add("-c");
-                            startInfo.ArgumentList.Add("copy");
+                            startInfo.ArgumentList.Add("pcm_s16le");
                             startInfo.ArgumentList.Add(persistedPath);
 
                             if (TrimRunnerSeam != null)
@@ -218,7 +239,15 @@ public partial class VoiceOverWindow
                         {
                             await Task.Run(() => File.Copy(session.WavPath, persistedPath, overwrite: true));
                         }
-                        persistedTakes.Add(new VoiceOverTake(persistedPath, session.RenderStartSec));
+                        double Out(double source) => _timeline?.SourceToOutput(source) ?? source;
+                        // VOSAMPLE_01: a positive endpoint tail may be shorter than one millisecond.
+                        double duration = Math.Max(0, (session.CapturedDurationSec ??
+                            Math.Max(0, Out(session.EndSec) - Out(session.StartSec))) - session.RealTrimLeft - session.RealTrimRight);
+                        double offset = Out(session.StartSec) + session.OutputOffsetSec + session.RealTrimLeft - Out(session.RenderStartSec);
+                        double end = SourceEndForCapturedAudio(session.RenderStartSec, duration, offset);
+                        string? signature = _timeline == null ? null : VoiceOverTiming.Signature(
+                            _timeline, _trimStartSec, _trimEndSec, session.RenderStartSec, end);
+                        persistedTakes.Add(new VoiceOverTake(persistedPath, session.RenderStartSec, offset, duration, end, signature));
                         keepPaths.Add(persistedPath);
                     }
                     catch (Exception ex)
@@ -281,7 +310,9 @@ public partial class VoiceOverWindow
     {
         foreach (var session in _sessions)
         {
-            if (!keepPaths.Contains(session.WavPath))
+            if (!keepPaths.Contains(session.WavPath) &&
+                InitialState?.VoiceOverTakes.Any(t => string.Equals(t.Path, session.WavPath, StringComparison.OrdinalIgnoreCase)) != true &&
+                !string.Equals(InitialState?.VoiceOverWavPath, session.WavPath, StringComparison.OrdinalIgnoreCase))
             {
                 TryDeleteFile(session.WavPath);
             }
@@ -402,7 +433,11 @@ public partial class VoiceOverWindow
             _lastApplyErrorMessage = message;
         }
         bool canApply = HasApplicableVoiceEffect() && !_capture.HasUnreleasedDevice && !_lastTakeFailedFinalization && !HasUnresolvedFailedTakes && !_recovery.IsOperationInFlight;
+        bool needsReview = _sessions.Any(s => !s.IsMuted && s.NeedsTimingReview);
+        canApply &= !needsReview;
         string? effectiveMessage = message ?? _lastApplyErrorMessage;
+        if (effectiveMessage == null && needsReview)
+            effectiveMessage = "Timing changed. Select each marked take, play it, then Keep this timing—or trim or replace it.";
         if (effectiveMessage == null && !canApply && !_capture.HasInputDevice)
         {
             effectiveMessage = "No microphone input detected. You must record a take to apply voiceover.";
@@ -448,7 +483,7 @@ public partial class VoiceOverWindow
         {
             if (_isCommitted || _isClosing) return VoiceOverSessionOwner.Closing;
             if (_isApplying) return VoiceOverSessionOwner.Apply;
-            if (_recovery.IsOperationInFlight) return VoiceOverSessionOwner.Recovery;
+            if (_recovery.IsOperationInFlight || _isConfirmingDelete) return VoiceOverSessionOwner.Recovery;
             if (_isRecording || _recordArming || _capture.IsOpeningRecorder || _capture.HasPendingFinalizations)
                 return VoiceOverSessionOwner.Capture;
             return VoiceOverSessionOwner.None;
@@ -519,16 +554,99 @@ public partial class VoiceOverWindow
         }
     }
 
-    /// <summary>VORECOVERY_01 — DISCARD FAILED TAKE. Deletion runs off the dispatcher; only proven
-    /// deletions become Discarded; a storage failure is reported, never hidden.</summary>
+    /// <summary>VORECOVERY_01 / VORECOVERY_03 — DELETE unsaved voice recordings with deliberate confirmation.
+    /// Snapshots intended recovery identities before asynchronous confirmation and revalidates
+    /// ownership and take existence before deletion. Deletes only confirmed items.</summary>
     internal async Task<bool> DiscardFailedTakesAction()
     {
-        if (!CanStartRecoveryOperation()) return false;
-        var pending = _recovery.DiscardTakesAsync(_capture);
+        if (_isConfirmingDelete || !CanStartRecoveryOperation()) return false;
+
+        var unresolved = _recovery.PendingFailedTakes.Where(t => t.BlocksApply).ToList();
+        if (unresolved.Count == 0) return false;
+
+        // 1. Snapshot intended recovery identities before confirmation
+        var snapshotIds = unresolved.Select(t => t.Id).ToList();
+
+        _isConfirmingDelete = true;
+        BeginRecoveryOperationUi();
+
+        bool confirmed = false;
+        try
+        {
+            int count = snapshotIds.Count;
+            string title = count > 1
+                ? $"Delete {count} Unsaved Voice Recordings"
+                : "Delete Unsaved Voice Recording";
+            string message = count > 1
+                ? $"Permanently delete all {count} unsaved voice recordings?\n\nThis action applies to all {count} offered recordings and will permanently remove their audio files from disk."
+                : $"Permanently delete this unsaved voice recording ({unresolved[0].Session.StartSec:0.0}s..{unresolved[0].Session.EndSec:0.0}s)?\n\nThe audio file will be permanently removed from disk and cannot be recovered.";
+
+            if (ConfirmDeleteSeam != null)
+            {
+                confirmed = await ConfirmDeleteSeam(this, title, message);
+            }
+            else if (IsVisible)
+            {
+                var dlg = new Controls.ConfirmDialogWindow();
+                dlg.SetTitle(title);
+                dlg.SetMessage(message);
+                dlg.SetButtonText("DELETE", "CANCEL");
+                dlg.UseDestructiveStyling();
+                await dlg.ShowDialog(this);
+                confirmed = dlg.Result;
+            }
+            else
+            {
+                confirmed = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("VoiceOver", $"VORECOVERY_03 delete confirmation prompt faulted: {ex.Message}");
+            confirmed = false;
+        }
+        finally
+        {
+            _isConfirmingDelete = false;
+        }
+
+        if (!confirmed)
+        {
+            EndRecoveryOperationUi();
+            UpdateFailedTakesUi();
+            return false;
+        }
+
+        // 2. Revalidate ownership and existence after asynchronous confirmation
+        if (!CanStartRecoveryOperation() || _closeRequestedDuringRecovery || _isClosing || _isCommitted || _isApplying)
+        {
+            EndRecoveryOperationUi();
+            UpdateFailedTakesUi();
+            return false;
+        }
+
+        var targets = _recovery.PendingFailedTakes.Where(t => t.BlocksApply && snapshotIds.Contains(t.Id)).ToList();
+        if (targets.Count == 0)
+        {
+            // Stale confirmation: target takes were already resolved elsewhere or removed
+            EndRecoveryOperationUi();
+            UpdateFailedTakesUi();
+            return false;
+        }
+
+        // 3. Delete only confirmed items through established recovery manager
+        var targetIds = targets.Select(t => t.Id).ToList();
+        var pending = _recovery.DiscardTakesAsync(_capture, targetIds);
         BeginRecoveryOperationUi();
         (bool success, string? error) = (false, null);
-        try { (success, error) = await pending; }
-        finally { EndRecoveryOperationUi(); }
+        try
+        {
+            (success, error) = await pending;
+        }
+        finally
+        {
+            EndRecoveryOperationUi();
+        }
 
         if (!success)
         {
@@ -540,19 +658,22 @@ public partial class VoiceOverWindow
 
         _lastTakeFailedFinalization = _recovery.HasUnresolvedFailedTakes;
         _lastApplyErrorMessage = null;
+        UpdateFailedTakesUi();
         UpdateApplyState();
         return true;
     }
 
-    /// <summary>VORECOVERY_01 — RECOVER AUDIO. WAV validation runs off the dispatcher; publication
-    /// into <c>_sessions</c> happens here, on the UI thread, and is refused once the studio is
-    /// applying/committed/closing (late completion cannot mutate a committed result).</summary>
+    /// <summary>VORECOVERY_01 / VORECOVERY_03 — RESTORE unsaved audio into session.
+    /// WAV validation runs off the dispatcher; publication into _sessions happens here, on UI thread.</summary>
     internal async Task<bool> RecoverFailedTakesAction()
     {
-        if (!CanStartRecoveryOperation()) return false;
+        if (_isConfirmingDelete || !CanStartRecoveryOperation()) return false;
         var pending = _recovery.RecoverTakesAsync(_capture, session =>
         {
             if (_isCommitted || _isClosing || _isApplying) return false;
+            if (session.CapturedDurationSec is double duration)
+                session.EndSec = Math.Max(session.StartSec + 0.001,
+                    SourceEndForCapturedAudio(session.StartSec, duration, session.OutputOffsetSec));
             _sessions.Add(session);
             return true;
         });
@@ -574,6 +695,7 @@ public partial class VoiceOverWindow
             if (!_recovery.HasUnresolvedFailedTakes && result.StorageError == null) _lastApplyErrorMessage = null;
             _renderedSessionCount = -1;
             UpdatePlayheadUI();
+            UpdateFailedTakesUi();
             UpdateApplyState(result.StorageError);
             Controls.FloatingNotice.Success(this, "Recovered audio added to your voiceover session.");
             return true;
@@ -583,6 +705,7 @@ public partial class VoiceOverWindow
         {
             _lastApplyErrorMessage = result.ErrorMessage;
             Controls.FloatingNotice.Error(this, result.ErrorMessage);
+            UpdateFailedTakesUi();
             UpdateApplyState(result.ErrorMessage);
         }
         return false;
@@ -632,22 +755,55 @@ public partial class VoiceOverWindow
 
         if (hasUnresolved)
         {
-            var unresolved = _recovery.PendingFailedTakes;
+            var unresolved = _recovery.PendingFailedTakes.Where(t => t.BlocksApply).ToList();
+            int count = unresolved.Count;
             bool busy = !CanAdmit(VoiceOverSessionOwner.Recovery);
-            if (_discardFailedTakesButton != null) _discardFailedTakesButton.IsEnabled = !busy;
-            if (_recoverFailedTakesButton != null) _recoverFailedTakesButton.IsEnabled = !busy;
-            FreeVideoStudio.App.Services.PendingFailedTake? lastUnresolved = null;
-            for (int i = unresolved.Count - 1; i >= 0; i--)
+            if (_discardFailedTakesButton != null)
             {
-                if (!unresolved[i].IsResolved) { lastUnresolved = unresolved[i]; break; }
+                _discardFailedTakesButton.IsEnabled = !busy;
+                _discardFailedTakesButton.Content = "DELETE";
+                ToolTip.SetTip(_discardFailedTakesButton, count > 1
+                    ? $"Delete all {count} unsaved voice recordings"
+                    : "Delete unsaved voice recording");
+            }
+            if (_recoverFailedTakesButton != null)
+            {
+                _recoverFailedTakesButton.IsEnabled = !busy;
+                _recoverFailedTakesButton.Content = "RESTORE";
+                ToolTip.SetTip(_recoverFailedTakesButton, count > 1
+                    ? $"Restore all {count} unsaved voice recordings into session"
+                    : "Restore unsaved voice recording into session");
             }
 
-            if (lastUnresolved != null && _voiceOverHintText != null)
+            if (_voiceOverHintText != null && count > 0)
             {
-                string wavName = System.IO.Path.GetFileName(lastUnresolved.Session.WavPath);
-                string takeInfo = $"Failed take {lastUnresolved.Session.StartSec:0.0}s..{lastUnresolved.Session.EndSec:0.0}s ({lastUnresolved.FailureReason}) preserved at {wavName}.";
-                _voiceOverHintText.Text = $"{takeInfo} Click DISCARD FAILED TAKE to ignore, or RECOVER AUDIO to keep.";
-                _voiceOverHintText.Foreground = GetAppBrush("AppWarningBrush", Brushes.Orange);
+                if (_lastApplyErrorMessage != null)
+                {
+                    _voiceOverHintText.Text = _lastApplyErrorMessage;
+                    _voiceOverHintText.Foreground = GetAppBrush("AppDangerBrush", Brushes.Red);
+                }
+                else if (count == 1)
+                {
+                    _voiceOverHintText.Text = "We found an unsaved voice recording.";
+                    _voiceOverHintText.Foreground = GetAppBrush("AppWarningBrush", Brushes.Orange);
+                }
+                else
+                {
+                    _voiceOverHintText.Text = $"We found {count} unsaved voice recordings. RESTORE and DELETE apply to all {count} recordings.";
+                    _voiceOverHintText.Foreground = GetAppBrush("AppWarningBrush", Brushes.Orange);
+                }
+
+                string takeDetails = string.Join("; ", unresolved.ConvertAll(t =>
+                    $"{System.IO.Path.GetFileName(t.Session.WavPath)} ({t.Session.StartSec:0.0}s..{t.Session.EndSec:0.0}s: {t.FailureReason})"));
+                ToolTip.SetTip(_voiceOverHintText, $"Unsaved recording details: {takeDetails}");
+                RuntimeLog.Info("VoiceOver", $"[VORECOVERY_03] Unsaved recordings offer ({count} take(s)): {takeDetails}");
+            }
+        }
+        else
+        {
+            if (_voiceOverHintText != null && _lastApplyErrorMessage == null)
+            {
+                ToolTip.SetTip(_voiceOverHintText, null);
             }
         }
     }
@@ -691,7 +847,7 @@ public partial class VoiceOverWindow
     {
         ClearLiveZoomCrop();
 
-        if (_recovery.IsOperationInFlight && !_isCommitted)
+        if ((_recovery.IsOperationInFlight || _isConfirmingDelete) && !_isCommitted)
         {
             e.Cancel = true;
             _closeRequestedDuringRecovery = true;

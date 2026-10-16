@@ -1,4 +1,7 @@
-﻿using System.Diagnostics;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -245,7 +248,8 @@ internal static class UpgradeCoordinator
             if (!recovery)
             {
                 progress.Step(UpgradeStep.CheckNothingOpen);
-                string[] knownRoots = InstallDiscovery.FindRoots();
+                bool allowDowngrade = args.Contains("--allow-downgrade", StringComparer.OrdinalIgnoreCase);
+                string[] knownRoots = InstallDiscovery.FindRoots(allowDowngrade);
                 previousVersion = ReadInstalledVersion(knownRoots);
                 if (!await EnsureAppsClosedAsync(knownRoots, progress).ConfigureAwait(false))
                 {
@@ -258,6 +262,7 @@ internal static class UpgradeCoordinator
                 progress.Step(UpgradeStep.CheckNothingOpen, "Getting the installer ready… (a few seconds)");
             string workerPath = await workerExecutable.ConfigureAwait(false);
 
+            // UPGRADEUX_02 — explain the Windows prompt before it appears.
             progress.Step(UpgradeStep.Permission, UpgradeText.PermissionDetail(kind));
             listener.Start();
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -266,6 +271,7 @@ internal static class UpgradeCoordinator
             start.ArgumentList.Add("--upgrade-worker");
             start.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
             start.ArgumentList.Add(token);
+            start.ArgumentList.Add("--allow-downgrade");
             try
             {
                 worker = Process.Start(start) ?? throw new IOException("Windows did not start the installer.");
@@ -328,7 +334,8 @@ internal static class UpgradeCoordinator
                 : "Opening the new version and checking that it started correctly…");
             healthListener.Start();
             string healthToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            app = StartApp(((IPEndPoint)healthListener.LocalEndpoint).Port, healthToken, previousVersion, kind);
+            bool noLaunch = args.Contains("--no-launch", StringComparer.OrdinalIgnoreCase);
+            app = StartApp(((IPEndPoint)healthListener.LocalEndpoint).Port, healthToken, previousVersion, kind, noLaunch);
             health = await AcceptAsync(healthListener, healthToken).ConfigureAwait(false);
             string pid = await health.ExpectAsync("healthy").ConfigureAwait(false);
             if (pid != app.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) || app.HasExited)
@@ -340,8 +347,21 @@ internal static class UpgradeCoordinator
             Save(session);
             await TryRemoveShellAsync(shell, session).ConfigureAwait(false);
             await health.SendAsync("committed").ConfigureAwait(false);
-            if (args.Contains("--no-launch", StringComparer.OrdinalIgnoreCase)) app.CloseMainWindow();
-            progress.Succeeded(SuccessMessage(kind, previousVersion));
+            if (noLaunch)
+            {
+                try
+                {
+                    if (!app.WaitForExit(5000))
+                    {
+                        app.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                }
+            }
+            progress.Succeeded(SuccessMessage(kind, previousVersion, noLaunch));
             return 0;
         }
         catch (Exception ex)
@@ -457,9 +477,15 @@ internal static class UpgradeCoordinator
         return null;
     }
 
-    private static string SuccessMessage(UpgradeKind kind, string? previousVersion)
+    private static string SuccessMessage(UpgradeKind kind, string? previousVersion, bool noLaunch = false)
     {
         string now = DeploymentLifecycle.GetCurrentVersion();
+        if (noLaunch)
+        {
+            return previousVersion != null && previousVersion != now
+                ? $"Free Video Studio was updated from {previousVersion} to {now}. It will open the next time you launch it."
+                : $"Free Video Studio {now} is updated and ready.";
+        }
         return kind == UpgradeKind.Install
             ? $"Free Video Studio {now} is installed and opening now."
             : previousVersion != null && previousVersion != now
@@ -725,7 +751,7 @@ internal static class UpgradeCoordinator
 
     private static void Save(JsonObject session) => AtomicJsonFile.WriteObject(SessionPath, session);
 
-    private static Process StartApp(int? port = null, string? token = null, string? previousVersion = null, UpgradeKind kind = UpgradeKind.Update)
+    private static Process StartApp(int? port = null, string? token = null, string? previousVersion = null, UpgradeKind kind = UpgradeKind.Update, bool noLaunch = false)
     {
         var start = new ProcessStartInfo(DeploymentFootprint.InstallPath) { UseShellExecute = false, WorkingDirectory = InstallDiscovery.Destination };
         start.ArgumentList.Add("run-ui");
@@ -739,6 +765,10 @@ internal static class UpgradeCoordinator
             {
                 start.ArgumentList.Add(UpgradeFinishedNotice.FromArgument);
                 start.ArgumentList.Add(previousVersion);
+            }
+            if (noLaunch)
+            {
+                start.ArgumentList.Add("--no-launch");
             }
         }
         return Process.Start(start) ?? throw new IOException("Could not start the installed app.");

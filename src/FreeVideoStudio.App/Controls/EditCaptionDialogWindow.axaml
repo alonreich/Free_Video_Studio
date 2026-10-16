@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FreeVideoStudio.App.Controls.EditCaptionDialogWindow"
+        Title="Edit Commentary Caption"
+        Width="500" Height="360"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource AppSurfaceBrush}">
+
+    <Border Padding="20" Background="{DynamicResource AppSurfaceBrush}">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Header -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                <TextBlock Name="DialogTitleText" Text="Edit Commentary Caption"
+                           FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Adjust subtitle text, fine-tune timing, regenerate this line, or delete."
+                           FontSize="{DynamicResource AppFontSize11}"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0"/>
+            </StackPanel>
+
+            <!-- Form Content -->
+            <StackPanel Grid.Row="1" Spacing="12">
+                <!-- Timing Row -->
+                <Grid ColumnDefinitions="*,16,*">
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Start Time (seconds):" FontSize="{DynamicResource AppFontSize11}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Name="StartTimeBox" Classes="FormInput" Height="32"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="End Time (seconds):" FontSize="{DynamicResource AppFontSize11}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Name="EndTimeBox" Classes="FormInput" Height="32"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Caption Text -->
+                <StackPanel>
+                    <TextBlock Text="Caption Text:" FontSize="{DynamicResource AppFontSize11}"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
+                    <TextBox Name="CaptionTextBox" Classes="FormInput" Height="80"
+                             TextWrapping="Wrap" AcceptsReturn="True"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Action Buttons Footer -->
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,16,0,0">
+                <Button Grid.Column="0" Name="DeleteBtn" Content="🗑️ Delete Line"
+                        Classes="Danger" Height="32" Margin="0,0,8,0"
+                        ToolTip.Tip="Remove this caption line from commentary"/>
+                <Button Grid.Column="1" Name="RegenerateBtn" Content="⚡ Regenerate Line"
+                        Classes="Secondary" Height="32"
+                        ToolTip.Tip="Ask AI to regenerate commentary for this line's span"/>
+
+                <Button Grid.Column="3" Name="CancelBtn" Content="Cancel"
+                        Classes="Secondary" Height="32" Margin="0,0,8,0"/>
+                <Button Grid.Column="4" Name="SaveBtn" Content="✓ Save &amp; Apply"
+                        Classes="Primary" Height="32"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

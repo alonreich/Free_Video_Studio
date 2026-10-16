@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,6 +13,7 @@ using FreeVideoStudio.App;
 using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.Core.Media;
+using NAudio.Wave;
 using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
@@ -26,6 +27,33 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class VoiceOverRecordingUiTests : IDisposable
 {
+    [AvaloniaFact]
+    public async Task StorageFailure_ShowsMicErrorAndKeepsPositiveTailForReview()
+    {
+        var devices = new SampleCaptureDevices();
+        using var capture = new VoiceCaptureSession(devices, a => Dispatcher.UIThread.Post(a));
+        var (window, clock) = NewWindow(capture);
+        window.ConfigurePreparedPreviewForTesting(new VoiceOverPlaybackPlan(0, 60, [], 1));
+        try
+        {
+            window.TriggerStartRecordingAndPlayback();
+            clock.Paused = false;
+            clock.Time = 0.02;
+            window.TriggerTimerTick();
+            await LiveCaptureDriver.PumpUntil(() => devices.Recorder?.IsRecording == true && !capture.IsOpeningRecorder, "microphone open");
+            devices.Input.Deliver(new byte[2]); // Even one complete frame is a usable prefix.
+            devices.File!.FailNext = true;
+            devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
+            await LiveCaptureDriver.PumpUntil(() => window.Sessions.Count == 1 && !capture.HasPendingFinalizations, "fault take saved");
+            Assert.Equal("MIC ERROR", Status(window));
+            var take = Assert.Single(window.Sessions);
+            Assert.True(take.NeedsTimingReview);
+            Assert.Equal(1.0 / 44100, take.CapturedDurationSec!.Value, 10);
+            Assert.Equal(new byte[2], SampleCaptureDevices.ReadPcm(take.WavPath));
+            Assert.False(window.ApplyButtonControl!.IsEnabled);
+        }
+        finally { window.IsSafeToClose = true; window.Close(); }
+    }
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsVoRecUi_" + Guid.NewGuid().ToString("N"));
     private readonly IDisposable _programData;
     private readonly TimeSpan _pulseLimit = VoiceOverWindow.RecordingPulseLimit;
@@ -36,6 +64,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         _programData = LiveCaptureDriver.IsolateProgramData(_root);
         VoiceOverWindow.RecoveryDirectorySeam = () => _root;
         VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = null;
     }
 
     public void Dispose()
@@ -43,6 +72,8 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         VoiceOverWindow.RecordingPulseLimit = _pulseLimit;
         VoiceOverWindow.TakeSavedNoticeDuration = _savedNotice;
         VoiceOverWindow.RecoveryDirectorySeam = null;
+        VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = null;
         VoiceOverWindow.TrimRunnerSeam = null;
         FloatingNotice.NoticeHookForTesting = null;
         _programData.Dispose();
@@ -214,6 +245,8 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.DoesNotContain("pulse", window.RecordingLightControl!.Classes);
         Assert.DoesNotContain("pulse", window.MicRecordButtonControl!.Classes);
 
+        // A late callback after device retirement is distinct from valid asynchronous drain PCM.
+        await LiveCaptureDriver.PumpUntil(() => first.Disposed, "first recorder retired");
         first.Deliver(LiveCaptureDevices.Pcm(0.5, 0.9f));
         for (int i = 0; i < 5; i++) window.TriggerTimerTick();
         Assert.Equal("PAUSED 0:01.0", Badge(window));
@@ -415,6 +448,82 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.True(overlayRect.Intersects(regionRect), $"overlay {overlayRect} region {regionRect}");
         Assert.Equal(1.0, live.Opacity);
         Assert.True(live.IsVisible);
+    }
+
+    private string CreateWav(string name)
+    {
+        string path = Path.Combine(_root, name);
+        using var writer = new WaveFileWriter(path, new WaveFormat(44100, 16, 1));
+        var buffer = new byte[44100 * 2];
+        writer.Write(buffer, 0, buffer.Length);
+        return path;
+    }
+
+    [AvaloniaFact]
+    public void RecoveryNoticeUi_SingleTake_ShowsAccurateNoticeAndRestoreDeleteButtons()
+    {
+        var devices = new LiveCaptureDevices();
+        using var session = LiveCaptureDriver.NewSession(devices);
+        var (window, _) = NewWindow(session);
+
+        string wav = CreateWav("single_ui.wav");
+        window.RecoveryManager.RegisterFailedTake(new VoiceOverWindow.VoiceOverSession { WavPath = wav, StartSec = 1.0, EndSec = 2.5 }, null, "ui test");
+        window.CheckAndOfferReopenRecovery();
+
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.NotNull(window.RecoverFailedTakesButtonControl);
+        Assert.NotNull(window.DiscardFailedTakesButtonControl);
+        Assert.NotNull(window.VoiceOverHintTextControl);
+
+        Assert.True(window.RecoverFailedTakesButtonControl!.IsVisible);
+        Assert.True(window.DiscardFailedTakesButtonControl!.IsVisible);
+        Assert.Equal("RESTORE", window.RecoverFailedTakesButtonControl.Content);
+        Assert.Equal("DELETE", window.DiscardFailedTakesButtonControl.Content);
+        Assert.Equal("We found an unsaved voice recording.", window.VoiceOverHintTextControl!.Text);
+        Assert.Equal("Restore unsaved voice recording into session", ToolTip.GetTip(window.RecoverFailedTakesButtonControl));
+        Assert.Equal("Delete unsaved voice recording", ToolTip.GetTip(window.DiscardFailedTakesButtonControl));
+        Assert.Contains("single_ui.wav", ToolTip.GetTip(window.VoiceOverHintTextControl) as string);
+    }
+
+    [AvaloniaFact]
+    public void RecoveryNoticeUi_MultipleTakes_ShowsCountAndAllOfferedNotice()
+    {
+        var devices = new LiveCaptureDevices();
+        using var session = LiveCaptureDriver.NewSession(devices);
+        var (window, _) = NewWindow(session);
+
+        string wav1 = CreateWav("multi_ui1.wav");
+        string wav2 = CreateWav("multi_ui2.wav");
+        window.RecoveryManager.RegisterFailedTake(new VoiceOverWindow.VoiceOverSession { WavPath = wav1, StartSec = 0, EndSec = 1 }, null, "t1");
+        window.RecoveryManager.RegisterFailedTake(new VoiceOverWindow.VoiceOverSession { WavPath = wav2, StartSec = 1, EndSec = 2 }, null, "t2");
+        window.CheckAndOfferReopenRecovery();
+
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.Equal("We found 2 unsaved voice recordings. RESTORE and DELETE apply to all 2 recordings.", window.VoiceOverHintTextControl!.Text);
+        Assert.Equal("Restore all 2 unsaved voice recordings into session", ToolTip.GetTip(window.RecoverFailedTakesButtonControl!));
+        Assert.Equal("Delete all 2 unsaved voice recordings", ToolTip.GetTip(window.DiscardFailedTakesButtonControl!));
+    }
+
+    [AvaloniaFact]
+    public void DeleteConfirmationDialog_DestructiveStyling_SafeDefaultsAndCancel()
+    {
+        var dlg = new ConfirmDialogWindow();
+        dlg.SetTitle("Delete Unsaved Voice Recording");
+        dlg.SetMessage("Permanently delete this unsaved voice recording?");
+        dlg.SetButtonText("DELETE", "CANCEL");
+        dlg.UseDestructiveStyling();
+
+        var yesBtn = dlg.FindControl<Button>("YesBtn")!;
+        var noBtn = dlg.FindControl<Button>("NoBtn")!;
+
+        Assert.Equal("DELETE", yesBtn.Content);
+        Assert.Equal("CANCEL", noBtn.Content);
+        Assert.Contains("Danger", yesBtn.Classes);
+        Assert.False(yesBtn.IsDefault);
+        Assert.Contains("Success", noBtn.Classes);
+        Assert.True(noBtn.IsDefault);
+        Assert.True(noBtn.IsCancel);
+        Assert.Equal(ConfirmDialogWindow.ConfirmDialogResult.Cancelled, dlg.DialogResult);
     }
 
     /// <summary>Delegates to the production session and counts the window's event subscriptions.</summary>

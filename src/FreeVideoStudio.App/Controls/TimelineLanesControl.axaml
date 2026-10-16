@@ -63,6 +63,7 @@
                     <RowDefinition Height="22"/>
                     <RowDefinition Height="Auto" MinHeight="60"/>
                     <RowDefinition Height="Auto" MinHeight="60"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
             <!-- Ruler. Explicit Height, NOT MinHeight: a Canvas reports zero desired size, so an
@@ -82,9 +83,14 @@
                 <Panel Name="LaneBHostPanel"/>
             </Border>
 
+            <Border Grid.Row="4" Name="LaneCBorder" BorderBrush="{DynamicResource AppPanelBrush}"
+                    BorderThickness="2" CornerRadius="2" Height="36" MinHeight="36" IsVisible="False">
+                <Panel Name="LaneCHostPanel"/>
+            </Border>
+
             <!-- Faint vertical gridlines dropping from every ruler tick through both lanes, so a
                  moment can be read straight down the screen. Never hit-testable. -->
-            <Canvas Grid.Row="1" Grid.RowSpan="3" Name="GridlinesCanvas"
+            <Canvas Grid.Row="1" Grid.RowSpan="4" Name="GridlinesCanvas"
                     IsHitTestVisible="False" ClipToBounds="False" ZIndex="50"/>
 
             <!-- Per-row seek surfaces (see the header note). -->
@@ -97,6 +103,9 @@
             <Canvas Grid.Row="3" Name="LaneBSeekCanvas" Background="Transparent" Cursor="Hand"
                     ZIndex="100" IsVisible="False"
                     AutomationProperties.Name="Seek using the lower lane"/>
+            <Canvas Grid.Row="4" Name="LaneCSeekCanvas" Background="Transparent" Cursor="Hand"
+                    ZIndex="100" IsVisible="False"
+                    AutomationProperties.Name="Seek using the captions lane"/>
 
             <!-- MARKER_01 — FLOATING MARKER LAYER.
                  For markers that must sit ON TOP OF the timeline rather than inside a lane: a
@@ -118,12 +127,12 @@
                  take input. ClipToBounds=False lets a head float above the ruler INTO THE HEADROOM
                  ROW (ZOOM_01: inside a ScrollViewer that only works if the headroom row reserves
                  the space). -->
-            <Canvas Grid.Row="1" Grid.RowSpan="3" Name="MarkerOverlayCanvas"
+            <Canvas Grid.Row="1" Grid.RowSpan="4" Name="MarkerOverlayCanvas"
                     ZIndex="150" ClipToBounds="False"/>
 
             <!-- Caret: a wide invisible grab column carrying a thin visible line, plus the time
                  badge. Spans the ruler and both lanes so all three always agree. -->
-            <Panel Grid.Row="1" Grid.RowSpan="3" Name="CaretHost" ZIndex="200"
+            <Panel Grid.Row="1" Grid.RowSpan="4" Name="CaretHost" ZIndex="200"
                    IsHitTestVisible="False" ClipToBounds="False">
                 <!-- ISSUE_34: 14px was narrower than the playhead itself was easy to aim at, so most grab
                  attempts missed and registered as a click-to-seek jump instead of a drag. -->

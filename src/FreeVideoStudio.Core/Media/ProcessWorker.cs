@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -144,6 +146,10 @@ public class ProcessWorker : IDisposable
     public string? PortraitText { get; set; }
     public JsonObject? MusicConfig { get; set; }
     public List<SpeedSegment>? SpeedSegments { get; set; }
+    /// <summary>
+    /// AICAPTION_EXPORT_01 — live commentary captions track burned into export via ASS subtitles filter.
+    /// </summary>
+    public CaptionTrack? CaptionTrack { get; set; }
 
     /// <summary>
     /// CUT_01 — stretches of footage deleted from the middle of the clip, in ABSOLUTE source ms.
@@ -415,6 +421,22 @@ public class ProcessWorker : IDisposable
         var earlierAttempts = new List<ExportFailure>();
         int attemptCounter = 0;
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // CANCELREG_01 — THIS REGISTRATION MUST STAY INSIDE THE TRY. DO NOT HOIST IT BACK OUT.
+        //
+        // It used to sit ABOVE the try. CancellationToken.Register throws ObjectDisposedException
+        // when its CancellationTokenSource has already been disposed — which is exactly what
+        // happened when the user cancelled an export and immediately started another one, because
+        // the new export disposed the previous CTS while this worker still held registrations on it.
+        // That exception escaped RunAsync entirely, so EmitFinished NEVER FIRED, the controller's
+        // TaskCompletionSource never completed, and the caller's await hung forever: overlay gone,
+        // PROCESS button dead, no error on screen.
+        //
+        // Inside the try, the same throw lands in the catch-all at the bottom of this method, which
+        // always calls EmitFinished. A cancelled export then reports as cancelled instead of wedging
+        // the UI. (EXPORTSESSION_01 in MainWindow.Export.cs removes the disposal race itself; this
+        // is the defence in depth that keeps a future regression from being unrecoverable.)
+        // ══════════════════════════════════════════════════════════════════════════════════════
         CancellationTokenRegistration cancelMirror = default;
 
         try
@@ -425,6 +447,8 @@ public class ProcessWorker : IDisposable
             }
             var pipelineStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var encoderMgr = await Task.Run(() => new EncoderManager(HardwareStrategy, _ffmpegPath), cancellationToken).ConfigureAwait(false);
+            // TEMPO_01 — Rubber Band capability, probed once per FFmpeg binary and cached, BEFORE any
+            // graph is built. Never throws; a failed probe means the atempo chain.
             await AudioTempoFilterBuilder.EnsureProbedAsync(_ffmpegPath).ConfigureAwait(false);
             if (encoderMgr.EncoderPreflightError != null)
             {
@@ -485,12 +509,16 @@ public class ProcessWorker : IDisposable
                 double sourceDuration = await prober.GetDurationAsync();
                 OriginalResolution = await prober.GetResolutionStringAsync();
 
+                // COLOR_01 — decide the colour conversion ONCE per export, from the source's own tags.
                 VideoColorInfo sourceColor = await prober.GetVideoColorInfoAsync();
                 bool canToneMap = sourceColor.IsHdr
                     && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "zscale")
                     && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "tonemap");
                 string? colorChain = ExportColorPolicy.BuildConversionChain(sourceColor, canToneMap, out string colorDescription, out string? colorDegraded);
                 CoreLogger.Info("COLOR", $"Source {sourceColor}. {colorDescription}");
+                // PREVIEWFIDELITY_01 — a background preview-mix render is not an export: it renders no
+                // picture, and raising this notice from it re-showed "the export may look washed out"
+                // after every edit. The preview's own fidelity marker reports HDR instead.
                 if (colorDegraded != null && string.IsNullOrEmpty(AudioPreviewOutputPath))
                 {
                     FreeVideoStudio.Core.Abstractions.Faults.Degraded("EXPORT", colorDegraded, technicalDetail: colorDescription);
@@ -711,6 +739,7 @@ public class ProcessWorker : IDisposable
                 var musicTracks = MusicTracks != null ? new List<MusicTrack>(MusicTracks) : new List<MusicTrack>();
                 if (musicTracks.Count > 0 && (padStartHumanSec > 0 || padEndHumanSec > 0))
                 {
+                    // MUSICPAD_01 — the UI placed the music from MARK START; the body starts at the fade-in pad.
                     double firstBefore = musicTracks[0].TimelineStartDelay;
                     musicTracks = MusicPadAlignment.Align(musicTracks, padStartHumanSec, padEndHumanSec, gDur, MusicLeadFadeIn, MusicTailFadeOut);
                     CoreLogger.Info("Audio",
@@ -915,6 +944,7 @@ public class ProcessWorker : IDisposable
 
                     if (sourceHasAudio)
                     {
+                        // AVSYNC_04: pass the input duration to the shared compensated tempo builder.
                         string baseAtempoSegment = AudioTempoFilterBuilder.Segment(SpeedFactor, leadingComma: true,
                             (actualExtractEndMs - actualExtractStartMs) / 1000.0);
                         coreFilters.Add($"{baseAudioLabel}aresample=48000:async=1,asetpts=PTS{baseAtempoSegment}[a_prepared_base]");
@@ -954,6 +984,10 @@ public class ProcessWorker : IDisposable
                 var effectiveTakes = GetEffectiveVoiceOverTakes();
 
                 string? voicePulseExpr = null;
+                string? voiceMusicPulseExpr = null;
+                var voiceDurations = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                foreach (var take in effectiveTakes)
+                    voiceDurations[take.Path] = await new MediaProber(_ffprobePath, take.Path).GetDurationAsync();
 
                 if (effectiveTakes.Count > 0)
                 {
@@ -962,12 +996,12 @@ public class ProcessWorker : IDisposable
                         var conditions = new List<string>();
                         foreach (var take in effectiveTakes)
                         {
-                            var p = new MediaProber(_ffprobePath, take.Path);
-                            double dur = await p.GetDurationAsync();
+                            double dur = voiceDurations[take.Path];
 
                             double voStartOutSec = granularTimeMapper != null
                                 ? granularTimeMapper(take.StartSec)
                                 : (take.StartSec - actualExtractStartMs / 1000.0) / SpeedFactor;
+                            voStartOutSec += take.OutputOffsetSec;
 
                             double relStart = voStartOutSec;
                             double relEnd = relStart + dur;
@@ -988,6 +1022,11 @@ public class ProcessWorker : IDisposable
 
                     if (sourceHasAudio && VoiceOverDuckAudio && voicePulseExpr != null)
                     {
+                        // VOPROT_01 / VOGATE_01 — DUCK **AND** CARVE the game, across the takes ONLY.
+                        // The 85% dip alone still leaves the game competing in the 1-4 kHz band that
+                        // carries speech, so it is paired with a 2.5 kHz scoop. The scoop used to be a
+                        // static equalizer on the whole bus for the whole video; it is now gated by the
+                        // same pulse (AudioFilterChain.GatedVoiceProtection).
                         coreFilters.AddRange(AudioFilterChain.GatedVoiceProtection(aPreparedPad, voicePulseExpr, "vpg", "[a_ducked]"));
                         aPreparedPad = "[a_ducked]";
                         CoreLogger.Info("Audio",
@@ -995,6 +1034,7 @@ public class ProcessWorker : IDisposable
                     }
 
                     int voBaseIndex = 1 + musicTracks.Count + (introDurationSec > 0.001 ? 1 : 0) + (textPngPath != null ? 1 : 0) + memes.Count + cornerMemes.Count;
+                    var musicProtectionWindows = new List<(double Start, double End)>();
 
 
                     string? finalVoLabel = null;
@@ -1008,6 +1048,17 @@ public class ProcessWorker : IDisposable
                             double voStartOutSec = granularTimeMapper != null
                                 ? granularTimeMapper(take.StartSec)
                                 : (take.StartSec - actualExtractStartMs / 1000.0) / SpeedFactor;
+                            voStartOutSec += take.OutputOffsetSec;
+                            if (mixMusicAfterMeme)
+                            {
+                                var pieces = VoiceOverSplice.Place(voStartOutSec, voiceDurations[take.Path], gDur, introDurationSec,
+                                    memes.Select(m => (m.CutOutputSec - introDurationSec, m.DurationSec)));
+                                string postMemeLabel = $"[vo_delayed_{t}]";
+                                coreFilters.AddRange(VoiceOverSplice.Filters(inputIdx, postMemeLabel, $"vo_splice{t}", pieces));
+                                voMixedLabels.Add(postMemeLabel);
+                                musicProtectionWindows.AddRange(pieces.Select(p => (p.OutputStartSec, p.OutputStartSec + p.DurationSec)));
+                                continue;
+                            }
                             string trimFilter = "";
                             if (voStartOutSec < 0)
                             {
@@ -1016,15 +1067,18 @@ public class ProcessWorker : IDisposable
                             }
 
                             double voDelaySec = voStartOutSec;
-                            if (mixMusicAfterMeme)
-                                voDelaySec += introDurationSec
-                                            + MemeTimeInsertedBefore(introDurationSec + voStartOutSec, landsAfter: true);
 
                             int delayMs = Math.Max(0, (int)Math.Round(voDelaySec * 1000.0));
                             string delayLabel = $"[vo_delayed_{t}]";
                             
                             coreFilters.Add($"[{inputIdx}:a]aresample=48000:async=1,{trimFilter}adelay={delayMs}|{delayMs}{delayLabel}");
                             voMixedLabels.Add(delayLabel);
+                        }
+                        if (mixMusicAfterMeme && musicProtectionWindows.Count > 0)
+                        {
+                            string F(double n) => n.ToString("0.#########", System.Globalization.CultureInfo.InvariantCulture);
+                            voiceMusicPulseExpr = "clip(" + string.Join("+", musicProtectionWindows.Select(w =>
+                                $"clip((t-({F(w.Start)}-0.3))/0.3,0,1)*clip((({F(w.End)}+0.3)-t)/0.3,0,1)")) + ",0,1)";
                         }
                         
                         if (voMixedLabels.Count > 1)
@@ -1242,6 +1296,7 @@ public class ProcessWorker : IDisposable
                             CoreLogger.Info("Audio",
                                 $"MEME LEVEL: '{Path.GetFileName(m.FilePath)}' {(m.MeasuredLufs is double ml ? $"{ml:F2}" : "unmeasured")} LUFS " +
                                 $"-> gameplay {(gameplayLufs is double gl ? $"{gl:F2}" : "unmeasured")} LUFS = {memeGainDb:+0.00;-0.00} dB.");
+                            // SPLICE_03 — the meme butt-joins gameplay on both sides: de-click.
                             memeAudio += MemeLoudness.SpliceFade(m.DurationSec);
                         }
 
@@ -1372,7 +1427,7 @@ public class ProcessWorker : IDisposable
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null);
 
                     foreach (var part in built.chains)
                     {
@@ -1397,6 +1452,37 @@ public class ProcessWorker : IDisposable
                 aOutputFinal = "[a_flattened]";
                 CoreLogger.Info("Audio", $"SAFETY LIMITER: true-peak ceiling {PeakSafety.SafetyCeilingDbtp:F1} dBTP (4x oversampled, no auto-level).");
 
+                // AICAPTION_EXPORT_01 — burn in live commentary captions track if present
+                if (CaptionTrack != null && CaptionTrack.Lines is { Count: > 0 })
+                {
+                    var timeline = OutputTimeline.Create(
+                        actualExtractEndMs - actualExtractStartMs,
+                        SpeedSegments,
+                        SpeedFactor,
+                        actualExtractStartMs,
+                        cuts: exportCuts);
+
+                    var (origW, origH) = CoordinateMath.GetResolutionInts(OriginalResolution);
+                    int canvasWidth = IsMobileFormat ? 1080 : origW;
+                    int canvasHeight = IsMobileFormat ? 1920 : origH;
+
+                    string assContent = CaptionAssWriter.GenerateAss(
+                        CaptionTrack,
+                        timeline,
+                        canvasWidth,
+                        canvasHeight,
+                        isPortrait: IsMobileFormat,
+                        baseOffsetSec: introDurationSec);
+
+                    string assPath = Path.Combine(tempJobDir, "captions.ass");
+                    await File.WriteAllTextAsync(assPath, assContent, cancellationToken).ConfigureAwait(false);
+
+                    string escapedAssPath = assPath.Replace('\\', '/').Replace(":", @"\:");
+                    coreFilters.Add($"{vOutputFinal}subtitles=filename='{escapedAssPath}'[v_subtitled]");
+                    vOutputFinal = "[v_subtitled]";
+                    CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Burn-in captions track ({CaptionTrack.Lines.Count} line(s)) via ASS subtitle filter.");
+                }
+
                 string filterScript = string.Join(";", coreFilters.Where(p => !string.IsNullOrEmpty(p)));
                 CoreLogger.Info("FFmpeg", $"Filter Script Content:\n{filterScript}");
                 string filterScriptPath = Path.Combine(tempJobDir, "filter_complex.txt");
@@ -1404,6 +1490,10 @@ public class ProcessWorker : IDisposable
 
                 string corePath = Path.Combine(tempJobDir, "core.mp4");
 
+                // TIMINGTAG_02 — frame-exact timing stamped into the delivered file (intro + fades),
+                // alongside the SCRAPER_01 v1 seconds key that older Merger builds read.
+                // A meme at an edge moves the fade away from the file's edge, so that fade is written
+                // as UNKNOWN (null) rather than as a wrong position.
                 {
                     if (!ExportTiming.TryParseFps(targetFps, out int tagFpsNum, out int tagFpsDen)) { tagFpsNum = 60; tagFpsDen = 1; }
                     double tagFps = (double)tagFpsNum / tagFpsDen;
@@ -2179,6 +2269,13 @@ public class ProcessWorker : IDisposable
                         }
                         else
                         {
+                            // PROCGATE_02 — the thumbnail grab was the one child process in this
+                            // pipeline that was never published to _currentProcess, never registered
+                            // against the cancellation token and never handed to ChildProcessTracker.
+                            // Cancel() therefore could not reach it at all, and if the app exited
+                            // during the grab the ffmpeg child was not covered by the kill-on-close
+                            // Job Object either. All three are now wired, exactly like every other
+                            // child process here.
                             SetCurrentProcess(p);
                             try { ChildProcessTracker.AddProcess(p); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
                             using var thumbReg = cancellationToken.Register(() =>
@@ -2523,6 +2620,19 @@ public class ProcessWorker : IDisposable
                 }
             });
 
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // PIPEDRAIN_01 — DRAIN BEFORE DISPOSE, ON EVERY PATH INCLUDING CANCELLATION.
+            //
+            // This used to be `catch (OperationCanceledException) { return false; }`. That return
+            // jumped straight to the finally below, which disposes `proc` — closing the
+            // StandardOutput / StandardError pipe handles while progressTask and stderrTask were
+            // still suspended inside ReadLineAsync on them. Both tasks faulted with nobody awaiting
+            // them (unobserved), their `using var reader` double-disposed the StreamReader, and the
+            // anonymous pipe pair survived until finalization. The main encode loop above already
+            // does this correctly with Task.WhenAll; this path was simply missed.
+            //
+            // The 5s ceiling exists so a child that survived the kill cannot hold teardown open.
+            // ══════════════════════════════════════════════════════════════════════════════════
             bool tailCanceled = false;
             try { await proc.WaitForExitAsync(cancellationToken); }
             catch (OperationCanceledException swallowed6)
@@ -2763,4 +2873,8 @@ public class ProcessWorker : IDisposable
     public void Dispose() => _lifetime.DisposeJob();
 }
 
-public record VoiceOverTake(string Path, double StartSec);
+// VOTIMING_01: the source anchor plus an output offset preserves positions INSIDE a freeze.
+// Optional metadata keeps old projects readable; speech always runs at its recorded rate.
+public record VoiceOverTake(string Path, double StartSec, double OutputOffsetSec = 0,
+    double? DurationSec = null, double? RecordedEndSec = null, string? TimingSignature = null,
+    bool NeedsTimingReview = false);

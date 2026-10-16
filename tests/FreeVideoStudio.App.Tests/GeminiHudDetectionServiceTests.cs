@@ -1,4 +1,4 @@
-﻿
+
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -343,11 +343,10 @@ public sealed class GeminiHudDetectionServiceTests
             string text = File.ReadAllText(file);
             if (Path.GetFileName(file).Equals("CropToolWindow.MagicWand.cs", StringComparison.OrdinalIgnoreCase))
             {
-                Assert.Single(Regex.Matches(text, @"\bGeminiApiKey\b"));
-                Assert.Contains("() => SettingsManager.Instance.GeminiApiKey", text);
+                Assert.Contains("SettingsManager.Instance.GetApiKey", text);
                 continue;
             }
-            Assert.DoesNotMatch(@"\bGeminiApiKey\b", text);
+            Assert.DoesNotMatch(@"\b(GeminiApiKey|ClaudeApiKey|OpenAiApiKey|GetApiKey)\b", text);
         }
 
         foreach (Type t in new[] { typeof(AiHudFrame), typeof(AiHudCacheKey), typeof(HudDetectionResult), typeof(HudCandidate), typeof(AiHudDetectionResult) })

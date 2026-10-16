@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -57,6 +57,84 @@ namespace FreeVideoStudio.App.Services;
 internal static partial class UpdateService
 {
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases";
+
+    [System.Runtime.InteropServices.DllImport("ole32.dll", ExactSpelling = true)]
+    private static extern int CoCreateInstance(
+        in Guid rclsid,
+        IntPtr pUnkOuter,
+        uint dwClsContext,
+        in Guid riid,
+        out IntPtr ppv);
+
+    private static bool TryGetWindowsNetworkCost(out uint cost)
+    {
+        cost = 0;
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            var clsid = new Guid("DCB00C01-570F-4A9B-8D69-199FDBA5723B");
+            var iid = new Guid("DCB00008-570F-4A9B-8D69-199FDBA5723B");
+            int hr = CoCreateInstance(in clsid, IntPtr.Zero, 1 /* CLSCTX_INPROC_SERVER */, in iid, out IntPtr pManager);
+            if (hr != 0 || pManager == IntPtr.Zero) return false;
+            try
+            {
+                unsafe
+                {
+                    void** vtable = *(void***)pManager;
+                    delegate* unmanaged[Stdcall]<IntPtr, uint*, void*, int> getCost =
+                        (delegate* unmanaged[Stdcall]<IntPtr, uint*, void*, int>)vtable[3];
+                    uint c = 0;
+                    if (getCost(pManager, &c, null) == 0)
+                    {
+                        cost = c;
+                        return true;
+                    }
+                }
+            }
+            finally
+            {
+                System.Runtime.InteropServices.Marshal.Release(pManager);
+            }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+        return false;
+    }
+
+    internal static bool IsMeteredOrConstrainedConnection()
+    {
+        try
+        {
+            if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+                return false;
+
+            const uint MeteredMask = 0x2 | 0x4 | 0x10000 | 0x20000 | 0x40000 | 0x80000;
+            if (TryGetWindowsNetworkCost(out uint cost))
+            {
+                if ((cost & MeteredMask) != 0) return true;
+                if ((cost & 0x1) != 0) return false;
+            }
+
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                    (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wwanpp ||
+                     ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wwanpp2))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+        return false;
+    }
+
     /// <summary>
     /// NODROPPER_01 — the full installer is an Inno Setup package. Releases also carry the same bytes
     /// as <see cref="LegacyFullAssetName"/> so copies released before the change still find an installer;
@@ -243,28 +321,39 @@ internal static partial class UpdateService
                 return;
             }
 
-            if (!DeploymentLifecycle.TryParseVersion(release.Tag, out Version remote) ||
-                !TryGetLocalVersion(out Version local))
+            string currentVer = DeploymentLifecycle.GetCurrentVersion();
+            string remote = release.Tag.TrimStart('v', 'V');
+            string local = currentVer.TrimStart('v', 'V');
+            int cmp = DeploymentLifecycle.CompareVersions(release.Tag, currentVer);
+            if (cmp <= 0)
             {
-                RuntimeLog.Fail("UPDATE", $"Could not compare versions (running build vs tag '{release.Tag}'); no prompt shown.");
-                RecordResult($"Could not read the version number of the latest release ('{release.Tag}').");
-                return;
-            }
-
-            if (remote.CompareTo(local) <= 0)
-            {
-                RuntimeLog.Info("UPDATE", $"Already up to date (installed {local}, latest {remote}).");
+                RuntimeLog.Info("UPDATE", $"Already up to date (installed {currentVer}, latest {release.Tag}).");
                 RecordResult($"You have the latest version ({local}).");
                 return;
             }
 
-            RuntimeLog.Info("UPDATE", $"Newer version found: {remote} (installed {local}). Prompting user.");
+            RuntimeLog.Info("UPDATE", $"Newer version found: {release.Tag} (installed {currentVer}). Prompting user.");
 
             string skipped = UiStateStore.ReadText(SkippedTagFile).Trim();
             if (string.Equals(skipped, release.Tag, StringComparison.OrdinalIgnoreCase))
             {
                 RuntimeLog.Info("UPDATE", $"Release {release.Tag} was skipped by the user; staying quiet until a newer one appears.");
                 RecordResult($"Version {remote} is available — you chose to skip it.");
+                return;
+            }
+
+            bool isMetered = SettingsManager.Instance.AvoidMeteredNetworkUpdates && IsMeteredOrConstrainedConnection();
+            bool autoDownload = SettingsManager.Instance.AutoDownloadUpdates && !isMetered;
+
+            if (!autoDownload)
+            {
+                string reason = isMetered ? "a metered connection was detected" : "automatic background downloads are turned off in Settings";
+                RuntimeLog.Info("UPDATE", $"Newer version {remote} is available; automatic background download skipped because {reason}.");
+                RecordResult($"Version {remote} is available. Download skipped because {reason}. You can check and download manually via Settings › About.");
+                Dispatcher.UIThread.Post(() =>
+                {
+                    FloatingNotice.Info(owner, $"Free Video Studio version {remote} is available. Go to Settings › About to download.");
+                });
                 return;
             }
 
@@ -346,37 +435,30 @@ internal static partial class UpdateService
                 statusCallback?.Invoke(problem);
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    NativeDialog.ShowError(problem + "\r\nPlease check your network connection and try again.", "Update Check Failed");
+                    string message = problem.Contains("limit reached", StringComparison.OrdinalIgnoreCase)
+                        ? problem
+                        : problem + "\r\nPlease check your network connection and try again.";
+                    NativeDialog.ShowError(message, "Update Check Failed");
                 });
                 return;
             }
 
-            if (!DeploymentLifecycle.TryParseVersion(release.Tag, out Version remote) ||
-                !TryGetLocalVersion(out Version local))
+            string currentVer = DeploymentLifecycle.GetCurrentVersion();
+            int cmp = DeploymentLifecycle.CompareVersions(release.Tag, currentVer);
+            if (cmp <= 0)
             {
-                RecordResult($"Could not read the version number of the latest release ('{release.Tag}').");
-                statusCallback?.Invoke($"Could not compare versions ({release.Tag}).");
+                RecordResult($"You have the latest version ({currentVer}).");
+                statusCallback?.Invoke($"Up to date (v{currentVer}).");
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    NativeDialog.ShowError($"Could not determine version compatibility (installed build vs release tag '{release.Tag}').", "Update Check Failed");
+                    NativeDialog.ShowInfo($"You are already running the latest version of Free Video Studio (v{currentVer}).");
                 });
                 return;
             }
 
-            if (remote.CompareTo(local) <= 0)
-            {
-                RecordResult($"You have the latest version ({local}).");
-                statusCallback?.Invoke($"Up to date (v{local}).");
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    NativeDialog.ShowInfo($"You are already running the latest version of Free Video Studio (v{local}).");
-                });
-                return;
-            }
-
-            RecordResult($"Version {remote} is available (you have {local}). Downloading it in the background…");
+            RecordResult($"Version {release.Tag} is available (you have {currentVer}). Downloading it in the background…");
             if (string.Equals(GetSkippedVersion(), release.Tag, StringComparison.OrdinalIgnoreCase)) ClearSkippedVersion();
-            statusCallback?.Invoke($"Version {remote} found — downloading in the background. Watch the corner of the main window.");
+            statusCallback?.Invoke($"Version {release.Tag} found — downloading in the background. Watch the corner of the main window.");
             StartBackgroundUpdate(owner, release);
         }
         catch (Exception ex)
@@ -581,29 +663,61 @@ internal static partial class UpdateService
         if (DevReleaseFolder is { } devFolder) return await QueryLocalDevReleaseAsync(devFolder).ConfigureAwait(false);
         try
         {
+            bool isBeta = string.Equals(SettingsManager.Instance.UpdateChannel, "Beta", StringComparison.OrdinalIgnoreCase);
+            string targetUrl = isBeta ? ReleasesApiUrl + "?per_page=10" : LatestReleaseApiUrl;
+
             using var cts = new CancellationTokenSource(ProbeTimeout);
-            using var response = await Http.GetAsync(LatestReleaseApiUrl, cts.Token).ConfigureAwait(false);
+            using var response = await Http.GetAsync(targetUrl, cts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                RuntimeLog.Info("UPDATE", $"Release probe returned HTTP {(int)response.StatusCode}; staying silent.");
-                return (null, $"GitHub did not answer the update check (HTTP {(int)response.StatusCode}).");
+                int code = (int)response.StatusCode;
+                RuntimeLog.Info("UPDATE", $"Release probe returned HTTP {code}; staying silent.");
+                if (code == 403 || code == 429)
+                {
+                    return (null, "Update check limit reached; please try again later.");
+                }
+                return (null, $"GitHub did not answer the update check (HTTP {code}).");
             }
 
             string json = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-            var root = JsonNode.Parse(json)?.AsObject();
+            JsonObject? root = null;
+            if (isBeta)
+            {
+                var array = JsonNode.Parse(json)?.AsArray();
+                if (array != null)
+                {
+                    foreach (var item in array)
+                    {
+                        var obj = item?.AsObject();
+                        if (obj != null && obj["draft"]?.GetValue<bool>() != true)
+                        {
+                            root = obj;
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                root = JsonNode.Parse(json)?.AsObject();
+                if (root?["draft"]?.GetValue<bool>() == true || root?["prerelease"]?.GetValue<bool>() == true)
+                {
+                    RuntimeLog.Info("UPDATE", "Latest release is a draft/prerelease; staying silent.");
+                    return (null, "No finished release is published yet.");
+                }
+            }
 
-            string? tag = root?["tag_name"]?.GetValue<string>();
-            string? releaseNotes = root?["body"]?.GetValue<string>();
+            if (root is null)
+            {
+                return (null, isBeta ? "No releases found on Beta channel." : "No finished release is published yet.");
+            }
+
+            string? tag = root["tag_name"]?.GetValue<string>();
+            string? releaseNotes = root["body"]?.GetValue<string>();
             if (string.IsNullOrWhiteSpace(tag))
             {
                 RuntimeLog.Fail("UPDATE", "Release JSON carried no tag_name; staying silent.");
                 return (null, "The latest release on GitHub has no version number.");
-            }
-
-            if (root?["draft"]?.GetValue<bool>() == true || root?["prerelease"]?.GetValue<bool>() == true)
-            {
-                RuntimeLog.Info("UPDATE", "Latest release is a draft/prerelease; staying silent.");
-                return (null, "No finished release is published yet.");
             }
 
             JsonNode? asset = null;

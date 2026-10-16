@@ -16,6 +16,104 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class VoiceCaptureSessionTests
 {
+    [Fact]
+    public async Task BoundedCapture_OpeningDelayAndDrain_UseOneAnchorAndRealPcm()
+    {
+        string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vo-budget-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        for (int cycle = 0; cycle < 3; cycle++)
+        {
+            var devices = new SampleCaptureDevices();
+            using var opening = new ManualResetEventSlim();
+            using var resume = new ManualResetEventSlim();
+            double clock = 0.75;
+            devices.Input.OnStart = () =>
+            {
+                devices.Input.Deliver(new byte[882]);
+                opening.Set();
+                Assert.True(resume.Wait(Timeout));
+            };
+            devices.Input.OnStop = () =>
+            {
+                // All remaining budget, then an identifiable post-end pulse in multiple drain callbacks.
+                devices.Input.Deliver(new byte[21168]);
+                devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
+                devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
+            };
+            await using var capture = new VoiceCaptureSession(devices, a => a());
+            var budget = new FreeVideoStudio.Core.Media.VoiceCaptureBudget(1, () => clock);
+            string path = System.IO.Path.Combine(root, $"take-{cycle}.wav");
+            var open = capture.StartRecordingAsync(path, 0, _ => { }, budget)!;
+            Assert.True(opening.Wait(Timeout));
+            Assert.Null(capture.StartRecordingAsync(path, 0, _ => { }, new FreeVideoStudio.Core.Media.VoiceCaptureBudget(1, () => clock)));
+            clock = 1.5; // UI/open completion is late: it must not move the anchor.
+            int completions = 0;
+            var drain = capture.FinalizeRecordingAsync(_ => completions++);
+            Assert.NotNull(drain);
+            Assert.Same(drain, capture.FinalizeRecordingAsync(_ => throw new Exception("duplicate completion")));
+            var shutdown = capture.DisposeAsync().AsTask();
+            resume.Set();
+            await open.WaitAsync(Timeout);
+            var result = await drain!.WaitAsync(Timeout);
+            Assert.Equal(0.75, budget.OutputStart);
+            Assert.Equal(22050, result.Bytes);
+            Assert.True(result.IsSuccess);
+            Assert.All(SampleCaptureDevices.ReadPcm(path), b => Assert.Equal(0, b));
+            Assert.Equal(22050, SampleCaptureDevices.ReadPcm(path).Length);
+            await capture.WhenFinalizationsSettled().WaitAsync(Timeout);
+            await shutdown.WaitAsync(Timeout);
+            Assert.Equal(1, completions);
+            Assert.Equal(1, devices.Input.Disposals);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealRecorderFault_PreservesPrefixAndReportsFailure(bool duringOpen)
+    {
+        string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vo-fault-" + Guid.NewGuid().ToString("N") + ".wav");
+        var devices = new SampleCaptureDevices();
+        void DeliverFailure()
+        {
+            devices.Input.Deliver(new byte[882]);
+            devices.File!.FailNext = true;
+            devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
+            devices.Input.Deliver(new byte[882]);
+        }
+        if (duringOpen) devices.Input.OnStart = DeliverFailure;
+        await using var capture = new VoiceCaptureSession(devices, a => a());
+        var opened = await capture.StartRecordingAsync(path, 0, _ => { },
+            new FreeVideoStudio.Core.Media.VoiceCaptureBudget(1, () => 0))!.WaitAsync(Timeout);
+        Assert.Equal(RecordingOpenOutcome.Opened, opened.Outcome);
+        if (!duringOpen) DeliverFailure();
+        Assert.Equal(MicrophoneHealth.Faulted, capture.Health);
+        var result = await capture.FinalizeRecordingAsync(_ => { })!.WaitAsync(Timeout);
+        Assert.False(result.IsSuccess);
+        Assert.IsType<IOException>(result.Error);
+        Assert.True(result.WriteFailed);
+        Assert.True(result.FileFinalized);
+        Assert.Equal(882, result.Bytes);
+        Assert.Equal(new byte[882], SampleCaptureDevices.ReadPcm(path));
+    }
+
+    [Fact]
+    public async Task RealRecorder_DisconnectAndCompetingDispose_PreserveOneFinalizedPrefix()
+    {
+        string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vo-disconnect-" + Guid.NewGuid().ToString("N") + ".wav");
+        var devices = new SampleCaptureDevices();
+        await using var capture = new VoiceCaptureSession(devices, a => a());
+        await capture.StartRecordingAsync(path, 0, _ => { }, new FreeVideoStudio.Core.Media.VoiceCaptureBudget(1, () => 0))!;
+        devices.Input.Deliver(new byte[882]);
+        devices.Input.Disconnect();
+        var final = capture.FinalizeRecordingAsync(_ => { })!;
+        await Task.WhenAll(final, capture.DisposeAsync().AsTask()).WaitAsync(Timeout);
+        var result = await final;
+        Assert.False(result.IsSuccess);
+        Assert.Equal(882, result.Bytes);
+        Assert.Equal(new byte[882], SampleCaptureDevices.ReadPcm(path));
+        Assert.Equal(1, devices.Input.Disposals);
+    }
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
@@ -1164,6 +1262,7 @@ public sealed class VoiceCaptureSessionTests
 
 
     /// <summary>Holds the FIRST admitted buffer in flight (after admission, before analysis) until released.</summary>
+    // ── SPECTRUM_05 — a retired source can never publish, even its first in-flight spectrum ──────
     private sealed class InFlightGate : IDisposable
     {
         private int _calls;

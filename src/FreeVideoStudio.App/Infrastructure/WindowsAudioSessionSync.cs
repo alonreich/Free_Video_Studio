@@ -1,4 +1,7 @@
-﻿
+
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -36,6 +39,7 @@ internal static unsafe partial class WindowsAudioSessionSync
     private static readonly Guid CLSID_MMDeviceEnumerator = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
     private static readonly Guid IID_IMMDeviceEnumerator = new("A95664D2-9614-4F35-A746-DE8DB63617E6");
     private static readonly Guid IID_IAudioSessionManager = new("BFA971F1-4D5E-40BB-935E-967039BFBEE4");
+    private static readonly Guid IID_IAudioSessionControl2 = new("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D");
     /// <summary>Our own event context, so a change we made is never mistaken for the user's.</summary>
     private static readonly Guid OurContext = new("6F1C2A3E-5B7D-4C21-9E0A-FVS000000001".Replace("FVS", "0A0"));
 
@@ -53,6 +57,14 @@ internal static unsafe partial class WindowsAudioSessionSync
     private static volatile int _desiredMuted = -1;
     private static int _suppressPosition = -1;
     private static volatile bool _stop;
+    private static volatile int _voiceCaptureActive;
+
+    /// <summary>Active during voiceover recording or mic monitoring to reject ducking-induced volume drops.</summary>
+    public static bool IsVoiceCaptureActive
+    {
+        get => _voiceCaptureActive != 0;
+        set => _voiceCaptureActive = value ? 1 : 0;
+    }
 
     public static void Start()
     {
@@ -135,6 +147,13 @@ internal static unsafe partial class WindowsAudioSessionSync
                         bool muteMoved = lastMute >= 0 && (mute != 0 ? 1 : 0) != lastMute;
                         if (lastLevel < 0) lastLevel = cur;
                         if (lastMute < 0) lastMute = mute != 0 ? 1 : 0;
+                        if (levelMoved && IsVoiceCaptureActive && cur < lastLevel)
+                        {
+                            // Ignore downward session volume jumps during active voice capture/monitoring
+                            // to protect against driver-level communications ducking ratcheting the master volume down.
+                            cur = lastLevel;
+                            levelMoved = false;
+                        }
                         if (levelMoved || muteMoved)
                         {
                             lastLevel = cur;
@@ -187,6 +206,31 @@ internal static unsafe partial class WindowsAudioSessionSync
         MarkSystemApplied(false);
     }
 
+    /// <summary>Opts out of Windows default stream attenuation (ducking) when communications/mic streams open.</summary>
+    private static void OptOutOfDucking(IntPtr manager)
+    {
+        if (manager == IntPtr.Zero) return;
+        IntPtr control = IntPtr.Zero, control2 = IntPtr.Zero;
+        try
+        {
+            var getControl = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, uint, IntPtr*, int>)(*(void***)manager)[3];
+            if (getControl(manager, null, 0, &control) < 0 || control == IntPtr.Zero) return;
+
+            var queryInterface = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)(*(void***)control)[0];
+            Guid iid = IID_IAudioSessionControl2;
+            if (queryInterface(control, &iid, &control2) < 0 || control2 == IntPtr.Zero) return;
+
+            var setDucking = (delegate* unmanaged[Stdcall]<IntPtr, int, int>)(*(void***)control2)[16];
+            setDucking(control2, 1);
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+        finally
+        {
+            Release(ref control2);
+            Release(ref control);
+        }
+    }
+
     /// <summary>Default render endpoint → IAudioSessionManager → this process's default session ISimpleAudioVolume.</summary>
     private static IntPtr AcquireSimpleVolume()
     {
@@ -206,6 +250,8 @@ internal static unsafe partial class WindowsAudioSessionSync
             IntPtr mgr;
             if (activate(device, &iid, CLSCTX_ALL, IntPtr.Zero, &mgr) < 0 || mgr == IntPtr.Zero) return IntPtr.Zero;
             manager = mgr;
+
+            OptOutOfDucking(manager);
 
             var getSimple = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, uint, IntPtr*, int>)(*(void***)manager)[4];
             IntPtr sv;

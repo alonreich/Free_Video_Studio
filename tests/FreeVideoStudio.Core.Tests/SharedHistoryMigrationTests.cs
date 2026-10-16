@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -488,7 +488,7 @@ public class SharedHistoryMigrationTests
             Assert.False(typeof(IDisposable).IsAssignableFrom(t), $"{t} holds a disposable resource");
             Assert.False(typeof(System.Threading.Tasks.Task).IsAssignableFrom(t), $"{t} is a Task");
             Assert.False(t == typeof(IntPtr) || t == typeof(System.Runtime.InteropServices.SafeHandle), $"{t} is a native handle");
-            if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ImmutableArray<>))
+            if (t.IsGenericType && (t.GetGenericTypeDefinition() == typeof(ImmutableArray<>) || t.GetGenericTypeDefinition() == typeof(IReadOnlyList<>)))
             {
                 Check(t.GetGenericArguments()[0], seen);
                 return;

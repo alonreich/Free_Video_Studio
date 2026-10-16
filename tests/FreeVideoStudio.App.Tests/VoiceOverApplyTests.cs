@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -19,6 +19,20 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class VoiceOverApplyTests : IDisposable
 {
+    [AvaloniaFact]
+    public async Task Apply_OneFrameEndpointTail_DoesNotInflatePersistedDuration()
+    {
+        using var isolated = LiveCaptureDriver.IsolateProgramData(_tempDir);
+        using var capture = new VoiceCaptureSession(new TestDevices(), a => a());
+        var window = new VoiceOverWindow(capture);
+        string path = CreateTestWav("one-frame.wav", 1.0 / 44100);
+        window.TriggerCompleteTake(new VoiceOverWindow.VoiceOverSession { WavPath = path, StartSec = 0 },
+            true, 2, 1, 0);
+        await window.ApplyAndCloseAsync().WaitAsync(Timeout);
+        var saved = Assert.Single(window.Result!.VoiceOverTakes);
+        Assert.Equal(1.0 / 44100, saved.DurationSec!.Value, 10);
+        Assert.Equal(new byte[2], SampleCaptureDevices.ReadPcm(saved.Path));
+    }
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "FvsVoApplyTest_" + Guid.NewGuid().ToString("N"));
 
@@ -27,10 +41,12 @@ public sealed class VoiceOverApplyTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         VoiceOverWindow.RecoveryDirectorySeam = () => _tempDir;
         VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => Task.FromResult(true);
     }
 
     public void Dispose()
     {
+        VoiceOverWindow.ConfirmDeleteSeam = null;
         VoiceOverWindow.TrimRunnerSeam = null;
         VoiceOverWindow.RecoveryDirectorySeam = null;
         VoiceOverWindow.RecoveryStoreSeam = null;

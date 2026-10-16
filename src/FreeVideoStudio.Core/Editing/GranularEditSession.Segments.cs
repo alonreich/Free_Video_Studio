@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/07_UNDO_AND_HISTORY.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -394,6 +396,20 @@ public sealed partial class GranularEditSession
             if (selfStart - otherEnd < gapMs && otherStart - selfEnd < gapMs) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// SLOWZOOMGLIDE_01 — Evaluates per-side glide availability for segment <paramref name="segIndex"/>.
+    /// </summary>
+    public GranularSpeedBuilder.SlowZoomGlideAvailability GetSlowZoomGlideAvailability(
+        int segIndex,
+        SpeedSegment? overrideSegment = null)
+    {
+        double totalDurationSec = (TrimEndMs > 0 && TrimEndMs > TrimStartMs)
+            ? (TrimEndMs - TrimStartMs) / 1000.0
+            : ((ProbedDurationSec > 0) ? ProbedDurationSec : 0.0);
+        return GranularSpeedBuilder.GetSlowZoomGlideAvailability(
+            Segments, segIndex, totalDurationSec, trimStartSec: TrimStartMs / 1000.0, overrideSegment);
     }
 
 

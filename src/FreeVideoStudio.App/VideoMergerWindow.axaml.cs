@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -49,7 +51,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     }
 
     public static readonly Avalonia.StyledProperty<double> QualitySliderValueProperty =
-        Avalonia.AvaloniaProperty.Register<VideoMergerWindow, double>(nameof(QualitySliderValue), 100.0);
+        Avalonia.AvaloniaProperty.Register<VideoMergerWindow, double>(nameof(QualitySliderValue), 19.0);
     public double QualitySliderValue
     {
         get => GetValue(QualitySliderValueProperty);
@@ -57,7 +59,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     }
 
     public static readonly Avalonia.StyledProperty<double> MainSpeedSliderValueProperty =
-        Avalonia.AvaloniaProperty.Register<VideoMergerWindow, double>(nameof(MainSpeedSliderValue), 1.0);
+        Avalonia.AvaloniaProperty.Register<VideoMergerWindow, double>(nameof(MainSpeedSliderValue), 10.0);
     public double MainSpeedSliderValue
     {
         get => GetValue(MainSpeedSliderValueProperty);
@@ -67,6 +69,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     private MusicWizardResult? _musicResult;
 
     private bool _isSafeToClose = false;
+    internal bool IsSafeToClose { get => _isSafeToClose; set => _isSafeToClose = value; }
     private MergerWorker? _activeMergerWorker;
     private System.Threading.CancellationTokenSource? _mergeCts;
 
@@ -146,7 +149,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             videoList.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, VideoList_DragOver);
             videoList.AddHandler(Avalonia.Input.DragDrop.DragLeaveEvent, VideoList_DragLeave);
             videoList.AddHandler(Avalonia.Input.DragDrop.DropEvent, VideoList_Drop);
-            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true); // MERGERUX_01 (P10 R-a) — the row handles the press for selection
             videoList.AddHandler(Avalonia.Input.InputElement.PointerMovedEvent, VideoList_PointerMoved, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
             videoList.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, VideoList_PointerReleased, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
         }
@@ -156,7 +159,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         var timelineOverlay = this.FindControl<Border>("TimelineOverlay");
         var canvas = this.FindControl<Avalonia.Controls.Canvas>("TimelineMarkersCanvas");
 
-        Controls.TimelineKnob.Attach(canvas, timelineSlider); AttachMergerPlayhead(canvas, timelineSlider);
+        Controls.TimelineKnob.Attach(canvas, timelineSlider); AttachMergerPlayhead(canvas, timelineSlider); // MERGERPLAYHEAD_01
 
         if (timelineSlider != null)
         {
@@ -322,20 +325,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         {
             menuRemoveSelected.Click += async (s, e) =>
             {
-                if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmVideoMergerRemove)
-                {
-                    ExecuteRemoveSelected();
-                }
-                else
-                {
-                    var dlg = new FreeVideoStudio.App.Controls.ConfirmDialogWindow();
-                    dlg.SetTitle("Remove Selected");
-                    dlg.SetMessage("Remove the selected video(s) from the queue?\nThe files on your computer are not touched. Ctrl+Z brings them back.");
-                    dlg.SetButtonText("YES, REMOVE", "CANCEL"); dlg.UseDestructiveStyling();
-                    await dlg.ShowDialog(this);
-                    if (dlg.Result)
-                        ExecuteRemoveSelected();
-                }
+                await RequestRemoveSelectedAsync();
             };
         }
 
@@ -401,6 +391,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             {
                 removeBtn.Flyout.Opened += (s, e) =>
                 {
+                    OnToolbarRemoveFlyoutOpened();
                     if (flyoutScrim != null) flyoutScrim.IsVisible = true;
                 };
                 removeBtn.Flyout.Closed += (s, e) =>
@@ -458,24 +449,12 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         UpdateQueueState();
     }
     
+    /// <summary>REMOVEUX_01 — removal routes through stable ClipId operations.</summary>
     private void ExecuteRemoveSelected()
     {
-        var videoList = VideoListCtl;
-        if (videoList?.SelectedItems != null && videoList.SelectedItems.Count > 0)
-        {
-            var itemsToRemove = videoList.SelectedItems.Cast<string>().ToList();
-            int lastIndex = -1;
-            foreach (var item in itemsToRemove)
-            {
-                lastIndex = Math.Max(lastIndex, VideoQueue.IndexOf(item));
-                VideoQueue.Remove(item);
-            }
-            if (VideoQueue.Count > 0)
-            {
-                videoList.SelectedItems.Clear();
-                videoList.SelectedIndex = Math.Min(Math.Max(0, lastIndex - itemsToRemove.Count + 1), VideoQueue.Count - 1);
-            }
-        }
+        var ids = TakeToolbarRemoveIds();
+        if (ids.Count == 0) ids = SelectedQueueClipIds();
+        RemoveQueueClips(ids);
     }
 
     private void VideoQueue_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -498,33 +477,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private void MoveVideo(int direction)
     {
-        var videoList = VideoListCtl;
-        if (videoList?.SelectedItems == null || videoList.SelectedItems.Count == 0) return;
-
-        var selectedItems = videoList.SelectedItems.Cast<string>().ToList();
-        var selectedIndices = selectedItems.Select(x => VideoQueue.IndexOf(x)).Where(x => x >= 0).OrderBy(x => x).ToList();
-        
-        if (selectedIndices.Count == 0) return;
-        if (direction < 0 && selectedIndices.First() == 0) return; 
-        if (direction > 0 && selectedIndices.Last() == VideoQueue.Count - 1) return;
-
-        if (direction < 0)
-        {
-            foreach (int idx in selectedIndices)
-                VideoQueue.Move(idx, idx - 1);
-        }
-        else
-        {
-            selectedIndices.Reverse();
-            foreach (int idx in selectedIndices)
-                VideoQueue.Move(idx, idx + 1);
-        }
-        
-        videoList.SelectedItems.Clear();
-        foreach (var item in selectedItems)
-        {
-            videoList.SelectedItems.Add(item);
-        }
+        var ids = SelectedQueueClipIds();
+        MoveQueueClips(ids, direction);
     }
 
     private void InitializeSliders()
@@ -537,7 +491,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             for (int i = 0; i < 20; i++) qualityLabels.Add($"{(i + 1) * 5}%");
             qualitySlider.SetLabels(qualityLabels);
             qualitySlider.Value = 19;
-            qualitySlider.ValueChanged += (s, v) => { DebouncedQualityProbe(); };
+            QualitySliderValue = 19.0;
+            qualitySlider.ValueChanged += (s, v) => { QualitySliderValue = v; DebouncedQualityProbe(); };
             qualitySlider.ValueChangeCompleted += (s, v) => RuntimeLog.Info("UI", $"Quality slider set to {(v + 1) * 5}%");
         }
         UpdateQualityProbe();
@@ -550,11 +505,13 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             for (int i = 1; i <= 40; i++) speedLabels.Add((i / 10.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "x");
             speedSlider.SetLabels(speedLabels);
             speedSlider.Value = 10;
+            MainSpeedSliderValue = 10.0;
             SpeedPresetButtons.ConfigureBaseButton(this, 1.0, "Set speed to the default 1.0x");
             SpeedPresetButtons.WirePresetButtons(this, 1.0, ApplySpeedPreset);
             speedSlider.ValueChanged += (s, v) =>
             {
                 _baseSpeed = v / 10.0;
+                MainSpeedSliderValue = v;
                 if (_videoHost?.IpcClient != null)
                     _ = _videoHost?.IpcClient?.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
                 UpdateSpeedLabel();
@@ -648,16 +605,22 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         var speedSlider = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("MainSpeedSlider");
         SpeedPresetButtons.SetSpinningWheelValue(speedSlider, speed);
         _baseSpeed = Math.Clamp(speed, 0.1, 4.0);
+        MainSpeedSliderValue = (int)Math.Round(_baseSpeed * 10.0, MidpointRounding.AwayFromZero);
         if (_videoHost?.IpcClient != null)
             _ = _videoHost.IpcClient.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
         UpdateSpeedLabel();
         UpdateEstimatedSize();
     }
 
+    internal double BaseSpeedForTesting => _baseSpeed;
+    internal void ApplySpeedPresetForTesting(double speed) => ApplySpeedPreset(speed);
+
     private void UpdateQualityProbe() => UpdateEstimatedSize();
 
     private List<string> SnapshotVideoQueue() => new(VideoQueue);
 
+    // SIZEESTIMATE_01 / MERGERESTIMATE_01 — one shared background estimator, with a bounded
+    // metadata cache. Quality and speed changes reuse the probes instead of launching new ones.
     private void UpdateEstimatedSize()
     {
         _mergerSizeEstimator ??= new Services.OutputSizeEstimator(() => _ffprobePath);
@@ -665,7 +628,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             _mergerSizeEstimator.EstimateMergerAsync, PaintSizeEstimate,
             action => Avalonia.Threading.Dispatcher.UIThread.Post(action), Services.OutputSizeEstimator.QuickMergerEstimate);
         int quality = (this.FindControl<Controls.SpinningWheelSlider>("QualitySlider")?.Value + 1) * 5 ?? 100;
-        var request = new Services.MergerSizeRequest(VideoQueue.ToArray(), _baseSpeed, quality, _knownSizeSources, EdlOutputSec());
+        var request = new Services.MergerSizeRequest(VideoQueue.ToArray(), _baseSpeed, quality, _knownSizeSources, EdlOutputSec()); // MERGESIZE_01
         if (_lastMergerSizeRequest is { } previous && previous.Speed == request.Speed && previous.OutputSeconds == request.OutputSeconds &&
             previous.Quality == request.Quality && previous.Paths.SequenceEqual(request.Paths)) return;
         bool queueChanged = _lastMergerSizeRequest == null || !_lastMergerSizeRequest.Paths.SequenceEqual(request.Paths);
@@ -733,6 +696,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private void WireUpVolumeSlider()
     {
+        // VOLSHARED_01 — the shared master rack. AUTOPREVIEW_01: touching the rack (press, wheel,
+        // speaker) IS asking for sound, so it also takes manual control of the browsing preview.
         Infrastructure.MasterVolumeUi.Bind(this, VolumeSliderCtl,
             this.FindControl<TextBlock>("VolumeBadgeText"),
             this.FindControl<Avalonia.Controls.Shapes.Path>("VolumeSpeakerIcon"),
@@ -1351,13 +1316,13 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             }
         }
 
-        var selectedIndices = videoList?.SelectedItems?.Cast<string>().Select(x => VideoQueue.IndexOf(x)).Where(x => x >= 0).ToList() ?? new System.Collections.Generic.List<int>();
+        var selectedIndices = SelectedQueueIndices();
         var removeBtn = this.FindControl<Button>("RemoveVideoButton");
         if (removeBtn != null) removeBtn.IsEnabled = selectedIndices.Count > 0;
         var moveUpBtn = this.FindControl<Button>("MoveUpButton");
-        if (moveUpBtn != null) moveUpBtn.IsEnabled = selectedIndices.Count > 0 && selectedIndices.Min() > 0;
+        if (moveUpBtn != null) moveUpBtn.IsEnabled = QueueRowOps.CanMove(selectedIndices, count, -1);
         var moveDownBtn = this.FindControl<Button>("MoveDownButton");
-        if (moveDownBtn != null) moveDownBtn.IsEnabled = selectedIndices.Count > 0 && selectedIndices.Max() < count - 1;
+        if (moveDownBtn != null) moveDownBtn.IsEnabled = QueueRowOps.CanMove(selectedIndices, count, 1);
 
         var emptyText = this.FindControl<TextBlock>("EmptyQueueText");
         if (emptyText != null) emptyText.IsVisible = count == 0;
@@ -1789,15 +1754,15 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             switch (button.Name)
             {
                 case "CtxMoveUpButton":
-                    button.Click += (s, e) => { CloseQueueContextFlyout(); MoveVideo(-1); };
+                    button.Click += (s, e) => { var ids = TakeContextMenuIds(); CloseQueueContextFlyout(); MoveQueueClips(ids, -1); };
                     wired++;
                     break;
                 case "CtxMoveDownButton":
-                    button.Click += (s, e) => { CloseQueueContextFlyout(); MoveVideo(1); };
+                    button.Click += (s, e) => { var ids = TakeContextMenuIds(); CloseQueueContextFlyout(); MoveQueueClips(ids, 1); };
                     wired++;
                     break;
                 case "CtxRemoveButton":
-                    button.Click += (s, e) => { CloseQueueContextFlyout(); ExecuteRemoveSelected(); };
+                    button.Click += (s, e) => { var ids = TakeContextMenuIds(); CloseQueueContextFlyout(); _ = RequestRemoveClipsAsync(ids); };
                     wired++;
                     break;
             }
@@ -1826,12 +1791,17 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     protected override void OnClosed(EventArgs e)
     {
+        // PROJ_11 — the last word on the queue, before this window and its collection stop
+        // existing. Everything below is teardown; this is the one line that makes the user's
+        // merge survive the window it was assembled in. MERGESESSION_01: capture + autosave now.
         CaptureEdlNow(flush: true);
 
         _mergerSizeWorker?.Dispose();
         ShutdownMergerMusicPreview();
         Controls.CoachOverlay.Cancel(this);
         Controls.FloatingNotice.Clear(this);
+        TeardownMergerCornerMemes();
+        _recovery.ReleaseLockOnly();
         base.OnClosed(e);
     }
 
@@ -1849,12 +1819,16 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         if (list == null) return;
 
         var item = (e.Source as Avalonia.Controls.Control)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
-        if (item?.DataContext is not string clicked) return;
+        if (item == null) return;
 
-        if (list.SelectedItems != null && list.SelectedItems.Contains(clicked)) return;
+        int clickedIndex = list.IndexFromContainer(item);
+        if (clickedIndex < 0 || clickedIndex >= VideoQueue.Count) return;
 
-        list.SelectedItems?.Clear();
-        list.SelectedItem = clicked;
+        if (!SelectedQueueIndices().Contains(clickedIndex))
+        {
+            SelectQueueRow(clickedIndex, preview: false);
+        }
+        OnQueueContextMenuOpened();
     }
 
     private async void VideoList_PointerMoved(object? sender, Avalonia.Input.PointerEventArgs e)
@@ -1865,23 +1839,25 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             var diff = point.Position - _videoDragStartPoint.Value;
             if (Math.Abs(diff.X) > 3 || Math.Abs(diff.Y) > 3)
             {
-                var source = e.Source as Avalonia.Controls.Control;
-                if (source?.DataContext is string itemText)
-                {
-                    _isVideoDragging = true;
-                    var videoList = VideoListCtl;
-                    if (videoList != null)
-                    {
-                        foreach (var container in videoList.GetRealizedContainers().Cast<ListBoxItem>())
-                            if (container.DataContext is string s && s == itemText) { container.Opacity = 0.3; break; }
-                    }
-                    var dragData = new Avalonia.Input.DataTransfer();
-                    dragData.Add(Avalonia.Input.DataTransferItem.Create(VideoItemFormat, itemText));
-                    await Avalonia.Input.DragDrop.DoDragDropAsync(e, dragData, Avalonia.Input.DragDropEffects.Move);
-                    _videoDragStartPoint = null;
-                    _isVideoDragging = false;
-                    if (videoList != null) foreach (var container in videoList.GetRealizedContainers().Cast<ListBoxItem>()) container.Opacity = 1.0;
-                }
+                var videoList = VideoListCtl;
+                if (videoList == null) return;
+                var item = (e.Source as Avalonia.Controls.Control)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+                if (item == null) return;
+                int fromIndex = videoList.IndexFromContainer(item);
+                if (fromIndex < 0 || fromIndex >= VideoQueue.Count) return;
+
+                _clipIds.EnsureCount(VideoQueue.Count);
+                Guid clipId = _clipIds.Ids[fromIndex];
+
+                _isVideoDragging = true;
+                item.Opacity = 0.3;
+
+                var dragData = new Avalonia.Input.DataTransfer();
+                dragData.Add(Avalonia.Input.DataTransferItem.Create(VideoItemFormat, clipId.ToString()));
+                await Avalonia.Input.DragDrop.DoDragDropAsync(e, dragData, Avalonia.Input.DragDropEffects.Move);
+                _videoDragStartPoint = null;
+                _isVideoDragging = false;
+                item.Opacity = 1.0;
             }
         }
     }
@@ -1908,14 +1884,32 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         HideDropIndicator();
         if (e.DataTransfer.Contains(VideoItemFormat))
         {
-            string? itemToMove = e.DataTransfer.TryGetValue(VideoItemFormat);
-            if (itemToMove == null) return;
+            string? payload = e.DataTransfer.TryGetValue(VideoItemFormat);
+            if (payload == null) return;
+
+            int oldIndex = -1;
+            if (Guid.TryParse(payload, out Guid dragClipId))
+            {
+                _clipIds.EnsureCount(VideoQueue.Count);
+                oldIndex = _clipIds.IndexOf(dragClipId);
+            }
+            else
+            {
+                oldIndex = VideoQueue.IndexOf(payload);
+            }
+
+            if (oldIndex < 0) return;
+
             int targetIndex = ComputeDropIndex(e);
-            int oldIndex = VideoQueue.IndexOf(itemToMove);
-            if (oldIndex >= 0 && targetIndex >= 0 && targetIndex != oldIndex)
+            if (targetIndex >= 0 && targetIndex != oldIndex)
             {
                 if (targetIndex > oldIndex) targetIndex--;
-                VideoQueue.Move(oldIndex, Math.Clamp(targetIndex, 0, VideoQueue.Count - 1));
+                targetIndex = Math.Clamp(targetIndex, 0, VideoQueue.Count - 1);
+                if (targetIndex != oldIndex)
+                {
+                    VideoQueue.Move(oldIndex, targetIndex);
+                    SelectQueueRow(targetIndex, preview: false);
+                }
             }
             var videoList = VideoListCtl;
             if (videoList != null) foreach (var container in videoList.GetRealizedContainers().Cast<ListBoxItem>()) container.Opacity = 1.0;
@@ -1992,41 +1986,53 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     private int ComputeDropIndex(Avalonia.Input.DragEventArgs e)
     {
         var videoList = VideoListCtl;
-        if (videoList == null) return 0;
+        if (videoList == null || VideoQueue.Count == 0) return 0;
         var pos = e.GetPosition(videoList);
-        var containers = videoList.GetRealizedContainers().Cast<ListBoxItem>().ToList();
+        var containers = videoList.GetRealizedContainers()
+            .Cast<ListBoxItem>()
+            .Select(c => (Item: c, Index: videoList.IndexFromContainer(c)))
+            .Where(x => x.Index >= 0)
+            .OrderBy(x => x.Index)
+            .ToList();
+
         for (int idx = 0; idx < containers.Count; idx++)
         {
-            var bounds = containers[idx].Bounds;
+            var bounds = containers[idx].Item.Bounds;
             if (pos.X >= bounds.Left && pos.X <= bounds.Right &&
                 pos.Y >= bounds.Top && pos.Y <= bounds.Bottom)
             {
                 double midY = bounds.Top + bounds.Height / 2.0;
-                return pos.Y < midY ? idx : idx + 1;
+                return pos.Y < midY ? containers[idx].Index : containers[idx].Index + 1;
             }
         }
-        var lastBounds = containers.Last().Bounds;
-        var endPos = e.GetPosition(videoList);
-        return endPos.Y > lastBounds.Bottom ? VideoQueue.Count : 0;
+        if (containers.Count > 0)
+        {
+            var lastBounds = containers[^1].Item.Bounds;
+            if (pos.Y > lastBounds.Bottom) return VideoQueue.Count;
+        }
+        return 0;
     }
 
     private void ShowDropIndicator(Avalonia.Input.DragEventArgs e)
     {
         var indicator = this.FindControl<Border>("DropIndicator");
         var videoList = VideoListCtl;
-        if (indicator == null || videoList == null) return;
+        if (indicator == null || videoList == null || VideoQueue.Count == 0) return;
         int targetIndex = ComputeDropIndex(e);
         var containers = videoList.GetRealizedContainers().Cast<ListBoxItem>().ToList();
         if (containers.Count == 0) return;
         double y = 0;
         if (targetIndex >= VideoQueue.Count)
         {
-            var last = containers.LastOrDefault(c => c.DataContext is string dc && VideoQueue.IndexOf(dc) == VideoQueue.Count - 1);
+            int lastIdx = VideoQueue.Count - 1;
+            var last = (ListBoxItem?)videoList.ContainerFromIndex(lastIdx)
+                       ?? containers.LastOrDefault(c => videoList.IndexFromContainer(c) == lastIdx);
             if (last != null) y = last.Bounds.Bottom;
         }
         else
         {
-            var target = containers.FirstOrDefault(c => c.DataContext is string dc && VideoQueue.IndexOf(dc) == targetIndex);
+            var target = (ListBoxItem?)videoList.ContainerFromIndex(targetIndex)
+                         ?? containers.FirstOrDefault(c => videoList.IndexFromContainer(c) == targetIndex);
             if (target != null) y = target.Bounds.Top;
         }
         indicator.IsVisible = true;

@@ -7,6 +7,7 @@ Read the specifications before inspecting or editing governed source code.
 Mandatory entry point and spec router: .\docs\README.md
 Zero-leakage governance contract:      .\docs\SPEC_GOVERNANCE.md
 File, symbol and sentinel lookup:      .\docs\INDEX.md
+Changelog & What's New router:         .\docs\CHANGELOG.md (plain-English rolling release notes for the latest 5 releases)
 
 Solution:             .\FreeVideoStudio.sln
 Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj
@@ -16,7 +17,7 @@ Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Te
 Local packaging:      .\dev_build.cmd
 Verification tool:    .\build\FvsVerify\FvsVerify.csproj
 Sentinel registry:     .\build\sentinels.txt
-Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; needs Inno Setup 6.3+)
+Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; holds exactly one local installer; GitHub retains latest 5 releases)
 Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-INSTALLER)
 AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01 (docs/05 SYS-AVCLEAN)
 
@@ -56,4 +57,10 @@ Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Vid
                       Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.
 Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01/02);
                       docs/04_UI_UX_AVALONIA_SPEC.md, UI-MEMESELECT.
+AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool), Google Gemini only.
+                      Transport: .\src\FreeVideoStudio.App\Services\GeminiClient.cs (GEMINICLIENT_01, key in
+                      header only). Key sealed with DPAPI in settings.json (KEYPROTECT_01, SecretProtector.cs).
+                      Specs: docs/01 TL-AITRACKING / TL-AIHUD, docs/04 UI-AIZOOM / UI-AIHUDWAND,
+                      docs/05 SYS-AISETTINGS. Secret guard: tests\FreeVideoStudio.App.Tests\SecretLeakTests.cs
+                      (SECRETSCAN_01) — never commit keys, .pfx, *.key.pem or *.password.txt.
 ===============================================================================

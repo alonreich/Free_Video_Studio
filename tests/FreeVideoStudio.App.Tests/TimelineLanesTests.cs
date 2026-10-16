@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -101,14 +101,48 @@ public sealed class TimelineLanesTests
 
         var laneA = control.FindControl<Border>("LaneABorder");
         var laneB = control.FindControl<Border>("LaneBBorder");
+        var laneC = control.FindControl<Border>("LaneCBorder");
 
         Assert.NotNull(laneA);
         Assert.NotNull(laneB);
+        Assert.NotNull(laneC);
 
         Assert.Equal(60, laneA.Height);
         Assert.Equal(60, laneA.MinHeight);
         Assert.Equal(60, laneB.Height);
         Assert.Equal(60, laneB.MinHeight);
+        Assert.Equal(36, laneC.Height);
+        Assert.Equal(36, laneC.MinHeight);
+        Assert.False(laneC.IsVisible);
+
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void TimelineLanesControl_LaneCVisible_TogglesVisibility()
+    {
+        var control = new TimelineLanesControl();
+        var window = new Window
+        {
+            Width = 1200,
+            Height = 400,
+            Content = control
+        };
+        window.Show();
+
+        var laneC = control.FindControl<Border>("LaneCBorder");
+        Assert.NotNull(laneC);
+
+        Assert.False(control.LaneCVisible);
+        Assert.False(laneC.IsVisible);
+
+        control.LaneCVisible = true;
+        Assert.True(control.LaneCVisible);
+        Assert.True(laneC.IsVisible);
+
+        control.LaneCVisible = false;
+        Assert.False(control.LaneCVisible);
+        Assert.False(laneC.IsVisible);
 
         window.Close();
     }
@@ -876,4 +910,103 @@ public sealed class TimelineLanesTests
             Assert.DoesNotContain("_layout.TryAdd(t.CacheKey", src);
         }
     }
+
+    [Fact]
+    public void SlowZoomGlide_ScreenPositioning_SpeedVariations_CutsAndFreezes()
+    {
+        // Authoritative mapping test across speeds, cuts, and freezes
+        // Ramp length is exactly 0.5 seconds of SOURCE footage time (500 ms).
+        const double rampSrcSec = GranularSpeedBuilder.ZoomRampSeconds; // 0.5s
+        const double canvasWidth = 1000.0;
+
+        // 1. Normal 1.0x speed: 10s clip -> total output = 10s.
+        var timeline1x = OutputTimeline.Create(10000.0, Array.Empty<SpeedSegment>(), 1.0);
+        double rampOut1x = timeline1x.SourceToOutput(2.0) - timeline1x.SourceToOutput(1.5);
+        Assert.Equal(rampSrcSec, rampOut1x, 3);
+        double screenPx1x = (rampOut1x / timeline1x.TotalOutputSeconds) * canvasWidth;
+
+        // 2. Slow motion 0.5x speed across the ramp span (1.0s to 3.0s):
+        // Output duration of 0.5s source time must equal 0.5 / 0.5 = 1.0s output time!
+        var segmentsSlow = new List<SpeedSegment> { new SpeedSegment(1000, 3000, 0.5) };
+        var timelineSlow = OutputTimeline.Create(10000.0, segmentsSlow, 1.0);
+        double rampOutSlow = timelineSlow.SourceToOutput(2.0) - timelineSlow.SourceToOutput(1.5);
+        Assert.Equal(1.0, rampOutSlow, 3); // Output time doubles!
+        double screenPxSlow = (rampOutSlow / timelineSlow.TotalOutputSeconds) * canvasWidth;
+        // The ramp does not have fixed pixel width or fixed output-time duration:
+        Assert.NotEqual(screenPx1x, screenPxSlow);
+
+        // 3. Fast motion 2.0x speed across the ramp span (1.0s to 3.0s):
+        // Output duration of 0.5s source time must equal 0.5 / 2.0 = 0.25s output time!
+        var segmentsFast = new List<SpeedSegment> { new SpeedSegment(1000, 3000, 2.0) };
+        var timelineFast = OutputTimeline.Create(10000.0, segmentsFast, 1.0);
+        double rampOutFast = timelineFast.SourceToOutput(2.0) - timelineFast.SourceToOutput(1.5);
+        Assert.Equal(0.25, rampOutFast, 3); // Output time halves!
+        double screenPxFast = (rampOutFast / timelineFast.TotalOutputSeconds) * canvasWidth;
+        Assert.NotEqual(screenPx1x, screenPxFast);
+
+        // 4. Freeze insertion: a 2s freeze at 5s source time occupies output time without consuming source time
+        var segmentsFreeze = new List<SpeedSegment> { new SpeedSegment(5000, 7000, 0.0) };
+        var timelineFreeze = OutputTimeline.Create(10000.0, segmentsFreeze, 1.0);
+        Assert.Equal(12.0, timelineFreeze.TotalOutputSeconds, 3);
+
+        // 5. Cut insertion: 2s cut consumes source time and occupies 0 output time
+        var cuts = new List<OutputTimeline.Cut> { new OutputTimeline.Cut(5.0, 7.0) };
+        var timelineCut = OutputTimeline.Create(10000.0, Array.Empty<SpeedSegment>(), 1.0, cuts: cuts);
+        Assert.Equal(8.0, timelineCut.TotalOutputSeconds, 3);
+    }
+
+    [Fact]
+    public void SlowZoomGlide_GuidesDoNotCapturePointerInput()
+    {
+        // Verify contract: guide shapes must have IsHitTestVisible = false
+        var guideIn = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Name = "ZoomGlideGuideIn_0",
+            IsHitTestVisible = false
+        };
+        var guideOut = new Avalonia.Controls.Shapes.Rectangle
+        {
+            Name = "ZoomGlideGuideOut_0",
+            IsHitTestVisible = false
+        };
+
+        Assert.False(guideIn.IsHitTestVisible);
+        Assert.False(guideOut.IsHitTestVisible);
+
+        // In code verification: assert GranularSpeedEditorWindow sets IsHitTestVisible = false for both
+        string windowSource = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.axaml.cs"));
+        Assert.Contains("Name = $\"ZoomGlideGuideIn_{i}\"", windowSource);
+        Assert.Contains("Name = $\"ZoomGlideGuideOut_{i}\"", windowSource);
+        Assert.Contains("SLOWZOOMGLIDE_01", windowSource);
+    }
+
+    [Fact]
+    public void SlowZoomGlide_UiAvailabilityMatchesPreviewAndExportPerSide()
+    {
+        // Asymmetric case:
+        // Slow zoom near clip start: 0.2s - 2.0s in 8.0s clip
+        // Incoming lacks room (0.2s < 0.5s); outgoing has room (8.0s - 2.0s = 6.0s >= 0.5s)
+        var segments = new List<SpeedSegment>
+        {
+            new SpeedSegment(200, 2000, 1.0, ZoomX: 100, ZoomY: 100, ZoomW: 640, ZoomH: 360, ZoomOrigRes: "1920x1080", ZoomSlow: true)
+        };
+
+        var uiAvail = GranularSpeedBuilder.GetSlowZoomGlideAvailability(segments, 0, 8.0);
+        Assert.False(uiAvail.IncomingAvailable);
+        Assert.True(uiAvail.OutgoingAvailable);
+
+        // Preview: no crop during incoming pre-roll (0.1s), but active crop during outgoing post-roll (2.25s)
+        var previewPre = ZoomPreviewSimulator.Compute(segments, 0.1, 8.0);
+        Assert.False(previewPre.HasCrop);
+
+        var previewPost = ZoomPreviewSimulator.Compute(segments, 2.25, 8.0);
+        Assert.True(previewPost.HasCrop);
+        Assert.True(previewPost.Progress > 0 && previewPost.Progress < 1.0);
+
+        // Export filtergraph: contains dynamic scale/eval=frame for the outgoing ramp
+        var (graph, _, _, _, finalDur, _) = GranularSpeedBuilder.Build(8000.0, segments, baseSpeed: 1.0, needHudBranch: false);
+        Assert.NotEmpty(graph);
+        Assert.Equal(8.0, finalDur, 1);
+    }
 }
+

@@ -1,4 +1,7 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -90,6 +93,16 @@ public static class AiTrajectorySmoother
 
         [JsonPropertyName("segmentDuration")]
         public double SegmentDurationSec { get; set; }
+
+        /// <summary>
+        /// AIRESMOOTH_01 — the raw waypoints Gemini returned (after sanitising, times relative to the
+        /// zoom start). Kept so "EDIT AI ZOOM" can re-frame with new settings WITHOUT another paid AI
+        /// call. Null for trajectories written before this field existed (they can only be re-tracked).
+        /// Omitted from the JSON when null so older documents round-trip byte-identically.
+        /// </summary>
+        [JsonPropertyName("raw")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<RawSubjectWaypoint>? RawWaypoints { get; set; }
 
         public (double CropX, double CropY, double CropW, double CropH, double Scale) EvaluateAt(double relSec)
         {
@@ -340,7 +353,8 @@ public static class AiTrajectorySmoother
         double minScale = 1.3,
         double deadbandPercent = 2.0,
         bool avoidHud = true,
-        bool portraitMode = false)
+        bool portraitMode = false,
+        IReadOnlyList<AiNormalizedRect>? hudZones = null)
     {
         var result = new SmoothedTrajectory
         {
@@ -355,11 +369,31 @@ public static class AiTrajectorySmoother
         }
 
         baseScale = Math.Clamp(baseScale, 1.2, 5.0);
-        minScale = Math.Clamp(minScale, 1.0, baseScale);
+        // AIPORTRAIT_ZOOM_01 — portrait exports already incur an implicit ~2.67x horizontal center crop
+        // (16:9 -> 2:3 / 9:16). Applying an additional full 2.2x+ scale magnifies the center >5.8x,
+        // which cuts off body/weapon context and causes 3rd-person avatar heads to dominate the screen.
+        // Capping portrait base scale to 1.65x preserves the player's action context while keeping clear magnification.
+        double effectiveBaseScale = portraitMode ? Math.Min(baseScale, 1.65) : baseScale;
+        double effectiveMinScale = Math.Clamp(minScale, 1.0, effectiveBaseScale);
         deadbandPercent = Math.Clamp(deadbandPercent, 0.0, 10.0);
 
-        var tempSorted = new List<RawSubjectWaypoint>(rawWaypoints);
+        // AITIME_01 — a waypoint past the segment end (the AI slice is never shorter than 1 s, and a
+        // model may overshoot) used to be kept and then the LAST one was re-timed to the segment end,
+        // leaving earlier points AFTER it: a non-monotonic timeline. Out-of-range and non-finite
+        // times are dropped here, before anything else looks at them.
+        var tempSorted = new List<RawSubjectWaypoint>(rawWaypoints.Count);
+        foreach (var wp in rawWaypoints)
+        {
+            if (wp == null || !double.IsFinite(wp.Time)) continue;
+            if (wp.Time < -0.001 || wp.Time > segmentDurationSec + 0.001) continue;
+            tempSorted.Add(wp);
+        }
         tempSorted.Sort((a, b) => a.Time.CompareTo(b.Time));
+        result.RawWaypoints = new List<RawSubjectWaypoint>(tempSorted);
+
+        IReadOnlyList<AiNormalizedRect> zones = !avoidHud || portraitMode
+            ? Array.Empty<AiNormalizedRect>()
+            : hudZones ?? AiHudAvoidZones.DefaultsFor(AiGameProfiles.Default);
 
         var sorted = new List<RawSubjectWaypoint>();
         foreach (var wp in tempSorted)
@@ -440,7 +474,7 @@ public static class AiTrajectorySmoother
         double lastValidW = 120.0;
         double lastValidH = 260.0;
         double lastValidTime = 0.0;
-        double lastAppliedScale = baseScale;
+        double lastAppliedScale = effectiveBaseScale;
         double lastVx = 0.0;
         double lastVy = 0.0;
         bool hasInitial = false;
@@ -467,10 +501,10 @@ public static class AiTrajectorySmoother
             }
 
             double bodyFitScale = 1000.0 / Math.Max(120.0, hVal * 1.50);
-            double idealScale = Math.Clamp(bodyFitScale, minScale, baseScale);
+            double idealScale = Math.Clamp(bodyFitScale, effectiveMinScale, effectiveBaseScale);
 
             double expansion = lookaheadBreathing[i];
-            double motionTargetScale = idealScale - (idealScale - minScale) * expansion;
+            double motionTargetScale = idealScale - (idealScale - effectiveMinScale) * expansion;
 
             if (!hasInitial)
             {
@@ -592,7 +626,7 @@ public static class AiTrajectorySmoother
 
         foreach (var pt in finalTimeline)
         {
-            double scale = Math.Clamp(pt.Scale, 1.0, baseScale);
+            double scale = Math.Clamp(pt.Scale, 1.0, effectiveBaseScale);
             double cropW = sourceW / scale;
             double cropH = sourceH / scale;
 
@@ -605,8 +639,12 @@ public static class AiTrajectorySmoother
             double feetY = ((pt.Cy + pt.H / 2.0) / 1000.0) * sourceH;
             double headY = ((pt.Cy - pt.H / 2.0) / 1000.0) * sourceH;
 
-            double bottomMarginFrac = portraitMode ? 0.78 : 0.88;
-            double topMarginFrac = portraitMode ? 0.12 : 0.10;
+            // AIPORTRAIT_MARGINS_01 — in portrait mobile export, the top 20% contains black letterbox
+            // padding (150px) and minimap/stats HUD overlays. The bottom 28% contains weapon inventory/health
+            // overlays and bottom letterbox padding. Framing with 0.20 headroom and 0.72 footroom keeps the
+            // target, weapons, and action safely in the clear central zone, preventing occlusion.
+            double bottomMarginFrac = portraitMode ? 0.72 : 0.88;
+            double topMarginFrac = portraitMode ? 0.20 : 0.10;
 
             if (feetY > cropY + cropH * bottomMarginFrac)
             {
@@ -618,13 +656,12 @@ public static class AiTrajectorySmoother
                 cropY = headY - cropH * topMarginFrac;
             }
 
-            if (avoidHud && !portraitMode)
+            if (zones.Count > 0)
             {
-                if (cropX + cropW > sourceW * 0.78 && cropY < sourceH * 0.32)
-                {
-                    cropX = Math.Min(cropX, sourceW * 0.78 - cropW);
-                    cropY = Math.Max(cropY, sourceH * 0.32);
-                }
+                double halfW = (pt.W / 1000.0) * sourceW / 2.0;
+                double halfH = (pt.H / 1000.0) * sourceH / 2.0;
+                (cropX, cropY) = AvoidHudZones(cropX, cropY, cropW, cropH, sourceW, sourceH,
+                    targetCenterX - halfW, headY, targetCenterX + halfW, Math.Max(feetY, headY + 1), zones);
             }
 
             if (portraitMode && sourceW > 0 && sourceH > 0)
@@ -655,5 +692,56 @@ public static class AiTrajectorySmoother
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// AIHUDZONE_01 — moves one crop window out of every HUD zone it overlaps, by the SMALLEST single
+    /// horizontal or vertical shift that (a) clears the zone, (b) keeps the window inside the frame and
+    /// (c) keeps the whole target box inside the window. When no shift satisfies all three the window
+    /// is left where it is: the target always wins over the HUD. Two passes, so clearing one zone
+    /// cannot silently push the window into another without a second look.
+    /// </summary>
+    internal static (double X, double Y) AvoidHudZones(
+        double cropX, double cropY, double cropW, double cropH, int sourceW, int sourceH,
+        double targetL, double targetT, double targetR, double targetB,
+        IReadOnlyList<AiNormalizedRect> zones)
+    {
+        double maxX = Math.Max(0.0, sourceW - cropW);
+        double maxY = Math.Max(0.0, sourceH - cropH);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            bool moved = false;
+            foreach (AiNormalizedRect z in zones)
+            {
+                if (!z.IsUsable) continue;
+                double zl = z.X * sourceW, zt = z.Y * sourceH;
+                double zr = zl + z.W * sourceW, zb = zt + z.H * sourceH;
+                bool overlaps = cropX < zr && cropX + cropW > zl && cropY < zb && cropY + cropH > zt;
+                if (!overlaps) continue;
+
+                double bestDx = double.NaN, bestDy = double.NaN, bestMag = double.MaxValue;
+                void Try(double dx, double dy)
+                {
+                    double nx = cropX + dx, ny = cropY + dy;
+                    if (nx < -0.5 || ny < -0.5 || nx > maxX + 0.5 || ny > maxY + 0.5) return;
+                    if (targetL < nx - 0.5 || targetR > nx + cropW + 0.5 || targetT < ny - 0.5 || targetB > ny + cropH + 0.5) return;
+                    double mag = Math.Abs(dx) + Math.Abs(dy);
+                    if (mag < bestMag) { bestMag = mag; bestDx = dx; bestDy = dy; }
+                }
+                Try(zl - (cropX + cropW), 0);
+                Try(zr - cropX, 0);
+                Try(0, zt - (cropY + cropH));
+                Try(0, zb - cropY);
+
+                if (!double.IsNaN(bestDx))
+                {
+                    cropX = Math.Clamp(cropX + bestDx, 0.0, maxX);
+                    cropY = Math.Clamp(cropY + bestDy, 0.0, maxY);
+                    moved = true;
+                }
+            }
+            if (!moved) break;
+        }
+        return (cropX, cropY);
     }
 }

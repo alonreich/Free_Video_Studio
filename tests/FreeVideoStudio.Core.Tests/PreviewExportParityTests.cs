@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -687,5 +687,64 @@ public class MasterVolumeIsolationTests
             MpvIpcClient.SetGlobalMasterVolume(savedLevel);
             MpvIpcClient.SetGlobalMuted(savedMute);
         }
+    }
+}
+
+public class AiTrajectoryPortraitTests
+{
+    [Fact]
+    public void PortraitMode_CapsScaleAt1_65_ToPreventOvermagnification()
+    {
+        var waypoints = new List<RawSubjectWaypoint>
+        {
+            new() { Time = 0.5, Cx = 510, Cy = 415, W = 20, H = 30, Visible = true },
+            new() { Time = 1.0, Cx = 510, Cy = 415, W = 20, H = 30, Visible = true },
+        };
+
+        var portraitTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 2.5, portraitMode: true);
+        var landscapeTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 2.5, portraitMode: false);
+
+        Assert.All(portraitTraj.Keyframes, k => Assert.True(k.Scale <= 1.65 + 0.001, $"Expected portrait scale <= 1.65, got {k.Scale}"));
+        Assert.Contains(landscapeTraj.Keyframes, k => k.Scale > 1.65);
+    }
+
+    [Fact]
+    public void PortraitMode_EnforcesSafeMargins_Top20_Bottom72()
+    {
+        // Target located in the upper zone: head at cy - h/2 = 400 - 100 = 300 (out of 1000 = 432px on 1440p)
+        var waypoints = new List<RawSubjectWaypoint>
+        {
+            new() { Time = 0.5, Cx = 500, Cy = 400, W = 100, H = 200, Visible = true },
+            new() { Time = 1.0, Cx = 500, Cy = 400, W = 100, H = 200, Visible = true },
+        };
+
+        var portraitTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 1.5, portraitMode: true);
+        var kf = portraitTraj.Keyframes.Find(k => k.TimeSec >= 0.5)!;
+
+        double headY = (400 - 100) / 1000.0 * 1440; // 432px
+        double headRelCropY = headY - kf.CropY;
+        double headFraction = headRelCropY / kf.CropH;
+
+        // Head must be at least 20% down from the crop window top to clear top HUD and letterbox padding
+        Assert.True(headFraction >= 0.20 - 0.01, $"Expected head fraction >= 0.20, was {headFraction:F3}");
+    }
+
+    [Fact]
+    public void LandscapeMode_PreservesStandardMargins_Top10_Bottom88()
+    {
+        var waypoints = new List<RawSubjectWaypoint>
+        {
+            new() { Time = 0.5, Cx = 500, Cy = 200, W = 100, H = 150, Visible = true },
+            new() { Time = 1.0, Cx = 500, Cy = 200, W = 100, H = 150, Visible = true },
+        };
+
+        var landscapeTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 2.0, portraitMode: false);
+        var kf = landscapeTraj.Keyframes.Find(k => k.TimeSec >= 0.5)!;
+
+        double headY = (200 - 75) / 1000.0 * 1440;
+        double headRelCropY = headY - kf.CropY;
+        double headFraction = headRelCropY / kf.CropH;
+
+        Assert.True(headFraction >= 0.10 - 0.01, $"Expected head fraction >= 0.10, was {headFraction:F3}");
     }
 }

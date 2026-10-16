@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -165,6 +165,26 @@ public static partial class MpvWrapper
         if (handle == nint.Zero) return;
         string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
         mpv_command_string(handle, $"loadfile \"{safePath}\"");
+    }
+
+    /// <summary>
+    /// AICAPTION_EXPORT_01 — loads an ASS subtitle file into libmpv (sub-add) for live preview.
+    /// </summary>
+    public static void AddSubtitles(nint handle, string path, bool select = true)
+    {
+        if (handle == nint.Zero) return;
+        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        string flag = select ? "select" : "auto";
+        mpv_command_string(handle, $"sub-add \"{safePath}\" {flag}");
+    }
+
+    /// <summary>
+    /// AICAPTION_EXPORT_01 — removes subtitle tracks from libmpv preview.
+    /// </summary>
+    public static void RemoveSubtitles(nint handle)
+    {
+        if (handle == nint.Zero) return;
+        mpv_command_string(handle, "sub-remove");
     }
 
     /// <summary>

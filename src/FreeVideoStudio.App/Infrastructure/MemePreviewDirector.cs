@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -166,6 +168,7 @@ public sealed class MemePreviewDirector
         if (memes != null)
         {
             foreach (var m in memes)
+                // MEMEMODE_01 — a corner overlay never pauses, seeks or swaps the gameplay: it is not a cutaway.
                 if (m.DurationSec > 0.001 && !m.IsCornerOverlay) _memes.Add(m);
         }
         _memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));

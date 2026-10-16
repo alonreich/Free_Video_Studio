@@ -1,4 +1,4 @@
-﻿
+
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -290,8 +290,6 @@ public sealed class SessionStateWriter
                 }
             }
 
-            foreach (var tcs in release) tcs.TrySetResult(ok);
-
             if (!ok)
             {
                 CoreLogger.Fail("SessionState",
@@ -299,6 +297,8 @@ public sealed class SessionStateWriter
                 try { CommitFailed?.Invoke(batch); }
                 catch (Exception ex) { CoreLogger.Swallowed(ex); }
             }
+
+            foreach (var tcs in release) tcs.TrySetResult(ok);
         }
     }
 

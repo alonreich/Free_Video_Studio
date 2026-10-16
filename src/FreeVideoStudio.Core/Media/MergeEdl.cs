@@ -1,4 +1,9 @@
-﻿using System;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -9,6 +14,25 @@ namespace FreeVideoStudio.Core.Media;
 
 
 /// <summary>Where a meme sits inside its clip (user decision D4).</summary>
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// MERGEEDL_01 — THE VIDEO MERGER'S EDIT DECISION LIST (Video-Merger-Migration.md P2.1).
+//
+// The whole merge is DATA: which clips, in which order, which part of each, and which effects.
+// Nothing is rendered until MERGE. Preview, music, undo, autosave and export all read this one
+// object, so they cannot disagree.
+//
+// TIME UNIT: SOURCE MICROSECONDS (long) inside each clip's own file. Not seconds (double drift),
+// and not frame indexes (gameplay captures can be variable frame rate, so "frame 600" has no fixed
+// time). P2.2 snaps every stored microsecond to a REAL frame timestamp of that file.
+//
+// ANCHORS: everything that must survive a layout change (reorder, scraper toggle, custom
+// thumbnail) is stored as (ClipId, SourceUs). ClipId is a GUID given when a clip enters the queue,
+// so the same file added twice gets two identities.
+//
+// EQUALITY: records that hold lists implement structural Equals/GetHashCode by hand. A record's
+// generated Equals compares lists BY REFERENCE, which silently breaks UndoStack's "no-op edit"
+// detection (see UNDOEQ_01 in ProjectDocument).
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 public enum EdlMemePlacement
 {
     /// <summary>Inserted at <see cref="EdlMeme.AtUs"/> inside the clip.</summary>

@@ -4,6 +4,16 @@ using System.Collections.Generic;
 using FvsVerify;
 
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// SYS-VERIFYTOOL — THE PRE-BUILD HALT, AS A PROGRAM.
+//
+// dev.cmd calls this and tests the exit code. That is the whole of dev.cmd's involvement now:
+// it no longer parses a list, no longer seeks labels, and no longer has an opinion about
+// brackets. Exit 0 = every sentinel resolved. Exit 1 = halt, with the reason printed.
+//
+// ⚠️ THE EXIT CODE IS THE PRODUCT. VERIFYHALT_01 is the record of what happens when the answer
+//    is computed and not returned: this check existed for months and could not fail.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 string start = args.Length > 0 ? args[0] : Environment.CurrentDirectory;
 
 string? root = SentinelList.FindRepositoryRoot(start);

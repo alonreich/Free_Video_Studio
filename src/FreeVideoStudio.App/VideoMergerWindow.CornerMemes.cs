@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.App;
@@ -24,6 +29,8 @@ public partial class VideoMergerWindow
 
         _cornerMemes ??= new Infrastructure.CornerMemeOverlayPresenter();
         _cornerMemes.Attach(_videoHost);
+        // CORNERPARITY_01 — geometry on the frame actually on screen (even, like every export canvas). The
+        // presenter's old 16x9 stand-in rounded the margin to 0 and the box to ninths of the height.
         int fw = _videoHost.IpcClient.VideoWidth, fh = _videoHost.IpcClient.VideoHeight;
         if (fw > 1 && fh > 1) _cornerMemes.SetFrameSize(fw - fw % 2, fh - fh % 2);
         if (!ReferenceEquals(_cornerMemePlan, plan))
@@ -34,5 +41,13 @@ public partial class VideoMergerWindow
             _cornerMemes.SetSpans(spans);
         }
         _cornerMemes.Update(plan.GameplaySecAt(_videoHost.IpcClient.CurrentTime));
+    }
+
+    /// <summary>CACHEBOUND_05 — detaches and disposes merger corner memes on close or queue reset.</summary>
+    private void TeardownMergerCornerMemes()
+    {
+        _cornerMemes?.Dispose();
+        _cornerMemes = null;
+        _cornerMemePlan = null;
     }
 }

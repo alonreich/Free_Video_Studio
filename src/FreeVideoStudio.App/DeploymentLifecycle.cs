@@ -1,4 +1,4 @@
-﻿
+
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
@@ -206,24 +206,121 @@ internal static class DeploymentLifecycle
     /// user may well have launched an older installer without realising it was older.
     /// </para>
     /// </summary>
-    private static bool ConfirmVersionTransition(string? existingVersion)
+    internal static bool ConfirmVersionTransition(string? existingVersion)
     {
-        if (!TryParseVersion(existingVersion, out Version installed) ||
-            !TryParseVersion(GetCurrentVersion(), out Version current))
-        {
-            return true;
-        }
-
-        int cmp = current.CompareTo(installed);
-
+        string currentVer = GetCurrentVersion();
+        int cmp = CompareVersions(currentVer, existingVersion);
         if (cmp >= 0) return true;
+
+        string installedDisplay = existingVersion ?? "unknown";
+        string currentDisplay = currentVer;
 
         return NativeDialog.ShowQuestion(
             "You are about to install an OLDER version than the one already installed.\r\n\r\n" +
-            $"Installed version: {installed}\r\n" +
-            $"This installer:    {current}\r\n\r\n" +
+            $"Installed version: {installedDisplay}\r\n" +
+            $"This installer:    {currentDisplay}\r\n\r\n" +
             "Going backwards can make settings saved by the newer version unreadable.\r\n\r\nContinue anyway?",
             "Free Video Studio Setup");
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Represents a parsed version with full SemVer pre-release support.
+    /// Invariants:
+    /// - Normal versions have higher precedence than pre-release versions with the same core numbers:
+    ///   2026.10.14-beta.1 &lt; 2026.10.14
+    /// - Pre-release tags are compared identifier by identifier:
+    ///   2026.10.14-beta.1 &lt; 2026.10.14-beta.2
+    /// </summary>
+    internal sealed record AppVersion(Version CoreVersion, string? Prerelease = null) : IComparable<AppVersion>
+    {
+        public int CompareTo(AppVersion? other)
+        {
+            if (other is null) return 1;
+            int coreCmp = CoreVersion.CompareTo(other.CoreVersion);
+            if (coreCmp != 0) return coreCmp;
+
+            if (string.IsNullOrEmpty(Prerelease) && string.IsNullOrEmpty(other.Prerelease)) return 0;
+            if (string.IsNullOrEmpty(Prerelease) && !string.IsNullOrEmpty(other.Prerelease)) return 1;
+            if (!string.IsNullOrEmpty(Prerelease) && string.IsNullOrEmpty(other.Prerelease)) return -1;
+
+            return ComparePrereleaseIdentifiers(Prerelease!, other.Prerelease!);
+        }
+
+        private static int ComparePrereleaseIdentifiers(string a, string b)
+        {
+            string[] partsA = a.Split('.');
+            string[] partsB = b.Split('.');
+            int count = Math.Min(partsA.Length, partsB.Length);
+            for (int i = 0; i < count; i++)
+            {
+                string pA = partsA[i];
+                string pB = partsB[i];
+                bool isNumA = int.TryParse(pA, out int numA);
+                bool isNumB = int.TryParse(pB, out int numB);
+                if (isNumA && isNumB)
+                {
+                    int cmp = numA.CompareTo(numB);
+                    if (cmp != 0) return cmp;
+                }
+                else if (isNumA)
+                {
+                    return -1;
+                }
+                else if (isNumB)
+                {
+                    return 1;
+                }
+                else
+                {
+                    int cmp = string.Compare(pA, pB, StringComparison.OrdinalIgnoreCase);
+                    if (cmp != 0) return cmp;
+                }
+            }
+            return partsA.Length.CompareTo(partsB.Length);
+        }
+
+        public override string ToString() =>
+            string.IsNullOrEmpty(Prerelease) ? CoreVersion.ToString() : $"{CoreVersion}-{Prerelease}";
+    }
+
+    internal static bool TryParseSemanticVersion(string? value, out AppVersion version)
+    {
+        version = new AppVersion(new Version(0, 0));
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        string trimmed = value!.Trim().TrimStart('v', 'V');
+        int plusIndex = trimmed.IndexOf('+');
+        if (plusIndex >= 0) trimmed = trimmed.Substring(0, plusIndex);
+
+        string? prerelease = null;
+        int dashIndex = trimmed.IndexOf('-');
+        if (dashIndex >= 0)
+        {
+            prerelease = trimmed.Substring(dashIndex + 1);
+            trimmed = trimmed.Substring(0, dashIndex);
+        }
+
+        string cleaned = new string(trimmed.TakeWhile(c => char.IsDigit(c) || c == '.').ToArray()).Trim('.');
+        if (string.IsNullOrEmpty(cleaned)) return false;
+
+        if (Version.TryParse(cleaned, out Version? parsed) && parsed != null)
+        {
+            version = new AppVersion(parsed, prerelease);
+            return true;
+        }
+
+        return false;
+    }
+
+    public static int CompareVersions(string? versionA, string? versionB)
+    {
+        bool parsedA = TryParseSemanticVersion(versionA, out AppVersion appA);
+        bool parsedB = TryParseSemanticVersion(versionB, out AppVersion appB);
+        if (parsedA && parsedB) return appA.CompareTo(appB);
+        if (parsedA) return 1;
+        if (parsedB) return -1;
+        return string.Compare(versionA, versionB, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -233,19 +330,12 @@ internal static class DeploymentLifecycle
     /// </summary>
     internal static bool TryParseVersion(string? value, out Version version)
     {
-        version = new Version(0, 0);
-        if (string.IsNullOrWhiteSpace(value)) return false;
-
-        string trimmed = value!.Trim().TrimStart('v', 'V');
-        string cleaned = new string(trimmed.TakeWhile(c => char.IsDigit(c) || c == '.').ToArray()).Trim('.');
-        if (string.IsNullOrEmpty(cleaned)) return false;
-
-        if (Version.TryParse(cleaned, out Version? parsed) && parsed != null)
+        if (TryParseSemanticVersion(value, out AppVersion semVer))
         {
-            version = parsed;
+            version = semVer.CoreVersion;
             return true;
         }
-
+        version = new Version(0, 0);
         return false;
     }
 

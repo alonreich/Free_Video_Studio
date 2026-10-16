@@ -29,17 +29,14 @@ public partial class VoiceOverWindow
         bool playing = (!ipc.IsPaused || _isCurrentlyFrozen) && !_isRecording;
         if (playing && _duckAudioCb?.IsChecked == true && _sessions.Count > 0)
         {
-            double time = ipc.CurrentTime;
-            double outputSec = _timeline != null ? _timeline.SourceToOutput(time) : time;
-            if (_isCurrentlyFrozen) outputSec += (DateTime.UtcNow - _freezeStartTime).TotalSeconds;
+            double outputSec = PreviewOutputSeconds;
 
             var takes = new List<(double, double)>(_sessions.Count);
             foreach (var session in _sessions)
             {
                 if (session.IsMuted || session.EndSec <= session.StartSec) continue;
-                double Out(double sec) => _timeline != null ? _timeline.SourceToOutput(sec) : sec;
-                double start = Out(session.StartSec) + Math.Max(0, Out(session.StartSec + session.TrimLeftSec) - Out(session.StartSec));
-                double end = Out(session.EndSec) - Math.Max(0, Out(session.EndSec) - Out(session.EndSec - session.TrimRightSec));
+                double start = SessionOutputStart(session) + SessionTrimLeft(session);
+                double end = SessionOutputStart(session) + SessionOutputDuration(session) - SessionTrimRight(session);
                 if (end > start) takes.Add((start, end));
             }
             gain = 1.0 - AudioFilterChain.VoiceDuckDepth * AudioFilterChain.VoiceProtectionPulseAt(outputSec, takes);

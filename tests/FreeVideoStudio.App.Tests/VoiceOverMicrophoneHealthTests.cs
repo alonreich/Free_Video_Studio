@@ -271,7 +271,7 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void CompleteTake_GenuineShortTake_ReportsTakeTooShort()
+    public void CompleteTake_PositiveEndpointTail_IsKept()
     {
         var devices = new TestHealthDevices();
         using var session = new VoiceCaptureSession(devices, a => a());
@@ -293,12 +293,14 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
             EndSec = 0.0
         };
 
-        window.TriggerCompleteTake(takeSession, micWasOpen: true, capturedBytes: 882, capturedBuffers: 1, capturedPeak: 0.1f);
+        window.TriggerCompleteTake(takeSession, micWasOpen: true, capturedBytes: 1764, capturedBuffers: 1, capturedPeak: 0.1f);
 
-        Assert.True(window.LastTakeWasRejected);
+        Assert.False(window.LastTakeWasRejected);
         Assert.NotNull(noticeText);
-        Assert.Equal(NoticeKind.Error, noticeKind);
-        Assert.Equal("That take was too short to keep", noticeText);
+        Assert.Equal(NoticeKind.Success, noticeKind);
+        Assert.Single(window.Sessions);
+        Assert.Equal(0.02, takeSession.CapturedDurationSec!.Value, 6);
+        Assert.True(File.Exists(wavPath));
     }
 
     [AvaloniaFact]

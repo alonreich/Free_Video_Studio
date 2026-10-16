@@ -1,4 +1,9 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Globalization;
 using System.IO;
@@ -92,6 +97,7 @@ public partial class MainWindow
     /// <summary>The voice-over pulse at output time <paramref name="outputSec"/>: the export's 0.3 s ramps, exactly.</summary>
     private void UpdatePreviewVoicePulse(double outputSec)
     {
+        // VOPREVIEW_02 — the export's own pulse (summed ramps), shared with the Voice Over studio.
         double pulse = outputSec < 0 ? 0 : AudioFilterChain.VoiceProtectionPulseAt(outputSec,
             _voiceOverPreviewTakes.Select(take => (take.StartProjectSec, take.StartProjectSec + take.Reader.TotalTime.TotalSeconds)));
         if (Math.Abs(pulse - _previewVoicePulse) < 0.02 && !(pulse == 0 && _previewVoicePulse != 0)) return;
@@ -344,7 +350,8 @@ public partial class MainWindow
             {
                 long len = 0;
                 try { len = new FileInfo(t.Path).Length; } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-                sb.Append(';').Append(t.Path).Append('@').Append(t.StartSec.ToString("F3", ci)).Append('#').Append(len);
+                sb.Append(';').Append(t.Path).Append('@').Append(t.StartSec.ToString("F3", ci))
+                  .Append('+').Append(t.OutputOffsetSec.ToString("F6", ci)).Append('#').Append(len);
             }
         }
         return sb.ToString();

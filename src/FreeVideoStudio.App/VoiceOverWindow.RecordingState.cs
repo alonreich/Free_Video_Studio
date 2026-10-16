@@ -211,7 +211,7 @@ public partial class VoiceOverWindow
         if (i.CaptureState == VoiceCaptureState.Connecting || i.Health == MicrophoneHealth.Connecting)
             return new(RecordingPhase.Connecting, "CONNECTING…", "AppTextMutedBrush", "REC", RecordingGlyph.Ring, false, false);
         if (!i.PreviewReady)
-            return new(RecordingPhase.PreviewLoading, "LOADING PREVIEW", "AppTextMutedBrush", "REC", RecordingGlyph.Ring, false, false);
+            return new(RecordingPhase.PreviewLoading, "PREPARING PREVIEW", "AppTextMutedBrush", "REC", RecordingGlyph.Ring, false, false);
         if (i.ReadyLampLit)
             return new(RecordingPhase.Ready, "READY", "AppTextPrimaryBrush", "REC", RecordingGlyph.None, false, false);
         if (i.MonitorOpen)
@@ -337,19 +337,24 @@ public partial class VoiceOverWindow
         _shownPulse = pulse;
     }
 
-    private static readonly Geometry DotGlyph = Geometry.Parse("M7,1 A6,6 0 1 1 6.99,1 Z");
-    private static readonly Geometry RingGlyph = Geometry.Parse("M7,2 A5,5 0 1 1 6.99,2 Z");
-    private static readonly Geometry PauseGlyph = Geometry.Parse("M3,2 H6 V12 H3 Z M8,2 H11 V12 H8 Z");
-    private static readonly Geometry AlertGlyph = Geometry.Parse("M7,1 L13.5,13 H0.5 Z");
-    private static readonly Geometry CheckGlyph = Geometry.Parse("M2,7.5 L5.5,11 L12,3.5");
+    // VOREC_INIT_01: pure recording-state access must not require a platform renderer.
+    // Parse cached geometry only when a window first paints an indicator on the UI thread.
+    private static class IndicatorGeometry
+    {
+        internal static readonly Geometry DotGlyph = Geometry.Parse("M7,1 A6,6 0 1 1 6.99,1 Z");
+        internal static readonly Geometry RingGlyph = Geometry.Parse("M7,2 A5,5 0 1 1 6.99,2 Z");
+        internal static readonly Geometry PauseGlyph = Geometry.Parse("M3,2 H6 V12 H3 Z M8,2 H11 V12 H8 Z");
+        internal static readonly Geometry AlertGlyph = Geometry.Parse("M7,1 L13.5,13 H0.5 Z");
+        internal static readonly Geometry CheckGlyph = Geometry.Parse("M2,7.5 L5.5,11 L12,3.5");
+    }
 
     private static (Geometry Data, bool Filled) GlyphGeometry(RecordingGlyph glyph) => glyph switch
     {
-        RecordingGlyph.Ring => (RingGlyph, false),
-        RecordingGlyph.PauseBars => (PauseGlyph, true),
-        RecordingGlyph.Alert => (AlertGlyph, true),
-        RecordingGlyph.Check => (CheckGlyph, false),
-        _ => (DotGlyph, true),
+        RecordingGlyph.Ring => (IndicatorGeometry.RingGlyph, false),
+        RecordingGlyph.PauseBars => (IndicatorGeometry.PauseGlyph, true),
+        RecordingGlyph.Alert => (IndicatorGeometry.AlertGlyph, true),
+        RecordingGlyph.Check => (IndicatorGeometry.CheckGlyph, false),
+        _ => (IndicatorGeometry.DotGlyph, true),
     };
 
     private static void SetClass(StyledElement element, string cls, bool on)
@@ -441,12 +446,12 @@ public partial class VoiceOverWindow
         UpdateApplyState(message);
     }
 
-    private double SourceEndForCapturedAudio(double startAbsSec, double capturedSec)
+    private double SourceEndForCapturedAudio(double startAbsSec, double capturedSec, double outputOffsetSec = 0)
     {
         if (!(capturedSec > 0) || double.IsInfinity(capturedSec)) return startAbsSec;
         var timeline = _timeline;
         if (timeline == null) return startAbsSec + capturedSec;
-        double outStart = timeline.SourceToOutput(startAbsSec);
+        double outStart = timeline.SourceToOutput(startAbsSec) + outputOffsetSec;
         double endAbs = _trimStartSec + timeline.OutputToSourceRelative(outStart + capturedSec);
         return Math.Max(startAbsSec, endAbs);
     }
@@ -470,8 +475,13 @@ public partial class VoiceOverWindow
     private bool TryReadPreviewClock(out double time, out bool paused, out double duration)
     {
         var ipc = _videoHost?.IpcClient;
-        if (ipc != null) { time = ipc.CurrentTime; paused = ipc.IsPaused; duration = ipc.Duration; return true; }
-        if (PreviewClockSeam is { } seam) { (time, paused, duration) = seam(); return true; }
+        if (ipc != null) { time = PreviewSourceSeconds; paused = ipc.IsPaused; duration = PreviewSourceDuration; return true; }
+        if (PreviewClockSeam is { } seam)
+        {
+            (time, paused, duration) = seam();
+            if (_playbackPlan != null) { time = _playbackPlan.SourceAt(time); duration = _playbackPlan.SourceEndSec; }
+            return true;
+        }
         time = 0; paused = true; duration = 0;
         return false;
     }
@@ -537,7 +547,7 @@ public partial class VoiceOverWindow
         var session = _currentSession!;
         double captured = _liveSnapshot?.CapturedSeconds ?? 0;
         double x1 = X(session.StartSec);
-        double x2 = Math.Max(x1, X(SourceEndForCapturedAudio(session.StartSec, captured)));
+        double x2 = Math.Max(x1, X(SourceEndForCapturedAudio(session.StartSec, captured, session.OutputOffsetSec)));
         LiveRegionPixels = (x1, x2);
 
         _liveAnchorLine!.IsVisible = true;
@@ -599,7 +609,7 @@ public partial class VoiceOverWindow
             {
                 double captured = snap?.CapturedSeconds ?? 0;
                 double x1 = x(session.StartSec);
-                double x2 = Math.Max(x1, x(SourceEndForCapturedAudio(session.StartSec, captured)));
+                double x2 = Math.Max(x1, x(SourceEndForCapturedAudio(session.StartSec, captured, session.OutputOffsetSec)));
                 if (x2 - x1 < 1) continue;
                 rc.BeginFigure(new Point(x1, 0), true);
                 rc.LineTo(new Point(x2, 0));

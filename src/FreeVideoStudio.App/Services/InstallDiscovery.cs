@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 using Microsoft.Win32;
 
@@ -9,6 +9,8 @@ internal static class InstallDiscovery
     public static string Destination => DeploymentFootprint.InstallFolder;
     public static string Store => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FreeVideoStudioMigration");
     public static string[] Executables => LegacyProductIdentity.ExecutableNames.Append(InstallPayload.ExecutableName).ToArray();
+    public static string[] CompanionExecutables => ["ffmpeg.exe", "ffprobe.exe", "mpv.exe"];
+    public static string[] AllMonitoredProcessNames => Executables.Concat(CompanionExecutables).Select(x => Path.GetFileNameWithoutExtension(x)!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     /// <summary>
     /// NOSPACE_01 — install destinations a machine journal may legitimately name: today's
@@ -28,7 +30,7 @@ internal static class InstallDiscovery
         new[] { Destination }.Concat(roots)
             .FirstOrDefault(r => File.Exists(Path.Combine(r, InstallPayload.ManifestName)));
 
-    public static string[] FindRoots()
+    public static string[] FindRoots(bool allowDowngrade = false)
     {
         if (Directory.Exists(Destination) && Directory.EnumerateFileSystemEntries(Destination).Any() && !IsProductDirectory(Destination))
             throw new IOException("The installation folder contains files from an unknown installation. It was left unchanged.");
@@ -55,9 +57,18 @@ internal static class InstallDiscovery
         foreach (string name in Executables)
         {
             string exe = Path.Combine(root, name);
-            if (File.Exists(exe) && DeploymentLifecycle.TryParseVersion(FileVersionInfo.GetVersionInfo(exe).FileVersion ?? "", out var installed) &&
-                DeploymentLifecycle.TryParseVersion(DeploymentLifecycle.GetCurrentVersion(), out var candidate) && installed > candidate)
-                throw new IOException("A newer version is already installed. Download the latest installer to continue.");
+            string? installedVer = File.Exists(exe) ? FileVersionInfo.GetVersionInfo(exe).FileVersion : null;
+            if (!string.IsNullOrWhiteSpace(installedVer) &&
+                DeploymentLifecycle.CompareVersions(installedVer, DeploymentLifecycle.GetCurrentVersion()) > 0)
+            {
+                if (!allowDowngrade)
+                {
+                    if (!DeploymentLifecycle.ConfirmVersionTransition(installedVer))
+                    {
+                        throw new OperationCanceledException("Downgrade cancelled by user.");
+                    }
+                }
+            }
         }
         return roots.ToArray();
     }
@@ -81,7 +92,7 @@ internal static class InstallDiscovery
 
     public static void EnsureIdle(IEnumerable<string> roots, params int[] excludedPids)
     {
-        foreach (string name in Executables.Select(x => Path.GetFileNameWithoutExtension(x)!).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (string name in AllMonitoredProcessNames)
         {
             foreach (Process process in Process.GetProcessesByName(name))
             {
@@ -121,7 +132,7 @@ internal static class InstallDiscovery
         var mine = new List<Process>();
         bool other = false;
         string[] rootList = roots.ToArray();
-        foreach (string name in Executables.Select(x => Path.GetFileNameWithoutExtension(x)!).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (string name in AllMonitoredProcessNames)
         {
             foreach (Process process in Process.GetProcessesByName(name))
             {

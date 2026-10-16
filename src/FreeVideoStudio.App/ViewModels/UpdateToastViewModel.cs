@@ -1,4 +1,7 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+
 using System.Windows.Input;
 
 namespace FreeVideoStudio.App.ViewModels;
@@ -26,6 +29,7 @@ public sealed class UpdateToastViewModel : ViewModelBase
     {
         RestartCommand = new RelayCommand(() => RestartRequested?.Invoke());
         LaterCommand = new RelayCommand(() => LaterRequested?.Invoke());
+        SkipCommand = new RelayCommand(() => SkipRequested?.Invoke());
         PauseCommand = new RelayCommand(() => PauseRequested?.Invoke());
         RetryCommand = new RelayCommand(() => RetryRequested?.Invoke());
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke());
@@ -58,12 +62,14 @@ public sealed class UpdateToastViewModel : ViewModelBase
 
     public ICommand RestartCommand { get; }
     public ICommand LaterCommand { get; }
+    public ICommand SkipCommand { get; }
     public ICommand PauseCommand { get; }
     public ICommand RetryCommand { get; }
     public ICommand CloseCommand { get; }
 
     public event Action? RestartRequested;
     public event Action? LaterRequested;
+    public event Action? SkipRequested;
     public event Action? PauseRequested;
     public event Action? RetryRequested;
     public event Action? CloseRequested;
@@ -81,7 +87,7 @@ public sealed class UpdateToastViewModel : ViewModelBase
     {
         Headline = $"Version {version} is ready to install";
         Status = summary + Environment.NewLine
-               + "Restart now to install it (about a minute). Or choose Later: it installs by itself the next time you close Free Video Studio.";
+               + "Restart now to install it (about a minute). Or choose Later: it requests administrator permission (UAC) and installs by itself the next time you close Free Video Studio.";
         IsIndeterminate = false;
         Percent = 100;
         State = ToastState.Ready;

@@ -1,4 +1,7 @@
-﻿using Avalonia.Platform.Storage;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/SPEC_GOVERNANCE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -293,6 +296,10 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             services.Clock,
             _viewModel,
             ProbeVideoMetricsForProject,
+            // PROJSESSION_08 — the session defers to the window's own "is there anything to lose"
+            // test, which already returns false after a successful export
+            // (ExportedCleanSinceLastEdit) and is what SWITCHPROMPT_01 has always used. Without
+            // this the session prompted to save a render that was already finished.
             HasUnsavedWork,
             Infrastructure.LiveMaskCache.ReadNow,
             Services.ToolNavigator.ReadMergeQueue,
@@ -853,6 +860,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         EnableEditingControls();
 
+        // PROJSESSION_06 — a new clip starts a new history. Ordered BEFORE SaveRecoveryState
+        // because that call now pushes an undo entry, and pushing onto the previous clip's stack
+        // would leave one entry describing footage that is no longer open.
         BeginProjectHistory();
 
         SaveRecoveryState();
@@ -1815,7 +1825,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return _baseSpeed;
     }
 
-    private async void InitializeMpv() => await StartVideoHostAsync();
+    private async void InitializeMpv() => await StartVideoHostAsync(); // TOOLRETURN_01 — body in MainWindow.ToolReturn.cs
 
     private void OnSeekCompleted()
     {
@@ -1952,6 +1962,20 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     /// </summary>
     private double _lastFreezeTriggerMs = -1;
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // TRANSPORT_TRACE_01 — EVERY PLAY/PAUSE THE MAIN WINDOW ISSUES, NAMED, WITH THE STATE THAT
+    // CAUSED IT.
+    //
+    // The "play advances one frame and pauses itself" trap has now survived three separate
+    // fixes, each aimed at a mechanism that static reading said was sufficient. It is not
+    // reproducible from source alone, so it stops being diagnosed from source: every pause and
+    // every play the main window issues now writes one line saying WHO issued it and what the
+    // player state was at that instant. One reproduction names the culprit exactly.
+    //
+    // Cost is a formatted string per transport change — not per tick — so this is cheap enough
+    // to leave in permanently, and valuable enough to be worth it: this is the log a user can
+    // send that turns "it feels stuck" into a line number.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
     private void TransportTrace(string who, string action)
     {
         try
@@ -2096,6 +2120,18 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         e.Cancel = true;
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // PROJSESSION_07 — ASK BEFORE DISCARDING THE DOCUMENT.
+        //
+        // Placed after `e.Cancel = true` and BEFORE MarkCleanShutdownIntent and the teardown
+        // below, because all three are irreversible: the shutdown intent suppresses the next
+        // launch's crash-recovery prompt, and the teardown disposes the pipeline this window
+        // would need to keep working if the user says "stay".
+        //
+        // Returning here leaves the window cancelled-but-alive, which is exactly the state the
+        // deferred-close contract (05 §3) produces between its two turns — _isSafeToClose is
+        // never set, Close() is never re-posted, and the window simply carries on.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         if (!await ConfirmProjectDiscardOnCloseAsync())
         {
             RuntimeLog.Info("UI", "Close cancelled — the user chose to keep unsaved project work.");
@@ -2172,6 +2208,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         SingleInstanceGuard.VideoPathReceived -= OnVideoHandedOffFromAnotherLaunch;
         SingleInstanceGuard.Release();
         DisposeVoiceOverPreviewTakes();
+        TeardownCornerMemes();
         ShutdownVideoPipelineForProcessExit();
         Environment.Exit(0);
     }
@@ -2334,6 +2371,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     private static bool HasVoiceOverEffect(VoiceOverWindow.VoiceOverResult? result)
     {
         return HasVoiceOverWav(result) ||
+               result?.VoiceOverTakes?.Count > 0 || !string.IsNullOrWhiteSpace(result?.VoiceOverWavPath) ||
                result?.DuckAudio == true;
     }
 
@@ -2355,7 +2393,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void ApplyVoiceOverState(VoiceOverWindow.VoiceOverResult? result, bool isRestore = false)
     {
-        var oldResult = _voiceOverResult;
         _voiceOverResult = HasVoiceOverEffect(result) ? result : null;
         var btn = VoiceOverButtonCtl;
         var text = this.FindControl<TextBlock>("VoiceOverText");
@@ -2366,29 +2403,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _voiceOverReader = null;
         DisposeVoiceOverPreviewTakes();
 
-        if (!isRestore && oldResult != null && oldResult != _voiceOverResult)
-        {
-            if (!string.IsNullOrEmpty(oldResult.VoiceOverWavPath))
-            {
-                try { System.IO.File.Delete(oldResult.VoiceOverWavPath); } catch (System.Exception swallowed6)
-                {
-                    global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed6);
-                }
-            }
-            if (oldResult.VoiceOverTakes != null)
-            {
-                foreach (var take in oldResult.VoiceOverTakes)
-                {
-                    if (!string.IsNullOrEmpty(take.Path))
-                    {
-                        try { System.IO.File.Delete(take.Path); } catch (System.Exception swallowed11)
-                        {
-                            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed11);
-                        }
-                    }
-                }
-            }
-        }
+        // VOTIMING_01: a project or undo snapshot can still own the previous audio.
+        // Changing takes or their review metadata must never delete those recordings.
 
         if (_voiceOverResult != null)
         {
@@ -2440,12 +2456,15 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             if (text != null) text.Text = "VOICE OVER";
         }
 
+        ResetVoiceTimingBaseline();
+        RefreshVoiceTimingReviewBadge();
         if (!isRestore) SaveRecoveryState(label: "voice over");
     }
 
     private void InvalidateVoiceOverRecordingForTimingChange()
     {
-        if (!HasVoiceOverWav(_voiceOverResult)) return;
+        // VOTIMING_01: SaveRecoveryState owns the coalesced timing decision, including cuts and trims.
+        RefreshVoiceTimingReviewBadge();
     }
 
     private Avalonia.Threading.DispatcherTimer? _recoveryDebounceTimer;
@@ -2540,6 +2559,21 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
                 ? new Services.CropToolLaunchContext(_loadedVideoPath, _trimStartMs, _trimEndMs)
                 : new Services.MergerLaunchContext();
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // TOOLNAV_01 — IN-PROCESS. This used to be CompanionAppService.SwitchToCompanionAppAsync,
+        // which ended with Environment.Exit(0): the application killed itself and relaunched its
+        // own executable with a different flag. The user saw the app disappear from the taskbar
+        // and a different window appear, and everything not in the handoff payload — the loaded
+        // clip's undo history, the document session, window focus and z-order — was gone.
+        //
+        // Now the tool opens as a window in this process and the editor is HIDDEN behind it
+        // (TOOLNAV_03), so the session is exactly where the user left it when they come back.
+        //
+        // MarkCleanShutdownIntent is NO LONGER CALLED here, and that is the point: the process is
+        // not shutting down. Marking it would suppress the next launch's crash-recovery prompt for
+        // a session that is still running, which is the same wrong-state defect the flag beside
+        // _exportedCleanSinceLastEdit was added to fix.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         var navigator = new Services.ToolNavigator(Infrastructure.AppServices.Current.Faults);
 
         bool opened = await navigator.OpenAsync(

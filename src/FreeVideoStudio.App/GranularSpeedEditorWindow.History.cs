@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md, docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -134,6 +136,8 @@ public partial class GranularSpeedEditorWindow
                 UpdateDeleteButtonVisibility();
                 RedrawTimeline();
                 RefreshUndoRedoButtons();
+                UpdateAiCommentaryBtnVisualState();
+                SyncCaptionsPreviewSubtitles();
             }
             catch (Exception ex) { RuntimeLog.Fail("UNDO", ex); }
         }
@@ -283,6 +287,8 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private void AdoptParkedHistory()
     {
+        // EDITSTATE_01 — the session owns the slot and the identity proof (same clip AND same
+        // revision only). MERGEEDIT_02 — a merge has no clip identity and never parks.
         if (_edit.AdoptParkedHistory()) RefreshUndoRedoButtons();
     }
 

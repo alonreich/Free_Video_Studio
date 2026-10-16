@@ -1,4 +1,7 @@
-﻿using System.Globalization;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App.ViewModels;
 using FreeVideoStudio.Core.Media;
@@ -61,6 +64,7 @@ public sealed class OutputSizeEstimator
                 return cached.Media;
             long bytes = file.Length;
             DateTime modified = file.LastWriteTimeUtc;
+            // LIBAVPROBE_03 — native libav metadata, ffprobe subprocess as the bounded fallback.
             var probe = await MediaMetadataProbe.ProbeAsync(_probePath(), path, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             if (!probe.Ok) return null;
@@ -152,6 +156,8 @@ public sealed class OutputSizeEstimator
         double duration = sources.Sum(s => s.Duration);
         if (duration <= 0 || speed <= 0 || !double.IsFinite(speed)) return OutputSizeEstimate.Empty;
         double average = sources.Sum(s => s.Duration * s.VideoKbps) / duration;
+        // MERGEQUALITY_01 — below 100% the export targets exactly this bitrate (100% × the quality curve), so the
+        // estimate uses the same number and a lower setting always shows (and produces) a smaller file.
         double rate = OutputFileSize.MergerTargetKbps(average) * OutputFileSize.MergerQualityRatio(quality);
         if (quality < 100) rate = Math.Max(300, Math.Round(rate));
         double seconds = outputSeconds is double exact && exact > 0 && double.IsFinite(exact) ? exact : duration / speed;

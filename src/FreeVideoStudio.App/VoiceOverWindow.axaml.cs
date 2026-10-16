@@ -1,4 +1,11 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
@@ -93,6 +100,8 @@ public partial class VoiceOverWindow : Window
     /// </summary>
     private void UpdateLiveZoomCrop()
     {
+        // VOCLOCK_01: the export compiler has already rendered zoom into the recording picture.
+        if (_playbackPlan != null) return;
         var ipc = _videoHost?.IpcClient;
         if (ipc == null || !_isMpvReady) return;
         if (!FreeVideoStudio.Core.Media.VideoRenderMode.Current.UseHardwareAcceleration) return;
@@ -170,8 +179,8 @@ public partial class VoiceOverWindow : Window
 
         _memePreview = new Infrastructure.MemePreviewDirector(
             () => _videoHost?.IpcClient,
-            () => _videoPath,
-            () => _trimStartSec,
+            () => _previewProxyPath ?? _videoPath,
+            () => _playbackPlan != null ? 0 : _trimStartSec,
             SetMemeSwapOverlay,
             "VOICEOVER");
 
@@ -198,7 +207,7 @@ public partial class VoiceOverWindow : Window
     private void SetMemeSwapOverlay(bool visible, string message)
         => Infrastructure.MemeSwapOverlay.Set(this, visible, message);
     private double _baseSpeed = 1.0;
-    private double _lastAppliedSpeed = 1.0;
+    private double _lastAppliedSpeed = double.NaN;
     private bool _isCurrentlyFrozen;
     private DateTime _freezeStartTime;
     private double _currentFreezeDurationMs;
@@ -213,6 +222,11 @@ public partial class VoiceOverWindow : Window
         public string WavPath { get; set; } = "";
         public double StartSec { get; set; }
         public double EndSec { get; set; }
+        public double OutputOffsetSec { get; set; }
+        internal VoiceCaptureBudget? CaptureBudget { get; set; }
+        public double? CapturedDurationSec { get; set; }
+        public string? TimingSignature { get; set; }
+        public bool NeedsTimingReview { get; set; }
         public double TrimLeftSec { get; set; } = 0;
         public double TrimRightSec { get; set; } = 0;
         public bool IsMuted { get; set; } = false;
@@ -272,6 +286,9 @@ public partial class VoiceOverWindow : Window
     private List<PreviewPlayer> _previewPlayers = new();
 
 
+    // LOUDSTD_REMOVED_01 — PREVIEW_03's take gain offset (SourceMeasuredLufs / VoicePreviewOffsetDb)
+    // compensated for a -14 LUFS export normalisation that no longer exists; takes preview at unity,
+    // exactly as they are exported.
     private Button? _micRecordButton;
     private Button? _playPauseButton;
     private Button? _applyButton;
@@ -301,6 +318,7 @@ public partial class VoiceOverWindow : Window
     private Image? _waveformLaneImage;
     private Border? _thumbLoadingOverlay;
     private Border? _waveformLoadingOverlay;
+    private Border? _previewPreparingOverlay;
     private Avalonia.Controls.Shapes.Path? _playIcon;
     private Avalonia.Controls.Shapes.Path? _pauseIcon;
     private CheckBox? _duckAudioCb;
@@ -342,7 +360,7 @@ public partial class VoiceOverWindow : Window
     internal VoiceOverWindow(FreeVideoStudio.App.Services.IVoiceCaptureSession capture)
     {
         _capture = capture;
-        _recovery = CreateRecoveryManager();
+        _recovery = CreateRecoveryManager(); // VORECOVERY_01
         _outputWavPath = CreateTempVoiceOverPath();
         InitializeComponent();
         CacheControls();
@@ -358,6 +376,7 @@ public partial class VoiceOverWindow : Window
         WireEffectStateControls();
         UpdateTransportState();
         UpdateApplyState();
+        Infrastructure.WindowsAudioSessionSync.IsVoiceCaptureActive = true;
     }
 
     private void OnMasterVolumeChanged(int volume)
@@ -388,6 +407,9 @@ public partial class VoiceOverWindow : Window
 
     internal Button? DiscardFailedTakesButtonControl => _discardFailedTakesButton;
     internal Button? RecoverFailedTakesButtonControl => _recoverFailedTakesButton;
+    internal Button? DeleteFailedTakesButtonControl => _discardFailedTakesButton;
+    internal Button? RestoreFailedTakesButtonControl => _recoverFailedTakesButton;
+    internal TextBlock? VoiceOverHintTextControl => _voiceOverHintText;
 
     internal bool IsApplyingInFlight { get => _isApplying; set => _isApplying = value; }
     internal bool IsCommitted { get => _isCommitted; set => _isCommitted = value; }
@@ -451,7 +473,7 @@ public partial class VoiceOverWindow : Window
         _trimStartSec = trimStartMs / 1000.0;
         _trimEndSec = trimEndMs / 1000.0;
         _baseSpeed = Math.Clamp(baseSpeed, 0.1, 4.0);
-        _lastAppliedSpeed = _baseSpeed;
+        _lastAppliedSpeed = double.NaN;
         if (speedSegments != null)
         {
             foreach (var segment in speedSegments)
@@ -514,28 +536,28 @@ public partial class VoiceOverWindow : Window
                         _videoHost.IpcClient.SeekCompleted -= OnSeekCompleted;
                         _videoHost.IpcClient.SeekCompleted += OnSeekCompleted;
                         
-                        double initialPos = NormalizePreviewPlaybackPosition(_trimStartSec);
-                        await _videoHost.IpcClient.LoadFileAsync(_videoPath, initialPos);
-                        await _videoHost.IpcClient.SetPropertyAsync("pause", "yes");
+                        _previewPreparation = PrepareRecordingPreviewAsync(_videoHost.IpcClient);
+                        await _previewPreparation;
+                        if (_isClosing || _isPreviewTeardownPosted) return;
 
 
                         await _videoHost.IpcClient.SetPropertyAsync("ab-loop-a", "no");
                         await _videoHost.IpcClient.SetPropertyAsync("ab-loop-b", "no");
                         await _videoHost.IpcClient.SetPropertyAsync("keep-open", "yes");
 
-                        double videoDuration = _videoHost.IpcClient.Duration;
-                        double effectiveDuration = (_trimEndSec > 0 ? _trimEndSec : videoDuration) - _trimStartSec;
-                        if (effectiveDuration <= 0) effectiveDuration = videoDuration;
-                        BuildStudioTimeline(effectiveDuration);
                         
                         previewReady = true;
+                        if (_previewPreparingOverlay != null) _previewPreparingOverlay.IsVisible = false;
                         
                         if (InitialState != null)
                         {
                             ApplyVoiceProtectionPolicy(InitialState.DuckAudio, InitialState.ProtectFromMusic);
                             if (InitialState.VoiceOverTakes != null)
                             {
-                                foreach (var t in InitialState.VoiceOverTakes)
+                                var initialTakes = InitialState.VoiceOverTakes.Count > 0 ? InitialState.VoiceOverTakes :
+                                    string.IsNullOrWhiteSpace(InitialState.VoiceOverWavPath) ? new List<VoiceOverTake>() :
+                                    new List<VoiceOverTake> { new(InitialState.VoiceOverWavPath, InitialState.VoiceOverStartTimestampSec) };
+                                foreach (var t in initialTakes)
                                 {
                                     if (System.IO.File.Exists(t.Path))
                                     {
@@ -544,7 +566,11 @@ public partial class VoiceOverWindow : Window
                                         {
                                             global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
                                         }
-                                        _sessions.Add(new VoiceOverSession { WavPath = t.Path, StartSec = t.StartSec, EndSec = SourceEndForCapturedAudio(t.StartSec, dur) });
+                                        _sessions.Add(new VoiceOverSession { WavPath = t.Path, StartSec = t.StartSec,
+                                            OutputOffsetSec = t.OutputOffsetSec, CapturedDurationSec = dur,
+                                            EndSec = Math.Max(t.StartSec + 0.001, SourceEndForCapturedAudio(t.StartSec, dur, t.OutputOffsetSec)),
+                                            TimingSignature = t.TimingSignature,
+                                            NeedsTimingReview = _timeline != null && VoiceOverTiming.NeedsReview(t, _timeline, _trimStartSec, _trimEndSec) });
                                         _renderedSessionCount = -1;
                                         EnsureTakePeaksAsync(t.Path);
                                     }
@@ -554,22 +580,27 @@ public partial class VoiceOverWindow : Window
                         }
                     }
                 }
+                catch (OperationCanceledException) when (_previewPrepareCts.IsCancellationRequested) { return; }
                 catch (Exception ex)
                 {
+                    if (_previewPreparingOverlay != null) _previewPreparingOverlay.IsVisible = false;
                     RuntimeLog.Fail("VoiceOver", $"Preview startup failed. Recording disabled, auto-ducking remains available. {ex.Message}");
-                    var startupShutdown = await _videoHost.ShutdownAsync();
+                    var startupShutdown = _videoHost != null ? await _videoHost.ShutdownAsync() : PreviewShutdownResult.AlreadyStopped;
                     if (!startupShutdown.Succeeded) RuntimeLog.Fail("VoiceOver", $"Partial preview teardown did not complete: {startupShutdown.Reason}");
                     _previewFailed = true;
-                    UpdateApplyState(previewReady ? null : "Preview could not start on this graphics session.");
+                    UpdateApplyState("The timed preview could not be prepared. Your existing takes are kept; reopen the studio to retry.");
                 }
 
                 _isMpvReady = previewReady;
+                if (!previewReady && _previewPreparingOverlay != null) _previewPreparingOverlay.IsVisible = false;
 
                 UpdateTransportState();
-                UpdateApplyState(previewReady ? null : "Preview could not start on this graphics session.");
+                UpdateApplyState(previewReady ? null : "The timed preview could not be prepared. Your existing takes are kept; reopen the studio to retry.");
 
                 if (previewReady)
                 {
+                    _lastApplyErrorMessage = null;
+                    UpdateApplyState();
                     _ = GenerateLanesAsync();
                 }
             }
@@ -623,7 +654,7 @@ public partial class VoiceOverWindow : Window
         
         bool isMpvPaused = _videoHost.IpcClient.IsPaused;
         bool shouldPlay = (!isMpvPaused || _isCurrentlyFrozen) && !_isRecording;
-        double time = _videoHost.IpcClient.CurrentTime;
+        double time = PreviewSourceSeconds;
         
         double elapsedFreezeSec = 0;
         if (_isCurrentlyFrozen)
@@ -682,13 +713,11 @@ public partial class VoiceOverWindow : Window
                 continue;
             }
 
-            bool shouldPlayVoice = shouldPlay && time >= take.RenderStartSec && time <= take.RenderEndSec;
-            
-            double mappedTime = _timeline != null ? _timeline.SourceToOutput(time) : time;
-            mappedTime += elapsedFreezeSec;
-            
-            double mappedStart = _timeline != null ? _timeline.SourceToOutput(take.StartSec) : take.StartSec;
+            double mappedTime = PreviewOutputSeconds;
+            double mappedStart = SessionOutputStart(take);
             double mappedOffset = mappedTime - mappedStart;
+            bool shouldPlayVoice = shouldPlay && mappedOffset >= SessionTrimLeft(take) &&
+                mappedOffset < SessionOutputDuration(take) - SessionTrimRight(take);
             
             try
             {
@@ -706,7 +735,7 @@ public partial class VoiceOverWindow : Window
         if (_memePreview != null)
         {
             _memePreview.Suspended = _isRecording || _recordArming;
-            _memePreview.SetMemes(_memes);
+            _memePreview.SetMemes(PreviewMemes);
             _memePreview.Tick();
             if (_memePreview.IsActive)
             {
@@ -725,6 +754,7 @@ public partial class VoiceOverWindow : Window
         PumpRecordArming();
         _capture.CheckHealth();
         SampleLiveTake();
+        CheckRecordingClock();
         UpdateReadyLamp();
         RefreshRecordingIndicator();
         UpdatePlayPauseIconUI();
@@ -806,6 +836,7 @@ public partial class VoiceOverWindow : Window
         _waveformLaneImage = this.FindControl<Image>("WaveformLaneImage");
         _thumbLoadingOverlay = this.FindControl<Border>("ThumbLoadingOverlay");
         _waveformLoadingOverlay = this.FindControl<Border>("WaveformLoadingOverlay");
+        _previewPreparingOverlay = this.FindControl<Border>("PreviewPreparingOverlay");
         _playIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PlayIcon");
         _pauseIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PauseIcon");
         _duckAudioCb = this.FindControl<CheckBox>("DuckAudioCb");
@@ -816,6 +847,8 @@ public partial class VoiceOverWindow : Window
         var selectedTakeToolbar = _selectedTakeToolbar = this.FindControl<Border>("SelectedTakeToolbar");
         var muteTakeBtn = _muteTakeButton = this.FindControl<Button>("MuteTakeButton");
         var deleteTakeBtn = this.FindControl<Button>("DeleteTakeButton");
+        _reviewTakeButton = ReviewTakeButton;
+        if (_reviewTakeButton != null) _reviewTakeButton.Click += (_, _) => AcceptSelectedTakeTiming();
 
         if (muteTakeBtn != null)
         {
@@ -1173,13 +1206,14 @@ public partial class VoiceOverWindow : Window
     private void SeekBySeconds(double seconds)
     {
         if (_videoHost?.IpcClient == null) return;
-        double target = Math.Clamp(_videoHost.IpcClient.CurrentTime + seconds, _trimStartSec, GetEffectiveTimelineEnd());
+        double target = Math.Clamp(PreviewSourceSeconds + seconds, _trimStartSec, GetEffectiveTimelineEnd());
         SeekToAbsolute(target);
     }
 
     private void SeekToAbsolute(double seconds)
     {
         if (_videoHost?.IpcClient == null) return;
+        if (_isRecording && !_recordPaused) return;
         _isCurrentlyFrozen = false;
         _lastFreezeTriggerMs = -1;
         ApplyPreviewSpeedForPosition(seconds * 1000.0);
@@ -1193,7 +1227,7 @@ public partial class VoiceOverWindow : Window
         _isSeeking = true;
         try
         {
-            _ = _videoHost.IpcClient.SendCommandAsync("seek", seconds, "absolute");
+            _ = _videoHost.IpcClient.SendCommandAsync("seek", PlayerSeekSeconds(seconds), "absolute+exact");
         }
         catch (System.Exception swallowed3)
         {
@@ -1219,7 +1253,7 @@ public partial class VoiceOverWindow : Window
     private double GetEffectiveTimelineEnd()
     {
         if (_videoHost?.IpcClient == null) return _trimEndSec > 0 ? _trimEndSec : _trimStartSec;
-        double videoDuration = _videoHost.IpcClient.Duration;
+        double videoDuration = PreviewSourceDuration;
         return _trimEndSec > 0 ? _trimEndSec : Math.Max(_trimStartSec, videoDuration);
     }
 
@@ -1248,6 +1282,8 @@ public partial class VoiceOverWindow : Window
     /// <summary>VOEND_01 — is this position at (or past) the end of the trimmed range?</summary>
     private bool IsPreviewAtTimelineEnd(double seconds)
     {
+        if (_playbackPlan != null)
+            return _videoHost?.IpcClient?.IsEof == true || PreviewOutputSeconds >= _playbackPlan.Timeline.TotalOutputSeconds - 1.0 / 60;
         double end = GetEffectiveTimelineEnd();
         if (end <= _trimStartSec) return false;
         return seconds >= end - 0.05;
@@ -1286,8 +1322,17 @@ public partial class VoiceOverWindow : Window
         {
             if (!_isMpvReady || !TryReadPreviewClock(out double now, out bool previewPaused, out _)) return;
             if (_trimEndSec <= _trimStartSec) return;
-            if (previewPaused) return;
-            if (now < _trimEndSec - 0.05) return;
+            if (_playbackPlan != null)
+            {
+                if (_videoHost?.IpcClient?.IsEof != true &&
+                    _currentSession?.CaptureBudget?.Exhausted != true &&
+                    PreviewOutputSeconds < _playbackPlan.Timeline.TotalOutputSeconds) return;
+            }
+            else
+            {
+                if (previewPaused) return;
+                if (now < _trimEndSec - 0.05) return;
+            }
 
             if (_isRecording && !_recordPaused)
             {
@@ -1313,6 +1358,7 @@ public partial class VoiceOverWindow : Window
     /// </summary>
     private void EnforceCutSkip()
     {
+        if (_playbackPlan != null) return;
         try
         {
             if (_cuts.Count == 0) return;
@@ -1370,7 +1416,7 @@ public partial class VoiceOverWindow : Window
     private void ApplyPreviewSpeedForPosition(double positionMs)
     {
         if (_videoHost?.IpcClient == null) return;
-        double targetSpeed = GetSpeedForPosition(positionMs);
+        double targetSpeed = _playbackPlan != null ? 1 : GetSpeedForPosition(positionMs);
         if (Math.Abs(targetSpeed - _lastAppliedSpeed) <= 0.001) return;
 
         _lastAppliedSpeed = targetSpeed;
@@ -1380,6 +1426,7 @@ public partial class VoiceOverWindow : Window
 
     private void UpdatePreviewSpeedAndFreeze(double currentTimeSec)
     {
+        if (_playbackPlan != null) return;
         if (_videoHost?.IpcClient == null) return;
 
         double currentAbsMs = currentTimeSec * 1000.0;
@@ -1470,7 +1517,7 @@ public partial class VoiceOverWindow : Window
         bool isApplyingOrClosing = _isApplying || _isClosing || _isCommitted;
         if (_micRecordButton != null)
         {
-            _micRecordButton.IsEnabled = !isApplyingOrClosing && _isMpvReady && (_isRecording || (hasInputDevice && CanAdmit(VoiceOverSessionOwner.Capture)));
+            _micRecordButton.IsEnabled = !isApplyingOrClosing && _isMpvReady && (_isRecording || (hasInputDevice && CanAdmit(VoiceOverSessionOwner.Capture))); // SESSIONOWNER_01
         }
         if (_playPauseButton != null)
         {
@@ -1493,13 +1540,13 @@ public partial class VoiceOverWindow : Window
     {
         if (_videoHost?.IpcClient == null) return;
         
-        while (_videoHost.IpcClient.Duration <= 0)
+        while (PreviewSourceDuration <= 0)
         {
             await Task.Delay(100);
             if (_isClosing) return;
         }
 
-        double videoDuration = _videoHost.IpcClient.Duration;
+        double videoDuration = PreviewSourceDuration;
         double durationSec = (_trimEndSec > 0 ? _trimEndSec : videoDuration) - _trimStartSec;
         if (durationSec <= 0) durationSec = videoDuration;
         string ffmpeg = ResolveBinaryPath("ffmpeg.exe", "backend");
@@ -1765,6 +1812,8 @@ public partial class VoiceOverWindow : Window
 
         var toolbar = _selectedTakeToolbar;
         if (toolbar != null) toolbar.IsVisible = _selectedSession != null;
+        if (_reviewTakeButton != null)
+            _reviewTakeButton.IsVisible = _selectedSession?.NeedsTimingReview == true;
         var muteBtn = _muteTakeButton;
         if (muteBtn != null && _selectedSession != null)
         {
@@ -2024,6 +2073,14 @@ public partial class VoiceOverWindow : Window
             Canvas.SetLeft(region, x1);
             Canvas.SetTop(region, 0);
             lane.Children.Add(region);
+            if (session.NeedsTimingReview)
+            {
+                var reviewLabel = new TextBlock { Text = "NEEDS REVIEW", FontSize = 10, IsHitTestVisible = false };
+                reviewLabel[!TextBlock.ForegroundProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppWarningBrush");
+                Canvas.SetLeft(reviewLabel, x1 + 3);
+                Canvas.SetTop(reviewLabel, 2);
+                lane.Children.Add(reviewLabel);
+            }
 
             if (isSelected)
             {
@@ -2213,7 +2270,7 @@ public partial class VoiceOverWindow : Window
             }
 
             if (_videoHost?.IpcClient == null) return;
-            double vDur = _videoHost.IpcClient.Duration;
+            double vDur = PreviewSourceDuration;
             double eDur = (_trimEndSec > 0 ? _trimEndSec : vDur) - _trimStartSec;
             double w = timelineCanvas.Bounds.Width;
             double pointX = e.GetCurrentPoint(timelineCanvas).Position.X;
@@ -2241,7 +2298,7 @@ public partial class VoiceOverWindow : Window
 
         if (_isRecording && !_recordPaused) return;
         if (_videoHost?.IpcClient == null) return;
-        double videoDuration = _videoHost.IpcClient.Duration;
+        double videoDuration = PreviewSourceDuration;
         double effectiveDuration = (_trimEndSec > 0 ? _trimEndSec : videoDuration) - _trimStartSec;
         if (effectiveDuration <= 0) effectiveDuration = videoDuration;
         double width = timelineCanvas.Bounds.Width;
@@ -2352,13 +2409,13 @@ public partial class VoiceOverWindow : Window
         else if (seekFwd.Matches(e))
         {
             if (_isRecording && !_recordPaused) return;
-            _ = _videoHost?.IpcClient?.SendCommandAsync("seek", "5", "relative");
+            SeekBySeconds(5);
             e.Handled = true;
         }
         else if (seekBack.Matches(e))
         {
             if (_isRecording && !_recordPaused) return;
-            _ = _videoHost?.IpcClient?.SendCommandAsync("seek", "-5", "relative");
+            SeekBySeconds(-5);
             e.Handled = true;
         }
     }
@@ -2388,11 +2445,11 @@ public partial class VoiceOverWindow : Window
             bool shouldPlay = _videoHost.IpcClient.IsPaused;
             if (shouldPlay)
             {
-                double current = RewindFromTimelineEnd(_videoHost.IpcClient.CurrentTime);
+                double current = RewindFromTimelineEnd(PreviewSourceSeconds);
                 double safeStart = NormalizePreviewPlaybackPosition(current);
                 if (Math.Abs(safeStart - current) > 0.01)
                 {
-                    await _videoHost.IpcClient.SetPropertyAsync("time-pos", safeStart.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    await _videoHost.IpcClient.SetPropertyAsync("time-pos", PlayerSeekSeconds(safeStart).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 }
                 _isCurrentlyFrozen = false;
                 _lastFreezeTriggerMs = -1;
@@ -2439,7 +2496,7 @@ public partial class VoiceOverWindow : Window
             $"Starting recording. previewTime={currentPreviewTime:0.###}s, normalisedStart={recordingStart:0.###}s, trim={_trimStartSec:0.###}s..{_trimEndSec:0.###}s, mpvPaused={_videoHost?.IpcClient?.IsPaused}, micIndex={GetSelectedMicrophoneDeviceIndex()}.");
         if (Math.Abs(recordingStart - currentPreviewTime) > 0.01)
         {
-            _ = _videoHost?.IpcClient?.SetPropertyAsync("time-pos", recordingStart.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _ = _videoHost?.IpcClient?.SetPropertyAsync("time-pos", PlayerSeekSeconds(recordingStart).ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
         _isCurrentlyFrozen = false;
         _lastFreezeTriggerMs = -1;
@@ -2462,6 +2519,8 @@ public partial class VoiceOverWindow : Window
     /// </summary>
     private bool ArmTakeSegment(double provisionalStartSec)
     {
+        _recordingClockGuard.Reset();
+        _previewInterruptionMessage = null;
         ReleaseRecorder();
 
         StopMicMonitor();
@@ -2477,7 +2536,8 @@ public partial class VoiceOverWindow : Window
         _uiSoundMute = UiSoundEffect.Suppress();
 
         _recordArming = true;
-        _armPrevTime = TryReadPreviewClock(out double armClock, out _, out _) ? armClock : provisionalStartSec;
+        _armPrevTime = _playbackPlan != null ? PreviewOutputSeconds :
+            (TryReadPreviewClock(out double armClock, out _, out _) ? armClock : provisionalStartSec);
         _armDeadlineUtc = DateTime.UtcNow.AddSeconds(3);
 
         _ = _videoHost?.IpcClient?.SetPropertyAsync("pause", "no");
@@ -2496,6 +2556,7 @@ public partial class VoiceOverWindow : Window
         if (!_recordArming) return;
 
         if (!TryReadPreviewClock(out double now, out bool previewPaused, out _)) return;
+        if (_playbackPlan != null) now = PreviewOutputSeconds;
 
         if (_isCurrentlyFrozen || previewPaused)
         {
@@ -2538,8 +2599,15 @@ public partial class VoiceOverWindow : Window
         int micIndex = GetSelectedMicrophoneDeviceIndex();
         RuntimeLog.Info("VoiceOver", $"Opening microphone index {micIndex} (video clock at {now:0.###}s).");
 
-        _ = _capture.StartRecordingAsync(takePath, micIndex, result =>
+        var openingSession = _currentSession!;
+        var plan = _playbackPlan;
+        // VOSAMPLE_01: read the cached output clock on the device worker immediately before start.
+        // The immutable anchor already includes every opening buffer when the UI sees the verdict.
+        var budget = plan == null ? null : new VoiceCaptureBudget(plan.Timeline.TotalOutputSeconds, () => PreviewOutputSeconds);
+        openingSession.CaptureBudget = budget;
+        void OpenSettled(FreeVideoStudio.App.Services.RecordingOpenResult result)
         {
+            AnchorCaptureBudget(openingSession);
             if (result.Outcome == FreeVideoStudio.App.Services.RecordingOpenOutcome.Cancelled)
             {
                 if (result.Failure == null)
@@ -2549,7 +2617,7 @@ public partial class VoiceOverWindow : Window
 
             if (_isClosing || !_isRecording || _currentSession == null)
             {
-                if (result.Outcome == FreeVideoStudio.App.Services.RecordingOpenOutcome.Opened) _ = _capture.ReleaseRecorderAsync();
+                if (result.Outcome == FreeVideoStudio.App.Services.RecordingOpenOutcome.Opened && !_capture.HasPendingFinalizations) _ = _capture.ReleaseRecorderAsync();
                 return;
             }
 
@@ -2562,6 +2630,12 @@ public partial class VoiceOverWindow : Window
             }
 
             double liveAt = TryReadPreviewClock(out double openedAt, out _, out _) ? openedAt : now;
+            if (_playbackPlan != null && budget?.OutputStart is double outputAt)
+            {
+                liveAt = _playbackPlan.SourceAt(outputAt);
+                _currentSession.OutputOffsetSec = outputAt - _playbackPlan.OutputAt(liveAt);
+                _recordingClockGuard.Arm(outputAt);
+            }
             _currentSession.StartSec = liveAt;
 
             RuntimeLog.Info("VoiceOver",
@@ -2569,7 +2643,10 @@ public partial class VoiceOverWindow : Window
 
             UpdateTransportState();
             UpdateApplyState("Recording in progress. Apply will save the current take and close.");
-        });
+            if (result.Failure != null) OnCaptureHealthChanged(_capture, FreeVideoStudio.App.Services.MicrophoneHealth.Faulted);
+        }
+        _ = budget == null ? _capture.StartRecordingAsync(takePath, micIndex, OpenSettled)
+            : _capture.StartRecordingAsync(takePath, micIndex, OpenSettled, budget);
     }
 
     /// <summary>Pause: close the current take cleanly and stop the video. Resume opens a new one.</summary>
@@ -2657,6 +2734,8 @@ public partial class VoiceOverWindow : Window
     private void CompleteTake(VoiceOverSession session, bool micWasOpen, long capturedBytes, int capturedBuffers, float capturedPeak, bool isTakeValid = true, FreeVideoStudio.App.Services.CapturedTake? takeOutcome = null)
     {
         if (_isClosing || _isCommitted) return;
+        AnchorCaptureBudget(session);
+        if (takeOutcome?.WriteFailed == true) session.NeedsTimingReview = true;
 
         double dur = 0;
         if (capturedBytes > 0)
@@ -2676,10 +2755,13 @@ public partial class VoiceOverWindow : Window
             catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
         }
 
-        session.EndSec = SourceEndForCapturedAudio(session.StartSec, dur);
+        session.CapturedDurationSec = dur;
+        session.EndSec = SourceEndForCapturedAudio(session.StartSec, session.CapturedDurationSec.Value, session.OutputOffsetSec);
 
         bool isSafelyFinalized = takeOutcome == null || (takeOutcome.EndpointReleased && takeOutcome.FileFinalized);
-        bool hasPositiveAudio = micWasOpen && capturedBuffers > 0 && capturedBytes > 0 && dur > 0.05 && System.IO.File.Exists(session.WavPath);
+        // VOREC_02 — "too short" is judged on CAPTURED audio. A take ending inside a freeze hold spans
+        // almost no source time but is real speech; the source span must not decide whether it is kept.
+        bool hasPositiveAudio = micWasOpen && capturedBuffers > 0 && capturedBytes > 0 && dur > 0 && System.IO.File.Exists(session.WavPath);
         if (hasPositiveAudio && session.EndSec <= session.StartSec) session.EndSec = session.StartSec + 0.001;
 
         if (isSafelyFinalized && hasPositiveAudio)
@@ -2825,16 +2907,26 @@ public partial class VoiceOverWindow : Window
     }
 
 
+    // VOAPPLY_01 — ApplyAndClose, persistence, FFmpeg trimming, transaction rollback
+    // and session file cleanup moved to VoiceOverWindow.Apply.cs (MVVM_02 code-behind ceiling).
+// VOTOOLS_01 — RetireGenerationCts moved verbatim; see the extracted type.
     private bool _isPreviewTeardownPosted;
     protected override void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
         base.OnClosing(e);
         if (e.Cancel || _isPreviewTeardownPosted) return;
         e.Cancel = true; _isPreviewTeardownPosted = true;
+        _previewPrepareCts.Cancel();
         Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
         {
             try
             {
+                if (_previewPreparation != null)
+                {
+                    try { await _previewPreparation; }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
                 var host = _videoHost; _videoHost = null;
                 RuntimeLog.Info("VoiceOver", "[Stage: PreviewShutdownStart] Shutting down video preview host...");
                 var shutdown = host != null ? await host.ShutdownAsync() : PreviewShutdownResult.AlreadyStopped;
@@ -2842,6 +2934,7 @@ public partial class VoiceOverWindow : Window
                 RuntimeLog.Info("VoiceOver", shutdown.Succeeded
                     ? "[Stage: PreviewShutdownEnd] Video preview shutdown complete."
                     : $"[Stage: PreviewShutdownEnd] Video preview shutdown failed: {shutdown.Reason}");
+                if (shutdown.Succeeded) CleanupPreparedPreview();
             }
             catch (Exception ex) { RuntimeLog.Fail("VoiceOver", $"Video preview teardown during close failed: {ex.Message}"); }
             finally
@@ -2857,6 +2950,10 @@ public partial class VoiceOverWindow : Window
         Controls.CoachOverlay.Cancel(this);
         Controls.FloatingNotice.Clear(this);
         _isClosing = true;
+        Infrastructure.WindowsAudioSessionSync.IsVoiceCaptureActive = false;
+        if (_previewPreparingOverlay != null) _previewPreparingOverlay.IsVisible = false;
+        _previewPrepareCts.Cancel();
+        _previewPrepareCts.Dispose();
         RefreshRecordingIndicator();
         MpvIpcClient.GlobalMasterVolumeChanged -= OnMasterVolumeChanged;
         _generationCts?.Cancel();

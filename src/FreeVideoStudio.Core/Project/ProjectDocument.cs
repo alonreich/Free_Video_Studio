@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -66,8 +66,10 @@ public sealed record ProjectDocument
     /// They live INSIDE a meme object, where a v3 reader keeps no unknown keys: it would read a corner
     /// overlay as a full-screen cutaway (a different, longer video) and drop the keys on save. Refused
     /// instead. Files at 1..3 read unchanged: no keys = full-screen with sound.
+    /// <b>5 — VOTIMING_01.</b> v4 readers would discard nested voice takes, freeze offsets and review state.
+    /// <b>6 — CAPTIONS_01.</b> Added <see cref="Captions"/> (AI Live Commentary Captions track).
     /// </remarks>
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 6;
 
     /// <summary>
     /// PROJ_02 — the oldest schema this build can still READ. A file below this is refused with an
@@ -150,6 +152,11 @@ public sealed record ProjectDocument
     /// </para>
     /// </summary>
     public ProjectMerge? Merge { get; init; }
+
+    /// <summary>
+    /// CAPTIONS_01 — AI Live Commentary Captions track. Null means no commentary captions were generated.
+    /// </summary>
+    public CaptionTrack? Captions { get; init; }
 
     /// <summary>Free-text name shown in the title bar and the recent list. Never used as a file path.</summary>
     public string Title { get; init; } = "Untitled";
@@ -573,6 +580,28 @@ public sealed record ProjectAudio
     public double VoiceOverAtOutputSec { get; init; }
 
     public double VoiceOverVolume { get; init; } = 1.0;
+
+    /// <summary>VOTIMING_01: every take and its review state are saved work, including freeze offsets.</summary>
+    public IReadOnlyList<VoiceOverTake> VoiceOverTakes { get; init; } = Array.Empty<VoiceOverTake>();
+    public bool VoiceOverDuckAudio { get; init; }
+    public bool VoiceOverProtectFromMusic { get; init; } = true;
+
+    public bool Equals(ProjectAudio? other) => other != null &&
+        MusicFilePath == other.MusicFilePath && MusicStartSec == other.MusicStartSec &&
+        MusicVolume == other.MusicVolume && VideoVolume == other.VideoVolume && SidechainDucking == other.SidechainDucking &&
+        VoiceOverFilePath == other.VoiceOverFilePath && VoiceOverAtOutputSec == other.VoiceOverAtOutputSec &&
+        VoiceOverVolume == other.VoiceOverVolume && VoiceOverDuckAudio == other.VoiceOverDuckAudio &&
+        VoiceOverProtectFromMusic == other.VoiceOverProtectFromMusic && VoiceOverTakes.SequenceEqual(other.VoiceOverTakes);
+
+    public override int GetHashCode()
+    {
+        var h = new HashCode();
+        h.Add(MusicFilePath); h.Add(MusicStartSec); h.Add(MusicVolume); h.Add(VideoVolume); h.Add(SidechainDucking);
+        h.Add(VoiceOverFilePath); h.Add(VoiceOverAtOutputSec); h.Add(VoiceOverVolume);
+        h.Add(VoiceOverDuckAudio); h.Add(VoiceOverProtectFromMusic);
+        foreach (var take in VoiceOverTakes) h.Add(take);
+        return h.ToHashCode();
+    }
 }
 
 /// <summary>PROJ_06 — export choices that survive a save, so re-exporting a project is one click.</summary>

@@ -1,4 +1,7 @@
-﻿using Avalonia.Controls;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia.Controls;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
 
@@ -6,7 +9,7 @@ namespace FreeVideoStudio.App.Controls;
 
 public partial class SettingsWindow : Window
 {
-    private void SaveAndClose()
+    internal void SaveAndClose()
     {
         bool committed = SettingsManager.Update(s =>
         {
@@ -47,8 +50,12 @@ public partial class SettingsWindow : Window
             {
                 AutoUpdateChecks = autoCheckCb.IsChecked.Value;
             }
+            // UPDATECONSENT_01: an explicit settings choice answers the update-consent prompt.
             if (s.AutoUpdateChecks != AutoUpdateChecks) s.UpdateConsentAsked = true;
             s.AutoUpdateChecks = AutoUpdateChecks;
+            s.AutoDownloadUpdates = AutoDownloadUpdates;
+            s.AvoidMeteredNetworkUpdates = AvoidMeteredNetworkUpdates;
+            s.UpdateChannel = UpdateChannel;
             s.MergerThumbnailScraper = MergerThumbnailScraper;
             s.MergerMatchClipLoudness = MergerMatchClipLoudness;
             s.UiSoundsEnabled = UiSoundsEnabled;
@@ -61,12 +68,7 @@ public partial class SettingsWindow : Window
             s.VoiceProtectMusicMode = _pendingVoiceProtectMusic;
             s.VideoEncoderOverride = _pendingVideoEncoder;
 
-            s.GeminiApiKey = _pendingGeminiApiKey;
-            s.GeminiModelName = _pendingGeminiModelName;
-            s.AiZoomBaseScale = _pendingAiZoomBaseScale;
-            s.AiZoomMinScale = _pendingAiZoomMinScale;
-            s.AiZoomAvoidHud = _pendingAiZoomAvoidHud;
-            s.AiZoomDeadbandPercent = _pendingAiZoomDeadbandPercent;
+            ApplyPendingAiSettings(s);
 
             ApplyPendingOutputSettings(s);
         });
@@ -95,11 +97,13 @@ public partial class SettingsWindow : Window
 
         try
         {
-            FreeVideoStudio.Core.Ipc.SessionStateWriter.For(_paths)
-                .Enqueue(new System.Text.Json.Nodes.JsonObject
+            if (_musicFolderEdited || _initialMusicFolder != null)
+            {
+                _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
                 {
                     ["CustomMusicDirectory"] = _pendingMusicFolder
                 });
+            }
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
 

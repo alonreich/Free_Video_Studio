@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Runtime.InteropServices;
 using FreeVideoStudio.Core.Media;
@@ -7,6 +9,7 @@ namespace FreeVideoStudio.App.Interop;
 
 internal interface INativeTeardownInvoker
 {
+    nint WglGetCurrentContext();
     bool WglMakeCurrent(nint hdc, nint hglrc);
     void MpvRenderContextSetUpdateCallback(nint ctx);
     void MpvRenderContextFree(nint ctx);
@@ -24,6 +27,8 @@ internal interface INativeTeardownInvoker
 internal unsafe sealed class DefaultNativeTeardownInvoker : INativeTeardownInvoker
 {
     public static readonly DefaultNativeTeardownInvoker Instance = new();
+
+    public nint WglGetCurrentContext() => WglInterop.wglGetCurrentContext();
 
     public bool WglMakeCurrent(nint hdc, nint hglrc) => WglInterop.wglMakeCurrent(hdc, hglrc);
 

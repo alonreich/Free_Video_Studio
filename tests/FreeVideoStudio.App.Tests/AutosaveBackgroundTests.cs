@@ -208,6 +208,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
     }
 
     [AvaloniaFact]
+    // UIIPC_01: a hung owner must not block the dispatcher during close.
     public async Task WindowClose_OwnerHung_DispatcherKeepsProcessing_AndTheFinalSnapshotIsCommitted()
     {
         var commit = new GatedCommit();

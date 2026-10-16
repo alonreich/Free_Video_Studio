@@ -1,4 +1,4 @@
-﻿# SYMBOL & FILE INDEX (routing lookup)
+# SYMBOL & FILE INDEX (routing lookup)
 
 Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY the spec it names.
 Notation: `03 §9 FFM-BINPATH` = `03_FFMPEG_EXPORT_PIPELINE.md`, section 9, stable anchor `FFM-BINPATH`.
@@ -10,6 +10,21 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ---
 
 ## 1. Source File -> Spec
+Voiceover timing additions (all listed specs govern these files):
+
+| File | Specs and tags |
+| :--- | :--- |
+| `Core/Media/VoiceOverPlaybackPlan.cs` | 01 TL-OUTPUTTIMELINE; 03 FFM-TEMPO; VOCLOCK_01 |
+| `Core/Media/VoiceCaptureBudget.cs`, `VOSAMPLE_01` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; sample-frame endpoint and immutable opening anchor |
+| `VOWRITE_01`, `VoiceCaptureBudgetTests` | 02 AUD-VOICEOVER; terminal WAV-write faults and acknowledged PCM prefix |
+| `Core/Media/VoiceOverClockGuard.cs`, `Core/Media/VoiceOverTiming.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; VOSTALL_01, VOTIMING_01 |
+| `Core/Media/VoiceOverSplice.cs` | 02 AUD-VOICEOVER; 03 FFM-TEMPO; VOSPLICE_01 |
+| `Core/Media/VoiceOverTakeJson.cs` | 02 AUD-VOICEOVER; 06 PROJ-SCHEMA; VOTIMING_01 |
+| `App/Services/VoiceOverPreviewRenderer.cs` | 02 AUD-VOICEOVER; 03 FFM-TEMPO; 05 SYS-VOICE-TIMING; VOCLOCK_01 |
+| `App/VoiceOverWindow.PlaybackClock.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; 03 FFM-TEMPO; 05 SYS-VOICE-TIMING |
+| `App/MainWindow.VoiceTiming.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; 04 UI-VOICE-TIMING; 06 PROJ-SCHEMA; 07 UNDO-VOICE-TIMING |
+| `VODEFAULTS_01`, `VoiceOverPreparedClockTests`, `VoiceOverEditWarningTests`, `VoiceOverExportTimingTests`, `VoiceOverTimingTests` | 02 AUD-VOICEOVER |
+
 `⚠` = CO-GOVERNED. Reading one listed spec is NOT compliance; read them all (`SPEC_GOVERNANCE.md` §2).
 
 ⚠️ **This list is NOT exhaustive** and never has been — many files under `src/` are absent from it. The authoritative routing for any file is the `[SPEC CONTRACT]` sentinel block at its own line 1, which every one of them carries and which `ArchitectureRuleTests.EveryProductionSourceFileCarriesTheSpecContract` enforces. Use this table as a fast lookup, not as proof that an unlisted file is ungoverned.
@@ -18,6 +33,11 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiSetupWizardWindow.axaml.cs               04
   AiSubjectPickerWindow.axaml.cs             04
 ⚠ AiTrajectorySmoother.cs                    01 03
+  AiGameProfile.cs                           01
+  AiTrackingPrompts.cs                       01
+  GeminiClient.cs                            05
+  SecretProtector.cs                         05
+  SecretLeakTests.cs                         05 SECRETSCAN_01
   AmbientBubblesBackground.cs                04
   AppDataPaths.cs                            05 SYS-REBRAND
   AppDataPathsTests.cs                       05 SYS-REBRAND
@@ -47,11 +67,15 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   FloatingNotice.cs                          04
 ⚠ FluidVolumeSlider.cs                       02 04
   FramePtsProbe.cs                           03
-  GeminiTrackingService.cs                   01 03 04
+⚠ GeminiTrackingService.cs                   01 03 04 05
   GpuCapabilityProbe.cs                      03
   GranularSpeedBuilder.cs                    03
 ⚠ GranularSpeedEditorWindow.axaml.cs         01 04 05 07
-⚠ GranularSpeedEditorWindow.AiZoom.cs        01 04
+⚠ GranularSpeedEditorWindow.AiZoom.cs        01 04 07
+⚠ GranularSpeedEditorWindow.AiCommentary.cs  01 04 07
+⚠ GranularSpeedEditorWindow.CaptionsLane.cs  01 04 07
+  EditCaptionDialogWindow.axaml.cs           04
+  CaptionTrackJson.cs                        06
 ⚠ GranularSpeedEditorWindow.Merge.cs         01 04
   HardwareScanner.cs                         03
   KineticScrubController.cs                  01
@@ -128,6 +152,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   RuntimeLog.cs                              05
   SettingsWindow.axaml.cs                    04
   SettingsWindow.AiTracking.cs               04
+  SettingsWindow.Merger.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-SCRAPER
+  SettingsMusicFolderTests.cs                04 UI-SETTINGS-ABOUT | 05 SYS-IPCLIFETIME
   SettingsWindow.Output.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
   SpinningWheelSlider.cs                     04
   TextOverlayGenerator.cs                    03
@@ -151,7 +177,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   VoiceRecorder.cs                           02
   VoiceCaptureSession.cs                     02
 ⚠ VoiceOverRecoveryManager.cs                02 05
-⚠ VoiceOverWindow.Apply.cs                   01 02 05
+⚠ VoiceOverWindow.Apply.cs                   01 02 04 05
 ⚠ WindowBoundsHelper.cs                      04 05
   ZoomPreviewSimulator.cs                    03
   FvsBuild Program.cs                        05
@@ -235,6 +261,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   VersionAndUpdaterTests.cs                  05 SYS-AUTOUPDATE | SYS-UPGRADEUX
   UpgradeProgressReportingTests.cs           05 SYS-UPGRADEUX
   Staging.cs                                 09
+  CHANGELOG.md                               09 (rolling release notes for latest 5 versions)
   GitHubReleasePublisher.cs                  09 DIST-SPLIT
   InnoInstaller.cs                           09 DIST-INSTALLER (NODROPPER_01)
   FreeVideoStudio.iss (build/installer)      09 DIST-INSTALLER (NODROPPER_01)
@@ -480,6 +507,64 @@ AIHUD_02                                     01 §12a TL-AIHUD
 AIHUD_03                                     01 §12a TL-AIHUD
 AIHUD_04                                     01 §12a TL-AIHUD
 AIHUD_05                                     04 §13a UI-AIHUDWAND | 05 §6 SYS-AISETTINGS
+AIGAME_01                                    01 §11 TL-AITRACKING | 05 §6 SYS-AISETTINGS
+AIEXCLUDE_02                                 01 §11 TL-AITRACKING
+AICHUNK_01                                   01 §11 TL-AITRACKING | 04 §13 UI-AIZOOM
+AIFPS_01                                     01 §11 TL-AITRACKING
+AITIME_01                                    01 §11 TL-AITRACKING
+AIRESMOOTH_01                                01 §11 TL-AITRACKING | 04 §13 UI-AIZOOM
+AIHUDZONE_01                                 01 §11 TL-AITRACKING
+AILOOKAHEAD_01                               01 §11 TL-AITRACKING | 04 §13 UI-AIZOOM
+AIMERGE_01                                   01 §11 TL-AITRACKING | 04 §13 UI-AIZOOM
+AIOWNBOX_01                                  04 §13 UI-AIZOOM
+AIZOOMCONSENT_01                             04 §13 UI-AIZOOM | 05 §6 SYS-AISETTINGS
+AIUNDO_01                                    07 §7.1 UNDO-GRANULAR-APPLY | 04 §13 UI-AIZOOM
+AIMODELFALLBACK_01                           05 §6 SYS-AISETTINGS
+GEMINICLIENT_01                              05 §6 SYS-AISETTINGS | 04 §13 UI-AIZOOM
+AIPROVIDER_01                                05 §6 SYS-AISETTINGS
+CLAUDEPROVIDER_01                            05 §6 SYS-AISETTINGS
+OPENAIPROVIDER_01                            05 §6 SYS-AISETTINGS
+AIFRAMESEQ_01                                 05 §6 SYS-AISETTINGS
+AISETTINGS_01                                 05 §6 SYS-AISETTINGS
+AIPROVIDER_UI_01                             04 §13 UI-AIZOOM | 05 §6 SYS-AISETTINGS
+AIPROVIDER_ROUTING_01                        01 §11 TL-AITRACKING | 04 §13 UI-AIZOOM | 05 §6 SYS-AISETTINGS
+AICAPTION_MODEL_01                           01 §11a TL-CAPTIONS
+CaptionLine                                  01 §11a TL-CAPTIONS
+CaptionTrack                                 01 §11a TL-CAPTIONS
+CaptionTimeline                              01 §11a TL-CAPTIONS
+AICAPTION_LAYOUT_01                          01 §11a TL-CAPTIONS
+CaptionLayoutEngine                          01 §11a TL-CAPTIONS
+AICAPTION_ASS_01                             01 §11a TL-CAPTIONS
+CaptionAssWriter                             01 §11a TL-CAPTIONS
+AICAPTION_EXPORT_01                          03 §15 FFM-CAPTIONS
+AICOMMENTARY_SERVICE_01                      01 §11a TL-CAPTIONS | 05 §6 SYS-AISETTINGS
+AICOMMENTARY_UI_01                           04 §15 UI-AICOMMENTARY
+AICAPTION_LANE_01                            04 §15 UI-AICOMMENTARY | 01 §11a TL-CAPTIONS
+CAPTIONS_01                                  06 §3 PROJ-SCHEMA | 01 §11a TL-CAPTIONS
+CaptionTrackJson                             06 §3 PROJ-SCHEMA
+EditCaptionDialogWindow                      04 §15 UI-AICOMMENTARY
+CommentaryService                            01 §11a TL-CAPTIONS | 05 §6 SYS-AISETTINGS
+IAiVisionProvider                            05 §6 SYS-AISETTINGS
+GeminiProvider                               05 §6 SYS-AISETTINGS
+ClaudeProvider                               05 §6 SYS-AISETTINGS
+OpenAiProvider                               05 §6 SYS-AISETTINGS
+AiProviderException                          05 §6 SYS-AISETTINGS
+AiFrameSequenceExtractor                     05 §6 SYS-AISETTINGS
+AiUsageConfig                                05 §6 SYS-AISETTINGS
+KEYPROTECT_01                                05 §6 SYS-AISETTINGS
+SECRETSCAN_01                                05 §6 SYS-AISETTINGS
+WANDPROGRESSIVE_01                           01 §12a TL-AIHUD | 04 §13a UI-AIHUDWAND
+WANDCOLOR_01                                 04 §13a UI-AIHUDWAND
+AiGameProfile                                01 §11 TL-AITRACKING
+AiHudAvoidZones                              01 §11 TL-AITRACKING
+AiTrackingPrompts                            01 §11 TL-AITRACKING
+AiTrackingGameProfile                        05 §6 SYS-AISETTINGS
+AiZoomCloudConsent                           05 §6 SYS-AISETTINGS | 04 §13 UI-AIZOOM
+GeminiClient                                 05 §6 SYS-AISETTINGS
+GeminiException                              05 §6 SYS-AISETTINGS | 04 §13 UI-AIZOOM
+GeminiModelSession                           05 §6 SYS-AISETTINGS
+SecretProtector                              05 §6 SYS-AISETTINGS
+HudLocalPreview                              01 §12a TL-AIHUD
 InsertionAt                                  01 (mini-map only)
 IsActive                                     02 §4 AUD-VOICEOVER | 03 §5 FFM-MEMEPREVIEW
 IsEof                                        02 §2a AUD-IPCSTATE
@@ -565,7 +650,7 @@ OutputTimeline                               01 §2 TL-OUTPUTTIMELINE | 02 §6 A
 OverlayCanvas                                04 §5 UI-COACH
 P3ASYNC_01                                   02 §6 AUD-DIALOGS
 PhoneFrameMockup                             01 §1 TL-PORTRAIT | 04 (mini-map only)
-PostWithRetryAsync                           05 §6 SYS-AISETTINGS
+GenerateAsync (GeminiClient)                 05 §6 SYS-AISETTINGS   (replaces PostWithRetryAsync, removed)
 ProcessWorker                                03 §9 FFM-BINPATH
 ProgramDataRoot                              05 (mini-map only)
 ProjectRecoveryService                       05 (mini-map only)
@@ -668,6 +753,7 @@ MICHEALTH_02                                 02 §4 AUD-VOICEOVER | 06 PROJ-AOTP
 MICSMOKE_01                                  02 §4 AUD-VOICEOVER
 MICSMOKE_02                                  02 §4 AUD-VOICEOVER
 VORECOVERY_02                                02 §4 AUD-VOICEOVER
+VORECOVERY_03                                02 §4 AUD-VOICEOVER | 04 §4 UI-SAFEGUARDS
 SESSIONOWNER_01                              02 §4 AUD-VOICEOVER
 VoiceOverRecoveryManager                     02 §4 AUD-VOICEOVER
 IVoiceOverRecoveryStore                      02 §4 AUD-VOICEOVER
@@ -691,6 +777,8 @@ _marchingAntsOffset                          04 §6 UI-GRANULAR
 ZOOMSTYLE_02                                 04 §6 UI-GRANULAR   [spec-only: no in-code tag]
 ZOOMPREVIEW_01                               04 §6 UI-GRANULAR   [spec-only: no in-code tag]
 ZOOMCOMMIT_01                                04 §6 UI-GRANULAR   [spec-only: no in-code tag]
+SLOWZOOMGLIDE_01                             04 §6 UI-GRANULAR | 01 §6 TL-ZOOM
+SlowZoomGlideAvailability                    03 §2 FFM-ZOOMGRAPH | 04 §6 UI-GRANULAR
 CheckManualAsync                             05 §6 SYS-AUTOUPDATE
 ShowAboutAsync                               04 §11 UI-SETTINGS-ABOUT
 GetCurrentVersion                            05 §6 SYS-AUTOUPDATE
@@ -810,6 +898,7 @@ DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTO
 DEVFAST_01                                   05 §4a SYS-DEVBUILD   (default dev run is incremental; dev rebuild = full wipe)
 UPDATEPIN_01                                 05 §5 SYS-SIGNING   (publisher root built into the app)
 UPDATEPIN_02                                 05 §5 SYS-SIGNING   (leaf renews itself from the root)
+UPDATEPIN_PEM_01                             05 §5 SYS-SIGNING   (preserve public PEM data and verify its pin)
 BGUPDATE_01                                  05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (background download, one question)
 DLRESUME_01                                  05 §6 SYS-AUTOUPDATE   (resumable downloads)
 DIST-SMART                                   09 §3a DIST-SMART   (per-file smart updates)
@@ -937,6 +1026,7 @@ CACHEBOUND_01                                04 §9 UI-MERGERQUEUE | 05 §4c SYS
 CACHEBOUND_02                                04 §10 UI-MEMESELECT
 CACHEBOUND_03                                04 §10 UI-MEMESELECT
 CACHEBOUND_04                                04 §9 UI-MERGERQUEUE
+CACHEBOUND_05                                04 §10 UI-MEMESELECT | 03 §4a FFM-MEMECORNER
 WAVEPIXEL_01                                 04 §9 UI-MERGERQUEUE
 WaveformEnvelope                             04 §9 UI-MERGERQUEUE
 WaveformLanePresenter                        04 §9 UI-MERGERQUEUE
@@ -1085,6 +1175,9 @@ ZOOM_01                                      04   [code-only: CropToolWindow.axa
 CROPZOOMRESET_01                             04 §4 UI-SAFEGUARDS
 CROPSAVEPROMPT_02                            04 §4 UI-SAFEGUARDS
 CROPUNSAVED_01                               04 §4 UI-SAFEGUARDS | 06 §5 PROJ-DISK
+CROPEDIT_01                                  05 §4 SYS-RECOVERY
+CROPPROFILE_01                               05 §4 SYS-RECOVERY
+CROPCONFIRM_01                               04 §4 UI-SAFEGUARDS
 CROPFIRSTBOOT_01                             05 §4 SYS-RECOVERY
 FORTNITEDEFAULT_02                           05 §4 SYS-RECOVERY
 CROPFALLBACK_02                              05 §4 SYS-RECOVERY
@@ -1139,8 +1232,9 @@ TOOLRETURN_01                                05 §3 SYS-WINSTATE
 | `REBRAND_01`, `AppDataDir`, `LocalCacheDir`, `MigrateDirectory`, `FvsFreeVideoStudioMutex` | `05` SYS-REBRAND |
 | `NOSPACE_01`, `LegacyInstallFolder`, `KnownDestinations`, `ReuseRoot`, `RetargetUserLinksAsync` | `05` SYS-NOSPACE |
 | `MEMEFOLDER_01`, `MEMEFOLDER_02`, `CloudMemeFolder`, `MemeCategory`, `MEMECAT_01`, `MEMESYNC_01`..`03`, `STARTERLIST_01`, `ResolveSavedFile` | `03` FFM-MEMELIB |
-| `MEMEPICK_01`, `MEMEPICK_02`, `MEMEWALL_01`, `MEMEMUSIC_01`, `MemeThumbnailCache`, `CACHEBOUND_02`, `CACHEBOUND_03`, `OwnedLruCache`, `ViewportThumbnailLoader` | `04` UI-MEMESELECT |
+| `MEMEPICK_01`, `MEMEPICK_02`, `MEMEWALL_01`, `MEMEMUSIC_01`, `MemeThumbnailCache`, `CACHEBOUND_02`, `CACHEBOUND_03`, `CACHEBOUND_05`, `OwnedLruCache`, `ViewportThumbnailLoader` | `04` UI-MEMESELECT |
 | `REBRAND_02`, `LegacyResidueSweep`, `RunForCurrentUser`, `LegacyTempNames`, `LegacyStorageNames` | `05` SYS-REBRAND-SWEEP |
 | `REBRAND_03`, `GitHubReleasePublisher.ReleaseAssets`, previous-brand release alias | `09` DIST-SPLIT |
 | Old→new identity map, old-brand update flow, allow list | `REBRAND_MIGRATION.md` |
 | `ProductionNamespacesUseTheProductRoot` | `08` COMP-ARCHTEST |
+<!-- WGLUNBIND_01: MpvVideoView.cs, Interop/WglInterop.cs and Interop/NativeTeardownInvoker.cs — 05 SYS-WINSTATE; WglInterop.cs also 04 UI-GPUPRESENT2. -->

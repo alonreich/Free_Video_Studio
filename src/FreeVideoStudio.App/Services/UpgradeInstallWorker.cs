@@ -1,4 +1,7 @@
-﻿using System.Diagnostics;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Principal;
@@ -19,7 +22,7 @@ internal static class UpgradeInstallWorker
 
     public static async Task<int> RunAsync(string[] args)
     {
-        if (!IsElevated() || args.Length != 3 || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 ||
+        if (!IsElevated() || args.Length < 3 || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 ||
             args[2].Length != 64 || args[2].Any(c => !Uri.IsHexDigit(c))) return 2;
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port).ConfigureAwait(false);
@@ -50,7 +53,8 @@ internal static class UpgradeInstallWorker
             }
             if (mode != "install") throw new IOException("Unknown installation request.");
             SmartUpdateManifest? smart = smartFolder is null ? null : LoadVerifiedSmartUpdate(smartFolder);
-            string[] roots = InstallDiscovery.FindRoots();
+            bool allowDowngrade = args.Contains("--allow-downgrade", StringComparer.OrdinalIgnoreCase);
+            string[] roots = InstallDiscovery.FindRoots(allowDowngrade);
             InstallDiscovery.EnsureIdle(roots, Environment.ProcessId);
             transaction = DirectoryUpgrade.Create(InstallDiscovery.Store, InstallDiscovery.Destination,
                 roots.Where(r => !r.Equals(InstallDiscovery.Destination, StringComparison.OrdinalIgnoreCase)));
@@ -75,6 +79,7 @@ internal static class UpgradeInstallWorker
             }
             else
             {
+                // NODROPPER_01: full installs use the separate Inno Setup executable.
                 throw new IOException("This program is not an installer. Download FreeVideoStudio-Setup.exe to install Free Video Studio.");
             }
             await relay.RunAsync("install", report => transaction.Prepare(candidate =>
@@ -84,6 +89,7 @@ internal static class UpgradeInstallWorker
                 {
                     string target = Path.Combine(candidate, Path.GetRelativePath(extracted, newFiles[i]));
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    // FASTINSTALL_01: move extracted files into the prepared candidate without a second payload copy.
                     File.Move(newFiles[i], target, overwrite: true);
                     report(0.3 + 0.2 * (i + 1) / newFiles.Length);
                 }
@@ -256,6 +262,9 @@ internal static class UpgradeInstallWorker
             string path = Path.Combine(directory, "journal.json");
             if (!File.Exists(path)) continue;
             JsonObject journal = AtomicJsonFile.ReadObject(path) ?? throw new IOException("An installation recovery record is unreadable. Backups were preserved.");
+            // NOSPACE_01 — journals written before the move to the space-free folder name the spaced
+            // folder as their destination. They are still ours and must still recover and prune;
+            // rejecting them would block every future install on that machine.
             string destination = UpgradeFiles.FullPath(journal["Destination"]!.GetValue<string>());
             if (!InstallDiscovery.KnownDestinations.Contains(destination, StringComparer.OrdinalIgnoreCase))
                 throw new IOException("Unexpected destination in protected installation journal.");
@@ -293,6 +302,7 @@ internal static class UpgradeInstallWorker
                     await new UpgradeRegistration(true, transaction.DirectoryPath, roots).RemoveLegacyAsync().ConfigureAwait(false);
                     UpgradeFiles.DeleteTree(Path.Combine(transaction.DirectoryPath, "payload"), transaction.DirectoryPath);
                 }
+                // ONEBACKUP_01: prune older confirmed backups when a newer committed installation exists.
                 transaction.PruneBackup(DateTimeOffset.UtcNow,
                     supersededByNewer: newest is { } latest && transaction.ConfirmedAt is { } at && at < latest);
             }
@@ -303,6 +313,7 @@ internal static class UpgradeInstallWorker
             if (!string.IsNullOrWhiteSpace(xml) && System.Xml.Linq.XDocument.Parse(xml).Descendants()
                     .Where(x => x.Name.LocalName == "Command").Any(x => oldExecutables.Contains(x.Value.Trim('"'))))
                 _ = await TaskCommandAsync("/Delete", "/TN", LegacyProductIdentity.CompactName, "/F").ConfigureAwait(false);
+            // NOSYSTEMTASK_01: remove the former scheduled maintenance task; maintenance runs through the installer gate.
             string ownTask = await TaskCommandAsync("/Query", "/TN", DeploymentFootprint.ScheduledTaskName, "/XML").ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(ownTask))
                 _ = await TaskCommandAsync("/Delete", "/TN", DeploymentFootprint.ScheduledTaskName, "/F").ConfigureAwait(false);
