@@ -25,6 +25,11 @@ public partial class SettingsWindow : Window
     private AiUsageConfig _pendingAiUsageTracking = new(AiVendor.Google, GeminiClient.DefaultModel);
     private AiUsageConfig _pendingAiUsageMagicWand = new(AiVendor.Google, GeminiClient.DefaultModel);
     private AiUsageConfig _pendingAiUsageCommentary = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageMusicAutoFit = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageViralPost = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageEliminationTracker = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private bool _pendingAiEliminationTrackerEnabled;
+    private bool _pendingAiViralPostHelperEnabled = true;
     private double _pendingAiZoomBaseScale = 2.2;
     private double _pendingAiZoomMinScale = 1.3;
     private bool _pendingAiZoomAvoidHud = true;
@@ -49,6 +54,11 @@ public partial class SettingsWindow : Window
         _pendingAiUsageTracking = s.AiUsageTracking.Clone();
         _pendingAiUsageMagicWand = s.AiUsageMagicWand.Clone();
         _pendingAiUsageCommentary = s.AiUsageCommentary.Clone();
+        _pendingAiUsageMusicAutoFit = s.AiUsageMusicAutoFit.Clone();
+        _pendingAiUsageViralPost = s.AiUsageViralPost.Clone();
+        _pendingAiUsageEliminationTracker = s.AiUsageEliminationTracker.Clone();
+        _pendingAiEliminationTrackerEnabled = s.AiEliminationTrackerEnabled;
+        _pendingAiViralPostHelperEnabled = s.AiViralPostHelperEnabled;
         _pendingAiZoomBaseScale = s.AiZoomBaseScale;
         _pendingAiZoomMinScale = s.AiZoomMinScale;
         _pendingAiZoomAvoidHud = s.AiZoomAvoidHud;
@@ -80,6 +90,11 @@ public partial class SettingsWindow : Window
         s.AiUsageTracking = _pendingAiUsageTracking.Clone();
         s.AiUsageMagicWand = _pendingAiUsageMagicWand.Clone();
         s.AiUsageCommentary = _pendingAiUsageCommentary.Clone();
+        s.AiUsageMusicAutoFit = _pendingAiUsageMusicAutoFit.Clone();
+        s.AiUsageViralPost = _pendingAiUsageViralPost.Clone();
+        s.AiUsageEliminationTracker = _pendingAiUsageEliminationTracker.Clone();
+        s.AiEliminationTrackerEnabled = _pendingAiEliminationTrackerEnabled;
+        s.AiViralPostHelperEnabled = _pendingAiViralPostHelperEnabled;
 
         s.AiZoomBaseScale = _pendingAiZoomBaseScale;
         s.AiZoomMinScale = Math.Min(_pendingAiZoomMinScale, _pendingAiZoomBaseScale);
@@ -449,6 +464,37 @@ public partial class SettingsWindow : Window
         SetupUsageRow(scope, "AiU2", _pendingAiUsageTracking, AiUsage.DenseTracking);
         SetupUsageRow(scope, "AiU3", _pendingAiUsageMagicWand, AiUsage.MagicWand);
         SetupUsageRow(scope, "AiU4", _pendingAiUsageCommentary, AiUsage.Commentary);
+
+        // --- AI Features Checkboxes & Navigation ---
+        var elimCb = scope?.Find("AiEliminationTrackerCheckBox") as CheckBox;
+        if (elimCb != null)
+        {
+            elimCb.IsChecked = _pendingAiEliminationTrackerEnabled;
+            elimCb.IsCheckedChanged += (_, _) => _pendingAiEliminationTrackerEnabled = elimCb.IsChecked == true;
+        }
+
+        var viralCb = scope?.Find("AiViralPostHelperCheckBox") as CheckBox;
+        if (viralCb != null)
+        {
+            viralCb.IsChecked = _pendingAiViralPostHelperEnabled;
+            viralCb.IsCheckedChanged += (_, _) => _pendingAiViralPostHelperEnabled = viralCb.IsChecked == true;
+        }
+
+        var goToProvBtn = scope?.Find("AiGoToProvidersBtn") as Button;
+        if (goToProvBtn != null)
+        {
+            goToProvBtn.Click += (_, _) => OnGoToAiProvidersClicked(null, null!);
+        }
+    }
+
+    private void OnGoToAiProvidersClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var tc = this.FindNameScope()?.Find("SettingsTabControl") as TabControl;
+        var provTab = this.FindNameScope()?.Find("AiProvidersTab") as TabItem;
+        if (tc != null && provTab != null)
+        {
+            tc.SelectedItem = provTab;
+        }
     }
 
     private void SetupUsageRow(

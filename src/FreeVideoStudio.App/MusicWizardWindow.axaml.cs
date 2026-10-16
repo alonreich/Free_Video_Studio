@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
 // Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
 // Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
@@ -793,11 +793,10 @@ public partial class MusicWizardWindow : Window
             phase3Lanes.SeekRequested += videoRelativeSec =>
             {
                 bool wasPlaying = _isPreviewPlaying;
-                StopPreview();
+                if (wasPlaying) StopPreview();
                 _previewCurrentOffset = _songStartSeconds + videoRelativeSec;
-                SeekPhase3VideoHost(videoRelativeSec, forcePause: !wasPlaying);
-                if (wasPlaying) StartPreviewInternal(_previewCurrentOffset);
-                else UpdatePlayhead();
+                SeekPhase3VideoHost(videoRelativeSec, forcePause: true);
+                UpdatePlayhead();
             };
             phase3Lanes.SizeChanged += (_, _) => DrawPhase3TimelineScale();
         }
@@ -1833,19 +1832,90 @@ public partial class MusicWizardWindow : Window
     }
 
 
+    private bool _isSeekingPhase3Video = false;
+    private double? _nextPhase3SeekTarget = null;
+    private long _lastPhase3SeekTimestamp = 0;
+    private const int Phase3SeekCoalesceMs = 15;
+    private DispatcherTimer? _phase3SeekFlushTimer;
+
+    private void OnPhase3SeekCompleted()
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            _isSeekingPhase3Video = false;
+            if (_nextPhase3SeekTarget.HasValue)
+            {
+                double target = _nextPhase3SeekTarget.Value;
+                _nextPhase3SeekTarget = null;
+                await SeekPhase3VideoHostInternal(target, forcePause: true);
+            }
+        });
+    }
+
+    private void EnsurePhase3SeekFlushTimer()
+    {
+        if (_phase3SeekFlushTimer != null)
+        {
+            if (!_phase3SeekFlushTimer.IsEnabled) _phase3SeekFlushTimer.Start();
+            return;
+        }
+
+        _phase3SeekFlushTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Phase3SeekCoalesceMs) };
+        _phase3SeekFlushTimer.Tick += (_, _) =>
+        {
+            if (!_nextPhase3SeekTarget.HasValue) { _phase3SeekFlushTimer?.Stop(); return; }
+            if (_isSeekingPhase3Video) return;
+            if (Environment.TickCount64 - _lastPhase3SeekTimestamp < Phase3SeekCoalesceMs) return;
+
+            double target = _nextPhase3SeekTarget.Value;
+            _nextPhase3SeekTarget = null;
+            _phase3SeekFlushTimer?.Stop();
+            _ = SeekPhase3VideoHostInternal(target, forcePause: true);
+        };
+        _phase3SeekFlushTimer.Start();
+    }
+
     private void SeekPhase3VideoHost(double outputRelativeSec, bool forcePause)
     {
+        long now = Environment.TickCount64;
+        if (_isSeekingPhase3Video || (now - _lastPhase3SeekTimestamp < Phase3SeekCoalesceMs))
+        {
+            _nextPhase3SeekTarget = outputRelativeSec;
+            EnsurePhase3SeekFlushTimer();
+            return;
+        }
+
+        _ = SeekPhase3VideoHostInternal(outputRelativeSec, forcePause);
+    }
+
+    private async Task SeekPhase3VideoHostInternal(double outputRelativeSec, bool forcePause)
+    {
         var wizardVideoHost = WizardVideoHost;
-        if (wizardVideoHost?.IpcClient == null) return;
+        if (wizardVideoHost?.IpcClient == null)
+        {
+            _isSeekingPhase3Video = false;
+            return;
+        }
+
+        _isSeekingPhase3Video = true;
+        _lastPhase3SeekTimestamp = Environment.TickCount64;
 
         double sourceRelativeSec = MapPhase3OutputToSourceRelativeSeconds(outputRelativeSec);
         double sourceAbsSec = (_trimStartMs / 1000.0) + sourceRelativeSec;
         double speed = GetPhase3PreviewSpeedAtSourceRelativeSeconds(sourceRelativeSec);
 
-        _ = wizardVideoHost.IpcClient.SetPropertyAsync("time-pos", sourceAbsSec.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        _ = wizardVideoHost.IpcClient.SetPropertyAsync("speed", Math.Max(0.001, speed).ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
-        if (forcePause || speed <= 0.001)
-            _ = wizardVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
+        try
+        {
+            await wizardVideoHost.IpcClient.SendCommandAsync("seek", sourceAbsSec.ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute");
+            await wizardVideoHost.IpcClient.SetPropertyAsync("speed", Math.Max(0.001, speed).ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
+            if (forcePause || speed <= 0.001)
+                await wizardVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
+        }
+        catch (Exception ex)
+        {
+            _isSeekingPhase3Video = false;
+            RuntimeLog.Swallowed(ex);
+        }
     }
 
     private void SyncPhase3VideoPreviewClock()
@@ -2229,6 +2299,8 @@ public partial class MusicWizardWindow : Window
                 if (wizardVideoHost.IpcClient == null)
                     throw new InvalidOperationException("Video preview did not start.");
 
+                wizardVideoHost.IpcClient.SeekCompleted += OnPhase3SeekCompleted;
+
                 await wizardVideoHost.IpcClient.LoadFileAsync(_videoPath, _trimStartMs / 1000.0);
                 await wizardVideoHost.IpcClient.SetPropertyAsync("time-pos", (_trimStartMs / 1000.0).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 await wizardVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
@@ -2503,6 +2575,8 @@ public partial class MusicWizardWindow : Window
         var border = VideoHostBorderCtl;
         if (border?.Child is FreeVideoStudio.App.MpvVideoView wizardVideoHost)
         {
+            if (wizardVideoHost.IpcClient != null)
+                wizardVideoHost.IpcClient.SeekCompleted -= OnPhase3SeekCompleted;
             border.Child = null;
             var shutdown = await wizardVideoHost.ShutdownAsync();
             if (!shutdown.Succeeded) RuntimeLog.Fail("MUSIC_WIZARD", $"Phase 3 preview did not shut down cleanly: {shutdown.Reason}");
@@ -2793,7 +2867,14 @@ public partial class MusicWizardWindow : Window
         }
         else if (Math.Abs(_audioIpcClient.CurrentTime - audioStartOffset) > 0.5)
         {
-            await _audioIpcClient.SendCommandAsync("seek", audioStartOffset.ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute");
+            try
+            {
+                await _audioIpcClient.SendCommandAsync("seek", audioStartOffset.ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute");
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Swallowed(ex);
+            }
         }
 
         await _audioIpcClient.ApplyPreviewGainAsync(GetPreviewMusicBalance());
@@ -3042,7 +3123,7 @@ public partial class MusicWizardWindow : Window
 
             if (_currentStep == StepFit)
             {
-                await SyncPhase3MusicPreviewTrackAsync(forceReload: true);
+                await SyncPhase3MusicPreviewTrackAsync(forceReload: false);
                 return;
             }
 
@@ -3466,243 +3547,6 @@ public partial class MusicWizardWindow : Window
         }
 
         RuntimeLog.Info("Songs", $"Song download finished: {count} new track(s).");
-    }
-
-    /// <summary>
-    /// ISSUE_10 — the folder the wizard is currently browsing: the user's saved custom music
-    /// folder if set and present, otherwise the shell Music folder.
-    /// </summary>
-    private string ResolveCurrentMusicDirectory()
-    {
-        try
-        {
-            if (File.Exists(_paths.SessionStateFile))
-            {
-                var state = FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.ReadObject(_paths.SessionStateFile);
-                if (state != null && state.TryGetPropertyValue("CustomMusicDirectory", out var node) && node != null)
-                {
-                    string custom = node.ToString();
-                    if (Directory.Exists(custom)) return custom;
-                }
-            }
-        }
-        catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
-
-        return Infrastructure.MemeDirectory.GetMusicRoot();
-    }
-
-    private void LoadMusicDirectory()
-
-    {
-
-        string? targetDir = null;
-
-        try
-
-        {
-
-            if (File.Exists(_paths.SessionStateFile))
-            {
-                var state = FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.ReadObject(_paths.SessionStateFile);
-                if (state != null && state.TryGetPropertyValue("CustomMusicDirectory", out var node) && node != null)
-                {
-                    targetDir = node.ToString();
-                }
-            }
-        }
-
-        catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
-
-        if (string.IsNullOrWhiteSpace(targetDir) || !Directory.Exists(targetDir))
-
-        {
-
-            targetDir = Infrastructure.MemeDirectory.GetMusicRoot();
-        }
-
-        _ = ScanDirectoryForMusicAsync(targetDir);
-    }
-
-    private async Task ScanDirectoryForMusicAsync(string directoryPath)
-
-    {
-
-        CancelMusicScan();
-        var cts = new CancellationTokenSource();
-        _musicScanCts = cts;
-        int scanVersion = _musicScanVersion;
-        Vm.MusicFolderText = directoryPath;
-
-        _allTracks.Clear();
-        AvailableTracks.Clear();
-        ApplyTrackFilterAndSort();
-
-        try
-        {
-            var tracks = await Task.Run(() =>
-            {
-                var found = new System.Collections.Generic.List<MusicTrackItem>();
-                if (!Directory.Exists(directoryPath))
-                    return found;
-
-                var exts = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".m4a", ".aac", ".ogg" };
-
-                foreach (string f in Directory.EnumerateFiles(directoryPath))
-                {
-                    cts.Token.ThrowIfCancellationRequested();
-                    if (!exts.Contains(Path.GetExtension(f)))
-                        continue;
-
-                    var fileInfo = new FileInfo(f);
-                    found.Add(new MusicTrackItem
-                    {
-                        Name = Path.GetFileName(f),
-                        Title = Path.GetFileNameWithoutExtension(f),
-                        FilePath = f,
-                        DurationText = "Loading...",
-                        SizeText = "",
-                        LastModifiedTicks = fileInfo.LastWriteTimeUtc.Ticks,
-                        IsRecent = _recentMusicPaths.Contains(f)
-                    });
-                }
-
-                return found;
-            }, cts.Token);
-
-            if (cts.Token.IsCancellationRequested || scanVersion != _musicScanVersion)
-                return;
-
-            _allTracks.Clear();
-            foreach (var item in tracks)
-                _allTracks.Add(item);
-
-            ApplyTrackFilterAndSort();
-
-            foreach (var item in tracks)
-                _ = ProbeTrackInfoAsync(item, cts.Token);
-        }
-        catch (OperationCanceledException swallowed10)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed10);
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Fail("MUSIC_WIZARD", $"Failed to scan music directory: {ex.Message}");
-            ApplyTrackFilterAndSort();
-        }
-    }
-
-    private void UpdateMusicEmptyState()
-    {
-        var emptyText = this.FindControl<TextBlock>("EmptyMusicListText");
-        if (emptyText != null)
-        {
-            emptyText.Text = _allTracks.Count == 0
-                ? "No music files found. Change folder or drop an audio file here."
-                : "No songs match the current search.";
-            emptyText.IsVisible = AvailableTracks.Count == 0;
-        }
-    }
-
-    /// <summary>
-
-    /// Improvement #6: Probes duration and file size asynchronously for display in the list.
-
-    /// </summary>
-
-    private async Task ProbeTrackInfoAsync(MusicTrackItem item, CancellationToken cancellationToken = default)
-
-    {
-
-        try
-
-        {
-
-            await _trackProbeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var fileInfo = new FileInfo(item.FilePath);
-                double sizeMb = fileInfo.Length / (1024.0 * 1024.0);
-                string sizeText = sizeMb >= 1.0 ? $"{sizeMb:F1} MB" : $"{fileInfo.Length / 1024.0:F0} KB";
-
-                var ffprobePath = ResolveFfprobePath();
-                var prober = new FreeVideoStudio.Core.Media.MediaProber(ffprobePath, item.FilePath);
-                double duration = await prober.GetDurationAsync().ConfigureAwait(false);
-
-                string durationText;
-                double durationSec = 0.0;
-                if (duration > 0)
-                {
-                    durationSec = duration;
-                    var ts = TimeSpan.FromSeconds(duration);
-                    durationText = ts.TotalHours >= 1
-                        ? ts.ToString(@"h\:mm\:ss")
-                        : ts.ToString(@"m\:ss");
-                }
-                else
-                {
-                    durationText = "—";
-                }
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (cancellationToken.IsCancellationRequested)
-                        return;
-
-                    item.SizeText = sizeText;
-                    item.DurationSec = durationSec;
-                    item.DurationText = durationText;
-
-                    if (_musicSortMode == "Shortest" || _musicSortMode == "Longest")
-                    {
-                        ApplyTrackFilterAndSort();
-                    }
-                    else
-                    {
-                        var idx = AvailableTracks.IndexOf(item);
-
-                        if (idx >= 0)
-                        {
-                            // Re-inserting the same item makes the row re-read its length. The list's
-                            // selection is held across it so a length arriving is never a "selection".
-                            var listbox = MusicListBoxCtl;
-                            bool wasSelected = ReferenceEquals(listbox?.SelectedItem, item);
-                            var tmp = AvailableTracks[idx];
-                            _suppressTrackSelectionSideEffects = true;
-                            try
-                            {
-                                AvailableTracks[idx] = tmp;
-                                if (wasSelected && listbox != null) listbox.SelectedItem = tmp;
-                            }
-                            finally { _suppressTrackSelectionSideEffects = false; }
-                        }
-                    }
-
-                    OnTrackDurationKnown(item);
-                    UpdateCoverageBar();
-                    UpdateProblemFlags();
-                });
-            }
-            finally
-            {
-                _trackProbeGate.Release();
-            }
-        }
-        catch (OperationCanceledException swallowed4)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed4);
-        }
-        catch (Exception ex)
-
-        {
-
-            RuntimeLog.Fail("MUSIC_WIZARD", $"Failed to probe {item.Name}: {ex.Message}");
-
-            Dispatcher.UIThread.Post(() => item.DurationText = "—");
-        }
     }
 
     /// <summary>

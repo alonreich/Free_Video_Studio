@@ -868,6 +868,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         SaveRecoveryState();
 
         _ = RunAudioPeakCheckAsync(path);
+        if (Infrastructure.SettingsManager.Instance.AiEliminationTrackerEnabled)
+            _ = RunAiEliminationScanAsync(path);
     }
 
     /// <summary>The user's peak-softening answer for THIS video. Null until the probe has
@@ -1072,6 +1074,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         ClearOverlayTextForNextVideo("a different video was loaded");
 
         _speedSegments.Clear();
+        _aiEliminationTimestamps.Clear();
         _musicWizardResult = null;
         StopMusicPreview();
         _ = StopPreviewMixPlaybackAsync();

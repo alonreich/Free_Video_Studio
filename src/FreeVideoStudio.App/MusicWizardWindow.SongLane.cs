@@ -323,12 +323,11 @@ public partial class MusicWizardWindow
     {
         if (_currentStep != StepFit || !_phase3Ready) return;
         bool wasPlaying = _isPreviewPlaying;
-        StopPreview();
+        if (wasPlaying) StopPreview();
         double t = Math.Clamp(videoRelativeSec, 0, GetPhase3VideoDurationSeconds());
         _previewCurrentOffset = _songStartSeconds + t;
-        SeekPhase3VideoHost(t, forcePause: !wasPlaying);
-        if (wasPlaying) StartPreviewInternal(_previewCurrentOffset);
-        else UpdatePlayhead();
+        SeekPhase3VideoHost(t, forcePause: true);
+        UpdatePlayhead();
     }
 
     // ── the song card ───────────────────────────────────────────────────────────────────────

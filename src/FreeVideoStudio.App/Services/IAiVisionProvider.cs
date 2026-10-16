@@ -103,6 +103,12 @@ public enum AiUsage
     MagicWand,
     /// <summary>U4 — Live commentary captions (clip -> timed first-person lines).</summary>
     Commentary,
+    /// <summary>U5 — Background music auto-fit (video keyframes -> best song recommendation & timing).</summary>
+    MusicAutoFit,
+    /// <summary>U6 — Modern viral post helper (export finish -> viral clickbait title, caption & hashtags).</summary>
+    ViralPost,
+    /// <summary>U7 — AI elimination tracker (gameplay clip -> kill / knockdown timestamp markers).</summary>
+    EliminationTracker,
 }
 
 /// <summary>

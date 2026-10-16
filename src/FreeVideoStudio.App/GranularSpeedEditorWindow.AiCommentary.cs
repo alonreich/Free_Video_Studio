@@ -28,6 +28,7 @@ public partial class GranularSpeedEditorWindow
     private CaptionTrack? _aiCommentaryCandidateTrack;
     private CaptionTrack? _aiCommentaryOriginalTrack;
     private string? _aiCommentaryTempAssPath;
+    private string? _liveCaptionsAssPath;
 
     private void WireAiCommentaryControls()
     {
@@ -138,6 +139,14 @@ public partial class GranularSpeedEditorWindow
         var commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
         if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, commentaryConfig.Vendor)) return;
 
+        if (_edit.IsMergeMode)
+        {
+            await ErrorReporter.ShowAsync(this, "Merged Timeline",
+                "AI Commentary generation is currently supported for single video clips in the Granular Speed Editor.\n" +
+                "Open the individual clip to generate commentary.");
+            return;
+        }
+
         var dialogResult = await AiCommentaryDialogWindow.ShowDialogAsync(
             this,
             _edit.HasSelectedSegment,
@@ -163,17 +172,9 @@ public partial class GranularSpeedEditorWindow
             durationSec = Math.Max(0.1, (endMs - _edit.TrimStartMs) / 1000.0);
         }
 
-        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || (!File.Exists(_edit.VideoPath) && !_edit.IsMergeMode))
+        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath))
         {
             await ErrorReporter.ShowAsync(this, "File Not Found", "The video clip file could not be found.");
-            return;
-        }
-
-        if (_edit.IsMergeMode)
-        {
-            await ErrorReporter.ShowAsync(this, "Merged Timeline",
-                "AI Commentary generation is currently supported for single video clips in the Granular Speed Editor.\n" +
-                "Open the individual clip to generate commentary.");
             return;
         }
 
@@ -381,9 +382,17 @@ public partial class GranularSpeedEditorWindow
                 int ow = _edit.IsMobileFormat ? Math.Min(sw, sh) : Math.Max(sw, sh);
                 int oh = _edit.IsMobileFormat ? Math.Max(sw, sh) : Math.Min(sw, sh);
 
+                string? previous = _liveCaptionsAssPath;
                 string assPath = Path.Combine(Path.GetTempPath(), $"fvs_captions_live_{Guid.NewGuid():N}.ass");
                 CaptionAssWriter.WriteToFile(assPath, _edit.CaptionTrack, OutTimeline(), ow, oh, isPortrait: _edit.IsMobileFormat, baseOffsetSec: 0.0);
                 _ = _videoHost.IpcClient.AddSubtitlesAsync(assPath);
+                _liveCaptionsAssPath = assPath;
+
+                if (!string.IsNullOrEmpty(previous) && File.Exists(previous))
+                {
+                    try { File.Delete(previous); }
+                    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
             }
             catch (Exception ex)
             {
@@ -393,6 +402,12 @@ public partial class GranularSpeedEditorWindow
         else
         {
             _ = _videoHost.IpcClient.RemoveSubtitlesAsync();
+            if (!string.IsNullOrEmpty(_liveCaptionsAssPath) && File.Exists(_liveCaptionsAssPath))
+            {
+                try { File.Delete(_liveCaptionsAssPath); }
+                catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                _liveCaptionsAssPath = null;
+            }
         }
     }
 
@@ -403,6 +418,13 @@ public partial class GranularSpeedEditorWindow
             try { File.Delete(_aiCommentaryTempAssPath); }
             catch (Exception ex) { RuntimeLog.Swallowed(ex); }
             _aiCommentaryTempAssPath = null;
+        }
+
+        if (_liveCaptionsAssPath != null && File.Exists(_liveCaptionsAssPath))
+        {
+            try { File.Delete(_liveCaptionsAssPath); }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            _liveCaptionsAssPath = null;
         }
     }
 }

@@ -39,6 +39,7 @@ public partial class FinishedDialogWindow : Window
         {
             txt.Text = $"File successfully saved to:\n{path}";
         }
+        StartViralPostGeneration(path);
     }
 
     public void SetAttributionText(string? text)

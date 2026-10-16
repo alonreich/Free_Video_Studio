@@ -336,7 +336,56 @@
                             </StackPanel>
                             </ScrollViewer>
                         </TabItem>
-                        <TabItem Header="AI Providers">
+                        <!-- AI Features Tab -->
+                        <TabItem Header="AI Features" Name="AiFeaturesTab">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="15" Spacing="16" HorizontalAlignment="Left" MaxWidth="680">
+                                    <TextBlock Text="AI Automation Features" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize12}"
+                                               Text="Enable intelligent automation tools powered by cloud AI vision and deterministic audio analysis. AI features run in the background with zero local model overhead."/>
+
+                                    <!-- AI Elimination Tracker Card -->
+                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                        <StackPanel Spacing="8">
+                                            <CheckBox Name="AiEliminationTrackerCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
+                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="AI Elimination Tracker (Auto-detect kills on timeline)"/>
+                                            <TextBlock Text="When enabled, automatically scans audio peaks and gameplay footage in the background when a video is loaded. Confirmed eliminations and knockdowns are marked with a subtle ✕ directly above the timeline."
+                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Default: OFF · Runs asynchronously in the background · Keeps timeline clean and uncluttered"
+                                                       Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Modern Viral Post Helper Card -->
+                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                        <StackPanel Spacing="8">
+                                            <CheckBox Name="AiViralPostHelperCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
+                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="Modern Viral Post Helper (Export Finished Screen)"/>
+                                            <TextBlock Text="Generates 2026 trending clickbait titles, engagement captions, and high-reach hashtags when exporting completes, with 1-click clipboard copying."
+                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Default: ON · Tailored for YouTube Shorts, TikTok, and Instagram Reels"
+                                                       Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- AI Music Auto-Fit Card -->
+                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="AI Music Auto-Fit" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                            <TextBlock Text="Available inside the Add Music wizard. Analyzes scene keyframes and pacing to match against your MP3 music library with custom in/out trimming."
+                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Quick Navigation to AI Providers -->
+                                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
+                                        <TextBlock Text="Need to configure API keys or change models?" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"/>
+                                        <Button Name="AiGoToProvidersBtn" Classes="Secondary" Content="Configure AI Providers →" Cursor="Hand" Click="OnGoToAiProvidersClicked"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Header="AI Providers" Name="AiProvidersTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Margin="15" Spacing="16" HorizontalAlignment="Left" MaxWidth="680">
                                     <TextBlock Text="AI Providers &amp; Tracking Configuration" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>

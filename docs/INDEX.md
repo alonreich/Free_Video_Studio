@@ -133,6 +133,16 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ MusicWizardWindow.axaml                    04 UI-MUSICWIZARD | 02 AUD-DIALOGS
 ⚠ MusicWizardWindow.Playlist.cs              02 AUD-MUSICWIN | 04 UI-MUSICWIZARD | 07 UNDO-MIGRATION
 ⚠ MusicWizardWindow.SongLane.cs              01 | 02 AUD-MUSICWIN | 04 UI-MUSICWIZARD
+  MusicWizardWindow.AiAutoFit.cs             02 AUD-MUSICWIN | 04 UI-MUSICWIZARD | 05 SYS-AISETTINGS
+  MusicWizardWindow.Scan.cs                  02 AUD-MUSICWIN | 04 UI-MUSICWIZARD
+  AiMusicAutoFitService.cs                   02 AUD-MUSICWIN | 05 SYS-AISETTINGS
+  AiMusicAutoFitTests.cs                     02 AUD-MUSICWIN | 05 SYS-AISETTINGS
+  AiViralPostService.cs                      04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
+  AiViralPostTests.cs                        04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
+  AiEliminationTrackerService.cs             01 TL-AITRACKING | 05 SYS-AISETTINGS
+  AiEliminationTrackerTests.cs               01 TL-AITRACKING | 05 SYS-AISETTINGS
+  MainWindow.AiElimination.cs                01 TL-AITRACKING | 05 SYS-AISETTINGS
+  FinishedDialogWindow.AiViral.cs            04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
 ⚠ MusicWizardResult.Plan.cs                  02 AUD-PREVIEWSYNC | 03 (mini-map only)
 ⚠ MusicWizardViewModel.cs                    04 UI-MUSICWIZARD | 02 AUD-MUSICWIN
 ⚠ VideoMergerWindow.MusicButton.cs           02 AUD-DIALOGS | 04 UI-MUSICWIZARD

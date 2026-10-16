@@ -440,7 +440,7 @@ public static class GeminiTrackingService
         }
         CoreLogger.Info("AI-Discovery", session.Redact($"{session.VendorName} discovery answer ({text.Length} chars): {GeminiClient.Truncate(text, 800)}"));
 
-        List<DiscoveredSubject> raw = ParseDiscovery(text);
+        List<DiscoveredSubject> raw = ParseDiscovery(text, session.VendorName);
         var valid = new List<DiscoveredSubject>();
         foreach (DiscoveredSubject sub in raw)
         {
@@ -462,7 +462,7 @@ public static class GeminiTrackingService
     }
 
     /// <summary>Parses and validates a discovery answer. Malformed JSON throws <see cref="GeminiException"/> (never silently "no targets").</summary>
-    internal static List<DiscoveredSubject> ParseDiscovery(string? text)
+    internal static List<DiscoveredSubject> ParseDiscovery(string? text, string vendorName = "AI")
     {
         string json = GeminiClient.StripCodeFence(text);
         List<DiscoveredSubject>? subjects;
@@ -473,7 +473,7 @@ public static class GeminiTrackingService
         catch (JsonException ex)
         {
             throw new GeminiException(GeminiErrorKind.MalformedResponse,
-                "Gemini's list of subjects could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));
+                $"{vendorName}'s list of subjects could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));
         }
         var result = new List<DiscoveredSubject>();
         if (subjects == null) return result;
@@ -609,7 +609,7 @@ public static class GeminiTrackingService
         ArgumentNullException.ThrowIfNull(req);
         ArgumentNullException.ThrowIfNull(session);
         if (!File.Exists(req.VideoPath)) throw new FileNotFoundException("Video file not found", req.VideoPath);
-        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, "No Gemini API key is configured. Add one in Settings › AI Tracking.");
+        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, $"No {session.VendorName} API key is configured. Add one in Settings › AI Providers.");
         if (req.SourceDurationSec > MaxTrackSec + 0.01)
             throw new InvalidOperationException($"AI SMART ZOOM can follow a target for up to {MaxTrackSec:0} seconds. Split this segment into shorter blocks and track each one.");
 
@@ -650,7 +650,7 @@ public static class GeminiTrackingService
             {
                 // AIFPS_01 — an API that rejects videoMetadata.fps gets the plain request (1 s interval).
                 useFps = false;
-                consoleLog?.Invoke("Gemini refused the custom frame rate; retrying at its default 1 frame per second.");
+                consoleLog?.Invoke($"{session.VendorName} refused the custom frame rate; retrying at its default 1 frame per second.");
                 CoreLogger.Info("AI-Tracking", session.Redact($"fps metadata refused: {ex.Detail}"));
                 waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, refCrop, mp4, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
             }
@@ -678,7 +678,7 @@ public static class GeminiTrackingService
         }
 
         if (all.Count == 0)
-            throw new GeminiException(GeminiErrorKind.MalformedResponse, "Gemini returned no tracking points for this target. Try a clearer segment.");
+            throw new GeminiException(GeminiErrorKind.MalformedResponse, $"{session.VendorName} returned no tracking points for this target. Try a clearer segment.");
 
         cancellationToken.ThrowIfCancellationRequested();
         statusProgress?.Report("Phase 4: Smoothing the camera path…");
@@ -727,11 +727,11 @@ public static class GeminiTrackingService
 
         CoreLogger.Info("AI-Tracking", session.Redact($"{session.VendorName} tracking answer ({text.Length} chars): {GeminiClient.Truncate(text, 800)}"));
         consoleLog?.Invoke($"Received {text.Length} characters of tracking data.");
-        return ParseWaypoints(text);
+        return ParseWaypoints(text, session.VendorName);
     }
 
     /// <summary>Parses + validates a tracking answer: finite times, coordinates clamped to 0..1000.</summary>
-    internal static List<RawSubjectWaypoint> ParseWaypoints(string? text)
+    internal static List<RawSubjectWaypoint> ParseWaypoints(string? text, string vendorName = "AI")
     {
         string json = GeminiClient.StripCodeFence(text);
         List<RawSubjectWaypoint>? raw;
@@ -742,7 +742,7 @@ public static class GeminiTrackingService
         catch (JsonException ex)
         {
             throw new GeminiException(GeminiErrorKind.MalformedResponse,
-                "Gemini's tracking answer could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));
+                $"{vendorName}'s tracking answer could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));
         }
         var result = new List<RawSubjectWaypoint>();
         if (raw == null) return result;
