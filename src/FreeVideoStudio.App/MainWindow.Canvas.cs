@@ -1062,30 +1062,7 @@ public partial class MainWindow
             };
         }
 
-        if (_aiEliminationTimestamps.Count > 0 && duration > 0)
-        {
-            var elimBaseColor = Infrastructure.ThemeResources.Colour(this, "AppDangerColor", Avalonia.Media.Color.FromRgb(168, 50, 50));
-            var elimBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, elimBaseColor.R, elimBaseColor.G, elimBaseColor.B));
-
-            foreach (double elimSec in _aiEliminationTimestamps)
-            {
-                if (elimSec < 0 || elimSec > duration) continue;
-                double ex = (elimSec / duration) * canvasWidth;
-
-                var xMark = new TextBlock
-                {
-                    Text = "✕",
-                    Foreground = elimBrush,
-                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(12),
-                    FontWeight = Avalonia.Media.FontWeight.Bold,
-                    IsHitTestVisible = true
-                };
-                ToolTip.SetTip(xMark, $"Elimination detected at {FormatTime(TimeSpan.FromSeconds(elimSec))}");
-                Avalonia.Controls.Canvas.SetLeft(xMark, Math.Max(0, ex - 6));
-                Avalonia.Controls.Canvas.SetTop(xMark, -16);
-                canvas.Children.Add(xMark);
-            }
-        }
+        DrawAiEliminationOverlay(canvas, duration, canvasWidth);
     }
 
     /// <summary>POPSICLE_01 — x:Name of the visible stick inside a timeline camera/magnifier.</summary>

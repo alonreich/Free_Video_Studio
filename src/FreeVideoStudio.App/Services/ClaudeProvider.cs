@@ -25,7 +25,7 @@ namespace FreeVideoStudio.App.Services;
 /// </summary>
 public sealed class ClaudeProvider : IAiVisionProvider
 {
-    public const string DefaultModelName = "claude-3-7-sonnet-20250219";
+    public const string DefaultModelName = "claude-sonnet-5-5"; // AIMODELS_02 — every Claude 3.x model is retired.
     public const string BaseUrl = "https://api.anthropic.com/v1/";
     public const string MessagesEndpoint = BaseUrl + "messages";
     public const string ModelsEndpoint = BaseUrl + "models";
@@ -142,21 +142,35 @@ public sealed class ClaudeProvider : IAiVisionProvider
             throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No Anthropic API key is configured. Add one in Settings.");
 
         options ??= GeminiCallOptions.Tracking;
-        string resolvedModel = ResolveModel(model);
+        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
 
-        byte[] requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, jsonSchema, reasoning);
+        // AISCHEMA_01 — Claude tools take JSON Schema with an object root.
+        AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: false);
+        // AITEMP_02 — Claude 4.7 and later answer HTTP 400 to any non-default temperature, so none is ever sent.
+        byte[] requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning);
+        bool fallbackTried = false;
 
         for (int attempt = 0; ; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                string responseBody = await PostOnceAsync(MessagesEndpoint, key, requestBody, options.Timeout, ct).ConfigureAwait(false);
+                string responseBody = await PostOnceAsync(MessagesEndpoint, key, resolvedModel, requestBody, options.Timeout, ct).ConfigureAwait(false);
                 if (TryExtractToolResult(responseBody, out string result, out string? error))
-                    return result;
+                    return string.IsNullOrWhiteSpace(jsonSchema) ? result : AiJsonSchema.Normalize(result, schema.Wrapped);
 
                 throw new AiProviderException(Vendor, AiProviderErrorKind.MalformedResponse,
                     "Anthropic answer could not be parsed.", GeminiClient.Redact(error, key));
+            }
+            catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
+            {
+                // AIMODELFALLBACK_02 — a retired model is replaced once by the newest live one of this key.
+                fallbackTried = true;
+                string? live = await AiVisionProviders.FindLiveReplacementAsync(this, key, resolvedModel, userLog, ct).ConfigureAwait(false);
+                if (live == null) throw;
+                resolvedModel = live;
+                requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning);
+                attempt = -1;
             }
             catch (AiProviderException ex) when (ex.IsTransient && attempt < options.MaxRetries)
             {
@@ -179,7 +193,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
         }
     }
 
-    private async Task<string> PostOnceAsync(string url, string key, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
+    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
@@ -193,10 +207,16 @@ public sealed class ClaudeProvider : IAiVisionProvider
 
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode) return body;
+            if (response.IsSuccessStatusCode)
+            {
+                // AIUSAGE_01 — tokens from the body, the per-minute allowance from the headers.
+                var (inTok, outTok, thinkTok) = AiUsageMeter.ParseClaudeUsage(body);
+                AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseClaudeLimits(response));
+                return body;
+            }
 
             TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
-            throw Classify((int)response.StatusCode, body, key, "claude", retryAfter);
+            throw Classify((int)response.StatusCode, body, key, model, retryAfter);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -222,14 +242,16 @@ public sealed class ClaudeProvider : IAiVisionProvider
         IReadOnlyList<AiImageInput> images,
         AiVideoInput? video,
         string jsonSchema,
-        AiReasoningConfig? reasoning)
+        AiReasoningConfig? reasoning,
+        double? temperature = null)
     {
         int estimatedSize = 4096 + prompt.Length * 2;
         foreach (var img in images) estimatedSize += img.Data.Length * 4 / 3 + 128;
 
         int budget = reasoning?.BudgetTokens ?? (reasoning?.Level == AiReasoningLevel.High ? 4096 : (reasoning?.Level == AiReasoningLevel.Medium ? 2048 : 0));
         bool enableThinking = budget > 0 && reasoning?.Level != AiReasoningLevel.Off;
-        int maxTokens = enableThinking ? Math.Max(8192, budget + 4096) : 4096;
+        // AICLAUDE_TOKENS_01 — 8192 so a long Commentary or Kill Tracker answer is never cut mid-JSON.
+        int maxTokens = enableThinking ? Math.Max(8192, budget + 4096) : 8192;
 
         var buffer = new ArrayBufferWriter<byte>(estimatedSize);
         using (var w = new Utf8JsonWriter(buffer))
@@ -245,6 +267,9 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteNumber("budget_tokens", Math.Max(1024, budget));
                 w.WriteEndObject();
             }
+            // AITEMP_02 — no temperature at all: Claude 4.7+ rejects non-default values with HTTP 400, and
+            // `temperature` is kept in the signature only so older callers still compile (it is ignored).
+            _ = temperature;
 
             // Tools: structured output definition
             if (!string.IsNullOrWhiteSpace(jsonSchema))
@@ -269,9 +294,18 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteEndObject(); // tool
                 w.WriteEndArray(); // tools
 
+                // Anthropic rejects a FORCED tool choice while extended thinking is on; "any" is
+                // also refused, so thinking runs use "auto" and the prompt asks for the tool.
                 w.WriteStartObject("tool_choice");
-                w.WriteString("type", "tool");
-                w.WriteString("name", "submit_result");
+                if (enableThinking)
+                {
+                    w.WriteString("type", "auto");
+                }
+                else
+                {
+                    w.WriteString("type", "tool");
+                    w.WriteString("name", "submit_result");
+                }
                 w.WriteEndObject();
             }
 
@@ -281,9 +315,17 @@ public sealed class ClaudeProvider : IAiVisionProvider
             w.WriteString("role", "user");
             w.WriteStartArray("content");
 
-            // Images
+            // Images — each label BEFORE its image, the same order Gemini and OpenAI receive.
             foreach (var img in images)
             {
+                if (!string.IsNullOrEmpty(img.Label))
+                {
+                    w.WriteStartObject();
+                    w.WriteString("type", "text");
+                    w.WriteString("text", img.Label);
+                    w.WriteEndObject();
+                }
+
                 w.WriteStartObject();
                 w.WriteString("type", "image");
                 w.WriteStartObject("source");
@@ -292,20 +334,14 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteBase64String("data", img.Data);
                 w.WriteEndObject(); // source
                 w.WriteEndObject(); // image block
-
-                if (!string.IsNullOrEmpty(img.Label))
-                {
-                    w.WriteStartObject();
-                    w.WriteString("type", "text");
-                    w.WriteString("text", img.Label);
-                    w.WriteEndObject();
-                }
             }
 
             // Prompt text
             w.WriteStartObject();
             w.WriteString("type", "text");
-            w.WriteString("text", prompt);
+            w.WriteString("text", enableThinking && !string.IsNullOrWhiteSpace(jsonSchema)
+                ? prompt + "\n\nSubmit your answer by calling the submit_result tool."
+                : prompt);
             w.WriteEndObject();
 
             w.WriteEndArray(); // content
@@ -404,7 +440,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
                     $"Your Anthropic API key is not permitted to use '{model}'.", detail, status);
             case 404:
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.ModelNotFound,
-                    $"The model '{model}' was not found on Anthropic.", detail, status);
+                    $"The AI model '{model}' is not available on Anthropic (it may have been retired). Choose another model in Settings › AI Features.", detail, status);
             case 429:
                 int waitSec = (int)Math.Ceiling((retryAfterHeader ?? TimeSpan.FromSeconds(30)).TotalSeconds);
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.RateLimited,

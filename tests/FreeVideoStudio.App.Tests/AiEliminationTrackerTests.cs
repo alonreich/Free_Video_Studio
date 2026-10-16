@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using FreeVideoStudio.App.Infrastructure;
@@ -22,49 +23,65 @@ public sealed class AiEliminationTrackerTests
     }
 
     [Fact]
-    public void ParseEliminationResults_FiltersLowConfidenceAndNonEliminations()
+    public void ParseMomentResults_MapsByEchoedId_FiltersLowConfidenceAndNonEliminations()
     {
         string rawJson = """
             ```json
-            {
-              "results": [
-                {
-                  "frameIndex": 0,
-                  "isElimination": true,
-                  "confidence": 0.92,
-                  "description": "Killfeed headshot confirmation"
-                },
-                {
-                  "frameIndex": 1,
-                  "isElimination": false,
-                  "confidence": 0.30,
-                  "description": "General weapon reloading"
-                },
-                {
-                  "frameIndex": 2,
-                  "isElimination": true,
-                  "confidence": 0.40,
-                  "description": "Uncertain hitmarker"
-                }
-              ]
-            }
+            { "results": [
+                { "moment": "M2", "isElimination": true,  "confidence": 0.92, "description": "Killfeed headshot" },
+                { "moment": "M1", "isElimination": false, "confidence": 0.30, "description": "Reloading" },
+                { "moment": "M3", "isElimination": true,  "confidence": 0.40, "description": "Uncertain" },
+                { "moment": "M9", "isElimination": true,  "confidence": 0.99, "description": "Unknown id" },
+                { "moment": "M2", "isElimination": true,  "confidence": 0.99, "description": "Duplicate" }
+            ] }
             ```
             """;
-
-        double[] timestamps = { 10.5, 22.1, 35.0 };
-        var confirmed = AiEliminationTrackerService.ParseEliminationResults(rawJson, timestamps);
+        var times = new Dictionary<string, double> { ["M1"] = 10.5, ["M2"] = 22.1, ["M3"] = 35.0 };
+        var confirmed = AiEliminationTrackerService.ParseMomentResults(rawJson, times);
 
         Assert.Single(confirmed);
-        Assert.Equal(10.5, confirmed[0].TimestampSec);
-        Assert.Equal(0.92, confirmed[0].Confidence);
-        Assert.Equal("Killfeed headshot confirmation", confirmed[0].Description);
+        Assert.Equal(22.1, confirmed[0].TimestampSec);
+        Assert.Equal("Killfeed headshot", confirmed[0].Description);
     }
 
     [Fact]
-    public void ParseEliminationResults_EmptyOrCorruptJson_ReturnsEmpty()
+    public void ParseMomentResults_AcceptsBracketedOrPrefixedIds()
     {
-        var results = AiEliminationTrackerService.ParseEliminationResults("{ corrupt json: ", new[] { 10.0 });
-        Assert.Empty(results);
+        var times = new Dictionary<string, double> { ["M4"] = 7.0 };
+        var r1 = AiEliminationTrackerService.ParseMomentResults("""{"results":[{"moment":"[M4]","isElimination":true,"confidence":0.8,"description":"x"}]}""", times);
+        var r2 = AiEliminationTrackerService.ParseMomentResults("""{"results":[{"moment":"Moment M4","isElimination":true,"confidence":0.8,"description":"x"}]}""", times);
+        Assert.Single(r1);
+        Assert.Single(r2);
+    }
+
+    [Fact]
+    public void ParseMomentResults_EmptyOrCorruptJson_ReturnsEmpty()
+    {
+        Assert.Empty(AiEliminationTrackerService.ParseMomentResults("{ corrupt json: ", new Dictionary<string, double> { ["M1"] = 1 }));
+        Assert.Empty(AiEliminationTrackerService.ParseMomentResults(null, new Dictionary<string, double>()));
+    }
+
+    [Fact]
+    public void Prompt_ListsEveryMomentId()
+    {
+        string prompt = AiEliminationTrackerService.BuildPrompt(new[] { "M1", "M2" });
+        Assert.Contains("M1, M2", prompt);
+    }
+
+    [Fact]
+    public void FindPeaks_OnePeakPerBurst_LoudestFirst()
+    {
+        const int rate = 8000;
+        var samples = new short[rate * 10];
+        void Burst(int fromSec, short amp) { for (int i = fromSec * rate; i < fromSec * rate + rate / 2; i++) samples[i] = (short)(i % 2 == 0 ? amp : -amp); }
+        Burst(2, 8000);
+        Burst(7, 16000);
+        var bytes = new byte[samples.Length * 2];
+        Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+        var peaks = AiEliminationTrackerService.FindPeaks(bytes, rate);
+        Assert.Equal(2, peaks.Count);
+        Assert.Equal(7.0, peaks[0], 1);
+        Assert.Equal(2.0, peaks[1], 1);
     }
 
     [Fact]

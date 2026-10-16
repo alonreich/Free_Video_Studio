@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -202,28 +203,27 @@ public partial class GranularSpeedEditorWindow
     /// </summary>
     private async Task<bool> EnsureAiZoomConsentAsync()
     {
-        if (SettingsManager.Instance.AiZoomCloudConsent) return true;
-        var vendor = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking).Vendor;
-        string vendorName = vendor switch
-        {
-            FreeVideoStudio.App.Services.AiVendor.Google => "Google Gemini",
-            FreeVideoStudio.App.Services.AiVendor.Anthropic => "Anthropic Claude",
-            FreeVideoStudio.App.Services.AiVendor.OpenAI => "OpenAI",
-            _ => "the configured AI provider"
-        };
+        var settings = SettingsManager.Instance;
+        var vendor = settings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking).Vendor;
+        // AICONSENT_02 — consent is per company: what is sent differs, so a new company asks again.
+        if (AppSettings.ConsentCovers(settings.AiZoomCloudConsent, settings.AiZoomCloudConsentVendor, vendor)) return true;
+        string vendorName = AiVisionProviders.DisplayName(vendor);
+        string blockPart = AiVisionProviders.WatchesVideoWithAudio(vendor)
+            ? "• a short, silent, low-resolution (640 px wide) copy of that block — at most 8 seconds per request.\n\n"
+            : "• still pictures of that block, 2 per second, 640 px wide (no sound) — at most 8 seconds per request.\n\n";
         bool yes = await ConfirmDialogWindow.AskAsync(
             this,
             $"To find and follow your target, AI SMART ZOOM sends {vendorName}:\n\n" +
             "• 3 still frames from the selected block, and\n" +
-            "• a short, silent, low-resolution (640 px wide) copy of that block — at most 8 seconds per request.\n\n" +
+            blockPart +
             $"Nothing else from your video or your computer is sent. {vendorName}'s API terms apply to what is sent.\n\n" +
-            "You can change this at any time in Settings › AI Providers.",
+            "You can change this at any time in Settings › AI Features.",
             $"AI Smart Zoom: send to {vendorName}?",
             "Send and continue",
             "Cancel");
         if (yes)
         {
-            SettingsManager.Update(s => s.AiZoomCloudConsent = true);
+            SettingsManager.Update(s => { s.AiZoomCloudConsent = true; s.AiZoomCloudConsentVendor = vendor.ToString(); });
             RuntimeLog.Info("AiTracking", $"User allowed AI SMART ZOOM to send frames and short clips to {vendorName}.");
         }
         return yes;
@@ -476,6 +476,9 @@ public partial class GranularSpeedEditorWindow
         string u2Model = settings.GetEffectiveModel(AiUsage.DenseTracking);
         var trackingSession = new GeminiModelSession(u2Key, u2Model, consoleLog, vendor: u2Config.Vendor);
         AiDiscoveryResult? discovery = null;
+        // AIUSAGE_01 — count every token this run uses and read the allowance before → after.
+        using var usage = AiUsageMeter.BeginTask("AI Smart Zoom", u2Config.Vendor);
+        if (AiTrackingPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiTracking", null);
         try
         {
             if (AiTrackingStatusLabelCtl != null) AiTrackingStatusLabelCtl.Text = $"Phase 2: Asking {discoverySession.VendorName} who is in the block…";
@@ -532,7 +535,7 @@ public partial class GranularSpeedEditorWindow
             else
             {
                 string profileNote = profile.ExcludesThirdPersonAvatar()
-                    ? "Your own character is never offered as a target (Settings › AI Tracking › What are you recording?).\n\n"
+                    ? "Your own character is never offered as a target (Settings › AI Features › What are you recording?).\n\n"
                     : profile == AiGameProfile.FirstPerson
                         ? "Your own hands and weapon are never offered as a target.\n\n"
                         : string.Empty;
@@ -610,32 +613,37 @@ public partial class GranularSpeedEditorWindow
             if (trajectory.Keyframes.Count > 0)
             {
                 BeginAiPreview(segIndex, seg, trajectory, sw, sh, newEndMs);
+                if (AiTrackingPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiTracking", ReportAiUsage(usage, consoleLog));
             }
             else
             {
+                var (u, a) = ReportAiUsage(usage, consoleLog);
                 await ErrorReporter.ShowAsync(this, "AI Tracking Inconclusive",
                     $"{trackingSession.VendorName} could not follow the selected target through this block.\n\n" +
-                    "Try a block where the target is clearer, or set the zoom by hand.");
+                    $"Try a block where the target is clearer, or set the zoom by hand.\n\n{u}\n{a}");
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            Notify("AI Smart Zoom was cancelled.");
+            var (u, _) = ReportAiUsage(usage, consoleLog);
+            Notify($"AI Smart Zoom was cancelled. {u}");
         }
         catch (AiProviderException ex)
         {
             string safeDetail = trackingSession.Redact(discoverySession.Redact(ex.Detail));
             RuntimeLog.Fail("AiTracking", $"{ex.Vendor} {ex.Kind}: {ex.Message} {safeDetail}");
             if (overlay != null) overlay.IsVisible = false;
-            await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), ex.Message, safeDetail);
+            var (u, a) = ReportAiUsage(usage, consoleLog);
+            await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{u}\n{a}", safeDetail);
         }
         catch (Exception ex)
         {
             string err = trackingSession.Redact(discoverySession.Redact(ex.ToString()));
             RuntimeLog.Fail("AiTracking", err);
             if (overlay != null) overlay.IsVisible = false;
+            var (u, a) = ReportAiUsage(usage, consoleLog);
             await ErrorReporter.ShowAsync(this, "AI Smart Zoom Error",
-                $"AI Smart Zoom stopped:\n{trackingSession.Redact(discoverySession.Redact(ex.Message))}", err);
+                $"AI Smart Zoom stopped:\n{trackingSession.Redact(discoverySession.Redact(ex.Message))}\n\n{u}\n{a}", err);
         }
         finally
         {
@@ -644,6 +652,29 @@ public partial class GranularSpeedEditorWindow
             if (AiSmartZoomBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
             _aiTrackingCts?.Dispose();
             _aiTrackingCts = null;
+        }
+    }
+
+    /// <summary>AIUSAGE_01 — logs the task's usage report, writes it to the run's console, and returns its two lines.</summary>
+    private static (string Usage, string Allowance) ReportAiUsage(AiUsageMeter.Scope scope, Action<string>? consoleLog)
+    {
+        var (u, a) = scope.Report();
+        RuntimeLog.Info("AiUsage", $"{scope.TaskName}: {u} {a}");
+        consoleLog?.Invoke(u);
+        consoleLog?.Invoke(a);
+        return (u, a);
+    }
+
+    /// <summary>
+    /// AIUSAGE_01 — shows (or hides, with null) the two usage lines inside a preview bar. The lines are the bar's
+    /// own children, found by walking the bar (no window-wide name lookup, MVVM_01).
+    /// </summary>
+    private static void SetAiUsageLines(Border bar, string prefix, (string Usage, string Allowance)? lines)
+    {
+        foreach (var tb in Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(bar).OfType<TextBlock>())
+        {
+            if (tb.Name == prefix + "UsageText") { tb.Text = lines?.Usage ?? ""; tb.IsVisible = lines != null; }
+            else if (tb.Name == prefix + "AllowanceText") { tb.Text = lines?.Allowance ?? ""; tb.IsVisible = lines != null; }
         }
     }
 

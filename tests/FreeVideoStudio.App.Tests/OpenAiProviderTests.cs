@@ -32,7 +32,7 @@ public sealed class OpenAiProviderTests
     {
         var provider = new OpenAiProvider();
         Assert.Equal(AiVendor.OpenAI, provider.Vendor);
-        Assert.Equal("o3-mini", provider.DefaultModel);
+        Assert.Equal("gpt-6-luna", provider.DefaultModel);
     }
 
     [Fact]

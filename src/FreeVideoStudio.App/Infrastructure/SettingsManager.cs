@@ -70,7 +70,7 @@ public class AppSettings
 
     /// <summary>
     /// AI SMART ZOOM — Google Gemini API key used for universal subject vision tracking, in CLEAR text,
-    /// in memory only. Default empty. Configured via Settings › AI Tracking or the First-Time Setup Wizard.
+    /// in memory only. Default empty. Configured via Settings › AI Features or the First-Time Setup Wizard.
     /// KEYPROTECT_01 (schema 14): never serialized as plain text — see <see cref="GeminiApiKeyStored"/>.
     /// </summary>
     [JsonIgnore]
@@ -246,8 +246,61 @@ public class AppSettings
     /// </summary>
     public bool AiViralPostHelperEnabled { get; set; } = true;
 
-    /// <summary>Helper to retrieve the per-usage configuration, guaranteeing non-null.</summary>
-    public AiUsageConfig GetUsageConfig(AiUsage usage) => usage switch
+    /// <summary>
+    /// AIDEFAULT_01 (docs/05 SYS-AISETTINGS) — the ONE AI provider + model every AI feature uses unless it is
+    /// listed in <see cref="AiUsageOverrides"/>. Null on a settings file written before this existed; it is then
+    /// derived from the per-feature values by <see cref="EnsureAiDefault"/> (no schema bump, additive).
+    /// </summary>
+    public AiUsageConfig? AiDefaultUsage { get; set; }
+
+    /// <summary>AIDEFAULT_01 — <see cref="AiUsage"/> names that keep their OWN vendor/model (Settings › AI Features › Advanced).</summary>
+    public List<string>? AiUsageOverrides { get; set; }
+
+    /// <summary>All seven AI usages, in Settings order.</summary>
+    public static readonly AiUsage[] AllAiUsages =
+    {
+        AiUsage.SubjectDiscovery, AiUsage.DenseTracking, AiUsage.MagicWand, AiUsage.Commentary,
+        AiUsage.MusicAutoFit, AiUsage.ViralPost, AiUsage.EliminationTracker,
+    };
+
+    public bool IsUsageOverridden(AiUsage usage)
+        => AiUsageOverrides != null && AiUsageOverrides.Contains(usage.ToString());
+
+    /// <summary>
+    /// AIDEFAULT_01 — fills <see cref="AiDefaultUsage"/> / <see cref="AiUsageOverrides"/> for an older file: the
+    /// most common per-feature choice becomes the default (ties: subject discovery's), and every feature that
+    /// differs from it becomes an override, so nobody's existing routing changes. True when something was filled.
+    /// </summary>
+    public bool EnsureAiDefault()
+    {
+        if (AiDefaultUsage != null && AiUsageOverrides != null) return false;
+        var own = AllAiUsages.Select(u => (Usage: u, Config: GetOwnUsageConfig(u))).ToList();
+        if (AiDefaultUsage == null)
+        {
+            var best = own
+                .GroupBy(x => (x.Config.Vendor, Model: (x.Config.Model ?? "").Trim().ToLowerInvariant()))
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Min(x => Array.IndexOf(AllAiUsages, x.Usage)))
+                .First();
+            AiDefaultUsage = best.First().Config.Clone();
+        }
+        AiUsageOverrides ??= own
+            .Where(x => x.Config.Vendor != AiDefaultUsage.Vendor
+                     || !string.Equals((x.Config.Model ?? "").Trim(), (AiDefaultUsage.Model ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.Usage.ToString())
+            .ToList();
+        return true;
+    }
+
+    /// <summary>
+    /// The vendor/model a feature actually uses: its own when overridden (or before AIDEFAULT_01 existed),
+    /// otherwise the shared default. Guaranteed non-null.
+    /// </summary>
+    public AiUsageConfig GetUsageConfig(AiUsage usage)
+        => AiDefaultUsage != null && !IsUsageOverridden(usage) ? AiDefaultUsage : GetOwnUsageConfig(usage);
+
+    /// <summary>The feature's OWN stored vendor/model, ignoring the shared default.</summary>
+    public AiUsageConfig GetOwnUsageConfig(AiUsage usage) => usage switch
     {
         AiUsage.SubjectDiscovery => AiUsageSubjectDiscovery,
         AiUsage.DenseTracking => AiUsageTracking,
@@ -259,10 +312,15 @@ public class AppSettings
         _ => new(AiVendor.Google, GeminiModelName),
     };
 
-    /// <summary>Helper to set the per-usage configuration.</summary>
+    /// <summary>Sets a feature's OWN vendor/model and marks it as overriding the shared default (AIDEFAULT_01).</summary>
     public void SetUsageConfig(AiUsage usage, AiUsageConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        if (AiDefaultUsage != null)
+        {
+            AiUsageOverrides ??= new List<string>();
+            if (!AiUsageOverrides.Contains(usage.ToString())) AiUsageOverrides.Add(usage.ToString());
+        }
         switch (usage)
         {
             case AiUsage.SubjectDiscovery: AiUsageSubjectDiscovery = config; break;
@@ -322,6 +380,56 @@ public class AppSettings
     /// explains what is sent and asks. Additive, no schema bump. Never a credential.
     /// </summary>
     public bool AiCommentaryCloudConsent { get; set; }
+
+    /// <summary>
+    /// AICONSENT_02 — WHICH company each of the three consents above was given for (an <see cref="AiVendor"/> name).
+    /// The dialogs name the company and say exactly what is sent, which differs per company (Gemini gets clips with
+    /// sound, Claude / OpenAI get still frames), so switching company asks again. Empty = a consent from before
+    /// this field existed, when only Google could be chosen: it counts for Google only. Additive, no schema bump.
+    /// </summary>
+    public string AiZoomCloudConsentVendor { get; set; } = "";
+
+    /// <summary>
+    /// AICOMMENTARY_REMEMBER_01 — the AI Commentary options the user picked last time (tone, caption style,
+    /// placement, language, whole video vs. selected block, extra notes). The options window opens on them.
+    /// Empty / null = never chosen (the window's own defaults). Additive, no schema bump. Game type is the shared
+    /// <see cref="AiTrackingGameProfile"/> (AIPROFILE_ONE_01).
+    /// </summary>
+    public string AiCommentaryLastTone { get; set; } = "";
+    public string AiCommentaryLastStyle { get; set; } = "";
+    public string AiCommentaryLastPosition { get; set; } = "";
+    public string AiCommentaryLastLanguage { get; set; } = "";
+    public bool? AiCommentaryLastEntireTimeline { get; set; }
+    public string AiCommentaryLastNotes { get; set; } = "";
+    public string AiMagicWandCloudConsentVendor { get; set; } = "";
+    public string AiCommentaryCloudConsentVendor { get; set; } = "";
+
+    /// <summary>AICONSENT_02 — true when <paramref name="given"/> was granted for <paramref name="vendor"/>.</summary>
+    public static bool ConsentCovers(bool given, string? consentVendor, AiVendor vendor)
+        => given && (string.IsNullOrEmpty(consentVendor)
+            ? vendor == AiVendor.Google
+            : string.Equals(consentVendor, vendor.ToString(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// AIMODELS_02 — moves every saved model name that a vendor has retired (or is retiring) to that vendor's
+    /// current default: the shared default, all seven per-feature configs and the legacy Gemini name. Returns true
+    /// when something changed. Runs on every load, so an app update repairs old settings with no user action.
+    /// </summary>
+    public bool ReplaceRetiredAiModels()
+    {
+        bool changed = false;
+        void Fix(AiUsageConfig? c)
+        {
+            if (c == null) return;
+            string next = AiVisionProviders.ReplaceRetired(c.Vendor, c.Model);
+            if (!string.Equals(next, c.Model, StringComparison.Ordinal)) { c.Model = next; changed = true; }
+        }
+        Fix(AiDefaultUsage);
+        foreach (AiUsage u in AllAiUsages) Fix(GetOwnUsageConfig(u));
+        string gemini = AiVisionProviders.ReplaceRetired(AiVendor.Google, GeminiModelName);
+        if (!string.Equals(gemini, GeminiModelName, StringComparison.Ordinal)) { GeminiModelName = gemini; changed = true; }
+        return changed;
+    }
 
     /// <summary>AI SMART ZOOM — Base tight zoom multiplier (default 2.2x, range 1.5x - 4.0x).</summary>
     public double AiZoomBaseScale { get; set; } = 2.2;
@@ -891,7 +999,6 @@ public class DefaultValues
 [JsonSerializable(typeof(FontScale))]
 [JsonSerializable(typeof(AiUsageConfig))]
 [JsonSerializable(typeof(AiVendor))]
-[JsonSerializable(typeof(AiReasoningLevel))]
 [JsonSerializable(typeof(AiUsage))]
 public partial class SettingsJsonContext : JsonSerializerContext { }
 
@@ -1440,6 +1547,13 @@ public static class SettingsManager
             if (loaded.AiUsageMagicWand?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageMagicWand.Model) || loaded.AiUsageMagicWand.Model == GeminiClient.DefaultModel))
                 loaded.AiUsageMagicWand.Model = loaded.GeminiModelName;
         }
+
+        // AIDEFAULT_01 — derive the shared AI default from the per-feature values once (additive, no bump).
+        loaded.EnsureAiDefault();
+
+        // AIMODELS_02 — retired model names (gemini-2.5-*, claude-3*, o3-mini…) move to today's defaults.
+        if (loaded.ReplaceRetiredAiModels())
+            RuntimeLog.Info("Settings", "AI model names that the AI companies have retired were updated to their current defaults.");
 
         loaded.SchemaVersion = from;
     }

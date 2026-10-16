@@ -92,12 +92,27 @@ public partial class AiCommentaryDialogWindow : Window
         return new AiCommentaryDialogResult(tone, style, pos, lang, profile, notes, entireTimeline);
     }
 
+    /// <summary>AIPROFILE_ONE_01 — the combo order: index ↔ profile (the single place the mapping lives).</summary>
+    internal static int ProfileToIndex(AiGameProfile p) => p switch
+    {
+        AiGameProfile.FirstPerson => 1,
+        AiGameProfile.Fortnite => 2,
+        AiGameProfile.Generic => 3,
+        _ => 0,
+    };
+
     public static async Task<AiCommentaryDialogResult?> ShowDialogAsync(
         Window owner,
         bool hasSelectedSegment,
-        CaptionTone initialTone = CaptionTone.Hype)
+        CaptionTone initialTone = CaptionTone.Hype,
+        AiGameProfile initialProfile = AiGameProfile.ThirdPerson)
     {
         var dlg = new AiCommentaryDialogWindow();
+
+        // AIPROFILE_ONE_01 — start on the game type chosen in Settings › AI Features ("What are you recording?");
+        // the editor writes the choice back, so there is ONE game-type setting for every AI feature.
+        if (dlg.ResolveControl<ComboBox>("ProfileCombo") is { } profileCombo)
+            profileCombo.SelectedIndex = ProfileToIndex(initialProfile);
 
         if (dlg.ResolveControl<RadioButton>("ScopeSegmentRadio") is { } segRadio)
         {
@@ -124,7 +139,61 @@ public partial class AiCommentaryDialogWindow : Window
                 break;
         }
 
+        dlg.ApplyRemembered(hasSelectedSegment);
+
         await dlg.ShowDialog(owner);
         return dlg.Result;
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_REMEMBER_01 — opens on the options the user chose last time (tone, caption style, placement,
+    /// language, scope, notes). Anything never chosen keeps the window's default; "Selected block" falls back to
+    /// "Entire timeline" when no block is selected now.
+    /// </summary>
+    private void ApplyRemembered(bool hasSelectedSegment)
+    {
+        var s = Infrastructure.SettingsManager.Instance;
+        void Check(string name) { if (ResolveControl<RadioButton>(name) is { } r) r.IsChecked = true; }
+
+        if (Enum.TryParse(s.AiCommentaryLastTone, true, out CaptionTone tone))
+            Check(tone switch
+            {
+                CaptionTone.Chill => "ToneChillRadio",
+                CaptionTone.Funny => "ToneFunnyRadio",
+                CaptionTone.Tactical => "ToneTacticalRadio",
+                _ => "ToneHypeRadio",
+            });
+        if (Enum.TryParse(s.AiCommentaryLastStyle, true, out CaptionStyle style))
+            Check(style == CaptionStyle.PopIn ? "StyleCleanRadio" : "StyleKaraokeRadio");
+        if (Enum.TryParse(s.AiCommentaryLastPosition, true, out CaptionPosition pos))
+            Check(pos == CaptionPosition.Top ? "PositionTopRadio" : "PositionBottomRadio");
+        if (!string.IsNullOrWhiteSpace(s.AiCommentaryLastLanguage) && ResolveControl<ComboBox>("LanguageCombo") is { } lang)
+        {
+            for (int i = 0; i < lang.ItemCount; i++)
+                if (lang.Items[i] is ComboBoxItem { Content: string c } && string.Equals(c, s.AiCommentaryLastLanguage, StringComparison.OrdinalIgnoreCase))
+                {
+                    lang.SelectedIndex = i;
+                    break;
+                }
+        }
+        if (s.AiCommentaryLastEntireTimeline is bool entire)
+            Check(entire || !hasSelectedSegment ? "ScopeAllRadio" : "ScopeSegmentRadio");
+        if (!string.IsNullOrWhiteSpace(s.AiCommentaryLastNotes) && ResolveControl<TextBox>("CustomNotesText") is { } notes)
+            notes.Text = s.AiCommentaryLastNotes;
+    }
+
+    /// <summary>AICOMMENTARY_REMEMBER_01 — stores what the user just chose, for the next time the window opens.</summary>
+    public static void Remember(AiCommentaryDialogResult r)
+    {
+        Infrastructure.SettingsManager.Update(s =>
+        {
+            s.AiCommentaryLastTone = r.Tone.ToString();
+            s.AiCommentaryLastStyle = r.Style.ToString();
+            s.AiCommentaryLastPosition = r.Position.ToString();
+            s.AiCommentaryLastLanguage = r.Language;
+            s.AiCommentaryLastEntireTimeline = r.EntireTimeline;
+            s.AiCommentaryLastNotes = r.CustomNotes ?? "";
+            s.AiTrackingGameProfile = r.Profile.ToString();
+        });
     }
 }

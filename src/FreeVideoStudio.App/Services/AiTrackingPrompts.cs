@@ -8,7 +8,7 @@ using FreeVideoStudio.Core.Media;
 namespace FreeVideoStudio.App.Services;
 
 /// <summary>
-/// AIGAME_01 — the AI SMART ZOOM prompts, built from the user's game profile (Settings › AI Tracking)
+/// AIGAME_01 — the AI SMART ZOOM prompts, built from the user's game profile (Settings › AI Features)
 /// instead of hard-coding one game and one player skin. Pure text; no I/O.
 /// </summary>
 public static class AiTrackingPrompts

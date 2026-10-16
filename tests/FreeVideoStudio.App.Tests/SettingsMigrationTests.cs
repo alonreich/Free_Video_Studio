@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.Core.Infrastructure;
@@ -189,7 +190,7 @@ public sealed class SettingsMigrationTests : IDisposable
         SettingsManager.Load();
 
         Assert.Equal(14, SettingsManager.CurrentSchemaVersion);
-        Assert.Equal("gemini-2.5-flash", SettingsManager.Instance.GeminiModelName);
+        Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, SettingsManager.Instance.GeminiModelName);
         Assert.Equal(2.2, SettingsManager.Instance.AiZoomBaseScale);
         Assert.Equal(1.3, SettingsManager.Instance.AiZoomMinScale);
         Assert.True(SettingsManager.Instance.AiZoomAvoidHud);
@@ -394,8 +395,8 @@ public sealed class SettingsMigrationTests : IDisposable
         {
             s.ClaudeApiKey = claudeKey;
             s.OpenAiApiKey = openAiKey;
-            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.Anthropic, "claude-sonnet-custom", FreeVideoStudio.App.Services.AiReasoningLevel.Medium));
-            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.OpenAI, "o3-mini-custom", FreeVideoStudio.App.Services.AiReasoningLevel.High));
+            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.Anthropic, "claude-sonnet-custom"));
+            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.OpenAI, "gpt-6-custom"));
         }));
 
         string onDisk = File.ReadAllText(_settingsFile);
@@ -413,12 +414,45 @@ public sealed class SettingsMigrationTests : IDisposable
         var u1 = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery);
         Assert.Equal(FreeVideoStudio.App.Services.AiVendor.Anthropic, u1.Vendor);
         Assert.Equal("claude-sonnet-custom", u1.Model);
-        Assert.Equal(FreeVideoStudio.App.Services.AiReasoningLevel.Medium, u1.ReasoningLevel);
 
         var u2 = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking);
         Assert.Equal(FreeVideoStudio.App.Services.AiVendor.OpenAI, u2.Vendor);
-        Assert.Equal("o3-mini-custom", u2.Model);
-        Assert.Equal(FreeVideoStudio.App.Services.AiReasoningLevel.High, u2.ReasoningLevel);
+        Assert.Equal("gpt-6-custom", u2.Model);
+    }
+
+    [Fact]
+    public void RetiredModels_AreMovedToCurrentDefaults_OnLoad()
+    {
+        // AIMODELS_02 — an old file naming retired models works again after an update, with no user action.
+        var settings = new AppSettings
+        {
+            GeminiModelName = "gemini-2.5-flash",
+            AiDefaultUsage = new(FreeVideoStudio.App.Services.AiVendor.Google, "gemini-2.5-flash"),
+            AiUsageOverrides = new List<string>(),
+        };
+        settings.AiUsageCommentary = new(FreeVideoStudio.App.Services.AiVendor.Anthropic, "claude-3-7-sonnet-20250219");
+        settings.AiUsageViralPost = new(FreeVideoStudio.App.Services.AiVendor.OpenAI, "o3-mini");
+        settings.AiUsageMagicWand = new(FreeVideoStudio.App.Services.AiVendor.Google, "gemini-3.6-flash");
+
+        Assert.True(settings.ReplaceRetiredAiModels());
+
+        Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, settings.GeminiModelName);
+        Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, settings.AiDefaultUsage!.Model);
+        Assert.Equal(FreeVideoStudio.App.Services.ClaudeProvider.DefaultModelName, settings.AiUsageCommentary.Model);
+        Assert.Equal(FreeVideoStudio.App.Services.OpenAiProvider.DefaultModelName, settings.AiUsageViralPost.Model);
+        Assert.Equal("gemini-3.6-flash", settings.AiUsageMagicWand.Model); // a live model is never touched
+        Assert.False(settings.ReplaceRetiredAiModels());
+    }
+
+    [Fact]
+    public void ConsentCovers_IsPerCompany_AndLegacyMeansGoogle()
+    {
+        // AICONSENT_02
+        Assert.True(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.Google));
+        Assert.False(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.OpenAI));
+        Assert.True(AppSettings.ConsentCovers(true, "OpenAI", FreeVideoStudio.App.Services.AiVendor.OpenAI));
+        Assert.False(AppSettings.ConsentCovers(true, "OpenAI", FreeVideoStudio.App.Services.AiVendor.Anthropic));
+        Assert.False(AppSettings.ConsentCovers(false, "Google", FreeVideoStudio.App.Services.AiVendor.Google));
     }
 
     [Fact]

@@ -30,7 +30,12 @@ public sealed record CommentaryRequest(
     CaptionStyle Style = CaptionStyle.Karaoke,
     CaptionPosition Position = CaptionPosition.BottomContent,
     string? CustomNotes = null,
-    IAiVisionProvider? Provider = null);
+    IAiVisionProvider? Provider = null,
+    OutputTimeline? Timeline = null,
+    double TimelineOffsetSec = 0.0);
+
+/// <summary>AICOMMENTARY_REPORT_01 — the generated track plus how many request parts could not be read.</summary>
+public sealed record CommentaryResult(CaptionTrack Track, int FailedChunks, int TotalChunks);
 
 /// <summary>
 /// AICOMMENTARY_SERVICE_01 — AI Live Commentary Captions generation service.
@@ -43,6 +48,18 @@ public static class CommentaryService
     public const double MaxChunkSec = 8.0;
     public const double ChunkOverlapSec = 1.0;
     public const double MinLineDurationSec = 0.5;
+
+    /// <summary>AICOMMENTARY_SPEED_01 — shortest time a line stays on screen in the FINISHED video.</summary>
+    public const double MinReadableOutputSec = 1.2;
+
+    /// <summary>Test seam: replaces FFmpeg frame sampling for the Claude / OpenAI path (null in the app).</summary>
+    internal static Func<string, double, double, CancellationToken, Task<IReadOnlyList<AiImageInput>>>? FrameSamplerForTests { get; set; }
+
+    /// <summary>AICOMMENTARY_ESTIMATE_01 — more parts than this and the editor asks first, naming the count and time.</summary>
+    public const int ConfirmAbovePartCount = 6;
+
+    /// <summary>AICOMMENTARY_ESTIMATE_01 — a typical part's round trip (clip prep + AI answer), for the estimate only.</summary>
+    public const double TypicalSecondsPerPart = 12.0;
 
     /// <summary>
     /// Plans even overlapping chunks of at most <paramref name="maxChunkSec"/> with <paramref name="overlapSec"/> overlap.
@@ -75,10 +92,22 @@ public static class CommentaryService
         return list;
     }
 
-    /// <summary>
-    /// Generates live commentary captions for the requested video segment.
-    /// </summary>
+    /// <summary>Generates live commentary captions for the requested video segment.</summary>
     public static async Task<CaptionTrack> GenerateCommentaryAsync(
+        CommentaryRequest request,
+        string apiKey,
+        IProgress<string>? progress = null,
+        Action<string>? consoleLog = null,
+        CancellationToken cancellationToken = default)
+        => (await GenerateCommentaryWithReportAsync(request, apiKey, progress, consoleLog, cancellationToken).ConfigureAwait(false)).Track;
+
+    /// <summary>
+    /// AICOMMENTARY_REPORT_01 — generates the track and reports parts that failed. Line times are ABSOLUTE
+    /// source seconds (the caption model's contract, TL-CAPTIONS): <see cref="CommentaryRequest.StartSec"/> is added.
+    /// A part whose answer cannot be read is retried once; if it still fails it is skipped and counted.
+    /// Account problems (key, permission, model, quota) stop the whole run at once.
+    /// </summary>
+    public static async Task<CommentaryResult> GenerateCommentaryWithReportAsync(
         CommentaryRequest request,
         string apiKey,
         IProgress<string>? progress = null,
@@ -90,7 +119,7 @@ public static class CommentaryService
             throw new ArgumentException("Video file does not exist", nameof(request));
 
         if (request.DurationSec <= 0.1)
-            return new CaptionTrack(request.Style, request.Position, request.Tone, request.Language, Array.Empty<CaptionLine>());
+            return new CommentaryResult(new CaptionTrack(request.Style, request.Position, request.Tone, request.Language, Array.Empty<CaptionLine>()), 0, 0);
 
         IAiVisionProvider provider = request.Provider ?? AiVisionProviders.Get(request.Vendor);
         string effectiveModel = request.Vendor switch
@@ -103,72 +132,210 @@ public static class CommentaryService
         var chunks = PlanChunks(request.DurationSec);
         var rawLines = new List<CaptionLine>();
         int lineIdCounter = 1;
-        var ci = CultureInfo.InvariantCulture;
+        int failed = 0;
+        string vendorName = request.Vendor switch { AiVendor.Anthropic => "Claude", AiVendor.OpenAI => "OpenAI", _ => "Gemini" };
 
         for (int i = 0; i < chunks.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var chunk = chunks[i];
             double chunkStartSec = request.StartSec + chunk.Start;
+            double chunkEndSec = request.StartSec + chunk.End;
             double chunkDurSec = chunk.End - chunk.Start;
 
-            string statusMsg = $"Analyzing chunk {i + 1} of {chunks.Count} ({chunk.Start:0.0}s - {chunk.End:0.0}s) with {request.Vendor}…";
+            string statusMsg = $"Analyzing part {i + 1} of {chunks.Count} ({chunk.Start:0.0}s - {chunk.End:0.0}s) with {vendorName}…";
             progress?.Report(statusMsg);
             consoleLog?.Invoke($"Commentary: {statusMsg}");
 
-            string prompt = AiCommentaryPrompts.BuildPrompt(request.Tone, request.Profile, request.Language, request.CustomNotes);
+            string prompt = AiCommentaryPrompts.BuildPrompt(request.Tone, request.Profile, request.Language, request.CustomNotes,
+                DescribePlayback(request.Timeline, request.TimelineOffsetSec, chunkStartSec, chunkEndSec),
+                canHearAudio: AiVisionProviders.WatchesVideoWithAudio(request.Vendor));
 
-            string responseJson;
-            if (request.Vendor == AiVendor.Google)
+            List<CaptionLine>? chunkLines = null;
+            for (int attempt = 0; attempt < 2 && chunkLines == null; attempt++)
             {
-                // Native video chunk with audio
-                byte[] mp4Bytes = await ExtractVideoChunkAsync(request.VideoPath, chunkStartSec, chunkDurSec, consoleLog, cancellationToken).ConfigureAwait(false);
-                var videoInput = new AiVideoInput(mp4Bytes, "video/mp4", 2.0);
-
-                responseJson = await provider.GenerateJsonAsync(
-                    apiKey, effectiveModel, prompt, Array.Empty<AiImageInput>(), videoInput,
-                    AiCommentaryPrompts.CommentaryJsonSchema, null,
-                    GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                // Timestamped frame sequence extraction (2 fps)
-                var frames = await AiFrameSequenceExtractor.SampleFramesAsync(
-                    request.VideoPath, chunkStartSec, chunkDurSec, 2.0, 640, consoleLog, cancellationToken).ConfigureAwait(false);
-
-                responseJson = await provider.GenerateJsonAsync(
-                    apiKey, effectiveModel, prompt, frames, null,
-                    AiCommentaryPrompts.CommentaryJsonSchema, null,
-                    GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    string responseJson = await RequestChunkAsync(request, provider, apiKey, effectiveModel, prompt,
+                        chunkStartSec, chunkDurSec, consoleLog, cancellationToken).ConfigureAwait(false);
+                    if (TryParseCommentaryResponse(responseJson, chunkStartSec, chunkEndSec, ref lineIdCounter, out var parsed))
+                        chunkLines = parsed;
+                    else
+                        consoleLog?.Invoke($"Commentary: part {i + 1} answer could not be read{(attempt == 0 ? " — retrying once." : ".")}");
+                }
+                catch (AiProviderException ex) when (IsPartLevelFailure(ex))
+                {
+                    consoleLog?.Invoke($"Commentary: part {i + 1} failed ({ex.Message}){(attempt == 0 ? " — retrying once." : ".")}");
+                }
             }
 
-            var chunkLines = ParseCommentaryResponse(responseJson, chunk.Start, chunk.End, ref lineIdCounter);
-            consoleLog?.Invoke($"Commentary: chunk {i + 1} yielded {chunkLines.Count} commentary line(s).");
+            if (chunkLines == null)
+            {
+                failed++;
+                continue;
+            }
+            consoleLog?.Invoke($"Commentary: part {i + 1} yielded {chunkLines.Count} line(s).");
             rawLines.AddRange(chunkLines);
         }
 
-        // De-duplicate lines across chunk seams
+        if (failed == chunks.Count)
+            throw new AiProviderException(request.Vendor, AiProviderErrorKind.MalformedResponse,
+                $"{vendorName} did not return readable commentary for any part of this range. Please try again.");
+
         var deduplicated = DeduplicateLines(rawLines);
+        var readable = EnsureReadableOnScreen(deduplicated, request.Timeline, request.TimelineOffsetSec, request.StartSec, request.StartSec + request.DurationSec);
 
-        // Populate syllable-proportional word timing for each line
-        var finalLines = new List<CaptionLine>(deduplicated.Count);
-        foreach (var l in deduplicated)
+        var finalLines = new List<CaptionLine>(readable.Count);
+        foreach (var l in readable)
+            finalLines.Add(l with { Words = CaptionTimeline.DistributeWords(l.Text, l.SourceStartSec, l.SourceEndSec) });
+
+        consoleLog?.Invoke($"Commentary generation complete: {finalLines.Count} line(s) ready{(failed > 0 ? $", {failed} of {chunks.Count} part(s) failed" : "")}.");
+
+        return new CommentaryResult(
+            new CaptionTrack(request.Style, request.Position, request.Tone, request.Language, finalLines),
+            failed,
+            chunks.Count);
+    }
+
+    /// <summary>Failures worth one retry of the same part; account-level problems are not.</summary>
+    private static bool IsPartLevelFailure(AiProviderException ex)
+        => ex.Kind is AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Blocked
+            or AiProviderErrorKind.BadRequest or AiProviderErrorKind.Timeout
+            or AiProviderErrorKind.Overloaded or AiProviderErrorKind.Network;
+
+    private static async Task<string> RequestChunkAsync(
+        CommentaryRequest request, IAiVisionProvider provider, string apiKey, string model, string prompt,
+        double chunkStartSec, double chunkDurSec, Action<string>? consoleLog, CancellationToken ct)
+    {
+        if (request.Vendor == AiVendor.Google)
         {
-            var words = l.Words is { Count: > 0 }
-                ? l.Words
-                : CaptionTimeline.DistributeWords(l.Text, l.SourceStartSec, l.SourceEndSec);
-
-            finalLines.Add(l with { Words = words });
+            // Native video chunk with audio
+            byte[] mp4Bytes = await ExtractVideoChunkAsync(request.VideoPath, chunkStartSec, chunkDurSec, consoleLog, ct).ConfigureAwait(false);
+            var videoInput = new AiVideoInput(mp4Bytes, "video/mp4", 2.0);
+            return await provider.GenerateJsonAsync(
+                apiKey, model, prompt, Array.Empty<AiImageInput>(), videoInput,
+                AiCommentaryPrompts.CommentaryJsonSchema, null,
+                GeminiCallOptions.Creative, consoleLog, ct).ConfigureAwait(false);
         }
 
-        consoleLog?.Invoke($"Commentary generation complete: {finalLines.Count} total line(s) ready.");
+        // Timestamped frame sequence extraction (2 fps)
+        var frames = FrameSamplerForTests != null
+            ? await FrameSamplerForTests(request.VideoPath, chunkStartSec, chunkDurSec, ct).ConfigureAwait(false)
+            : await AiFrameSequenceExtractor.SampleFramesAsync(
+                request.VideoPath, chunkStartSec, chunkDurSec, 2.0, 640, consoleLog, ct).ConfigureAwait(false);
+        // AIZEROFRAMES_01 — never ask the AI about pictures it was not given (it would invent lines).
+        if (frames.Count == 0)
+            throw new AiProviderException(request.Vendor, AiProviderErrorKind.MalformedResponse,
+                "No pictures could be read from this part of the video.", "frame sampling produced 0 frames");
+        return await provider.GenerateJsonAsync(
+            apiKey, model, prompt, frames, null,
+            AiCommentaryPrompts.CommentaryJsonSchema, null,
+            GeminiCallOptions.Creative, consoleLog, ct).ConfigureAwait(false);
+    }
 
-        return new CaptionTrack(
-            request.Style,
-            request.Position,
-            request.Tone,
-            request.Language,
-            finalLines);
+    /// <summary>
+    /// <paramref name="timelineOffsetSec"/> is subtracted from ABSOLUTE source seconds to reach the timeline's own
+    /// source coordinates (the editor's timeline is trim-relative, so it passes the trim start).
+    /// AICOMMENTARY_SPEED_01 — plain-English playback notes for one part, in seconds from the PART's start,
+    /// so the AI narrates as the viewer experiences it (slow motion lingers, fast forward rushes, cuts vanish).
+    /// Null when the whole part plays at normal speed.
+    /// </summary>
+    public static string? DescribePlayback(OutputTimeline? timeline, double timelineOffsetSec, double absStartSec, double absEndSec)
+    {
+        if (timeline == null) return null;
+        var spans = timeline.DescribeSourceRange(absStartSec - timelineOffsetSec, absEndSec - timelineOffsetSec);
+        if (spans.Count == 0) return null;
+        bool allNormal = true;
+        var ci = CultureInfo.InvariantCulture;
+        var lines = new List<string>();
+        foreach (var sp in spans)
+        {
+            double a = Math.Max(0, sp.AbsStartSec + timelineOffsetSec - absStartSec), b = Math.Max(a, sp.AbsEndSec + timelineOffsetSec - absStartSec);
+            if (sp.IsCut)
+            {
+                allNormal = false;
+                lines.Add($"- {a.ToString("0.0", ci)}s to {b.ToString("0.0", ci)}s is CUT from the final video: write no line there.");
+            }
+            else if (sp.FreezeHoldSec > 0)
+            {
+                allNormal = false;
+                lines.Add($"- At {a.ToString("0.0", ci)}s the picture FREEZES for {sp.FreezeHoldSec.ToString("0.0", ci)}s: a good moment for a reaction line.");
+            }
+            else if (Math.Abs(sp.Speed - 1.0) > 0.01)
+            {
+                allNormal = false;
+                string kind = sp.Speed < 1 ? "SLOW MOTION — viewers see it longer, give it a strong line" : "FAST FORWARD — viewers see it briefly, keep lines few and very short";
+                lines.Add($"- {a.ToString("0.0", ci)}s to {b.ToString("0.0", ci)}s plays at {sp.Speed.ToString("0.##", ci)}x ({kind}).");
+            }
+        }
+        return allNormal ? null : string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_SPEED_01 — keeps every line inside [<paramref name="rangeStartSec"/>, <paramref name="rangeEndSec"/>]
+    /// (ABSOLUTE source seconds) and on screen for at least <see cref="MinReadableOutputSec"/> of FINISHED video:
+    /// a line inside a 2x stretch is lengthened in source time so it is still readable, without running into the
+    /// next line or past the range. Without a timeline the check is done 1:1.
+    /// </summary>
+    public static List<CaptionLine> EnsureReadableOnScreen(IReadOnlyList<CaptionLine> lines, OutputTimeline? timeline, double timelineOffsetSec, double rangeStartSec, double rangeEndSec)
+    {
+        var sorted = lines
+            .Select(l => l with
+            {
+                SourceStartSec = Math.Clamp(l.SourceStartSec, rangeStartSec, rangeEndSec),
+                SourceEndSec = Math.Clamp(l.SourceEndSec, rangeStartSec, rangeEndSec),
+            })
+            .Where(l => l.SourceEndSec > l.SourceStartSec + 0.05)
+            .OrderBy(l => l.SourceStartSec)
+            .ToList();
+
+        double ToOut(double abs) => timeline?.SourceToOutput(abs - timelineOffsetSec) ?? abs;
+        double ToAbs(double outSec) => timeline != null ? timeline.OriginSec + timeline.OutputToSourceRelative(outSec) + timelineOffsetSec : outSec;
+
+        double rangeOutEnd = ToOut(rangeEndSec);
+        var result = new List<CaptionLine>(sorted.Count);
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var l = sorted[i];
+            double outStart = ToOut(l.SourceStartSec), outEnd = ToOut(l.SourceEndSec);
+            if (outEnd - outStart >= MinReadableOutputSec - 0.001) { result.Add(l); continue; }
+
+            double limitOut = rangeOutEnd;
+            if (i + 1 < sorted.Count) limitOut = Math.Min(limitOut, ToOut(sorted[i + 1].SourceStartSec));
+            double wantOut = Math.Min(outStart + MinReadableOutputSec, Math.Max(outEnd, limitOut));
+            double newEnd = Math.Clamp(ToAbs(wantOut), l.SourceEndSec, rangeEndSec);
+            result.Add(l with { SourceEndSec = newEnd });
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_MERGE_01 — puts commentary made for ONE segment into the existing track: existing lines fully
+    /// inside [<paramref name="rangeStartSec"/>, <paramref name="rangeEndSec"/>] are replaced, lines crossing its
+    /// edge are trimmed to the part outside (dropped if under <see cref="MinLineDurationSec"/>), everything else is
+    /// kept. Ids are renumbered in time order. Style, position and tone come from <paramref name="generated"/>.
+    /// </summary>
+    public static CaptionTrack MergeSegment(CaptionTrack? existing, CaptionTrack generated, double rangeStartSec, double rangeEndSec)
+    {
+        var kept = new List<CaptionLine>();
+        foreach (var line in existing?.Lines ?? Array.Empty<CaptionLine>())
+        {
+            double s = line.SourceStartSec, e = line.SourceEndSec;
+            if (e <= rangeStartSec || s >= rangeEndSec) { kept.Add(line); continue; }
+            if (s >= rangeStartSec && e <= rangeEndSec) continue;
+
+            double before = rangeStartSec - s, after = e - rangeEndSec;
+            CaptionLine trimmed = before >= after
+                ? line with { SourceEndSec = rangeStartSec }
+                : line with { SourceStartSec = rangeEndSec };
+            if (trimmed.SourceEndSec - trimmed.SourceStartSec < MinLineDurationSec) continue;
+            kept.Add(trimmed with { Words = CaptionTimeline.DistributeWords(trimmed.Text, trimmed.SourceStartSec, trimmed.SourceEndSec) });
+        }
+
+        kept.AddRange(generated.Lines ?? Array.Empty<CaptionLine>());
+        var ordered = kept.OrderBy(l => l.SourceStartSec).Select((l, i) => l with { Id = i + 1 }).ToList();
+        return generated with { Lines = ordered };
     }
 
     /// <summary>
@@ -180,12 +347,28 @@ public static class CommentaryService
         double chunkLimitSec,
         ref int lineIdCounter)
     {
-        var lines = new List<CaptionLine>();
-        if (string.IsNullOrWhiteSpace(json)) return lines;
+        TryParseCommentaryResponse(json, chunkOffsetSec, chunkLimitSec, ref lineIdCounter, out var lines);
+        return lines;
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_REPORT_01 — like <see cref="ParseCommentaryResponse"/> but returns false when the answer is
+    /// not readable JSON (an empty list means "nothing worth saying", which is valid). Times are offset by
+    /// <paramref name="chunkOffsetSec"/> (ABSOLUTE source start of the part) and kept before <paramref name="chunkLimitSec"/>.
+    /// </summary>
+    public static bool TryParseCommentaryResponse(
+        string json,
+        double chunkOffsetSec,
+        double chunkLimitSec,
+        ref int lineIdCounter,
+        out List<CaptionLine> lines)
+    {
+        lines = new List<CaptionLine>();
+        if (string.IsNullOrWhiteSpace(json)) return false;
 
         try
         {
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(GeminiClient.StripCodeFence(json));
             JsonElement root = doc.RootElement;
 
             if (root.ValueKind == JsonValueKind.Array)
@@ -216,9 +399,10 @@ public static class CommentaryService
         catch (JsonException ex)
         {
             RuntimeLog.Swallowed(ex);
+            return false;
         }
 
-        return lines;
+        return true;
     }
 
     private static bool TryParseLine(
@@ -237,31 +421,39 @@ public static class CommentaryService
         var emphasis = new List<string>();
         double confidence = 1.0;
 
-        if (el.TryGetProperty("start", out var sProp) && sProp.TryGetDouble(out double s)) start = s;
-        if (el.TryGetProperty("end", out var eProp) && eProp.TryGetDouble(out double e)) end = e;
-        if (el.TryGetProperty("text", out var tProp)) text = tProp.GetString() ?? "";
+        if (el.TryGetProperty("start", out var sProp) && sProp.ValueKind == JsonValueKind.Number && sProp.TryGetDouble(out double s)) start = s;
+        if (el.TryGetProperty("end", out var eProp) && eProp.ValueKind == JsonValueKind.Number && eProp.TryGetDouble(out double e)) end = e;
+        if (el.TryGetProperty("text", out var tProp) && tProp.ValueKind == JsonValueKind.String) text = tProp.GetString() ?? "";
 
         if (el.TryGetProperty("emphasis", out var empProp) && empProp.ValueKind == JsonValueKind.Array)
         {
             foreach (var emp in empProp.EnumerateArray())
             {
-                string? w = emp.GetString();
+                string? w = emp.ValueKind == JsonValueKind.String ? emp.GetString() : null;
                 if (!string.IsNullOrWhiteSpace(w)) emphasis.Add(w.Trim());
             }
         }
 
-        if (el.TryGetProperty("confidence", out var confProp) && confProp.TryGetDouble(out double c))
+        if (el.TryGetProperty("confidence", out var confProp) && confProp.ValueKind == JsonValueKind.Number && confProp.TryGetDouble(out double c))
             confidence = Math.Clamp(c, 0.0, 1.0);
 
         if (string.IsNullOrWhiteSpace(text)) return false;
         if (end <= start) end = start + 1.5;
 
-        // Map to chunk-offset absolute source seconds
-        double absStart = chunkOffsetSec + start;
+        if (!double.IsFinite(start) || !double.IsFinite(end)) return false;
+
+        // Part-relative seconds -> ABSOLUTE source seconds, kept inside this part.
+        double absStart = chunkOffsetSec + Math.Max(0, start);
         double absEnd = chunkOffsetSec + end;
+        if (chunkLimitSec > chunkOffsetSec)
+        {
+            if (absStart >= chunkLimitSec - 0.1) return false;
+            absEnd = Math.Min(absEnd, chunkLimitSec);
+        }
 
         if (absEnd - absStart < MinLineDurationSec)
-            absEnd = absStart + MinLineDurationSec;
+            absEnd = chunkLimitSec > chunkOffsetSec ? Math.Min(absStart + MinLineDurationSec, chunkLimitSec) : absStart + MinLineDurationSec;
+        if (absEnd <= absStart) return false;
 
         line = new CaptionLine(
             lineIdCounter++,

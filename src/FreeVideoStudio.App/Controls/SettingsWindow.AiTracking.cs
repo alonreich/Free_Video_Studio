@@ -28,6 +28,8 @@ public partial class SettingsWindow : Window
     private AiUsageConfig _pendingAiUsageMusicAutoFit = new(AiVendor.Google, GeminiClient.DefaultModel);
     private AiUsageConfig _pendingAiUsageViralPost = new(AiVendor.Google, GeminiClient.DefaultModel);
     private AiUsageConfig _pendingAiUsageEliminationTracker = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiDefault = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private readonly HashSet<string> _pendingAiOverrides = new(StringComparer.Ordinal);
     private bool _pendingAiEliminationTrackerEnabled;
     private bool _pendingAiViralPostHelperEnabled = true;
     private double _pendingAiZoomBaseScale = 2.2;
@@ -41,7 +43,7 @@ public partial class SettingsWindow : Window
     private CancellationTokenSource? _aiSettingsCts;
 
     /// <summary>Models offered before the user refreshes the list from Google.</summary>
-    private static readonly string[] KnownModels = { GeminiClient.DefaultModel, "gemini-2.5-pro", "gemini-2.5-flash-lite" };
+    private static readonly string[] KnownModels = AiVisionProviders.KnownGoogleModels; // AIMODELS_02
 
     private void InitializeAiTrackingSettings()
     {
@@ -57,6 +59,11 @@ public partial class SettingsWindow : Window
         _pendingAiUsageMusicAutoFit = s.AiUsageMusicAutoFit.Clone();
         _pendingAiUsageViralPost = s.AiUsageViralPost.Clone();
         _pendingAiUsageEliminationTracker = s.AiUsageEliminationTracker.Clone();
+        // AIDEFAULT_01 — read (or derive, for an older file) the shared default and the override list.
+        s.EnsureAiDefault();
+        _pendingAiDefault = (s.AiDefaultUsage ?? new AiUsageConfig(AiVendor.Google, GeminiClient.DefaultModel)).Clone();
+        _pendingAiOverrides.Clear();
+        foreach (string o in s.AiUsageOverrides ?? new List<string>()) _pendingAiOverrides.Add(o);
         _pendingAiEliminationTrackerEnabled = s.AiEliminationTrackerEnabled;
         _pendingAiViralPostHelperEnabled = s.AiViralPostHelperEnabled;
         _pendingAiZoomBaseScale = s.AiZoomBaseScale;
@@ -64,9 +71,10 @@ public partial class SettingsWindow : Window
         _pendingAiZoomAvoidHud = s.AiZoomAvoidHud;
         _pendingAiZoomDeadbandPercent = s.AiZoomDeadbandPercent;
         _pendingAiGameProfile = AiGameProfiles.Parse(s.AiTrackingGameProfile).ToString();
-        _pendingAiZoomConsent = s.AiZoomCloudConsent;
-        _pendingAiWandConsent = s.AiMagicWandCloudConsent;
-        _pendingAiCommentaryConsent = s.AiCommentaryCloudConsent;
+        // AICONSENT_02 — a box is ticked only when the consent covers the company that feature uses NOW.
+        _pendingAiZoomConsent = AppSettings.ConsentCovers(s.AiZoomCloudConsent, s.AiZoomCloudConsentVendor, s.GetUsageConfig(AiUsage.DenseTracking).Vendor);
+        _pendingAiWandConsent = AppSettings.ConsentCovers(s.AiMagicWandCloudConsent, s.AiMagicWandCloudConsentVendor, s.GetUsageConfig(AiUsage.MagicWand).Vendor);
+        _pendingAiCommentaryConsent = AppSettings.ConsentCovers(s.AiCommentaryCloudConsent, s.AiCommentaryCloudConsentVendor, s.GetUsageConfig(AiUsage.Commentary).Vendor);
     }
 
     /// <summary>
@@ -76,6 +84,8 @@ public partial class SettingsWindow : Window
     /// </summary>
     private void ApplyPendingAiSettings(AppSettings s)
     {
+        if (_pendingAiDefault.Vendor == AiVendor.Google && !string.IsNullOrWhiteSpace(_pendingAiDefault.Model))
+            _pendingGeminiModelName = _pendingAiDefault.Model;
         string geminiKey = (_pendingGeminiApiKey ?? string.Empty).Trim();
         if (!string.Equals(geminiKey, s.GeminiApiKey, StringComparison.Ordinal)) s.GeminiApiKey = geminiKey;
         s.GeminiModelName = GeminiClient.ResolveModel(_pendingGeminiModelName);
@@ -93,6 +103,8 @@ public partial class SettingsWindow : Window
         s.AiUsageMusicAutoFit = _pendingAiUsageMusicAutoFit.Clone();
         s.AiUsageViralPost = _pendingAiUsageViralPost.Clone();
         s.AiUsageEliminationTracker = _pendingAiUsageEliminationTracker.Clone();
+        s.AiDefaultUsage = _pendingAiDefault.Clone();
+        s.AiUsageOverrides = AppSettings.AllAiUsages.Select(u => u.ToString()).Where(_pendingAiOverrides.Contains).ToList();
         s.AiEliminationTrackerEnabled = _pendingAiEliminationTrackerEnabled;
         s.AiViralPostHelperEnabled = _pendingAiViralPostHelperEnabled;
 
@@ -104,6 +116,10 @@ public partial class SettingsWindow : Window
         s.AiZoomCloudConsent = _pendingAiZoomConsent;
         s.AiMagicWandCloudConsent = _pendingAiWandConsent;
         s.AiCommentaryCloudConsent = _pendingAiCommentaryConsent;
+        // AICONSENT_02 — a ticked box is consent for the company each feature uses after this save.
+        s.AiZoomCloudConsentVendor = _pendingAiZoomConsent ? s.GetUsageConfig(AiUsage.DenseTracking).Vendor.ToString() : "";
+        s.AiMagicWandCloudConsentVendor = _pendingAiWandConsent ? s.GetUsageConfig(AiUsage.MagicWand).Vendor.ToString() : "";
+        s.AiCommentaryCloudConsentVendor = _pendingAiCommentaryConsent ? s.GetUsageConfig(AiUsage.Commentary).Vendor.ToString() : "";
     }
 
     private void SetAiStatus(TextBlock? statusText, string text, string brushKey)
@@ -459,13 +475,10 @@ public partial class SettingsWindow : Window
             };
         }
 
-        // --- Per-Task Model Routing Controls (U1 - U4) ---
-        SetupUsageRow(scope, "AiU1", _pendingAiUsageSubjectDiscovery, AiUsage.SubjectDiscovery);
-        SetupUsageRow(scope, "AiU2", _pendingAiUsageTracking, AiUsage.DenseTracking);
-        SetupUsageRow(scope, "AiU3", _pendingAiUsageMagicWand, AiUsage.MagicWand);
-        SetupUsageRow(scope, "AiU4", _pendingAiUsageCommentary, AiUsage.Commentary);
+        // --- AIDEFAULT_01: one AI for every feature + Advanced per-feature overrides ---
+        BuildAiDefaultAndOverridesUi(scope);
 
-        // --- AI Features Checkboxes & Navigation ---
+        // --- AI Features Checkboxes ---
         var elimCb = scope?.Find("AiEliminationTrackerCheckBox") as CheckBox;
         if (elimCb != null)
         {
@@ -479,168 +492,230 @@ public partial class SettingsWindow : Window
             viralCb.IsChecked = _pendingAiViralPostHelperEnabled;
             viralCb.IsCheckedChanged += (_, _) => _pendingAiViralPostHelperEnabled = viralCb.IsChecked == true;
         }
-
-        var goToProvBtn = scope?.Find("AiGoToProvidersBtn") as Button;
-        if (goToProvBtn != null)
-        {
-            goToProvBtn.Click += (_, _) => OnGoToAiProvidersClicked(null, null!);
-        }
     }
 
+    /// <summary>Kept for callers that still say "go to the AI providers": everything AI lives on the AI Features tab now.</summary>
     private void OnGoToAiProvidersClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var tc = this.FindNameScope()?.Find("SettingsTabControl") as TabControl;
-        var provTab = this.FindNameScope()?.Find("AiProvidersTab") as TabItem;
-        if (tc != null && provTab != null)
-        {
-            tc.SelectedItem = provTab;
-        }
+        var tab = this.FindNameScope()?.Find("AiFeaturesTab") as TabItem;
+        if (tc != null && tab != null) tc.SelectedItem = tab;
     }
 
-    private void SetupUsageRow(
-        INameScope? scope,
-        string prefix,
-        AiUsageConfig usageConfig,
-        AiUsage usage)
+    private static readonly (AiVendor Vendor, string Label)[] VendorItems =
+    {
+        (AiVendor.Google, "Google Gemini"),
+        (AiVendor.Anthropic, "Anthropic Claude"),
+        (AiVendor.OpenAI, "OpenAI"),
+    };
+
+    /// <summary>Plain names for the seven AI usages, as the Advanced list shows them.</summary>
+    internal static string UsageLabel(AiUsage usage) => usage switch
+    {
+        AiUsage.SubjectDiscovery => "AI Smart Zoom · finding the target",
+        AiUsage.DenseTracking => "AI Smart Zoom · following the target",
+        AiUsage.MagicWand => "Magic Wand (Crop Tool)",
+        AiUsage.Commentary => "AI Commentary",
+        AiUsage.MusicAutoFit => "AI Music Auto-Fit",
+        AiUsage.ViralPost => "Viral Post Helper",
+        AiUsage.EliminationTracker => "AI Kill Tracker",
+        _ => usage.ToString(),
+    };
+
+    private AiUsageConfig PendingOwnConfig(AiUsage usage) => usage switch
+    {
+        AiUsage.SubjectDiscovery => _pendingAiUsageSubjectDiscovery,
+        AiUsage.DenseTracking => _pendingAiUsageTracking,
+        AiUsage.MagicWand => _pendingAiUsageMagicWand,
+        AiUsage.Commentary => _pendingAiUsageCommentary,
+        AiUsage.MusicAutoFit => _pendingAiUsageMusicAutoFit,
+        AiUsage.ViralPost => _pendingAiUsageViralPost,
+        _ => _pendingAiUsageEliminationTracker,
+    };
+
+    private string PendingKey(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Google => _pendingGeminiApiKey,
+        AiVendor.Anthropic => _pendingClaudeApiKey,
+        AiVendor.OpenAI => _pendingOpenAiApiKey,
+        _ => "",
+    };
+
+    /// <summary>Models listed live per vendor (Refresh), shared by the default row and every override row.</summary>
+    private readonly Dictionary<AiVendor, IReadOnlyList<string>> _liveModels = new();
+
+    private IReadOnlyList<string> ModelsFor(AiVendor vendor)
+        => _liveModels.TryGetValue(vendor, out var live) && live.Count > 0 ? live : AiVisionProviders.GetKnownModels(vendor);
+
+    /// <summary>
+    /// AIDEFAULT_01 / AISETTINGS_UI_02 — the provider row everyone follows, the per-feature override rows,
+    /// and key cards that show only for the companies actually in use (or that still hold a saved key).
+    /// </summary>
+    private void BuildAiDefaultAndOverridesUi(INameScope? scope)
     {
         if (scope == null) return;
-        var vendorCombo = scope.Find($"{prefix}VendorCombo") as ComboBox;
-        var modelCombo = scope.Find($"{prefix}ModelCombo") as ComboBox;
-        var refreshBtn = scope.Find($"{prefix}RefreshModelsBtn") as Button;
-        var useRecBtn = scope.Find($"{prefix}UseRecommendedBtn") as Button;
+        var rowRefreshers = new List<Action>();
 
-        var vendorItems = new (AiVendor Vendor, string Label)[]
+        void UpdateKeyCards()
         {
-            (AiVendor.Google, "Google Gemini"),
-            (AiVendor.Anthropic, "Anthropic Claude"),
-            (AiVendor.OpenAI, "OpenAI"),
-        };
-
-        if (vendorCombo != null)
-        {
-            vendorCombo.ItemsSource = vendorItems.Select(v => v.Label).ToList();
-            int currentVendorIdx = Array.FindIndex(vendorItems, v => v.Vendor == usageConfig.Vendor);
-            vendorCombo.SelectedIndex = currentVendorIdx >= 0 ? currentVendorIdx : 0;
+            var needed = new HashSet<AiVendor> { _pendingAiDefault.Vendor };
+            foreach (AiUsage u in AppSettings.AllAiUsages)
+                if (_pendingAiOverrides.Contains(u.ToString())) needed.Add(PendingOwnConfig(u).Vendor);
+            foreach (var (vendor, card) in new[] { (AiVendor.Google, "AiGeminiKeyCard"), (AiVendor.Anthropic, "AiClaudeKeyCard"), (AiVendor.OpenAI, "AiOpenAiKeyCard") })
+                if (scope.Find(card) is Control c)
+                    c.IsVisible = needed.Contains(vendor) || !string.IsNullOrWhiteSpace(PendingKey(vendor));
         }
 
-        void PopulateModels(IReadOnlyList<string> candidateModels)
+        void FillModelCombo(ComboBox combo, AiUsageConfig cfg)
         {
-            if (modelCombo == null) return;
-            var list = candidateModels.Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (!string.IsNullOrWhiteSpace(usageConfig.Model) && !list.Contains(usageConfig.Model, StringComparer.OrdinalIgnoreCase))
-            {
-                list.Insert(0, usageConfig.Model);
-            }
-            if (list.Count == 0)
-            {
-                list.Add(AiVisionProviders.GetDefaultModel(usageConfig.Vendor));
-            }
-            modelCombo.ItemsSource = list;
-            string target = !string.IsNullOrWhiteSpace(usageConfig.Model) && list.Contains(usageConfig.Model, StringComparer.OrdinalIgnoreCase)
-                ? usageConfig.Model
-                : list[0];
-            modelCombo.SelectedItem = list.First(m => string.Equals(m, target, StringComparison.OrdinalIgnoreCase));
-            usageConfig.Model = target;
+            var list = ModelsFor(cfg.Vendor).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (string.IsNullOrWhiteSpace(cfg.Model)) cfg.Model = AiVisionProviders.GetDefaultModel(cfg.Vendor);
+            if (!list.Contains(cfg.Model, StringComparer.OrdinalIgnoreCase)) list.Insert(0, cfg.Model);
+            combo.ItemsSource = list;
+            combo.SelectedItem = list.First(m => string.Equals(m, cfg.Model, StringComparison.OrdinalIgnoreCase));
         }
 
-        PopulateModels(AiVisionProviders.GetKnownModels(usageConfig.Vendor));
-
-        if (vendorCombo != null)
+        void WireVendorModel(ComboBox vendorCombo, ComboBox modelCombo, AiUsageConfig cfg)
         {
+            vendorCombo.ItemsSource = VendorItems.Select(v => v.Label).ToList();
+            int vi = Array.FindIndex(VendorItems, v => v.Vendor == cfg.Vendor);
+            vendorCombo.SelectedIndex = vi >= 0 ? vi : 0;
+            FillModelCombo(modelCombo, cfg);
             vendorCombo.SelectionChanged += (_, _) =>
             {
                 int idx = vendorCombo.SelectedIndex;
-                if (idx >= 0 && idx < vendorItems.Length)
-                {
-                    var newVendor = vendorItems[idx].Vendor;
-                    if (usageConfig.Vendor != newVendor)
-                    {
-                        usageConfig.Vendor = newVendor;
-                        usageConfig.Model = AiVisionProviders.GetDefaultModel(newVendor);
-                        PopulateModels(AiVisionProviders.GetKnownModels(newVendor));
-                    }
-                }
+                if (idx < 0 || idx >= VendorItems.Length || VendorItems[idx].Vendor == cfg.Vendor) return;
+                cfg.Vendor = VendorItems[idx].Vendor;
+                cfg.Model = AiVisionProviders.GetDefaultModel(cfg.Vendor);
+                FillModelCombo(modelCombo, cfg);
+                UpdateKeyCards();
             };
-        }
-
-        if (modelCombo != null)
-        {
             modelCombo.SelectionChanged += (_, _) =>
             {
-                if (modelCombo.SelectedItem is string selectedModel && !string.IsNullOrWhiteSpace(selectedModel))
-                {
-                    usageConfig.Model = selectedModel;
-                    if (usageConfig.Vendor == AiVendor.Google)
-                    {
-                        _pendingGeminiModelName = selectedModel;
-                    }
-                }
+                if (modelCombo.SelectedItem is string m && !string.IsNullOrWhiteSpace(m)) cfg.Model = m;
             };
         }
 
-        if (refreshBtn != null)
+        // Default row
+        var defVendor = scope.Find("AiDefaultVendorCombo") as ComboBox;
+        var defModel = scope.Find("AiDefaultModelCombo") as ComboBox;
+        if (defVendor != null && defModel != null)
         {
-            refreshBtn.Click += async (_, _) =>
+            WireVendorModel(defVendor, defModel, _pendingAiDefault);
+
+            if (scope.Find("AiDefaultUseRecommendedBtn") is Button rec)
             {
-                string key = usageConfig.Vendor switch
+                rec.Click += (_, _) =>
                 {
-                    AiVendor.Google => _pendingGeminiApiKey,
-                    AiVendor.Anthropic => _pendingClaudeApiKey,
-                    AiVendor.OpenAI => _pendingOpenAiApiKey,
-                    _ => "",
+                    _pendingAiDefault.Vendor = AiVisionProviders.RecommendedVendor;
+                    _pendingAiDefault.Model = AiVisionProviders.RecommendedModel;
+                    defVendor.SelectedIndex = Array.FindIndex(VendorItems, v => v.Vendor == AiVisionProviders.RecommendedVendor);
+                    FillModelCombo(defModel, _pendingAiDefault);
+                    UpdateKeyCards();
                 };
+            }
 
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    return;
-                }
-
-                refreshBtn.IsEnabled = false;
-                _aiSettingsCts?.Cancel();
-                _aiSettingsCts = new CancellationTokenSource();
-                try
-                {
-                    var provider = AiVisionProviders.Get(usageConfig.Vendor);
-                    var models = await provider.ListModelsAsync(key, _aiSettingsCts.Token);
-                    if (models.Count > 0)
-                    {
-                        PopulateModels(models);
-                    }
-                }
-                catch (AiProviderException ex)
-                {
-                    CoreLogger.Warn("AI", $"Failed to refresh models for {usageConfig.Vendor}: {ex.Message}");
-                }
-                catch (OperationCanceledException ex)
-                {
-                    CoreLogger.Swallowed(ex);
-                }
-                catch (Exception ex)
-                {
-                    CoreLogger.Warn("AI", $"Failed to refresh models: {ex.Message}");
-                }
-                finally
-                {
-                    refreshBtn.IsEnabled = true;
-                }
-            };
-        }
-
-        if (useRecBtn != null)
-        {
-            useRecBtn.Click += (_, _) =>
+            if (scope.Find("AiDefaultRefreshBtn") is Button refresh)
             {
-                usageConfig.Vendor = AiVisionProviders.RecommendedVendor;
-                usageConfig.Model = AiVisionProviders.RecommendedModel;
-                int gIdx = Array.FindIndex(vendorItems, v => v.Vendor == AiVendor.Google);
-                if (vendorCombo != null && gIdx >= 0) vendorCombo.SelectedIndex = gIdx;
-                PopulateModels(AiVisionProviders.GetKnownModels(AiVendor.Google));
-                if (modelCombo != null)
+                refresh.Click += async (_, _) =>
                 {
-                    modelCombo.SelectedItem = AiVisionProviders.RecommendedModel;
-                }
-            };
+                    var vendors = new HashSet<AiVendor> { _pendingAiDefault.Vendor };
+                    foreach (AiUsage u in AppSettings.AllAiUsages)
+                        if (_pendingAiOverrides.Contains(u.ToString())) vendors.Add(PendingOwnConfig(u).Vendor);
+                    refresh.IsEnabled = false;
+                    _aiSettingsCts?.Cancel();
+                    _aiSettingsCts = new CancellationTokenSource();
+                    var ct = _aiSettingsCts.Token;
+                    try
+                    {
+                        foreach (AiVendor v in vendors)
+                        {
+                            string key = PendingKey(v);
+                            if (string.IsNullOrWhiteSpace(key)) continue;
+                            try
+                            {
+                                var models = await AiVisionProviders.Get(v).ListModelsAsync(key, ct);
+                                if (models.Count > 0) _liveModels[v] = models;
+                            }
+                            catch (AiProviderException ex)
+                            {
+                                CoreLogger.Warn("AI", $"Failed to refresh models for {v}: {ex.Message}");
+                            }
+                        }
+                        FillModelCombo(defModel, _pendingAiDefault);
+                        foreach (var r in rowRefreshers) r();
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        CoreLogger.Swallowed(ex);
+                    }
+                    finally
+                    {
+                        refresh.IsEnabled = true;
+                    }
+                };
+            }
         }
+
+        // Advanced override rows (built here so the XAML stays short)
+        if (scope.Find("AiOverridesPanel") is StackPanel panel)
+        {
+            panel.Children.Clear();
+            foreach (AiUsage usage in AppSettings.AllAiUsages)
+            {
+                AiUsage u = usage;
+                AiUsageConfig own = PendingOwnConfig(u);
+                bool overridden = _pendingAiOverrides.Contains(u.ToString());
+                if (!overridden)
+                {
+                    own.Vendor = _pendingAiDefault.Vendor;
+                    own.Model = _pendingAiDefault.Model;
+                }
+
+                var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("260, 10, 150, 10, *") };
+                var check = new CheckBox { Content = UsageLabel(u), IsChecked = overridden, Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+                var vCombo = new ComboBox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, IsEnabled = overridden };
+                var mCombo = new ComboBox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, IsEnabled = overridden };
+                ToolTip.SetTip(check, "Ticked: this feature uses its own AI. Unticked: it follows the AI provider above.");
+                Grid.SetColumn(vCombo, 2);
+                Grid.SetColumn(mCombo, 4);
+                grid.Children.Add(check);
+                grid.Children.Add(vCombo);
+                grid.Children.Add(mCombo);
+                panel.Children.Add(grid);
+
+                WireVendorModel(vCombo, mCombo, own);
+                rowRefreshers.Add(() => FillModelCombo(mCombo, own));
+                check.IsCheckedChanged += (_, _) =>
+                {
+                    bool on = check.IsChecked == true;
+                    vCombo.IsEnabled = mCombo.IsEnabled = on;
+                    if (on)
+                    {
+                        _pendingAiOverrides.Add(u.ToString());
+                    }
+                    else
+                    {
+                        _pendingAiOverrides.Remove(u.ToString());
+                        own.Vendor = _pendingAiDefault.Vendor;
+                        own.Model = _pendingAiDefault.Model;
+                        vCombo.SelectedIndex = Array.FindIndex(VendorItems, x => x.Vendor == own.Vendor);
+                        FillModelCombo(mCombo, own);
+                    }
+                    UpdateKeyCards();
+                };
+            }
+
+            if (_pendingAiOverrides.Count > 0 && scope.Find("AiAdvancedExpander") is Expander exp) exp.IsExpanded = true;
+        }
+
+        // Keep key-card visibility live as keys are typed or removed.
+        foreach (string boxName in new[] { "AiGeminiApiKeyTextBox", "AiClaudeApiKeyTextBox", "AiOpenAiApiKeyTextBox" })
+        {
+            if (scope.Find(boxName) is TextBox tb)
+                tb.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Avalonia.Threading.Dispatcher.UIThread.Post(UpdateKeyCards); };
+        }
+        UpdateKeyCards();
     }
 
     private void BuildAboutUi()

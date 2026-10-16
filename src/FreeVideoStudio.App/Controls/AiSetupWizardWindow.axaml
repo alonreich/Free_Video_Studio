@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.AiSetupWizardWindow"
-        Title="AI Smart Tracking Setup"
+        Title="Connect Your AI"
         Width="580" MinHeight="560" SizeToContent="Height"
         Background="{DynamicResource AppSurfaceBrush}"
         CanResize="False"
@@ -14,14 +14,14 @@
         <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, *">
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Text="AI Smart Tracking Setup" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                    <TextBlock Text="Connect Your AI" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24,20" Spacing="18">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="Set Up Universal AI Zoom" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Google Gemini provides a free vision API that powers automatic broadcast-camera tracking. No paid subscription or credit card is required."
+                            <TextBlock Name="WizardHeadline" Text="Connect your AI" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                            <TextBlock Name="WizardIntro" Text="AI features (Smart Zoom, Commentary, Magic Wand, Music Auto-Fit, Viral Post, Kill Tracker) use your own AI key. Paste it once here; it is stored encrypted for your Windows account only."
                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
                         </StackPanel>
 
@@ -32,20 +32,20 @@
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
                                         <TextBlock Text="1" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
-                                    <TextBlock Text="Step 1: Get Your Free Gemini Key" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Name="Step1Title" Text="Step 1: Get your key" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <TextBlock Text="Follow these quick steps in Google AI Studio:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
+                                <TextBlock Name="Step1Lead" Text="Follow these quick steps:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
 
                                 <StackPanel Margin="10,0,0,0" Spacing="4">
-                                    <TextBlock Text="1. Sign in with any Google account." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Text="2. Click the button to Create API Key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Text="3. Select 'Create in new project'." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Text="4. Click the copy icon next to your generated key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Name="Step1Line1" Text="1. Sign in with any Google account." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Name="Step1Line2" Text="2. Click the button to Create API Key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Name="Step1Line3" Text="3. Select 'Create in new project'." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Name="Step1Line4" Text="4. Click the copy icon next to your generated key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
                                 </StackPanel>
 
-                                <Button Name="OpenAiStudioBtn" Classes="Primary" Content="Get Free Gemini API Key" Cursor="Hand" Margin="0,4,0,0"
-                                        ToolTip.Tip="Opens https://aistudio.google.com/app/apikey in your default web browser."/>
+                                <Button Name="OpenAiStudioBtn" Classes="Primary" Content="Get a Google Gemini key" Cursor="Hand" Margin="0,4,0,0"
+                                        ToolTip.Tip="Opens the company's key page in your default web browser."/>
                             </StackPanel>
                         </Border>
 
@@ -60,10 +60,10 @@
                                 </StackPanel>
 
                                 <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
-                                    <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your Gemini API key here..."
+                                    <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your API key here..."
                                              Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
                                     <Button Name="TestAndSaveBtn" Grid.Column="1" Classes="Success" Content="Test and Save Key" Cursor="Hand"
-                                            ToolTip.Tip="Tests connection to Google AI servers and verifies key validity."/>
+                                            ToolTip.Tip="Checks the key with the AI company, then saves it encrypted."/>
                                 </Grid>
 
                                 <TextBlock Name="VerificationStatusLabel" Text="Paste key and click Test and Save Key."
@@ -74,7 +74,7 @@
                         <!-- STEP 3: Ready Action -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,10,0,0">
                             <Button Name="CancelWizardBtn" Classes="Secondary" Content="CANCEL" MinWidth="100" Cursor="Hand" IsCancel="True"/>
-                            <Button Name="StartAiZoomBtn" Classes="Success" Content="Start Using AI Zoom" MinWidth="160" Cursor="Hand" IsEnabled="False" IsDefault="True"/>
+                            <Button Name="StartAiZoomBtn" Classes="Success" Content="CONTINUE" MinWidth="160" Cursor="Hand" IsEnabled="False" IsDefault="True"/>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

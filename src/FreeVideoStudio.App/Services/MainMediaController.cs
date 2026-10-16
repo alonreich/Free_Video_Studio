@@ -196,6 +196,8 @@ public class MainMediaController
         if (payload.MusicTracks != null) worker.MusicTracks = payload.MusicTracks;
         if (payload.MusicConfig != null) worker.MusicConfig = payload.MusicConfig;
         worker.KeepMusicDuringMeme = payload.KeepMusicDuringMeme;
+        // AICAPTION_EXPORT_02 — accepted AI Commentary captions reach the burn-in (they never did before).
+        worker.CaptionTrack = payload.CaptionTrack;
         
         worker.VoiceOverWavPath = payload.VoiceOverWavPath;
         worker.VoiceOverStartSec = payload.VoiceOverStartSec;

@@ -63,6 +63,13 @@ public record ExportPayload
     public List<MusicTrack>? MusicTracks { get; init; }
     public JsonObject? MusicConfig { get; init; }
     public bool KeepMusicDuringMeme { get; init; }
+
+    /// <summary>
+    /// AICAPTION_EXPORT_02 — the accepted AI Commentary captions (ABSOLUTE source seconds). Before this field the
+    /// captions lived only in the editor and the main window: the payload had no slot for them, the worker's
+    /// <c>CaptionTrack</c> was never set, and every export came out WITHOUT the captions the preview showed.
+    /// </summary>
+    public CaptionTrack? CaptionTrack { get; init; }
 }
 
 public record ExportResult

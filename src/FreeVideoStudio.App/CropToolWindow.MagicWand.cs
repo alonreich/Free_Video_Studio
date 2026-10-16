@@ -119,21 +119,16 @@ public partial class CropToolWindow
     /// </summary>
     private async Task<bool> ConfirmWandCloudConsentAsync()
     {
-        if (SettingsManager.Instance.AiMagicWandCloudConsent) return true;
-
-        var vendor = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
-        string provider = vendor switch
-        {
-            FreeVideoStudio.App.Services.AiVendor.Google => "Google Gemini",
-            FreeVideoStudio.App.Services.AiVendor.Anthropic => "Anthropic Claude",
-            FreeVideoStudio.App.Services.AiVendor.OpenAI => "OpenAI",
-            _ => WandDetection.AiService?.ProviderName ?? "the AI provider"
-        };
+        var wandSettings = SettingsManager.Instance;
+        var vendor = wandSettings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
+        // AICONSENT_02 — consent is per company; switching company asks again.
+        if (AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, vendor)) return true;
+        string provider = FreeVideoStudio.App.Services.AiVisionProviders.DisplayName(vendor);
         bool yes = await Controls.ConfirmDialogWindow.AskAsync(
             this,
             $"The Magic Wand can ask {provider} for extra HUD suggestions.\n\n" +
             $"To do that, ONE still image — the frozen frame you are looking at — will be sent to {provider} " +
-            "(the AI provider set in Settings › AI Providers). Your video is never uploaded.\n\n" +
+            "(the AI provider set in Settings › AI Features). Your video is never uploaded.\n\n" +
             "The offline Magic Wand runs either way, and nothing is applied until you pick a box yourself.\n\n" +
             $"Send this frame to {provider}?",
             $"Magic Wand: send one frame to {provider}?",
@@ -142,7 +137,7 @@ public partial class CropToolWindow
 
         if (yes)
         {
-            SettingsManager.Update(s => s.AiMagicWandCloudConsent = true);
+            SettingsManager.Update(s => { s.AiMagicWandCloudConsent = true; s.AiMagicWandCloudConsentVendor = vendor.ToString(); });
             RuntimeLog.Info("CROP", $"User allowed the Magic Wand to send one frame to {provider}.");
         }
         else

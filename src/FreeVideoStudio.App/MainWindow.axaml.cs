@@ -1075,6 +1075,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         _speedSegments.Clear();
         _aiEliminationTimestamps.Clear();
+        _aiEliminationMarkers.Clear();
+        _aiEliminationStatus = null;
+        _aiEliminationScanCts?.Cancel();
         _musicWizardResult = null;
         StopMusicPreview();
         _ = StopPreviewMixPlaybackAsync();

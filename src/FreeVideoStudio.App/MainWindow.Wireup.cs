@@ -420,7 +420,16 @@ public partial class MainWindow
                 editor.AvailableMemes = _memeItems;
                 editor.SetAiEliminations(_aiEliminationTimestamps);
 
-                await editor.ShowDialog(this);
+                // AIELIM_03 — a kill scan that finishes while the editor is open still reaches it.
+                _openGranularEditor = editor;
+                try
+                {
+                    await editor.ShowDialog(this);
+                }
+                finally
+                {
+                    _openGranularEditor = null;
+                }
                 ReturnToTrimStartPaused();
 
                 SetTimelinePopupsVisible(true);
@@ -442,6 +451,7 @@ public partial class MainWindow
                     _memePlacements.AddRange(editor.ResultMemes);
 
                     _viewModel.CaptionTrack = editor.ResultCaptionTrack;
+                    RuntimeLog.Info("UI", $"Granular editor: {editor.ResultCaptionTrack?.Lines?.Count ?? 0} commentary caption line(s) kept for the export.");
 
                     ClearLiveZoomCrop();
 

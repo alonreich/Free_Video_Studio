@@ -49,6 +49,18 @@ public sealed class GeminiException : AiProviderException
 /// <summary>Per-call policy: how long one HTTP attempt may take and how often a transient failure is retried.</summary>
 public sealed record GeminiCallOptions(TimeSpan Timeout, int MaxRetries, TimeSpan MaxRetryDelay)
 {
+    /// <summary>
+    /// AITEMP_01 — sampling temperature. Null = deterministic (0 on Gemini, the vendor default elsewhere);
+    /// creative tasks (viral post, commentary) pass <see cref="CreativeTemperature"/> so a retry is not a copy.
+    /// </summary>
+    public double? Temperature { get; init; }
+
+    /// <summary>AITEMP_01 — the temperature creative writing tasks use.</summary>
+    public const double CreativeTemperature = 0.9;
+
+    /// <summary>AITEMP_01 — <see cref="Tracking"/> timeouts with <see cref="CreativeTemperature"/>.</summary>
+    public static GeminiCallOptions Creative => Tracking with { Temperature = CreativeTemperature };
+
     /// <summary>AI SMART ZOOM: the user is waiting on a modal, a video upload + analysis can take minutes.</summary>
     public static readonly GeminiCallOptions Tracking = new(TimeSpan.FromSeconds(180), 3, TimeSpan.FromSeconds(30));
 
@@ -77,7 +89,20 @@ public sealed record GeminiCallOptions(TimeSpan Timeout, int MaxRetries, TimeSpa
 public sealed class GeminiClient
 {
     /// <summary>The single default model name (D3). Settings, both services and the wizard all read this.</summary>
-    public const string DefaultModel = "gemini-2.5-flash";
+    public const string DefaultModel = "gemini-3.8-flash"; // AIMODELS_02 — gemini-2.5-flash shut down 2026-10-16.
+
+    /// <summary>
+    /// AITEMP_02 — Gemini 3 and later are tuned for their default temperature (1.0); Google warns that lowering
+    /// it can cause looping or degraded answers. For those models (and the moving "-latest" aliases) the app
+    /// sends NO temperature unless the task explicitly asks for a creative one.
+    /// </summary>
+    public static bool PrefersDefaultTemperature(string? model)
+    {
+        string m = ResolveModel(model);
+        if (m.Contains("-latest", StringComparison.OrdinalIgnoreCase)) return true;
+        var match = Regex.Match(m, @"^gemini-(\d+)", RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out int major) && major >= 3;
+    }
 
     public const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta/";
     public const string ModelsEndpoint = BaseUrl + "models/";
@@ -278,23 +303,23 @@ public sealed class GeminiClient
 
         if (status == 401 || keyProblem)
             return new GeminiException(GeminiErrorKind.InvalidKey,
-                "Google rejected your Gemini API key. Check it in Settings › AI Tracking (Test Connection), or create a new key in Google AI Studio.",
+                "Google rejected your Gemini API key. Check it in Settings › AI Features (Test Connection), or create a new key in Google AI Studio.",
                 detail, status);
 
         switch (status)
         {
             case 403:
                 return new GeminiException(GeminiErrorKind.PermissionDenied,
-                    $"Your Gemini API key is not allowed to use the model '{model}'. Choose another model in Settings › AI Tracking, or check the key's project in Google AI Studio.",
+                    $"Your Gemini API key is not allowed to use the model '{model}'. Choose another model in Settings › AI Features, or check the key's project in Google AI Studio.",
                     detail, status);
             case 404:
                 return new GeminiException(GeminiErrorKind.ModelNotFound,
-                    $"The AI model '{model}' is not available for your key (it may have been retired). Choose another model in Settings › AI Tracking.",
+                    $"The AI model '{model}' is not available for your key (it may have been retired). Choose another model in Settings › AI Features.",
                     detail, status);
             case 429:
                 if (perDay || googleMessage.Contains("per day", StringComparison.OrdinalIgnoreCase))
                     return new GeminiException(GeminiErrorKind.QuotaExhausted,
-                        $"Your daily Gemini quota for '{model}' is used up. It resets once a day — try again later, or choose another model in Settings › AI Tracking.",
+                        $"Your daily Gemini quota for '{model}' is used up. It resets once a day — try again later, or choose another model in Settings › AI Features.",
                         detail, status);
                 int wait = (int)Math.Ceiling((retryDelay ?? TimeSpan.FromSeconds(30)).TotalSeconds);
                 return new GeminiException(GeminiErrorKind.RateLimited,
@@ -344,7 +369,7 @@ public sealed class GeminiClient
     {
         string key = apiKey?.Trim() ?? string.Empty;
         if (key.Length == 0)
-            throw new GeminiException(GeminiErrorKind.InvalidKey, "No Gemini API key is configured. Add one in Settings › AI Tracking.");
+            throw new GeminiException(GeminiErrorKind.InvalidKey, "No Gemini API key is configured. Add one in Settings › AI Features.");
         string resolved = ResolveModel(model);
         string url = ModelsEndpoint + resolved + ":generateContent";
 
@@ -355,6 +380,9 @@ public sealed class GeminiClient
             try
             {
                 string body = await PostOnceAsync(url, key, requestBody, options.Timeout, cancellationToken).ConfigureAwait(false);
+                // AIUSAGE_01 — every answered request is billed: count it whether or not its text is readable.
+                var (inTok, outTok, thinkTok) = AiUsageMeter.ParseGeminiUsage(body);
+                AiUsageMeter.Record(AiVendor.Google, inTok, outTok, thinkTok, null);
                 if (TryExtractModelText(body, out string text, out string? error, out bool blocked))
                     return text;
                 failure = blocked

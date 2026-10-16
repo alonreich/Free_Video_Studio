@@ -28,9 +28,20 @@ public sealed record ViralPostResult(
             : $"{Caption}\n\n{string.Join(" ", Hashtags)}";
 }
 
+/// <summary>AIVIRAL_HONEST_01 — what really happened when the post was requested.</summary>
+public enum ViralPostStatus
+{
+    AiGenerated,
+    NoKey,
+    Failed,
+}
+
+/// <summary>AIVIRAL_HONEST_01 — the post (only when <see cref="Status"/> is AiGenerated) and a plain message otherwise.</summary>
+public sealed record ViralPostOutcome(ViralPostStatus Status, ViralPostResult? Post, string? Message);
+
 /// <summary>
 /// Modern Viral Post Helper for social media export (TikTok, YouTube Shorts, Reels).
-/// Uses cloud multimodal AI (Google Gemini, Anthropic Claude, OpenAI) to formulate high-engagement 2026 clickbait titles,
+/// Uses cloud multimodal AI (Google Gemini, Anthropic Claude, OpenAI) to formulate high-engagement clickbait titles,
 /// punchy captions with comment-driving hooks, and trending hashtags.
 /// Zero local AI models are ever used.
 /// </summary>
@@ -51,6 +62,7 @@ public static class AiViralPostService
         }
         """;
 
+    /// <summary>Back-compatible wrapper: the post, or null when no key / the AI failed. Prefer <see cref="GenerateAsync"/>.</summary>
     public static async Task<ViralPostResult?> GenerateViralPostAsync(
         string ffmpegPath,
         string videoPath,
@@ -58,15 +70,28 @@ public static class AiViralPostService
         string apiKey,
         string? model = null,
         CancellationToken ct = default)
+        => (await GenerateAsync(ffmpegPath, videoPath, vendor, apiKey, model, null, ct).ConfigureAwait(false)).Post;
+
+    /// <summary>
+    /// AIVIRAL_HONEST_01 — writes a title, caption and hashtags for the exported video and says what really
+    /// happened: <see cref="ViralPostStatus.AiGenerated"/> only when the AI answered; <see cref="ViralPostStatus.NoKey"/>
+    /// without a key; <see cref="ViralPostStatus.Failed"/> with a plain reason otherwise. Never dresses a stock
+    /// template up as an AI answer. <paramref name="avoidTitle"/> (a regenerate) asks for a different take.
+    /// </summary>
+    public static async Task<ViralPostOutcome> GenerateAsync(
+        string ffmpegPath,
+        string videoPath,
+        AiVendor vendor,
+        string apiKey,
+        string? model = null,
+        string? avoidTitle = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
             throw new FileNotFoundException("Video file not found", videoPath);
 
-        // If no API key configured, provide high-quality modern offline templates
         if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            return CreateOfflineFallback();
-        }
+            return new ViralPostOutcome(ViralPostStatus.NoKey, null, "Add an AI key to get a title, caption and hashtags written for this video.");
 
         var tempFrames = new List<string>();
         try
@@ -74,40 +99,39 @@ public static class AiViralPostService
             var provider = AiVisionProviders.Get(vendor);
             string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : provider.DefaultModel;
 
-            // Probe video duration or default to sample points
-            double durationSec = await ProbeDurationSecAsync(ffmpegPath, videoPath, ct).ConfigureAwait(false);
+            double durationSec = await AiFfmpeg.ProbeDurationSecAsync(ffmpegPath, videoPath, ct).ConfigureAwait(false);
             if (durationSec <= 0) durationSec = 30.0;
 
-            double t1 = Math.Max(0.5, durationSec * 0.30);
-            double t2 = Math.Max(1.0, durationSec * 0.75);
-
             var images = new List<AiImageInput>();
-            foreach (double t in new[] { t1, t2 })
+            foreach (double frac in new[] { 0.20, 0.50, 0.80 })
             {
                 ct.ThrowIfCancellationRequested();
+                double t = Math.Clamp(durationSec * frac, 0.2, Math.Max(0.2, durationSec - 0.2));
                 string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_viral_frame_{Guid.NewGuid():N}.jpg");
                 tempFrames.Add(tempPath);
 
-                bool ok = await ExtractFrameJpegAsync(ffmpegPath, videoPath, t, tempPath, ct).ConfigureAwait(false);
-                if (ok && File.Exists(tempPath))
+                if (await AiFfmpeg.ExtractFrameJpegAsync(ffmpegPath, videoPath, t, tempPath, ct).ConfigureAwait(false))
                 {
                     byte[] data = await File.ReadAllBytesAsync(tempPath, ct).ConfigureAwait(false);
-                    images.Add(new AiImageInput(data, "image/jpeg", $"Highlight scene at {t:F1}s"));
+                    images.Add(new AiImageInput(data, "image/jpeg", $"Scene at {t:F1}s of {durationSec:F0}s"));
                 }
             }
 
             if (images.Count == 0)
-            {
-                return CreateOfflineFallback();
-            }
+                return new ViralPostOutcome(ViralPostStatus.Failed, null, "Could not read frames from the exported video.");
 
-            string prompt = """
-                You are a top gaming social media strategist and viral clip editor in 2026.
-                Analyze these highlights from an exported gaming clip. Formulate modern, high-engagement viral copy tailored for YouTube Shorts, TikTok, and Instagram Reels:
+            string different = string.IsNullOrWhiteSpace(avoidTitle)
+                ? string.Empty
+                : $"\nThe user asked for a NEW version. Write a clearly different angle than this previous title: \"{avoidTitle.Trim()}\".\n";
 
-                1. "title": A viral clickbait title strictly UNDER 60 CHARACTERS. Use high-stakes hooks, curiosity gaps, or modern meme framing (e.g. "Bro pushed the wrong building...", "POV: when they thought they won 💀", "The 1v4 that broke their lobby", "Nobody expected this ending..."). NEVER use boring or outdated titles like "Epic Gameplay Clip".
-                2. "caption": A punchy 1-2 sentence caption that hooks the viewer and ends with an engagement call-to-action (e.g., "Rate this clutch 1-10 👇", "What would you do in this 1v3?", "Drop your main below 👇").
-                3. "hashtags": An array of 6 to 8 trending high-reach hashtags including "#gaming", "#fyp", "#viral", "#clutch", "#shorts", plus relevant game/genre hashtags if you recognize the gameplay.
+            string prompt = $"""
+                You are a top social media strategist and viral short-form video editor.
+                Look at these scenes from a {durationSec:F0}-second exported video and write high-engagement copy for YouTube Shorts, TikTok and Instagram Reels.
+                Describe what is ACTUALLY visible; never invent events that are not shown.
+                {different}
+                1. "title": a scroll-stopping title strictly UNDER 60 CHARACTERS. Use a curiosity gap, high stakes or current meme framing (e.g. "Bro pushed the wrong building...", "POV: they thought they won 💀", "The 1v4 that broke their lobby"). Never generic titles like "Epic Gameplay Clip".
+                2. "caption": 1-2 punchy sentences that hook the viewer and end with a comment-driving call to action (e.g. "Rate this clutch 1-10 👇").
+                3. "hashtags": 6 to 8 high-reach hashtags. For gameplay include broad ones like #gaming #fyp #shorts plus the game / genre if you recognise it; otherwise pick tags that fit what is shown.
 
                 Return strictly a JSON object matching the requested schema.
                 """;
@@ -119,19 +143,27 @@ public static class AiViralPostService
                 images,
                 video: null,
                 ViralPostJsonSchema,
-                options: GeminiCallOptions.Tracking,
+                options: GeminiCallOptions.Creative,
                 ct: ct).ConfigureAwait(false);
 
-            return ParseJsonResponse(jsonResponse);
+            ViralPostResult? post = TryParseJsonResponse(jsonResponse);
+            return post != null
+                ? new ViralPostOutcome(ViralPostStatus.AiGenerated, post, null)
+                : new ViralPostOutcome(ViralPostStatus.Failed, null, "The AI's answer could not be read. Try again.");
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (AiProviderException ex)
+        {
+            RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+            return new ViralPostOutcome(ViralPostStatus.Failed, null, ex.Message);
+        }
         catch (Exception ex)
         {
-            RuntimeLog.Swallowed(ex);
-            return CreateOfflineFallback();
+            RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", apiKey));
+            return new ViralPostOutcome(ViralPostStatus.Failed, null, "Something went wrong while writing the post. Try again.");
         }
         finally
         {
@@ -143,6 +175,37 @@ public static class AiViralPostService
                     catch (Exception ex) { RuntimeLog.Swallowed(ex); }
                 }
             }
+        }
+    }
+
+    /// <summary>AIVIRAL_HONEST_01 — the parsed post, or null when the answer has no usable title (no stock filler).</summary>
+    public static ViralPostResult? TryParseJsonResponse(string? json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(GeminiClient.StripCodeFence(json));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            string title = root.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? (t.GetString() ?? "").Trim() : "";
+            string caption = root.TryGetProperty("caption", out var c) && c.ValueKind == JsonValueKind.String ? (c.GetString() ?? "").Trim() : "";
+            var tags = new List<string>();
+            if (root.TryGetProperty("hashtags", out var h) && h.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var el in h.EnumerateArray())
+                {
+                    if (el.ValueKind != JsonValueKind.String) continue;
+                    string tag = (el.GetString() ?? "").Trim().Replace(" ", "");
+                    if (tag.Length == 0) continue;
+                    if (!tag.StartsWith('#')) tag = "#" + tag;
+                    if (!tags.Contains(tag, StringComparer.OrdinalIgnoreCase)) tags.Add(tag);
+                }
+            }
+            return title.Length == 0 ? null : new ViralPostResult(title, caption, tags);
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return null;
         }
     }
 
@@ -198,68 +261,5 @@ public static class AiViralPostService
             Title: "Bro thought he was safe... 💀",
             Caption: "Wait until the very end. Rate this play 1-10 in the comments 👇",
             Hashtags: new[] { "#gaming", "#fyp", "#viral", "#clutch", "#shorts", "#gamersoftiktok" });
-    }
-
-    private static async Task<double> ProbeDurationSecAsync(string ffmpegPath, string videoPath, CancellationToken ct)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = ffmpegPath,
-                Arguments = $"-i \"{videoPath}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardError = true
-            };
-            using var proc = Process.Start(psi);
-            if (proc == null) return 0;
-            string output = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
-            await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-
-            var match = System.Text.RegularExpressions.Regex.Match(output, @"Duration:\s*(\d+):(\d+):(\d+\.\d+)");
-            if (match.Success)
-            {
-                int h = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-                int m = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
-                double s = double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
-                return h * 3600 + m * 60 + s;
-            }
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Swallowed(ex);
-        }
-        return 0;
-    }
-
-    private static async Task<bool> ExtractFrameJpegAsync(
-        string ffmpegPath,
-        string videoPath,
-        double timeSec,
-        string destinationJpeg,
-        CancellationToken ct)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = ffmpegPath,
-                Arguments = $"-y -ss {timeSec.ToString("0.000", CultureInfo.InvariantCulture)} -i \"{videoPath}\" -vframes 1 -vf \"scale=640:-2\" -q:v 3 \"{destinationJpeg}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true
-            };
-            using var proc = Process.Start(psi);
-            if (proc == null) return false;
-            await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-            return proc.ExitCode == 0 && File.Exists(destinationJpeg);
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Swallowed(ex);
-            return false;
-        }
     }
 }

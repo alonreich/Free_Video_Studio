@@ -438,7 +438,7 @@ public partial class GranularSpeedEditorWindow
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             await ErrorReporter.ShowAsync(this, "API Key Missing",
-                $"Please configure an API key for {config.Vendor} in Settings -> AI Providers.");
+                $"Please configure an API key for {config.Vendor} in Settings › AI Features.");
             return;
         }
 

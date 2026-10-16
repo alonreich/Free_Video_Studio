@@ -112,24 +112,25 @@ public enum AiUsage
 }
 
 /// <summary>
-/// AIPROVIDER_01 / AISETTINGS_01 — per-usage AI execution settings: {Vendor, Model, ReasoningLevel}.
+/// AIPROVIDER_01 / AISETTINGS_01 — per-usage AI execution settings: {Vendor, Model}.
+/// AIREASONING_01 (2026-10-16): the old <c>ReasoningLevel</c> field was saved but never used by any feature and
+/// never shown in Settings; it is gone. An old settings file that still carries it loads fine (unknown JSON
+/// members are ignored) and the field disappears on the next save.
 /// </summary>
 public sealed class AiUsageConfig
 {
     public AiVendor Vendor { get; set; } = AiVendor.Google;
     public string Model { get; set; } = "";
-    public AiReasoningLevel ReasoningLevel { get; set; } = AiReasoningLevel.Default;
 
     public AiUsageConfig() { }
 
-    public AiUsageConfig(AiVendor vendor, string model, AiReasoningLevel reasoningLevel = AiReasoningLevel.Default)
+    public AiUsageConfig(AiVendor vendor, string model)
     {
         Vendor = vendor;
         Model = model ?? string.Empty;
-        ReasoningLevel = reasoningLevel;
     }
 
-    public AiUsageConfig Clone() => new(Vendor, Model, ReasoningLevel);
+    public AiUsageConfig Clone() => new(Vendor, Model);
 }
 
 /// <summary>

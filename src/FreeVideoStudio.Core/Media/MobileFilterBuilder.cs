@@ -168,6 +168,34 @@ public class MobileFilterBuilder
         return (string.Join(";", parts), "[v_final]");
     }
 
+    /// <summary>
+    /// AICAPTION_LAYOUT_02 — where each HUD piece of the user's Crop Tool layout lands on the FINISHED 1080x1920
+    /// portrait canvas, as (X, Y, W, H) pixels, for the caption layout to stay clear of. The layout's overlay
+    /// positions are already in that space (UI y includes the 150 px top strip and the 1280→1080 / 1920→1620
+    /// scale pair cancels out), and a piece's size is its 1080p crop × its scale. Same layer filter as
+    /// <see cref="Build"/>: retired roles, hidden teammates / spectating are skipped.
+    /// </summary>
+    public static IReadOnlyList<(double X, double Y, double W, double H)> HudCanvasRects(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
+    {
+        var rects = new List<(double, double, double, double)>();
+        if (mobileCoords?["crops_1080p"] is not JsonObject crops) return rects;
+        var layers = new List<LayerSpec>();
+        foreach (var kvp in crops)
+        {
+            string key = kvp.Key;
+            if (HudConfig.IsRetiredRole(key)) continue;
+            if (key == "spectating" && !showSpectating) continue;
+            if (key == "team" && !showTeammates) continue;
+            layers.RegisterLayer(mobileCoords, key, key, key, key);
+        }
+        foreach (var l in layers)
+        {
+            double w = l.UiRect[0] * l.Scale, h = l.UiRect[1] * l.Scale;
+            if (w > 1 && h > 1) rects.Add((l.Pos.x, l.Pos.y, w, h));
+        }
+        return rects;
+    }
+
     public record LayerSpec(
         string Name, string ConfKey,
         int[] UiRect,

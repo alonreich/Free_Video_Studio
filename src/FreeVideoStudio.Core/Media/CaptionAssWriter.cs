@@ -37,7 +37,8 @@ public static class CaptionAssWriter
         bool isPortrait = true,
         IReadOnlyList<(double X, double Y, double W, double H)>? hudRects = null,
         string fontName = DefaultFontName,
-        double baseOffsetSec = 0.0)
+        double baseOffsetSec = 0.0,
+        IReadOnlyList<(double AtSec, double DurationSec)>? splices = null)
     {
         var mappedLines = CaptionTimeline.Map(track, timeline, baseOffsetSec);
         var sb = new StringBuilder();
@@ -54,7 +55,7 @@ public static class CaptionAssWriter
         sb.AppendLine();
 
         // 2. V4+ Styles
-        int baseFontSize = isPortrait ? 54 : 58;
+        int baseFontSize = isPortrait ? CaptionLayoutEngine.PortraitFontSize : CaptionLayoutEngine.LandscapeFontSize;
         sb.AppendLine("[V4+ Styles]");
         sb.AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
 
@@ -63,7 +64,7 @@ public static class CaptionAssWriter
         int alignCode = track.Position == CaptionPosition.Top ? 8 : 2;
         sb.Append($"Style: Commentary,{fontName},{baseFontSize},");
         sb.Append($"{PrimaryColourDefault},{SecondaryColourKaraoke},{OutlineColourDefault},{BackColourDefault},");
-        sb.AppendLine($"-1,0,0,0,100,100,0,0,1,3.5,2.0,{alignCode},40,40,40,1");
+        sb.AppendLine($"-1,0,0,0,100,100,0,0,1,4.5,2.0,{alignCode},40,40,40,1");
         sb.AppendLine();
 
         // 3. Events
@@ -77,8 +78,12 @@ public static class CaptionAssWriter
 
             if (layout.Lines.Count == 0) continue;
 
-            string startStr = FormatAssTimestamp(layout.OutputStartSec);
-            string endStr = FormatAssTimestamp(layout.OutputEndSec);
+            // AICAPTION_MEMESHIFT_01 — a meme spliced INTO the video pushes everything after it later; the burn-in
+            // runs on the finished stream, so each caption moves by the memes before it (and stops at a meme).
+            var (outStart, outEnd) = ShiftForSplices(layout.OutputStartSec, layout.OutputEndSec, splices);
+            if (outEnd - outStart < 0.05) continue;
+            string startStr = FormatAssTimestamp(outStart);
+            string endStr = FormatAssTimestamp(outEnd);
 
             string dialogueText = BuildDialogueText(layout, track.Style);
 
@@ -176,12 +181,33 @@ public static class CaptionAssWriter
             lineParts.Add(string.Join(" ", wordParts));
         }
 
-        // Exact pixel positioning override with \pos(x, y) if positioned, or bottom-center
+        // AICAPTION_LAYOUT_02 — \an5 anchors the text block at its CENTRE, so \pos is the layout box's centre.
+        // (Before, the style's bottom-centre anchor put the text's BOTTOM on the box centre: every caption sat
+        // half a box higher than the layout computed.) \fs carries the layout's own size when it shrank a line.
         double centerX = Math.Round(layout.BoxX + (layout.BoxWidth / 2.0));
         double centerY = Math.Round(layout.BoxY + (layout.BoxHeight / 2.0));
 
         string content = string.Join(@"\N", lineParts);
-        return @$"{{\pos({centerX.ToString(CultureInfo.InvariantCulture)},{centerY.ToString(CultureInfo.InvariantCulture)})}}{content}";
+        return @$"{{\an5\fs{layout.FontSize}\pos({centerX.ToString(CultureInfo.InvariantCulture)},{centerY.ToString(CultureInfo.InvariantCulture)})}}{content}";
+    }
+
+    /// <summary>
+    /// AICAPTION_MEMESHIFT_01 — maps a caption from the rendered-video clock (before memes are spliced in) to the
+    /// finished-video clock: every splice at or before the start adds its duration; a caption that runs INTO a
+    /// splice ends where the meme starts. Pure.
+    /// </summary>
+    public static (double Start, double End) ShiftForSplices(double start, double end, IReadOnlyList<(double AtSec, double DurationSec)>? splices)
+    {
+        if (splices == null || splices.Count == 0) return (start, end);
+        double shift = 0;
+        double clippedEnd = end;
+        foreach (var (at, dur) in splices.OrderBy(s => s.AtSec))
+        {
+            if (dur <= 0) continue;
+            if (at <= start + 1e-6) { shift += dur; continue; }
+            if (at < clippedEnd) clippedEnd = at;
+        }
+        return (start + shift, clippedEnd + shift);
     }
 
     /// <summary>
@@ -196,10 +222,11 @@ public static class CaptionAssWriter
         bool isPortrait = true,
         IReadOnlyList<(double X, double Y, double W, double H)>? hudRects = null,
         string fontName = DefaultFontName,
-        double baseOffsetSec = 0.0)
+        double baseOffsetSec = 0.0,
+        IReadOnlyList<(double AtSec, double DurationSec)>? splices = null)
     {
         ArgumentNullException.ThrowIfNull(filePath);
-        string text = GenerateAss(track, timeline, outputW, outputH, isPortrait, hudRects, fontName, baseOffsetSec);
+        string text = GenerateAss(track, timeline, outputW, outputH, isPortrait, hudRects, fontName, baseOffsetSec, splices);
         string dir = Path.GetDirectoryName(filePath) ?? "";
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
         File.WriteAllText(filePath, text, Encoding.UTF8);

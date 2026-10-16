@@ -431,7 +431,9 @@ public partial class MainWindow
             VoiceOverStartSec = _voiceOverResult?.VoiceOverStartTimestampSec ?? 0.0,
             VoiceOverTakes = _voiceOverResult != null ? GetExistingVoiceOverTakes(_voiceOverResult) : null,
             VoiceOverDuckAudio = _voiceOverResult?.DuckAudio ?? false,
-            VoiceOverProtectFromMusic = _voiceOverResult?.ProtectFromMusic ?? false
+            VoiceOverProtectFromMusic = _voiceOverResult?.ProtectFromMusic ?? false,
+            // AICAPTION_EXPORT_02 — the accepted commentary captions are burned into the export.
+            CaptionTrack = _viewModel.CaptionTrack is { Lines.Count: > 0 } captions ? captions : null
         };
         return payload;
     }

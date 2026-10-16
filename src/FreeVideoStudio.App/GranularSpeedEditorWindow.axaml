@@ -109,6 +109,9 @@
                                         <TextBlock Text="AI TRACKING PREVIEW (LOOPING)" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
                                     </StackPanel>
                                     <TextBlock Text="Review camera tracking motion before applying." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <!-- AIUSAGE_01 — what this AI task used and the allowance before → after (docs/05 §7.5). -->
+                                    <TextBlock Name="AiTrackingUsageText" IsVisible="False" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxWidth="560" Margin="0,4,0,0"/>
+                                    <TextBlock Name="AiTrackingAllowanceText" IsVisible="False" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap" MaxWidth="560"/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -130,6 +133,9 @@
                                         <TextBlock Text="AI COMMENTARY PREVIEW" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
                                     </StackPanel>
                                     <TextBlock Text="Review commentary subtitles before applying." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <!-- AIUSAGE_01 — what this AI task used and the allowance before → after (docs/05 §7.5). -->
+                                    <TextBlock Name="AiCommentaryUsageText" IsVisible="False" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxWidth="560" Margin="0,4,0,0"/>
+                                    <TextBlock Name="AiCommentaryAllowanceText" IsVisible="False" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap" MaxWidth="560"/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">

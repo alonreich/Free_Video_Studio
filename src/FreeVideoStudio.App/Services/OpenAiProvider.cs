@@ -24,7 +24,7 @@ namespace FreeVideoStudio.App.Services;
 /// </summary>
 public sealed class OpenAiProvider : IAiVisionProvider
 {
-    public const string DefaultModelName = "o3-mini";
+    public const string DefaultModelName = "gpt-6-luna"; // AIMODELS_02 — o3-mini shuts down 2026-10-23; gpt-6-luna is OpenAI's current vision model for high-volume work.
     public const string BaseUrl = "https://api.openai.com/v1/";
     public const string ChatEndpoint = BaseUrl + "chat/completions";
     public const string ModelsEndpoint = BaseUrl + "models";
@@ -106,11 +106,10 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 if (m.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String)
                 {
                     string name = id.GetString() ?? "";
-                    if ((name.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
-                      || name.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
-                      || name.StartsWith("o4", StringComparison.OrdinalIgnoreCase)
-                      || name.StartsWith("gpt-4", StringComparison.OrdinalIgnoreCase))
-                      && !Regex.IsMatch(name, "(audio|realtime|transcription|tts|embedding)", RegexOptions.IgnoreCase)
+                    // AIMODELS_02 — any "gpt-N" (N ≥ 4) or o-series model; gpt-6 and later used to be hidden.
+                    if ((Regex.IsMatch(name, @"^o\d", RegexOptions.IgnoreCase)
+                      || Regex.IsMatch(name, @"^gpt-([4-9]|\d{2,})", RegexOptions.IgnoreCase))
+                      && !Regex.IsMatch(name, "(audio|realtime|transcription|transcribe|tts|embedding|search|image|codex)", RegexOptions.IgnoreCase)
                       && SafeModelName.IsMatch(name))
                     {
                         names.Add(name);
@@ -142,21 +141,37 @@ public sealed class OpenAiProvider : IAiVisionProvider
             throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No OpenAI API key is configured. Add one in Settings.");
 
         options ??= GeminiCallOptions.Tracking;
-        string resolvedModel = ResolveModel(model);
+        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
 
-        byte[] requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, jsonSchema, reasoning);
+        // AISCHEMA_01 — strict Structured Outputs need an object root, additionalProperties:false and every field required.
+        AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: true);
+        byte[] requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning, options.Temperature);
+        bool fallbackTried = false;
 
         for (int attempt = 0; ; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                string responseBody = await PostOnceAsync(ChatEndpoint, key, requestBody, options.Timeout, ct).ConfigureAwait(false);
-                if (TryExtractContent(responseBody, out string result, out string? error))
-                    return result;
+                string responseBody = await PostOnceAsync(ChatEndpoint, key, resolvedModel, requestBody, options.Timeout, ct).ConfigureAwait(false);
+                if (TryExtractContent(responseBody, out string result, out string? error, out bool refused))
+                    return string.IsNullOrWhiteSpace(jsonSchema) ? result : AiJsonSchema.Normalize(result, schema.Wrapped);
 
+                if (refused)
+                    throw new AiProviderException(Vendor, AiProviderErrorKind.Blocked,
+                        "OpenAI declined to analyse this footage. Try a different segment.", GeminiClient.Redact(error, key));
                 throw new AiProviderException(Vendor, AiProviderErrorKind.MalformedResponse,
                     "OpenAI answer could not be parsed.", GeminiClient.Redact(error, key));
+            }
+            catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
+            {
+                // AIMODELFALLBACK_02 — a retired model is replaced once by the newest live one of this key.
+                fallbackTried = true;
+                string? live = await AiVisionProviders.FindLiveReplacementAsync(this, key, resolvedModel, userLog, ct).ConfigureAwait(false);
+                if (live == null) throw;
+                resolvedModel = live;
+                requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning, options.Temperature);
+                attempt = -1;
             }
             catch (AiProviderException ex) when (ex.IsTransient && attempt < options.MaxRetries)
             {
@@ -179,7 +194,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
         }
     }
 
-    private async Task<string> PostOnceAsync(string url, string key, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
+    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
@@ -192,10 +207,16 @@ public sealed class OpenAiProvider : IAiVisionProvider
 
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode) return body;
+            if (response.IsSuccessStatusCode)
+            {
+                // AIUSAGE_01 — tokens from the body, the per-minute allowance from the headers.
+                var (inTok, outTok, thinkTok) = AiUsageMeter.ParseOpenAiUsage(body);
+                AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseOpenAiLimits(response));
+                return body;
+            }
 
             TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
-            throw Classify((int)response.StatusCode, body, key, "openai", retryAfter);
+            throw Classify((int)response.StatusCode, body, key, model, retryAfter);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -221,7 +242,8 @@ public sealed class OpenAiProvider : IAiVisionProvider
         IReadOnlyList<AiImageInput> images,
         AiVideoInput? video,
         string jsonSchema,
-        AiReasoningConfig? reasoning)
+        AiReasoningConfig? reasoning,
+        double? temperature = null)
     {
         int estimatedSize = 4096 + prompt.Length * 2;
         foreach (var img in images) estimatedSize += img.Data.Length * 4 / 3 + 128;
@@ -244,6 +266,10 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 };
                 w.WriteString("reasoning_effort", effort);
             }
+
+            // AITEMP_01 — reasoning models (o-series, gpt-5 family) only accept their default temperature.
+            if (temperature is double temp && SupportsTemperature(model))
+                w.WriteNumber("temperature", Math.Clamp(temp, 0, 2));
 
             // Structured Outputs via json_schema response_format
             if (!string.IsNullOrWhiteSpace(jsonSchema))
@@ -311,10 +337,19 @@ public sealed class OpenAiProvider : IAiVisionProvider
         return buffer.WrittenSpan.ToArray();
     }
 
+    /// <summary>True for chat models that accept a custom temperature: only the gpt-4 family (o-series and gpt-5+ are reasoning models).</summary>
+    internal static bool SupportsTemperature(string model)
+        => !string.IsNullOrEmpty(model)
+           && Regex.IsMatch(model, @"^gpt-4", RegexOptions.IgnoreCase);
+
     internal static bool TryExtractContent(string responseJson, out string result, out string? error)
+        => TryExtractContent(responseJson, out result, out error, out _);
+
+    internal static bool TryExtractContent(string responseJson, out string result, out string? error, out bool refused)
     {
         result = string.Empty;
         error = null;
+        refused = false;
         if (string.IsNullOrWhiteSpace(responseJson)) { error = "empty response body"; return false; }
         try
         {
@@ -330,6 +365,12 @@ public sealed class OpenAiProvider : IAiVisionProvider
                     {
                         result = GeminiClient.StripCodeFence(content.GetString());
                         return true;
+                    }
+                    if (message.TryGetProperty("refusal", out JsonElement refusal) && refusal.ValueKind == JsonValueKind.String)
+                    {
+                        refused = true;
+                        error = "the model declined: " + GeminiClient.Truncate(refusal.GetString(), 200);
+                        return false;
                     }
                 }
             }
@@ -382,7 +423,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
                     $"Your OpenAI account is not permitted to use '{model}'.", detail, status);
             case 404:
                 return new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.ModelNotFound,
-                    $"The model '{model}' does not exist on OpenAI.", detail, status);
+                    $"The AI model '{model}' is not available on OpenAI (it may have been retired). Choose another model in Settings › AI Features.", detail, status);
             case 429:
                 if (openAiCode.Contains("quota", StringComparison.OrdinalIgnoreCase) || openAiMsg.Contains("quota", StringComparison.OrdinalIgnoreCase))
                 {
