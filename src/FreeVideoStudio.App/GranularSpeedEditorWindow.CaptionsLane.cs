@@ -450,7 +450,7 @@ public partial class GranularSpeedEditorWindow
             config.Vendor,
             settings.GetEffectiveModel(AiUsage.Commentary),
             track.Tone,
-            AiGameProfile.ThirdPerson,
+            AiGameProfiles.Parse(settings.AiTrackingGameProfile),
             track.Language,
             track.Style,
             track.Position);

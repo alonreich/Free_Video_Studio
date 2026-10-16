@@ -6,6 +6,15 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 
 ## v2026.10.16.1230 (Upcoming)
 **What's New in This Release:**
+- **AI Elimination Tracker:** When enabled in Settings, the app automatically scans video in the background when a clip is loaded and subtly marks eliminations with a red ✕ on the timeline and in the speed editor, with zero clutter.
+- **Modern Viral Post Helper:** When your video finishes exporting, the app drafts catchy 2026 clickbait titles, engagement captions, and trending hashtags with 1-click copy buttons for TikTok, YouTube Shorts, and Instagram Reels.
+- **Dedicated AI Features Settings Tab:** Added an AI Features tab in Settings to easily toggle automated smart tools and customize model routing across Google, Anthropic, and OpenAI.
+- **AI Music Auto-Fit:** The Add Music wizard can now analyze your video scenes using cloud AI to automatically pick the best matching background song and optimal start point for your video's mood and pacing.
+- **Rock-Solid Preview Scrubbing:** Rapid scrubbing and seeking in the Add Music preview player no longer freezes or turns into a black screen.
+- **Accurate Music Timeline Markers:** The pink music notes and music coverage bar on the timeline now accurately reflect exactly where the music stops without stretching past the end of the song.
+- **Settings & Window Sizes Kept on Updates:** Updating the app now reliably preserves your custom window sizes, positions, and preferences without forgetting them.
+- **Clear AI Setup Guidance:** If an AI API key is not yet configured when using smart tools like Magic Wand or AI Music, a friendly guide helps you configure it or run offline with one click.
+- **Multi-Provider AI Names:** Messages and alerts throughout the app now dynamically display your chosen AI provider (such as Anthropic Claude or OpenAI) instead of always saying Google Gemini.
 - **No More Random Volume Drops:** Fixed an unexpected volume mute/drop bug across the Main App, Video Merger, and Crop tools; audio playback now remains steady and in sync.
 - **Rubberband Drag Selection in Video Merger:** You can now drag a selection box across multiple videos in the queue to highlight and select them simultaneously.
 - **Batch Queue Reorder & Delete:** Move or delete multiple selected videos at once using toolbar buttons or the `Delete` key, fully synchronized with timeline markers and preview.

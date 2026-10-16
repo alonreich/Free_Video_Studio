@@ -482,7 +482,7 @@ internal static partial class UpdateService
 
     private static readonly string[] DevOnlyEnvironment =
     [
-        "FVS_DEV_LOG_DIR", "FVS_PROGRAMDATA_ROOT", DevUpdateSourceVariable, "FVS_ALLOW_UNSIGNED_UPDATE"
+        "FVS_DEV_LOG_DIR", DevUpdateSourceVariable, "FVS_ALLOW_UNSIGNED_UPDATE"
     ];
 
     /// <summary>The repository root to read .\compiled from, or null outside dev.cmd.</summary>

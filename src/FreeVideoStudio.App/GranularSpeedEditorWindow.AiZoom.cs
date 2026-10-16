@@ -398,7 +398,7 @@ public partial class GranularSpeedEditorWindow
             var choice = await ConfirmDialogWindow.AskThreeWayAsync(
                 this,
                 "Edit AI Zoom",
-                "Re-frame this AI zoom with your current camera settings (instant, nothing is sent to Google), " +
+                "Re-frame this AI zoom with your current camera settings (instant, nothing is sent to the AI), " +
                 "or track the target again from scratch?",
                 "Re-frame (no AI)",
                 "Track again");
@@ -539,7 +539,7 @@ public partial class GranularSpeedEditorWindow
                 if (userBox != null)
                 {
                     bool trackBox = await ConfirmDialogWindow.AskAsync(this,
-                        "Gemini did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
+                        $"{discoverySession.VendorName} did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
                         "Track the area inside the zoom box you drew instead?",
                         "No Targets Found", "Track my box", "Cancel");
                     if (!trackBox) return;
@@ -548,7 +548,7 @@ public partial class GranularSpeedEditorWindow
                 else
                 {
                     await ErrorReporter.ShowAsync(this, "No Targets Found",
-                        "Gemini did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
+                        $"{discoverySession.VendorName} did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
                         "Pick a block where your target is clearly visible — or draw a zoom box around them and press AI SMART ZOOM again; it will offer to track your box.");
                     return;
                 }

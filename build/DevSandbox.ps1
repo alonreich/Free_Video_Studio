@@ -45,7 +45,11 @@ function Has-Key($settings) {
 
 try {
     $devSettings = Join-Path $DevData 'settings.json'
+    $devSessionState = Join-Path $DevData 'session_state.json'
     $keepFile = Join-Path $KeepDir 'ai_settings.json'
+    $keepSettings = Join-Path $KeepDir 'settings.json'
+    $keepSessionState = Join-Path $KeepDir 'session_state.json'
+    $prodSessionState = Join-Path $ProdData 'session_state.json'
 
     # 1. One-time move out of %TMP%. The marker keeps a later 'dev fresh' from importing it again.
     $moved = Join-Path $KeepDir 'moved_from_tmp.txt'
@@ -59,9 +63,39 @@ try {
         [System.IO.File]::WriteAllText($moved, (Get-Date -Format o), $utf8)
     }
 
+    # 1b. Window bounds & sizes persistence (session_state.json)
+    if (Test-Path -LiteralPath $devSessionState) {
+        Copy-Item -LiteralPath $devSessionState -Destination $keepSessionState -Force
+    } elseif (Test-Path -LiteralPath $keepSessionState) {
+        New-Item -ItemType Directory -Path $DevData -Force | Out-Null
+        Copy-Item -LiteralPath $keepSessionState -Destination $devSessionState -Force
+        Write-Host "[DEV] Restored window sizes and bounds from remembered dev session state."
+    } elseif (Test-Path -LiteralPath $prodSessionState) {
+        New-Item -ItemType Directory -Path $DevData -Force | Out-Null
+        Copy-Item -LiteralPath $prodSessionState -Destination $devSessionState -Force
+        Write-Host "[DEV] Borrowed initial window sizes and bounds from installed app session state."
+    }
+
+    # 1c. Full settings persistence (settings.json)
+    if (-not (Test-Path -LiteralPath $devSettings)) {
+        if (Test-Path -LiteralPath $keepSettings) {
+            New-Item -ItemType Directory -Path $DevData -Force | Out-Null
+            Copy-Item -LiteralPath $keepSettings -Destination $devSettings -Force
+            Write-Host "[DEV] Restored full settings from remembered dev settings."
+        } elseif (Test-Path -LiteralPath (Join-Path $ProdData 'settings.json')) {
+            New-Item -ItemType Directory -Path $DevData -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $ProdData 'settings.json') -Destination $devSettings -Force
+            Write-Host "[DEV] Borrowed full settings from installed app settings."
+        }
+    }
+
     $dev = Read-Json $devSettings
 
-    # 2a. Remember the current AI settings whenever the sandbox has a key.
+    # 2a. Remember the current settings and AI settings whenever available.
+    if ($null -ne $dev) {
+        Copy-Item -LiteralPath $devSettings -Destination $keepSettings -Force
+    }
+
     if (Has-Key $dev) {
         $keep = [ordered]@{ SchemaVersion = $dev.SchemaVersion }
         foreach ($f in $aiFields) { if ($dev.PSObject.Properties[$f]) { $keep[$f] = $dev.$f } }
@@ -82,8 +116,7 @@ try {
     }
 
     if ($null -eq $dev) {
-        # Missing settings file ('dev fresh' or first run): a minimal file. Every other setting
-        # takes the app's own default; SchemaVersion is the source's, so normal migration applies.
+        # Missing settings file: a minimal file. Every other setting takes defaults; SchemaVersion applies.
         $dev = [pscustomobject]@{ SchemaVersion = $source.SchemaVersion }
     }
     foreach ($f in $aiFields) {

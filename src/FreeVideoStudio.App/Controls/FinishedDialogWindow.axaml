@@ -70,6 +70,34 @@
                         <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Name="FinishedCopyCreditBtn" Classes="Primary" Padding="14,8" VerticalAlignment="Center" Content="📋 COPY CREDIT" ToolTip.Tip="Copy the attribution credit to clipboard." Click="OnCopyCreditClicked"/>
                     </Grid>
                 </Border>
+                <!-- Modern Viral Post Helper Card -->
+                <Border Name="ViralPostCard" IsVisible="False" Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppAccentBrush}" BorderThickness="1.5" CornerRadius="8" Padding="14,10" MaxWidth="720" HorizontalAlignment="Center">
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="✨" FontSize="{DynamicResource AppFontSize14}" VerticalAlignment="Center"/>
+                                <TextBlock Text="VIRAL POST HELPER (2026 EDITION)" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Border Grid.Column="1" Background="{DynamicResource AppSurfaceSubtleBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock Name="ViralPostStatusBadge" Text="AI GENERATED" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Title Row -->
+                        <Grid ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
+                            <TextBlock Text="TITLE:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox Name="ViralTitleTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <Button Name="CopyViralTitleBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY TITLE" ToolTip.Tip="Copy viral title to clipboard." Click="OnCopyViralTitleClicked"/>
+                        </Grid>
+
+                        <!-- Caption & Tags Row -->
+                        <Grid ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
+                            <TextBlock Text="CAPTION &amp; TAGS:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox Name="ViralDescriptionTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxHeight="60" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <Button Name="CopyViralDescBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY CAPTION" ToolTip.Tip="Copy caption and hashtags to clipboard." Click="OnCopyViralDescriptionClicked"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
             </StackPanel>
             
             <Grid Grid.Row="2" Margin="0,24,0,0" RowDefinitions="Auto,24,Auto" HorizontalAlignment="Center">

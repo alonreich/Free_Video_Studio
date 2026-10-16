@@ -418,6 +418,7 @@ public partial class MainWindow
                     existingCaptions: _viewModel.CaptionTrack);
 
                 editor.AvailableMemes = _memeItems;
+                editor.SetAiEliminations(_aiEliminationTimestamps);
 
                 await editor.ShowDialog(this);
                 ReturnToTrimStartPaused();

@@ -177,6 +177,26 @@ public partial class CropToolWindow
         }
 
         string? frameIdentity = CurrentWandFrameIdentity();
+        bool aiConfigured = WandDetection.AiService is { IsConfigured: true };
+        if (!aiConfigured && !s_wandCloudDeclinedThisSession)
+        {
+            var choice = await Controls.ConfirmDialogWindow.AskThreeWayAsync(
+                this,
+                "AI HUD Detection",
+                "AI HUD detection gives more accurate suggestions for game interfaces.\n\n" +
+                "An AI provider key is not configured yet. Would you like to set up an AI key now, or run offline HUD detection only?",
+                "Set up AI Key",
+                "Run Offline");
+            if (choice == Controls.ConfirmDialogWindow.ConfirmDialogResult.Yes)
+            {
+                var vendor = SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
+                await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor);
+            }
+            else
+            {
+                s_wandCloudDeclinedThisSession = true;
+            }
+        }
         bool aiAvailable = WandAiAvailable();
 
         if (_wandCandidates != null && _wandCandidatesFrame != null && _wandCandidatesFrame != frameIdentity && !aiAvailable)
@@ -353,7 +373,8 @@ public partial class CropToolWindow
         ShowMagicWandCandidates();
         SetEnabled("MagicWandButton", true);
         SetContent("MagicWandButton", "\u23F9 STOP AI SUGGESTIONS");
-        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. Google Gemini is still looking for more — you can start reviewing now.");
+        string providerName = WandDetection.AiService?.ProviderName ?? "The AI";
+        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. {providerName} is still looking for more — you can start reviewing now.");
     }
 
     /// <summary>

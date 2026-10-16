@@ -210,6 +210,42 @@ public class AppSettings
     }
     private AiUsageConfig? _aiUsageCommentary = new(AiVendor.Google, GeminiClient.DefaultModel);
 
+    /// <summary>AI usage U5 — Background music auto-fit (video keyframes to recommended song and timing).</summary>
+    public AiUsageConfig AiUsageMusicAutoFit
+    {
+        get => _aiUsageMusicAutoFit ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageMusicAutoFit = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageMusicAutoFit = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>AI usage U6 — Modern viral post generator (export finish -> viral clickbait title, caption &amp; hashtags).</summary>
+    public AiUsageConfig AiUsageViralPost
+    {
+        get => _aiUsageViralPost ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageViralPost = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageViralPost = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>AI usage U7 — AI elimination tracker (gameplay clip -> kill / knockdown timestamp markers).</summary>
+    public AiUsageConfig AiUsageEliminationTracker
+    {
+        get => _aiUsageEliminationTracker ??= new(AiVendor.Google, GeminiModelName);
+        set => _aiUsageEliminationTracker = value ?? new(AiVendor.Google, GeminiModelName);
+    }
+    private AiUsageConfig? _aiUsageEliminationTracker = new(AiVendor.Google, GeminiClient.DefaultModel);
+
+    /// <summary>
+    /// AI Elimination Tracker — automatically scans video in background upon load to detect and mark eliminations (✕) on timeline.
+    /// Default false (OFF).
+    /// </summary>
+    public bool AiEliminationTrackerEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Modern Viral Post Helper — automatically drafts high-engagement titles, captions, and hashtags on the Export Finished screen.
+    /// Default true (ON).
+    /// </summary>
+    public bool AiViralPostHelperEnabled { get; set; } = true;
+
     /// <summary>Helper to retrieve the per-usage configuration, guaranteeing non-null.</summary>
     public AiUsageConfig GetUsageConfig(AiUsage usage) => usage switch
     {
@@ -217,6 +253,9 @@ public class AppSettings
         AiUsage.DenseTracking => AiUsageTracking,
         AiUsage.MagicWand => AiUsageMagicWand,
         AiUsage.Commentary => AiUsageCommentary,
+        AiUsage.MusicAutoFit => AiUsageMusicAutoFit,
+        AiUsage.ViralPost => AiUsageViralPost,
+        AiUsage.EliminationTracker => AiUsageEliminationTracker,
         _ => new(AiVendor.Google, GeminiModelName),
     };
 
@@ -230,6 +269,9 @@ public class AppSettings
             case AiUsage.DenseTracking: AiUsageTracking = config; break;
             case AiUsage.MagicWand: AiUsageMagicWand = config; break;
             case AiUsage.Commentary: AiUsageCommentary = config; break;
+            case AiUsage.MusicAutoFit: AiUsageMusicAutoFit = config; break;
+            case AiUsage.ViralPost: AiUsageViralPost = config; break;
+            case AiUsage.EliminationTracker: AiUsageEliminationTracker = config; break;
         }
     }
 

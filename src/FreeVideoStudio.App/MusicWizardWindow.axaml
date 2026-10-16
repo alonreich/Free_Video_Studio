@@ -75,13 +75,14 @@
                                  bar showing whether the songs cover the whole video.
                                  ══════════════════════════════════════════════════════════════════ -->
                             <Grid Name="Step1Panel" IsVisible="True" RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,Auto">
-                                <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,8">
+                                <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
                                     <TextBlock Grid.Column="0" Text="Music folder:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding MusicFolderText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center" TextTrimming="PathSegmentEllipsis"/>
                                     <Button Grid.Column="2" Name="ChangeFolderBtn" Content="Change folder" Classes="Secondary" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand" ToolTip.Tip="Choose a different folder to browse for music files"/>
                                     <!-- ISSUE_10: the in-app way to get the shared song library. Secondary on purpose:
                                          green is reserved for NEXT, the one action that moves the user forward. -->
                                     <Button Grid.Column="3" Name="DownloadSongsBtn" Content="⬇ Get more songs" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Download free background songs from the official library into this folder" AutomationProperties.Name="Download more songs"/>
+                                    <Button Grid.Column="4" Name="AiAutoFitBtn" Content="✨ AI Auto-Fit" Click="OnAiAutoFitClicked" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Let cloud AI analyze video scenes and automatically pick the best matching song and optimal timing" AutomationProperties.Name="AI Auto-Fit song"/>
                                 </Grid>
                                 <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
                                     <Grid Grid.Column="0" VerticalAlignment="Center">

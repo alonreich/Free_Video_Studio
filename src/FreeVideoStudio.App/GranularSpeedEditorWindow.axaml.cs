@@ -196,6 +196,17 @@ public partial class GranularSpeedEditorWindow : Window
     private bool _zoomDragIsStart;
     private double _freezeDragGrabOffsetSec;
     private double _freezeDragFixedEndOutSec;
+    private readonly List<double> _aiEliminationTimestamps = new();
+
+    public void SetAiEliminations(IEnumerable<double>? timestamps)
+    {
+        _aiEliminationTimestamps.Clear();
+        if (timestamps != null)
+        {
+            _aiEliminationTimestamps.AddRange(timestamps);
+        }
+        RedrawTimeline();
+    }
 
 
     /// <summary>
@@ -3030,6 +3041,34 @@ public partial class GranularSpeedEditorWindow : Window
 
             DrawMemeBands(canvas, markerOverlay, w, h, MarkerStickHeight);
             DrawCornerMemeBands(canvas, w, h);
+
+            if (_aiEliminationTimestamps.Count > 0 && dur > 0)
+            {
+                var elimBaseColor = Infrastructure.ThemeResources.Colour(this, "AppDangerColor", Avalonia.Media.Color.FromRgb(168, 50, 50));
+                var elimBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, elimBaseColor.R, elimBaseColor.G, elimBaseColor.B));
+
+                foreach (double elimSec in _aiEliminationTimestamps)
+                {
+                    double elimMs = elimSec * 1000.0;
+                    if (elimMs < _edit.TrimStartMs || (_edit.TrimEndMs > 0 && elimMs > _edit.TrimEndMs)) continue;
+
+                    double elimRelMs = elimMs - _edit.TrimStartMs;
+                    double ex = SrcMsToX(elimRelMs, w);
+
+                    var xMark = new TextBlock
+                    {
+                        Text = "✕",
+                        Foreground = elimBrush,
+                        FontSize = Infrastructure.ThemeManager.ScaledFontSize(12),
+                        FontWeight = Avalonia.Media.FontWeight.Bold,
+                        IsHitTestVisible = true
+                    };
+                    ToolTip.SetTip(xMark, $"Elimination detected at {TimeSpan.FromSeconds(elimSec):mm\\:ss\\.f}");
+                    Avalonia.Controls.Canvas.SetLeft(xMark, Math.Max(0, ex - 6));
+                    Avalonia.Controls.Canvas.SetTop(xMark, -16);
+                    canvas.Children.Add(xMark);
+                }
+            }
         });
     }
 

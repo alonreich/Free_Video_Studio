@@ -962,9 +962,9 @@ public partial class MainWindow
                 if (_draggingMusicEnd) {
                     double currentX = e.GetPosition(canvas).X;
 
-                    double markEndX = (_trimEndMs / 1000.0 / duration) * canvasWidth;
+                    double markEndX = _trimEndMs > 0 ? (_trimEndMs / 1000.0 / duration) * canvasWidth : canvasWidth;
                     if (currentX > markEndX) currentX = markEndX;
-                    if (Math.Abs(currentX - markEndX) < 10) currentX = markEndX;
+                    if (_trimEndMs > 0 && Math.Abs(currentX - markEndX) < 10) currentX = markEndX;
 
                     double newEnd = (currentX / canvasWidth) * duration;
                     if (newEnd > duration) newEnd = duration;
@@ -1012,7 +1012,7 @@ public partial class MainWindow
                     double rawNewEnd = dragInitialEndSec + dxSeconds;
 
                     double markStartSec = _trimStartMs / 1000.0;
-                    double markEndSec = _trimEndMs / 1000.0;
+                    double markEndSec = _trimEndMs > 0 ? _trimEndMs / 1000.0 : duration;
 
                     if (rawNewStart < markStartSec) {
                         rawNewStart = markStartSec;
@@ -1034,7 +1034,7 @@ public partial class MainWindow
                         newStart = markStartSec;
                         newEnd = newStart + dur;
                     }
-                    else if (distEndToMarkEnd < 10)
+                    else if (_trimEndMs > 0 && distEndToMarkEnd < 10)
                     {
                         newEnd = markEndSec;
                         newStart = newEnd - dur;
@@ -1060,6 +1060,31 @@ public partial class MainWindow
                     Avalonia.Controls.Canvas.SetLeft(musicEndBorder, nEndX - 20);
                 }
             };
+        }
+
+        if (_aiEliminationTimestamps.Count > 0 && duration > 0)
+        {
+            var elimBaseColor = Infrastructure.ThemeResources.Colour(this, "AppDangerColor", Avalonia.Media.Color.FromRgb(168, 50, 50));
+            var elimBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, elimBaseColor.R, elimBaseColor.G, elimBaseColor.B));
+
+            foreach (double elimSec in _aiEliminationTimestamps)
+            {
+                if (elimSec < 0 || elimSec > duration) continue;
+                double ex = (elimSec / duration) * canvasWidth;
+
+                var xMark = new TextBlock
+                {
+                    Text = "✕",
+                    Foreground = elimBrush,
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(12),
+                    FontWeight = Avalonia.Media.FontWeight.Bold,
+                    IsHitTestVisible = true
+                };
+                ToolTip.SetTip(xMark, $"Elimination detected at {FormatTime(TimeSpan.FromSeconds(elimSec))}");
+                Avalonia.Controls.Canvas.SetLeft(xMark, Math.Max(0, ex - 6));
+                Avalonia.Controls.Canvas.SetTop(xMark, -16);
+                canvas.Children.Add(xMark);
+            }
         }
     }
 
