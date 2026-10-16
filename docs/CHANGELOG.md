@@ -6,10 +6,28 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 
 ## v2026.10.16.1230 (Upcoming)
 **What's New in This Release:**
-- **AI Elimination Tracker:** When enabled in Settings, the app automatically scans video in the background when a clip is loaded and subtly marks eliminations with a red ✕ on the timeline and in the speed editor, with zero clutter.
-- **Modern Viral Post Helper:** When your video finishes exporting, the app drafts catchy 2026 clickbait titles, engagement captions, and trending hashtags with 1-click copy buttons for TikTok, YouTube Shorts, and Instagram Reels.
-- **Dedicated AI Features Settings Tab:** Added an AI Features tab in Settings to easily toggle automated smart tools and customize model routing across Google, Anthropic, and OpenAI.
-- **AI Music Auto-Fit:** The Add Music wizard can now analyze your video scenes using cloud AI to automatically pick the best matching background song and optimal start point for your video's mood and pacing.
+- **See What Each AI Job Used:** After AI Smart Zoom or AI Commentary finishes (or fails, or is cancelled), the app shows how many AI requests and tokens that job used, and — for Anthropic and OpenAI — how much of your per-minute allowance was left before and after. Google doesn't share remaining quota with apps, so the app tells you where to check it.
+- **AI Commentary Remembers Your Choices:** Tone, caption style, top or bottom placement, language, whole video or one block, and your extra notes are kept for next time.
+- **AI Works Again After Today's AI Model Retirements:** Google, Anthropic and OpenAI retired the AI models the app used. The app now uses their current models, quietly updates your saved choice, and if a model ever disappears again it switches to a working one by itself and tells you.
+- **AI Commentary Now Appears in Your Saved Video:** The captions you accept in the speed editor are now burned into the exported video, exactly like the preview.
+- **Bigger, Better-Placed Captions:** Commentary text is larger and sits two-thirds of the way down the screen, above your health, shield, stamina and hotbar, so it never covers your HUD. Captions also stay in sync when a meme is cut into the video.
+- **AI Music Auto-Fit Shows What It Is Doing:** A line under the buttons shows each step and a seconds counter, the button becomes "Cancel AI", and it gives up after 2 minutes instead of hanging. The AI now picks a song from your list by number, and the app finds where the song gets going by itself, so the music always covers your whole video.
+- **AI Kill Tracker You Can See and Trust:** Bigger red ✕ badges that never hide behind other markers, a message when the scan finishes, sharper pictures so kill messages can be read, only YOUR kills are counted, longer videos get more moments checked, and the speed editor gets the markers even if it was already open.
+- **Commentary Works with Claude:** AI Commentary and the Viral Post Helper no longer fail when Anthropic Claude is your AI.
+- **One Simple "Connect Your AI" Window:** Every AI feature now opens the same short setup for whichever AI company you use (Google, Anthropic or OpenAI) instead of a "Smart Zoom" setup or a dead end.
+- **Honest Privacy Questions:** The app asks again when you switch AI company, and says exactly what that company gets (Gemini hears the game sound; Claude and OpenAI only see still pictures).
+- **One Game-Type Setting:** AI Commentary now uses the game type from Settings and remembers your choice there.
+- **Long Commentary Warning:** Before captioning a long video, the app tells you how many AI requests it will make and about how long it will take.
+- **Cleaner Caption Preview:** The preview never stacks old captions on top of new ones.
+- **AI Kill Tracker:** When turned on in Settings, the app checks the loudest action moments of each video you open and marks every kill with a red ✕ on the timeline and in the speed editor. Click a ✕ to jump straight to it. A small note on the timeline says how many kills were found, or why the check failed.
+- **Viral Post Helper:** When your video finishes exporting, the AI writes a catchy title, caption and hashtags for it, with 1-click copy buttons. Press NEW VERSION for a different take. If the AI can't answer, the card says so honestly (and why) instead of showing made-up text.
+- **One Simple AI Settings Tab:** Everything AI now lives in Settings › AI Features: pick one AI provider and model for all features, add its key, and turn features on or off. Want a different AI for just one feature? Open "Advanced" and tick it.
+- **AI Music Auto-Fit:** The Add Music wizard can now analyze your video scenes using cloud AI to automatically pick the best matching background song and optimal start point for your video's mood and pacing. It looks at every clip in the Video Merger (not just the first), sizes the song to your finished video (slow motion, fast forward and freezes included), and one Ctrl+Z brings back the songs you had before.
+- **Claude and OpenAI Now Work Everywhere:** Choosing Anthropic Claude or OpenAI no longer makes AI Smart Zoom, AI Commentary, Magic Wand, Music Auto-Fit, Viral Post or the Kill Tracker fail.
+- **AI Commentary in Perfect Sync:** Captions now appear exactly when the action happens, even on trimmed clips, single blocks, slow motion and fast forward. Lines stay on screen long enough to read at any speed, and the AI is told which parts are slowed down, sped up, frozen or cut.
+- **Commentary for One Block Keeps the Rest:** Making commentary for a single block now only replaces the captions inside that block.
+- **No Silent Gaps in Commentary:** If part of a clip can't be analysed, the app retries once and tells you how many parts are missing.
+- **No More Freezes While AI Prepares Your Video:** The behind-the-scenes video steps used by AI features can no longer hang, and Cancel stops them right away.
 - **Rock-Solid Preview Scrubbing:** Rapid scrubbing and seeking in the Add Music preview player no longer freezes or turns into a black screen.
 - **Accurate Music Timeline Markers:** The pink music notes and music coverage bar on the timeline now accurately reflect exactly where the music stops without stretching past the end of the song.
 - **Settings & Window Sizes Kept on Updates:** Updating the app now reliably preserves your custom window sizes, positions, and preferences without forgetting them.

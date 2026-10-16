@@ -524,7 +524,7 @@
 * **Schema v12 (LOUDSTD_REMOVED_01 / CLIPLEVEL_01 / VOLMUTE_01):** removes `LoudnessNormalizationPrompt` and `Defaults.AutoVoiceNormalization` (old keys are ignored on read and dropped on the next write); adds `MergerMatchClipLoudness` (default OFF) and `PreviewMuted` (default OFF). The master LEVEL stays in the session state (`MainVolume`), written by `MasterVolumePersistence` off the UI thread.
 * **Schema v10 (SYS-AISETTINGS):** Introduces configuration for Universal AI Smart Tracking Zoom:
   * `GeminiApiKey` (string, default `""`): Google Gemini API key. Since schema 14 the on-disk value is SEALED (`KEYPROTECT_01`, below); code reads the clear key only through `AppSettings.GeminiApiKey` (`[JsonIgnore]`), the JSON property is `GeminiApiKeyStored`.
-  * `GeminiModelName` (string, default `GeminiClient.DefaultModel` = `"gemini-2.5-flash"` — the ONE place the default model is named; D3): selected Gemini model, chosen in Settings › AI Tracking from the list the key can use.
+  * `GeminiModelName` (string, default `GeminiClient.DefaultModel` = `"gemini-3.8-flash"` since `AIMODELS_02` (was `"gemini-2.5-flash"`, shut down 2026-10-16) — the ONE place the default model is named; D3): selected Gemini model, chosen in Settings › AI Tracking from the list the key can use.
   * `AiZoomBaseScale` (double, default `2.2`): camera scale during still or slow gameplay ($v \le v_{\text{slow}}$).
   * `AiZoomMinScale` (double, default `1.3`): minimum wide camera scale during high-velocity gameplay ($v \ge v_{\text{fast}}$).
   * `AiZoomAvoidHud` (bool, default `true`): keeps the camera crop off HUD zones (`01` AIHUDZONE_01).
@@ -547,18 +547,24 @@
   * `ClaudeProvider` (`CLAUDEPROVIDER_01`) implements `IAiVisionProvider` using Anthropic's Messages API with `x-api-key` and `anthropic-version: 2023-06-01` headers, base64 image inputs, structured JSON extraction via tool use (`tool_choice: { type: "tool", name: "submit_result" }`), extended thinking budgets, and classified error responses.
   * `OpenAiProvider` (`OPENAIPROVIDER_01`) implements `IAiVisionProvider` using OpenAI's Chat Completions API with `Authorization: Bearer` headers, data URL image inputs, strict Structured Outputs via `response_format: { type: "json_schema" }`, `reasoning_effort` controls, and classified error handling.
   * `GeminiClient.Redact` scrubs all vendor key shapes (`AIza…`, `sk-ant-…`, `sk-…`), auth headers (`x-goog-api-key`, `x-api-key`, `Authorization: Bearer`), and query parameters from logs, faults, and exception messages.
+* **`AISCHEMA_01` — one response-schema translator (`AiJsonSchema`):** the app's schemas are written in Google's dialect (upper-case types, `nullable`, array roots). `ClaudeProvider` and `OpenAiProvider` translate them before sending: types lower-cased, `nullable` → `[type,"null"]`, an array root wrapped as `{ "items": [...] }` (both vendors require an object root) and unwrapped from the answer; for OpenAI strict mode every object also gets `additionalProperties:false` with all properties required (optional ones become nullable) and `null` values are dropped from the answer, so every parser sees exactly the Gemini shape. Before this, Claude and OpenAI rejected Smart Zoom, Commentary and Magic Wand requests outright, and OpenAI rejected all seven features. Tests: `AiJsonSchemaTests`.
+* **`AITEMP_02` — temperature, per vendor (supersedes the AITEMP_01 details below):** Claude NEVER receives a temperature (Claude 4.7+ answer HTTP 400 to any non-default value — Commentary and Viral Post used to fail on Claude every time); Gemini 3 and later and the `-latest` aliases keep their default temperature unless the task asks for a creative one (`GeminiClient.PrefersDefaultTemperature`; Google warns a lowered value can loop or degrade); older Gemini keeps 0; OpenAI gets a temperature only for the gpt-4 family (o-series and gpt-5+ are reasoning models). Claude `max_tokens` is 8192 without thinking so long answers are not cut mid-JSON.
+* **`AITEMP_01` — temperature per task:** `GeminiCallOptions.Temperature` (null = deterministic: 0 on Gemini, vendor default elsewhere). Tracking, HUD, elimination and music stay deterministic; Commentary and Viral Post use `GeminiCallOptions.Creative` (0.9) so a retry is not a copy. Claude never receives a temperature together with extended thinking; OpenAI reasoning models (o-series, gpt-5) never receive one.
+* **Claude extended thinking:** Anthropic rejects a forced tool choice while thinking is on, so a thinking request uses `tool_choice: auto` and the prompt asks for `submit_result`. Image labels are sent BEFORE their image for every vendor. 404s name the real model and point to Settings › AI Features.
+* **`AIFFMPEG_01` — AI helper FFmpeg jobs (`AiFfmpeg`):** stills, duration probe and PCM dump for Music Auto-Fit, Viral Post and the Kill Tracker run through `AsyncProcessRunner` (both pipes drained, time limit, kill on cancel, `ArgumentList` quoting). The old helpers redirected stderr without reading it and had no limit, so a chatty FFmpeg could fill the pipe and hang forever.
+* **`AIDEFAULT_01` — one AI for every feature:** `AppSettings.AiDefaultUsage` (vendor + model) is what `GetUsageConfig` returns for every usage NOT listed in `AiUsageOverrides`; listed usages use their own stored `AiUsage*` config (`GetOwnUsageConfig`). Both are additive (missing = null, no schema bump): `EnsureAiDefault` (called by `Migrate` and the Settings window) derives them from an older file — the most common per-feature choice becomes the default and every feature that differs becomes an override — so nobody's routing changes. `SetUsageConfig` marks the usage overridden. All seven usages (U5 Music Auto-Fit, U6 Viral Post, U7 Kill Tracker included) can be overridden in Settings › AI Features › Advanced.
 * **`AIFRAMESEQ_01` — Frame-sequence fallback for AI vision providers (`AiFrameSequenceExtractor`):**
   * Extracts sampled video frames (default 2 fps, 640 px width preserving aspect ratio, JPEG format) labelled with their exact source timestamps (formatted `[MM:SS.fff]`) using FFmpeg.
   * Partitions frame sequences into chunks respecting vendor-specific limits (e.g. Claude: 20 images per request; OpenAI: 50 images per request; custom limits configurable).
   * Enables high-accuracy video tracking and karaoke caption analysis across all non-native video providers without changing prompt schemas or coordinate contracts.
 * **`AISETTINGS_01` — Multi-vendor AI keys & per-usage settings (`SettingsManager`, `AppSettings`, `AiUsageConfig`):**
   * Extends DPAPI-sealed credentials storage (`KEYPROTECT_01`, `SecretProtector`) to Anthropic Claude (`ClaudeApiKey` / `ClaudeApiKeyStored`) and OpenAI (`OpenAiApiKey` / `OpenAiApiKeyStored`). Plain-text keys on disk are automatically sealed on load and persisted back immediately; test keys are sealed with `plain1:` prefix.
-  * Introduces per-usage execution settings (`AiUsageConfig: { Vendor, Model, ReasoningLevel }`) for four studio tasks: U1 Zoom Subject Discovery (`AiUsageSubjectDiscovery`), U2 Zoom Dense Tracking (`AiUsageTracking`), U3 Magic Wand HUD Detection (`AiUsageMagicWand`), and U4 Live Commentary Captions (`AiUsageCommentary`).
+  * Introduces per-usage execution settings (`AiUsageConfig: { Vendor, Model }` — the never-used `ReasoningLevel` was removed by `AIREASONING_01`; an old file carrying it still loads) for seven studio tasks: U1 Zoom Subject Discovery (`AiUsageSubjectDiscovery`), U2 Zoom Dense Tracking (`AiUsageTracking`), U3 Magic Wand HUD Detection (`AiUsageMagicWand`), U4 Live Commentary Captions (`AiUsageCommentary`), U5 Music Auto-Fit (`AiUsageMusicAutoFit`), U6 Viral Post (`AiUsageViralPost`) and U7 Kill Tracker (`AiUsageEliminationTracker`). Since `AIDEFAULT_01` these are per-feature OVERRIDES of one shared default.
   * Backward compatibility invariant: Migration automatically maps legacy user-configured `GeminiModelName` into all Google vendor usage profiles; missing fields deserialize safely to default models; no plain-text secret ever touches disk.
-* **`AIPROVIDER_UI_01` — Multi-Vendor AI Providers Settings UI (`SettingsWindow.AiTracking.cs`, `SettingsWindow.axaml`):**
-  * Adds an "AI Providers" configuration tab in Settings styled strictly with application theme tokens.
+* **`AIPROVIDER_UI_01` — Multi-Vendor AI Settings UI (`SettingsWindow.AiTracking.cs`, `SettingsWindow.axaml`):**
+  * Since `AISETTINGS_UI_02` the controls live in the single "AI Features" tab (docs/04 UI-SETTINGS-ABOUT): one default provider row plus collapsed per-feature overrides (U1–U7); key cards show only for companies in use.
   * Connects credential management for Google Gemini, Anthropic Claude, and OpenAI with password masking, single-click "Test Connection" verification against live vendor endpoints, "Remove Key" confirmation, and direct browser navigation to developer consoles.
-  * Provides per-usage model selector dropdowns (U1-U4) populated dynamically from provider catalogs or local defaults, with live "Refresh" capability, "★ Recommended" visual badges, and instant "Use Recommended" presets.
+  * Provides the default vendor/model row and per-usage override rows (U1-U7) populated from provider catalogs or local defaults, with one live "Refresh" for every company in use, a "★ Recommended" badge and "Use Recommended".
   * Persists all key changes and task mappings atomically via single-transaction settings save (`SETTX_01`).
 * **`AIPROVIDER_ROUTING_01` — Dynamic Multi-Vendor Vision Dispatch & Unified Error Handling:**
   * Routes U1 Subject Discovery (`GeminiTrackingService.DiscoverSubjectsWithLookaheadAsync`), U2 Dense Tracking (`GeminiTrackingService.TrackSubjectAsync`), and U3 Magic Wand HUD (`GeminiHudDetectionService.DetectAsync`, `CropToolWindow.MagicWand.cs`) through each task's configured vendor and model.
@@ -886,3 +892,73 @@ Moving an existing install reuses the transactional upgrade (SYS-UPGRADE) unchan
 * Uninstall and the zero-footprint check include the old spaced install, ProgramData and scratch folders.
 
 `MemeLibraryTests.AppFoldersHaveNoSpaces` guards the folder names. Real-Windows verification still required: upgrade from a spaced install (full and compact), a second account's Desktop icon, uninstall afterwards.
+
+---
+
+## 7. AI Features — What Each One Does, In Plain English  {#SYS-AISETTINGS}
+Single entry point for every cloud-AI feature. Detailed maths and UI rules live in the sections each item links to;
+this section is the map, the end-user promise, and the shared contracts every feature obeys. Zero local AI models:
+every AI step is ONE HTTPS call to the user's own key (Google Gemini, Anthropic Claude or OpenAI); everything else
+(frames, clips, audio energy, smoothing, layout) is local FFmpeg / C# maths.
+
+### 7.1 The seven features (`AiUsage` U1–U7)
+| # | Feature (where) | What the user gets | What is sent | How it works, step by step |
+| :- | :- | :- | :- | :- |
+| U1+U2 | **AI Smart Zoom** (Granular speed editor) | A broadcast-style camera that follows one person through a block | 3 stills, then the block as silent 640-px clips of at most 8 s (Gemini) or 2 stills per second (Claude / OpenAI) | 3 stills → the AI lists the people it sees → the user picks one (or tracks their own box) → the block is sent in ≤ 8 s parts → the AI returns the person's position every 0.5 s → `AiTrajectorySmoother` turns it into a smooth camera path → loop preview → ACCEPT (one undo step) / DISCARD. Re-frame re-smooths stored points with no new AI call. Spec: `01` TL-AITRACKING, `04` UI-AIZOOM. |
+| U3 | **Magic Wand** (Crop Tool) | Boxes around HUD pieces (minimap, health, ammo…) | ONE frozen frame (optional, after consent) | The offline detector scans the clip and shows its finds first; the AI is asked about the frozen frame; boxes both agree on show ✓, AI-only boxes are dashed; nothing is applied until the user clicks a box. Answers are cached per frame. Spec: `01` TL-AIHUD, `04` UI-AIHUDWAND. |
+| U4 | **AI Commentary** (Granular speed editor) | Short first-person caption lines ("I'm pushing left!") timed to the action, burned into the export | Gemini: each ≤ 8 s part as a small clip WITH game audio. Claude / OpenAI: 2 stills per second (no audio) | Split into ≤ 8 s parts (1 s overlap) → the AI writes lines with start/end times → overlaps merged → lines kept readable in the FINISHED video (slow-mo, fast-forward, freezes, cuts) → preview → ACCEPT / DISCARD → the export burns the same lines in. Spec: `01` TL-CAPTIONS, `03` FFM-CAPTIONS, `04` UI-AICOMMENTARY. |
+| U5 | **Music Auto-Fit** (Add Music wizard) | One recommended song and where it starts | 4–8 stills of the finished video + the song list | Stills from the whole finished video + numbered song list → the AI names a song → the app picks the start point locally from the song's loudness so the song covers the video. Spec: `02` AUD-MUSICWIN. |
+| U6 | **Viral Post Helper** (Export finished screen) | A title, caption and hashtags with copy buttons | 3 stills of the exported file | Runs after export when switched on; the badge always says what really happened (WRITING… / AI WRITTEN / NO AI KEY / AI FAILED); NEW VERSION asks for a different angle. Spec: `04` UI-SETTINGS-ABOUT (Viral Post card). |
+| U7 | **AI Kill Tracker** (main timeline + speed editor) | A red ✕ over every kill; click jumps there | 2 stills after each loud moment | Local audio energy finds the loud moments → 2 stills just after each → the AI answers yes/no per moment ID (it can never land on the wrong moment) → ✕ markers + a status chip. Spec: `01` TL-AITRACKING (AIELIM_02), `04` UI-SETTINGS-ABOUT. |
+| — | **Settings › AI Features** | One AI for everything, optional per-feature override | nothing | One default vendor + model (`AIDEFAULT_01`), per-feature overrides under Advanced, keys sealed with DPAPI for the Windows account (`KEYPROTECT_01`). |
+
+### 7.2 Shared contracts (every feature)
+* **Transport:** `IAiVisionProvider` (`GeminiProvider`, `ClaudeProvider`, `OpenAiProvider`) — key only in headers, classified errors (`AiProviderException`), per-attempt timeout ≠ user cancel, key redaction in every log (`GEMINICLIENT_01`, `AIPROVIDER_01`).
+* **Schemas:** written once in Google's dialect and translated for Claude / OpenAI (`AISCHEMA_01`).
+* **Honesty rule:** a feature never shows stock or guessed output as an AI answer; failures say what failed and why.
+* **Consent:** any feature that sends frames or clips asks first, naming the provider and exactly what is sent.
+
+### 7.3 Audit findings 2026-10-16 (`AIAUDIT_01`) — tracked to closure (all closed, §7.4)
+Found in review and in live testing. Each entry names the fix that closes it; §7.4 records the shipped behaviour.
+1. Default and listed models retired or retiring (`gemini-2.5-flash` shut down 2026-10-16; Claude 3.x retired; `o3-mini` 2026-10-23); saved settings pin the old name; only Smart Zoom fell back.
+2. Claude 4.7+ rejects a non-default temperature; Commentary and Viral Post sent 0.9.
+3. Music Auto-Fit: the AI only sees file names, so its "start point" was a guess; loose name matching; silent fallback to song #1; 40-song cap; start point could leave the end of the video silent; no progress or timeout (stuck on "Analyzing…").
+4. Kill Tracker: 640-px stills (kill feed unreadable); other players' kills counted; 24-moment cap; misleading "no audio" text; editor never got late results; no consent; no visible status when the scan failed silently.
+5. Caption preview stacked subtitle tracks in libmpv.
+6. Gemini temperature forced to 0 on Gemini 3.
+7. Setup wizard titled "AI Zoom" for every feature; Claude / OpenAI dead-ended.
+8. Commentary had its own game-type picker that ignored Settings.
+9. Consent text wrong for Claude / OpenAI; consent not re-asked on vendor change.
+10. Reasoning level stored but never used.
+11. Claude / OpenAI tracking could send zero frames.
+12. Whole-timeline Commentary gave no time / call estimate.
+13. LIVE: accepted commentary captions never reached the export (`ExportPayload` had no caption track).
+14. LIVE: caption font too small and placed too low (overlapping Fortnite HUD / stamina bar in portrait).
+
+### 7.4 What shipped for each finding (2026-10-16)
+| # | Tag(s) | Now | Spec |
+| :- | :- | :- | :- |
+| 1 | `AIMODELS_02`, `AIMODELFALLBACK_02` | Defaults `gemini-3.8-flash` / `claude-sonnet-5-5` / `gpt-6-luna`; offline catalogue updated; `AiVisionProviders.IsRetiredModel` + `AppSettings.ReplaceRetiredAiModels` move saved retired names to the defaults on every load; ONE 404 fallback for every vendor and feature (`FindLiveReplacementAsync`: list the key's live models, pick the best non-retired one, remember it for the session, tell the user, never change the setting). OpenAI's list shows gpt-6+. | this section |
+| 2 | `AITEMP_02` | No temperature to Claude, ever. | §AITEMP_02 above |
+| 3 | `AIMUSIC_HONEST_01`, `AIMUSIC_START_01`, `AIMUSIC_PROGRESS_01` | Numbered choice, local start point, visible steps + seconds, cancel, 45 s / 120 s limits. | `02` AUD-MUSICWIN, `04` UI-MUSICWIZARD |
+| 4 | `AIELIM_03` | 1280-px stills, own-kills-only prompt, 24–60 moments by length, honest "no sound", real length, solid ✕ badges + notice, editor gets late results; Settings text states what is sent. | `01` TL-AITRACKING, `04` |
+| 5 | `AICAPTION_PREVIEWSUB_01` | One caption track in the preview, ever. | `03` FFM-CAPTIONS |
+| 6 | `AITEMP_02` | Gemini 3+ keeps its default temperature (also Smart Zoom and Magic Wand bodies). | above |
+| 7 | `AISETUP_02` | One "Connect Your AI" window for every feature and company. | `04` |
+| 8 | `AIPROFILE_ONE_01` | Commentary uses and saves the Settings game type. | `04` UI-AICOMMENTARY |
+| 9 | `AICONSENT_02`, `AIVENDORCAPS_01` | Consent per company with company-true text; stills vendors are told there is no sound. | `04` |
+| 10 | `AIREASONING_01` | The dead `ReasoningLevel` field is gone. | above |
+| 11 | `AIZEROFRAMES_01` | No pictures → no AI request (Smart Zoom and Commentary). | `01` |
+| 12 | `AICOMMENTARY_ESTIMATE_01` | > 6 parts asks first with count and minutes. | `04` UI-AICOMMENTARY |
+| 13 | `AICAPTION_EXPORT_02` | Accepted captions are burned into the export. | `03` FFM-CAPTIONS |
+| 14 | `AICAPTION_LAYOUT_02`, `AICAPTION_MEMESHIFT_01` | Bigger captions on the 2/3 line, clear of the user's HUD layout; correct after spliced memes. | `01` TL-CAPTIONS, `03` |
+
+Shared rule added: **`AISCHEMA_02`** — schemas written in standard JSON Schema (Music Auto-Fit, Viral Post, Kill Tracker) are sent to Gemini in its upper-case dialect (`AiJsonSchema.ToGeminiDialect`).
+Tests: `AiAuditFixTests` (App), `CaptionAuditFixTests` and `CaptionLayoutEngineTests` (Core), `SettingsMigrationTests.RetiredModels_*` / `ConsentCovers_*`.
+
+### 7.5 AI usage report for Smart Zoom and Commentary (`AIUSAGE_01`, `AiUsageMeter`)
+* **What the user sees:** when an AI SMART ZOOM or AI COMMENTARY run ends, two lines — in the preview bar on success, in the error dialog on failure, in the run's console and the log (`AiUsage`) always, and in the cancel notice:
+  1. *Usage:* "AI usage for this task: 7 requests · 48,210 in + 3,104 out + 1,200 thinking = 52,514 tokens (Google Gemini)."
+  2. *Allowance:* "before → after" as the AI company reports it.
+* **Where the numbers come from (no extra AI call, nothing estimated by the app):** every successful answer adds the company's own count — Gemini `usageMetadata` (prompt / candidates / thoughts), Claude `usage` (input incl. cache reads/writes, output), OpenAI `usage` (prompt, completion minus reasoning, reasoning). Requests that fail are not billed and not counted. `AiUsageMeter.BeginTask` opens an `AsyncLocal` scope, so calls made on worker threads (`Task.Run`) are counted too.
+* **Allowance — honest limits of what can be known:** API keys have NO "5-hour cap"; that belongs to the consumer chat apps. API limits are per minute (and per day). Anthropic and OpenAI return the per-minute window in response headers (`anthropic-ratelimit-{tokens,requests}-{remaining,limit,reset}`, `x-ratelimit-{remaining,limit}-{tokens,requests}`, `x-ratelimit-reset-tokens`); "before" is the last value reported earlier this session, or — on the first AI use of the session — the first answer's value with that answer's own usage added back (shown with ≈). Google reports nothing to apps, so the line says so and points to AI Studio › Usage. No money cost is shown: prices change and differ per account.

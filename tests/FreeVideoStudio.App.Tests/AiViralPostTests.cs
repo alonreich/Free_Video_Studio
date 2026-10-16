@@ -100,3 +100,31 @@ public sealed class AiViralPostTests
         }
     }
 }
+
+/// <summary>AIVIRAL_HONEST_01 — no key and unreadable answers are reported honestly, never as an AI answer.</summary>
+public sealed class AiViralPostHonestyTests
+{
+    [Fact]
+    public async Task NoKey_ReportsNoKey_WithoutPost()
+    {
+        string video = Path.Combine(Path.GetTempPath(), $"fvs_v_{Guid.NewGuid():N}.mp4");
+        File.WriteAllBytes(video, new byte[] { 0 });
+        try
+        {
+            var outcome = await AiViralPostService.GenerateAsync("ffmpeg.exe", video, AiVendor.Google, "");
+            Assert.Equal(ViralPostStatus.NoKey, outcome.Status);
+            Assert.Null(outcome.Post);
+        }
+        finally { File.Delete(video); }
+    }
+
+    [Fact]
+    public void TryParse_NullWhenNoTitle_NormalisesTags()
+    {
+        Assert.Null(AiViralPostService.TryParseJsonResponse("{\"title\":\"\",\"caption\":\"x\",\"hashtags\":[]}"));
+        Assert.Null(AiViralPostService.TryParseJsonResponse("not json"));
+        var p = AiViralPostService.TryParseJsonResponse("{\"title\":\"T\",\"caption\":\"C\",\"hashtags\":[\"fyp\",\"#fyp\",\"#game play\"]}");
+        Assert.NotNull(p);
+        Assert.Equal(new[] { "#fyp", "#gameplay" }, p!.Hashtags);
+    }
+}

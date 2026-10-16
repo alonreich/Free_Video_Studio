@@ -12,6 +12,17 @@ namespace FreeVideoStudio.App.Tests;
 
 public sealed class CommentaryServiceTests
 {
+    static CommentaryServiceTests()
+    {
+        // AIZEROFRAMES_01 — the fake video below decodes to no pictures; give the stills path two fake ones so the
+        // mock provider is exercised (an empty sample is now refused before any AI call, by design).
+        CommentaryService.FrameSamplerForTests = (_, start, dur, _) => Task.FromResult<IReadOnlyList<AiImageInput>>(new[]
+        {
+            new AiImageInput(new byte[] { 1 }, "image/jpeg", "[Timestamp: 0.00s]"),
+            new AiImageInput(new byte[] { 2 }, "image/jpeg", "[Timestamp: 0.50s]"),
+        });
+    }
+
     [Fact]
     public void PlanChunks_ShortDuration_YieldsSingleChunk()
     {
@@ -163,6 +174,145 @@ public sealed class CommentaryServiceTests
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_responseJson);
+        }
+    }
+}
+
+/// <summary>AICOMMENTARY_SPEED_01 / MERGE_01 / REPORT_01 — absolute times, speed-aware readability, segment merge, part retry.</summary>
+public sealed class CommentaryTimingTests
+{
+    static CommentaryTimingTests()
+    {
+        // AIZEROFRAMES_01 — the fake video below decodes to no pictures; give the stills path two fake ones so the
+        // mock provider is exercised (an empty sample is now refused before any AI call, by design).
+        CommentaryService.FrameSamplerForTests = (_, start, dur, _) => Task.FromResult<IReadOnlyList<AiImageInput>>(new[]
+        {
+            new AiImageInput(new byte[] { 1 }, "image/jpeg", "[Timestamp: 0.00s]"),
+            new AiImageInput(new byte[] { 2 }, "image/jpeg", "[Timestamp: 0.50s]"),
+        });
+    }
+
+    [Fact]
+    public void Parse_KeepsLinesInsideThePart_AndDropsLinesPastIt()
+    {
+        string json = """[{"start":1,"end":30,"text":"way too long"},{"start":9,"end":10,"text":"past the end"}]""";
+        int id = 1;
+        Assert.True(CommentaryService.TryParseCommentaryResponse(json, 20.0, 28.0, ref id, out var lines));
+        Assert.Single(lines);
+        Assert.Equal(21.0, lines[0].SourceStartSec, 3);
+        Assert.Equal(28.0, lines[0].SourceEndSec, 3);
+    }
+
+    [Fact]
+    public void TryParse_FalseForUnreadable_TrueForEmptyArray()
+    {
+        int id = 1;
+        Assert.False(CommentaryService.TryParseCommentaryResponse("{oops", 0, 8, ref id, out _));
+        Assert.True(CommentaryService.TryParseCommentaryResponse("[]", 0, 8, ref id, out var none));
+        Assert.Empty(none);
+    }
+
+    [Fact]
+    public void ReadableOnScreen_LengthensLinesInFastForward()
+    {
+        // Trim-relative timeline: 0..10 s at 1x, 10..20 s at 4x. Captions are ABSOLUTE; trim starts at 100 s.
+        var tl = OutputTimeline.Create(20000, new[] { new SpeedSegment(10000, 20000, 4.0) });
+        var line = new CaptionLine(1, 112.0, 113.2, "quick one");
+        var fixedLines = CommentaryService.EnsureReadableOnScreen(new[] { line }, tl, 100.0, 100.0, 120.0);
+        double outLen = tl.SourceToOutput(fixedLines[0].SourceEndSec - 100) - tl.SourceToOutput(fixedLines[0].SourceStartSec - 100);
+        Assert.True(outLen >= CommentaryService.MinReadableOutputSec - 0.01, $"on screen {outLen:0.00}s");
+    }
+
+    [Fact]
+    public void ReadableOnScreen_NeverRunsIntoNextLineOrPastRange()
+    {
+        var tl = OutputTimeline.Create(20000, new[] { new SpeedSegment(0, 20000, 4.0) });
+        var a = new CaptionLine(1, 1.0, 1.4, "first");
+        var b = new CaptionLine(2, 2.0, 3.0, "second");
+        var r = CommentaryService.EnsureReadableOnScreen(new[] { a, b }, tl, 0, 0, 2.5);
+        Assert.True(r[0].SourceEndSec <= 2.0 + 1e-6);
+        Assert.True(r[1].SourceEndSec <= 2.5 + 1e-6);
+    }
+
+    [Fact]
+    public void DescribePlayback_ReportsSlowFastAndCut()
+    {
+        var tl = OutputTimeline.Create(20000, new[] { new SpeedSegment(2000, 4000, 0.5), new SpeedSegment(4000, 6000, 2.0) });
+        string? notes = CommentaryService.DescribePlayback(tl, 50.0, 50.0, 58.0);
+        Assert.NotNull(notes);
+        Assert.Contains("0.5x", notes);
+        Assert.Contains("2x", notes);
+        Assert.Contains("2.0s to 4.0s", notes);
+        Assert.Null(CommentaryService.DescribePlayback(OutputTimeline.Create(20000, null), 0, 0, 8));
+    }
+
+    [Fact]
+    public void MergeSegment_ReplacesOnlyInsideTheRange()
+    {
+        var existing = new CaptionTrack(Lines: new[]
+        {
+            new CaptionLine(1, 1, 3, "before"),
+            new CaptionLine(2, 11, 13, "inside"),
+            new CaptionLine(3, 9, 12, "crosses the edge"),
+            new CaptionLine(4, 25, 27, "after"),
+        });
+        var generated = new CaptionTrack(CaptionStyle.PopIn, Lines: new[] { new CaptionLine(1, 10.5, 12, "new one") });
+        var merged = CommentaryService.MergeSegment(existing, generated, 10, 20);
+        Assert.Equal(new[] { "before", "crosses the edge", "new one", "after" }, merged.Lines!.Select(l => l.Text));
+        Assert.Equal(10.0, merged.Lines![1].SourceEndSec, 3);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, merged.Lines!.Select(l => l.Id));
+        Assert.Equal(CaptionStyle.PopIn, merged.Style);
+    }
+
+    [Fact]
+    public async Task Generate_AddsSegmentStart_AndRetriesUnreadablePartOnce()
+    {
+        var provider = new SequenceProvider("not json", """[{"start":0.5,"end":2.5,"text":"Got him"}]""");
+        string video = Path.Combine(Path.GetTempPath(), $"fvs_c_{Guid.NewGuid():N}.mp4");
+        File.WriteAllBytes(video, new byte[] { 0 });
+        try
+        {
+            var req = new CommentaryRequest(video, 42.0, 5.0, AiVendor.Anthropic, "m", Provider: provider);
+            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k"); // SECRETSCAN_ALLOW
+            Assert.Equal(0, result.FailedChunks);
+            Assert.Equal(2, provider.Calls);
+            Assert.Equal(42.5, result.Track.Lines![0].SourceStartSec, 3);
+        }
+        finally { File.Delete(video); }
+    }
+
+    [Fact]
+    public async Task Generate_CountsPartsThatStillFail()
+    {
+        var provider = new SequenceProvider("bad", "bad", """[{"start":0.5,"end":2,"text":"ok"}]""");
+        string video = Path.Combine(Path.GetTempPath(), $"fvs_c_{Guid.NewGuid():N}.mp4");
+        File.WriteAllBytes(video, new byte[] { 0 });
+        try
+        {
+            var req = new CommentaryRequest(video, 0, 15.0, AiVendor.Anthropic, "m", Provider: provider);
+            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k"); // SECRETSCAN_ALLOW
+            Assert.Equal(2, result.TotalChunks);
+            Assert.Equal(1, result.FailedChunks);
+            Assert.Single(result.Track.Lines!);
+        }
+        finally { File.Delete(video); }
+    }
+
+    private sealed class SequenceProvider : IAiVisionProvider
+    {
+        private readonly Queue<string> _answers;
+        public int Calls;
+        public SequenceProvider(params string[] answers) => _answers = new Queue<string>(answers);
+        public AiVendor Vendor => AiVendor.Anthropic;
+        public string DefaultModel => "m";
+        public Task<IReadOnlyList<string>> ListModelsAsync(string apiKey, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        public Task<string> GenerateJsonAsync(string apiKey, string model, string prompt, IReadOnlyList<AiImageInput> images,
+            AiVideoInput? video, string jsonSchema, AiReasoningConfig? reasoning = null, GeminiCallOptions? options = null,
+            Action<string>? userLog = null, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(_answers.Count > 0 ? _answers.Dequeue() : "[]");
         }
     }
 }

@@ -1,5 +1,11 @@
 # SYMBOL & FILE INDEX (routing lookup)
 
+> 🛑 AGENT RULES — they apply even when you came here directly: never run `.\Build.cmd` (it publishes to GitHub) —
+> use `.\dev_build.cmd` / `dotnet build` / `dotnet test`; open every edit with the Proof-of-Read header
+> (`SPEC_GOVERNANCE.md` §3); land a `TAG=path` line in `build/sentinels.txt` with every guarded fix; stage
+> end-user notes in `CHANGELOG.md` and update `project_structure.txt` (CHANGELOG_01). Full rules: `README.md`,
+> `SPEC_GOVERNANCE.md`, `AGENTS.md`.
+
 Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY the spec it names.
 Notation: `03 §9 FFM-BINPATH` = `03_FFMPEG_EXPORT_PIPELINE.md`, section 9, stable anchor `FFM-BINPATH`.
 Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote anchors in Proof-of-Read headers, never bare numbers.
@@ -143,6 +149,13 @@ Voiceover timing additions (all listed specs govern these files):
   AiEliminationTrackerTests.cs               01 TL-AITRACKING | 05 SYS-AISETTINGS
   MainWindow.AiElimination.cs                01 TL-AITRACKING | 05 SYS-AISETTINGS
   FinishedDialogWindow.AiViral.cs            04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
+  AiJsonSchema.cs                            05 SYS-AISETTINGS (AISCHEMA_01)
+  AiJsonSchemaTests.cs                       05 SYS-AISETTINGS (AISCHEMA_01)
+  AiFfmpeg.cs                                05 SYS-AISETTINGS (AIFFMPEG_01)
+  AiAuditFixTests.cs                         05 SYS-AISETTINGS §7.4 (AIAUDIT_01)
+  AiUsageMeter.cs                            05 SYS-AISETTINGS §7.5 (AIUSAGE_01)
+  AiUsageMeterTests.cs                       05 SYS-AISETTINGS §7.5 (AIUSAGE_01)
+  CaptionAuditFixTests.cs                    01 TL-CAPTIONS | 03 FFM-CAPTIONS (AIAUDIT_01)
 ⚠ MusicWizardResult.Plan.cs                  02 AUD-PREVIEWSYNC | 03 (mini-map only)
 ⚠ MusicWizardViewModel.cs                    04 UI-MUSICWIZARD | 02 AUD-MUSICWIN
 ⚠ VideoMergerWindow.MusicButton.cs           02 AUD-DIALOGS | 04 UI-MUSICWIZARD
@@ -1277,6 +1290,28 @@ POPUPCLEAR_01                                04   [code-only: CropToolWindow.axa
 AUTOZOOM_02                                  04   [code-only: CropToolWindow.axaml.cs]
 CROSSHAIR_01                                 04   [code-only: CropToolWindow.axaml.cs]
 TOOLRETURN_01                                05 §3 SYS-WINSTATE
+AIAUDIT_01                                   05 §7 SYS-AISETTINGS (plain-English map of all AI features + audit closure)
+AIMODELS_02                                  05 §7.4 SYS-AISETTINGS
+AIMODELFALLBACK_02                           05 §7.4 SYS-AISETTINGS
+AITEMP_02                                    05 SYS-AISETTINGS
+AISCHEMA_02                                  05 §7.4 SYS-AISETTINGS
+AIMUSIC_HONEST_01                            02 AUD-MUSICWIN
+AIMUSIC_START_01                             02 AUD-MUSICWIN
+AIMUSIC_PROGRESS_01                          04 UI-MUSICWIZARD
+AIELIM_03                                    01 TL-AITRACKING | 04 UI-SETTINGS-ABOUT
+AICAPTION_PREVIEWSUB_01                      03 FFM-CAPTIONS | 04 UI-AICOMMENTARY
+AICAPTION_EXPORT_02                          03 FFM-CAPTIONS
+AICAPTION_LAYOUT_02                          01 TL-CAPTIONS | 03 FFM-CAPTIONS
+AICAPTION_MEMESHIFT_01                       03 FFM-CAPTIONS
+AISETUP_02                                   04 UI-AIZOOM
+AICONSENT_02                                 04 UI-AIZOOM | 05 §7.4
+AIVENDORCAPS_01                              05 §7.4 SYS-AISETTINGS
+AIPROFILE_ONE_01                             04 UI-AICOMMENTARY
+AIREASONING_01                               05 SYS-AISETTINGS
+AIZEROFRAMES_01                              05 §7.4 SYS-AISETTINGS
+AICOMMENTARY_ESTIMATE_01                     04 UI-AICOMMENTARY
+AIUSAGE_01                                   05 §7.5 SYS-AISETTINGS | 04 UI-AICOMMENTARY
+AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
 ```
 
 

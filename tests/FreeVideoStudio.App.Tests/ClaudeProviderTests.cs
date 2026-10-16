@@ -32,7 +32,7 @@ public sealed class ClaudeProviderTests
     {
         var provider = new ClaudeProvider();
         Assert.Equal(AiVendor.Anthropic, provider.Vendor);
-        Assert.Equal("claude-3-7-sonnet-20250219", provider.DefaultModel);
+        Assert.Equal("claude-sonnet-5-5", provider.DefaultModel);
     }
 
     [Fact]
@@ -66,8 +66,10 @@ public sealed class ClaudeProviderTests
         Assert.Equal(1, tools.GetArrayLength());
         Assert.Equal("submit_result", tools[0].GetProperty("name").GetString());
 
+        // Anthropic rejects a forced tool while extended thinking is on (AISCHEMA_01 / CLAUDEPROVIDER_01).
         Assert.True(root.TryGetProperty("tool_choice", out JsonElement toolChoice));
-        Assert.Equal("submit_result", toolChoice.GetProperty("name").GetString());
+        Assert.Equal("auto", toolChoice.GetProperty("type").GetString());
+        Assert.False(root.TryGetProperty("temperature", out _));
 
         JsonElement messages = root.GetProperty("messages");
         Assert.Equal(1, messages.GetArrayLength());

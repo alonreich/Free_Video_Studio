@@ -10,6 +10,14 @@ AI agent rules & invariants:           .\AGENTS.md
 File, symbol and sentinel lookup:      .\docs\INDEX.md
 Changelog & What's New router:         .\docs\CHANGELOG.md (plain-English rolling release notes for the latest 5 releases)
 
+AGENT ROUTE (in this order): this file -> .\docs\README.md (rules + domain routing) -> .\docs\INDEX.md
+(file/symbol/tag -> ONE spec) -> that spec in .\docs\ -> code. Before ANY edit:
+- NEVER run .\Build.cmd (it publishes a public release to GitHub). Build/test only with .\dev_build.cmd,
+  dotnet build or dotnet test.
+- Start every edit proposal with the Proof-of-Read header (docs/SPEC_GOVERNANCE.md §3).
+- Land a TAG=path line in .\build\sentinels.txt with every guarded fix (docs/README.md §4.5).
+- Stage end-user notes in .\docs\CHANGELOG.md and update this file + docs/INDEX.md (CHANGELOG_01).
+
 MANDATORY AGENT INVARIANT (CHANGELOG_01):
 Whenever making changes to logic, UI, workflows, or project structure, an AI agent CANNOT finish
 without staging what was done in:
@@ -69,7 +77,9 @@ Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Vid
                       Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.
 Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .Playlist.cs (song list, coverage)
                       + .SongLane.cs (song blocks on the music lane, song card) + .History.cs (undo)
-                      + .AiAutoFit.cs (cloud AI song auto-fit) + .Scan.cs (folder scan & probes) +
+                      + .AiAutoFit.cs (cloud AI song auto-fit: AI picks a song by NUMBER, start point measured
+                      locally from the song's loudness, visible steps + seconds counter + cancel, 45 s / 120 s
+                      limits — AIMUSIC_HONEST_01 / AIMUSIC_START_01 / AIMUSIC_PROGRESS_01) + .Scan.cs (folder scan & probes) +
                       ViewModels\MusicWizardViewModel.cs (bound state). Two steps: Choose music -> Fit & mix
                       (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
                       laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
@@ -82,10 +92,34 @@ Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(
 AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool) + AI Commentary (captions)
                       + AI Music Auto-Fit (Add Music wizard: Services\AiMusicAutoFitService.cs)
                       + Modern Viral Post Helper (Export finished screen: Services\AiViralPostService.cs, Controls\FinishedDialogWindow.AiViral.cs)
-                      + AI Elimination Tracker (Timeline markers: MainWindow.AiElimination.cs, Services\AiEliminationTrackerService.cs). Zero local models.
+                      + AI Kill Tracker / Elimination Tracker (red ✕ badges over the timeline + result notice, also pushed into an
+                      open speed editor; 1280-px stills, own kills only, 24-60 moments by length, honest "no sound" —
+                      AIELIM_03: MainWindow.AiElimination.cs, Services\AiEliminationTrackerService.cs). Zero local models.
                       Multi-vendor transport: Google Gemini, Anthropic Claude, OpenAI (IAiVisionProvider.cs).
+                      Schema translator for Claude/OpenAI: Services\AiJsonSchema.cs (AISCHEMA_01); standard JSON Schema
+                      -> Gemini's upper-case dialect (AISCHEMA_02). Temperature rules per vendor (AITEMP_02).
+                      AI helper FFmpeg jobs (stills, probe, PCM; timeout + kill on cancel): Services\AiFfmpeg.cs (AIFFMPEG_01).
+                      Settings: ONE "AI Features" tab (the old "AI Providers" tab is nested in it); one default
+                      AI for all features + per-feature overrides (AIDEFAULT_01, AppSettings.AiDefaultUsage / AiUsageOverrides).
                       Key sealed with DPAPI in settings.json (KEYPROTECT_01, SecretProtector.cs).
-                      Specs: docs/01 TL-AITRACKING / TL-AIHUD, docs/04 UI-AIZOOM / UI-AIHUDWAND / UI-MUSICWIZARD / UI-MERGER-MULTISELECT,
+                      Plain-English map of every AI feature + 2026-10-16 audit closure: docs/05 SYS-AISETTINGS §7
+                      (AIAUDIT_01). Defaults gemini-3.8-flash / claude-sonnet-5-5 / gpt-6-luna, retired names
+                      migrated on load, one 404 fallback for all vendors (AIMODELS_02, AIMODELFALLBACK_02 in
+                      Services\AiVisionProviders.cs). Commentary captions reach the export via ExportPayload.CaptionTrack
+                      (AICAPTION_EXPORT_02). One "Connect Your AI" window for every feature (AISETUP_02).
+                      Caption burn-in: Core\Media\CaptionLayoutEngine.cs + CaptionAssWriter.cs — 76/64 px text centred on
+                      the 2/3 line, kept clear of the user's Crop Tool HUD (MobileFilterBuilder.HudCanvasRects), shifted
+                      for spliced memes (AICAPTION_LAYOUT_02, AICAPTION_MEMESHIFT_01); one caption track in the preview
+                      (AICAPTION_PREVIEWSUB_01). Commentary options window remembers tone, style, placement, language,
+                      scope and notes (AICOMMENTARY_REMEMBER_01, AppSettings.AiCommentaryLast*) and shares the game type
+                      with Settings (AIPROFILE_ONE_01). Cloud consents are per AI company (AICONSENT_02,
+                      AppSettings.Ai*CloudConsentVendor).
+                      Per-task AI usage report (tokens + allowance before/after) for Smart Zoom and Commentary:
+                      Services\AiUsageMeter.cs (AIUSAGE_01, docs/05 SYS-AISETTINGS §7.5).
+                      Tests: tests\FreeVideoStudio.App.Tests\AiAuditFixTests.cs, tests\FreeVideoStudio.App.Tests\AiUsageMeterTests.cs,
+                      tests\FreeVideoStudio.Core.Tests\CaptionAuditFixTests.cs.
+                      Specs: docs/01 TL-AITRACKING / TL-AIHUD / TL-CAPTIONS, docs/02 AUD-MUSICWIN, docs/03 FFM-CAPTIONS,
+                      docs/04 UI-AIZOOM / UI-AIHUDWAND / UI-AICOMMENTARY / UI-MUSICWIZARD / UI-MERGER-MULTISELECT,
                       docs/05 SYS-AISETTINGS. Secret guard: tests\FreeVideoStudio.App.Tests\SecretLeakTests.cs
                       (SECRETSCAN_01) — never commit keys, .pfx, *.key.pem or *.password.txt.
 ===============================================================================

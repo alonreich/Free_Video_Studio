@@ -124,7 +124,7 @@ public sealed class GeminiModelSession
         {
             AiVendor.Anthropic => ClaudeProvider.ResolveModel(model),
             AiVendor.OpenAI => OpenAiProvider.ResolveModel(model),
-            _ => GeminiClient.ResolveModel(model),
+            _ => AiVisionProviders.EffectiveModel(AiVendor.Google, GeminiClient.ResolveModel(model)),
         };
     }
 
@@ -156,7 +156,7 @@ public sealed class GeminiModelSession
             }
             string? fallback = GeminiClient.PickFallbackModel(available, Model);
             if (fallback == null) throw;
-            _log?.Invoke($"Model '{Model}' is not available for your key — using '{fallback}' for this run. Choose a model in Settings › AI Providers to make this permanent.");
+            _log?.Invoke($"Model '{Model}' is not available for your key — using '{fallback}' for this run. Choose a model in Settings › AI Features to make this permanent.");
             Model = fallback;
             return await _client.GenerateAsync(_apiKey, Model, body, GeminiCallOptions.Tracking, _log, cancellationToken).ConfigureAwait(false);
         }
@@ -304,8 +304,8 @@ public static class GeminiTrackingService
 
     // ───────────────────────────── request bodies (AOT-safe, no reflection) ─────────────────────────────
 
-    /// <summary>B4 — generateContent body: prompt, media parts, temperature 0, JSON MIME type and a response schema.</summary>
-    internal static byte[] BuildRequest(string prompt, IReadOnlyList<(string MimeType, byte[] Data, double? Fps)> media, Action<Utf8JsonWriter> writeSchema)
+    /// <summary>B4 — generateContent body: prompt, media parts, temperature 0 (omitted for Gemini 3+, AITEMP_02), JSON MIME type and a response schema.</summary>
+    internal static byte[] BuildRequest(string prompt, IReadOnlyList<(string MimeType, byte[] Data, double? Fps)> media, Action<Utf8JsonWriter> writeSchema, string? model = null)
     {
         int size = 4096 + prompt.Length * 2;
         foreach (var m in media) size += m.Data.Length * 4 / 3 + 64;
@@ -338,7 +338,7 @@ public static class GeminiTrackingService
             w.WriteEndObject();
             w.WriteEndArray();
             w.WriteStartObject("generationConfig");
-            w.WriteNumber("temperature", 0);
+            if (!GeminiClient.PrefersDefaultTemperature(model)) w.WriteNumber("temperature", 0);
             w.WriteString("responseMimeType", "application/json");
             w.WritePropertyName("responseSchema");
             writeSchema(w);
@@ -424,7 +424,7 @@ public static class GeminiTrackingService
         string text;
         if (session.Vendor == AiVendor.Google && session.Provider == null)
         {
-            byte[] body = BuildRequest(AiTrackingPrompts.Discovery(profile), media, WriteDiscoverySchema);
+            byte[] body = BuildRequest(AiTrackingPrompts.Discovery(profile), media, WriteDiscoverySchema, session.Model);
             text = await session.GenerateAsync(body, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -553,7 +553,7 @@ public static class GeminiTrackingService
                 DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
                 throw;
             }
-            catch (GeminiException ex) when (!ex.IsTransient && ex.Kind is not GeminiErrorKind.MalformedResponse)
+            catch (AiProviderException ex) when (!ex.IsTransient && ex.Kind is not AiProviderErrorKind.MalformedResponse)
             {
                 DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
                 throw;
@@ -609,7 +609,7 @@ public static class GeminiTrackingService
         ArgumentNullException.ThrowIfNull(req);
         ArgumentNullException.ThrowIfNull(session);
         if (!File.Exists(req.VideoPath)) throw new FileNotFoundException("Video file not found", req.VideoPath);
-        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, $"No {session.VendorName} API key is configured. Add one in Settings › AI Providers.");
+        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, $"No {session.VendorName} API key is configured. Add one in Settings › AI Features.");
         if (req.SourceDurationSec > MaxTrackSec + 0.01)
             throw new InvalidOperationException($"AI SMART ZOOM can follow a target for up to {MaxTrackSec:0} seconds. Split this segment into shorter blocks and track each one.");
 
@@ -706,7 +706,7 @@ public static class GeminiTrackingService
             if (refCrop != null) media.Add(("image/jpeg", refCrop, null));
             media.Add(("video/mp4", mp4, useFps ? TrackingFps : null));
 
-            byte[] body = BuildRequest(prompt, media, WriteTrackingSchema);
+            byte[] body = BuildRequest(prompt, media, WriteTrackingSchema, session.Model);
             text = await session.GenerateAsync(body, ct).ConfigureAwait(false);
         }
         else
@@ -714,6 +714,11 @@ public static class GeminiTrackingService
             var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
             var sampledFrames = await AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync(
                 mp4, TrackingFps, targetWidth: 640, log: consoleLog, ct: ct).ConfigureAwait(false);
+            // AIZEROFRAMES_01 — no pictures means no request: the AI would invent positions for an empty clip.
+            if (sampledFrames.Count == 0)
+                throw new AiProviderException(session.Vendor, AiProviderErrorKind.MalformedResponse,
+                    "No pictures could be read from this part of the block, so it was not sent to the AI. Try again or pick a slightly different block.",
+                    "frame sampling produced 0 frames");
 
             var images = new List<AiImageInput>(sampledFrames.Count + (refCrop != null ? 1 : 0));
             if (refCrop != null)

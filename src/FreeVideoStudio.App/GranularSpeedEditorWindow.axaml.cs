@@ -3047,25 +3047,50 @@ public partial class GranularSpeedEditorWindow : Window
                 var elimBaseColor = Infrastructure.ThemeResources.Colour(this, "AppDangerColor", Avalonia.Media.Color.FromRgb(168, 50, 50));
                 var elimBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, elimBaseColor.R, elimBaseColor.G, elimBaseColor.B));
 
+                // AIELIM_02 — markers are ABSOLUTE source seconds; they are placed through the output timeline
+                // (speed changes, freezes), hidden when the moment was cut away, and jump the playhead on click.
+                var elimTimeline = OutTimeline();
                 foreach (double elimSec in _aiEliminationTimestamps)
                 {
                     double elimMs = elimSec * 1000.0;
                     if (elimMs < _edit.TrimStartMs || (_edit.TrimEndMs > 0 && elimMs > _edit.TrimEndMs)) continue;
 
                     double elimRelMs = elimMs - _edit.TrimStartMs;
+                    if (elimTimeline.IsCutAtSource(elimRelMs / 1000.0)) continue;
                     double ex = SrcMsToX(elimRelMs, w);
+                    double outSec = elimTimeline.SourceToOutput(elimRelMs / 1000.0);
 
-                    var xMark = new TextBlock
+                    // AIELIM_03 — same solid red badge as the main timeline, raised above every other marker.
+                    var xMark = new Avalonia.Controls.Border
                     {
-                        Text = "✕",
-                        Foreground = elimBrush,
-                        FontSize = Infrastructure.ThemeManager.ScaledFontSize(12),
-                        FontWeight = Avalonia.Media.FontWeight.Bold,
-                        IsHitTestVisible = true
+                        Width = 18,
+                        Height = 18,
+                        CornerRadius = new Avalonia.CornerRadius(9),
+                        Background = elimBrush,
+                        BorderBrush = Avalonia.Media.Brushes.White,
+                        BorderThickness = new Avalonia.Thickness(1.5),
+                        IsHitTestVisible = true,
+                        ZIndex = 500,
+                        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                        Child = new TextBlock
+                        {
+                            Text = "✕",
+                            Foreground = Avalonia.Media.Brushes.White,
+                            FontSize = Infrastructure.ThemeManager.ScaledFontSize(11),
+                            FontWeight = Avalonia.Media.FontWeight.Bold,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        },
                     };
-                    ToolTip.SetTip(xMark, $"Elimination detected at {TimeSpan.FromSeconds(elimSec):mm\\:ss\\.f}");
-                    Avalonia.Controls.Canvas.SetLeft(xMark, Math.Max(0, ex - 6));
-                    Avalonia.Controls.Canvas.SetTop(xMark, -16);
+                    ToolTip.SetTip(xMark, $"Elimination at {TimeSpan.FromSeconds(outSec):mm\\:ss\\.f} in the finished video — click to jump there");
+                    double jumpRelMs = Math.Max(0, elimRelMs - 1000.0);
+                    xMark.PointerPressed += (_, e) =>
+                    {
+                        e.Handled = true;
+                        SetPlayheadFromScrub(jumpRelMs);
+                    };
+                    Avalonia.Controls.Canvas.SetLeft(xMark, Math.Max(0, ex - 9));
+                    Avalonia.Controls.Canvas.SetTop(xMark, -20);
                     canvas.Children.Add(xMark);
                 }
             }

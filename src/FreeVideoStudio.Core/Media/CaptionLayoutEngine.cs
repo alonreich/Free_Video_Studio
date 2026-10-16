@@ -53,6 +53,23 @@ public static class CaptionLayoutEngine
     public const int MaxWordsPerLine = 8;
     public const int MaxLinesOnScreen = 2;
 
+    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1080x1920 portrait canvas (was 54).</summary>
+    public const int PortraitFontSize = 76;
+
+    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1920x1080 landscape canvas (was 58).</summary>
+    public const int LandscapeFontSize = 64;
+
+    /// <summary>
+    /// AICAPTION_LAYOUT_02 — where the DEFAULT (BottomContent) caption's CENTRE sits, as a fraction of the canvas
+    /// height: exactly on the line between the upper two-thirds and the lower third. Above the bottom HUD band
+    /// (health / shield / stamina / hotbar) and below the action in the middle of the screen. HUD pieces that
+    /// still overlap push it further up (<see cref="AvoidHudCollisions"/>).
+    /// </summary>
+    public const double DefaultCenterFraction = 2.0 / 3.0;
+
+    /// <summary>AICAPTION_LAYOUT_02 — the gap kept between a caption and a HUD piece it was moved off.</summary>
+    public const double HudGapPx = 24.0;
+
     /// <summary>
     /// Computes the layout for a single <see cref="MappedCaptionLine"/> given canvas dimensions, mode,
     /// placement preset, and optional active HUD bounding boxes in output canvas pixels.
@@ -69,7 +86,7 @@ public static class CaptionLayoutEngine
         if (outputW <= 0) outputW = isPortrait ? PortraitWidth : LandscapeWidth;
         if (outputH <= 0) outputH = isPortrait ? PortraitHeight : LandscapeHeight;
 
-        int baseFontSize = isPortrait ? 54 : 58;
+        int baseFontSize = isPortrait ? PortraitFontSize : LandscapeFontSize;
         int fontSize = baseFontSize;
         double sideMargin = isPortrait ? 60.0 : 160.0;
         double maxTextWidth = Math.Max(200.0, outputW - (sideMargin * 2));
@@ -81,7 +98,7 @@ public static class CaptionLayoutEngine
         var wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
 
         // If wrapped into more than 2 lines, try scaling font size down to fit within max 2 lines
-        if (wrappedLines.Count > MaxLinesOnScreen && fontSize > 40)
+        if (wrappedLines.Count > MaxLinesOnScreen && fontSize > 48)
         {
             fontSize = (int)(baseFontSize * 0.85);
             font.Size = fontSize;
@@ -152,13 +169,15 @@ public static class CaptionLayoutEngine
 
     private static double ComputeDefaultBoxY(int outputH, double boxHeight, bool isPortrait, CaptionPosition position)
     {
+        // AICAPTION_LAYOUT_02 — BottomContent (the default) is centred on the 2/3 line of the canvas.
+        double defaultY = outputH * DefaultCenterFraction - boxHeight / 2.0;
         if (isPortrait)
         {
             return position switch
             {
                 CaptionPosition.Top => PortraitVoidTop + 40.0,
                 CaptionPosition.BottomVoid => (outputH - PortraitVoidBottom) + ((PortraitVoidBottom - boxHeight) / 2.0),
-                _ => (outputH - PortraitVoidBottom) - boxHeight - 40.0, // BottomContent default
+                _ => Math.Clamp(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
             };
         }
 
@@ -166,7 +185,7 @@ public static class CaptionLayoutEngine
         return position switch
         {
             CaptionPosition.Top => 60.0,
-            _ => outputH - boxHeight - 80.0, // Bottom default
+            _ => Math.Clamp(defaultY, 40.0, outputH - boxHeight - 40.0),
         };
     }
 
@@ -182,32 +201,31 @@ public static class CaptionLayoutEngine
     {
         double currentY = boxY;
         double topLimit = isPortrait ? PortraitVoidTop + 20.0 : 40.0;
+        double bottomLimit = isPortrait ? outputH - PortraitVoidBottom : outputH - 40.0;
 
-        foreach (var hud in hudRects)
+        // AICAPTION_LAYOUT_02 — repeat until clear: moving off one HUD piece can land on another (the old single
+        // pass stopped after the first move). Bounded so a crowded layout can never loop.
+        for (int pass = 0; pass < 8; pass++)
         {
-            if (hud.W <= 1 || hud.H <= 1) continue;
-
-            // Check bounding box intersection
-            bool intersectsX = (boxX < hud.X + hud.W) && (boxX + boxW > hud.X);
-            bool intersectsY = (currentY < hud.Y + hud.H) && (currentY + boxH > hud.Y);
-
-            if (intersectsX && intersectsY)
+            bool moved = false;
+            foreach (var hud in hudRects)
             {
-                if (position == CaptionPosition.Top)
+                if (hud.W <= 1 || hud.H <= 1) continue;
+
+                bool intersectsX = (boxX < hud.X + hud.W) && (boxX + boxW > hud.X);
+                bool intersectsY = (currentY < hud.Y + hud.H + HudGapPx) && (currentY + boxH + HudGapPx > hud.Y);
+                if (!intersectsX || !intersectsY) continue;
+
+                double newY = position == CaptionPosition.Top
+                    ? hud.Y + hud.H + HudGapPx
+                    : hud.Y - boxH - HudGapPx;
+                if (newY >= topLimit && newY + boxH <= bottomLimit && Math.Abs(newY - currentY) > 0.5)
                 {
-                    // Move downward below the HUD element
-                    double newY = hud.Y + hud.H + 20.0;
-                    if (newY + boxH < (isPortrait ? outputH - PortraitVoidBottom : outputH - 40.0))
-                        currentY = newY;
-                }
-                else
-                {
-                    // Move upward above the HUD element
-                    double newY = hud.Y - boxH - 20.0;
-                    if (newY >= topLimit)
-                        currentY = newY;
+                    currentY = newY;
+                    moved = true;
                 }
             }
+            if (!moved) break;
         }
 
         return currentY;

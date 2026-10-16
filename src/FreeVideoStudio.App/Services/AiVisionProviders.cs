@@ -4,6 +4,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
@@ -21,13 +25,140 @@ public static class AiVisionProviders
     public const string AnthropicConsoleKeysUrl = "https://console.anthropic.com/settings/keys";
     public const string OpenAiPlatformKeysUrl = "https://platform.openai.com/api-keys";
 
-    /// <summary>Recommended defaults per quality bake-off testing (P1.2).</summary>
+    /// <summary>Recommended defaults (AIMODELS_02, 2026-10-16: the vendors' current stable vision models).</summary>
     public const AiVendor RecommendedVendor = AiVendor.Google;
-    public const string RecommendedModel = "gemini-2.5-flash";
+    public const string RecommendedModel = GeminiClient.DefaultModel;
 
-    public static readonly string[] KnownGoogleModels = { "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash" };
-    public static readonly string[] KnownAnthropicModels = { "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022" };
-    public static readonly string[] KnownOpenAiModels = { "o3-mini", "gpt-4o", "gpt-4o-mini" };
+    // AIMODELS_02 — offline catalogue shown before "Refresh" lists the key's live models. First = default.
+    public static readonly string[] KnownGoogleModels = { GeminiClient.DefaultModel, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest" };
+    public static readonly string[] KnownAnthropicModels = { ClaudeProvider.DefaultModelName, "claude-haiku-5-5", "claude-opus-5-5" };
+    public static readonly string[] KnownOpenAiModels = { OpenAiProvider.DefaultModelName, "gpt-6.1-sol", "gpt-6-astra" };
+
+    /// <summary>
+    /// AIMODELS_02 — model names that no longer answer (or are about to stop). A saved setting naming one is
+    /// moved to the vendor's default on load (<c>SettingsManager.Migrate</c>), so an app update fixes it with
+    /// no user action. Prefix match, case-insensitive.
+    /// </summary>
+    private static readonly string[] RetiredGooglePrefixes = { "gemini-1.", "gemini-2.0-", "gemini-2.5-", "gemini-3-pro-preview", "gemini-3.1-flash-lite-preview" };
+    private static readonly string[] RetiredAnthropicPrefixes = { "claude-2", "claude-instant", "claude-3-", "claude-3." };
+    private static readonly string[] RetiredOpenAiPrefixes = { "o1", "o3-mini", "gpt-3.5", "gpt-4-", "gpt-4o-2024-05-13" };
+
+    /// <summary>AIMODELS_02 — true when <paramref name="model"/> is a retired name for <paramref name="vendor"/>.</summary>
+    public static bool IsRetiredModel(AiVendor vendor, string? model)
+    {
+        string m = (model ?? string.Empty).Trim();
+        if (m.StartsWith("models/", StringComparison.Ordinal)) m = m["models/".Length..];
+        if (m.Length == 0) return false;
+        string[] prefixes = vendor switch
+        {
+            AiVendor.Anthropic => RetiredAnthropicPrefixes,
+            AiVendor.OpenAI => RetiredOpenAiPrefixes,
+            _ => RetiredGooglePrefixes,
+        };
+        return prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>AIMODELS_02 — the model to use instead of a retired or empty one (the vendor default), else the input.</summary>
+    public static string ReplaceRetired(AiVendor vendor, string? model)
+        => string.IsNullOrWhiteSpace(model) || IsRetiredModel(vendor, model) ? GetDefaultModel(vendor) : model.Trim();
+
+    // ───────────── AIMODELFALLBACK_02 — one 404 fallback for every vendor and every feature ─────────────
+
+    private static readonly object RemapGate = new();
+    private static readonly Dictionary<string, string> SessionRemap = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// AIMODELFALLBACK_02 — the model this session actually calls for <paramref name="configured"/>: the
+    /// configured name, unless an earlier call this session found it gone (404) and switched to a live one.
+    /// </summary>
+    public static string EffectiveModel(AiVendor vendor, string configured)
+    {
+        lock (RemapGate)
+            return SessionRemap.TryGetValue($"{vendor}:{configured}", out string? live) ? live : configured;
+    }
+
+    /// <summary>Test seam: forgets every session remap.</summary>
+    internal static void ResetSessionRemapForTests()
+    {
+        lock (RemapGate) SessionRemap.Clear();
+    }
+
+    /// <summary>
+    /// AIMODELFALLBACK_02 — after a 404 on <paramref name="missing"/>, lists the key's live models and picks the
+    /// best replacement (newest stable general model of the same family). The choice is remembered for the rest
+    /// of the session so later calls skip the 404; the user's setting is NOT changed. Null when nothing fits
+    /// or the list cannot be read.
+    /// </summary>
+    public static async Task<string?> FindLiveReplacementAsync(IAiVisionProvider provider, string apiKey, string missing, Action<string>? userLog, CancellationToken ct)
+    {
+        IReadOnlyList<string> available;
+        try
+        {
+            available = await provider.ListModelsAsync(apiKey, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            CoreLogger.Info("AI", $"Model list unavailable after a 404 on '{missing}': {ex.GetType().Name}");
+            return null;
+        }
+
+        string? pick = PickReplacement(provider.Vendor, available, missing);
+        if (pick == null) return null;
+        lock (RemapGate) SessionRemap[$"{provider.Vendor}:{missing}"] = pick;
+        string line = $"The AI model '{missing}' is no longer available for your key — using '{pick}' instead. Pick a model in Settings › AI Features to make this permanent.";
+        userLog?.Invoke(line);
+        CoreLogger.Info("AI", line);
+        return pick;
+    }
+
+    /// <summary>AIMODELFALLBACK_02 — pure choice of a replacement from a vendor's live list (newest-first lists are assumed).</summary>
+    public static string? PickReplacement(AiVendor vendor, IReadOnlyList<string> available, string? exclude)
+    {
+        if (available == null || available.Count == 0) return null;
+        var live = available.Where(n => !string.Equals(n, exclude, StringComparison.OrdinalIgnoreCase) && !IsRetiredModel(vendor, n)).ToList();
+        if (live.Count == 0) return null;
+
+        // The curated defaults first, in catalogue order, when the key can use them.
+        foreach (string known in GetKnownModels(vendor))
+            if (live.Contains(known, StringComparer.OrdinalIgnoreCase)) return known;
+
+        switch (vendor)
+        {
+            case AiVendor.Google:
+                return GeminiClient.PickFallbackModel(live, exclude);
+            case AiVendor.Anthropic:
+                return live.FirstOrDefault(n => n.Contains("sonnet", StringComparison.OrdinalIgnoreCase))
+                    ?? live.FirstOrDefault(n => n.Contains("haiku", StringComparison.OrdinalIgnoreCase))
+                    ?? live[0];
+            default:
+                return live.FirstOrDefault(n => Regex.IsMatch(n, @"^gpt-\d+(\.\d+)?-[a-z]+$", RegexOptions.IgnoreCase))
+                    ?? live.FirstOrDefault(n => n.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase))
+                    ?? live[0];
+        }
+    }
+
+    /// <summary>AIVENDORCAPS_01 — only Gemini watches video clips and hears audio; Claude and OpenAI see stills.</summary>
+    public static bool WatchesVideoWithAudio(AiVendor vendor) => vendor == AiVendor.Google;
+
+    /// <summary>The company + product name shown to the user.</summary>
+    public static string DisplayName(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Anthropic => "Anthropic Claude",
+        AiVendor.OpenAI => "OpenAI",
+        _ => "Google Gemini",
+    };
+
+    /// <summary>Where the user creates a key for <paramref name="vendor"/>.</summary>
+    public static string KeyPageUrl(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Anthropic => AnthropicConsoleKeysUrl,
+        AiVendor.OpenAI => OpenAiPlatformKeysUrl,
+        _ => GeminiClient.AiStudioKeyUrl,
+    };
 
     public static IAiVisionProvider Get(AiVendor vendor) => vendor switch
     {

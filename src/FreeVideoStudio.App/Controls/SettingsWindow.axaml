@@ -337,69 +337,39 @@
                             </ScrollViewer>
                         </TabItem>
                         <!-- AI Features Tab -->
+                        <!-- AIPROVIDER_UI_01 / AIDEFAULT_01 / AISETTINGS_UI_02 — ONE tab for everything AI: the provider (key + model) used by every
+                             feature, the features themselves, Smart Zoom camera, privacy, and a collapsed Advanced section
+                             for giving one feature a different AI. The old "AI Providers" tab lives here now. -->
                         <TabItem Header="AI Features" Name="AiFeaturesTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Margin="15" Spacing="16" HorizontalAlignment="Left" MaxWidth="680">
-                                    <TextBlock Text="AI Automation Features" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="AI Features" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                     <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize12}"
-                                               Text="Enable intelligent automation tools powered by cloud AI vision and deterministic audio analysis. AI features run in the background with zero local model overhead."/>
+                                               Text="All AI runs in the cloud with your own key. Nothing is sent until you use an AI feature."/>
 
-                                    <!-- AI Elimination Tracker Card -->
+                                    <!-- 1. AI provider used by every feature -->
+                                    <TextBlock Text="AI provider" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                     <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="8">
-                                            <CheckBox Name="AiEliminationTrackerCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
-                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="AI Elimination Tracker (Auto-detect kills on timeline)"/>
-                                            <TextBlock Text="When enabled, automatically scans audio peaks and gameplay footage in the background when a video is loaded. Confirmed eliminations and knockdowns are marked with a subtle ✕ directly above the timeline."
-                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                            <TextBlock Text="Default: OFF · Runs asynchronously in the background · Keeps timeline clean and uncluttered"
-                                                       Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                            <Grid ColumnDefinitions="*, Auto">
+                                                <TextBlock Text="Used by every AI feature" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize13}"/>
+                                                <TextBlock Name="AiDefaultRecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini · gemini-3.8-flash"
+                                                           Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="160, 10, *, 10, Auto, 10, Auto">
+                                                <ComboBox Name="AiDefaultVendorCombo" HorizontalAlignment="Stretch" ToolTip.Tip="Which AI company to use"/>
+                                                <ComboBox Name="AiDefaultModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" ToolTip.Tip="Which model to use"/>
+                                                <Button Name="AiDefaultRefreshBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Lists the models your key can use"/>
+                                                <Button Name="AiDefaultUseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use Recommended" Cursor="Hand" ToolTip.Tip="Google Gemini with the recommended model"/>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
-
-                                    <!-- Modern Viral Post Helper Card -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
-                                        <StackPanel Spacing="8">
-                                            <CheckBox Name="AiViralPostHelperCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
-                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="Modern Viral Post Helper (Export Finished Screen)"/>
-                                            <TextBlock Text="Generates 2026 trending clickbait titles, engagement captions, and high-reach hashtags when exporting completes, with 1-click clipboard copying."
-                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                            <TextBlock Text="Default: ON · Tailored for YouTube Shorts, TikTok, and Instagram Reels"
-                                                       Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- AI Music Auto-Fit Card -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="AI Music Auto-Fit" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                            <TextBlock Text="Available inside the Add Music wizard. Analyzes scene keyframes and pacing to match against your MP3 music library with custom in/out trimming."
-                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <!-- Quick Navigation to AI Providers -->
-                                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
-                                        <TextBlock Text="Need to configure API keys or change models?" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"/>
-                                        <Button Name="AiGoToProvidersBtn" Classes="Secondary" Content="Configure AI Providers →" Cursor="Hand" Click="OnGoToAiProvidersClicked"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </TabItem>
-                        <TabItem Header="AI Providers" Name="AiProvidersTab">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel Margin="15" Spacing="16" HorizontalAlignment="Left" MaxWidth="680">
-                                    <TextBlock Text="AI Providers &amp; Tracking Configuration" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                    <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize12}"
-                                               Text="Configure API keys and model routing across Google Gemini, Anthropic Claude, and OpenAI for universal tracking zoom, Magic Wand HUD detection, and commentary captions."/>
-
-                                    <!-- AIPROVIDER_UI_01: Section 1: Connected Providers & API Keys -->
-                                    <TextBlock Text="Provider API Keys (Sealed Storage)" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
 
                                     <!-- Google Gemini -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                    <Border Name="AiGeminiKeyCard" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="8">
                                             <TextBlock Text="Google Gemini API Key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize13}"/>
-                                            <TextBlock Text="Required for Gemini 2.5 Flash and Pro models. Sealed on disk with Windows DPAPI encryption."
+                                            <TextBlock Text="Needed when Google Gemini is used. Stored encrypted for your Windows account only."
                                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                             <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,4,0,0">
                                                 <TextBox Name="AiGeminiApiKeyTextBox" PasswordChar="•" Watermark="Paste your Google Gemini API Key here..."
@@ -419,10 +389,10 @@
                                     </Border>
 
                                     <!-- Anthropic Claude -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                    <Border Name="AiClaudeKeyCard" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="8">
                                             <TextBlock Text="Anthropic Claude API Key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize13}"/>
-                                            <TextBlock Text="Required for Claude 3.7 / 3.5 Sonnet and Haiku models. Sealed on disk with Windows DPAPI encryption."
+                                            <TextBlock Text="Needed when Anthropic Claude is used. Stored encrypted for your Windows account only."
                                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                             <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,4,0,0">
                                                 <TextBox Name="AiClaudeApiKeyTextBox" PasswordChar="•" Watermark="Paste your Anthropic API Key (sk-ant-...) here..."
@@ -442,10 +412,10 @@
                                     </Border>
 
                                     <!-- OpenAI -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                                    <Border Name="AiOpenAiKeyCard" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="8">
                                             <TextBlock Text="OpenAI API Key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize13}"/>
-                                            <TextBlock Text="Required for OpenAI o3-mini and GPT-4o models. Sealed on disk with Windows DPAPI encryption."
+                                            <TextBlock Text="Needed when OpenAI is used. Stored encrypted for your Windows account only."
                                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                             <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,4,0,0">
                                                 <TextBox Name="AiOpenAiApiKeyTextBox" PasswordChar="•" Watermark="Paste your OpenAI API Key (sk-...) here..."
@@ -464,131 +434,91 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- Section 2: Per-Usage Model Routing -->
-                                    <TextBlock Text="Per-Task AI Model Routing" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,6,0,0"/>
-                                    <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize12}"
-                                               Text="Assign each workflow to a specific provider and model. The '★ Recommended' badge indicates the proven best balance of accuracy and latency from quality bake-off testing."/>
+                                    <!-- 2. The features -->
+                                    <TextBlock Text="Features" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,6,0,0"/>
+                                    <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize11}"
+                                               Text="Always available where you work: AI SMART ZOOM and AI COMMENTARY in the speed editor, MAGIC WAND in the Crop Tool, and AI Auto-Fit in the Add Music wizard."/>
 
-                                    <!-- U1: Subject Discovery -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="6">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="U1 · Zoom Subject Discovery (3 Still Frames)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiU1RecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini (gemini-2.5-flash)"
-                                                           Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="140, 10, *, 10, Auto, 10, Auto">
-                                                <ComboBox Name="AiU1VendorCombo" HorizontalAlignment="Stretch" ToolTip.Tip="Vendor for subject discovery"/>
-                                                <ComboBox Name="AiU1ModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" ToolTip.Tip="Model name"/>
-                                                <Button Name="AiU1RefreshModelsBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Fetches models live from vendor"/>
-                                                <Button Name="AiU1UseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use Recommended" Cursor="Hand" ToolTip.Tip="Resets this task to the recommended vendor &amp; model"/>
-                                            </Grid>
+                                            <CheckBox Name="AiViralPostHelperCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
+                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="Viral Post Helper (after export)"/>
+                                            <TextBlock Text="Writes a title, caption and hashtags for the video you just exported, with one-click copy and a NEW VERSION button. Turning this on allows 3 still pictures of each exported video to be sent to your AI provider."
+                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- U2: Dense Tracking -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="6">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="U2 · Zoom Dense Tracking (Video Clip Trajectory)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiU2RecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini (gemini-2.5-flash)"
-                                                           Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="140, 10, *, 10, Auto, 10, Auto">
-                                                <ComboBox Name="AiU2VendorCombo" HorizontalAlignment="Stretch" ToolTip.Tip="Vendor for dense tracking"/>
-                                                <ComboBox Name="AiU2ModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" ToolTip.Tip="Model name"/>
-                                                <Button Name="AiU2RefreshModelsBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Fetches models live from vendor"/>
-                                                <Button Name="AiU2UseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use Recommended" Cursor="Hand" ToolTip.Tip="Resets this task to the recommended vendor &amp; model"/>
-                                            </Grid>
+                                            <CheckBox Name="AiEliminationTrackerCheckBox" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}"
+                                                      Foreground="{DynamicResource AppTextPrimaryBrush}" Content="AI Kill Tracker (marks kills on the timeline)"/>
+                                            <TextBlock Text="When a video opens, checks its loudest action moments and marks each of YOUR kills with a red ✕ above the timeline. Click a ✕ to jump there. Turning this on allows 2 still pictures per loud moment (up to 60 per video) of every video you open to be sent to your AI provider."
+                                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- U3: Magic Wand -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
-                                        <StackPanel Spacing="6">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="U3 · Magic Wand HUD Detection (Frozen Frame)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiU3RecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini (gemini-2.5-flash)"
-                                                           Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="140, 10, *, 10, Auto, 10, Auto">
-                                                <ComboBox Name="AiU3VendorCombo" HorizontalAlignment="Stretch" ToolTip.Tip="Vendor for Magic Wand HUD detection"/>
-                                                <ComboBox Name="AiU3ModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" ToolTip.Tip="Model name"/>
-                                                <Button Name="AiU3RefreshModelsBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Fetches models live from vendor"/>
-                                                <Button Name="AiU3UseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use Recommended" Cursor="Hand" ToolTip.Tip="Resets this task to the recommended vendor &amp; model"/>
-                                            </Grid>
+                                    <!-- 3. Smart Zoom camera -->
+                                    <Expander Header="AI Smart Zoom camera" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="12" Margin="0,8,0,0">
+                                            <!-- Game profile (AIGAME_01) -->
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Text="What are you recording?" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                <TextBlock Text="Tells the AI who must never be tracked (your own character in third-person games, your hands and weapon in first-person games) and which screen corners hold the HUD."
+                                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                                <ComboBox Name="AiGameProfileCombo" MinWidth="280" Margin="0,2,0,0"/>
+                                            </StackPanel>
+
+                                            <!-- Camera Zoom Tuning -->
+                                            <StackPanel Spacing="12">
+                                                <!-- Base Zoom Depth -->
+                                                <StackPanel Spacing="4">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Base Zoom Depth (Stationary Target)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                        <TextBlock Name="AiBaseZoomLabel" Grid.Column="1" Text="2.2x" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
+                                                    </Grid>
+                                                    <TextBlock Text="How close the camera punches in when the subject is still or moving slowly." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                                    <Slider Name="AiBaseZoomSlider" Minimum="1.5" Maximum="4.0" Value="2.2" SmallChange="0.1" LargeChange="0.5" Margin="0,2,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- Fast Movement Zoom-Out -->
+                                                <StackPanel Spacing="4">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Fast Movement Zoom-Out (Dynamic Breathing)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                        <TextBlock Name="AiMinZoomLabel" Grid.Column="1" Text="1.3x" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
+                                                    </Grid>
+                                                    <TextBlock Text="When the subject sprints or moves rapidly, camera expands to this scale to keep them comfortably in view." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                                    <Slider Name="AiMinZoomSlider" Minimum="1.1" Maximum="2.0" Value="1.3" SmallChange="0.1" LargeChange="0.2" Margin="0,2,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- Jitter deadband (C4) -->
+                                                <StackPanel Spacing="4">
+                                                    <Grid ColumnDefinitions="*, Auto">
+                                                        <TextBlock Text="Steadiness (Ignore Small Movements)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                        <TextBlock Name="AiDeadbandLabel" Grid.Column="1" Text="2.0%" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
+                                                    </Grid>
+                                                    <TextBlock Text="Movements smaller than this share of the frame are ignored, so the camera does not twitch. Higher = calmer, lower = follows more closely." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                                    <Slider Name="AiDeadbandSlider" Minimum="0" Maximum="6" Value="2" SmallChange="0.5" LargeChange="1" Margin="0,2,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- HUD Avoidance -->
+                                                <CheckBox Name="AiAvoidHudCheckbox" Content="Keep the camera off the HUD (uses your Crop Tool layout, or the usual HUD corners)"
+                                                          Foreground="{DynamicResource AppTextPrimaryBrush}" IsChecked="True"
+                                                          ToolTip.Tip="Shifts the zoom window away from HUD areas when it can do so without losing the target."/>
+                                            </StackPanel>
                                         </StackPanel>
-                                    </Border>
+                                    </Expander>
 
-                                    <!-- U4: Commentary Captions -->
-                                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
-                                        <StackPanel Spacing="6">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="U4 · Live Commentary Karaoke Captions (Scene Narration)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiU4RecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini (gemini-2.5-flash)"
-                                                           Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <Grid ColumnDefinitions="140, 10, *, 10, Auto, 10, Auto">
-                                                <ComboBox Name="AiU4VendorCombo" HorizontalAlignment="Stretch" ToolTip.Tip="Vendor for commentary captions"/>
-                                                <ComboBox Name="AiU4ModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" ToolTip.Tip="Model name"/>
-                                                <Button Name="AiU4RefreshModelsBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Fetches models live from vendor"/>
-                                                <Button Name="AiU4UseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use Recommended" Cursor="Hand" ToolTip.Tip="Resets this task to the recommended vendor &amp; model"/>
-                                            </Grid>
+                                    <!-- 4. Advanced: one feature, a different AI -->
+                                    <Expander Name="AiAdvancedExpander" Header="Advanced: use a different AI for one feature" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                                            <TextBlock Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize11}"
+                                                       Text="Tick a feature to give it its own AI. Unticked features follow the AI provider above."/>
+                                            <StackPanel Name="AiOverridesPanel" Spacing="6"/>
+                                            <!-- Legacy alias controls for backward compatibility -->
+                                            <ComboBox Name="AiModelCombo" IsVisible="False"/>
+                                            <Button Name="AiRefreshModelsBtn" IsVisible="False"/>
                                         </StackPanel>
-                                    </Border>
-
-                                    <!-- Legacy alias controls for backward compatibility -->
-                                    <ComboBox Name="AiModelCombo" IsVisible="False"/>
-                                    <Button Name="AiRefreshModelsBtn" IsVisible="False"/>
-
-                                    <!-- Section 3: Footage & Camera Settings -->
-                                    <TextBlock Text="Footage &amp; Camera Motion Dynamics" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,6,0,0"/>
-
-                                    <!-- Game profile (AIGAME_01) -->
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="What are you recording?" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                        <TextBlock Text="Tells the AI who must never be tracked (your own character in third-person games, your hands and weapon in first-person games) and which screen corners hold the HUD."
-                                                   Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                        <ComboBox Name="AiGameProfileCombo" MinWidth="280" Margin="0,2,0,0"/>
-                                    </StackPanel>
-
-                                    <!-- Camera Zoom Tuning -->
-                                    <StackPanel Spacing="12">
-                                        <!-- Base Zoom Depth -->
-                                        <StackPanel Spacing="4">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="Base Zoom Depth (Stationary Target)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiBaseZoomLabel" Grid.Column="1" Text="2.2x" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                            </Grid>
-                                            <TextBlock Text="How close the camera punches in when the subject is still or moving slowly." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                            <Slider Name="AiBaseZoomSlider" Minimum="1.5" Maximum="4.0" Value="2.2" SmallChange="0.1" LargeChange="0.5" Margin="0,2,0,0"/>
-                                        </StackPanel>
-
-                                        <!-- Fast Movement Zoom-Out -->
-                                        <StackPanel Spacing="4">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="Fast Movement Zoom-Out (Dynamic Breathing)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiMinZoomLabel" Grid.Column="1" Text="1.3x" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                            </Grid>
-                                            <TextBlock Text="When the subject sprints or moves rapidly, camera expands to this scale to keep them comfortably in view." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                            <Slider Name="AiMinZoomSlider" Minimum="1.1" Maximum="2.0" Value="1.3" SmallChange="0.1" LargeChange="0.2" Margin="0,2,0,0"/>
-                                        </StackPanel>
-
-                                        <!-- Jitter deadband (C4) -->
-                                        <StackPanel Spacing="4">
-                                            <Grid ColumnDefinitions="*, Auto">
-                                                <TextBlock Text="Steadiness (Ignore Small Movements)" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Name="AiDeadbandLabel" Grid.Column="1" Text="2.0%" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                            </Grid>
-                                            <TextBlock Text="Movements smaller than this share of the frame are ignored, so the camera does not twitch. Higher = calmer, lower = follows more closely." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                            <Slider Name="AiDeadbandSlider" Minimum="0" Maximum="6" Value="2" SmallChange="0.5" LargeChange="1" Margin="0,2,0,0"/>
-                                        </StackPanel>
-
-                                        <!-- HUD Avoidance -->
-                                        <CheckBox Name="AiAvoidHudCheckbox" Content="Keep the camera off the HUD (uses your Crop Tool layout, or the usual HUD corners)"
-                                                  Foreground="{DynamicResource AppTextPrimaryBrush}" IsChecked="True"
-                                                  ToolTip.Tip="Shifts the zoom window away from HUD areas when it can do so without losing the target."/>
-                                    </StackPanel>
+                                    </Expander>
 
                                     <!-- Section 4: Privacy & Cloud Consent -->
                                     <StackPanel Spacing="8" Margin="0,6,0,0">
@@ -599,6 +529,9 @@
                                         <CheckBox Name="AiWandConsentCheckbox" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                                   Content="Crop Tool Magic Wand may send the frozen frame to the configured provider for extra HUD suggestions"
                                                   ToolTip.Tip="When off, the Magic Wand asks before sending anything (and works offline either way)."/>
+                                        <CheckBox Name="AiCommentaryConsentCheckbox" Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                                  Content="AI COMMENTARY may send short clips (with game audio) or sampled frames to the configured provider"
+                                                  ToolTip.Tip="When off, the first AI COMMENTARY press asks again."/>
                                     </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>
@@ -703,4 +636,4 @@
             </Grid>
         </Border>
     </Grid>
-</Window>
+</Window>

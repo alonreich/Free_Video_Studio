@@ -46,19 +46,42 @@ public sealed class GeminiProvider : IAiVisionProvider
         CancellationToken ct = default)
     {
         options ??= GeminiCallOptions.Tracking;
-        string resolvedModel = GeminiClient.ResolveModel(model);
+        string configured = GeminiClient.ResolveModel(model);
+        // AISCHEMA_02 — Gemini gets its own upper-case dialect whatever the feature wrote.
+        string geminiSchema = AiJsonSchema.ToGeminiDialect(jsonSchema);
 
-        byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: true);
+        // AIMODELFALLBACK_02 — a model found gone earlier this session is skipped; a fresh 404 is answered once
+        // with the newest live model of the key, for EVERY feature (it used to be AI Smart Zoom only).
+        string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured);
         try
         {
-            return await _client.GenerateAsync(apiKey, resolvedModel, requestBody, options, userLog, ct).ConfigureAwait(false);
+            return await GenerateWithFpsFallbackAsync(apiKey, resolvedModel, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
+        }
+        catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.ModelNotFound)
+        {
+            string? live = await AiVisionProviders.FindLiveReplacementAsync(this, apiKey, resolvedModel, userLog, ct).ConfigureAwait(false);
+            if (live == null) throw;
+            return await GenerateWithFpsFallbackAsync(apiKey, live, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> GenerateWithFpsFallbackAsync(
+        string apiKey, string model, string prompt, IReadOnlyList<AiImageInput> images, AiVideoInput? video,
+        string jsonSchema, AiReasoningConfig? reasoning, GeminiCallOptions options, Action<string>? userLog, CancellationToken ct)
+    {
+        // AITEMP_02 — Gemini 3+ keeps its default temperature unless the task asked for a creative one.
+        double? temperature = options.Temperature ?? (GeminiClient.PrefersDefaultTemperature(model) ? null : 0);
+        byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: true, temperature);
+        try
+        {
+            return await _client.GenerateAsync(apiKey, model, requestBody, options, userLog, ct).ConfigureAwait(false);
         }
         catch (GeminiException ex) when (video != null && ex.Kind == GeminiErrorKind.BadRequest)
         {
             CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
             // AIFPS_01 fallback: some API versions / models reject videoMetadata.fps; retry once without it.
-            byte[] retryBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: false);
-            return await _client.GenerateAsync(apiKey, resolvedModel, retryBody, options, userLog, ct).ConfigureAwait(false);
+            byte[] retryBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: false, temperature);
+            return await _client.GenerateAsync(apiKey, model, retryBody, options, userLog, ct).ConfigureAwait(false);
         }
     }
 
@@ -68,7 +91,8 @@ public sealed class GeminiProvider : IAiVisionProvider
         AiVideoInput? video,
         string jsonSchema,
         AiReasoningConfig? reasoning,
-        bool includeVideoFps)
+        bool includeVideoFps,
+        double? temperature = null)
     {
         int estimatedSize = 4096 + prompt.Length * 2;
         if (video != null) estimatedSize += video.Data.Length * 4 / 3 + 128;
@@ -131,7 +155,8 @@ public sealed class GeminiProvider : IAiVisionProvider
 
             // generationConfig
             w.WriteStartObject("generationConfig");
-            w.WriteNumber("temperature", 0);
+            // AITEMP_02 — null means "the model's own default": no temperature field at all.
+            if (temperature is double t) w.WriteNumber("temperature", Math.Clamp(t, 0, 2));
             w.WriteString("responseMimeType", "application/json");
 
             if (!string.IsNullOrWhiteSpace(jsonSchema))

@@ -208,15 +208,19 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(_timeout);
 
-        string url = Endpoint + model + ":generateContent";
+        // AIMODELFALLBACK_02 — skip a model this session already found gone.
+        model = AiVisionProviders.EffectiveModel(AiVendor.Google, model);
         string? responseText;
         HttpStatusCode status;
+        bool fallbackTried = false;
 
+    sendAgain:
+        string url = Endpoint + model + ":generateContent";
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation(ApiKeyHeader, apiKey);
-            request.Content = new ByteArrayContent(BuildRequestBody(frame.JpegBytes));
+            request.Content = new ByteArrayContent(BuildRequestBody(frame.JpegBytes, model));
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
             _log($"AI HUD: sending ONE frame ({frame.JpegBytes.Length / 1024} KB JPEG, source {frame.SourceWidth}x{frame.SourceHeight}) to {ProviderName} model {model}.");
@@ -250,6 +254,18 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
 
         if (status == HttpStatusCode.TooManyRequests)
             return Fail(AiHudOutcome.RateLimited, "HTTP 429", apiKey);
+
+        if (status == HttpStatusCode.NotFound && !fallbackTried)
+        {
+            // AIMODELFALLBACK_02 — a retired model: ask the key for its newest live one and try ONCE more.
+            fallbackTried = true;
+            string? live = await AiVisionProviders.FindLiveReplacementAsync(AiVisionProviders.Get(AiVendor.Google), apiKey, model, _log, timeoutCts.Token).ConfigureAwait(false);
+            if (live != null)
+            {
+                model = live;
+                goto sendAgain;
+            }
+        }
 
         if ((int)status < 200 || (int)status > 299)
             return Fail(AiHudOutcome.ModelError, $"HTTP {(int)status}: {Truncate(responseText, 300)}", apiKey);
@@ -304,7 +320,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
       + "\"minimap\", \"health bar\", \"ammo\", \"weapon slots\", \"team status\". confidence is 0..1. "
       + "Return at most 10 candidates. If there is no HUD, return {\"candidates\":[]}.";
 
-    internal static byte[] BuildRequestBody(byte[] jpeg)
+    internal static byte[] BuildRequestBody(byte[] jpeg, string? model = null)
     {
         var buffer = new ArrayBufferWriter<byte>(jpeg.Length * 4 / 3 + 4096);
         using (var w = new Utf8JsonWriter(buffer))
@@ -328,7 +344,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
             w.WriteEndArray();
 
             w.WriteStartObject("generationConfig");
-            w.WriteNumber("temperature", 0);
+            if (!GeminiClient.PrefersDefaultTemperature(model)) w.WriteNumber("temperature", 0); // AITEMP_02
             w.WriteString("responseMimeType", "application/json");
             w.WriteStartObject("responseSchema");
             w.WriteString("type", "OBJECT");

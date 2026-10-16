@@ -13,21 +13,60 @@ using FreeVideoStudio.App.Services;
 namespace FreeVideoStudio.App.Controls;
 
 /// <summary>
-/// UI-AIZOOM step 1 — first-run key setup. The test uses the model the user configured (not a
-/// hard-coded one), can be cancelled, and the key is saved through the sealed settings path
-/// (KEYPROTECT_01) only after Google accepted it.
+/// AISETUP_02 (docs/04 UI-AIZOOM) — the ONE "Connect your AI" window, opened by every AI feature that finds no
+/// key for its company (Smart Zoom, Commentary, Magic Wand, Music Auto-Fit, Viral Post). It used to be titled
+/// "AI Smart Tracking Setup / Start Using AI Zoom" even when opened from the Music wizard, and Claude / OpenAI
+/// users got a dead-end "go to Settings" message instead. Now the texts, key page and test follow the company
+/// the feature uses; the key is checked with that company and saved sealed (KEYPROTECT_01) only once accepted.
 /// </summary>
 public partial class AiSetupWizardWindow : Window
 {
     private CancellationTokenSource? _testCts;
+    private readonly AiVendor _vendor;
 
-    public AiSetupWizardWindow()
+    public AiSetupWizardWindow() : this(AiVendor.Google) { }
+
+    public AiSetupWizardWindow(AiVendor vendor)
     {
+        _vendor = vendor;
         InitializeComponent();
         var scope = this.FindNameScope();
+        string name = AiVisionProviders.DisplayName(vendor);
+
+        if (scope?.Find("WizardHeadline") is TextBlock headline) headline.Text = $"Connect {name}";
+        if (scope?.Find("Step1Title") is TextBlock s1) s1.Text = $"Step 1: Get your {name} key";
+        string[] lines = vendor switch
+        {
+            AiVendor.Anthropic => new[]
+            {
+                "1. Sign in to the Anthropic Console (add a payment method if asked).",
+                "2. Open Settings › API Keys and click Create Key.",
+                "3. Give it any name, e.g. Free Video Studio.",
+                "4. Copy the key (it starts with sk-ant-).",
+            },
+            AiVendor.OpenAI => new[]
+            {
+                "1. Sign in to the OpenAI platform (add a payment method if asked).",
+                "2. Open API keys and click Create new secret key.",
+                "3. Give it any name, e.g. Free Video Studio.",
+                "4. Copy the key (it starts with sk-).",
+            },
+            _ => new[]
+            {
+                "1. Sign in with any Google account.",
+                "2. Click the button to Create API Key.",
+                "3. Select 'Create in new project'.",
+                "4. Click the copy icon next to your generated key.",
+            },
+        };
+        for (int i = 0; i < lines.Length; i++)
+            if (scope?.Find($"Step1Line{i + 1}") is TextBlock line) line.Text = lines[i];
 
         if (scope?.Find("OpenAiStudioBtn") is Button openBtn)
-            openBtn.Click += (_, _) => OpenAiStudio();
+        {
+            openBtn.Content = $"Get a {name} key";
+            openBtn.Click += (_, _) => OpenKeyPage(vendor);
+        }
 
         var testBtn = scope?.Find("TestAndSaveBtn") as Button;
         var keyInput = scope?.Find("ApiKeyInputBox") as TextBox;
@@ -53,25 +92,24 @@ public partial class AiSetupWizardWindow : Window
                     return;
                 }
 
-                string model = GeminiClient.ResolveModel(SettingsManager.Instance.GeminiModelName);
                 testBtn.IsEnabled = false;
-                Status($"Contacting Google Gemini ({model})…", "AppTextMutedBrush");
+                Status($"Checking the key with {name}…", "AppTextMutedBrush");
                 _testCts?.Cancel();
                 _testCts = new CancellationTokenSource();
-                var (success, message) = await GeminiClient.Shared.TestKeyAsync(key, model, _testCts.Token);
+                var (success, message) = await TestKeyAsync(_vendor, key, _testCts.Token);
                 testBtn.IsEnabled = true;
 
                 if (success)
                 {
-                    bool saved = SettingsManager.Update(s => s.GeminiApiKey = key);
+                    bool saved = SettingsManager.Update(s => s.SetApiKey(_vendor, key));
                     if (saved)
                     {
-                        Status("Key verified and saved (encrypted for your Windows account).", "AppSuccessBrush");
+                        Status("Key verified and saved (encrypted for your Windows account). Press CONTINUE.", "AppSuccessBrush");
                         if (startBtn != null) startBtn.IsEnabled = true;
                     }
                     else
                     {
-                        Status("The key works, but it could not be saved. Try again, or add it in Settings › AI Tracking.", "AppDangerBrush");
+                        Status("The key works, but it could not be saved. Try again, or add it in Settings › AI Features.", "AppDangerBrush");
                     }
                 }
                 else
@@ -89,12 +127,37 @@ public partial class AiSetupWizardWindow : Window
         AttachTitleBarDrag();
     }
 
+    /// <summary>AISETUP_02 — checks a key with its company. Gemini: one tiny request; Claude / OpenAI: the model list. Never throws.</summary>
+    internal static async Task<(bool Success, string Message)> TestKeyAsync(AiVendor vendor, string key, CancellationToken ct)
+    {
+        if (vendor == AiVendor.Google)
+            return await GeminiClient.Shared.TestKeyAsync(key, AiVisionProviders.EffectiveModel(AiVendor.Google, GeminiClient.ResolveModel(SettingsManager.Instance.GeminiModelName)), ct);
+        try
+        {
+            var models = await AiVisionProviders.Get(vendor).ListModelsAsync(key, ct);
+            return (true, $"Key verified ({models.Count} models available).");
+        }
+        catch (AiProviderException ex)
+        {
+            RuntimeLog.Info("AiWizard", $"Key test failed for {vendor}: {ex.Kind}.");
+            return (false, ex.Message);
+        }
+        catch (OperationCanceledException ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            return (false, "Test cancelled.");
+        }
+    }
+
     /// <summary>Opens Google AI Studio's key page in the default browser. Never throws.</summary>
-    public static void OpenAiStudio()
+    public static void OpenAiStudio() => OpenKeyPage(AiVendor.Google);
+
+    /// <summary>Opens the key page of <paramref name="vendor"/> in the default browser. Never throws.</summary>
+    public static void OpenKeyPage(AiVendor vendor)
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = GeminiClient.AiStudioKeyUrl, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = AiVisionProviders.KeyPageUrl(vendor), UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -128,21 +191,9 @@ public partial class AiSetupWizardWindow : Window
             return true;
         }
 
-        if (vendor == AiVendor.Google)
-        {
-            var wizard = new AiSetupWizardWindow();
-            bool? result = await wizard.ShowDialog<bool?>(owner);
-            return result == true && !string.IsNullOrWhiteSpace(SettingsManager.Instance.GeminiApiKey);
-        }
-
-        string vendorName = vendor switch
-        {
-            AiVendor.Anthropic => "Anthropic Claude",
-            AiVendor.OpenAI => "OpenAI",
-            _ => "Google Gemini",
-        };
-        await ErrorReporter.ShowAsync(owner, $"{vendorName} API Key Required",
-            $"No API key is configured for {vendorName}.\n\nPlease go to Settings › AI Providers to enter your {vendorName} API key.");
-        return false;
+        // AISETUP_02 — the same in-place setup for every company (Claude / OpenAI used to dead-end).
+        var wizard = new AiSetupWizardWindow(vendor);
+        bool? result = await wizard.ShowDialog<bool?>(owner);
+        return result == true && !string.IsNullOrWhiteSpace(SettingsManager.Instance.GetApiKey(vendor));
     }
 }

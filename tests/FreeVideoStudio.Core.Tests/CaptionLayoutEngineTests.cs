@@ -32,6 +32,39 @@ public sealed class CaptionLayoutEngineTests
 
         Assert.NotEmpty(layout.Lines);
         Assert.True(layout.Lines.Count <= CaptionLayoutEngine.MaxLinesOnScreen, "Must not exceed 2 lines on screen");
+
+        // AICAPTION_LAYOUT_02 — bigger text, centred on the line between the upper 2/3 and the lower 1/3 (y = 1280).
+        Assert.Equal(CaptionLayoutEngine.PortraitFontSize, layout.FontSize);
+        Assert.InRange(layout.BoxY + layout.BoxHeight / 2.0, 1275.0, 1285.0);
+    }
+
+    [Fact]
+    public void ComputeLayout_PortraitDefault_ClimbsAboveEveryOverlappingHudPiece()
+    {
+        // AICAPTION_LAYOUT_02 — two stacked HUD pieces under the 2/3 line: the caption ends above BOTH.
+        var line = new CaptionLine(1, 1.0, 3.5, "Pushing up the hill now");
+        var track = new CaptionTrack(CaptionStyle.Karaoke, CaptionPosition.BottomContent, CaptionTone.Hype, "en", new[] { line });
+        var mapped = CaptionTimeline.Map(track, null)[0];
+        var hud = new List<(double X, double Y, double W, double H)> { (0, 1300, 1080, 120), (0, 1180, 1080, 100) };
+
+        var layout = CaptionLayoutEngine.ComputeLayout(mapped, 1080, 1920, true, CaptionPosition.BottomContent, hud);
+
+        Assert.True(layout.BoxY + layout.BoxHeight <= 1180 - CaptionLayoutEngine.HudGapPx + 0.5, $"bottom {layout.BoxY + layout.BoxHeight}");
+    }
+
+    [Fact]
+    public void HudCanvasRects_ReadTheUsersCropLayout()
+    {
+        // The values of a real Fortnite layout: overlay positions are already finished-canvas pixels.
+        var coords = System.Text.Json.Nodes.JsonNode.Parse("""
+            {"crops_1080p":{"loot":[520,176,1416,1389],"normal_hp":[496,92,-852,1465],"team":[275,183,-883,1254]},
+             "scales":{"loot":"521/520","normal_hp":"255/248","team":"278/275"},
+             "overlays":{"loot":{"x":540,"y":1462},"normal_hp":{"x":19,"y":1503},"team":{"x":0,"y":150}}}
+            """)!.AsObject();
+        var rects = MobileFilterBuilder.HudCanvasRects(coords, showTeammates: false, showSpectating: true);
+        Assert.Equal(2, rects.Count); // team hidden
+        Assert.Contains(rects, r => r.X == 540 && r.Y == 1462 && Math.Abs(r.W - 521) < 1);
+        Assert.Contains(rects, r => r.X == 19 && r.Y == 1503);
     }
 
     [Fact]
@@ -93,8 +126,9 @@ public sealed class CaptionLayoutEngineTests
             isPortrait: false,
             position: CaptionPosition.BottomContent);
 
-        // Lower third is roughly y >= 720
-        Assert.True(layout.BoxY >= 720.0, "Must sit in lower third in landscape mode");
+        // AICAPTION_LAYOUT_02 — the default caption is centred on the 2/3 line (y = 720 on 1080).
+        Assert.InRange(layout.BoxY + layout.BoxHeight / 2.0, 715.0, 725.0);
+        Assert.Equal(CaptionLayoutEngine.LandscapeFontSize, layout.FontSize);
         Assert.True(layout.BoxY + layout.BoxHeight <= 1060.0, "Must respect bottom margin");
         Assert.True(layout.BoxX >= 100.0, "Must respect left safe margin");
         Assert.True(layout.BoxX + layout.BoxWidth <= 1820.0, "Must respect right safe margin");

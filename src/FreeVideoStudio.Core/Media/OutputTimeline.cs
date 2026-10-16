@@ -127,6 +127,39 @@ public sealed class OutputTimeline
     /// <summary>Length of the trimmed source clip, in seconds. Speed and freezes do not affect it.</summary>
     public double TotalSourceSeconds => _totalSourceSec;
 
+    /// <summary>ABSOLUTE source second that clip-relative 0 corresponds to (the trim start).</summary>
+    public double OriginSec => _originSec;
+
+    /// <summary>
+    /// AISPEEDMAP_01 — how the ABSOLUTE source range [<paramref name="absStartSec"/>, <paramref name="absEndSec"/>]
+    /// plays in the finished video: every overlapping normal chunk (with its speed), freeze and cut, in
+    /// ABSOLUTE source seconds. AI features read this so their timing is judged as the viewer sees it.
+    /// </summary>
+    public IReadOnlyList<PlaybackSpan> DescribeSourceRange(double absStartSec, double absEndSec)
+    {
+        var spans = new List<PlaybackSpan>();
+        double a = ToClipRelative(absStartSec), b = ToClipRelative(absEndSec);
+        if (b <= a) return spans;
+        foreach (var ch in _chunks)
+        {
+            if (ch.IsInsertion) continue;
+            if (ch.HoldsSource)
+            {
+                if (ch.SourceStartSec >= a - 0.001 && ch.SourceStartSec <= b + 0.001)
+                    spans.Add(new PlaybackSpan(_originSec + ch.SourceStartSec, _originSec + ch.SourceStartSec, 0, ch.FreezeHoldSec, false));
+                continue;
+            }
+            double s = Math.Max(a, ch.SourceStartSec), e = Math.Min(b, ch.SourceEndSec);
+            if (e <= s + 0.001) continue;
+            spans.Add(new PlaybackSpan(_originSec + s, _originSec + e, ch.IsCut ? 0 : ch.Speed, 0, ch.IsCut));
+        }
+        return spans;
+    }
+
+    /// <summary>AISPEEDMAP_01 — one stretch of source and how it plays. <see cref="Speed"/> 0 with
+    /// <see cref="FreezeHoldSec"/> &gt; 0 is a held frame; <see cref="IsCut"/> means it is not in the video.</summary>
+    public readonly record struct PlaybackSpan(double AbsStartSec, double AbsEndSec, double Speed, double FreezeHoldSec, bool IsCut);
+
     /// <summary>
     /// Length of the FINISHED video in seconds, with every speed change and freeze applied.
     /// This is the number every ruler in the application should be drawn against.

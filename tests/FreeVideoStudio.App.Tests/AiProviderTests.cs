@@ -34,7 +34,7 @@ public sealed class AiProviderTests
     {
         var provider = new GeminiProvider();
         Assert.Equal(AiVendor.Google, provider.Vendor);
-        Assert.Equal("gemini-2.5-flash", provider.DefaultModel);
+        Assert.Equal("gemini-3.8-flash", provider.DefaultModel);
     }
 
     [Fact]
@@ -63,7 +63,8 @@ public sealed class AiProviderTests
         Assert.True(root.TryGetProperty("generationConfig", out JsonElement genConfig));
 
         Assert.Equal("application/json", genConfig.GetProperty("responseMimeType").GetString());
-        Assert.Equal(0, genConfig.GetProperty("temperature").GetInt32());
+        // AITEMP_02 — no temperature given = the model's own default: the field is absent.
+        Assert.False(genConfig.TryGetProperty("temperature", out _));
         Assert.True(genConfig.TryGetProperty("thinkingConfig", out JsonElement thinking));
         Assert.Equal(4096, thinking.GetProperty("thinkingBudget").GetInt32());
 

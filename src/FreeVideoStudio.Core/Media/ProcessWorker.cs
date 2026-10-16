@@ -1466,13 +1466,24 @@ public class ProcessWorker : IDisposable
                     int canvasWidth = IsMobileFormat ? 1080 : origW;
                     int canvasHeight = IsMobileFormat ? 1920 : origH;
 
+                    // AICAPTION_LAYOUT_02 — in portrait the captions keep clear of the user's own HUD layout
+                    // (health, shield, stamina, hotbar…); AICAPTION_MEMESHIFT_01 — memes spliced into the video
+                    // push the captions after them later, because the burn-in runs on the finished stream.
+                    var captionHud = IsMobileFormat
+                        ? MobileFilterBuilder.HudCanvasRects(mobileCoords, ShowTeammates, ShowSpectating)
+                        : null;
+                    var captionSplices = memes.Where(m => m.DurationSec > 0)
+                        .Select(m => (m.CutOutputSec, m.DurationSec))
+                        .ToList();
                     string assContent = CaptionAssWriter.GenerateAss(
                         CaptionTrack,
                         timeline,
                         canvasWidth,
                         canvasHeight,
                         isPortrait: IsMobileFormat,
-                        baseOffsetSec: introDurationSec);
+                        hudRects: captionHud,
+                        baseOffsetSec: introDurationSec,
+                        splices: captionSplices);
 
                     string assPath = Path.Combine(tempJobDir, "captions.ass");
                     await File.WriteAllTextAsync(assPath, assContent, cancellationToken).ConfigureAwait(false);
@@ -1480,7 +1491,7 @@ public class ProcessWorker : IDisposable
                     string escapedAssPath = assPath.Replace('\\', '/').Replace(":", @"\:");
                     coreFilters.Add($"{vOutputFinal}subtitles=filename='{escapedAssPath}'[v_subtitled]");
                     vOutputFinal = "[v_subtitled]";
-                    CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Burn-in captions track ({CaptionTrack.Lines.Count} line(s)) via ASS subtitle filter.");
+                    CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Burn-in captions track ({CaptionTrack.Lines.Count} line(s)) via ASS subtitle filter; {captionHud?.Count ?? 0} HUD area(s) avoided, {captionSplices.Count} meme splice(s) accounted for.");
                 }
 
                 string filterScript = string.Join(";", coreFilters.Where(p => !string.IsNullOrEmpty(p)));

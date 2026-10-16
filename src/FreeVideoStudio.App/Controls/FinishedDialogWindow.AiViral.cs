@@ -12,14 +12,23 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.Controls;
 
+/// <summary>
+/// AIVIRAL_HONEST_01 — the Viral Post card on the Finished screen. The badge always says what really
+/// happened (WRITING… / AI WRITTEN / NO AI KEY / AI FAILED); a stock template is never shown as an AI answer.
+/// NEW VERSION asks again for a different take (creative temperature, previous title passed as "avoid").
+/// </summary>
 public partial class FinishedDialogWindow
 {
     private CancellationTokenSource? _viralPostCts;
     private ViralPostResult? _viralPostResult;
+    private string? _viralVideoPath;
+    private bool _viralCloseHooked;
+
+    private T? FindViral<T>(string name) where T : class => this.FindNameScope()?.Find(name) as T;
 
     private void StartViralPostGeneration(string videoPath)
     {
-        var card = this.FindNameScope()?.Find("ViralPostCard") as Border;
+        var card = FindViral<Border>("ViralPostCard");
         if (card == null) return;
 
         if (!SettingsManager.Instance.AiViralPostHelperEnabled)
@@ -28,82 +37,114 @@ public partial class FinishedDialogWindow
             return;
         }
 
+        if (!_viralCloseHooked)
+        {
+            _viralCloseHooked = true;
+            Closed += (_, _) => { _viralPostCts?.Cancel(); _viralPostCts?.Dispose(); _viralPostCts = null; };
+        }
+
+        _viralVideoPath = videoPath;
         card.IsVisible = true;
-        var statusBadge = this.FindNameScope()?.Find("ViralPostStatusBadge") as TextBlock;
-        if (statusBadge != null) statusBadge.Text = "GENERATING 2026 HOOKS…";
+        RequestViralPost(avoidTitle: null);
+    }
 
-        var titleBox = this.FindNameScope()?.Find("ViralTitleTextBox") as TextBox;
-        if (titleBox != null) titleBox.Text = "Analyzing video highlights…";
+    private void RequestViralPost(string? avoidTitle)
+    {
+        string? videoPath = _viralVideoPath;
+        if (string.IsNullOrEmpty(videoPath)) return;
 
-        var descBox = this.FindNameScope()?.Find("ViralDescriptionTextBox") as TextBox;
-        if (descBox != null) descBox.Text = "Formulating viral hooks and trending hashtags…";
+        ShowViralState("WRITING…", message: "Looking at your video and writing a title, caption and hashtags…",
+            showText: false, showRegenerate: false, showSetup: false);
 
         _viralPostCts?.Cancel();
         _viralPostCts?.Dispose();
         var cts = new CancellationTokenSource();
         _viralPostCts = cts;
 
+        var settings = SettingsManager.Instance;
+        var config = settings.GetUsageConfig(AiUsage.ViralPost);
+        string apiKey = settings.GetApiKey(config.Vendor);
+        string model = settings.GetEffectiveModel(AiUsage.ViralPost);
+        string ffmpegPath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
+
         _ = Task.Run(async () =>
         {
+            ViralPostOutcome outcome;
             try
             {
-                var settings = SettingsManager.Instance;
-                var config = settings.GetUsageConfig(AiUsage.ViralPost);
-                string apiKey = settings.GetApiKey(config.Vendor);
-                string ffmpegPath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
-
-                var result = await AiViralPostService.GenerateViralPostAsync(
-                    ffmpegPath,
-                    videoPath,
-                    config.Vendor,
-                    apiKey,
-                    config.Model,
-                    cts.Token).ConfigureAwait(false);
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (cts.IsCancellationRequested) return;
-                    _viralPostResult = result;
-                    if (titleBox != null) titleBox.Text = result?.Title ?? "Bro thought he was safe... 💀";
-                    if (descBox != null) descBox.Text = result?.FormattedDescription ?? "#gaming #clutch #fyp #viral #shorts";
-                    if (statusBadge != null) statusBadge.Text = string.IsNullOrWhiteSpace(apiKey) ? "OFFLINE TEMPLATE" : "AI GENERATED";
-                });
+                outcome = await AiViralPostService.GenerateAsync(ffmpegPath, videoPath, config.Vendor, apiKey, model, avoidTitle, cts.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
             catch (Exception ex)
             {
                 RuntimeLog.Swallowed(ex);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (cts.IsCancellationRequested) return;
-                    if (titleBox != null) titleBox.Text = "Bro thought he was safe... 💀";
-                    if (descBox != null) descBox.Text = "Rate this clip 1-10 in the comments 👇\n\n#gaming #clutch #fyp #viral #shorts";
-                    if (statusBadge != null) statusBadge.Text = "TEMPLATE FALLBACK";
-                });
+                outcome = new ViralPostOutcome(ViralPostStatus.Failed, null, "Something went wrong while writing the post. Try again.");
             }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (cts.IsCancellationRequested) return;
+                ApplyViralOutcome(outcome);
+            });
         });
     }
 
-    private void OnCopyViralTitleClicked(object? sender, RoutedEventArgs e)
+    private void ApplyViralOutcome(ViralPostOutcome outcome)
+    {
+        switch (outcome.Status)
+        {
+            case ViralPostStatus.AiGenerated when outcome.Post != null:
+                _viralPostResult = outcome.Post;
+                if (FindViral<TextBox>("ViralTitleTextBox") is { } title) title.Text = outcome.Post.Title;
+                if (FindViral<TextBox>("ViralDescriptionTextBox") is { } desc) desc.Text = outcome.Post.FormattedDescription;
+                ResetCopyButtons();
+                ShowViralState("AI WRITTEN", message: null, showText: true, showRegenerate: true, showSetup: false);
+                break;
+            case ViralPostStatus.NoKey:
+                _viralPostResult = null;
+                ShowViralState("NO AI KEY", outcome.Message, showText: false, showRegenerate: false, showSetup: true);
+                break;
+            default:
+                _viralPostResult = null;
+                ShowViralState("AI FAILED", outcome.Message ?? "The AI could not write the post.", showText: false, showRegenerate: true, showSetup: false);
+                if (FindViral<Button>("ViralRegenerateBtn") is { } retry) retry.Content = "↻ RETRY";
+                break;
+        }
+    }
+
+    private void ShowViralState(string badge, string? message, bool showText, bool showRegenerate, bool showSetup)
+    {
+        if (FindViral<TextBlock>("ViralPostStatusBadge") is { } b) b.Text = badge;
+        if (FindViral<TextBlock>("ViralPostMessageText") is { } m)
+        {
+            m.Text = message ?? string.Empty;
+            m.IsVisible = !string.IsNullOrWhiteSpace(message);
+        }
+        if (FindViral<Grid>("ViralTitleRow") is { } tr) tr.IsVisible = showText;
+        if (FindViral<Grid>("ViralCaptionRow") is { } cr) cr.IsVisible = showText;
+        if (FindViral<Button>("ViralRegenerateBtn") is { } rb)
+        {
+            rb.IsVisible = showRegenerate;
+            rb.Content = "↻ NEW VERSION";
+        }
+        if (FindViral<Button>("ViralSetupAiBtn") is { } sb) sb.IsVisible = showSetup;
+    }
+
+    private void OnViralRegenerateClicked(object? sender, RoutedEventArgs e)
+        => RequestViralPost(_viralPostResult?.Title);
+
+    private void OnViralSetupAiClicked(object? sender, RoutedEventArgs e) => _ = SetupAiAndRetryAsync();
+
+    private async Task SetupAiAndRetryAsync()
     {
         try
         {
-            var titleBox = this.FindNameScope()?.Find("ViralTitleTextBox") as TextBox;
-            string text = titleBox?.Text ?? _viralPostResult?.Title ?? "";
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                var top = TopLevel.GetTopLevel(this);
-                if (top?.Clipboard != null)
-                {
-                    _ = top.Clipboard.SetTextAsync(text);
-                }
-            }
-
-            var btn = this.FindNameScope()?.Find("CopyViralTitleBtn") as Button;
-            if (btn != null)
-            {
-                btn.Content = "✅ COPIED!";
-            }
+            var vendor = SettingsManager.Instance.GetUsageConfig(AiUsage.ViralPost).Vendor;
+            if (await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor))
+                RequestViralPost(avoidTitle: null);
         }
         catch (Exception ex)
         {
@@ -111,30 +152,33 @@ public partial class FinishedDialogWindow
         }
     }
 
+    private void OnCopyViralTitleClicked(object? sender, RoutedEventArgs e)
+        => CopyViralText(FindViral<TextBox>("ViralTitleTextBox")?.Text ?? _viralPostResult?.Title, "CopyViralTitleBtn", "📋 COPY TITLE");
+
     private void OnCopyViralDescriptionClicked(object? sender, RoutedEventArgs e)
+        => CopyViralText(FindViral<TextBox>("ViralDescriptionTextBox")?.Text ?? _viralPostResult?.FormattedDescription, "CopyViralDescBtn", "📋 COPY CAPTION");
+
+    /// <summary>Copies, shows "✅ COPIED!" for two seconds, then puts the label back so the next copy is visible too.</summary>
+    private void CopyViralText(string? text, string buttonName, string idleLabel)
     {
         try
         {
-            var descBox = this.FindNameScope()?.Find("ViralDescriptionTextBox") as TextBox;
-            string text = descBox?.Text ?? _viralPostResult?.FormattedDescription ?? "";
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                var top = TopLevel.GetTopLevel(this);
-                if (top?.Clipboard != null)
-                {
-                    _ = top.Clipboard.SetTextAsync(text);
-                }
-            }
+            if (!string.IsNullOrWhiteSpace(text) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                _ = clipboard.SetTextAsync(text);
 
-            var btn = this.FindNameScope()?.Find("CopyViralDescBtn") as Button;
-            if (btn != null)
-            {
-                btn.Content = "✅ COPIED!";
-            }
+            if (FindViral<Button>(buttonName) is not { } btn) return;
+            btn.Content = "✅ COPIED!";
+            DispatcherTimer.RunOnce(() => btn.Content = idleLabel, TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
         {
             RuntimeLog.Swallowed(ex);
         }
+    }
+
+    private void ResetCopyButtons()
+    {
+        if (FindViral<Button>("CopyViralTitleBtn") is { } a) a.Content = "📋 COPY TITLE";
+        if (FindViral<Button>("CopyViralDescBtn") is { } b) b.Content = "📋 COPY CAPTION";
     }
 }
