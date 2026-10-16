@@ -314,20 +314,6 @@ public sealed record ProjectDocument
         }
         return true;
     }
-
-    private static string SafeTitleFrom(string path)
-    {
-        try
-        {
-            string name = Path.GetFileNameWithoutExtension(path);
-            return string.IsNullOrWhiteSpace(name) ? "Untitled" : name;
-        }
-        catch (ArgumentException swallowed)
-        {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
-            return "Untitled";
-        }
-    }
 }
 
 /// <summary>PROJ_05 — the answer to "is the footage still what this project was cut against?".</summary>

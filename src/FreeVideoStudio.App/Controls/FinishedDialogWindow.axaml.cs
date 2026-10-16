@@ -1,4 +1,4 @@
-﻿
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -13,6 +13,7 @@ namespace FreeVideoStudio.App.Controls;
 public partial class FinishedDialogWindow : Window
 {
     private string _outputPath = "";
+    private string? _attributionText;
     
     public int DialogResult { get; private set; } = 0;
 
@@ -37,6 +38,40 @@ public partial class FinishedDialogWindow : Window
         if (txt != null)
         {
             txt.Text = $"File successfully saved to:\n{path}";
+        }
+    }
+
+    public void SetAttributionText(string? text)
+    {
+        _attributionText = text;
+        var card = this.FindNameScope()?.Find("AttributionCard") as Border;
+        if (card != null)
+        {
+            card.IsVisible = !string.IsNullOrWhiteSpace(_attributionText);
+        }
+    }
+
+    private void OnCopyCreditClicked(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var top = TopLevel.GetTopLevel(this);
+            if (top?.Clipboard != null && !string.IsNullOrEmpty(_attributionText))
+            {
+                _ = top.Clipboard.SetTextAsync(_attributionText);
+            }
+
+            var btn = this.FindNameScope()?.Find("FinishedCopyCreditBtn") as Button;
+            if (btn != null)
+            {
+                btn.Content = "✅ COPIED!";
+                btn.Classes.Clear();
+                btn.Classes.Add("Success");
+            }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
         }
     }
 
@@ -124,6 +159,10 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
+            if (!string.IsNullOrEmpty(_attributionText))
+            {
+                _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);
+            }
             Process.Start(new ProcessStartInfo
             {
                 FileName = "https://studio.youtube.com/",
@@ -140,6 +179,10 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
+            if (!string.IsNullOrEmpty(_attributionText))
+            {
+                _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);
+            }
             Process.Start(new ProcessStartInfo
             {
                 FileName = "https://www.tiktok.com/creator-center/upload",

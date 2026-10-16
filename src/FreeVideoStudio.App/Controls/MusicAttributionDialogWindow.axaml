@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
+        x:Class="FreeVideoStudio.App.Controls.MusicAttributionDialogWindow"
+        Title="Music Credit — Avoid YouTube / TikTok Mute"
+        MinWidth="540" MinHeight="420" MaxWidth="680" SizeToContent="WidthAndHeight"
+        Background="{DynamicResource AppSurfaceBrush}"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="30">
+
+    <Grid>
+        <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
+            <Grid RowDefinitions="30, Auto, *, Auto">
+                <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                    <TextBlock Text="Music Credit — Prevent Mute" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                </Border>
+
+                <!-- Warning Banner & Oversimplified Instructions -->
+                <StackPanel Grid.Row="1" Margin="24,18,24,10" Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="⚠️" FontSize="{DynamicResource AppFontSize18}" VerticalAlignment="Center"/>
+                        <TextBlock Text="CREDIT REQUIRED TO AVOID MUTE" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" Foreground="{DynamicResource AppWarningBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Your video has background music that requires a credit to prevent automatic muting or copyright blocks on YouTube and TikTok."
+                               Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+                    
+                    <Border Background="{DynamicResource AppPanelBrush}" CornerRadius="6" Padding="12,10" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="HOW TO USE (EASY 2 STEPS):" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppAccentBrush}"/>
+                            <TextBlock Text="1. Click [COPY CREDIT TO CLIPBOARD] below." FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                            <TextBlock Text="2. When uploading your video:" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                            <TextBlock Text="   • YouTube: Paste into the video Description" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" Margin="8,0,0,0"/>
+                            <TextBlock Text="   • TikTok: Paste into the video Caption" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Credit text box -->
+                <Border Grid.Row="2" Margin="24,4,24,16" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" Padding="10">
+                    <ScrollViewer MaxHeight="130" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <TextBox Name="AttributionTextBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                 Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"
+                                 TextWrapping="Wrap" AcceptsReturn="True"/>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Action buttons -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,0,0,24">
+                    <Button Name="CopyCreditButton" Classes="Primary" MinWidth="240" Cursor="Hand" Click="OnCopyCreditClicked"
+                            AutomationProperties.Name="Copy credit to clipboard">
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Name="CopyIcon" Text="📋" FontSize="{DynamicResource AppFontSize14}" VerticalAlignment="Center"/>
+                            <TextBlock Name="CopyButtonText" Text="COPY CREDIT TO CLIPBOARD" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Name="GotItButton" Classes="Secondary" Content="GOT IT, CONTINUE" MinWidth="150" Cursor="Hand" Click="OnGotItClicked"
+                            AutomationProperties.Name="Close dialog and continue"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -425,4 +425,96 @@ public sealed class VideoMergerQueueOccurrenceTests : IDisposable
             window.Close();
         }
     }
+
+    [AvaloniaFact]
+    public void MultiSelect_MoveUpAndDown_PreservesRelativeOrder_AndUpdatesSelection()
+    {
+        var window = CreateWindow();
+        try
+        {
+            string a = @"C:\c\a.mp4";
+            string b = @"C:\c\b.mp4";
+            string c = @"C:\c\c.mp4";
+            string d = @"C:\c\d.mp4";
+            window.VideoQueue.Add(a);
+            window.VideoQueue.Add(b);
+            window.VideoQueue.Add(c);
+            window.VideoQueue.Add(d);
+
+            var ids = window.CurrentQueueClipIds;
+            var (idA, idB, idC, idD) = (ids[0], ids[1], ids[2], ids[3]);
+
+            // Multi-select B and C (indices 1 and 2)
+            window.SelectQueueRowsForTesting(new[] { 1, 2 });
+            Assert.Equal(new[] { 1, 2 }, window.SelectedQueueIndicesForTesting());
+
+            // Move Up: [A, B, C, D] -> [B, C, A, D]
+            window.MoveVideoForTesting(-1);
+
+            Assert.Equal(new[] { b, c, a, d }, window.VideoQueue);
+            Assert.Equal(new[] { idB, idC, idA, idD }, window.CurrentQueueClipIds);
+            Assert.Equal(new[] { 0, 1 }, window.SelectedQueueIndicesForTesting());
+
+            // At top boundary: Move Up should no-op
+            window.MoveVideoForTesting(-1);
+            Assert.Equal(new[] { b, c, a, d }, window.VideoQueue);
+            Assert.Equal(new[] { 0, 1 }, window.SelectedQueueIndicesForTesting());
+
+            // Move Down: [B, C, A, D] -> [A, B, C, D]
+            window.MoveVideoForTesting(1);
+            Assert.Equal(new[] { a, b, c, d }, window.VideoQueue);
+            Assert.Equal(new[] { idA, idB, idC, idD }, window.CurrentQueueClipIds);
+            Assert.Equal(new[] { 1, 2 }, window.SelectedQueueIndicesForTesting());
+        }
+        finally
+        {
+            window.IsSafeToClose = true;
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void MultiSelect_DeleteKey_RemovesAllSelectedClips()
+    {
+        var window = CreateWindow();
+        try
+        {
+            string a = @"C:\c\a.mp4";
+            string b = @"C:\c\b.mp4";
+            string c = @"C:\c\c.mp4";
+            string d = @"C:\c\d.mp4";
+            window.VideoQueue.Add(a);
+            window.VideoQueue.Add(b);
+            window.VideoQueue.Add(c);
+            window.VideoQueue.Add(d);
+
+            var ids = window.CurrentQueueClipIds;
+            var (idA, idD) = (ids[0], ids[3]);
+
+            // Disable confirmation dialog for test
+            window.RemoveConfirmOverride = () => Task.FromResult(true);
+
+            // Multi-select B and C (indices 1 and 2)
+            window.SelectQueueRowsForTesting(new[] { 1, 2 });
+            Assert.Equal(new[] { 1, 2 }, window.SelectedQueueIndicesForTesting());
+
+            // Trigger Delete Key
+            var deleteKey = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Delete,
+                KeyModifiers = KeyModifiers.None
+            };
+            window.TriggerClipActionsKeyDownForTesting(deleteKey);
+
+            // Remaining queue should be [A, D]
+            Assert.Equal(new[] { a, d }, window.VideoQueue);
+            Assert.Equal(new[] { idA, idD }, window.CurrentQueueClipIds);
+        }
+        finally
+        {
+            window.IsSafeToClose = true;
+            window.Close();
+        }
+    }
 }

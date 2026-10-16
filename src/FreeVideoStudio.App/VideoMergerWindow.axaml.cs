@@ -1,6 +1,7 @@
 // [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia;
 using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -149,9 +150,10 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             videoList.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, VideoList_DragOver);
             videoList.AddHandler(Avalonia.Input.DragDrop.DragLeaveEvent, VideoList_DragLeave);
             videoList.AddHandler(Avalonia.Input.DragDrop.DropEvent, VideoList_Drop);
-            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true); // MERGERUX_01 (P10 R-a) — the row handles the press for selection
+            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true); // MERGERUX_01 (P10 R-a) — tunnel to capture pre-click selection state
             videoList.AddHandler(Avalonia.Input.InputElement.PointerMovedEvent, VideoList_PointerMoved, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
             videoList.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, VideoList_PointerReleased, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+            videoList.AddHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, VideoList_PointerCaptureLost, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
         }
         VideoQueue.CollectionChanged += VideoQueue_CollectionChanged;
 
@@ -1204,8 +1206,21 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                     if (success)
                     {
                         SetQueueStatus("Merge completed successfully.", false);
+                        string? attribution = FreeVideoStudio.App.Infrastructure.MusicAttributionHelper.ResolveAttribution(
+                            _musicResult?.MusicFilePaths != null && _musicResult.MusicFilePaths.Count > 0
+                                ? _musicResult.MusicFilePaths
+                                : (_musicResult?.MusicFilePath != null ? new[] { _musicResult.MusicFilePath } : null));
+
+                        if (!string.IsNullOrEmpty(attribution))
+                        {
+                            var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
+                            attrDlg.SetAttributionText(attribution);
+                            await attrDlg.ShowDialog(this);
+                        }
+
                         var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
                         dlg.SetOutputPath(msg);
+                        if (!string.IsNullOrEmpty(attribution)) dlg.SetAttributionText(attribution);
                         await dlg.ShowDialog(this);
                         if (dlg.DialogResult == 1) Close();
                     }
@@ -1807,21 +1822,31 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private Avalonia.Point? _videoDragStartPoint;
     private bool _isVideoDragging;
+    private bool _isRubberbanding;
+    private bool _dragItemWasSelected;
+    private ListBoxItem? _dragStartItem;
+    private List<int>? _dragInitialSelection;
 
     private void VideoList_PointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
-        var point = e.GetCurrentPoint(sender as Avalonia.Controls.Control);
-        if (point.Properties.IsLeftButtonPressed) { _videoDragStartPoint = point.Position; return; }
-
-        if (!point.Properties.IsRightButtonPressed) return;
-
         var list = VideoListCtl;
         if (list == null) return;
 
+        var point = e.GetCurrentPoint(list);
         var item = (e.Source as Avalonia.Controls.Control)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
-        if (item == null) return;
+        int clickedIndex = item != null ? list.IndexFromContainer(item) : -1;
 
-        int clickedIndex = list.IndexFromContainer(item);
+        if (point.Properties.IsLeftButtonPressed)
+        {
+            _videoDragStartPoint = point.Position;
+            _dragStartItem = item;
+            _dragItemWasSelected = clickedIndex >= 0 && SelectedQueueIndices().Contains(clickedIndex);
+            _dragInitialSelection = SelectedQueueIndices();
+            return;
+        }
+
+        if (!point.Properties.IsRightButtonPressed) return;
+
         if (clickedIndex < 0 || clickedIndex >= VideoQueue.Count) return;
 
         if (!SelectedQueueIndices().Contains(clickedIndex))
@@ -1833,36 +1858,128 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private async void VideoList_PointerMoved(object? sender, Avalonia.Input.PointerEventArgs e)
     {
-        if (_videoDragStartPoint.HasValue && !_isVideoDragging)
+        var videoList = VideoListCtl;
+        if (videoList == null || !_videoDragStartPoint.HasValue || _isVideoDragging) return;
+
+        var point = e.GetCurrentPoint(videoList);
+        var diff = point.Position - _videoDragStartPoint.Value;
+        double dist = Math.Max(Math.Abs(diff.X), Math.Abs(diff.Y));
+
+        if (!_isRubberbanding && dist > 5)
         {
-            var point = e.GetCurrentPoint(sender as Avalonia.Controls.Control);
-            var diff = point.Position - _videoDragStartPoint.Value;
-            if (Math.Abs(diff.X) > 3 || Math.Abs(diff.Y) > 3)
+            // If dragging an already-selected item without modifier keys, start reordering drag-drop
+            if (_dragItemWasSelected && e.KeyModifiers == Avalonia.Input.KeyModifiers.None && _dragStartItem != null)
             {
-                var videoList = VideoListCtl;
-                if (videoList == null) return;
-                var item = (e.Source as Avalonia.Controls.Control)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
-                if (item == null) return;
-                int fromIndex = videoList.IndexFromContainer(item);
-                if (fromIndex < 0 || fromIndex >= VideoQueue.Count) return;
+                int fromIndex = videoList.IndexFromContainer(_dragStartItem);
+                if (fromIndex >= 0 && fromIndex < VideoQueue.Count)
+                {
+                    _clipIds.EnsureCount(VideoQueue.Count);
+                    Guid clipId = _clipIds.Ids[fromIndex];
 
-                _clipIds.EnsureCount(VideoQueue.Count);
-                Guid clipId = _clipIds.Ids[fromIndex];
+                    _isVideoDragging = true;
+                    _dragStartItem.Opacity = 0.3;
 
-                _isVideoDragging = true;
-                item.Opacity = 0.3;
-
-                var dragData = new Avalonia.Input.DataTransfer();
-                dragData.Add(Avalonia.Input.DataTransferItem.Create(VideoItemFormat, clipId.ToString()));
-                await Avalonia.Input.DragDrop.DoDragDropAsync(e, dragData, Avalonia.Input.DragDropEffects.Move);
-                _videoDragStartPoint = null;
-                _isVideoDragging = false;
-                item.Opacity = 1.0;
+                    var dragData = new Avalonia.Input.DataTransfer();
+                    dragData.Add(Avalonia.Input.DataTransferItem.Create(VideoItemFormat, clipId.ToString()));
+                    await Avalonia.Input.DragDrop.DoDragDropAsync(e, dragData, Avalonia.Input.DragDropEffects.Move);
+                    _videoDragStartPoint = null;
+                    _isVideoDragging = false;
+                    _dragStartItem.Opacity = 1.0;
+                    return;
+                }
             }
+
+            // Otherwise initiate rubberband (marquee) selection
+            _isRubberbanding = true;
+            e.Pointer.Capture(videoList);
+        }
+
+        if (_isRubberbanding)
+        {
+            double rx = Math.Min(_videoDragStartPoint.Value.X, point.Position.X);
+            double ry = Math.Min(_videoDragStartPoint.Value.Y, point.Position.Y);
+            double rw = Math.Max(1, Math.Abs(point.Position.X - _videoDragStartPoint.Value.X));
+            double rh = Math.Max(1, Math.Abs(point.Position.Y - _videoDragStartPoint.Value.Y));
+
+            var rubberband = this.FindNameScope()?.Find("VideoListRubberband") as Avalonia.Controls.Shapes.Rectangle;
+            if (rubberband != null)
+            {
+                Avalonia.Controls.Canvas.SetLeft(rubberband, rx);
+                Avalonia.Controls.Canvas.SetTop(rubberband, ry);
+                rubberband.Width = rw;
+                rubberband.Height = rh;
+                rubberband.IsVisible = true;
+            }
+
+            var marqueeRect = new Avalonia.Rect(rx, ry, rw, rh);
+            var intersected = new HashSet<int>();
+            if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) && _dragInitialSelection != null)
+            {
+                foreach (int idx in _dragInitialSelection) intersected.Add(idx);
+            }
+
+            for (int i = 0; i < VideoQueue.Count; i++)
+            {
+                var container = videoList.ContainerFromIndex(i) as ListBoxItem;
+                if (container != null && container.IsVisible)
+                {
+                    var topLeft = container.TranslatePoint(new Avalonia.Point(0, 0), videoList);
+                    if (topLeft.HasValue)
+                    {
+                        var itemRect = new Avalonia.Rect(topLeft.Value.X, topLeft.Value.Y, container.Bounds.Width, container.Bounds.Height);
+                        if (marqueeRect.Intersects(itemRect))
+                        {
+                            intersected.Add(i);
+                        }
+                    }
+                }
+            }
+
+            SelectQueueRows(intersected.OrderBy(x => x).ToList(), preview: false, scrollIntoView: false);
+            e.Handled = true;
         }
     }
 
-    private void VideoList_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e) { _videoDragStartPoint = null; }
+    private void VideoList_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (_isRubberbanding)
+        {
+            _isRubberbanding = false;
+            e.Pointer.Capture(null);
+            var rubberband = this.FindNameScope()?.Find("VideoListRubberband") as Avalonia.Controls.Shapes.Rectangle;
+            if (rubberband != null) rubberband.IsVisible = false;
+            e.Handled = true;
+        }
+        else if (_videoDragStartPoint.HasValue && _dragStartItem == null)
+        {
+            // Clicked empty space without dragging: clear selection
+            var point = e.GetCurrentPoint(VideoListCtl);
+            var diff = point.Position - _videoDragStartPoint.Value;
+            if (Math.Max(Math.Abs(diff.X), Math.Abs(diff.Y)) <= 5)
+            {
+                SelectQueueRows(Array.Empty<int>(), preview: false);
+            }
+        }
+
+        _videoDragStartPoint = null;
+        _dragItemWasSelected = false;
+        _dragStartItem = null;
+        _dragInitialSelection = null;
+    }
+
+    private void VideoList_PointerCaptureLost(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e)
+    {
+        if (_isRubberbanding)
+        {
+            _isRubberbanding = false;
+            var rubberband = this.FindNameScope()?.Find("VideoListRubberband") as Avalonia.Controls.Shapes.Rectangle;
+            if (rubberband != null) rubberband.IsVisible = false;
+        }
+        _videoDragStartPoint = null;
+        _dragItemWasSelected = false;
+        _dragStartItem = null;
+        _dragInitialSelection = null;
+    }
 
     private void VideoList_DragOver(object? sender, Avalonia.Input.DragEventArgs e)
     {

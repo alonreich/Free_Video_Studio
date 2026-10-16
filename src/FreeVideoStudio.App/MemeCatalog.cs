@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -62,6 +62,7 @@ public static class MemeCatalog
     private static readonly string[] ImageExts = { ".png", ".jpg", ".jpeg" };
 
     private static readonly string[] AudioExts = { ".mp3", ".wav", ".m4a", ".ogg", ".flac" };
+    private static readonly string[] SongSyncExts = { ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".txt" };
 
     private const string CloudOwner = "alonreich";
     private const string CloudRepo = "Free_Video_Studio";
@@ -329,7 +330,7 @@ public static class MemeCatalog
         string targetDirectory,
         IProgress<SyncProgress>? progress = null,
         CancellationToken cancellationToken = default)
-        => SyncFolderAsync(targetDirectory, CloudSongFolder, AudioExts, "Songs", progress, cancellationToken);
+        => SyncFolderAsync(targetDirectory, CloudSongFolder, SongSyncExts, "Songs", progress, cancellationToken);
 
     /// <summary>
     /// Shared delta-sync engine.

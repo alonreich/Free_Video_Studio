@@ -61,8 +61,13 @@
             <Setter Property="BoxShadow" Value="{DynamicResource AppItemGlowHoverShadow}"/>
         </Style>
         <Style Selector="ListBoxItem:selected Border.ItemGlow">
-            <Setter Property="Background" Value="{DynamicResource AppSuccessAlpha10Brush}"/>
+            <Setter Property="Background" Value="{DynamicResource AppAccentAlpha20Brush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="BoxShadow" Value="{DynamicResource AppItemGlowSelectedShadow}"/>
+        </Style>
+        <Style Selector="#VideoList ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppAccentAlpha20Brush}"/>
         </Style>
         <Style Selector="#VideoList ListBoxItem">
             <Setter Property="Cursor" Value="Hand"/>
@@ -540,6 +545,14 @@
 
                                         <TextBlock Name="EmptyQueueText" Text="Add at least one video to build a merge queue." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="18" IsHitTestVisible="False"/>
                                         <Border Name="DropIndicator" Height="3" Background="{DynamicResource AppInfoBrush}" CornerRadius="1.5" IsVisible="False" VerticalAlignment="Top" Margin="4,0,4,0" BoxShadow="{DynamicResource AppDropIndicatorShadow}" ZIndex="100" IsHitTestVisible="False"/>
+                                        <Canvas Name="VideoListRubberbandCanvas" IsHitTestVisible="False" ZIndex="200">
+                                            <Rectangle Name="VideoListRubberband"
+                                                       Fill="{DynamicResource AppAccentAlpha20Brush}"
+                                                       Stroke="{DynamicResource AppAccentBrush}"
+                                                       StrokeThickness="1.5"
+                                                       StrokeDashArray="3,2"
+                                                       IsVisible="False" />
+                                        </Canvas>
                                     </Grid>
 
                                     <!-- The list's own toolbar, welded to the bottom of the same frame. -->

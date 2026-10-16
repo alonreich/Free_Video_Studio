@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -218,8 +218,21 @@ public partial class MainWindow
             _recovery.ClearState();
             RuntimeLog.Info("RECOVERY", "Export completed successfully - recovery state cleared; no crash prompt is due for this session.");
 
+            string? attribution = FreeVideoStudio.App.Infrastructure.MusicAttributionHelper.ResolveAttribution(
+                _musicWizardResult?.MusicFilePaths != null && _musicWizardResult.MusicFilePaths.Count > 0
+                    ? _musicWizardResult.MusicFilePaths
+                    : (_musicWizardResult?.MusicFilePath != null ? new[] { _musicWizardResult.MusicFilePath } : null));
+
+            if (!string.IsNullOrEmpty(attribution))
+            {
+                var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
+                attrDlg.SetAttributionText(attribution);
+                await attrDlg.ShowDialog(this);
+            }
+
             var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
             dlg.SetOutputPath(result.OutputPath ?? string.Empty);
+            if (!string.IsNullOrEmpty(attribution)) dlg.SetAttributionText(attribution);
             await dlg.ShowDialog(this);
 
             if (result.Warning != null && dlg.DialogResult != 1)

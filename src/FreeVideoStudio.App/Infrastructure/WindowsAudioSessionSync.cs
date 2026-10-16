@@ -92,8 +92,6 @@ internal static unsafe partial class WindowsAudioSessionSync
 
         IntPtr volume = IntPtr.Zero;
         long acquiredAt = 0;
-        float lastLevel = -1f;
-        int lastMute = -1;
         int failures = 0;
 
         while (!_stop)
@@ -105,8 +103,6 @@ internal static unsafe partial class WindowsAudioSessionSync
                     Release(ref volume);
                     volume = AcquireSimpleVolume();
                     acquiredAt = Environment.TickCount64;
-                    lastLevel = -1f;
-                    lastMute = -1;
                 }
 
                 if (volume == IntPtr.Zero)
@@ -116,65 +112,17 @@ internal static unsafe partial class WindowsAudioSessionSync
                 else
                 {
                     failures = 0;
-                    MarkSystemApplied(true);
+                    MarkSystemApplied(false);
 
                     var vtbl = *(void***)volume;
                     var setMaster = (delegate* unmanaged[Stdcall]<IntPtr, float, Guid*, int>)vtbl[3];
-                    var getMaster = (delegate* unmanaged[Stdcall]<IntPtr, float*, int>)vtbl[4];
                     var setMute = (delegate* unmanaged[Stdcall]<IntPtr, int, Guid*, int>)vtbl[5];
-                    var getMute = (delegate* unmanaged[Stdcall]<IntPtr, int*, int>)vtbl[6];
                     Guid ctx = OurContext;
 
-                    int want = _desiredLevel;
-                    if (want >= 0)
-                    {
-                        _desiredLevel = -1;
-                        float level = (float)MpvIpcClient.PerceptualGain(want);
-                        if (setMaster(volume, level, &ctx) >= 0) lastLevel = level;
-                    }
-                    int wantMute = _desiredMuted;
-                    if (wantMute >= 0)
-                    {
-                        _desiredMuted = -1;
-                        if (setMute(volume, wantMute, &ctx) >= 0) lastMute = wantMute;
-                    }
-
-                    float cur;
-                    int mute;
-                    if (getMaster(volume, &cur) >= 0 && getMute(volume, &mute) >= 0)
-                    {
-                        bool levelMoved = lastLevel >= 0 && Math.Abs(cur - lastLevel) > Epsilon;
-                        bool muteMoved = lastMute >= 0 && (mute != 0 ? 1 : 0) != lastMute;
-                        if (lastLevel < 0) lastLevel = cur;
-                        if (lastMute < 0) lastMute = mute != 0 ? 1 : 0;
-                        if (levelMoved && IsVoiceCaptureActive && cur < lastLevel)
-                        {
-                            // Ignore downward session volume jumps during active voice capture/monitoring
-                            // to protect against driver-level communications ducking ratcheting the master volume down.
-                            cur = lastLevel;
-                            levelMoved = false;
-                        }
-                        if (levelMoved || muteMoved)
-                        {
-                            lastLevel = cur;
-                            lastMute = mute != 0 ? 1 : 0;
-                            int position = (int)Math.Round(MpvIpcClient.PositionForGain(cur));
-                            bool muted = mute != 0;
-                            Dispatcher.UIThread.Post(() =>
-                            {
-                                if (levelMoved && position != MpvIpcClient.GlobalMasterVolume)
-                                {
-                                    Interlocked.Exchange(ref _suppressPosition, position);
-                                    MpvIpcClient.SetGlobalMasterVolume(position);
-                                }
-                                if (muteMoved) MpvIpcClient.SetGlobalMuted(muted);
-                            });
-                        }
-                    }
-                    else
-                    {
-                        Release(ref volume);
-                    }
+                    // Ensure the process audio session is kept at unity (1.0) and unmuted
+                    // so Windows never attenuates or mutes the in-app player output.
+                    setMaster(volume, 1.0f, &ctx);
+                    setMute(volume, 0, &ctx);
                 }
             }
             catch (Exception ex)
@@ -197,7 +145,7 @@ internal static unsafe partial class WindowsAudioSessionSync
         Dispatcher.UIThread.Post(() => MpvIpcClient.SetMasterAppliedBySystem(value));
         RuntimeLog.Info("Audio", value
             ? "VOLSYNC_01: the master volume is carried by this app's Windows audio session (Volume Mixer in sync)."
-            : "VOLSYNC_01: Windows audio session unavailable; players apply the master themselves.");
+            : "VOLSYNC_01: decoupled volume mode active; players apply the master volume directly.");
     }
 
     private static void Fallback(string why)

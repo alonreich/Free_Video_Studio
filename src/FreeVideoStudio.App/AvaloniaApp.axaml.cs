@@ -55,7 +55,9 @@ public partial class AvaloniaApp : Application
                 && state["MainVolume"] is System.Text.Json.Nodes.JsonNode v
                 && double.TryParse(v.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double level))
             {
-                FreeVideoStudio.Core.Media.MpvIpcClient.SetGlobalMasterVolume((int)System.Math.Round(level));
+                int safeLevel = (int)System.Math.Round(level);
+                if (safeLevel <= 2) safeLevel = 100;
+                FreeVideoStudio.Core.Media.MpvIpcClient.SetGlobalMasterVolume(safeLevel);
             }
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }

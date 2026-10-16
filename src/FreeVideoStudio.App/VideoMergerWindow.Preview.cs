@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -209,17 +209,8 @@ public partial class VideoMergerWindow
                 });
             };
 
-            try
-            {
-                var state = await new StateTransferStore(_paths).LoadAsync().WaitAsync(cancellationToken).ConfigureAwait(true);
-                if (state.TryGetPropertyValue("MainVolume", out var volNode))
-                {
-                    var volSlider = VolumeSliderCtl;
-                    if (volSlider != null) volSlider.Value = volNode?.GetValue<double>() ?? 100.0;
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            // AUD-MASTERVOL — MasterVolumeUi.Bind (VideoMergerWindow.axaml.cs) already bound and painted
+            // the rack from MpvIpcClient.GlobalMasterVolume with proper re-entrancy guarding.
 
             if (!_previewGate.MarkReady()) return;
         }

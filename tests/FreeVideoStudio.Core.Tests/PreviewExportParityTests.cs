@@ -688,6 +688,69 @@ public class MasterVolumeIsolationTests
             MpvIpcClient.SetGlobalMuted(savedMute);
         }
     }
+
+    [Fact]
+    public void DecoupledVolume_PlayersApplyMasterDirectly_MasterAppliedBySystemIsFalse()
+    {
+        int savedLevel = MpvIpcClient.GlobalMasterVolume;
+        bool savedMute = MpvIpcClient.GlobalMuted;
+        bool savedSystem = MpvIpcClient.MasterAppliedBySystem;
+        try
+        {
+            MpvIpcClient.SetMasterAppliedBySystem(false);
+            Assert.False(MpvIpcClient.MasterAppliedBySystem);
+
+            MpvIpcClient.SetGlobalMasterVolume(80);
+            MpvIpcClient.SetGlobalMuted(false);
+
+            // With MasterAppliedBySystem false, player volume reflects GlobalMasterVolume directly
+            double vol = MpvIpcClient.PlayerMpvVolume(1.0);
+            Assert.Equal(80.0, vol);
+
+            // Perceptual gain: (80/100)^3 = 0.512
+            Assert.True(Math.Abs(MpvIpcClient.MasterLinearGain - 0.512) < 0.001);
+
+            // Muting immediately zeros both player and master linear gain
+            MpvIpcClient.SetGlobalMuted(true);
+            Assert.Equal(0.0, MpvIpcClient.PlayerMpvVolume(1.0));
+            Assert.Equal(0.0, MpvIpcClient.MasterLinearGain);
+
+            // Unmuting restores the exact master level
+            MpvIpcClient.SetGlobalMuted(false);
+            Assert.Equal(80.0, MpvIpcClient.PlayerMpvVolume(1.0));
+            Assert.True(Math.Abs(MpvIpcClient.MasterLinearGain - 0.512) < 0.001);
+        }
+        finally
+        {
+            MpvIpcClient.SetGlobalMasterVolume(savedLevel);
+            MpvIpcClient.SetGlobalMuted(savedMute);
+            MpvIpcClient.SetMasterAppliedBySystem(savedSystem);
+        }
+    }
+
+    [Fact]
+    public void MasterVolume_ClampingAndPerceptualCurves_AreDeterministic()
+    {
+        int savedLevel = MpvIpcClient.GlobalMasterVolume;
+        try
+        {
+            MpvIpcClient.SetGlobalMasterVolume(-50);
+            Assert.Equal(0, MpvIpcClient.GlobalMasterVolume);
+
+            MpvIpcClient.SetGlobalMasterVolume(250);
+            Assert.Equal(100, MpvIpcClient.GlobalMasterVolume);
+
+            MpvIpcClient.SetGlobalMasterVolume(50);
+            Assert.Equal(50, MpvIpcClient.GlobalMasterVolume);
+            // (50/100)^3 = 0.125
+            Assert.Equal(0.125, MpvIpcClient.PerceptualGain(50));
+            Assert.True(Math.Abs(MpvIpcClient.PositionForGain(0.125) - 50.0) < 0.001);
+        }
+        finally
+        {
+            MpvIpcClient.SetGlobalMasterVolume(savedLevel);
+        }
+    }
 }
 
 public class AiTrajectoryPortraitTests

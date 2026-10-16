@@ -154,7 +154,7 @@ public partial class VideoMergerWindow
     }
 
     /// <summary>Selects exactly <paramref name="rows"/> by INDEX (duplicates of one path stay distinct). No preview by default.</summary>
-    private void SelectQueueRows(IReadOnlyList<int> rows, bool preview = false)
+    private void SelectQueueRows(IReadOnlyList<int> rows, bool preview = false, bool scrollIntoView = true)
     {
         var list = VideoListCtl;
         if (list == null) return;
@@ -181,7 +181,7 @@ public partial class VideoMergerWindow
                 if (rows.Count > 0 && rows[0] >= 0 && rows[0] < VideoQueue.Count)
                     list.SelectedIndex = rows[0];
             }
-            if (rows.Count > 0 && rows[0] >= 0 && rows[0] < VideoQueue.Count) list.ScrollIntoView(rows[0]);
+            if (scrollIntoView && rows.Count > 0 && rows[0] >= 0 && rows[0] < VideoQueue.Count) list.ScrollIntoView(rows[0]);
         }
         finally { _selectWithoutPreview = before; }
         UpdateQueueState();
