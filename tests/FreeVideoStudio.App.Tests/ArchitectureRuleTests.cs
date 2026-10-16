@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -677,4 +677,39 @@ public sealed class ArchitectureRuleTests
 
         Assert.True(hits.Count == 0, "UIIPC_01 — synchronous / blocking session-state IPC is back:" + Environment.NewLine + string.Join(Environment.NewLine, hits));
     }
+
+    /// <summary>
+    /// CHANGELOG_01 — docs/CHANGELOG.md must exist, retain at most 5 releases, have an upcoming staging
+    /// or active release block at the top, and describe changes in non-empty plain-English bullets.
+    /// Governs SPEC_GOVERNANCE.md §6 and project_structure.txt.
+    /// </summary>
+    [Fact]
+    public void ChangelogEnforcesTopStagingAndFiveReleaseLimit()
+    {
+        string changelogPath = System.IO.Path.Combine(RepoRoot.Path, "docs", "CHANGELOG.md");
+        Assert.True(File.Exists(changelogPath), "docs/CHANGELOG.md must exist (CHANGELOG_01).");
+
+        string[] lines = File.ReadAllLines(changelogPath);
+        var releaseHeaders = lines.Where(l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        Assert.True(releaseHeaders.Count > 0, "docs/CHANGELOG.md must contain at least one release header.");
+        Assert.True(releaseHeaders.Count <= 5, $"docs/CHANGELOG.md must retain at most 5 releases (found {releaseHeaders.Count}).");
+
+        int firstReleaseIdx = Array.FindIndex(lines, l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase));
+        int nextReleaseIdx = Array.FindIndex(lines, firstReleaseIdx + 1, l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase));
+        if (nextReleaseIdx < 0) nextReleaseIdx = lines.Length;
+
+        var topSection = lines.Skip(firstReleaseIdx).Take(nextReleaseIdx - firstReleaseIdx).ToList();
+        Assert.Contains(topSection, l => l.Contains("**What's New", StringComparison.OrdinalIgnoreCase));
+
+        var bullets = topSection.Where(l => l.TrimStart().StartsWith("- ", StringComparison.Ordinal)).ToList();
+        Assert.True(bullets.Count > 0, "Top release in docs/CHANGELOG.md must contain at least one bullet point describing changes.");
+
+        foreach (string bullet in bullets)
+        {
+            string content = bullet.TrimStart()[2..].Trim();
+            Assert.False(string.IsNullOrWhiteSpace(content), "Changelog bullet items must not be blank.");
+        }
+    }
 }
+

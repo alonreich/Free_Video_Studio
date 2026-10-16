@@ -6,8 +6,16 @@ Read the specifications before inspecting or editing governed source code.
 
 Mandatory entry point and spec router: .\docs\README.md
 Zero-leakage governance contract:      .\docs\SPEC_GOVERNANCE.md
+AI agent rules & invariants:           .\AGENTS.md
 File, symbol and sentinel lookup:      .\docs\INDEX.md
 Changelog & What's New router:         .\docs\CHANGELOG.md (plain-English rolling release notes for the latest 5 releases)
+
+MANDATORY AGENT INVARIANT (CHANGELOG_01):
+Whenever making changes to logic, UI, workflows, or project structure, an AI agent CANNOT finish
+without staging what was done in:
+1. .\docs\CHANGELOG.md under '## v... (Upcoming)' in plain, short, oversimplified English for end users.
+   (Feeds directly to GitHub release notes and in-app update card upon release; strictly keep latest 5 releases).
+2. .\project_structure.txt & docs if new files, classes, or architecture rules were added/removed.
 
 Solution:             .\FreeVideoStudio.sln
 Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj

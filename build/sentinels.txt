@@ -914,3 +914,5 @@ CAPTIONS_01=src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs
+CHANGELOG_01=docs/SPEC_GOVERNANCE.md
+

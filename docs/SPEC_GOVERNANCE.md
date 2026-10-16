@@ -63,3 +63,12 @@ When audits or tests reveal discrepancies between text documentation and active 
 1. Ground truth resides in mathematical laws, thread safety boundaries, and hardware protection safeguards.
 2. Obsolete workflows (e.g., legacy checkmark-based zoom models) must be purged from documentation and replaced with live production invariants (e.g., ZOOMLIVE continuous gestures).
 3. Critical unwritten defenses present in source code (e.g., WASAPI 3-second preview clock aborts, render thread OpenGL deadlock mitigations, sub-pixel pointer capture releases, atomic file replacement safeguards) must be codified directly into the governing specifications.
+
+## 6. Mandatory End-User Changelog & Project Structure Staging (CHANGELOG_01)
+Every autonomous AI agent modifying application source code, UI elements, workflows, or architectural structure must stage end-user release notes before concluding:
+1. **Target:** The top release block in `docs/CHANGELOG.md` (`## vYYYY.MM.DD.xxxx (Upcoming)`).
+2. **Audience & Style:** Plain, short, oversimplified English for the end user. Technical jargon, internal method names, and class names are strictly forbidden. Describe the user-visible capability or bug fix directly.
+3. **5-Release Retention:** `docs/CHANGELOG.md` strictly retains the 5 latest releases. When adding a new release header, the oldest is pruned.
+4. **Automated Release Pipeline Integration:** When an official release is published via `Build.cmd` / `FvsBuild`, `GitHubReleasePublisher.GetReleaseNotesFromChangelog` automatically extracts the top notes for GitHub Releases and the in-app update card (`UpdateToastWindow`).
+5. **Project Structure Sync:** If new files, classes, or architecture rules are introduced, `project_structure.txt` and `docs/INDEX.md` must be updated in tandem.
+6. **Mandatory Completion Block:** An AI agent is strictly forbidden from finishing a task or committing code without completing this changelog staging step.
