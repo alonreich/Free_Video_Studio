@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="FreeVideoStudio.Core.Tests" />
+    <InternalsVisibleTo Include="FreeVideoStudio.App.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,10 +29,10 @@
        satellite assembly is exactly the kind of detail a security reviewer flags. Keep in step
        with FreeVideoStudio.App.csproj on every release. -->
   <PropertyGroup>
-    <Version>2026.10.12.0921</Version>
-    <AssemblyVersion>2026.10.12.0921</AssemblyVersion>
-    <FileVersion>2026.10.12.0921</FileVersion>
-    <InformationalVersion>2026.10.12.0921</InformationalVersion>
+    <Version>2026.10.13.2238</Version>
+    <AssemblyVersion>2026.10.13.2238</AssemblyVersion>
+    <FileVersion>2026.10.13.2238</FileVersion>
+    <InformationalVersion>2026.10.13.2238</InformationalVersion>
     <Company>Alon Reich</Company>
     <Authors>Alon Reich</Authors>
     <Product>Free Video Studio</Product>

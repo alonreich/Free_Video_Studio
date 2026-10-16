@@ -1,4 +1,9 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -38,7 +43,7 @@ public partial class VideoMergerWindow
         btn.IsEnabled = !_granularOpen && VideoQueue.Count > 0 && TimelineMatchesQueue();
         int effects;
         try { effects = CurrentEdl.Clips.Count(c => !c.Effects.IsEmpty); }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); effects = 0; }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); effects = 0; } // EDLNULL_01 — a paint must never take the app down
         if (effects > 0)
         {
             btn.Classes.Remove("Primary");

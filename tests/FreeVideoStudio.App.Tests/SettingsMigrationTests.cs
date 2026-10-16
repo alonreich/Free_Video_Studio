@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.Core.Infrastructure;
@@ -100,7 +100,7 @@ public sealed class SettingsMigrationTests : IDisposable
 
         SettingsManager.Load();
 
-        Assert.Equal(13, SettingsManager.CurrentSchemaVersion);
+        Assert.Equal(14, SettingsManager.CurrentSchemaVersion);
         Assert.True(SettingsManager.Instance.MergerThumbnailScraper);
         Assert.Contains("\"MergerThumbnailScraper\": true", File.ReadAllText(_settingsFile));
     }
@@ -188,12 +188,43 @@ public sealed class SettingsMigrationTests : IDisposable
 
         SettingsManager.Load();
 
-        Assert.Equal(13, SettingsManager.CurrentSchemaVersion);
+        Assert.Equal(14, SettingsManager.CurrentSchemaVersion);
         Assert.Equal("gemini-2.5-flash", SettingsManager.Instance.GeminiModelName);
         Assert.Equal(2.2, SettingsManager.Instance.AiZoomBaseScale);
         Assert.Equal(1.3, SettingsManager.Instance.AiZoomMinScale);
         Assert.True(SettingsManager.Instance.AiZoomAvoidHud);
         Assert.Equal(2.0, SettingsManager.Instance.AiZoomDeadbandPercent);
+    }
+
+    /// <summary>KEYPROTECT_01 — a plain-text key on disk is sealed on load and the clear key leaves the file.</summary>
+    [Fact]
+    public void MigrateFromSchema13_SealsAPlainTextApiKeyOnDisk()
+    {
+        const string key = "AIzaSyFAKE-MIGRATION-ONLY-00000000000"; // SECRETSCAN_ALLOW (fake)
+        File.WriteAllText(_settingsFile, "{ \"SchemaVersion\": 13, \"AutoUpdateChecks\": true, \"GeminiApiKey\": \"" + key + "\" }");
+
+        SettingsManager.Load();
+
+        Assert.Equal(key, SettingsManager.Instance.GeminiApiKey);
+        string saved = File.ReadAllText(_settingsFile);
+        Assert.DoesNotContain(key, saved);
+        Assert.Contains("\"SchemaVersion\": 14", saved);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("dpapi1:", saved);
+        }
+    }
+
+    [Fact]
+    public void SecretProtector_RoundTripsOnWindows_AndProducesDpapiPrefix()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        const string key = "AIzaSyFAKE-TEST-KEY-12345678901234567"; // SECRETSCAN_ALLOW
+        string sealedKey = SecretProtector.Protect(key);
+        Assert.StartsWith("dpapi1:", sealedKey);
+        Assert.True(SecretProtector.IsProtectedForm(sealedKey));
+        string unsealed = SecretProtector.Unprotect(sealedKey);
+        Assert.Equal(key, unsealed);
     }
 
     [Fact]
@@ -301,5 +332,105 @@ public sealed class SettingsMigrationTests : IDisposable
     {
         SettingsManager.Load();
         Assert.True(SettingsManager.Instance.MergerThumbnailScraper);
+    }
+
+    [Fact]
+    public void MigrateFromSchema14_SealsPlainTextClaudeAndOpenAiKeysOnDisk()
+    {
+        const string claudeKey = "sk-ant-api03-FAKE-TEST-CLAUDE-KEY-0000000000"; // SECRETSCAN_ALLOW
+        const string openAiKey = "sk-proj-FAKE-TEST-OPENAI-KEY-0000000000000000"; // SECRETSCAN_ALLOW
+
+        File.WriteAllText(_settingsFile, $$"""
+        {
+            "SchemaVersion": 14,
+            "AutoUpdateChecks": true,
+            "ClaudeApiKey": "{{claudeKey}}",
+            "OpenAiApiKey": "{{openAiKey}}"
+        }
+        """);
+
+        SettingsManager.Load();
+
+        Assert.Equal(claudeKey, SettingsManager.Instance.ClaudeApiKey);
+        Assert.Equal(openAiKey, SettingsManager.Instance.OpenAiApiKey);
+
+        string saved = File.ReadAllText(_settingsFile);
+        Assert.DoesNotContain(claudeKey, saved);
+        Assert.DoesNotContain(openAiKey, saved);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("dpapi1:", saved);
+        }
+    }
+
+    [Fact]
+    public void Migrate_PreservesCustomGeminiModelName_AcrossUsageProfiles()
+    {
+        File.WriteAllText(_settingsFile, """
+        {
+            "SchemaVersion": 14,
+            "AutoUpdateChecks": true,
+            "GeminiModelName": "gemini-3.8-flash"
+        }
+        """);
+
+        SettingsManager.Load();
+
+        Assert.Equal("gemini-3.8-flash", SettingsManager.Instance.GeminiModelName);
+        Assert.Equal("gemini-3.8-flash", SettingsManager.Instance.AiUsageSubjectDiscovery.Model);
+        Assert.Equal("gemini-3.8-flash", SettingsManager.Instance.AiUsageTracking.Model);
+        Assert.Equal("gemini-3.8-flash", SettingsManager.Instance.AiUsageMagicWand.Model);
+    }
+
+    [Fact]
+    public void MultiVendorSettings_RoundTripAndPersistCorrectly()
+    {
+        const string claudeKey = "sk-ant-FAKE-ROUNDTRIP-CLAUDE-KEY-1111111"; // SECRETSCAN_ALLOW
+        const string openAiKey = "sk-FAKE-ROUNDTRIP-OPENAI-KEY-222222222222"; // SECRETSCAN_ALLOW
+
+        SettingsManager.Load();
+
+        Assert.True(SettingsManager.Update(s =>
+        {
+            s.ClaudeApiKey = claudeKey;
+            s.OpenAiApiKey = openAiKey;
+            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.Anthropic, "claude-sonnet-custom", FreeVideoStudio.App.Services.AiReasoningLevel.Medium));
+            s.SetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking, new FreeVideoStudio.App.Services.AiUsageConfig(FreeVideoStudio.App.Services.AiVendor.OpenAI, "o3-mini-custom", FreeVideoStudio.App.Services.AiReasoningLevel.High));
+        }));
+
+        string onDisk = File.ReadAllText(_settingsFile);
+        Assert.DoesNotContain(claudeKey, onDisk);
+        Assert.DoesNotContain(openAiKey, onDisk);
+
+        // Load again from disk
+        SettingsManager.Load();
+
+        Assert.Equal(claudeKey, SettingsManager.Instance.ClaudeApiKey);
+        Assert.Equal(openAiKey, SettingsManager.Instance.OpenAiApiKey);
+        Assert.Equal(claudeKey, SettingsManager.Instance.GetApiKey(FreeVideoStudio.App.Services.AiVendor.Anthropic));
+        Assert.Equal(openAiKey, SettingsManager.Instance.GetApiKey(FreeVideoStudio.App.Services.AiVendor.OpenAI));
+
+        var u1 = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery);
+        Assert.Equal(FreeVideoStudio.App.Services.AiVendor.Anthropic, u1.Vendor);
+        Assert.Equal("claude-sonnet-custom", u1.Model);
+        Assert.Equal(FreeVideoStudio.App.Services.AiReasoningLevel.Medium, u1.ReasoningLevel);
+
+        var u2 = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking);
+        Assert.Equal(FreeVideoStudio.App.Services.AiVendor.OpenAI, u2.Vendor);
+        Assert.Equal("o3-mini-custom", u2.Model);
+        Assert.Equal(FreeVideoStudio.App.Services.AiReasoningLevel.High, u2.ReasoningLevel);
+    }
+
+    [Fact]
+    public void GetEffectiveModel_ResolvesVendorDefaults_WhenEmpty()
+    {
+        var settings = new AppSettings();
+        settings.AiUsageSubjectDiscovery = new(FreeVideoStudio.App.Services.AiVendor.Google, "");
+        settings.AiUsageTracking = new(FreeVideoStudio.App.Services.AiVendor.Anthropic, "");
+        settings.AiUsageMagicWand = new(FreeVideoStudio.App.Services.AiVendor.OpenAI, "");
+
+        Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, settings.GetEffectiveModel(FreeVideoStudio.App.Services.AiUsage.SubjectDiscovery));
+        Assert.Equal(FreeVideoStudio.App.Services.ClaudeProvider.DefaultModelName, settings.GetEffectiveModel(FreeVideoStudio.App.Services.AiUsage.DenseTracking));
+        Assert.Equal(FreeVideoStudio.App.Services.OpenAiProvider.DefaultModelName, settings.GetEffectiveModel(FreeVideoStudio.App.Services.AiUsage.MagicWand));
     }
 }

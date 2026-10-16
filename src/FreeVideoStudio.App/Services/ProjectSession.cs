@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -696,6 +696,9 @@ public sealed class ProjectSession
                 VoiceOverFilePath = voice?.VoiceOverWavPath,
                 VoiceOverAtOutputSec = voice?.VoiceOverStartTimestampSec ?? 0,
                 VoiceOverVolume = 1.0,
+                VoiceOverTakes = voice?.VoiceOverTakes.ToArray() ?? [],
+                VoiceOverDuckAudio = voice?.DuckAudio ?? false,
+                VoiceOverProtectFromMusic = voice?.ProtectFromMusic ?? true,
             },
             Export = new ProjectExport
             {
@@ -705,6 +708,7 @@ public sealed class ProjectSession
             },
             Mask = forExplicitSave ? ReadLiveMaskSafely() : ReadLiveMaskFastSafely(),
             Merge = ReadMergeQueueSafely(),
+            Captions = _viewModel.CaptionTrack,
             Title = string.IsNullOrWhiteSpace(path) ? "Untitled" : Path.GetFileNameWithoutExtension(path),
             ModifiedUtc = _clock.UtcNow,
         };
@@ -757,6 +761,16 @@ public sealed class ProjectSession
                 _viewModel.QualitySliderValue = document.Export.QualityIndex;
 
             _viewModel.IsMusicActive = !string.IsNullOrWhiteSpace(document.Audio.MusicFilePath);
+            _viewModel.VoiceOverResult = document.Audio.VoiceOverTakes.Count > 0 || document.Audio.VoiceOverFilePath != null
+                ? new VoiceOverWindow.VoiceOverResult
+                {
+                    VoiceOverWavPath = document.Audio.VoiceOverFilePath,
+                    VoiceOverStartTimestampSec = document.Audio.VoiceOverAtOutputSec,
+                    VoiceOverTakes = document.Audio.VoiceOverTakes.ToList(),
+                    DuckAudio = document.Audio.VoiceOverDuckAudio,
+                    ProtectFromMusic = document.Audio.VoiceOverProtectFromMusic
+                } : null;
+            _viewModel.CaptionTrack = document.Captions;
         }
         finally
         {

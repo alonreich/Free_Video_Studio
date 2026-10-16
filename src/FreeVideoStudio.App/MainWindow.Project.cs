@@ -1,4 +1,10 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
+// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
+// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using FreeVideoStudio.Core.Abstractions;
 using FreeVideoStudio.Core.Project;
@@ -67,7 +73,13 @@ public partial class MainWindow
     {
         var services = Infrastructure.AppServices.Current;
 
+        // PROJ_11 — the merge queue is part of the document now, so restoring a document restores
+        // it. Done FIRST and outside the redraw guard: it is a data restore, not a repaint, and it
+        // must happen even if the timeline redraw below fails. Before this, opening a project left
+        // whatever queue happened to be in this process from the last time the Merger was used —
+        // so an opened project could silently inherit another project's clips.
         Services.ToolNavigator.RestoreMergeQueue(document.Merge);
+        ApplyVoiceOverState(_viewModel.VoiceOverResult, isRestore: true);
 
         services.Faults.Guard("PROJECT",
             "The timeline could not be redrawn after that change. Your edits are intact — switching " +
@@ -127,7 +139,10 @@ public partial class MainWindow
     /// PROJSESSION_03 — autosave pulse. Cheap: returns immediately unless the project is dirty,
     /// has a path, and the interval has elapsed.
     /// </summary>
-    private void ProjectAutosaveTick() => _projectSession?.AutosaveTick();
+    private void ProjectAutosaveTick()
+    {
+        if (_voiceTimingDecision == null) _projectSession?.AutosaveTick();
+    }
 
     /// <summary>
     /// The close guard. Returns false to keep the window open.
@@ -140,6 +155,9 @@ public partial class MainWindow
     /// its work still in memory.
     /// </para>
     /// </summary>
-    private Task<bool> ConfirmProjectDiscardOnCloseAsync()
-        => _projectSession?.ConfirmDiscardAsync("Close") ?? Task.FromResult(true);
+    private async Task<bool> ConfirmProjectDiscardOnCloseAsync()
+    {
+        await SettleVoiceTimingAsync();
+        return _projectSession == null || await _projectSession.ConfirmDiscardAsync("Close");
+    }
 }

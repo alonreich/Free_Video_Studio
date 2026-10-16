@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/06_PROJECT_DOCUMENT_MODEL.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -125,7 +130,8 @@ public partial class VideoMergerWindow
                     _suppressScraperToggle = false;
                 }
             }
-            if (Math.Abs(_baseSpeed - target.BaseSpeed) > 0.001) ApplySpeedPreset(target.BaseSpeed);
+            double targetSpeed = (_restoringSession && target.BaseSpeed <= 0.1001) ? 1.0 : target.BaseSpeed;
+            if (Math.Abs(_baseSpeed - targetSpeed) > 0.001) ApplySpeedPreset(targetSpeed);
 
             var thumbClip = target.Thumbnail is EdlThumbnail t ? target.Clips.FirstOrDefault(c => c.ClipId == t.At.ClipId) : null;
             _thumbPath = thumbClip?.Path;

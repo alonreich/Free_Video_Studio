@@ -1,4 +1,7 @@
-﻿using System;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -42,6 +45,7 @@ public partial class MainWindow
     /// </summary>
     private async Task ProcessVideoAsync(Button processButton)
     {
+        if (!await CheckVoiceTimingBeforeExportAsync()) return;
         var request = new ExportRequest("PROCESS button", new DelegateExportRunner(token =>
         {
             processButton.IsEnabled = false;
@@ -138,6 +142,8 @@ public partial class MainWindow
         int qualityIdx = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("QualitySlider")?.Value
                          ?? FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
         int resolvedQuality = FreeVideoStudio.App.ViewModels.QualityLadder.ToWorkerQualityLevel(qualityIdx);
+        // SIZEESTIMATE_01 — recapture current inputs; never export using a stale displayed result.
+        // Original's rough prediction remains separate from its null (uncapped) encoder target.
         var sizeRequest = CaptureSizeRequest();
         Services.OutputSizeEstimate sizeEstimate;
         try
@@ -378,6 +384,7 @@ public partial class MainWindow
                 ["main_vol"] = _musicWizardResult.VideoVolume,
                 ["music_vol"] = _musicWizardResult.MusicVolume,
                 ["carving_enabled"] = _musicWizardResult.EnableCarving,
+                // DUCKSTRENGTH_01 — the two strength handles from Settings (50 = tuned).
                 ["ducking_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.DuckingStrength,
                 ["carving_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.CarvingStrength
             };

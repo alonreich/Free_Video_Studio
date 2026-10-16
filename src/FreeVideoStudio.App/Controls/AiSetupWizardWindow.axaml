@@ -60,7 +60,7 @@
                                 </StackPanel>
 
                                 <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
-                                    <TextBox Name="ApiKeyInputBox" Watermark="Paste your Gemini API key here..."
+                                    <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your Gemini API key here..."
                                              Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
                                     <Button Name="TestAndSaveBtn" Grid.Column="1" Classes="Success" Content="Test and Save Key" Cursor="Hand"
                                             ToolTip.Tip="Tests connection to Google AI servers and verifies key validity."/>

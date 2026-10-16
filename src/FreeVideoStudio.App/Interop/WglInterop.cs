@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Runtime.InteropServices;
 
@@ -40,8 +42,11 @@ public static unsafe class WglInterop
     [DllImport("opengl32.dll")]
     public static extern nint wglCreateContext(nint hdc);
 
-    [DllImport("opengl32.dll")]
+    [DllImport("opengl32.dll", SetLastError = true)]
     public static extern bool wglMakeCurrent(nint hdc, nint hglrc);
+
+    [DllImport("opengl32.dll", ExactSpelling = true)]
+    public static extern nint wglGetCurrentContext();
 
     [DllImport("opengl32.dll")]
     public static extern bool wglDeleteContext(nint hglrc);

@@ -347,9 +347,9 @@
 
                             <!-- SCRAPER_05 — small, bottom left. Same flag as Settings > Defaults > Video Merger. -->
                             <CheckBox Grid.Row="1" Name="ThumbnailScraperCheckBox" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="0,6,0,0" MinHeight="0" Padding="4,0,0,0"
-                                      AutomationProperties.Name="Thumbnail Scraper"
-                                      ToolTip.Tip="Thumbnail Scraper: cut the short cover-picture intro this app adds to every export from the 2nd clip onward, so the joined video has no flashes between clips. The first clip keeps its intro unless you set a custom thumbnail.">
-                                <TextBlock Text="Thumbnail Scraper" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" MaxWidth="70" VerticalAlignment="Center"/>
+                                      AutomationProperties.Name="Skip cover pictures"
+                                      ToolTip.Tip="Removes the tiny cover picture added to the start of some clips, so it does not flash between videos. Eligible cover pictures are cut from the 2nd clip onward. The first clip keeps its cover picture unless you set a custom thumbnail.">
+                                <TextBlock Text="Skip cover pictures" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap" MaxWidth="70" VerticalAlignment="Center"/>
                             </CheckBox>
 
 
@@ -376,7 +376,7 @@
                                 <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="2" VerticalAlignment="Center">
                                     <TextBlock Text="OUTPUT QUALITY" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap"
                                                ToolTip.Tip="How good you want the finished video to look. Pick it once and leave it — the size it works out to is shown to its left." />
-                                    <controls:SpinningWheelSlider Name="QualitySlider" Value="{Binding $parent[local:VideoMergerWindow].QualitySliderValue, Mode=TwoWay}" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left for a smaller file size, or right for higher video quality." />
+                                    <controls:SpinningWheelSlider Name="QualitySlider" Value="19" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left for a smaller file size, or right for higher video quality." />
                                     <TextBlock Name="QualityLabel" Text="100% — Lossless" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
 
@@ -385,7 +385,7 @@
                                 <Grid Grid.Column="6" VerticalAlignment="Center" ColumnDefinitions="Auto,8,Auto">
                                     <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="2" VerticalAlignment="Center">
                                         <TextBlock Text="SPEED" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap" />
-                                        <controls:SpinningWheelSlider Name="MainSpeedSlider" Value="{Binding $parent[local:VideoMergerWindow].MainSpeedSliderValue, Mode=TwoWay}" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
+                                        <controls:SpinningWheelSlider Name="MainSpeedSlider" Value="10" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
                                         <TextBlock Name="MainSpeedLabel" Text="1.0x — Normal" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,2,0,0" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                     <!-- Preset grid geometry copied from MainWindow's MainSpeedPresetsPanel so the

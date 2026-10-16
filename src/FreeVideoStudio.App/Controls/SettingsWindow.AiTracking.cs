@@ -1,41 +1,115 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
+using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Controls;
 
 public partial class SettingsWindow : Window
 {
     private string _pendingGeminiApiKey = "";
-    private string _pendingGeminiModelName = "gemini-2.5-flash";
+    private string _pendingGeminiModelName = GeminiClient.DefaultModel;
+    private string _pendingClaudeApiKey = "";
+    private string _pendingOpenAiApiKey = "";
+    private AiUsageConfig _pendingAiUsageSubjectDiscovery = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageTracking = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageMagicWand = new(AiVendor.Google, GeminiClient.DefaultModel);
+    private AiUsageConfig _pendingAiUsageCommentary = new(AiVendor.Google, GeminiClient.DefaultModel);
     private double _pendingAiZoomBaseScale = 2.2;
     private double _pendingAiZoomMinScale = 1.3;
     private bool _pendingAiZoomAvoidHud = true;
     private double _pendingAiZoomDeadbandPercent = 2.0;
+    private string _pendingAiGameProfile = AiGameProfiles.Default.ToString();
+    private bool _pendingAiZoomConsent;
+    private bool _pendingAiWandConsent;
+    private bool _pendingAiCommentaryConsent;
+    private CancellationTokenSource? _aiSettingsCts;
+
+    /// <summary>Models offered before the user refreshes the list from Google.</summary>
+    private static readonly string[] KnownModels = { GeminiClient.DefaultModel, "gemini-2.5-pro", "gemini-2.5-flash-lite" };
 
     private void InitializeAiTrackingSettings()
     {
-        _pendingGeminiApiKey = SettingsManager.Instance.GeminiApiKey;
-        _pendingGeminiModelName = SettingsManager.Instance.GeminiModelName;
-        _pendingAiZoomBaseScale = SettingsManager.Instance.AiZoomBaseScale;
-        _pendingAiZoomMinScale = SettingsManager.Instance.AiZoomMinScale;
-        _pendingAiZoomAvoidHud = SettingsManager.Instance.AiZoomAvoidHud;
-        _pendingAiZoomDeadbandPercent = SettingsManager.Instance.AiZoomDeadbandPercent;
+        var s = SettingsManager.Instance;
+        _pendingGeminiApiKey = s.GeminiApiKey;
+        _pendingGeminiModelName = GeminiClient.ResolveModel(s.GeminiModelName);
+        _pendingClaudeApiKey = s.ClaudeApiKey;
+        _pendingOpenAiApiKey = s.OpenAiApiKey;
+        _pendingAiUsageSubjectDiscovery = s.AiUsageSubjectDiscovery.Clone();
+        _pendingAiUsageTracking = s.AiUsageTracking.Clone();
+        _pendingAiUsageMagicWand = s.AiUsageMagicWand.Clone();
+        _pendingAiUsageCommentary = s.AiUsageCommentary.Clone();
+        _pendingAiZoomBaseScale = s.AiZoomBaseScale;
+        _pendingAiZoomMinScale = s.AiZoomMinScale;
+        _pendingAiZoomAvoidHud = s.AiZoomAvoidHud;
+        _pendingAiZoomDeadbandPercent = s.AiZoomDeadbandPercent;
+        _pendingAiGameProfile = AiGameProfiles.Parse(s.AiTrackingGameProfile).ToString();
+        _pendingAiZoomConsent = s.AiZoomCloudConsent;
+        _pendingAiWandConsent = s.AiMagicWandCloudConsent;
+        _pendingAiCommentaryConsent = s.AiCommentaryCloudConsent;
     }
 
     /// <summary>
-    /// SETTX_01 — the AI-tracking values are no longer written here. They are applied inside
-    /// <see cref="SaveAndClose"/>'s single <see cref="SettingsManager.Update(System.Action{AppSettings})"/>
-    /// transaction, so all fields of the settings window commit atomically as one snapshot.
-    /// Kept as documentation of ownership; the fields are read directly in the patch.
+    /// SETTX_01 — the AI values are applied in <see cref="SaveAndClose"/>'s single transaction by
+    /// <see cref="ApplyPendingAiSettings"/>. KEYPROTECT_01: the key is only re-sealed when it changed,
+    /// so pressing Save does not rewrite an identical secret.
     /// </summary>
+    private void ApplyPendingAiSettings(AppSettings s)
+    {
+        string geminiKey = (_pendingGeminiApiKey ?? string.Empty).Trim();
+        if (!string.Equals(geminiKey, s.GeminiApiKey, StringComparison.Ordinal)) s.GeminiApiKey = geminiKey;
+        s.GeminiModelName = GeminiClient.ResolveModel(_pendingGeminiModelName);
 
+        string claudeKey = (_pendingClaudeApiKey ?? string.Empty).Trim();
+        if (!string.Equals(claudeKey, s.ClaudeApiKey, StringComparison.Ordinal)) s.ClaudeApiKey = claudeKey;
+
+        string openAiKey = (_pendingOpenAiApiKey ?? string.Empty).Trim();
+        if (!string.Equals(openAiKey, s.OpenAiApiKey, StringComparison.Ordinal)) s.OpenAiApiKey = openAiKey;
+
+        s.AiUsageSubjectDiscovery = _pendingAiUsageSubjectDiscovery.Clone();
+        s.AiUsageTracking = _pendingAiUsageTracking.Clone();
+        s.AiUsageMagicWand = _pendingAiUsageMagicWand.Clone();
+        s.AiUsageCommentary = _pendingAiUsageCommentary.Clone();
+
+        s.AiZoomBaseScale = _pendingAiZoomBaseScale;
+        s.AiZoomMinScale = Math.Min(_pendingAiZoomMinScale, _pendingAiZoomBaseScale);
+        s.AiZoomAvoidHud = _pendingAiZoomAvoidHud;
+        s.AiZoomDeadbandPercent = _pendingAiZoomDeadbandPercent;
+        s.AiTrackingGameProfile = AiGameProfiles.Parse(_pendingAiGameProfile).ToString();
+        s.AiZoomCloudConsent = _pendingAiZoomConsent;
+        s.AiMagicWandCloudConsent = _pendingAiWandConsent;
+        s.AiCommentaryCloudConsent = _pendingAiCommentaryConsent;
+    }
+
+    private void SetAiStatus(TextBlock? statusText, string text, string brushKey)
+    {
+        if (statusText == null) return;
+        statusText.Text = text;
+        statusText.Foreground = ThemeResources.Brush(this, brushKey, statusText.Foreground ?? Brushes.Gray);
+    }
+
+    /// <summary>
+    /// AIPROVIDER_UI_01 (docs/04 UI-AIZOOM, docs/05 SYS-AISETTINGS) — Multi-vendor AI providers UI.
+    /// Wires Google Gemini, Anthropic Claude, and OpenAI keys with Test and Remove controls,
+    /// live model listing, and per-task (U1-U4) routing with recommended defaults.
+    /// </summary>
     private void BuildAiTrackingUi()
     {
-        var keyBox = this.FindNameScope()?.Find("AiGeminiApiKeyTextBox") as TextBox;
+        var scope = this.FindNameScope();
+        var keyBox = scope?.Find("AiGeminiApiKeyTextBox") as TextBox;
+        var statusText = scope?.Find("AiConnectionStatusText") as TextBlock;
+        this.Closed += (_, _) => _aiSettingsCts?.Cancel();
+
         if (keyBox != null)
         {
             keyBox.Text = _pendingGeminiApiKey;
@@ -48,8 +122,93 @@ public partial class SettingsWindow : Window
             };
         }
 
-        var baseSlider = this.FindNameScope()?.Find("AiBaseZoomSlider") as Slider;
-        var baseLabel = this.FindNameScope()?.Find("AiBaseZoomLabel") as TextBlock;
+        if (scope?.Find("AiRemoveKeyBtn") is Button removeBtn)
+        {
+            removeBtn.Click += (_, _) =>
+            {
+                _pendingGeminiApiKey = "";
+                if (keyBox != null) keyBox.Text = "";
+                SetAiStatus(statusText, "The key will be removed when you press Save.", "AppWarningBrush");
+            };
+        }
+
+        // Model picker
+        var modelCombo = scope?.Find("AiModelCombo") as ComboBox;
+        void FillModels(IEnumerable<string> names)
+        {
+            if (modelCombo == null) return;
+            var list = names.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!list.Contains(_pendingGeminiModelName, StringComparer.OrdinalIgnoreCase)) list.Insert(0, _pendingGeminiModelName);
+            modelCombo.ItemsSource = list;
+            modelCombo.SelectedItem = list.First(n => string.Equals(n, _pendingGeminiModelName, StringComparison.OrdinalIgnoreCase));
+        }
+        FillModels(KnownModels);
+        if (modelCombo != null)
+        {
+            modelCombo.SelectionChanged += (_, _) =>
+            {
+                if (modelCombo.SelectedItem is string m) _pendingGeminiModelName = GeminiClient.ResolveModel(m);
+            };
+        }
+
+        if (scope?.Find("AiRefreshModelsBtn") is Button refreshBtn)
+        {
+            refreshBtn.Click += async (_, _) =>
+            {
+                if (string.IsNullOrWhiteSpace(_pendingGeminiApiKey))
+                {
+                    SetAiStatus(statusText, "Enter your API key first, then refresh the model list.", "AppWarningBrush");
+                    return;
+                }
+                refreshBtn.IsEnabled = false;
+                SetAiStatus(statusText, "Asking Google which models your key can use…", "AppTextMutedBrush");
+                _aiSettingsCts?.Cancel();
+                _aiSettingsCts = new CancellationTokenSource();
+                try
+                {
+                    var models = await GeminiClient.Shared.ListModelsAsync(_pendingGeminiApiKey, _aiSettingsCts.Token);
+                    if (models.Count == 0)
+                    {
+                        SetAiStatus(statusText, "Google returned no usable models for this key.", "AppWarningBrush");
+                    }
+                    else
+                    {
+                        FillModels(models);
+                        SetAiStatus(statusText, $"{models.Count} model(s) available.", "AppSuccessBrush");
+                    }
+                }
+                catch (GeminiException ex)
+                {
+                    RuntimeLog.Info("Settings", $"Model list refresh failed: {ex.Kind}.");
+                    SetAiStatus(statusText, ex.Message, "AppDangerBrush");
+                }
+                catch (OperationCanceledException ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                }
+                finally
+                {
+                    refreshBtn.IsEnabled = true;
+                }
+            };
+        }
+
+        // Game profile
+        if (scope?.Find("AiGameProfileCombo") is ComboBox profileCombo)
+        {
+            var profiles = Enum.GetValues<AiGameProfile>();
+            profileCombo.ItemsSource = profiles.Select(p => p.DisplayName()).ToList();
+            AiGameProfile current = AiGameProfiles.Parse(_pendingAiGameProfile);
+            profileCombo.SelectedIndex = Array.IndexOf(profiles, current);
+            profileCombo.SelectionChanged += (_, _) =>
+            {
+                int i = profileCombo.SelectedIndex;
+                if (i >= 0 && i < profiles.Length) _pendingAiGameProfile = profiles[i].ToString();
+            };
+        }
+
+        var baseSlider = scope?.Find("AiBaseZoomSlider") as Slider;
+        var baseLabel = scope?.Find("AiBaseZoomLabel") as TextBlock;
         if (baseSlider != null)
         {
             baseSlider.Value = _pendingAiZoomBaseScale;
@@ -64,8 +223,8 @@ public partial class SettingsWindow : Window
             };
         }
 
-        var minSlider = this.FindNameScope()?.Find("AiMinZoomSlider") as Slider;
-        var minLabel = this.FindNameScope()?.Find("AiMinZoomLabel") as TextBlock;
+        var minSlider = scope?.Find("AiMinZoomSlider") as Slider;
+        var minLabel = scope?.Find("AiMinZoomLabel") as TextBlock;
         if (minSlider != null)
         {
             minSlider.Value = _pendingAiZoomMinScale;
@@ -80,63 +239,359 @@ public partial class SettingsWindow : Window
             };
         }
 
-        var avoidHudCb = this.FindNameScope()?.Find("AiAvoidHudCheckbox") as CheckBox;
-        if (avoidHudCb != null)
+        var deadSlider = scope?.Find("AiDeadbandSlider") as Slider;
+        var deadLabel = scope?.Find("AiDeadbandLabel") as TextBlock;
+        if (deadSlider != null)
+        {
+            deadSlider.Value = _pendingAiZoomDeadbandPercent;
+            if (deadLabel != null) deadLabel.Text = $"{_pendingAiZoomDeadbandPercent:0.0}%";
+            deadSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == RangeBase.ValueProperty)
+                {
+                    _pendingAiZoomDeadbandPercent = Math.Round(deadSlider.Value * 2, MidpointRounding.AwayFromZero) / 2.0;
+                    if (deadLabel != null) deadLabel.Text = $"{_pendingAiZoomDeadbandPercent:0.0}%";
+                }
+            };
+        }
+
+        if (scope?.Find("AiAvoidHudCheckbox") is CheckBox avoidHudCb)
         {
             avoidHudCb.IsChecked = _pendingAiZoomAvoidHud;
             avoidHudCb.IsCheckedChanged += (_, _) => _pendingAiZoomAvoidHud = avoidHudCb.IsChecked ?? true;
         }
 
-        var getFreeBtn = this.FindNameScope()?.Find("AiGetFreeKeyBtn") as Button;
-        if (getFreeBtn != null)
+        if (scope?.Find("AiZoomConsentCheckbox") is CheckBox zoomConsentCb)
         {
-            getFreeBtn.Click += (_, _) =>
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "https://aistudio.google.com/app/apikey",
-                        UseShellExecute = true
-                    });
-                }
-                catch (Exception ex)
-                {
-                    RuntimeLog.Fail("Settings", $"Failed to launch browser: {ex.Message}");
-                }
-            };
+            zoomConsentCb.IsChecked = _pendingAiZoomConsent;
+            zoomConsentCb.IsCheckedChanged += (_, _) => _pendingAiZoomConsent = zoomConsentCb.IsChecked == true;
         }
 
-        var statusText = this.FindNameScope()?.Find("AiConnectionStatusText") as TextBlock;
-        var testBtn = this.FindNameScope()?.Find("AiTestConnectionBtn") as Button;
-        if (testBtn != null)
+        if (scope?.Find("AiWandConsentCheckbox") is CheckBox wandConsentCb)
+        {
+            wandConsentCb.IsChecked = _pendingAiWandConsent;
+            wandConsentCb.IsCheckedChanged += (_, _) => _pendingAiWandConsent = wandConsentCb.IsChecked == true;
+        }
+
+        if (scope?.Find("AiCommentaryConsentCheckbox") is CheckBox commConsentCb)
+        {
+            commConsentCb.IsChecked = _pendingAiCommentaryConsent;
+            commConsentCb.IsCheckedChanged += (_, _) => _pendingAiCommentaryConsent = commConsentCb.IsChecked == true;
+        }
+
+        if (scope?.Find("AiGetFreeKeyBtn") is Button getFreeBtn)
+        {
+            getFreeBtn.Click += (_, _) => AiSetupWizardWindow.OpenAiStudio();
+        }
+
+        if (scope?.Find("AiTestConnectionBtn") is Button testBtn)
         {
             testBtn.Click += async (_, _) =>
             {
                 if (string.IsNullOrWhiteSpace(_pendingGeminiApiKey))
                 {
-                    if (statusText != null)
-                    {
-                        statusText.Text = "Please enter an API Key first.";
-                        statusText.Foreground = Brushes.Orange;
-                    }
+                    SetAiStatus(statusText, "Please enter an API key first.", "AppWarningBrush");
                     return;
                 }
 
                 testBtn.IsEnabled = false;
-                if (statusText != null)
+                SetAiStatus(statusText, $"Contacting Google Gemini ({_pendingGeminiModelName})…", "AppTextMutedBrush");
+                _aiSettingsCts?.Cancel();
+                _aiSettingsCts = new CancellationTokenSource();
+                var (success, msg) = await GeminiClient.Shared.TestKeyAsync(_pendingGeminiApiKey, _pendingGeminiModelName, _aiSettingsCts.Token);
+                testBtn.IsEnabled = true;
+                SetAiStatus(statusText, msg, success ? "AppSuccessBrush" : "AppDangerBrush");
+            };
+        }
+
+        // --- Anthropic Claude Key Controls ---
+        var claudeKeyBox = scope?.Find("AiClaudeApiKeyTextBox") as TextBox;
+        var claudeStatusText = scope?.Find("AiClaudeStatusText") as TextBlock;
+        if (claudeKeyBox != null)
+        {
+            claudeKeyBox.Text = _pendingClaudeApiKey;
+            claudeKeyBox.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == TextBox.TextProperty)
                 {
-                    statusText.Text = "Contacting Google Gemini servers...";
-                    statusText.Foreground = Brushes.Gray;
+                    _pendingClaudeApiKey = claudeKeyBox.Text ?? "";
+                }
+            };
+        }
+
+        if (scope?.Find("AiRemoveClaudeKeyBtn") is Button removeClaudeBtn)
+        {
+            removeClaudeBtn.Click += (_, _) =>
+            {
+                _pendingClaudeApiKey = "";
+                if (claudeKeyBox != null) claudeKeyBox.Text = "";
+                SetAiStatus(claudeStatusText, "The Anthropic key will be removed when you press Save.", "AppWarningBrush");
+            };
+        }
+
+        if (scope?.Find("AiGetClaudeKeyBtn") is Button getClaudeBtn)
+        {
+            getClaudeBtn.Click += (_, _) => AiVisionProviders.OpenAnthropicConsole();
+        }
+
+        if (scope?.Find("AiTestClaudeBtn") is Button testClaudeBtn)
+        {
+            testClaudeBtn.Click += async (_, _) =>
+            {
+                if (string.IsNullOrWhiteSpace(_pendingClaudeApiKey))
+                {
+                    SetAiStatus(claudeStatusText, "Please enter an Anthropic API key first.", "AppWarningBrush");
+                    return;
                 }
 
-                var (success, msg) = await GeminiTrackingService.TestApiKeyAsync(_pendingGeminiApiKey, _pendingGeminiModelName);
-
-                testBtn.IsEnabled = true;
-                if (statusText != null)
+                testClaudeBtn.IsEnabled = false;
+                SetAiStatus(claudeStatusText, "Contacting Anthropic Claude...", "AppTextMutedBrush");
+                _aiSettingsCts?.Cancel();
+                _aiSettingsCts = new CancellationTokenSource();
+                try
                 {
-                    statusText.Text = msg;
-                    statusText.Foreground = success ? Brushes.LimeGreen : Brushes.Red;
+                    var models = await AiVisionProviders.Get(AiVendor.Anthropic).ListModelsAsync(_pendingClaudeApiKey, _aiSettingsCts.Token);
+                    SetAiStatus(claudeStatusText, $"Key verified. {models.Count} model(s) available.", "AppSuccessBrush");
+                }
+                catch (AiProviderException ex)
+                {
+                    RuntimeLog.Info("Settings", $"Anthropic key test failed: {ex.Kind}.");
+                    SetAiStatus(claudeStatusText, ex.Message, "AppDangerBrush");
+                }
+                catch (OperationCanceledException ex)
+                {
+                    CoreLogger.Swallowed(ex);
+                }
+                catch (Exception ex)
+                {
+                    CoreLogger.Warn("AI", $"Anthropic key test failed: {ex.Message}");
+                    SetAiStatus(claudeStatusText, $"Connection failed: {ex.Message}", "AppDangerBrush");
+                }
+                finally
+                {
+                    testClaudeBtn.IsEnabled = true;
+                }
+            };
+        }
+
+        // --- OpenAI Key Controls ---
+        var openAiKeyBox = scope?.Find("AiOpenAiApiKeyTextBox") as TextBox;
+        var openAiStatusText = scope?.Find("AiOpenAiStatusText") as TextBlock;
+        if (openAiKeyBox != null)
+        {
+            openAiKeyBox.Text = _pendingOpenAiApiKey;
+            openAiKeyBox.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == TextBox.TextProperty)
+                {
+                    _pendingOpenAiApiKey = openAiKeyBox.Text ?? "";
+                }
+            };
+        }
+
+        if (scope?.Find("AiRemoveOpenAiKeyBtn") is Button removeOpenAiBtn)
+        {
+            removeOpenAiBtn.Click += (_, _) =>
+            {
+                _pendingOpenAiApiKey = "";
+                if (openAiKeyBox != null) openAiKeyBox.Text = "";
+                SetAiStatus(openAiStatusText, "The OpenAI key will be removed when you press Save.", "AppWarningBrush");
+            };
+        }
+
+        if (scope?.Find("AiGetOpenAiKeyBtn") is Button getOpenAiBtn)
+        {
+            getOpenAiBtn.Click += (_, _) => AiVisionProviders.OpenOpenAiPlatform();
+        }
+
+        if (scope?.Find("AiTestOpenAiBtn") is Button testOpenAiBtn)
+        {
+            testOpenAiBtn.Click += async (_, _) =>
+            {
+                if (string.IsNullOrWhiteSpace(_pendingOpenAiApiKey))
+                {
+                    SetAiStatus(openAiStatusText, "Please enter an OpenAI API key first.", "AppWarningBrush");
+                    return;
+                }
+
+                testOpenAiBtn.IsEnabled = false;
+                SetAiStatus(openAiStatusText, "Contacting OpenAI servers...", "AppTextMutedBrush");
+                _aiSettingsCts?.Cancel();
+                _aiSettingsCts = new CancellationTokenSource();
+                try
+                {
+                    var models = await AiVisionProviders.Get(AiVendor.OpenAI).ListModelsAsync(_pendingOpenAiApiKey, _aiSettingsCts.Token);
+                    SetAiStatus(openAiStatusText, $"Key verified. {models.Count} model(s) available.", "AppSuccessBrush");
+                }
+                catch (AiProviderException ex)
+                {
+                    RuntimeLog.Info("Settings", $"OpenAI key test failed: {ex.Kind}.");
+                    SetAiStatus(openAiStatusText, ex.Message, "AppDangerBrush");
+                }
+                catch (OperationCanceledException ex)
+                {
+                    CoreLogger.Swallowed(ex);
+                }
+                catch (Exception ex)
+                {
+                    CoreLogger.Warn("AI", $"OpenAI key test failed: {ex.Message}");
+                    SetAiStatus(openAiStatusText, $"Connection failed: {ex.Message}", "AppDangerBrush");
+                }
+                finally
+                {
+                    testOpenAiBtn.IsEnabled = true;
+                }
+            };
+        }
+
+        // --- Per-Task Model Routing Controls (U1 - U4) ---
+        SetupUsageRow(scope, "AiU1", _pendingAiUsageSubjectDiscovery, AiUsage.SubjectDiscovery);
+        SetupUsageRow(scope, "AiU2", _pendingAiUsageTracking, AiUsage.DenseTracking);
+        SetupUsageRow(scope, "AiU3", _pendingAiUsageMagicWand, AiUsage.MagicWand);
+        SetupUsageRow(scope, "AiU4", _pendingAiUsageCommentary, AiUsage.Commentary);
+    }
+
+    private void SetupUsageRow(
+        INameScope? scope,
+        string prefix,
+        AiUsageConfig usageConfig,
+        AiUsage usage)
+    {
+        if (scope == null) return;
+        var vendorCombo = scope.Find($"{prefix}VendorCombo") as ComboBox;
+        var modelCombo = scope.Find($"{prefix}ModelCombo") as ComboBox;
+        var refreshBtn = scope.Find($"{prefix}RefreshModelsBtn") as Button;
+        var useRecBtn = scope.Find($"{prefix}UseRecommendedBtn") as Button;
+
+        var vendorItems = new (AiVendor Vendor, string Label)[]
+        {
+            (AiVendor.Google, "Google Gemini"),
+            (AiVendor.Anthropic, "Anthropic Claude"),
+            (AiVendor.OpenAI, "OpenAI"),
+        };
+
+        if (vendorCombo != null)
+        {
+            vendorCombo.ItemsSource = vendorItems.Select(v => v.Label).ToList();
+            int currentVendorIdx = Array.FindIndex(vendorItems, v => v.Vendor == usageConfig.Vendor);
+            vendorCombo.SelectedIndex = currentVendorIdx >= 0 ? currentVendorIdx : 0;
+        }
+
+        void PopulateModels(IReadOnlyList<string> candidateModels)
+        {
+            if (modelCombo == null) return;
+            var list = candidateModels.Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!string.IsNullOrWhiteSpace(usageConfig.Model) && !list.Contains(usageConfig.Model, StringComparer.OrdinalIgnoreCase))
+            {
+                list.Insert(0, usageConfig.Model);
+            }
+            if (list.Count == 0)
+            {
+                list.Add(AiVisionProviders.GetDefaultModel(usageConfig.Vendor));
+            }
+            modelCombo.ItemsSource = list;
+            string target = !string.IsNullOrWhiteSpace(usageConfig.Model) && list.Contains(usageConfig.Model, StringComparer.OrdinalIgnoreCase)
+                ? usageConfig.Model
+                : list[0];
+            modelCombo.SelectedItem = list.First(m => string.Equals(m, target, StringComparison.OrdinalIgnoreCase));
+            usageConfig.Model = target;
+        }
+
+        PopulateModels(AiVisionProviders.GetKnownModels(usageConfig.Vendor));
+
+        if (vendorCombo != null)
+        {
+            vendorCombo.SelectionChanged += (_, _) =>
+            {
+                int idx = vendorCombo.SelectedIndex;
+                if (idx >= 0 && idx < vendorItems.Length)
+                {
+                    var newVendor = vendorItems[idx].Vendor;
+                    if (usageConfig.Vendor != newVendor)
+                    {
+                        usageConfig.Vendor = newVendor;
+                        usageConfig.Model = AiVisionProviders.GetDefaultModel(newVendor);
+                        PopulateModels(AiVisionProviders.GetKnownModels(newVendor));
+                    }
+                }
+            };
+        }
+
+        if (modelCombo != null)
+        {
+            modelCombo.SelectionChanged += (_, _) =>
+            {
+                if (modelCombo.SelectedItem is string selectedModel && !string.IsNullOrWhiteSpace(selectedModel))
+                {
+                    usageConfig.Model = selectedModel;
+                    if (usageConfig.Vendor == AiVendor.Google)
+                    {
+                        _pendingGeminiModelName = selectedModel;
+                    }
+                }
+            };
+        }
+
+        if (refreshBtn != null)
+        {
+            refreshBtn.Click += async (_, _) =>
+            {
+                string key = usageConfig.Vendor switch
+                {
+                    AiVendor.Google => _pendingGeminiApiKey,
+                    AiVendor.Anthropic => _pendingClaudeApiKey,
+                    AiVendor.OpenAI => _pendingOpenAiApiKey,
+                    _ => "",
+                };
+
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    return;
+                }
+
+                refreshBtn.IsEnabled = false;
+                _aiSettingsCts?.Cancel();
+                _aiSettingsCts = new CancellationTokenSource();
+                try
+                {
+                    var provider = AiVisionProviders.Get(usageConfig.Vendor);
+                    var models = await provider.ListModelsAsync(key, _aiSettingsCts.Token);
+                    if (models.Count > 0)
+                    {
+                        PopulateModels(models);
+                    }
+                }
+                catch (AiProviderException ex)
+                {
+                    CoreLogger.Warn("AI", $"Failed to refresh models for {usageConfig.Vendor}: {ex.Message}");
+                }
+                catch (OperationCanceledException ex)
+                {
+                    CoreLogger.Swallowed(ex);
+                }
+                catch (Exception ex)
+                {
+                    CoreLogger.Warn("AI", $"Failed to refresh models: {ex.Message}");
+                }
+                finally
+                {
+                    refreshBtn.IsEnabled = true;
+                }
+            };
+        }
+
+        if (useRecBtn != null)
+        {
+            useRecBtn.Click += (_, _) =>
+            {
+                usageConfig.Vendor = AiVisionProviders.RecommendedVendor;
+                usageConfig.Model = AiVisionProviders.RecommendedModel;
+                int gIdx = Array.FindIndex(vendorItems, v => v.Vendor == AiVendor.Google);
+                if (vendorCombo != null && gIdx >= 0) vendorCombo.SelectedIndex = gIdx;
+                PopulateModels(AiVisionProviders.GetKnownModels(AiVendor.Google));
+                if (modelCombo != null)
+                {
+                    modelCombo.SelectedItem = AiVisionProviders.RecommendedModel;
                 }
             };
         }
@@ -175,6 +630,7 @@ public partial class SettingsWindow : Window
 
         var statusText = this.FindNameScope()?.Find("UpdateStatusText") as TextBlock;
         var checkBtn = this.FindNameScope()?.Find("CheckUpdatesNowBtn") as Button;
+        // UPDATEUX_06 — "Last checked 5 minutes ago: You have the latest version (…)".
         var lastCheckText = this.FindNameScope()?.Find("UpdateLastCheckText") as TextBlock;
         var skipPendingBtn = this.FindNameScope()?.Find("SkipPendingBtn") as Button;
         void RefreshLastCheck()
@@ -201,6 +657,28 @@ public partial class SettingsWindow : Window
         {
             autoCheckCb.IsChecked = AutoUpdateChecks;
             autoCheckCb.IsCheckedChanged += (_, _) => AutoUpdateChecks = autoCheckCb.IsChecked == true;
+        }
+        var autoDownloadCb = this.FindNameScope()?.Find("AutoDownloadUpdatesCheckbox") as CheckBox;
+        if (autoDownloadCb != null)
+        {
+            autoDownloadCb.IsChecked = AutoDownloadUpdates;
+            autoDownloadCb.IsCheckedChanged += (_, _) => AutoDownloadUpdates = autoDownloadCb.IsChecked == true;
+        }
+        var avoidMeteredCb = this.FindNameScope()?.Find("AvoidMeteredNetworkUpdatesCheckbox") as CheckBox;
+        if (avoidMeteredCb != null)
+        {
+            avoidMeteredCb.IsChecked = AvoidMeteredNetworkUpdates;
+            avoidMeteredCb.IsCheckedChanged += (_, _) => AvoidMeteredNetworkUpdates = avoidMeteredCb.IsChecked == true;
+        }
+        var channelCombo = this.FindNameScope()?.Find("UpdateChannelCombo") as ComboBox;
+        if (channelCombo != null)
+        {
+            channelCombo.SelectedIndex = string.Equals(UpdateChannel, "Beta", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            channelCombo.SelectionChanged += (_, _) =>
+            {
+                if (channelCombo.SelectedItem is ComboBoxItem item && item.Content is string ch)
+                    UpdateChannel = ch;
+            };
         }
         var skippedBorder = this.FindNameScope()?.Find("SkippedReleaseBorder") as Border;
         var skippedLabel = this.FindNameScope()?.Find("SkippedReleaseLabel") as TextBlock;

@@ -117,6 +117,27 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+
+                        <!-- AI Commentary Live Preview Verification Bar -->
+                        <Border Name="AiCommentaryPreviewBar" IsVisible="False" ZIndex="69"
+                                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,16"
+                                Background="{DynamicResource AppScrimStrongBrush}" BorderBrush="{DynamicResource AppAccentBrush}"
+                                BorderThickness="2" CornerRadius="8" Padding="16,10">
+                            <StackPanel Orientation="Horizontal" Spacing="18" VerticalAlignment="Center">
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource AppSuccessBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="AI COMMENTARY PREVIEW" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Review commentary subtitles before applying." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Button Name="AiCommentaryDiscardBtn" Classes="Danger" Content="DISCARD" MinWidth="90" MinHeight="36" Cursor="Hand" ToolTip.Tip="Discard generated commentary captions and revert"/>
+                                    <Button Name="AiCommentaryAcceptBtn" Classes="Success" Content="ACCEPT &amp; APPLY" MinWidth="130" MinHeight="36" Cursor="Hand" ToolTip.Tip="Accept and lock commentary captions onto the video"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                         
                         <Grid Name="FreezeDimmer" Background="{DynamicResource AppOverlayBrush}" IsVisible="{Binding #FreezeValidationPopup.IsOpen}" ZIndex="10" />
                         <Popup Name="FreezeValidationPopup" IsOpen="False" Placement="Center" IsHitTestVisible="False" ZIndex="11" IsLightDismissEnabled="False">
@@ -354,6 +375,9 @@
                          under FREEZE IMAGE. ⚠️ Do not add a second button back into this stack. -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Name="AiCommentaryBtn" Classes="Primary" Content="🎙️ AI COMMENTARY" MinWidth="140"
+                                HorizontalContentAlignment="Center"
+                                ToolTip.Tip="Generate AI live commentary captions with synchronized karaoke highlights for this video."/>
                         <Button Name="AiSmartZoomBtn" Classes="Primary" Content="AI SMART ZOOM" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="Automatically track and smoothly zoom in on a moving person, subject, or character using AI vision."/>
@@ -745,6 +769,52 @@
                             BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
                         <ScrollViewer Name="AiTrackingConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <TextBlock Name="AiTrackingConsoleText" Foreground="{DynamicResource AppTextMutedBrush}"
+                                       FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- AI Commentary Progress Overlay -->
+        <Border Name="AiCommentaryProgressOverlay" ZIndex="9997" IsVisible="False"
+                Background="{DynamicResource AppScrimStrongBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppAccentBrush}"
+                    BorderThickness="2" CornerRadius="12" Padding="28" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" MinWidth="850" MaxWidth="960">
+                <StackPanel Spacing="18">
+                    <!-- Title & Spinner Row -->
+                    <Grid ColumnDefinitions="Auto, *, Auto">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <ProgressBar IsIndeterminate="True" Width="26" Height="26" VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="AI LIVE COMMENTARY SYNTHESIS" FontSize="{DynamicResource AppFontSize18}"
+                                           FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                <TextBlock Text="Analyzing gameplay events, audio cues, and synthesizing synchronized narration"
+                                           FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Name="AiCommentaryCancelBtn" Grid.Column="2" Classes="Danger" Content="CANCEL" MinWidth="100" MinHeight="36"
+                                HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI commentary generation"/>
+                    </Grid>
+
+                    <!-- Large Status Banner -->
+                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14,10">
+                        <TextBlock Name="AiCommentaryStatusLabel" Text="Preparing video clips and audio..." TextAlignment="Center"
+                                   Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSize14}"/>
+                    </Border>
+
+                    <!-- Progress Bar -->
+                    <ProgressBar Name="AiCommentaryProgressBar" IsIndeterminate="True" Height="6" CornerRadius="3"
+                                 Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
+
+                    <!-- Expanded Console Log Output -->
+                    <Border Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
+                        <ScrollViewer Name="AiCommentaryConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock Name="AiCommentaryConsoleText" Foreground="{DynamicResource AppTextMutedBrush}"
                                        FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>

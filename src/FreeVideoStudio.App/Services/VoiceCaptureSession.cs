@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -35,7 +37,7 @@ public enum MicrophoneHealth
 /// <summary>How a queued recorder open ended.</summary>
 public enum RecordingOpenOutcome
 {
-    /// <summary>The device is open and capture is live.</summary>
+    /// <summary>A recorder is owned and can be finalized. Failure may describe a fault after positive opening PCM.</summary>
     Opened,
     /// <summary>The device refused to open. The session is <see cref="VoiceCaptureState.Faulted"/>.</summary>
     Failed,
@@ -54,7 +56,8 @@ public sealed record CapturedTake(
     bool IsSuccess = true,
     bool EndpointReleased = true,
     bool FileFinalized = true,
-    Exception? Error = null);
+    Exception? Error = null,
+    bool WriteFailed = false);
 
 /// <summary>The idle level meter's device (VOMON_01). Seam over <see cref="MicLevelMonitor"/>.</summary>
 public interface IMicMonitorDevice : IDisposable
@@ -77,6 +80,9 @@ public interface IMicMonitorDevice : IDisposable
 /// <summary>One take's capture device. Seam over <see cref="VoiceRecorder"/>.</summary>
 public interface IVoiceRecorderDevice : IDisposable
 {
+    bool WriteFailed => false;
+    event EventHandler? StopRequested { add { } remove { } }
+    void ConfigureBudget(VoiceCaptureBudget budget) => throw new NotSupportedException("Recorder does not support bounded capture.");
     event EventHandler<float>? VolumeChanged;
     event EventHandler<Exception?>? Stopped;
 
@@ -153,6 +159,8 @@ public interface IVoiceCaptureSession : IAsyncDisposable, IDisposable
     Task StartMonitorAsync(int deviceNumber);
     Task StopMonitorAsync();
     Task<RecordingOpenResult>? StartRecordingAsync(string takePath, int deviceNumber, Action<RecordingOpenResult> onSettled);
+    Task<RecordingOpenResult>? StartRecordingAsync(string takePath, int deviceNumber, Action<RecordingOpenResult> onSettled, VoiceCaptureBudget budget)
+        => throw new NotSupportedException("Session does not support bounded capture.");
     Task<CapturedTake>? FinalizeRecordingAsync(Action<CapturedTake> onSettled);
     Task ReleaseRecorderAsync();
     Task WhenFinalizationsSettled();
@@ -215,6 +223,10 @@ public sealed class NAudioVoiceCaptureDevices : IVoiceCaptureDeviceFactory
 
     internal sealed class RecorderAdapter : IVoiceRecorderDevice
     {
+        public bool WriteFailed => _inner.WriteFailed;
+        public event EventHandler? StopRequested;
+        public void ConfigureBudget(VoiceCaptureBudget budget) => _inner.Budget = budget;
+        private void OnStopRequested(object? sender, EventArgs e) => StopRequested?.Invoke(this, e);
         private readonly VoiceRecorder _inner;
         public event EventHandler<float>? VolumeChanged;
         public event EventHandler<Exception?>? Stopped;
@@ -223,6 +235,7 @@ public sealed class NAudioVoiceCaptureDevices : IVoiceCaptureDeviceFactory
         public RecorderAdapter(VoiceRecorder inner)
         {
             _inner = inner;
+            _inner.StopRequested += OnStopRequested;
             _inner.VolumeChanged += OnInnerVolumeChanged;
             _inner.Stopped += OnInnerStopped;
             _inner.PcmAvailable += OnInnerPcm;
@@ -244,6 +257,7 @@ public sealed class NAudioVoiceCaptureDevices : IVoiceCaptureDeviceFactory
         public void StopRecording() => _inner.StopRecording();
         public void Dispose()
         {
+            _inner.StopRequested -= OnStopRequested;
             _inner.VolumeChanged -= OnInnerVolumeChanged;
             _inner.Stopped -= OnInnerStopped;
             _inner.PcmAvailable -= OnInnerPcm;
@@ -479,7 +493,24 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     /// already opening or live, so a burst of record presses can never open the device twice.
     /// The monitor is stopped on the chain FIRST, inside the same job, whatever the caller did.
     /// </summary>
+    private Task<RecordingOpenResult>? _boundedOpen;
+    private Task<CapturedTake>? _openingFinalization;
+    private long _openingPcmBytes;
+
     public Task<RecordingOpenResult>? StartRecordingAsync(string takePath, int deviceNumber, Action<RecordingOpenResult> onSettled)
+        => StartRecordingCore(takePath, deviceNumber, onSettled, null);
+
+    public Task<RecordingOpenResult>? StartRecordingAsync(string takePath, int deviceNumber, Action<RecordingOpenResult> onSettled, VoiceCaptureBudget budget)
+    {
+        lock (_gate)
+        {
+            var opened = StartRecordingCore(takePath, deviceNumber, onSettled, budget);
+            if (opened != null) _boundedOpen = opened;
+            return opened;
+        }
+    }
+
+    private Task<RecordingOpenResult>? StartRecordingCore(string takePath, int deviceNumber, Action<RecordingOpenResult> onSettled, VoiceCaptureBudget? budget)
     {
         lock (_gate)
         {
@@ -487,6 +518,9 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                        or VoiceCaptureState.StartingRecording
                        or VoiceCaptureState.Recording) return null;
             if (_openAttempt != null || _recorder != null) return null;
+            _boundedOpen = null;
+            _openingFinalization = null;
+            _openingPcmBytes = 0;
 
             var attempt = new object();
             _openAttempt = attempt;
@@ -562,6 +596,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 {
                     try
                     {
+                        // VOAPPLY_03 / Section 7: Resolve the current monitor owner on the chain immediately before handoff
                         if (monitorToStop != null)
                         {
                             try
@@ -584,6 +619,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         }
 
                         recorder = _devices.CreateRecorder(takePath, deviceNumber);
+                        if (budget != null) recorder.ConfigureBudget(budget);
                         lock (_gate)
                         {
                             _openingRecorder = recorder;
@@ -591,6 +627,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         recorder.VolumeChanged += OnRecordingLevel;
                         recorder.Stopped += OnRecorderStopped;
                         recorder.PcmAvailable += OnRecorderPcm;
+                        recorder.StopRequested += OnRecorderStopRequested;
                         recorder.StartRecording();
                     }
                     catch (Exception ex)
@@ -602,8 +639,10 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
 
                 RecordingOpenResult result;
                 bool orphan = false;
+                bool hasOpeningAudio;
                 lock (_gate)
                 {
+                    hasOpeningAudio = _openingPcmBytes > 0;
                     _openingRecorder = null;
                     bool current = ReferenceEquals(_openAttempt, attempt);
                     if (current) _openAttempt = null;
@@ -613,7 +652,16 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         failure = _lastFault;
                     }
 
-                    if (failure != null)
+                    // VOWRITE_01: opening buffers are real audio, including a fault before UI publication.
+                    if (failure != null && current && hasOpeningAudio)
+                    {
+                        _recorder = recorder;
+                        _lastFault = failure;
+                        _state = VoiceCaptureState.Faulted;
+                        result = new RecordingOpenResult(RecordingOpenOutcome.Opened, failure);
+                        failure = null;
+                    }
+                    else if (failure != null)
                     {
                         if (current)
                         {
@@ -642,6 +690,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 {
                     recorder.VolumeChanged -= OnRecordingLevel;
                     recorder.Stopped -= OnRecorderStopped;
+                    recorder.StopRequested -= OnRecorderStopRequested;
                     recorder.PcmAvailable -= OnRecorderPcm;
                     Exception? dispEx = null;
                     try { recorder.Dispose(); } catch (Exception ex) { dispEx = ex; RuntimeLog.Swallowed(ex); }
@@ -656,12 +705,13 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                             UpdateHealthLocked();
                         }
                     }
-                    FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools.TryDeleteFile(takePath);
+                    if (!hasOpeningAudio) FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools.TryDeleteFile(takePath);
                 }
                 else if (orphan && recorder != null)
                 {
                     recorder.VolumeChanged -= OnRecordingLevel;
                     recorder.Stopped -= OnRecorderStopped;
+                    recorder.StopRequested -= OnRecorderStopRequested;
                     recorder.PcmAvailable -= OnRecorderPcm;
                     try { recorder.StopRecording(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
                     Exception? dispEx = null;
@@ -677,10 +727,14 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                             UpdateHealthLocked();
                         }
                     }
-                    FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools.TryDeleteFile(takePath);
+                    if (!hasOpeningAudio) FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools.TryDeleteFile(takePath);
                 }
 
-                PostThenComplete(() => onSettled(result), () => done.TrySetResult(result));
+                PostThenComplete(() =>
+                {
+                    try { onSettled(result); }
+                    finally { lock (_gate) { if (_state == VoiceCaptureState.Faulted) UpdateHealthLocked(); } }
+                }, () => done.TrySetResult(result));
             });
 
             return done.Task;
@@ -697,6 +751,14 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     {
         lock (_gate)
         {
+            // A bounded open owns a real sample anchor. Stop/EOF must drain it, not discard it.
+            if (_openAttempt != null && _boundedOpen is { } opening)
+            {
+                if (_openingFinalization != null) return _openingFinalization;
+                var pending = new TaskCompletionSource();
+                _pendingFinalizes.Add(pending);
+                return _openingFinalization = FinishOpeningAsync(opening, onSettled, pending);
+            }
             _openAttempt = null;
             var recorder = _recorder;
             _recorder = null;
@@ -715,6 +777,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
 
             recorder.VolumeChanged -= OnRecordingLevel;
             recorder.Stopped -= OnRecorderStopped;
+                    recorder.StopRequested -= OnRecorderStopRequested;
             recorder.PcmAvailable -= OnRecorderPcm;
             ResetSpectrumLocked();
 
@@ -817,7 +880,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         IsSuccess: isSafe,
                         EndpointReleased: !releaseFailed,
                         FileFinalized: fileErr == null,
-                        Error: releaseErr ?? fileErr ?? captureErr ?? stopEx);
+                        Error: releaseErr ?? fileErr ?? captureErr ?? stopEx,
+                        WriteFailed: recorder.WriteFailed);
 
                     PostThenComplete(
                         () =>
@@ -843,6 +907,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     {
         lock (_gate)
         {
+            if (_openingFinalization is { IsCompleted: false }) return _openingFinalization;
             _openAttempt = null;
             if (_state is VoiceCaptureState.StartingRecording or VoiceCaptureState.Recording)
             {
@@ -880,6 +945,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         lock (_gate)
         {
             if (_disposeTask != null) return _disposeTask;
+            if (_openingFinalization is { IsCompleted: false } pending) return ShutdownAfterOpeningAsync(pending);
 
             _state = VoiceCaptureState.Disposed;
             _openAttempt = null;
@@ -933,6 +999,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         if (recorder == null) return _chain;
         recorder.VolumeChanged -= OnRecordingLevel;
         recorder.Stopped -= OnRecorderStopped;
+                    recorder.StopRequested -= OnRecorderStopRequested;
         recorder.PcmAvailable -= OnRecorderPcm;
         return Enqueue(() =>
         {
@@ -1043,9 +1110,50 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
             if (!ReferenceEquals(sender, _recorder) && !ReferenceEquals(sender, _openingRecorder)) return;
             var fault = ex ?? new InvalidOperationException("Recording stopped unexpectedly.");
             _lastFault = fault;
+            if (ReferenceEquals(sender, _openingRecorder)) return;
             _state = VoiceCaptureState.Faulted;
             UpdateHealthLocked();
             _liveTake?.Freeze();
+        }
+    }
+
+    private async Task<CapturedTake> FinishOpeningAsync(Task<RecordingOpenResult> opening, Action<CapturedTake> onSettled, TaskCompletionSource pending)
+    {
+        try
+        {
+            await opening.ConfigureAwait(false);
+            var drain = FinalizeRecordingAsync(onSettled);
+            if (drain != null) return await drain.ConfigureAwait(false);
+            var empty = new CapturedTake(0, 0, 0, IsSuccess: false, Error: LastFault);
+            var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            PostThenComplete(() => onSettled(empty), () => delivered.TrySetResult());
+            await delivered.Task.ConfigureAwait(false);
+            return empty;
+        }
+        finally
+        {
+            lock (_gate) _pendingFinalizes.Remove(pending);
+            pending.TrySetResult();
+        }
+    }
+
+    private async Task ShutdownAfterOpeningAsync(Task pending)
+    {
+        await pending.ConfigureAwait(false);
+        await Shutdown().ConfigureAwait(false);
+    }
+
+    private void OnRecorderStopRequested(object? sender, EventArgs e)
+    {
+        lock (_gate)
+        {
+            if (sender is not IVoiceRecorderDevice recorder ||
+                (!ReferenceEquals(recorder, _recorder) && !ReferenceEquals(recorder, _openingRecorder))) return;
+            Enqueue(() =>
+            {
+                try { recorder.StopRecording(); }
+                catch (Exception ex) { OnRecorderStopped(recorder, ex); RuntimeLog.Swallowed(ex); }
+            });
         }
     }
 
@@ -1107,6 +1215,7 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         lock (_gate)
         {
             if (sender == null) return;
+            if (ReferenceEquals(sender, _openingRecorder)) _openingPcmBytes += pcm.Count;
             if (ReferenceEquals(sender, _recorder) || ReferenceEquals(sender, _openingRecorder)) liveTake = _liveTake;
             analyse = ReferenceEquals(sender, _recorder) && IsSpectrumSourceEligibleLocked(sender);
             epoch = _spectrumEpoch;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Avalonia;
 using Avalonia.Interactivity;
@@ -231,11 +231,10 @@ public partial class SettingsWindow
         if (string.Equals(_previousMergerOutputDir, _pendingMergerOutputDir, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
-            FreeVideoStudio.Core.Ipc.SessionStateWriter.For(_paths)
-                .Enqueue(new System.Text.Json.Nodes.JsonObject
-                {
-                    ["MergerOutputDirectory"] = _pendingMergerOutputDir ?? ""
-                });
+            _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
+            {
+                ["MergerOutputDirectory"] = _pendingMergerOutputDir ?? ""
+            });
         }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }

@@ -1,4 +1,7 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -104,6 +107,8 @@ public static class MaskOverlayManager
 
         if (!File.Exists(ApplicationPaths.CreateDefault().CropCoordinatesFile))
         {
+            // CROPFIRSTBOOT_01 — ApplyProfile calls EnsureDefaults. Seed the missing live
+            // document directly so a fresh install cannot recurse before its first write.
             var activeName = SanitizeProfileName(SettingsManager.Instance.ActiveMaskOverlay);
             var active = activeName == null ? null
                 : AtomicJsonFile.ReadObject(Path.Combine(ProfilesDirectory, activeName + ".json"));
@@ -130,28 +135,87 @@ public static class MaskOverlayManager
         return list;
     }
 
+    public readonly record struct ProfileLoadResult(
+        bool Success,
+        string? ProfileName,
+        JsonObject? Config,
+        string? ErrorMessage)
+    {
+        public static ProfileLoadResult Succeeded(string profileName, JsonObject config) =>
+            new(true, profileName, config, null);
+
+        public static ProfileLoadResult Failed(string? profileName, string errorMessage) =>
+            new(false, profileName, null, errorMessage);
+    }
+
+    /// <summary>
+    /// CROPPROFILE_01 — Explicitly loads and validates a mask profile without altering live state.
+    /// Returns a validated identity and configuration, or a detailed failure reason.
+    /// </summary>
+    public static ProfileLoadResult LoadProfile(string? profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            return ProfileLoadResult.Failed(null, "No profile name specified.");
+        }
+
+        string? safeName = SanitizeProfileName(profileName);
+        if (safeName == null)
+        {
+            return ProfileLoadResult.Failed(profileName, $"Invalid profile name '{profileName}'.");
+        }
+
+        if (IsNoMask(safeName))
+        {
+            return ProfileLoadResult.Failed(safeName, $"\"{NoMaskProfileName}\" is a reserved HUD-free profile and cannot be edited.");
+        }
+
+        EnsureDefaults();
+
+        string pPath = Path.Combine(ProfilesDirectory, safeName + ".json");
+        if (!File.Exists(pPath))
+        {
+            return ProfileLoadResult.Failed(safeName, $"Profile '{safeName}' does not exist.");
+        }
+
+        JsonObject? config;
+        try
+        {
+            config = AtomicJsonFile.ReadObject(pPath);
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("MASK PROFILE", $"Failed to read profile '{safeName}': {ex.Message}");
+            return ProfileLoadResult.Failed(safeName, $"Profile '{safeName}' could not be read: {ex.Message}");
+        }
+
+        if (config == null || !CropConfigStore.IsUsableConfig(config))
+        {
+            RuntimeLog.Fail("MASK PROFILE", $"Profile '{safeName}' contains invalid or corrupted configuration.");
+            return ProfileLoadResult.Failed(safeName, $"Profile '{safeName}' is corrupted or invalid.");
+        }
+
+        var sanitized = HudConfig.Sanitize(config, migrateLegacy: true);
+        return ProfileLoadResult.Succeeded(safeName, sanitized);
+    }
+
     public static void ApplyProfile(string profileName)
     {
         try
         {
-            EnsureDefaults();
-            var pPath = Path.Combine(ProfilesDirectory, profileName + ".json");
-            if (!File.Exists(pPath))
+            var loadResult = LoadProfile(profileName);
+            if (!loadResult.Success)
             {
-                RuntimeLog.Info("MASK PROFILE", $"Profile '{profileName}' not found. Keeping current crop configuration.");
+                RuntimeLog.Info("MASK PROFILE", $"Profile '{profileName}' not found or invalid: {loadResult.ErrorMessage}. Keeping current crop configuration.");
                 return;
             }
 
-            var config = AtomicJsonFile.ReadObject(pPath);
-            if (config == null) return;
-
-            var sanitized = HudConfig.Sanitize(config, migrateLegacy: true);
             using (AcquireConfigLock())
             {
-                AtomicJsonFile.WriteObject(ApplicationPaths.CreateDefault().CropCoordinatesFile, sanitized);
+                AtomicJsonFile.WriteObject(ApplicationPaths.CreateDefault().CropCoordinatesFile, loadResult.Config!);
             }
 
-            SettingsManager.Update(s => s.ActiveMaskOverlay = profileName);
+            SettingsManager.Update(s => s.ActiveMaskOverlay = loadResult.ProfileName!);
         }
         catch (Exception ex)
         {
@@ -193,25 +257,35 @@ public static class MaskOverlayManager
 
     public static bool SyncActiveProfileFromCurrentConfig()
     {
+        return SyncProfileFromCurrentConfig(SettingsManager.Instance.ActiveMaskOverlay);
+    }
+
+    /// <summary>
+    /// CROPPROFILE_01 — Writes live crop coordinates back to a specific named profile file,
+    /// avoiding blind fallback to global ActiveMaskOverlay.
+    /// </summary>
+    public static bool SyncProfileFromCurrentConfig(string? profileName)
+    {
         try
         {
-            var active = SettingsManager.Instance.ActiveMaskOverlay;
-            if (string.IsNullOrWhiteSpace(active)) return false;
+            if (string.IsNullOrWhiteSpace(profileName)) return false;
+            string? safeName = SanitizeProfileName(profileName);
+            if (safeName == null) return false;
 
-            if (IsNoMask(active))
+            if (IsNoMask(safeName))
             {
-                RuntimeLog.Info("MASK PROFILE", $"'{active}' is read-only. Live crop config NOT written back to it.");
+                RuntimeLog.Info("MASK PROFILE", $"'{safeName}' is read-only. Live crop config NOT written back to it.");
                 return false;
             }
 
-            var pPath = Path.Combine(ProfilesDirectory, active + ".json");
+            var pPath = Path.Combine(ProfilesDirectory, safeName + ".json");
             JsonObject? current;
             using (AcquireConfigLock())
             {
                 current = AtomicJsonFile.ReadObject(ApplicationPaths.CreateDefault().CropCoordinatesFile);
             }
 
-            if (current != null)
+            if (current != null && CropConfigStore.IsUsableConfig(current))
             {
                 if (!Directory.Exists(ProfilesDirectory)) Directory.CreateDirectory(ProfilesDirectory);
                 AtomicJsonFile.WriteObject(pPath, current);
@@ -220,9 +294,45 @@ public static class MaskOverlayManager
         }
         catch (Exception ex)
         {
-            RuntimeLog.Fail("MASK PROFILE", $"Profile sync failed: {ex.Message}");
+            RuntimeLog.Fail("MASK PROFILE", $"Profile sync for '{profileName}' failed: {ex.Message}");
         }
         return false;
+    }
+
+    /// <summary>
+    /// CROPPROFILE_01 — Atomically writes a validated configuration directly to a specific profile file.
+    /// </summary>
+    public static bool SaveProfile(string? profileName, JsonObject config)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(profileName)) return false;
+            string? safeName = SanitizeProfileName(profileName);
+            if (safeName == null) return false;
+
+            if (IsNoMask(safeName))
+            {
+                RuntimeLog.Info("MASK PROFILE", $"'{safeName}' is read-only. Profile file NOT written.");
+                return false;
+            }
+
+            if (!CropConfigStore.IsUsableConfig(config))
+            {
+                RuntimeLog.Fail("MASK PROFILE", $"SaveProfile('{safeName}') refused: config is not usable.");
+                return false;
+            }
+
+            if (!Directory.Exists(ProfilesDirectory)) Directory.CreateDirectory(ProfilesDirectory);
+            var pPath = Path.Combine(ProfilesDirectory, safeName + ".json");
+            var sanitized = HudConfig.Sanitize(config, migrateLegacy: true);
+            AtomicJsonFile.WriteObject(pPath, sanitized);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("MASK PROFILE", $"SaveProfile('{profileName}') failed: {ex.Message}");
+            return false;
+        }
     }
 
     public static void CreateNewProfile(string newName)

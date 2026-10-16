@@ -1,4 +1,7 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+
 using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
@@ -32,6 +35,7 @@ internal static partial class UpdateService
     private static UpdateToastViewModel? _toastVm;
     private static UpdateToastWindow? _toast;
     private static UpdateRelease? _backgroundRelease;
+    private static PreparedUpdate? _preparedUpdate;
 
     /// <summary>The version being downloaded or waiting to install, or null.</summary>
     public static string? PendingVersion
@@ -83,9 +87,12 @@ internal static partial class UpdateService
                     cancel.Token).ConfigureAwait(false);
                 cancel.Token.ThrowIfCancellationRequested();
 
-                Process installer = LaunchInstaller(prepared);
-                lock (BackgroundGate) _waitingInstaller = installer;
-                RuntimeLog.Info("UPDATE", $"Update {release.Tag} ready: {prepared.Summary} Installer waiting for this app to close.");
+                lock (BackgroundGate)
+                {
+                    _preparedUpdate = prepared;
+                    _waitingInstaller = null;
+                }
+                RuntimeLog.Info("UPDATE", $"Update {release.Tag} ready: {prepared.Summary}");
                 RecordResult($"Version {version} is downloaded and ready. {prepared.Summary} It installs when you restart or close the app.");
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -96,14 +103,14 @@ internal static partial class UpdateService
             catch (OperationCanceledException)
             {
                 RuntimeLog.Info("UPDATE", "Background update paused by the user; downloaded parts are kept for next time.");
-                lock (BackgroundGate) { if (ReferenceEquals(_backgroundCancel, cancel)) _backgroundTag = null; }
+                lock (BackgroundGate) { if (ReferenceEquals(_backgroundCancel, cancel)) { _backgroundTag = null; _preparedUpdate = null; } }
                 RecordResult($"The update to version {version} was paused. It continues next time.");
                 Dispatcher.UIThread.Post(() => _toastVm?.Paused());
             }
             catch (Exception ex)
             {
                 RuntimeLog.Fail("UPDATE", $"Background update failed: {ex}");
-                lock (BackgroundGate) { if (ReferenceEquals(_backgroundCancel, cancel)) _backgroundTag = null; }
+                lock (BackgroundGate) { if (ReferenceEquals(_backgroundCancel, cancel)) { _backgroundTag = null; _preparedUpdate = null; } }
                 RecordResult("The update could not be downloaded: " + ex.Message);
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -120,7 +127,7 @@ internal static partial class UpdateService
     /// For a smart update the installer is the NEW program itself,
     /// and --smart names the folder holding the signed list and the changed files (DIST-SMART).
     /// </summary>
-    private static Process LaunchInstaller(PreparedUpdate prepared)
+    private static Process LaunchInstaller(PreparedUpdate prepared, bool noLaunch = false)
     {
         var installer = new ProcessStartInfo(prepared.InstallerPath) { UseShellExecute = DevReleaseFolder is null };
         if (DevReleaseFolder is not null)
@@ -143,6 +150,10 @@ internal static partial class UpdateService
         }
         installer.ArgumentList.Add("--wait-pid");
         installer.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        if (noLaunch)
+        {
+            installer.ArgumentList.Add("--no-launch");
+        }
         return Process.Start(installer) ?? throw new IOException("Could not start the update.");
     }
 
@@ -161,6 +172,7 @@ internal static partial class UpdateService
             _backgroundCancel?.Cancel();
             _backgroundTag = null;
             _waitingInstaller = null;
+            _preparedUpdate = null;
         }
         if (tag is null) return;
         try
@@ -173,7 +185,7 @@ internal static partial class UpdateService
         }
         UiStateStore.WriteText(SkippedTagFile, tag);
         RecordResult($"Version {tag.TrimStart('v', 'V')} is available — you chose to skip it.");
-        RuntimeLog.Info("UPDATE", $"User skipped {tag} from Settings.");
+        RuntimeLog.Info("UPDATE", $"User skipped {tag}.");
         Dispatcher.UIThread.Post(CloseToast);
     }
 
@@ -185,14 +197,51 @@ internal static partial class UpdateService
         {
             CloseToast();
             Window? main = MainWindowOrNull();
-            if (main != null) RestartToUpdate(main);
+            if (main != null)
+            {
+                lock (BackgroundGate)
+                {
+                    if (_waitingInstaller is { HasExited: false })
+                    {
+                        try { _waitingInstaller.Kill(entireProcessTree: true); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                        _waitingInstaller = null;
+                    }
+                    if (_preparedUpdate != null)
+                    {
+                        try
+                        {
+                            _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: false);
+                        }
+                        catch (Exception ex)
+                        {
+                            RuntimeLog.Fail("UPDATE", $"Could not relaunch installer without --no-launch: {ex.Message}");
+                        }
+                    }
+                }
+                RestartToUpdate(main);
+            }
         };
         vm.LaterRequested += () =>
         {
             CloseToast();
+            lock (BackgroundGate)
+            {
+                if (_waitingInstaller is null && _preparedUpdate != null)
+                {
+                    try
+                    {
+                        _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RuntimeLog.Fail("UPDATE", $"Could not launch deferred installer: {ex.Message}");
+                    }
+                }
+            }
             if (MainWindowOrNull() is { } main)
-                FloatingNotice.Info(main, "The update will install by itself when you close Free Video Studio.");
+                FloatingNotice.Info(main, "The update will prompt for administrator permission (UAC) and install when you close Free Video Studio.");
         };
+        vm.SkipRequested += SkipPendingVersion;
         vm.PauseRequested += () =>
         {
             lock (BackgroundGate) _backgroundCancel?.Cancel();

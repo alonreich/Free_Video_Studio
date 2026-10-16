@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -145,6 +145,11 @@ public sealed partial class GranularEditSession
     public bool HasSelectedSegment => SelectedSegmentIndex >= 0 && SelectedSegmentIndex < Segments.Count;
 
     public SpeedSegment? SelectedSegment => HasSelectedSegment ? Segments[SelectedSegmentIndex] : null;
+
+    /// <summary>
+    /// AICAPTION_MODEL_01 — commentary captions track applied to this edit session.
+    /// </summary>
+    public CaptionTrack? CaptionTrack { get; set; }
 
 
     /// <summary>

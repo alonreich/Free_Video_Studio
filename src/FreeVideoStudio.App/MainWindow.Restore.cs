@@ -1,4 +1,7 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -108,6 +111,7 @@ public partial class MainWindow
             bool applied = _projectSession?.OpenDocument(document, allowMissingSource: true) ?? false;
             if (!applied)
             {
+                // RESTOREFAIL_01 — when OpenDocument fails, quarantine snapshot instead of clearing.
                 RuntimeLog.Fail("RECOVERY", "The recovered project document could not be applied to the editor.");
                 await PreserveFailedRestoreSnapshotAsync();
                 return;
@@ -241,6 +245,7 @@ public partial class MainWindow
             var addMemeCbRestore = AddMemeCheckboxCtl;
             if (addMemeCbRestore != null) addMemeCbRestore.IsChecked = addMeme;
 
+            // MEMEFOLDER_02 — a meme saved under the old spaced folder resolves to where it moved.
             string memeFilePath = FreeVideoStudio.Core.Infrastructure.MigrationPathResolver.ResolveSavedFile((string?)state["memeFilePath"] ?? "");
             string memeFile = (string?)state["memeFile"] ?? "";
             string restoreTarget = !string.IsNullOrEmpty(memeFilePath) ? memeFilePath
@@ -415,30 +420,18 @@ public partial class MainWindow
     /// </summary>
     private void RestoreVoiceOverTransient(ProjectDocument document, JsonObject state)
     {
-        bool hasVoiceOver = document.Audio.VoiceOverFilePath != null
+        bool hasVoiceOver = document.Audio.VoiceOverTakes.Count > 0 || document.Audio.VoiceOverFilePath != null
             || state.ContainsKey("voiceOverTakes")
             || state.ContainsKey("voiceOverDuckAudio")
             || state.ContainsKey("voiceOverProtectFromMusic");
         if (!hasVoiceOver) return;
 
         string? wavPath = document.Audio.VoiceOverFilePath;
-        bool duckAudio = state.TryGetPropertyValue("voiceOverDuckAudio", out var dNode) && dNode != null && dNode.GetValue<bool>();
-        bool protectFromMusic = state.TryGetPropertyValue("voiceOverProtectFromMusic", out var pmNode) && pmNode != null && pmNode.GetValue<bool>();
+        bool duckAudio = state.TryGetPropertyValue("voiceOverDuckAudio", out var dNode) && dNode != null ? dNode.GetValue<bool>() : document.Audio.VoiceOverDuckAudio;
+        bool protectFromMusic = state.TryGetPropertyValue("voiceOverProtectFromMusic", out var pmNode) && pmNode != null ? pmNode.GetValue<bool>() : document.Audio.VoiceOverProtectFromMusic;
 
-        var restoredTakes = new List<VoiceOverTake>();
-        if (state.TryGetPropertyValue("voiceOverTakes", out var takesNode) && takesNode is JsonArray takesArray)
-        {
-            foreach (var takeNode in takesArray)
-            {
-                if (takeNode is not JsonObject takeObj) continue;
-                string? takePath = takeObj["path"]?.GetValue<string>();
-                double takeStart = takeObj["startSec"]?.GetValue<double>() ?? 0;
-                if (!string.IsNullOrWhiteSpace(takePath) && File.Exists(takePath))
-                {
-                    restoredTakes.Add(new VoiceOverTake(takePath, takeStart));
-                }
-            }
-        }
+        var restoredTakes = document.Audio.VoiceOverTakes.Count > 0 ? document.Audio.VoiceOverTakes.ToList() :
+            VoiceOverTakeJson.Read(state["voiceOverTakes"]).ToList();
 
         if (restoredTakes.Count > 0 || (!string.IsNullOrEmpty(wavPath) && File.Exists(wavPath)) || duckAudio)
         {

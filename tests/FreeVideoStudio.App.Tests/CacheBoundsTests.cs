@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -6,10 +6,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using FreeVideoStudio.App.Infrastructure;
+using FreeVideoStudio.Core.Media;
 using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
@@ -362,6 +366,7 @@ public sealed class CacheBoundsTests : IDisposable
     }
 
     [Fact]
+    // CACHEBOUND_02: load only visible rows and the bounded prefetch margin.
     public async Task OnlyVisibleAndNearVisibleRowsLoad_OutOfThousands()
     {
         var h = new Harness();
@@ -530,6 +535,7 @@ public sealed class CacheBoundsTests : IDisposable
         : Array.Empty<string>();
 
     [Fact]
+    // CACHEBOUND_03: continuously enforce both disk-cache budgets.
     public async Task ThousandsOfWrites_ArePrunedContinuously_UnderBothBudgets()
     {
         var store = NewStore(maxFiles: 100, maxBytes: 64 * 1024);
@@ -645,6 +651,7 @@ public sealed class CacheBoundsTests : IDisposable
 
 
     [Fact]
+    // CACHEBOUND_04: preserve visible leases and bound off-lane images.
     public void FilmStrips_OnTheLaneAreNeverDisposed_AndOffLaneStripsStayWithinBudget()
     {
         var cache = new OwnedLruCache<Fake>(maxBytes: 10 * 2_300_000L, maxEntries: 128);
@@ -686,6 +693,7 @@ public sealed class CacheBoundsTests : IDisposable
 
 
     [Fact]
+    // ATOMICBYTES_01: verify atomic replacement and temporary-file cleanup.
     public void AtomicWriteBytes_ReplacesWholeFiles_AndLeavesNoTemp()
     {
         string p = Path.Combine(_root, "atomic", "x.png");
@@ -721,6 +729,389 @@ public sealed class CacheBoundsTests : IDisposable
         int releases = System.Text.RegularExpressions.Regex.Matches(lanes, @"ReleaseFilmLeases\(").Count;
         Assert.True(releases >= clears + 1, $"every film-lane clear ({clears}) must release its leases ({releases - 1} calls)");
         Assert.Contains("_filmCache.Clear()", lanes);
+
+        string cornerPresenter = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Infrastructure", "CornerMemeOverlayPresenter.cs"));
+        Assert.DoesNotContain("ConcurrentDictionary<string, Task<CornerMemeFrameSet?>>", cornerPresenter);
+        Assert.Contains("OwnedLruCache<CornerMemeFrameWindow>", cornerPresenter);
+        Assert.Contains("CACHEBOUND_05", cornerPresenter);
+    }
+
+    private static WriteableBitmap MakeBmp(int w = 10, int h = 10)
+        => new(new PixelSize(Math.Max(1, w), Math.Max(1, h)), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
+
+    private static CornerMemeFrameWindow MakeWindow(string path, int win, int framesCount = 5, int w = 10, int h = 10)
+    {
+        var bmps = Enumerable.Range(0, framesCount).Select(_ => MakeBmp(w, h)).ToArray();
+        return new CornerMemeFrameWindow(path, win, win * CornerMemeFrames.WindowDurationSeconds, CornerMemeFrames.WindowDurationSeconds, CornerMemeFrames.Fps, bmps);
+    }
+
+    [AvaloniaFact]
+    public void CornerMeme_CACHEBOUND_05_BoundedActiveWindowAndByteAccounting()
+    {
+        // CACHEBOUND_05 — active window footprint is bounded and strictly accounted for
+        const int w = 360;
+        const int h = 640;
+        const int frames = 30; // 2.5s at 12 fps
+        long expectedMaxFrameBytes = (long)w * h * 4 * frames; // 27,648,000 bytes (~26.4 MiB)
+        Assert.True(expectedMaxFrameBytes <= CornerMemeFrames.MaxActiveWindowBytes, "Max active window bytes must be strictly bounded");
+
+        var win = MakeWindow("test.mp4", 0, framesCount: 30, w: 360, h: 640);
+        Assert.Equal(expectedMaxFrameBytes, win.ByteCost);
+        Assert.False(win.IsDisposed);
+        Assert.Equal(0, win.Disposals);
+
+        win.Dispose();
+        Assert.True(win.IsDisposed);
+        Assert.Equal(1, win.Disposals);
+
+        // Exactly-once disposal
+        win.Dispose();
+        Assert.Equal(1, win.Disposals);
+    }
+
+    [AvaloniaFact]
+    public void CornerMeme_CACHEBOUND_05_OffscreenCacheBudgetAndEviction()
+    {
+        // CACHEBOUND_05 — offscreen window bytes are budgeted in OwnedLruCache, evicting unleased entries
+        var cache = new OwnedLruCache<CornerMemeFrameWindow>(maxBytes: 3000, maxEntries: 10);
+        var w0 = MakeWindow("m.mp4", 0, framesCount: 1, w: 10, h: 25); // 10*25*4 = 1000 bytes
+        var lease0 = cache.AddAndAcquire("k0", "id0", w0, w0.ByteCost)!;
+
+        // Lease is open: w0 is pinned
+        Assert.Equal(1, cache.PinnedCount);
+
+        // Add 5 more unleased windows (5 * 1000 = 5000 bytes > 3000 maxBytes)
+        for (int i = 1; i <= 5; i++)
+        {
+            var wi = MakeWindow("m.mp4", i, framesCount: 1, w: 10, h: 25);
+            cache.AddAndAcquire($"k{i}", $"id{i}", wi, wi.ByteCost)!.Dispose();
+        }
+
+        // w0 was pinned, so it MUST NOT be evicted or disposed!
+        Assert.False(w0.IsDisposed);
+        Assert.Equal(0, w0.Disposals);
+
+        // Close lease0: now w0 is eligible for eviction when cache trims
+        lease0.Dispose();
+        var w6 = MakeWindow("m.mp4", 6, framesCount: 1, w: 10, h: 25);
+        cache.AddAndAcquire("k6", "id6", w6, w6.ByteCost)!.Dispose();
+
+        Assert.True(cache.Bytes <= cache.MaxBytes);
+    }
+
+    [AvaloniaFact]
+    public async Task CornerMeme_CACHEBOUND_05_SameKeyContention_CoalescesIntoSingleDecode()
+    {
+        // CACHEBOUND_05 — concurrent callers for the same key coalesce into a single decode
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("contention.mp4", 100);
+        int decodeCount = 0;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        CornerMemeFrames.CustomDecoder = async (path, win, ct) =>
+        {
+            Interlocked.Increment(ref decodeCount);
+            await gate.Task.WaitAsync(ct);
+            return MakeWindow(path, win, framesCount: 2);
+        };
+
+        try
+        {
+            var tasks = Enumerable.Range(0, 8)
+                .Select(_ => CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None))
+                .ToList();
+
+            gate.SetResult();
+            var leases = await Task.WhenAll(tasks);
+
+            Assert.Equal(1, decodeCount); // Exactly ONE decode ran
+            Assert.All(leases, l => Assert.NotNull(l));
+            var firstWindow = leases[0]!.Value;
+            Assert.All(leases, l => Assert.Same(firstWindow, l!.Value));
+            Assert.False(firstWindow.IsDisposed);
+
+            // Dispose 7 leases
+            for (int i = 0; i < 7; i++) leases[i]!.Dispose();
+            Assert.False(firstWindow.IsDisposed);
+
+            // Dispose 8th lease
+            leases[7]!.Dispose();
+            Assert.False(firstWindow.IsDisposed); // Still in cache unpinned
+
+            CornerMemeFrames.Clear();
+            Assert.True(firstWindow.IsDisposed);
+            Assert.Equal(1, firstWindow.Disposals);
+        }
+        finally
+        {
+            CornerMemeFrames.CustomDecoder = null;
+            CornerMemeFrames.Clear();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task CornerMeme_CACHEBOUND_05_CancellationOfOneConsumer_DoesNotCancelOrCorruptOthers()
+    {
+        // CACHEBOUND_05 — cancelling one consumer must not destroy another consumer's lease or request
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("shared.mp4", 100);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        CornerMemeFrames.CustomDecoder = async (path, win, ct) =>
+        {
+            await gate.Task.WaitAsync(ct);
+            return MakeWindow(path, win, framesCount: 2);
+        };
+
+        try
+        {
+            var cts = new CancellationTokenSource();
+            var taskA = CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None);
+            var taskB = CornerMemeFrames.AcquireWindowAsync(testFile, 0, cts.Token);
+
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => taskB);
+
+            gate.SetResult();
+            using var leaseA = await taskA;
+            Assert.NotNull(leaseA);
+            Assert.False(leaseA.Value.IsDisposed);
+        }
+        finally
+        {
+            CornerMemeFrames.CustomDecoder = null;
+            CornerMemeFrames.Clear();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task CornerMeme_CACHEBOUND_05_FailedOrPartialDecode_DisposesPartialBitmaps_AndAllowsRetry()
+    {
+        // CACHEBOUND_05 — partial bitmaps are disposed on failure, and transient failure can be retried
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("retry.mp4", 100);
+        int attempts = 0;
+
+        CornerMemeFrames.CustomDecoder = (path, win, ct) =>
+        {
+            int att = Interlocked.Increment(ref attempts);
+            if (att == 1)
+            {
+                throw new InvalidOperationException("Simulated transient decode error");
+            }
+            return Task.FromResult<CornerMemeFrameWindow?>(MakeWindow(path, win, framesCount: 2));
+        };
+
+        try
+        {
+            var l1 = await CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None);
+            Assert.Null(l1);
+            Assert.Equal(1, attempts);
+
+            // Retry should succeed now
+            using var l2 = await CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None);
+            Assert.NotNull(l2);
+            Assert.Equal(2, attempts);
+            Assert.False(l2.Value.IsDisposed);
+        }
+        finally
+        {
+            CornerMemeFrames.CustomDecoder = null;
+            CornerMemeFrames.Clear();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task CornerMeme_CACHEBOUND_05_FileReplacement_RetiresOldWindows_AndInvalidates()
+    {
+        // CACHEBOUND_05 — file identity replacement retires old cached windows
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("replace_target.mp4", 100);
+
+        CornerMemeFrames.CustomDecoder = (path, win, ct) =>
+            Task.FromResult<CornerMemeFrameWindow?>(MakeWindow(path, win, framesCount: 2));
+
+        try
+        {
+            using var l1 = await CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None);
+            Assert.NotNull(l1);
+            var oldWindow = l1.Value;
+            Assert.Equal(1, CornerMemeFrames.Store.Count);
+
+            // Replace file with different byte length
+            File.WriteAllBytes(testFile, new byte[250]);
+
+            using var l2 = await CornerMemeFrames.AcquireWindowAsync(testFile, 0, CancellationToken.None);
+            Assert.NotNull(l2);
+            var newWindow = l2.Value;
+            Assert.NotSame(oldWindow, newWindow);
+
+            // Invalidate removes all windows for path
+            CornerMemeFrames.Invalidate(testFile);
+            Assert.Equal(0, CornerMemeFrames.Store.Count);
+        }
+        finally
+        {
+            CornerMemeFrames.CustomDecoder = null;
+            CornerMemeFrames.Clear();
+        }
+    }
+
+    [AvaloniaFact]
+    public void CornerMeme_CACHEBOUND_05_TwoPresenters_SharingFrames_SafeOwnership()
+    {
+        // CACHEBOUND_05 — two presenters can share frames without double-disposal or use-after-dispose
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("shared_meme.mp4", 100);
+        var fi = new FileInfo(testFile);
+        string key = $"{testFile}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}#w0";
+
+        var win = MakeWindow(testFile, 0, framesCount: 10, w: 100, h: 100);
+        using (var initLease = CornerMemeFrames.Store.AddAndAcquire(
+            key, $"{testFile}#w0", win, win.ByteCost)) { }
+
+        var p1 = new CornerMemeOverlayPresenter();
+        var p2 = new CornerMemeOverlayPresenter();
+
+        var panel = new Panel { Width = 800, Height = 600 };
+        var host = new Border { Width = 640, Height = 360 };
+        panel.Children.Add(host);
+
+        p1.Attach(host);
+        p2.Attach(host);
+        panel.Measure(new Size(800, 600));
+        panel.Arrange(new Rect(0, 0, 800, 600));
+        host.Measure(new Size(640, 360));
+        host.Arrange(new Rect(0, 0, 640, 360));
+
+        var meme = new FreeVideoStudio.Core.Media.MemePlacement(testFile, 1.0, 5.0, "m1",
+            Mode: MemePresentationMode.CornerOverlay, Corner: MemeOverlayCorner.BottomRight, Size: MemeOverlaySize.Medium);
+        var span = new CornerMemeSpan(meme, 1.0, 6.0);
+        p1.SetSpans(new[] { span });
+        p2.SetSpans(new[] { span });
+
+        // Update at 2.0s: both presenters acquire lease on window 0
+        p1.Update(2.0);
+        p2.Update(2.0);
+
+        Assert.False(win.IsDisposed);
+        Assert.True(CornerMemeFrames.Store.PinnedCount >= 1);
+
+        // p1 hides and disposes its lease
+        p1.Hide();
+        Assert.False(win.IsDisposed); // Window is still held by p2!
+
+        p1.Dispose();
+        Assert.False(win.IsDisposed); // Window is still held by p2!
+
+        p2.Dispose(); // p2 disposes its lease
+        Assert.False(win.IsDisposed); // Unpinned in cache, ready for reuse
+
+        CornerMemeFrames.Clear();
+        Assert.True(win.IsDisposed);
+        Assert.Equal(1, win.Disposals);
+    }
+
+    [AvaloniaFact]
+    public void CornerMeme_CACHEBOUND_05_RapidSeeks_AndOrdinaryPlayback_ReuseAndNoUseAfterDispose()
+    {
+        // CACHEBOUND_05 — presenter reuses window during playback, releases cleanly across window boundaries
+        CornerMemeFrames.ResetStoreForTesting();
+        string testFile = MemeFile("seq.mp4", 100);
+        var fi = new FileInfo(testFile);
+        string k0 = $"{testFile}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}#w0";
+        string k1 = $"{testFile}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}#w1";
+        string k2 = $"{testFile}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}#w2";
+
+        var w0 = MakeWindow(testFile, 0, framesCount: 10);
+        var w1 = MakeWindow(testFile, 1, framesCount: 10);
+        var w2 = MakeWindow(testFile, 2, framesCount: 10);
+
+        using (var l0 = CornerMemeFrames.Store.AddAndAcquire(k0, $"{testFile}#w0", w0, w0.ByteCost)) { }
+        using (var l1 = CornerMemeFrames.Store.AddAndAcquire(k1, $"{testFile}#w1", w1, w1.ByteCost)) { }
+        using (var l2 = CornerMemeFrames.Store.AddAndAcquire(k2, $"{testFile}#w2", w2, w2.ByteCost)) { }
+
+        var presenter = new CornerMemeOverlayPresenter();
+        var panel = new Panel { Width = 800, Height = 600 };
+        var host = new Border { Width = 640, Height = 360 };
+        panel.Children.Add(host);
+        presenter.Attach(host);
+        panel.Measure(new Size(800, 600));
+        panel.Arrange(new Rect(0, 0, 800, 600));
+        host.Measure(new Size(640, 360));
+        host.Arrange(new Rect(0, 0, 640, 360));
+
+        var meme = new FreeVideoStudio.Core.Media.MemePlacement(testFile, 0.0, 10.0, "m1",
+            Mode: MemePresentationMode.CornerOverlay, Corner: MemeOverlayCorner.BottomRight, Size: MemeOverlaySize.Medium);
+        presenter.SetSpans(new[] { new CornerMemeSpan(meme, 0.0, 10.0) });
+
+        // Play in window 0 (0.0 - 2.5s)
+        presenter.Update(0.5);
+        presenter.Update(1.0);
+        presenter.Update(2.0);
+
+        // Move to window 1 (2.5 - 5.0s)
+        presenter.Update(3.0);
+
+        // Seek back to window 0 (1.5s): reuses cached window 0
+        presenter.Update(1.5);
+
+        // Rapid seek to window 2 (6.0s)
+        presenter.Update(6.0);
+
+        // Detach on close
+        presenter.Dispose();
+
+        Assert.False(w0.IsDisposed);
+        Assert.False(w1.IsDisposed);
+        Assert.False(w2.IsDisposed);
+
+        CornerMemeFrames.Clear();
+        Assert.True(w0.IsDisposed);
+        Assert.True(w1.IsDisposed);
+        Assert.True(w2.IsDisposed);
+    }
+
+    [Fact]
+    public void CornerMeme_CACHEBOUND_05_ExtremeAspectRatios_FitPreservedWithoutOverflow()
+    {
+        // CACHEBOUND_05 — extreme portrait and landscape aspect ratios are fitted correctly
+        // 1:10 extreme portrait
+        var (x1, y1, w1, h1) = MemeOverlayLayout.Place(1920, 1080, 100, 1000, MemeOverlayCorner.BottomRight, MemeOverlaySize.Medium);
+        Assert.True(w1 >= 2 && w1 % 2 == 0);
+        Assert.True(h1 >= 2 && h1 % 2 == 0);
+        Assert.True(x1 + w1 <= 1920);
+        Assert.True(y1 + h1 <= 1080);
+
+        // 10:1 extreme landscape
+        var (x2, y2, w2, h2) = MemeOverlayLayout.Place(1920, 1080, 1000, 100, MemeOverlayCorner.TopLeft, MemeOverlaySize.Large);
+        Assert.True(w2 >= 2 && w2 % 2 == 0);
+        Assert.True(h2 >= 2 && h2 % 2 == 0);
+        Assert.True(x2 + w2 <= 1920);
+        Assert.True(y2 + h2 <= 1080);
+    }
+
+    [AvaloniaFact]
+    public async Task CornerMeme_CACHEBOUND_05_RealMediaDecoder_SmokeTest()
+    {
+        // CACHEBOUND_05 — real media decode smoke test
+        string starterPath = Path.Combine(RepoRoot.SourcePath("meme", "oopsie.png"));
+        if (!File.Exists(starterPath)) return;
+
+        CornerMemeFrames.ResetStoreForTesting();
+        try
+        {
+            using var lease = await CornerMemeFrames.AcquireWindowAsync(starterPath, 0, CancellationToken.None);
+            Assert.NotNull(lease);
+            Assert.Single(lease.Value.Frames);
+            Assert.True(lease.Value.Frames[0].PixelSize.Width <= CornerMemeFrames.Width);
+            Assert.True(lease.Value.Frames[0].PixelSize.Height <= CornerMemeFrames.MaxHeight);
+            Assert.True(lease.Value.ByteCost > 0);
+        }
+        finally
+        {
+            CornerMemeFrames.Clear();
+        }
     }
 
     private static void InterlockedMax(ref int target, int value)

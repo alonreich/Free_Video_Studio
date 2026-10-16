@@ -1,4 +1,9 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using Avalonia.Controls;
 
 using Avalonia.Interactivity;
@@ -3883,6 +3888,10 @@ public partial class MusicWizardWindow : Window
 
 
     /// <summary>VOLCURVE_01 — the MUSIC fader as a LINEAR gain, times the PREVIEW1_01 ease-in.</summary>
+    // LOUDSTD_REMOVED_01 — PREVIEW_04's balance correction (SourceMeasuredLufs, GameBusTargetLufs,
+    // EnsureMusicBedGainAsync) compensated for a -14 LUFS normalisation the export no longer does.
+    // Its measurement ran an ffmpeg pass per song and its result was already hard-wired to 0 dB. Both
+    // buses export at their recorded level times their fader, which is exactly what plays here.
     private double GetPreviewMusicBalance() =>
         Math.Clamp((MusicVolSliderCtl?.Value ?? 100.0) / 100.0 * CurrentPreviewFadeFactor(), 0.0, 1.0);
 

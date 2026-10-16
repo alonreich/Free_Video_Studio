@@ -1,5 +1,6 @@
-﻿
-
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Globalization;
 using System.Text;
 using FreeVideoStudio.Core.Infrastructure;
@@ -50,6 +51,7 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
+    // AIPARITY_01 — AiOriginSec is the zoom's UNCLAMPED clip-relative start: the trajectory's t = 0.
     private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
@@ -158,6 +160,167 @@ public class GranularSpeedBuilder
     /// deny ramps that are perfectly safe.
     /// </summary>
     public const double ZoomRampRequiredGapBetweenSlowZooms = ZoomRampSeconds * 2.0;
+
+    /// <summary>
+    /// SLOWZOOMGLIDE_01 — Per-side glide availability evaluation for a slow zoom.
+    ///
+    /// Evaluates whether the potential 0.5s incoming and outgoing ramps fit the source footage.
+    /// Uses exact renderer ordering and nearest valid neighbour on each side:
+    /// - Clip boundaries or Instant zoom neighbour: requires ZoomRampMinAvailableSeconds (0.5s)
+    /// - Adjacent Slow zoom neighbour: requires ZoomRampRequiredGapBetweenSlowZooms (1.0s)
+    /// </summary>
+    public readonly record struct SlowZoomGlideAvailability(
+        bool HasZoom,
+        bool IsSlow,
+        bool IncomingAvailable,
+        bool OutgoingAvailable,
+        double IncomingRequiredSec,
+        double OutgoingRequiredSec,
+        double IncomingAvailableSec,
+        double OutgoingAvailableSec,
+        bool IncomingNeighborIsSlow,
+        bool OutgoingNeighborIsSlow,
+        double ZoomStartSec,
+        double ZoomEndSec
+    )
+    {
+        public static readonly SlowZoomGlideAvailability None = new(
+            HasZoom: false,
+            IsSlow: false,
+            IncomingAvailable: false,
+            OutgoingAvailable: false,
+            IncomingRequiredSec: 0,
+            OutgoingRequiredSec: 0,
+            IncomingAvailableSec: 0,
+            OutgoingAvailableSec: 0,
+            IncomingNeighborIsSlow: false,
+            OutgoingNeighborIsSlow: false,
+            ZoomStartSec: 0,
+            ZoomEndSec: 0);
+
+        public bool AnyUnavailable => IsSlow && (!IncomingAvailable || !OutgoingAvailable);
+
+        public string GetIncomingExplanation()
+            => IncomingNeighborIsSlow
+                ? "These smooth zooms need 1 second of footage between them. There is not enough footage for the incoming glide."
+                : "This glide needs 0.5 seconds of footage. There is not enough footage for the incoming glide.";
+
+        public string GetOutgoingExplanation()
+            => OutgoingNeighborIsSlow
+                ? "These smooth zooms need 1 second of footage between them. There is not enough footage for the outgoing glide."
+                : "This glide needs 0.5 seconds of footage. There is not enough footage for the outgoing glide.";
+
+        public string? GetCombinedExplanation()
+        {
+            if (!IsSlow) return null;
+            if (!IncomingAvailable && !OutgoingAvailable)
+            {
+                if (IncomingNeighborIsSlow && OutgoingNeighborIsSlow)
+                    return "These smooth zooms need 1 second of footage between them. There is not enough footage for the incoming glide. There is not enough footage for the outgoing glide.";
+                if (IncomingNeighborIsSlow)
+                    return "These smooth zooms need 1 second of footage between them. There is not enough footage for the incoming glide. This glide needs 0.5 seconds of footage. There is not enough footage for the outgoing glide.";
+                if (OutgoingNeighborIsSlow)
+                    return "This glide needs 0.5 seconds of footage. There is not enough footage for the incoming glide. These smooth zooms need 1 second of footage between them. There is not enough footage for the outgoing glide.";
+                return "This glide needs 0.5 seconds of footage. There is not enough footage for the incoming glide. There is not enough footage for the outgoing glide.";
+            }
+            if (!IncomingAvailable) return GetIncomingExplanation();
+            if (!OutgoingAvailable) return GetOutgoingExplanation();
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// SLOWZOOMGLIDE_01 — Evaluates per-side glide availability for the zoom at <paramref name="segIndex"/>.
+    /// Uses exact renderer ordering and nearest valid neighbour on each side.
+    /// </summary>
+    public static SlowZoomGlideAvailability GetSlowZoomGlideAvailability(
+        IReadOnlyList<SpeedSegment>? segments,
+        int segIndex,
+        double totalDurationSec,
+        double trimStartSec = 0,
+        SpeedSegment? overrideSegment = null)
+    {
+        if (segments == null || segIndex < 0 || segIndex >= segments.Count)
+            return SlowZoomGlideAvailability.None;
+
+        var targetSeg = overrideSegment ?? segments[segIndex];
+        if (!targetSeg.ZoomW.HasValue || !targetSeg.ZoomH.HasValue || !targetSeg.ZoomX.HasValue || !targetSeg.ZoomY.HasValue || string.IsNullOrEmpty(targetSeg.ZoomOrigRes))
+            return SlowZoomGlideAvailability.None;
+
+        var zooms = new List<(double zs, double ze, bool isSlow, int index)>();
+        for (int i = 0; i < segments.Count; i++)
+        {
+            var s = (i == segIndex && overrideSegment != null) ? overrideSegment : segments[i];
+            if (!s.ZoomW.HasValue || !s.ZoomH.HasValue || !s.ZoomX.HasValue || !s.ZoomY.HasValue || string.IsNullOrEmpty(s.ZoomOrigRes))
+                continue;
+
+            double zs = ((s.ZoomStartMs ?? s.StartMs) / 1000.0) - trimStartSec;
+            double ze = ((s.ZoomEndMs ?? s.EndMs) / 1000.0) - trimStartSec;
+            if (totalDurationSec > 0)
+            {
+                zs = Math.Max(0, Math.Min(zs, totalDurationSec));
+                ze = Math.Max(0, Math.Min(ze, totalDurationSec));
+            }
+            if (ze > zs + 0.001)
+            {
+                zooms.Add((zs, ze, s.ZoomSlow, i));
+            }
+        }
+
+        if (zooms.Count == 0) return SlowZoomGlideAvailability.None;
+
+        zooms.Sort((a, b) => a.zs.CompareTo(b.zs));
+
+        int targetIdx = zooms.FindIndex(z => z.index == segIndex);
+        if (targetIdx < 0) return SlowZoomGlideAvailability.None;
+
+        var target = zooms[targetIdx];
+        if (!target.isSlow)
+        {
+            return new SlowZoomGlideAvailability(
+                HasZoom: true,
+                IsSlow: false,
+                IncomingAvailable: false,
+                OutgoingAvailable: false,
+                IncomingRequiredSec: 0,
+                OutgoingRequiredSec: 0,
+                IncomingAvailableSec: 0,
+                OutgoingAvailableSec: 0,
+                IncomingNeighborIsSlow: false,
+                OutgoingNeighborIsSlow: false,
+                ZoomStartSec: target.zs,
+                ZoomEndSec: target.ze);
+        }
+
+        double prevEnd = (targetIdx > 0) ? zooms[targetIdx - 1].ze : 0.0;
+        double nextStart = (targetIdx < zooms.Count - 1) ? zooms[targetIdx + 1].zs : totalDurationSec;
+
+        bool prevIsSlow = (targetIdx > 0) && zooms[targetIdx - 1].isSlow;
+        bool nextIsSlow = (targetIdx < zooms.Count - 1) && zooms[targetIdx + 1].isSlow;
+
+        double requiredBefore = prevIsSlow ? ZoomRampRequiredGapBetweenSlowZooms : ZoomRampMinAvailableSeconds;
+        double requiredAfter = nextIsSlow ? ZoomRampRequiredGapBetweenSlowZooms : ZoomRampMinAvailableSeconds;
+
+        double availBefore = target.zs - prevEnd;
+        double availAfter = nextStart - target.ze;
+
+        bool inAvail = availBefore >= requiredBefore;
+        bool outAvail = availAfter >= requiredAfter;
+
+        return new SlowZoomGlideAvailability(
+            HasZoom: true,
+            IsSlow: true,
+            IncomingAvailable: inAvail,
+            OutgoingAvailable: outAvail,
+            IncomingRequiredSec: requiredBefore,
+            OutgoingRequiredSec: requiredAfter,
+            IncomingAvailableSec: availBefore,
+            OutgoingAvailableSec: availAfter,
+            IncomingNeighborIsSlow: prevIsSlow,
+            OutgoingNeighborIsSlow: nextIsSlow,
+            ZoomStartSec: target.zs,
+            ZoomEndSec: target.ze);
+    }
 
     /// <summary>ISSUE_02 — filter dimensions must be positive even integers.</summary>
     private static int EvenDim(double v)
@@ -426,6 +589,7 @@ public class GranularSpeedBuilder
 
         if (nChunks == 0)
         {
+            // AVSYNC_04: compensate tempo latency and bound audio to the source duration divided by speed.
             string baseAtempoSegment = AudioTempoFilterBuilder.Segment(baseSpeed, leadingComma: true, totalDurationSec);
             string aChain = !string.IsNullOrEmpty(inputAudioLabel)
                 ? $"{inputAudioLabel}aresample=48000:async=1,asetpts=PTS-STARTPTS{baseAtempoSegment}[a_speed_out]"

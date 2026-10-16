@@ -43,6 +43,15 @@
                                             Background="{DynamicResource AppOverlayBrush}" ZIndex="9999"
                                             ToolTip.Tip="Pop the preview out into its own floating window. It remembers its size, position and which screen you left it on."/>
 
+                                    <!-- VOCLOCK_01: Active visual feedback while the timed preview proxy is being prepared. -->
+                                    <Border Name="PreviewPreparingOverlay" IsVisible="True" ZIndex="850" Background="{DynamicResource AppScrimBrush}" CornerRadius="6">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                                            <ProgressBar IsIndeterminate="True" MinWidth="220" MinHeight="6" Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
+                                            <TextBlock Name="PreviewPreparingTitle" Text="Preparing Recording Preview..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                            <TextBlock Name="PreviewPreparingSubtitle" Text="Compiling edit timing, cuts, and speeds. Please wait a moment..." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- MEME_07: the preview plays each meme where it will actually
                                          appear by swapping the file in the one mpv host. That costs
                                          a black moment at each end, so it is announced. -->
@@ -240,8 +249,8 @@
                                     <TextBlock Text="PROTECT THE VOICE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" />
                                     <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" Padding="10">
                                         <StackPanel Orientation="Vertical" Spacing="10">
-                                            <CheckBox Name="DuckAudioCb" IsChecked="True" Content="Protect VoiceOver Recording from Game-Play Sound" ToolTip.Tip="Across your recorded takes only: drops the gameplay volume and scoops the frequencies your voice sits in, so what you said stays intelligible." />
-                                            <CheckBox Name="DuckMusicCb" IsChecked="True" Content="Protect VoiceOver Recording from Music" ToolTip.Tip="Across your recorded takes only: does the same to any background music you added in the Add Music wizard. Has no effect if this video has no music." />
+                                            <CheckBox Name="DuckAudioCb" IsChecked="False" Content="Protect my voice from the gameplay sound" ToolTip.Tip="Across your recorded takes only: drops the gameplay volume and scoops the frequencies your voice sits in, so what you said stays intelligible." />
+                                            <CheckBox Name="DuckMusicCb" IsChecked="True" Content="Protect my voice from the background music" ToolTip.Tip="Across your recorded takes only: does the same to any background music you added in the Add Music wizard. Has no effect if this video has no music." />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -255,6 +264,7 @@
                                         <TextBlock Text="SELECTED TAKE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" />
                                         <StackPanel Orientation="Horizontal" Spacing="10">
                                             <Button Name="MuteTakeButton" Classes="Secondary" Content="MUTE" Padding="15,4" ToolTip.Tip="Mute or unmute this specific take" />
+                                            <Button Name="ReviewTakeButton" Classes="Primary" Content="KEEP THIS TIMING" Padding="15,4" IsVisible="False" ToolTip.Tip="After listening, accept how this take lines up with the edited video." />
                                             <Button Name="DeleteTakeButton" Classes="Danger" Content="DELETE" Padding="15,4" ToolTip.Tip="Delete this take" />
                                         </StackPanel>
                                         <TextBlock Text="You can also trim by dragging its edges in the timeline" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
@@ -270,13 +280,14 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Name="VoiceOverHintText" Grid.Column="0" Text="Record a take before applying. Cancel discards unapplied takes." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,15,0"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Right">
-                                <Button Name="RecoverFailedTakesButton" Classes="Secondary" Content="RECOVER AUDIO" MinWidth="130" IsVisible="False" ToolTip.Tip="Recover and accept audio from unfinalized take into session" />
-                                <Button Name="DiscardFailedTakesButton" Classes="Warning" Content="DISCARD FAILED TAKE" MinWidth="160" IsVisible="False" ToolTip.Tip="Discard unresolved failed take to allow applying valid takes" />
+                                <!-- VORECOVERY_03: simplified Restore and Delete recovery actions -->
+                                <Button Name="RecoverFailedTakesButton" Classes="Secondary" Content="RESTORE" MinWidth="110" IsVisible="False" ToolTip.Tip="Restore unsaved voice recording into session" />
+                                <Button Name="DiscardFailedTakesButton" Classes="Danger" Content="DELETE" MinWidth="110" IsVisible="False" ToolTip.Tip="Delete unsaved voice recording" />
                                 <!-- ISSUE_04: the permanent, always-available way back into this screen's walkthrough.
                                      The walkthrough auto-plays only on the first few opens; this button is
                                      how a returning user gets it again. Every screen in the suite has one. -->
                                 <Button Name="VoiceOverHelpButton" Classes="Secondary" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" AutomationProperties.Name="Show me around the voice over recorder" ToolTip.Tip="New here? Play the short walkthrough that points out what everything on this screen does."/>
-                                <Button Name="CancelButton" Classes="Secondary" Content="CANCEL" MinWidth="100" ToolTip.Tip="Close without applying this voiceover session"/>
+                                <Button Name="CancelButton" Classes="Secondary" Content="CANCEL" MinWidth="100" IsCancel="True" ToolTip.Tip="Close without applying this voiceover session"/>
                                 <Button Name="ApplyButton" Classes="Success" Content="APPLY &amp; CLOSE" MinWidth="140" IsEnabled="False" ToolTip.Tip="Record a take before applying"/>
                             </StackPanel>
                         </Grid>

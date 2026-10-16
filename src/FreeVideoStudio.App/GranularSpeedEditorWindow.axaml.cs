@@ -1,4 +1,7 @@
-﻿using Avalonia;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using System.Collections.Immutable;
@@ -116,6 +119,7 @@ public partial class GranularSpeedEditorWindow : Window
     public double ResultBaseSpeed => _edit.BaseSpeed;
     public double ResultFreezeTimeMs => _edit.FreezeTimeMs;
     public double ResultFreezeDurationS => _edit.FreezeDurationS;
+    public CaptionTrack? ResultCaptionTrack => _edit.CaptionTrack;
 
     private readonly FreeVideoStudio.App.Controls.VoiceOverPreviewPlayer _voiceOverPlayer = new();
 
@@ -538,7 +542,8 @@ public partial class GranularSpeedEditorWindow : Window
         string originalResolution = "1920x1080",
         VoiceOverWindow.VoiceOverResult? voiceOverResult = null,
         IEnumerable<FreeVideoStudio.Core.Media.CutRange>? existingCuts = null,
-        IEnumerable<FreeVideoStudio.Core.Media.MemePlacement>? existingMemes = null)
+        IEnumerable<FreeVideoStudio.Core.Media.MemePlacement>? existingMemes = null,
+        CaptionTrack? existingCaptions = null)
     {
         double probedSec = 0;
 
@@ -570,7 +575,7 @@ public partial class GranularSpeedEditorWindow : Window
         return new GranularSpeedEditorWindow(
             videoPath, trimStartMs, trimEndMs, existingSegments, baseSpeed, freezeTimeMs,
             freezeDurationS, isMobileFormat, originalResolution, voiceOverResult, existingCuts,
-            existingMemes, probedSec);
+            existingMemes, probedSec, existingCaptions);
     }
 
     /// <summary>
@@ -583,12 +588,14 @@ public partial class GranularSpeedEditorWindow : Window
     /// </summary>
     public GranularSpeedEditorWindow(string videoPath, double trimStartMs = 0, double trimEndMs = 0, IEnumerable<SpeedSegment>? existingSegments = null, double baseSpeed = 1.1, double freezeTimeMs = -1, double freezeDurationS = 1.0, bool isMobileFormat = false, string originalResolution = "1920x1080", VoiceOverWindow.VoiceOverResult? voiceOverResult = null, IEnumerable<FreeVideoStudio.Core.Media.CutRange>? existingCuts = null,
         IEnumerable<FreeVideoStudio.Core.Media.MemePlacement>? existingMemes = null,
-        double preProbedDurationSec = 0)
+        double preProbedDurationSec = 0,
+        CaptionTrack? existingCaptions = null)
     {
         _voiceOverPlayer.Result = voiceOverResult;
 
         _edit = new FreeVideoStudio.Core.Editing.GranularEditSession(videoPath, trimStartMs, trimEndMs,
             FreeVideoStudio.Core.Editing.GranularHistoryParking.Shared);
+        _edit.CaptionTrack = existingCaptions;
         _edit.Checkpointed += OnEditCheckpointed;
         _edit.SeedMemes(existingMemes);
         _edit.SeedCutsFromAbsolute(existingCuts);
@@ -718,6 +725,8 @@ public partial class GranularSpeedEditorWindow : Window
                 HideDragReadout();
                 RefreshSegmentList();
 
+                // DRAGCOST_01 — the drag is over (_segDragMode/_draggingSegmentIndex were cleared
+                // above), so these now run for real, once, instead of on every pointer move.
                 _redrawDeferredByDrag = false;
                 RedrawTimeline();
                 QueueRelayoutFrameLane();
@@ -1062,6 +1071,13 @@ public partial class GranularSpeedEditorWindow : Window
 
         if (e.Key == Avalonia.Input.Key.Delete || e.Key == Avalonia.Input.Key.Back)
         {
+            if (_selectedCaptionLineId.HasValue)
+            {
+                DeleteCaptionLine(_selectedCaptionLineId.Value);
+                e.Handled = true;
+                return;
+            }
+
             if (_edit.SelectedSegmentIndex >= 0 && _edit.SelectedSegmentIndex < _edit.Segments.Count)
             {
                 RequestDeleteSegment(_edit.SelectedSegmentIndex);
@@ -1465,6 +1481,13 @@ public partial class GranularSpeedEditorWindow : Window
                 double newStart = _dragOrigStartMs;
                 double newEnd = _dragOrigEndMs;
 
+                // EDGEGUARD_01 — THE RIGHT EDGE OF THE CLIP IS A HARD WALL.
+                // This line exists so a sandwiched block always has room for its 200ms minimum, but
+                // it raised upperBound with NO ceiling: a previous block ending within 200ms of the
+                // clip end pushed upperBound PAST totalMs, and the resize clamp then happily let
+                // the segment end beyond the footage. A segment past the clip end feeds source time
+                // that does not exist into OutputTimeline, and the output ruler grows to cover it —
+                // which is the timeline "ever expanding" under the drag.
                 upperBound = Math.Min(totalMs, Math.Max(upperBound, lowerBound + GranularEditSession.SegMinWidthMs));
 
                 bool hitLeftWall = false;
@@ -1529,7 +1552,28 @@ public partial class GranularSpeedEditorWindow : Window
                 else if (hitRightWall)
                     SetStatus("Blocked on the right by the next segment.");
                 else
-                    SetStatus(_segDragMode == SegDragMode.Move ? $"Moving segment #{idx + 1} — release to set." : $"Resizing segment #{idx + 1} — release to set.");
+                {
+                    bool explained = false;
+                    if (_segDragMode == SegDragMode.Move && idx >= 0 && idx < _edit.Segments.Count)
+                    {
+                        var seg = _edit.Segments[idx];
+                        if (seg.ZoomW.HasValue && seg.ZoomSlow)
+                        {
+                            double delta = newStart - _dragOrigStartMs;
+                            double? zs = _dragOrigZoomStartMs.HasValue ? _dragOrigZoomStartMs.Value + delta : newStart;
+                            double? ze = _dragOrigZoomEndMs.HasValue ? _dragOrigZoomEndMs.Value + delta : newEnd;
+                            var movedSeg = seg with { StartMs = newStart, EndMs = newEnd, ZoomStartMs = zs, ZoomEndMs = ze };
+                            var moveAvail = _edit.GetSlowZoomGlideAvailability(idx, overrideSegment: movedSeg);
+                            if (moveAvail.AnyUnavailable)
+                            {
+                                SetStatus(moveAvail.GetCombinedExplanation() ?? $"Moving segment #{idx + 1} — release to set.");
+                                explained = true;
+                            }
+                        }
+                    }
+                    if (!explained)
+                        SetStatus(_segDragMode == SegDragMode.Move ? $"Moving segment #{idx + 1} — release to set." : $"Resizing segment #{idx + 1} — release to set.");
+                }
 
                 PushUndo("resize segment", "seg-edge");
                 double actualDelta = newStart - _dragOrigStartMs;
@@ -1919,6 +1963,7 @@ public partial class GranularSpeedEditorWindow : Window
             if (!segSelected && _zoomModeActive) ExitZoomMode();
         }
         UpdateAiSmartZoomBtnVisualState();
+        UpdateAiCommentaryBtnVisualState();
         SyncZoomModeChecksFromSegment();
     }
 
@@ -2281,6 +2326,15 @@ public partial class GranularSpeedEditorWindow : Window
 
         RefreshSegmentList();
         RedrawTimeline();
+
+        if (seg.ZoomW.HasValue && seg.ZoomSlow)
+        {
+            var avail = _edit.GetSlowZoomGlideAvailability(index);
+            if (avail.AnyUnavailable)
+            {
+                SetStatus(avail.GetCombinedExplanation()!);
+            }
+        }
     }
 
     /// <summary>
@@ -2383,6 +2437,86 @@ public partial class GranularSpeedEditorWindow : Window
                 Avalonia.Controls.Canvas.SetLeft(child, x2 - 12);
             }
         }
+
+        if (segIndex >= 0 && segIndex < _edit.Segments.Count)
+        {
+            var s = _edit.Segments[segIndex];
+            if (s.ZoomW.HasValue && s.ZoomSlow)
+            {
+                double delta = newStartMs - _dragOrigStartMs;
+                double? zs = _dragOrigZoomStartMs.HasValue ? _dragOrigZoomStartMs.Value + delta : newStartMs;
+                double? ze = _dragOrigZoomEndMs.HasValue ? _dragOrigZoomEndMs.Value + delta : newEndMs;
+                double rampMs = FreeVideoStudio.Core.Media.GranularSpeedBuilder.ZoomRampSeconds * 1000.0;
+                double zsVal = zs ?? newStartMs;
+                double zeVal = ze ?? newEndMs;
+
+                double inStartMs = Math.Max(0, zsVal - rampMs);
+                double outEndMs = Math.Min(dur * 1000.0, zeVal + rampMs);
+
+                double inX1 = SrcMsToX(inStartMs, w);
+                double inX2 = SrcMsToX(zsVal, w);
+                double outX1 = SrcMsToX(zeVal, w);
+                double outX2 = SrcMsToX(outEndMs, w);
+
+                double inW = Math.Max(0, inX2 - inX1);
+                double outW = Math.Max(0, outX2 - outX1);
+
+                var movedSeg = s with { StartMs = newStartMs, EndMs = newEndMs, ZoomStartMs = zs, ZoomEndMs = ze };
+                var mAvail = _edit.GetSlowZoomGlideAvailability(segIndex, overrideSegment: movedSeg);
+
+                var zoomBrush = TryFindBrush("AppZoomBrush", "#2251c1");
+                var warnBrush = TryFindBrush("AppWarningBrush", "#facc15");
+
+                foreach (Avalonia.Controls.Control child in canvas.Children)
+                {
+                    if (child.Name == $"ZoomGlideGuideIn_{segIndex}" && child is Avalonia.Controls.Shapes.Rectangle inRect)
+                    {
+                        if (mAvail.IncomingAvailable)
+                        {
+                            inRect.Width = Math.Max(1, inW);
+                            inRect.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(40, 34, 81, 193));
+                            inRect.Stroke = zoomBrush;
+                            inRect.StrokeThickness = 1;
+                            inRect.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(2, 2);
+                            Avalonia.Controls.Canvas.SetLeft(inRect, inX1);
+                        }
+                        else
+                        {
+                            double effW = Math.Max(4, inW);
+                            inRect.Width = effW;
+                            inRect.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(70, 250, 204, 21));
+                            inRect.Stroke = warnBrush;
+                            inRect.StrokeThickness = 1.5;
+                            inRect.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(3, 2);
+                            double left = (inW < 4) ? Math.Max(0, inX2 - effW) : inX1;
+                            Avalonia.Controls.Canvas.SetLeft(inRect, left);
+                        }
+                    }
+                    else if (child.Name == $"ZoomGlideGuideOut_{segIndex}" && child is Avalonia.Controls.Shapes.Rectangle outRect)
+                    {
+                        if (mAvail.OutgoingAvailable)
+                        {
+                            outRect.Width = Math.Max(1, outW);
+                            outRect.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(40, 34, 81, 193));
+                            outRect.Stroke = zoomBrush;
+                            outRect.StrokeThickness = 1;
+                            outRect.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(2, 2);
+                            Avalonia.Controls.Canvas.SetLeft(outRect, outX1);
+                        }
+                        else
+                        {
+                            double effW = Math.Max(4, outW);
+                            outRect.Width = effW;
+                            outRect.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(70, 250, 204, 21));
+                            outRect.Stroke = warnBrush;
+                            outRect.StrokeThickness = 1.5;
+                            outRect.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(3, 2);
+                            Avalonia.Controls.Canvas.SetLeft(outRect, outX1);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -2477,6 +2611,8 @@ public partial class GranularSpeedEditorWindow : Window
         _thumbLoadingOverlay = thumbLoading;
         lanes.LaneBHost.Children.Add(thumbLoading);
 
+        SetupCaptionsLane();
+
         lanes.LaneASeekable = false;
         lanes.LaneBSeekable = true;
 
@@ -2556,6 +2692,7 @@ public partial class GranularSpeedEditorWindow : Window
 
             UpdateCaret();
             RelayoutFrameLane();
+            RedrawCaptionsLane();
             double dur = GetDuration();
             var lanes = GranularLanesCtl;
             double w = canvas.Bounds.Width;
@@ -2598,6 +2735,97 @@ public partial class GranularSpeedEditorWindow : Window
                     double zx2 = SrcMsToX(zeMs, w);
 
                     pendingZoomHeads.Add((i, zx1, zx2));
+
+                    // SLOWZOOMGLIDE_01: subtle non-hit-testable glide guides for selected/actively edited slow zoom
+                    int activeZoomSegIndex = (_zoomDragSegment >= 0 && _zoomDragSegment < _edit.Segments.Count)
+                        ? _zoomDragSegment
+                        : ((_draggingSegmentIndex >= 0 && _draggingSegmentIndex < _edit.Segments.Count)
+                            ? _draggingSegmentIndex
+                            : _edit.SelectedSegmentIndex);
+
+                    if (i == activeZoomSegIndex && seg.ZoomSlow)
+                    {
+                        var avail = _edit.GetSlowZoomGlideAvailability(i);
+                        bool inAvail = avail.IncomingAvailable;
+                        bool outAvail = avail.OutgoingAvailable;
+                        if (_zoomDragSegment == i && _zoomDragAttemptedConflict)
+                        {
+                            if (_zoomDragIsStart) inAvail = false;
+                            else outAvail = false;
+                        }
+
+                        double rampMs = FreeVideoStudio.Core.Media.GranularSpeedBuilder.ZoomRampSeconds * 1000.0;
+                        double inStartMs = Math.Max(0, zsMs - rampMs);
+                        double outEndMs = Math.Min(dur * 1000.0, zeMs + rampMs);
+
+                        double inX1 = SrcMsToX(inStartMs, w);
+                        double inX2 = SrcMsToX(zsMs, w);
+                        double outX1 = SrcMsToX(zeMs, w);
+                        double outX2 = SrcMsToX(outEndMs, w);
+
+                        double inW = Math.Max(0, inX2 - inX1);
+                        double outW = Math.Max(0, outX2 - outX1);
+
+                        var zoomBrush = TryFindBrush("AppZoomBrush", "#2251c1");
+                        var warnBrush = TryFindBrush("AppWarningBrush", "#facc15");
+
+                        var inGuide = new Avalonia.Controls.Shapes.Rectangle
+                        {
+                            Name = $"ZoomGlideGuideIn_{i}",
+                            Height = h,
+                            IsHitTestVisible = false
+                        };
+                        if (inAvail)
+                        {
+                            inGuide.Width = Math.Max(1, inW);
+                            inGuide.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(40, 34, 81, 193));
+                            inGuide.Stroke = zoomBrush;
+                            inGuide.StrokeThickness = 1;
+                            inGuide.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(2, 2);
+                            Avalonia.Controls.Canvas.SetLeft(inGuide, inX1);
+                        }
+                        else
+                        {
+                            double effW = Math.Max(4, inW);
+                            inGuide.Width = effW;
+                            inGuide.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(70, 250, 204, 21));
+                            inGuide.Stroke = warnBrush;
+                            inGuide.StrokeThickness = 1.5;
+                            inGuide.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(3, 2);
+                            double left = (inW < 4) ? Math.Max(0, inX2 - effW) : inX1;
+                            Avalonia.Controls.Canvas.SetLeft(inGuide, left);
+                        }
+                        Avalonia.Controls.Canvas.SetTop(inGuide, 0);
+                        canvas.Children.Add(inGuide);
+
+                        var outGuide = new Avalonia.Controls.Shapes.Rectangle
+                        {
+                            Name = $"ZoomGlideGuideOut_{i}",
+                            Height = h,
+                            IsHitTestVisible = false
+                        };
+                        if (outAvail)
+                        {
+                            outGuide.Width = Math.Max(1, outW);
+                            outGuide.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(40, 34, 81, 193));
+                            outGuide.Stroke = zoomBrush;
+                            outGuide.StrokeThickness = 1;
+                            outGuide.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(2, 2);
+                            Avalonia.Controls.Canvas.SetLeft(outGuide, outX1);
+                        }
+                        else
+                        {
+                            double effW = Math.Max(4, outW);
+                            outGuide.Width = effW;
+                            outGuide.Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(70, 250, 204, 21));
+                            outGuide.Stroke = warnBrush;
+                            outGuide.StrokeThickness = 1.5;
+                            outGuide.StrokeDashArray = new Avalonia.Collections.AvaloniaList<double>(3, 2);
+                            Avalonia.Controls.Canvas.SetLeft(outGuide, outX1);
+                        }
+                        Avalonia.Controls.Canvas.SetTop(outGuide, 0);
+                        canvas.Children.Add(outGuide);
+                    }
                 }
 
                 if (isSelected)
@@ -2770,10 +2998,22 @@ public partial class GranularSpeedEditorWindow : Window
                         return zcam;
                     }
 
-                    var zStartCam = BuildZoomMarker(true, zStartLeft, FreezeMarkerOverlayTop,
-                        $"Zoom on segment #{index + 1}.\nDrag to move where the zoom begins.");
-                    var zEndCam = BuildZoomMarker(false, zEndLeft, FreezeMarkerOverlayTop + zStagger,
-                        $"Zoom on segment #{index + 1}.\nDrag to move where the zoom ends.");
+                    var zseg = _edit.Segments[index];
+                    string inTip = $"Zoom on segment #{index + 1}.\nDrag to move where the zoom begins.";
+                    string outTip = $"Zoom on segment #{index + 1}.\nDrag to move where the zoom ends.";
+                    if (zseg.ZoomSlow)
+                    {
+                        var zAvail = _edit.GetSlowZoomGlideAvailability(index);
+                        inTip += zAvail.IncomingAvailable
+                            ? "\nIncoming glide: 0.5s source ramp."
+                            : $"\nIncoming glide unavailable: {zAvail.GetIncomingExplanation()}";
+                        outTip += zAvail.OutgoingAvailable
+                            ? "\nOutgoing glide: 0.5s source ramp."
+                            : $"\nOutgoing glide unavailable: {zAvail.GetOutgoingExplanation()}";
+                    }
+
+                    var zStartCam = BuildZoomMarker(true, zStartLeft, FreezeMarkerOverlayTop, inTip);
+                    var zEndCam = BuildZoomMarker(false, zEndLeft, FreezeMarkerOverlayTop + zStagger, outTip);
 
                     if (zStagger > 0)
                     {
@@ -3414,6 +3654,20 @@ public partial class GranularSpeedEditorWindow : Window
         _freezeFocus = FreezeMarkerEnd.None;
         _zoomFocus = (segIndex, isStart);
         UpdateDeleteButtonVisibility();
+        if (segIndex >= 0 && segIndex < _edit.Segments.Count)
+        {
+            var seg = _edit.Segments[segIndex];
+            if (seg.ZoomSlow)
+            {
+                var avail = _edit.GetSlowZoomGlideAvailability(segIndex);
+                if (isStart && !avail.IncomingAvailable)
+                    SetStatus(avail.GetIncomingExplanation());
+                else if (!isStart && !avail.OutgoingAvailable)
+                    SetStatus(avail.GetOutgoingExplanation());
+                else if (avail.AnyUnavailable)
+                    SetStatus(avail.GetCombinedExplanation()!);
+            }
+        }
     }
 
     /// <summary>
@@ -3588,17 +3842,60 @@ public partial class GranularSpeedEditorWindow : Window
     /// <summary>ZOOM_02 — how tight the auto-placed box starts. 2x = half the usable width.</summary>
     private const double DefaultZoomFactor = 2.0;
 
+    // SLOWZOOMGLIDE_01: tracks attempted conflict during edge drag
+    private bool _zoomDragAttemptedConflict;
+
+    private Avalonia.Media.IBrush TryFindBrush(string key, string fallbackHex)
+        => this.TryFindResource(key, ActualThemeVariant, out object? v) && v is Avalonia.Media.IBrush b
+            ? b
+            : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(fallbackHex));
+
     /// <summary>
-    /// ZOOMLIVE_05 — a SLOW zoom edge held one ramp's gap clear of its SLOW neighbour (the rule is the
-    /// session's); the window only says so when it bit.
+    /// ZOOMLIVE_05 / SLOWZOOMGLIDE_01 — a SLOW zoom edge held one ramp's gap clear of its SLOW neighbour (the rule is the
+    /// session's); the window only says so when it bit. During edge drag, preserves clamping and shows attempted conflict.
     /// </summary>
     private double ClampZoomEdgeAgainstSlowNeighbours(int segIndex, double proposedMs, bool isStart)
     {
         double clamped = _edit.ClampZoomEdgeAgainstSlowNeighbours(segIndex, proposedMs, isStart);
-        if (Math.Abs(clamped - proposedMs) > 0.5)
+        bool clampedBySlow = Math.Abs(clamped - proposedMs) > 0.5;
+        _zoomDragAttemptedConflict = false;
+
+        if (segIndex >= 0 && segIndex < _edit.Segments.Count)
         {
-            double requiredGapMs = FreeVideoStudio.Core.Media.GranularSpeedBuilder.ZoomRampRequiredGapBetweenSlowZooms * 1000.0;
-            SetStatus($"Held {FormatClock(requiredGapMs)} clear of the next slow zoom — closer than that and neither one can glide.");
+            var seg = _edit.Segments[segIndex];
+            if (seg.ZoomSlow)
+            {
+                var attemptedSeg = isStart
+                    ? seg with { ZoomStartMs = proposedMs, StartMs = Math.Min(seg.StartMs, proposedMs) }
+                    : seg with { ZoomEndMs = proposedMs, EndMs = Math.Max(seg.EndMs, proposedMs) };
+                var attemptedAvail = _edit.GetSlowZoomGlideAvailability(segIndex, overrideSegment: attemptedSeg);
+
+                if (isStart && (!attemptedAvail.IncomingAvailable || clampedBySlow))
+                {
+                    _zoomDragAttemptedConflict = true;
+                    SetStatus(attemptedAvail.GetIncomingExplanation());
+                    return clamped;
+                }
+                else if (!isStart && (!attemptedAvail.OutgoingAvailable || clampedBySlow))
+                {
+                    _zoomDragAttemptedConflict = true;
+                    SetStatus(attemptedAvail.GetOutgoingExplanation());
+                    return clamped;
+                }
+            }
+        }
+
+        if (clampedBySlow)
+        {
+            _zoomDragAttemptedConflict = true;
+            string shortage = isStart
+                ? "There is not enough footage for the incoming glide."
+                : "There is not enough footage for the outgoing glide.";
+            SetStatus($"These smooth zooms need 1 second of footage between them. {shortage}");
+        }
+        else
+        {
+            SetStatus(isStart ? "Moving zoom start — release to set." : "Moving zoom end — release to set.");
         }
         return clamped;
     }
@@ -3616,6 +3913,7 @@ public partial class GranularSpeedEditorWindow : Window
         };
 
         WireAiTrackingControls();
+        WireAiCommentaryControls();
 
         var removeZoomBtn = this.FindControl<Button>("RemoveZoomBtn");
         if (removeZoomBtn != null) removeZoomBtn.Click += (_, __) => RemoveZoomFromSelectedSegment();
@@ -3937,6 +4235,14 @@ public partial class GranularSpeedEditorWindow : Window
                 RuntimeLog.Info("Granular", $"Zoom ramp mode → {(slow ? "SLOW" : "INSTANT")} on segment #{_edit.SelectedSegmentIndex + 1}.");
                 RefreshSegmentList();
                 RedrawTimeline();
+                if (slow)
+                {
+                    var avail = _edit.GetSlowZoomGlideAvailability(_edit.SelectedSegmentIndex);
+                    if (avail.AnyUnavailable)
+                    {
+                        SetStatus(avail.GetCombinedExplanation()!);
+                    }
+                }
             }
         }
     }
@@ -4288,6 +4594,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         if (_zoomFactorBadge != null) _zoomFactorBadge.IsVisible = false;
         UpdateAiSmartZoomBtnVisualState();
+        UpdateAiCommentaryBtnVisualState();
 
         int orphan = _zoomCreatedSegmentIndex;
         if (_zoomSessionCreatedSegment && !_zoomBoxTouched
@@ -5211,7 +5518,7 @@ public partial class GranularSpeedEditorWindow : Window
         var loading = _thumbLoadingOverlay;
         if (laneGrid == null) return;
 
-        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath)) { if (IsMergeMode) await BuildMergeFrameLaneAsync(laneGrid, loading); return; }
+        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath)) { if (IsMergeMode) await BuildMergeFrameLaneAsync(laneGrid, loading); return; } // MERGEEDIT_02
 
         double dur = GetDuration();
         if (dur <= 0) return;
@@ -5986,6 +6293,7 @@ public partial class GranularSpeedEditorWindow : Window
         _freezePulseTimer?.Stop();
         _zoomTutorialTimer?.Stop();
         _memePreview = null;
+        TeardownEditorCornerMemes();
         _voiceOverPlayer.Dispose();
         _videoHost = null;
         base.OnClosed(e);

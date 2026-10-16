@@ -1,4 +1,4 @@
-﻿
+
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -86,4 +86,26 @@ public partial class GranularSpeedEditorWindow
     private Button? AiTrackingDiscardBtnCtl => _cAiTrackingDiscardBtn ??= (this.FindNameScope()?.Find("AiTrackingDiscardBtn") as Button);
     private Button? _cAiTrackingAcceptBtn;
     private Button? AiTrackingAcceptBtnCtl => _cAiTrackingAcceptBtn ??= (this.FindNameScope()?.Find("AiTrackingAcceptBtn") as Button);
+
+    private Button? _cAiCommentaryBtn;
+    private Button? AiCommentaryBtnCtl => _cAiCommentaryBtn ??= (this.FindNameScope()?.Find("AiCommentaryBtn") as Button);
+    private Border? _cAiCommentaryPreviewBar;
+    private Border? AiCommentaryPreviewBarCtl => _cAiCommentaryPreviewBar ??= (this.FindNameScope()?.Find("AiCommentaryPreviewBar") as Border);
+    private Button? _cAiCommentaryDiscardBtn;
+    private Button? AiCommentaryDiscardBtnCtl => _cAiCommentaryDiscardBtn ??= (this.FindNameScope()?.Find("AiCommentaryDiscardBtn") as Button);
+    private Button? _cAiCommentaryAcceptBtn;
+    private Button? AiCommentaryAcceptBtnCtl => _cAiCommentaryAcceptBtn ??= (this.FindNameScope()?.Find("AiCommentaryAcceptBtn") as Button);
+
+    private Border? _cAiCommentaryProgressOverlay;
+    private Border? AiCommentaryProgressOverlayCtl => _cAiCommentaryProgressOverlay ??= (this.FindNameScope()?.Find("AiCommentaryProgressOverlay") as Border);
+    private Button? _cAiCommentaryCancelBtn;
+    private Button? AiCommentaryCancelBtnCtl => _cAiCommentaryCancelBtn ??= (this.FindNameScope()?.Find("AiCommentaryCancelBtn") as Button);
+    private TextBlock? _cAiCommentaryStatusLabel;
+    private TextBlock? AiCommentaryStatusLabelCtl => _cAiCommentaryStatusLabel ??= (this.FindNameScope()?.Find("AiCommentaryStatusLabel") as TextBlock);
+    private ProgressBar? _cAiCommentaryProgressBar;
+    private ProgressBar? AiCommentaryProgressBarCtl => _cAiCommentaryProgressBar ??= (this.FindNameScope()?.Find("AiCommentaryProgressBar") as ProgressBar);
+    private TextBlock? _cAiCommentaryConsoleText;
+    private TextBlock? AiCommentaryConsoleTextCtl => _cAiCommentaryConsoleText ??= (this.FindNameScope()?.Find("AiCommentaryConsoleText") as TextBlock);
+    private ScrollViewer? _cAiCommentaryConsoleScroll;
+    private ScrollViewer? AiCommentaryConsoleScrollCtl => _cAiCommentaryConsoleScroll ??= (this.FindNameScope()?.Find("AiCommentaryConsoleScroll") as ScrollViewer);
 }

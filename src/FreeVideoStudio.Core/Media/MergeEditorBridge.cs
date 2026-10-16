@@ -1,4 +1,9 @@
-﻿using System;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -9,6 +14,20 @@ namespace FreeVideoStudio.Core.Media;
 
 /// <summary>One clip as the merge editor sees it (merged ms ↔ this clip's source µs).</summary>
 //   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// MERGEEDIT_01 — ONE GRANULAR EDITOR OVER THE WHOLE MERGE (Video-Merger-Migration.md P6.2, D16–D18).
+//
+// The Granular Speed Editor knows ONE source with ONE time axis. The merge becomes exactly that:
+//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
+//     is the clip's integer merged-frame count / 60, so mpv's time-pos IS the merged clock (P4.1 PASS:
+//     seamless across mixed codecs / sizes / rates).
+//   • EFFECTS  — the editor edits in MERGED milliseconds. On the way in, every clip's EdlEffects are
+//     mapped from (ClipId, source µs) to merged ms; on the way out, every editor effect is put back
+//     into the clip it belongs to. A speed segment or cut that crosses a clip boundary is SPLIT (the
+//     output is identical, and D4 "effects stay inside one clip" holds by construction). A freeze or
+//     meme belongs to the clip under it; a meme's Start/Mid/End placement follows D17.
+// Pure: no UI, no mpv, no disk. Unit-tested.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 public sealed record MergeEditorClip(
     int Index, Guid ClipId, string Path,
     double StartMs, double EndMs,

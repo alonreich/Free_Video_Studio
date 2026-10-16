@@ -1,5 +1,6 @@
-﻿
-
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -306,6 +307,19 @@ public class AudioFilterChain
         string gameForMix;
         if (duckingEnabled || carvingEnabled)
         {
+            // DUCKMB_01 — MULTIBAND SIDECHAIN. Both protections are now DYNAMIC: they act only while
+            // the gameplay (+voice) is actually sounding, and leave the music alone in quiet stretches.
+            //
+            //   music → acrossover 250 Hz / 2900 Hz → LOW | MID (speech/gameplay band) | HIGH
+            //   LOW  (<250 Hz)   never touched — the bed keeps its body.
+            //   MID  ducking (ratio 4) and/or carving (ratio 2.5, the dynamic replacement of the old
+            //        static 2 kHz -4 dB EQ, which dulled the music for the whole video).
+            //   HIGH ducking (ratio 4) only.
+            //   The three bands are summed back (measured flat to ±0.001 dB with no compression).
+            //
+            // Old ducking was threshold 0.15 / ratio 1.13: measured -1.2 dB under a near-full-scale
+            // trigger, i.e. inaudible. The tuned stage measures about -8 dB under the same trigger.
+            // DUCKSTRENGTH_01 — the two strength handles from Settings (0-100, 50 = tuned).
             int duckStrength = (int)Math.Round(GetDouble(musicConfig, "ducking_strength", SidechainCompressNode.DefaultStrength));
             int carveStrength = (int)Math.Round(GetDouble(musicConfig, "carving_strength", SidechainCompressNode.DefaultStrength));
             var compressors = new List<(string band, SidechainCompressNode node)>();

@@ -1,4 +1,7 @@
-﻿using Avalonia.Controls;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -14,6 +17,8 @@ public partial class ConfirmDialogWindow : Window
 
     public enum SaveChangesChoice { BackToEditing, Save, Discard }
 
+    // CROPUNSAVED_01 — explicit actions, with the harmless escape on Enter and Escape.
+    // Saving is green; discarding is red. Closing the prompt never discards anything.
     public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
         Window owner, string profileName, string destination)
     {
@@ -279,6 +284,31 @@ public partial class ConfirmDialogWindow : Window
         {
             RuntimeLog.Fail("DIALOG", $"Themed confirm failed, treating as declined: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// AIZOOMUX_01 — a three-way question with no safe/unsafe axis (COVER_01 dressing): YES and ALT
+    /// are two different actions, NO is "leave it". Closing the window, Escape, or a dialog that
+    /// cannot be shown returns <see cref="ConfirmDialogResult.Cancelled"/> — never read as consent.
+    /// </summary>
+    public static async System.Threading.Tasks.Task<ConfirmDialogResult> AskThreeWayAsync(
+        Window owner, string title, string message, string yesText, string altText, string noText = "Cancel")
+    {
+        try
+        {
+            var dlg = new ConfirmDialogWindow();
+            dlg.SetTitle(title);
+            dlg.SetMessage(message);
+            dlg.SetButtonText(yesText, noText, altText);
+            dlg.SetButtonClasses("Success", "Secondary", "Primary");
+            await dlg.ShowDialog(owner);
+            return dlg.DialogResult;
+        }
+        catch (System.Exception ex)
+        {
+            RuntimeLog.Fail("DIALOG", $"Three-way prompt failed, treating as cancelled: {ex.Message}");
+            return ConfirmDialogResult.Cancelled;
         }
     }
 

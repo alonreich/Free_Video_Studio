@@ -126,7 +126,8 @@
                                Name="ProfileStateLabel"
                                Text="No profile selected"
                                Foreground="{DynamicResource AppTextMutedBrush}"
-                               FontSize="{DynamicResource AppFontSize11}"
+                               FontSize="{DynamicResource AppFontSize12}"
+                               FontWeight="Bold"
                                TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center"
                                Margin="0,0,12,0"
@@ -800,17 +801,18 @@
                                          and CONFIRM DELETE is pushed to the far side of the warning
                                          with a deliberate gap so reaching it is a decision, not a
                                          twitch. MinWidth matches the trigger so nothing reflows. -->
-                                    <StackPanel Name="DeleteConfirmPanel" Orientation="Horizontal" Spacing="8" IsVisible="False" VerticalAlignment="Center">
-                                        <Button Name="CancelDeleteButton" Classes="Primary" Content="CANCEL" MinWidth="90" Margin="4,3" ToolTip.Tip="Keep this layer and close this menu. Nothing is deleted." />
+                                    <!-- CROPCONFIRM_01: Stack warning within available width; responsive buttons wrap cleanly without horizontal scrolling -->
+                                    <StackPanel Name="DeleteConfirmPanel" Orientation="Vertical" Spacing="4" IsVisible="False" VerticalAlignment="Center" Margin="4,3">
                                         <TextBlock Text="&#x26A0; Delete this layer? This cannot be undone."
                                                    Foreground="{DynamicResource AppWarningBrush}"
                                                    FontSize="{DynamicResource AppFontSize12}"
                                                    FontWeight="Bold"
-                                                   VerticalAlignment="Center"
                                                    TextWrapping="Wrap"
-                                                   MaxWidth="220"
-                                                   Margin="12,0,12,0" />
-                                        <Button Name="ConfirmDeleteButton" Classes="Danger" Content="CONFIRM DELETE" MinWidth="140" Margin="4,3" ToolTip.Tip="Permanently delete the selected layer." />
+                                                   Margin="4,2,4,4" />
+                                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Button Name="CancelDeleteButton" Classes="Primary" Content="CANCEL" MinWidth="80" Margin="4,3" ToolTip.Tip="Keep this layer and close this menu. Nothing is deleted." />
+                                            <Button Name="ConfirmDeleteButton" Classes="Danger" Content="CONFIRM DELETE" MinWidth="130" Margin="4,3" ToolTip.Tip="Permanently delete the selected layer." />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </StackPanel>
                             </StackPanel>
@@ -828,17 +830,18 @@
                                      already on and CONFIRM RESET sits past the warning. RESET throws
                                      away every placed element in the profile, so it is the more
                                      expensive of the two mistakes, not the less. -->
-                                <StackPanel Name="ResetConfirmPanel" Orientation="Horizontal" Spacing="8" IsVisible="False" VerticalAlignment="Center">
-                                    <Button Name="CancelResetButton" Classes="Primary" Content="CANCEL" MinWidth="90" ToolTip.Tip="Keep the current layout and close this menu. Nothing is reset." />
+                                <!-- CROPCONFIRM_01: Stack warning within available width; responsive buttons wrap cleanly without horizontal scrolling -->
+                                <StackPanel Name="ResetConfirmPanel" Orientation="Vertical" Spacing="4" IsVisible="False" VerticalAlignment="Center" Margin="4,3">
                                     <TextBlock Text="&#x26A0; Wipe every placed element? This cannot be undone."
                                                Foreground="{DynamicResource AppWarningBrush}"
                                                FontSize="{DynamicResource AppFontSize12}"
                                                FontWeight="Bold"
-                                               VerticalAlignment="Center"
                                                TextWrapping="Wrap"
-                                               MaxWidth="230"
-                                               Margin="12,0,12,0" />
-                                    <Button Name="ConfirmResetButton" Classes="Danger" Content="CONFIRM RESET" MinWidth="140" ToolTip.Tip="Permanently wipe everything clean and reset the canvas." />
+                                               Margin="4,2,4,4" />
+                                    <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button Name="CancelResetButton" Classes="Primary" Content="CANCEL" MinWidth="80" Margin="4,3" ToolTip.Tip="Keep the current layout and close this menu. Nothing is reset." />
+                                        <Button Name="ConfirmResetButton" Classes="Danger" Content="CONFIRM RESET" MinWidth="130" Margin="4,3" ToolTip.Tip="Permanently wipe everything clean and reset the canvas." />
+                                    </WrapPanel>
                                 </StackPanel>
                             </StackPanel>
                         </WrapPanel>
@@ -848,61 +851,9 @@
             </Grid>
 
             <!-- GATE_01 (F3) — the blank, non-destructive start.
-                 This window used to open with combo.SelectedItem already set to
-                 SettingsManager.ActiveMaskOverlay, i.e. LIVE on a real preset, with FINISH & SAVE
-                 wired through MaskOverlayManager.SyncActiveProfileFromCurrentConfig() — which
-                 overwrites that preset's file with no confirmation. A user who opened the tool to
-                 look around could destroy "Fortnite" in two clicks.
-                 Nothing may be edited until a profile has been deliberately chosen. The overlay
-                 covers row 2 only — the title bar stays draggable and the full-width Active Profile
-                 bar in row 1 stays reachable, which is the whole reason that bar was moved out of
-                 the right-hand panel. SetProfileGate hides it the moment a profile is selected.
-                 It is placed AFTER the working grid so it paints over it — declaration order, not
-                 ZIndex, is the mechanism among siblings (04_UI_UX_AVALONIA_SPEC.md#UI-THEME,
-                 SLIDER_09). -->
-            <!-- ISSUE_02 (audit round 6): Focusable + TabNavigation="Cycle", matching the
-                 ThinkingOverlay / SummaryOverlay siblings below, which had both and this did not.
-                 IsHitTestVisible stops the MOUSE and nothing else; it is not a focus trap. The
-                 companion half of the fix is in SetProfileGate, which now switches WorkAreaGrid off
-                 entirely while the gate is up — belt and braces, because Cycle only traps Tab once
-                 focus is already inside the overlay, and the window opens with focus elsewhere. -->
-            <Border Name="ProfileGateOverlay"
-                    Grid.Row="2"
-                    Background="{DynamicResource AppOverlayBrush}"
-                    ZIndex="9000"
-                    IsVisible="True"
-                    IsHitTestVisible="True"
-                    Focusable="True"
-                    KeyboardNavigation.TabNavigation="Cycle">
-                <Border Background="{DynamicResource AppSurfaceBrush}"
-                        BorderBrush="{DynamicResource AppAccentBrush}"
-                        BorderThickness="2"
-                        CornerRadius="12"
-                        Padding="40,30"
-                        MaxWidth="620"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center">
-                    <StackPanel Spacing="12" HorizontalAlignment="Center">
-                        <TextBlock Text="CHOOSE A PROFILE"
-                                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                   FontSize="{DynamicResource AppFontSize28}"
-                                   FontWeight="Bold"
-                                   HorizontalAlignment="Center" />
-                        <TextBlock Text="Pick the game profile you want to edit from the Active Profile box at the top right, or type a name and press SAVE AS NEW to copy one."
-                                   Foreground="{DynamicResource AppTextMutedBrush}"
-                                   FontSize="{DynamicResource AppFontSize12}"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center"
-                                   HorizontalAlignment="Center" />
-                        <TextBlock Text="Nothing can be changed or saved until you do."
-                                   Foreground="{DynamicResource AppTextMutedBrush}"
-                                   FontSize="{DynamicResource AppFontSize11}"
-                                   FontStyle="Italic"
-                                   TextAlignment="Center"
-                                   HorizontalAlignment="Center" />
-                    </StackPanel>
-                </Border>
-            </Border>
+                 Profile-specific editing remains disabled until a deliberate valid profile selection is made.
+                 The full-workspace barrier overlay is removed in favor of inline selector gating without
+                 obscuring the workspace. -->
 
             <!-- Overlays -->
             <Grid Name="ThinkingOverlay" Background="{DynamicResource AppOverlayBrush}" ZIndex="9999" IsVisible="False" Grid.RowSpan="3" IsHitTestVisible="True" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">

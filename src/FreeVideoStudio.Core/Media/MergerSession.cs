@@ -1,4 +1,9 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -10,6 +15,14 @@ namespace FreeVideoStudio.Core.Media;
 /// One stable <see cref="Guid"/> per queue row, kept in step with the queue's collection events.
 /// The queue holds plain paths and may hold the same file twice, so a path is not an identity.
 /// </summary>
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// MERGESESSION_01 — THE MERGER'S LIVE STATE ↔ ITS EDIT LIST (Video-Merger-Migration.md P3.2).
+//
+// The window still keeps its state the old way (an ObservableCollection<string>, a thumbnail path,
+// a MusicWizardResult). These pure helpers turn that state into a MergeEdl for autosave, the
+// project document and undo, and turn a saved MergeEdl back into what the window must restore.
+// Everything here is pure so it is unit-tested without a window, mpv or a disk.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 public sealed class ClipIdList
 {
     private readonly List<Guid> _ids = new();
@@ -97,6 +110,97 @@ public sealed class ClipIdList
         if (_ids.Count > count) _ids.RemoveRange(count, _ids.Count - count);
         else Insert(_ids.Count, count - _ids.Count);
         return true;
+    }
+
+    /// <summary>QUEUEOCCURRENCE_01 — Returns the index of <paramref name="id"/>, or -1 if not present.</summary>
+    public int IndexOf(Guid id)
+    {
+        for (int i = 0; i < _ids.Count; i++) if (_ids[i] == id) return i;
+        return -1;
+    }
+
+    /// <summary>QUEUEOCCURRENCE_01 — Returns the ids at the given row indices in order.</summary>
+    public List<Guid> IdsAt(IEnumerable<int> indices)
+    {
+        var result = new List<Guid>();
+        foreach (int i in indices)
+            if (i >= 0 && i < _ids.Count) result.Add(_ids[i]);
+        return result;
+    }
+
+    /// <summary>QUEUEOCCURRENCE_01 — Resolves <paramref name="ids"/> to their current row indices; returns null if any id is missing.</summary>
+    public List<int>? ResolveIndices(IEnumerable<Guid> ids)
+    {
+        var result = new List<int>();
+        foreach (var id in ids)
+        {
+            int idx = IndexOf(id);
+            if (idx < 0) return null;
+            result.Add(idx);
+        }
+        result.Sort();
+        return result;
+    }
+}
+
+/// <summary>
+/// QUEUEOCCURRENCE_01 — Pure helper for merger queue multi-selection movement and boundary checks (04 UI-MERGERQUEUE).
+/// </summary>
+public static class QueueRowOps
+{
+    public static List<Guid> IdsAt(IReadOnlyList<Guid> allIds, IEnumerable<int> indices)
+    {
+        var result = new List<Guid>();
+        if (allIds == null) return result;
+        foreach (int i in indices)
+            if (i >= 0 && i < allIds.Count) result.Add(allIds[i]);
+        return result;
+    }
+
+    public static List<int>? Resolve(IReadOnlyList<Guid> allIds, IEnumerable<Guid> targetIds)
+    {
+        if (allIds == null || targetIds == null) return null;
+        var result = new List<int>();
+        foreach (var id in targetIds)
+        {
+            int idx = -1;
+            for (int i = 0; i < allIds.Count; i++)
+            {
+                if (allIds[i] == id) { idx = i; break; }
+            }
+            if (idx < 0) return null;
+            result.Add(idx);
+        }
+        result.Sort();
+        return result;
+    }
+
+    public static bool CanMove(IReadOnlyList<int> sortedIndices, int queueCount, int direction)
+    {
+        if (sortedIndices == null || sortedIndices.Count == 0 || queueCount <= 0) return false;
+        if (direction < 0) return sortedIndices[0] > 0;
+        if (direction > 0) return sortedIndices[^1] < queueCount - 1;
+        return false;
+    }
+
+    public static IEnumerable<(int From, int To)> MoveSteps(IReadOnlyList<int> sortedIndices, int direction)
+    {
+        if (direction < 0)
+        {
+            for (int i = 0; i < sortedIndices.Count; i++)
+            {
+                int idx = sortedIndices[i];
+                yield return (idx, idx - 1);
+            }
+        }
+        else if (direction > 0)
+        {
+            for (int i = sortedIndices.Count - 1; i >= 0; i--)
+            {
+                int idx = sortedIndices[i];
+                yield return (idx, idx + 1);
+            }
+        }
     }
 }
 

@@ -1,4 +1,7 @@
-﻿using System;
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +22,27 @@ public class MainMediaController
     {
         var paths = ApplicationPaths.CreateDefault();
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // WORKERLIFETIME_01 — THE WORKER IS NOW SCOPED, AND SO IS ITS CANCELLATION REGISTRATION.
+        //
+        // ProcessWorker is IDisposable and NOTHING EVER DISPOSED IT. Its Dispose() carries the
+        // ISSUE_11 contract — "any path that disposed a worker without cancelling left a full-speed
+        // encode running on a file that would never be delivered, with the progress overlay already
+        // gone" — and that entire backstop was unreachable code, because the only construction site
+        // in the app (this method) let the instance fall out of scope on every exit path, success
+        // and failure alike. The symptom users report (fans at full tilt, pegged CPU, nothing on
+        // screen) is exactly what an undisposed worker produces when the setup path throws AFTER
+        // RunAsync has been kicked off.
+        //
+        // `using` on the worker must be the OUTERMOST scope so Dispose runs strictly AFTER
+        // `await tcs.Task` returns — disposing earlier would kill a process that had already
+        // succeeded.
+        //
+        // The ct.Register handle was also being discarded. A discarded CancellationTokenRegistration
+        // keeps its closure — and therefore the worker, and therefore the ProgressUpdate/PhaseUpdate/
+        // Finished delegate chains that close over MainWindow's controls — rooted for the whole
+        // lifetime of the CancellationTokenSource. `using` unregisters it deterministically.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         using var worker = new ProcessWorker(paths);
 
         try
@@ -64,6 +88,20 @@ public class MainMediaController
             
             ApplyPayload(worker, payload);
             
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // WORKERLIFETIME_02 — THE HANG GUARD.
+            //
+            // RunAsync signals completion through the Finished EVENT, not through its Task, so the
+            // Task is intentionally not awaited. But that means a throw which escapes RunAsync
+            // WITHOUT reaching EmitFinished leaves `tcs` uncompleted forever: the await below never
+            // returns, the phase overlay never clears and the PROCESS button never re-enables — a
+            // permanently wedged UI with no error shown.
+            //
+            // RunAsync's own top-level catch covers almost everything, but not a throw from the
+            // registration it takes before that try opens (see CANCELREG_01 in ProcessWorker), and
+            // not an OOM. This continuation is the backstop that converts any such escape into a
+            // normal, reported export failure.
+            // ══════════════════════════════════════════════════════════════════════════════════
             _ = worker.RunAsync(ct).ContinueWith(t =>
             {
                 if (t.IsFaulted && t.Exception != null)

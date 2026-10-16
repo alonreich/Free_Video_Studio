@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
@@ -73,7 +73,7 @@ public static class GranularRecoveryCodec
             memes.AddNode(memeObj);
         }
 
-        return new JsonObject
+        var result = new JsonObject
         {
             ["schema_version"] = SchemaVersion,
             ["open"] = true,
@@ -88,6 +88,14 @@ public static class GranularRecoveryCodec
             ["cuts"] = cuts,
             ["memes"] = memes
         };
+
+        // CAPTIONS_01 — crash recovery captions persistence.
+        if (s.CaptionTrack is { } captions && CaptionTrackJson.Write(captions) is JsonObject captionsObj)
+        {
+            result["captions"] = captionsObj;
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -173,6 +181,11 @@ public static class GranularRecoveryCodec
         s.FreezeTimeMs = GetJsonDouble(node["freeze_time_ms"], -1.0);
         if (s.FreezeTimeMs < -0.5) s.FreezeTimeMs = -1.0;
         s.FreezeDurationS = Math.Max(0.1, GetJsonDouble(node["freeze_duration_s"], 1.0));
+
+        if (node["captions"] is JsonObject captionsObj)
+        {
+            s.CaptionTrack = CaptionTrackJson.Read(captionsObj);
+        }
 
         CoreLogger.Info("Granular",
             "RECOVERY_03 - restored an unfinished granular session from the crash-recovery state: " +

@@ -765,8 +765,63 @@ public sealed class PreviewShutdownTests
         Assert.True(unbindIdx < delCtxIdx, "wglMakeCurrent_unbind must precede wglDeleteContext");
     }
 
+    [AvaloniaFact]
+    public async Task Shutdown_WithAlreadyUnboundUiContext_ReleasesNativeStackAndIsIdempotent()
+    {
+        var host = new MpvVideoView();
+        var invoker = new TrackingTeardownInvoker { FailUnbindWithoutCurrentContext = true };
+        host.NativeTeardownInvoker = invoker;
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(MpvVideoView).GetField("_hglrc", flags)!.SetValue(host, (nint)2);
+        typeof(MpvVideoView).GetField("_dummyHdc", flags)!.SetValue(host, (nint)3);
+        typeof(MpvVideoView).GetField("_renderContext", flags)!.SetValue(host, (nint)4);
+        typeof(MpvVideoView).GetField("_mpvHandle", flags)!.SetValue(host, (nint)5);
+
+        var result = await host.ShutdownAsync();
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Equal("wglMakeCurrent_bind", invoker.CallTrace[0]);
+        Assert.True(invoker.MpvRenderContextFreeCalled);
+        Assert.True(invoker.MpvTerminateDestroyCalled);
+        int calls = invoker.CallTrace.Count;
+        Assert.Equal(PreviewShutdownStatus.AlreadyStopped, (await host.ShutdownAsync()).Status);
+        Assert.Equal(calls, invoker.CallTrace.Count);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(0, true, true, false)]
+    [InlineData(99, true, true, false)]
+    [InlineData(2, false, true, true)]
+    [InlineData(2, true, false, true)]
+    public async Task UiTeardown_UnbindsOnlyItsCurrentContext(
+        int currentContext, bool failUnbind, bool succeeds, bool unbindCalled)
+    {
+        var host = new MpvVideoView();
+        var invoker = new TrackingTeardownInvoker
+        {
+            CurrentContext = currentContext,
+            FailWglUnbind = failUnbind
+        };
+        host.NativeTeardownInvoker = invoker;
+        var contextField = typeof(MpvVideoView).GetField("_hglrc",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        contextField.SetValue(host, (nint)2);
+        Assert.True((await PreviewShutdownCoordinator.QuiescePresentGatesAsync(
+            host.PresentGates, 1000, CancellationToken.None)).Succeeded);
+
+        var detached = await host.FinalizeUiResourcesOnUiThreadForTesting();
+
+        Assert.Equal(succeeds, detached.Success);
+        Assert.Equal(unbindCalled, invoker.WglUnbindCalled);
+        Assert.Equal(succeeds ? nint.Zero : (nint)2, (nint)contextField.GetValue(host)!);
+        Assert.Equal(succeeds ? (nint)2 : nint.Zero, detached.Hglrc);
+        if (!succeeds) Assert.Contains("Failed to unbind WGL context", detached.ErrorMessage);
+    }
+
     private sealed class TrackingTeardownInvoker : FreeVideoStudio.App.Interop.INativeTeardownInvoker
     {
+        public nint CurrentContext { get; set; }
+        public nint WglGetCurrentContext() => CurrentContext;
         [ThreadStatic]
         public static bool IsContextCurrentOnThisThread;
         public bool RequireContextForGlOps { get; set; } = true;
@@ -776,6 +831,7 @@ public sealed class PreviewShutdownTests
 
         public bool FailWglMakeCurrent { get; set; }
         public bool FailWglUnbind { get; set; }
+        public bool FailUnbindWithoutCurrentContext { get; set; }
         public bool ThrowMpvRenderContextFree { get; set; }
         public bool FailWglDXCloseDevice { get; set; }
         public bool FailWglDXUnregisterObject { get; set; }
@@ -829,7 +885,7 @@ public sealed class PreviewShutdownTests
             {
                 CallTrace.Add("wglMakeCurrent_unbind");
                 WglUnbindCalled = true;
-                if (FailWglUnbind) return false;
+                if (FailWglUnbind || (FailUnbindWithoutCurrentContext && !IsContextCurrentOnThisThread)) return false;
                 IsContextCurrentOnThisThread = false;
             }
             else

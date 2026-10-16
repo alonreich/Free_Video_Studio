@@ -370,6 +370,14 @@ public sealed class ArchitectureRuleTests
             SentinelList.FormatFailures(malformed, failures));
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════════════
+    // RULE 9b — SYS-VERIFYTOOL. dev.cmd DELEGATES the check; it does not perform it.
+    //
+    // The one rule left about dev.cmd, and the one worth keeping: if a future edit ever moves the
+    // sentinel list back into the script, this fails. That is the regression this whole change
+    // exists to make impossible — VERIFYLOOP_01, LISTCOMMENT_01 and BATCHPARENS_01 were three
+    // separate silent failures of exactly that arrangement, and VERIFYHALT_01 was a fourth.
+    // ════════════════════════════════════════════════════════════════════════════════════════
     [Fact]
     public void DevCmdDelegatesTheSentinelCheckRatherThanParsingIt()
     {
@@ -385,6 +393,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void ImperativeControlLookupsDoNotIncrease()
     {
+        // MVVM_03: ratchet repeated imperative control lookups down; never raise the ceiling.
         const int Baseline = 686;
 
         int count = 0;

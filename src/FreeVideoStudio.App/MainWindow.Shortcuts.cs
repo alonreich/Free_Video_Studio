@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -42,31 +44,43 @@ public partial class MainWindow
             return;
         }
 
+        // ══════════════════════════════════════════════════════════════════════════════════
+        // PROJSESSION_04 — DOCUMENT SHORTCUTS. Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+Z / Ctrl+Y.
+        //
+        // Until this block the main window had NO Ctrl+Z at all. Trims, cuts, memes and the music
+        // bed are all decided here, and none of them could be taken back — while the Granular
+        // editor and the Crop tool each had their own private undo. It also had no Save: the
+        // entire .fvsproj document model existed in Core, fully tested, and was unreachable from
+        // the UI, so closing the window discarded the session.
+        //
+        // Placed BEFORE the '?' sheet test so a modifier chord is never swallowed by a plain-key
+        // handler further down. Each arm sets e.Handled, because a Ctrl+S that also reaches the
+        // transport would toggle playback while saving.
+        // ══════════════════════════════════════════════════════════════════════════════════
         if (_projectSession != null && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             switch (e.Key)
             {
                 case Key.S:
                     e.Handled = true;
-                    _ = e.KeyModifiers.HasFlag(KeyModifiers.Shift)
-                        ? _projectSession.SaveAsAsync()
-                        : _projectSession.SaveAsync();
+                    bool saveAs = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+                    _ = RunAfterVoiceTimingAsync(() => saveAs ? _projectSession.SaveAsAsync() : _projectSession.SaveAsync());
                     return;
 
                 case Key.O:
                     e.Handled = true;
-                    _ = _projectSession.OpenAsync();
+                    _ = RunAfterVoiceTimingAsync(() => _projectSession.OpenAsync());
                     return;
 
                 case Key.Z when !e.KeyModifiers.HasFlag(KeyModifiers.Shift):
                     e.Handled = true;
-                    _projectSession.Undo();
+                    _ = RunAfterVoiceTimingAsync(() => { _projectSession.Undo(); return Task.CompletedTask; });
                     return;
 
                 case Key.Y:
                 case Key.Z when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
                     e.Handled = true;
-                    _projectSession.Redo();
+                    _ = RunAfterVoiceTimingAsync(() => { _projectSession.Redo(); return Task.CompletedTask; });
                     return;
             }
         }
@@ -322,6 +336,7 @@ public partial class MainWindow
             return;
         }
         _trimEndMs = time * 1000;
+        _trimEndSet = true;
         _prewarmArmed = true;
         SchedulePrewarm();
         var markEndButton = MarkEndButtonCtl;

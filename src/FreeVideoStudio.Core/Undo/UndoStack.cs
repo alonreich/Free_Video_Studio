@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 
@@ -212,6 +214,12 @@ public sealed class UndoStack<T> where T : class
 
         _redo.Add(new UndoEntry<T>(Current, entry.Label, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
+        // UNDO_23 — THE GUARD MUST COVER THE NOTIFICATION, NOT JUST THE ASSIGNMENT.
+        // Changed is the whole point of the guard: the handler is what repopulates the controls,
+        // and a control raising its own change event calls Apply straight back into this stack.
+        // Resetting _restoring in a finally that runs BEFORE the invoke left the re-entrant Apply
+        // unguarded, so every Ctrl+Z pushed the echoed state back onto the history and undo could
+        // never reach the beginning. UndoStackTests.RestoringDoesNotRecordHistory proves it.
         _restoring = true;
         try
         {

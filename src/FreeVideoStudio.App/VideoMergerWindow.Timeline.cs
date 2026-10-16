@@ -1,4 +1,9 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -144,6 +149,8 @@ public partial class VideoMergerWindow
 
         EnsurePreviewPlan();
 
+        // MERGEPREVIEW_01 (P8.2) / MEME_07 — while a meme is on screen mpv's clock is the MEME's:
+        // nothing below may read it, and the EDL must not be reloaded under it. The caret holds.
         if (TickMergerMemes()) return true;
 
         EnsureEdlLoaded(null, null);
@@ -191,7 +198,7 @@ public partial class VideoMergerWindow
         }
 
         var markers = MarkersCanvasCtl;
-        if (markers != null && !_draggingThumbMarker && !_draggingClipChip && !_chipPressed)
+        if (markers != null && !_draggingThumbMarker && !_draggingClipChip && !_chipPressed) // ANTS_01 — never rebuild under a pressed block
             DrawMergedTimeline(markers, this.FindControl<Canvas>("TimelineScaleCanvas"));
 
         UpdateMergerThumbnailButton();

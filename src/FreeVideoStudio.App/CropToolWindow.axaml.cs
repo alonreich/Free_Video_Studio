@@ -1,4 +1,7 @@
-﻿using Avalonia;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -240,6 +243,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private bool _suppressLayerSelection;
     private bool _isSafeToClose;
     private bool _changingProfile;
+    private bool _isSaving;
+    private string? _verifiedEditingProfile;
     private bool _unsavedPromptOpen;
     private bool _returningToMainApp;
     private bool _closeInProgress;
@@ -295,8 +300,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         _pendingInitialVideoPath = _initialVideoPath;
         ApplyWizardChrome(cropping: false);
-        SetProfileGate(unlocked: false);
-        SetWizardState(0, "Choose Profile", "Pick the profile you want to edit, up at the top.");
+        if (_verifiedEditingProfile == null)
+        {
+            SetProfileGate(unlocked: false);
+            SetWizardState(0, "Choose Profile", "Choose a profile from the picker on the left to start editing.");
+        }
 
         Loaded += (_, _) => Controls.CoachOverlay.Register(this, Controls.CoachTours.CropToolKey, Controls.CoachTours.CropTool);
 
@@ -329,7 +337,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _snapshotScroll = this.FindControl<ScrollViewer>("SnapshotScroll");
         _snapshotZoomHost = this.FindControl<LayoutTransformControl>("SnapshotZoomHost");
         _zoomLabel = this.FindControl<TextBlock>("ZoomLabel");
-        _profileGate = this.FindControl<Border>("ProfileGateOverlay");
+        _profileGate = null;
         _profileStateLabel = this.FindControl<TextBlock>("ProfileStateLabel");
         _composerEmptyState = this.FindControl<Border>("ComposerEmptyState");
         _composerEmptyStateTitle = this.FindControl<TextBlock>("ComposerEmptyStateTitle");
@@ -403,6 +411,9 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             CancelMagicWand();
         });
 
+        // MAGICWAND_02 — the wand is wired to a real detector now, so the button is live again.
+        // MAGICWAND_01 hid it because the old handler drew six boxes at hardcoded fractions of the
+        // frame and called them detections; see RunMagicWandAsync for what replaced that.
         ButtonClick("MagicWandButton", async (_, _) => await RunMagicWandAsync());
 
         ButtonClick("ZoomFitButton", (_, _) => ApplySnapshotZoom(null));
@@ -589,30 +600,61 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             RefreshMaskOverlayNameCache(allProfiles);
 
-            combo.SelectedItem = null;
+            // Reopen last deliberate editing choice only if still valid (Requirement 4)
+            string lastEdited = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.LastEditedCropProfile;
+            string? validInitial = null;
+            if (!string.IsNullOrWhiteSpace(lastEdited) &&
+                !FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(lastEdited))
+            {
+                string? matching = profiles.FirstOrDefault(p => string.Equals(p, lastEdited.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (matching != null)
+                {
+                    var testLoad = FreeVideoStudio.App.Infrastructure.MaskOverlayManager.LoadProfile(matching);
+                    if (testLoad.Success)
+                    {
+                        validInitial = testLoad.ProfileName;
+                    }
+                }
+            }
+
+            if (validInitial != null)
+            {
+                combo.SelectedItem = validInitial;
+                _ = OnProfileChosenAsync(validInitial);
+            }
+            else
+            {
+                combo.SelectedItem = null;
+                SetProfileGate(unlocked: false);
+            }
 
             combo.SelectionChanged += async (s, e) =>
             {
-                if (_changingProfile) return;
+                if (_changingProfile || _isSaving) return;
                 if (combo.SelectedItem is not string selected) return;
 
-                if (string.Equals(selected, _edit.ActiveProfile, StringComparison.OrdinalIgnoreCase)) return;
+                if (string.Equals(selected, _verifiedEditingProfile, StringComparison.OrdinalIgnoreCase)) return;
 
                 if (FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(selected))
                 {
                     RuntimeLog.Fail("CROP", "The reserved profile reached the Crop Tools picker — NOMASK_02's filter has been bypassed.");
-                    combo.SelectedItem = _edit.ActiveProfile;
+                    combo.SelectedItem = _verifiedEditingProfile;
+                    SetStatus($"\"{FreeVideoStudio.App.Infrastructure.MaskOverlayManager.NoMaskProfileName}\" is a reserved built-in profile and cannot be edited.");
                     return;
                 }
 
                 _changingProfile = true;
                 try
                 {
-                    combo.SelectedItem = _edit.ActiveProfile;
-                    if (_returningToMainApp || _closeInProgress ||
-                        !await ConfirmUnsavedChangesAsync($"switching to \"{selected}\"")) return;
+                    if (_returningToMainApp || _closeInProgress) return;
+                    if (!await ConfirmUnsavedChangesAsync($"switching to \"{selected}\""))
+                    {
+                        combo.SelectedItem = _verifiedEditingProfile;
+                        return;
+                    }
+
                     await OnProfileChosenAsync(selected);
-                    combo.SelectedItem = _edit.ActiveProfile;
+                    combo.SelectedItem = _verifiedEditingProfile;
                 }
                 finally { _changingProfile = false; }
             };
@@ -633,7 +675,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                     return;
                 }
 
-                if (_edit.ActiveProfile == null)
+                if (_verifiedEditingProfile == null)
                 {
                     SetStatus("Choose the profile you want to copy first.");
                     return;
@@ -729,41 +771,70 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         if (_profileStateLabel != null)
         {
-            _profileStateLabel.Text = unlocked
-                ? "Editing: " + (_edit.ActiveProfile ?? "")
-                : "No profile selected";
+            if (unlocked && !string.IsNullOrWhiteSpace(_verifiedEditingProfile))
+            {
+                _profileStateLabel.Text = $"EDITING PROFILE: {_verifiedEditingProfile}";
+                _profileStateLabel.Foreground = Infrastructure.ThemeResources.Brush(_profileStateLabel, "AppAccentBrush", Brushes.DodgerBlue);
+            }
+            else
+            {
+                _profileStateLabel.Text = "No profile selected";
+                _profileStateLabel.Foreground = Infrastructure.ThemeResources.Brush(_profileStateLabel, "AppTextMutedBrush", Brushes.Gray);
+            }
         }
 
         Avalonia.Input.DragDrop.SetAllowDrop(this, unlocked);
     }
 
     /// <summary>
-    /// GATE_01 (F3) - loads a profile the user deliberately picked.
+    /// GATE_01 / CROPPROFILE_01 — loads and verifies a profile the user deliberately picked.
     ///
-    /// ORDER MATTERS. ApplyProfile writes the chosen profile into the live crop config, so the
-    /// working state has to be cleared FIRST (otherwise items belonging to the previous profile
-    /// survive into this one and get written back to the wrong file on the next save), and the
-    /// rehydrate has to run AFTER (it reads the live config that ApplyProfile just wrote).
+    /// Validates the profile identity and contents first. If loading fails (missing, corrupt,
+    /// sentinel, invalid), does NOT clear working state, unlock editing or relabel old data.
+    /// Only upon successful verified load is working state reset and editing unlocked.
     /// </summary>
-    private async Task OnProfileChosenAsync(string profileName)
+    private async Task<bool> OnProfileChosenAsync(string profileName)
     {
         try
         {
-            FreeVideoStudio.App.Infrastructure.MaskOverlayManager.ApplyProfile(profileName);
-            _edit.ActiveProfile = profileName;
+            var loadResult = FreeVideoStudio.App.Infrastructure.MaskOverlayManager.LoadProfile(profileName);
+            if (!loadResult.Success)
+            {
+                RuntimeLog.Fail("CROP", $"Failed to load profile '{profileName}': {loadResult.ErrorMessage}");
+                SetStatus(loadResult.ErrorMessage ?? "Could not load profile.");
+                if (string.IsNullOrWhiteSpace(_verifiedEditingProfile))
+                {
+                    SetProfileGate(unlocked: false);
+                }
+                return false;
+            }
+
+            string verifiedName = loadResult.ProfileName!;
+            JsonObject validatedConfig = loadResult.Config!;
+
+            _paths.EnsureWritableDirectories();
+            using (NamedSystemMutex.Acquire(StateTransferStore.MutexName, StateTransferStore.DefaultMutexTimeout))
+            {
+                AtomicJsonFile.WriteObject(_paths.CropCoordinatesFile, validatedConfig);
+            }
+
+            _verifiedEditingProfile = verifiedName;
+            _edit.ActiveProfile = verifiedName;
 
             ResetWorkingState();
             SetProfileGate(unlocked: true);
 
-            await RehydrateSavedLayersAsync();
+            await RehydrateSavedLayersAsync(validatedConfig);
             UpdateComposerEmptyState();
 
             RefreshActionButtons();
-            RuntimeLog.Info("CROP", $"Editing mask profile '{profileName}' ({_items.Count} saved element(s) loaded).");
+            RuntimeLog.Info("CROP", $"Editing mask profile '{verifiedName}' ({_items.Count} saved element(s) loaded).");
+
+            FreeVideoStudio.App.Infrastructure.SettingsManager.Update(s => s.LastEditedCropProfile = verifiedName);
 
             if (string.IsNullOrWhiteSpace(_videoPath))
             {
-                SetWizardState(1, "Upload Video", $"Editing \"{profileName}\". Open a reference clip to start.");
+                SetWizardState(1, "Upload Video", $"Editing \"{verifiedName}\". Open a reference clip to start.");
             }
 
             if (!string.IsNullOrWhiteSpace(_pendingInitialVideoPath) && File.Exists(_pendingInitialVideoPath))
@@ -773,12 +844,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 await LoadVideoAsync(pending, startPaused: false);
             }
 
-            SetStatusSuccess("Profile loaded: " + profileName);
+            SetStatusSuccess("Profile loaded: " + verifiedName);
+            return true;
         }
         catch (Exception ex)
         {
             RuntimeLog.Fail("CROP", $"Could not open profile '{profileName}': {ex.Message}");
             SetStatus("That profile could not be opened. See runtime log.");
+            return false;
         }
     }
 
@@ -1092,6 +1165,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         {
             await _videoHost.IpcClient.LoadFileAsync(path);
 
+            // AUTOPLAY_01 - muted, and playing.
+            //
+            // MUTED: this screen never exports audio and the user is scanning for a frame with a
+            // clear HUD, not watching. Gameplay audio detonating the moment a file is picked is
+            // startling and has no upside here. Set BEFORE unpausing, or the first frames play out
+            // loud while the property is still in flight.
             await ApplyCurrentVolumeToMpvAsync();
 
             await _videoHost.IpcClient.SetPropertyAsync("pause", startPaused ? "yes" : "no");
@@ -1389,6 +1468,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 CoordinateConstants.PortraitH - CoordinateConstants.UIPaddingBottom);
             finalCanvas.DrawBitmap(internalBitmap, contentDst);
 
+            // COMPOSERDIM_01 - the red 64-alpha wash over the two letterbox bands is GONE.
+            // It was marking "this area is padding", but the AXAML already paints those bands with
+            // AppVideoSurfaceBrush over the top, so the wash was invisible where it was meant to be
+            // read and only served to muddy the colour of everything underneath. Combined with the
+            // old 0.22 background opacity it made the reference frame unreadable, which is the
+            // complaint this addresses. The bands are still obvious - they are the empty strips.
             finalCanvas.Flush();
         }
 
@@ -1481,6 +1566,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             return;
         }
 
+        // PAN_01 — middle-drag pans, the same gesture the Python tool used and the same one
+        // every image editor uses. Scrollbars alone are how the previous build earned
+        // "scrolling sideways/up/down is extremely confusing": they are the one navigation
+        // control you cannot reach without letting go of what you are doing.
         if (props.IsMiddleButtonPressed)
         {
             _sourceDrag = SourceDrag.Panning;
@@ -1800,6 +1889,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetStatus("Selection cancelled.");
     }
 
+    // CROPZOOMRESET_01 — commit and cancel both finish the temporary precision zoom.
+    // Restore only a view auto-zoom actually changed; preserve manually chosen zoom otherwise.
     private void RestoreSourceViewAfterSelection()
     {
         if (_preZoomState is { } saved)
@@ -2921,6 +3012,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             string cropPath = await CropSnapshotRegionForExportPreviewAsync(snapshotPath, sourceRect, role.Key);
             _tempFiles.Add(cropPath);
 
+            // NODUPES_01 / NODUPES_02 / DELETESET_01 — one element, one entry, always: an element
+            // already placed (by key OR by label) is REPLACED, and a twin under another key is
+            // tombstoned. EDITSTATE_01 — the rule, the default placement and the z collision are
+            // the session's; this releases the replaced visuals and builds the new one.
             CropLayer layer = _edit.AddLayer(role, sourceRect, cropPath, contentRect, out var replaced);
             foreach (CropLayer old in replaced)
             {
@@ -3007,6 +3102,21 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             Tag = null,
             ZIndex = snapshot.Z,
 
+            // ITEMHIT_01 — THE reason a placed element could not be picked up or moved.
+            //
+            // In Avalonia a Panel with Background = null does not take part in hit testing at all:
+            // there is nothing painted, so there is nothing to hit. Every child inside this Canvas
+            // is IsHitTestVisible = false (the image, the outline, the label) and the only hittable
+            // parts are the two red handles, which UpdateItemVisual keeps HIDDEN unless the item is
+            // already selected. A freshly placed element was therefore completely inert: no click,
+            // no select, no drag, and no way to reach the handles that would have let you select it.
+            //
+            // It was masked for as long as the LAYERS list existed, because clicking a row there was
+            // what called SelectItem. Removing that list (LAYERSPANE_01) took away the last route in
+            // and turned a latent bug into a dead feature.
+            //
+            // Brushes.Transparent is NOT the same as null here: a transparent brush paints nothing
+            // but IS hit-testable, which is exactly what is wanted. Do not "tidy" this to null.
             Background = Brushes.Transparent,
         };
         Avalonia.Automation.AutomationProperties.SetName(root, $"{snapshot.DisplayName} crop item");
@@ -3037,6 +3147,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         Canvas.SetLeft(border, -2);
         Canvas.SetTop(border, -2);
 
+        // HANDLECURSOR_01 — the two resize handles carried StandardCursorType.SizeAll, which is the
+        // SAME cursor the item root uses for "drag me". Hovering a corner therefore looked identical
+        // to hovering the middle, so nothing told the user the corners resize. Diagonal arrows, the
+        // universal resize affordance, and they point along the axis each corner actually moves.
         var tlHandle = CreateHandle(StandardCursorType.TopLeftCorner);
         var brHandle = CreateHandle(StandardCursorType.BottomRightCorner);
 
@@ -3486,13 +3600,15 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     /// <see cref="CropProfileCodec.ReadSavedLayers"/>; this window loads the file, cuts each
     /// thumbnail and builds the visuals. Safe to call more than once: a placed role is skipped.
     /// </summary>
-    private async Task RehydrateSavedLayersAsync()
+    private async Task RehydrateSavedLayersAsync(JsonObject? profileConfig = null)
     {
         if (_portraitCanvas == null) return;
 
         try
         {
-            JsonObject config = HudConfig.Sanitize(await new CropConfigStore(_paths).LoadAsync());
+            JsonObject config = profileConfig != null
+                ? HudConfig.Sanitize(profileConfig, migrateLegacy: true)
+                : HudConfig.Sanitize(await new CropConfigStore(_paths).LoadAsync(), migrateLegacy: true);
 
             foreach (CropLayer layer in CropProfileCodec.ReadSavedLayers(config, _edit))
             {
@@ -3587,15 +3703,21 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private async Task SaveAndReturnAsync(object? sender)
     {
-        if (_edit.ActiveProfile == null)
+        if (_isSaving || _changingProfile) return;
+
+        string? targetProfile = _verifiedEditingProfile ?? _edit.ActiveProfile;
+        if (string.IsNullOrWhiteSpace(targetProfile))
         {
             SetStatus("Choose a profile before saving.");
             return;
         }
 
+        // SAVECONFIRM_01 / CROPSAVEPROMPT_02 — name the destination and the action.
+        // Saving is the primary action; going back keeps the current edits open.
+        // "KEEP IT" was ambiguous about whether it kept the saved profile or the new work.
         bool confirmed = await Controls.ConfirmDialogWindow.AskAsync(
             this,
-            $"Save this layout to \"{_edit.ActiveProfile}\" and return to the main app?\n\n" +
+            $"Save this layout to \"{targetProfile}\" and return to the main app?\n\n" +
             "This updates the saved layout for this profile.",
             "Save your changes?",
             yesText: "Save changes",
@@ -3702,6 +3824,15 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private async Task<bool> SaveConfigAsync()
     {
+        if (_isSaving || _changingProfile) return false;
+
+        string? targetProfile = _verifiedEditingProfile ?? _edit.ActiveProfile;
+        if (string.IsNullOrWhiteSpace(targetProfile))
+        {
+            SetStatus("Choose a profile before saving.");
+            return false;
+        }
+
         if (_edit.Layers.Count == 0 && _edit.DeletedRoleKeys.Count == 0)
         {
             SetStatus("No HUD elements are currently placed.");
@@ -3710,7 +3841,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         try
         {
-            RuntimeLog.Info("CROP", "Saving crop coordinates.");
+            _isSaving = true;
+            RuntimeLog.Info("CROP", $"Saving crop coordinates for '{targetProfile}'.");
             var store = new CropConfigStore(_paths);
             
             JsonObject config = await store.LoadAsync();
@@ -3728,7 +3860,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             config = HudConfig.Sanitize(config);
             await store.SaveAsync(config);
 
-            if (!FreeVideoStudio.App.Infrastructure.MaskOverlayManager.SyncActiveProfileFromCurrentConfig())
+            // CROPPROFILE_01 — explicitly sync to targetProfile, not global ActiveMaskOverlay!
+            if (!FreeVideoStudio.App.Infrastructure.MaskOverlayManager.SyncProfileFromCurrentConfig(targetProfile))
             {
                 SetStatus("Could not save this profile. Your edits are still open. Please try saving again.");
                 return false;
@@ -3736,7 +3869,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             _edit.Dirty = false;
             RefreshActionButtons();
-            RuntimeLog.Success("CROP", "Saved crop coordinates successfully.");
+            RuntimeLog.Success("CROP", $"Saved crop coordinates successfully to '{targetProfile}'.");
             return true;
         }
         catch (InvalidOperationException ex)
@@ -3751,8 +3884,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             SetStatus("Save failed. See runtime log.");
             return false;
         }
+        finally
+        {
+            _isSaving = false;
+        }
     }
 
+    // CROPUNSAVED_01 — used by profile switches, Return, and the window close button,
+    // including an empty layout after the last element was deleted.
     private async Task<bool> ConfirmUnsavedChangesAsync(string destination)
     {
         if (_unsavedPromptOpen) return false;
@@ -3760,8 +3899,9 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _unsavedPromptOpen = true;
         try
         {
+            string profileName = _verifiedEditingProfile ?? _edit.ActiveProfile ?? "this profile";
             var choice = await Controls.ConfirmDialogWindow.AskSaveChangesAsync(
-                this, _edit.ActiveProfile ?? "this profile", destination);
+                this, profileName, destination);
             return choice switch
             {
                 Controls.ConfirmDialogWindow.SaveChangesChoice.Save => await SaveConfigAsync(),
@@ -3802,6 +3942,21 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "FreeVideoStudio.exe";
 
+            // RELAUNCHARG_01 — "run-ui" is NOT decoration. This line used to start the exe with NO
+            // arguments, and an argument-less launch is how this suite says "I am a standalone
+            // installer": DeploymentFootprint.IsStandaloneInstallerHost is
+            //     args.Length == 0 && !IsRunningFromInstallPath()
+            // so Program.cs line 7 handed the new process to DeploymentLifecycle, which opened an
+            // INSTALL LAUNCHER session and asked Windows for Administrator. Pressing FINISH & SAVE
+            // in the Crop Tools raised a UAC prompt, and declining it killed the relaunch.
+            //
+            // It is invisible in an installed build, because IsRunningFromInstallPath() is true
+            // there and the first condition never fires — it only bites in a dev build or a copy
+            // run from anywhere else, which is exactly where it was found.
+            //
+            // The outbound direction always got this right: CompanionAppService starts the
+            // companion with "--crop-tool". This is the return leg being made symmetrical.
+            // Program.cs handles "run-ui" explicitly, and any non-empty argv settles the question.
             var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, "run-ui") { UseShellExecute = false });
             if (p != null)
             {
@@ -3878,6 +4033,13 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         SetEnabled("SaveButton", _edit.CanSave);
 
+        // DELETEBTN_01: this line used to read SetEnabled("DeleteSelectedButton", ...). There has
+        // never been a control by that name in CropToolWindow.axaml - the button is DeleteMenuButton
+        // - and SetEnabled resolves through FindControl, which returns null and returns silently for
+        // a name that does not exist. So the call did nothing, DELETE kept the IsEnabled="False" it
+        // is declared with, and the only way to remove a layer was RESET (which wipes all of them).
+        // It failed silently in exactly the way 04_UI_UX_AVALONIA_SPEC.md#UI-THEME describes for
+        // the QualityLabel dead readout: the feature looked MISSING rather than broken.
         SetEnabled("DeleteMenuButton", profileChosen && SelectedView != null);
 
         SetEnabled("RaiseButton", profileChosen && SelectedView != null);

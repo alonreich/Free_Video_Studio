@@ -1,4 +1,7 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_TRANSFORMS.md (TL-AIHUD), docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -37,12 +40,15 @@ namespace FreeVideoStudio.App.Services;
 /// <para><b>Failure.</b> Never throws for provider trouble — see <see cref="IAiHudDetectionService"/>.
 /// No retry: a Magic Wand user is waiting, and the local answer is already on its way, so a 429 or
 /// a timeout falls straight back rather than holding the button.</para>
+///
+/// <para>AIPROVIDER_ROUTING_01 — routes requests through selected IAiVisionProvider.</para>
 /// </summary>
 public sealed class GeminiHudDetectionService : IAiHudDetectionService
 {
-    public const string DefaultModel = "gemini-2.5-flash";
-    public const string Endpoint = "https://generativelanguage.googleapis.com/v1beta/models/";
-    public const string ApiKeyHeader = "x-goog-api-key";
+    /// <summary>D3 — one default model for the whole app: <see cref="GeminiClient.DefaultModel"/>.</summary>
+    public const string DefaultModel = GeminiClient.DefaultModel;
+    public const string Endpoint = GeminiClient.ModelsEndpoint;
+    public const string ApiKeyHeader = GeminiClient.ApiKeyHeader;
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
 
     private const string LogArea = "AI-HUD";
@@ -57,7 +63,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         return client;
     });
 
-    private static readonly Regex SafeModelName = new("^[A-Za-z0-9._-]{1,64}$", RegexOptions.CultureInvariant);
 
     private readonly Func<string?> _apiKeyProvider;
     private readonly Func<string?> _modelProvider;
@@ -66,6 +71,10 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     private readonly IFaultSink _faults;
     private readonly Action<string> _log;
     private readonly AiHudResultCache _cache;
+    private readonly Func<AiVendor>? _vendorProvider;
+    private readonly IAiVisionProvider? _visionProvider;
+
+    public const string HudJsonSchema = "{\"type\":\"OBJECT\",\"properties\":{\"candidates\":{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"label\":{\"type\":\"STRING\"},\"normalizedX\":{\"type\":\"NUMBER\"},\"normalizedY\":{\"type\":\"NUMBER\"},\"normalizedWidth\":{\"type\":\"NUMBER\"},\"normalizedHeight\":{\"type\":\"NUMBER\"},\"confidence\":{\"type\":\"NUMBER\"}},\"required\":[\"label\",\"normalizedX\",\"normalizedY\",\"normalizedWidth\",\"normalizedHeight\",\"confidence\"]}}},\"required\":[\"candidates\"]}";
 
     /// <param name="apiKeyProvider">Read at call time; the key is never retained.</param>
     /// <param name="modelProvider">Read at call time; an unsafe or empty name falls back to <see cref="DefaultModel"/>.</param>
@@ -74,6 +83,8 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     /// <param name="timeout">Per-request ceiling. Null uses <see cref="DefaultTimeout"/>.</param>
     /// <param name="log">Test seam for log capture. Null writes to <see cref="CoreLogger"/>.</param>
     /// <param name="cache">Null creates a private bounded cache.</param>
+    /// <param name="vendorProvider">Optional delegate returning the active AiVendor for U3 HUD detection.</param>
+    /// <param name="visionProvider">Optional vision provider override for tests or custom dispatch.</param>
     public GeminiHudDetectionService(
         Func<string?> apiKeyProvider,
         Func<string?> modelProvider,
@@ -81,7 +92,9 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         HttpClient? httpClient = null,
         TimeSpan? timeout = null,
         Action<string>? log = null,
-        AiHudResultCache? cache = null)
+        AiHudResultCache? cache = null,
+        Func<AiVendor>? vendorProvider = null,
+        IAiVisionProvider? visionProvider = null)
     {
         _apiKeyProvider = apiKeyProvider ?? throw new ArgumentNullException(nameof(apiKeyProvider));
         _modelProvider = modelProvider ?? throw new ArgumentNullException(nameof(modelProvider));
@@ -90,9 +103,16 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         _timeout = timeout is { } t && t > TimeSpan.Zero ? t : DefaultTimeout;
         _log = log ?? (line => CoreLogger.Info(LogArea, line));
         _cache = cache ?? new AiHudResultCache();
+        _vendorProvider = vendorProvider;
+        _visionProvider = visionProvider;
     }
 
-    public string ProviderName => "Google Gemini";
+    public string ProviderName => (_vendorProvider?.Invoke() ?? AiVendor.Google) switch
+    {
+        AiVendor.Anthropic => "Anthropic Claude",
+        AiVendor.OpenAI => "OpenAI",
+        _ => "Google Gemini",
+    };
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKeyProvider());
 
@@ -101,8 +121,14 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     /// could change its meaning.</summary>
     public string ResolveModel()
     {
-        string? configured = _modelProvider()?.Trim();
-        return !string.IsNullOrEmpty(configured) && SafeModelName.IsMatch(configured) ? configured : DefaultModel;
+        AiVendor vendor = _vendorProvider?.Invoke() ?? AiVendor.Google;
+        string? raw = _modelProvider();
+        return vendor switch
+        {
+            AiVendor.Anthropic => ClaudeProvider.ResolveModel(raw),
+            AiVendor.OpenAI => OpenAiProvider.ResolveModel(raw),
+            _ => GeminiClient.ResolveModel(raw),
+        };
     }
 
     public async Task<AiHudDetectionResult> DetectAsync(AiHudFrame frame, CancellationToken cancellationToken)
@@ -113,19 +139,70 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         string apiKey = _apiKeyProvider()?.Trim() ?? string.Empty;
         if (apiKey.Length == 0)
         {
-            _log("AI HUD skipped: no API key configured. Offline Magic Wand only.");
+            _log($"AI HUD skipped: no {ProviderName} API key configured. Offline Magic Wand only.");
             return AiHudDetectionResult.Failed(AiHudOutcome.NotConfigured, "no API key");
         }
 
         if (frame.JpegBytes is not { Length: > 0 } || frame.SourceWidth <= 0 || frame.SourceHeight <= 0)
             return AiHudDetectionResult.Failed(AiHudOutcome.ModelError, "no frame to send");
 
+        AiVendor vendor = _vendorProvider?.Invoke() ?? AiVendor.Google;
         string model = ResolveModel();
-        var cacheKey = new AiHudCacheKey(frame.SourceFingerprint, frame.FrameKey, model);
+        var cacheKey = new AiHudCacheKey(frame.SourceFingerprint, frame.FrameKey, $"{vendor}:{model}");
         if (_cache.TryGet(cacheKey, out AiHudDetectionResult? cached) && cached != null)
         {
-            _log($"AI HUD: reused {cached.Candidates.Count} candidate(s) for this exact frame (model {model}).");
+            _log($"AI HUD: reused {cached.Candidates.Count} candidate(s) for this exact frame ({ProviderName} model {model}).");
             return cached;
+        }
+
+        if (vendor != AiVendor.Google || _visionProvider != null)
+        {
+            try
+            {
+                IAiVisionProvider provider = _visionProvider ?? AiVisionProviders.Get(vendor);
+                var images = new[] { new AiImageInput(frame.JpegBytes, "image/jpeg") };
+                _log($"AI HUD: sending ONE frame ({frame.JpegBytes.Length / 1024} KB JPEG, source {frame.SourceWidth}x{frame.SourceHeight}) to {ProviderName} model {model}.");
+                using var providerTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                providerTimeoutCts.CancelAfter(_timeout);
+                string responseJson = await provider.GenerateJsonAsync(apiKey, model, Prompt, images, null, HudJsonSchema, null, GeminiCallOptions.Quick, _log, providerTimeoutCts.Token).ConfigureAwait(false);
+                AiHudParseResult parsedResult = AiHudResponseParser.Parse(responseJson);
+                if (parsedResult.IsMalformed)
+                    return Fail(AiHudOutcome.MalformedResponse, parsedResult.Error, apiKey);
+
+                var detectionResult = new AiHudDetectionResult(AiHudOutcome.Success, parsedResult.Candidates, $"{parsedResult.Candidates.Count} accepted, {parsedResult.Rejected} rejected");
+                _cache.Store(cacheKey, detectionResult);
+                _log($"AI HUD: {parsedResult.Candidates.Count} candidate(s) accepted, {parsedResult.Rejected} rejected by validation (model {model}).");
+                return detectionResult;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                _faults.Recoverable(FaultArea, $"AI HUD request timed out after {_timeout.TotalSeconds:0}s ({ex.GetType().Name}).");
+                return Fail(AiHudOutcome.Timeout, $"no answer within {_timeout.TotalSeconds:0}s", apiKey);
+            }
+            catch (AiProviderException ex)
+            {
+                AiHudOutcome outcome = ex.Kind switch
+                {
+                    AiProviderErrorKind.RateLimited or AiProviderErrorKind.QuotaExhausted => AiHudOutcome.RateLimited,
+                    AiProviderErrorKind.Timeout => AiHudOutcome.Timeout,
+                    AiProviderErrorKind.Network => AiHudOutcome.NetworkError,
+                    AiProviderErrorKind.MalformedResponse => AiHudOutcome.MalformedResponse,
+                    _ => AiHudOutcome.ModelError,
+                };
+                string detail = Redact($"{ex.Kind}: {ex.Message} {ex.Detail}", apiKey);
+                _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
+                return Fail(outcome, detail, apiKey);
+            }
+            catch (Exception ex)
+            {
+                string detail = Redact($"{ex.GetType().Name}: {ex.Message}", apiKey);
+                _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
+                return Fail(AiHudOutcome.NetworkError, detail, apiKey);
+            }
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -207,17 +284,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     /// Removes the key (and anything shaped like a <c>key=</c> query value) from text bound for a
     /// log, a fault or a result. Belt and braces: the key is never put in a URL by this class.
     /// </summary>
-    public static string Redact(string? text, string? apiKey)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        string result = text;
-        if (!string.IsNullOrWhiteSpace(apiKey))
-            result = result.Replace(apiKey.Trim(), "[REDACTED]", StringComparison.Ordinal);
-        result = Regex.Replace(result, @"(?i)(key=)[^&\s""']+", "$1REDACTED");
-        result = Regex.Replace(result, @"(?i)(x-goog-api-key\s*[:=]\s*)\S+", "$1REDACTED");
-        result = Regex.Replace(result, @"(?i)(authorization\s*[:=]\s*)[^\r\n]+", "$1REDACTED");
-        return result;
-    }
+    public static string Redact(string? text, string? apiKey) => GeminiClient.Redact(text, apiKey);
 
 
     public const string Prompt =
@@ -305,52 +372,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
 
     /// <summary>Concatenates the text parts of the first candidate of a generateContent response.</summary>
     internal static bool TryExtractModelText(string? responseJson, out string text, out string? error)
-    {
-        text = string.Empty;
-        error = null;
-        if (string.IsNullOrWhiteSpace(responseJson)) { error = "empty HTTP body"; return false; }
+        => GeminiClient.TryExtractModelText(responseJson, out text, out error);
 
-        try
-        {
-            using JsonDocument doc = JsonDocument.Parse(responseJson);
-            JsonElement root = doc.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object
-             || !root.TryGetProperty("candidates", out JsonElement candidates)
-             || candidates.ValueKind != JsonValueKind.Array
-             || candidates.GetArrayLength() == 0)
-            {
-                error = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("promptFeedback", out _)
-                    ? "the model declined to answer (promptFeedback)"
-                    : "no candidates in response";
-                return false;
-            }
-
-            var sb = new StringBuilder();
-            JsonElement first = candidates[0];
-            if (first.TryGetProperty("content", out JsonElement content)
-             && content.TryGetProperty("parts", out JsonElement parts)
-             && parts.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement part in parts.EnumerateArray())
-                {
-                    if (part.TryGetProperty("text", out JsonElement t) && t.ValueKind == JsonValueKind.String)
-                        sb.Append(t.GetString());
-                }
-            }
-
-            text = sb.ToString();
-            if (text.Length == 0) { error = "no text part in response"; return false; }
-            return true;
-        }
-        catch (JsonException ex)
-        {
-            error = "response body is not JSON";
-            CoreLogger.Swallowed(ex);
-            return false;
-        }
-    }
-
-    private static string Truncate(string? s, int max)
-        => string.IsNullOrEmpty(s) ? string.Empty : (s.Length <= max ? s : s[..max] + "…");
+    private static string Truncate(string? s, int max) => GeminiClient.Truncate(s, max);
 }

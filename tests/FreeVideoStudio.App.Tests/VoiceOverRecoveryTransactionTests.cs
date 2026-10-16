@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -24,6 +24,26 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class VoiceOverRecoveryTransactionTests : IDisposable
 {
+    [Fact]
+    public void WriteFaultRecovery_RoundTripsOneFrameDurationAndFreezeOffset()
+    {
+        string wav = Wav("bounded-prefix.wav", 1.0 / 44100);
+        var take = Take(wav, 4, 4.001);
+        take.CapturedDurationSec = 1.0 / 44100;
+        take.OutputOffsetSec = -1.25;
+        take.NeedsTimingReview = true;
+        var manager = Manager();
+        Assert.True(manager.RegisterFailedTake(take,
+            new CapturedTake(2, 1, 0, IsSuccess: false, FileFinalized: false,
+                Error: new IOException("test write/header failure"), WriteFailed: true), "storage failure").Success);
+        var reopened = Manager();
+        reopened.CheckAndOfferReopenRecovery();
+        var stored = Assert.Single(reopened.PendingFailedTakes).Session;
+        Assert.Equal(take.CapturedDurationSec, stored.CapturedDurationSec);
+        Assert.Equal(-1.25, stored.OutputOffsetSec);
+        Assert.True(stored.NeedsTimingReview);
+        Assert.Equal(new byte[2], SampleCaptureDevices.ReadPcm(stored.WavPath));
+    }
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
     private const string Video = @"C:\clips\same.mp4";
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "FvsVoRecoveryTx_" + Guid.NewGuid().ToString("N"));
@@ -39,6 +59,7 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
     {
         VoiceOverWindow.RecoveryDirectorySeam = null;
         VoiceOverWindow.RecoveryStoreSeam = null;
+        VoiceOverWindow.ConfirmDeleteSeam = null;
         VoiceOverWindow.TrimRunnerSeam = null;
         try { Directory.Delete(_dir, recursive: true); }
         catch (IOException) { }
@@ -493,6 +514,323 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.False(await window.RecoverFailedTakesAction());
         Assert.Single(window.Sessions, s => s.WavPath == wav);
         Assert.Single(window.PendingFailedTakes);
+    }
+
+    [AvaloniaFact]
+    public async Task Restore_Successful_PreservesExactMetadataAndAddsToSession()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("restore_exact.wav", 2.0);
+        var take = new VoiceOverWindow.VoiceOverSession
+        {
+            WavPath = wav,
+            StartSec = 3.0,
+            EndSec = 5.0,
+            TrimLeftSec = 0.25,
+            TrimRightSec = 0.5,
+            CapturedDurationSec = 2.0,
+            OutputOffsetSec = -0.5,
+            IsMuted = false,
+            NeedsTimingReview = true
+        };
+        Assert.True(window.RecoveryManager.RegisterFailedTake(take, null, "interrupted take").Success);
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        Assert.True(window.HasUnresolvedFailedTakes);
+        bool recovered = await window.RecoverFailedTakesAction();
+        Assert.True(recovered);
+        Assert.False(window.HasUnresolvedFailedTakes);
+
+        var session = Assert.Single(window.Sessions);
+        Assert.Equal(wav, session.WavPath);
+        Assert.Equal(3.0, session.StartSec);
+        Assert.Equal(0.25, session.TrimLeftSec);
+        Assert.Equal(0.5, session.TrimRightSec);
+        Assert.Equal(2.0, session.CapturedDurationSec);
+        Assert.Equal(-0.5, session.OutputOffsetSec);
+        Assert.True(session.NeedsTimingReview);
+        Assert.False(session.IsMuted);
+
+        Assert.Equal(TakeRecoveryState.RecoveredInSession, window.RecoveryManager.PendingFailedTakes[0].State);
+        Assert.True(File.Exists(window.RecoveryManager.GetRecoveryManifestPath()));
+    }
+
+    [AvaloniaFact]
+    public async Task Delete_Confirmed_DeletesWavAndRemovesDurableRecord()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("delete_me.wav", 1.0);
+        var take = Take(wav, 1.0, 2.0);
+        window.RecoveryManager.RegisterFailedTake(take, null, "abandoned take");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        string confirmedTitle = "";
+        string confirmedMessage = "";
+        VoiceOverWindow.ConfirmDeleteSeam = (_, title, msg) =>
+        {
+            confirmedTitle = title;
+            confirmedMessage = msg;
+            return Task.FromResult(true);
+        };
+
+        bool result = await window.DiscardFailedTakesAction();
+        Assert.True(result);
+        Assert.False(File.Exists(wav), "Confirmed delete must remove audio from disk");
+        Assert.False(window.HasUnresolvedFailedTakes);
+        Assert.Contains("Delete Unsaved Voice Recording", confirmedTitle);
+        Assert.Contains("Permanently delete this unsaved voice recording", confirmedMessage);
+
+        var reopened = Manager(video: "");
+        reopened.CheckAndOfferReopenRecovery();
+        Assert.Empty(reopened.PendingFailedTakes);
+    }
+
+    [AvaloniaFact]
+    public async Task Delete_Cancelled_PreservesWavAndDurableRecord()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("keep_me.wav", 1.0);
+        var take = Take(wav, 1.0, 2.0);
+        window.RecoveryManager.RegisterFailedTake(take, null, "cancelled take");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => Task.FromResult(false);
+
+        bool result = await window.DiscardFailedTakesAction();
+        Assert.False(result);
+        Assert.True(File.Exists(wav), "Cancelled delete must preserve audio on disk");
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.Equal(TakeRecoveryState.Pending, window.RecoveryManager.PendingFailedTakes[0].State);
+
+        var reopened = Manager(video: "");
+        reopened.CheckAndOfferReopenRecovery();
+        Assert.Single(reopened.PendingFailedTakes);
+    }
+
+    [AvaloniaFact]
+    public async Task Delete_EscapeAndWindowClose_PreserveWavAndDurableRecord()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("escape_preserve.wav", 1.0);
+        var take = Take(wav, 1.0, 2.0);
+        window.RecoveryManager.RegisterFailedTake(take, null, "preserve take");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => Task.FromResult(false);
+        bool result = await window.DiscardFailedTakesAction();
+        Assert.False(result);
+
+        window.IsSafeToClose = true;
+        var cancelArgs = new CancelEventArgs();
+        window.TriggerClosing(cancelArgs);
+        Assert.False(cancelArgs.Cancel);
+
+        Assert.True(File.Exists(wav));
+        var reopened = Manager(video: "");
+        reopened.CheckAndOfferReopenRecovery();
+        var offered = Assert.Single(reopened.PendingFailedTakes);
+        Assert.Equal(wav, offered.Session.WavPath);
+    }
+
+    [AvaloniaFact]
+    public async Task RestartAndReoffer_DiscoversPreservedDurableTakes()
+    {
+        string wav = Wav("reoffer.wav", 1.0);
+        var initialManager = Manager(video: "");
+        Assert.True(initialManager.RegisterFailedTake(Take(wav, 2.0, 3.0), null, "previous session crash").Success);
+
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        await window.CheckAndOfferReopenRecoveryAsync();
+
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.Equal("We found an unsaved voice recording.", window.VoiceOverHintTextControl?.Text);
+        Assert.Equal("RESTORE", window.RecoverFailedTakesButtonControl?.Content);
+        Assert.Equal("DELETE", window.DiscardFailedTakesButtonControl?.Content);
+        Assert.True(File.Exists(wav));
+    }
+
+    [AvaloniaFact]
+    public async Task MultipleTakes_NoticeShowsAccurateCountAndAllScope()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav1 = Wav("multi1.wav", 1.0);
+        string wav2 = Wav("multi2.wav", 1.0);
+        string wav3 = Wav("multi3.wav", 1.0);
+        window.RecoveryManager.RegisterFailedTake(Take(wav1, 0, 1), null, "crash 1");
+        window.RecoveryManager.RegisterFailedTake(Take(wav2, 1, 2), null, "crash 2");
+        window.RecoveryManager.RegisterFailedTake(Take(wav3, 2, 3), null, "crash 3");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        Assert.Equal(3, window.RecoveryManager.PendingFailedTakes.Count);
+        Assert.Equal("We found 3 unsaved voice recordings. RESTORE and DELETE apply to all 3 recordings.", window.VoiceOverHintTextControl?.Text);
+        Assert.Equal("Restore all 3 unsaved voice recordings into session", Avalonia.Controls.ToolTip.GetTip(window.RecoverFailedTakesButtonControl!));
+        Assert.Equal("Delete all 3 unsaved voice recordings", Avalonia.Controls.ToolTip.GetTip(window.DiscardFailedTakesButtonControl!));
+
+        string dialogTitle = "";
+        string dialogMessage = "";
+        VoiceOverWindow.ConfirmDeleteSeam = (_, title, msg) =>
+        {
+            dialogTitle = title;
+            dialogMessage = msg;
+            return Task.FromResult(true);
+        };
+
+        bool deleted = await window.DiscardFailedTakesAction();
+        Assert.True(deleted);
+        Assert.Contains("Delete 3 Unsaved Voice Recordings", dialogTitle);
+        Assert.Contains("Permanently delete all 3 unsaved voice recordings?", dialogMessage);
+        Assert.Contains("applies to all 3 offered recordings", dialogMessage);
+        Assert.False(File.Exists(wav1));
+        Assert.False(File.Exists(wav2));
+        Assert.False(File.Exists(wav3));
+        Assert.False(window.HasUnresolvedFailedTakes);
+    }
+
+    [AvaloniaFact]
+    public async Task FailedRestore_LeavesTakeRecoverableAndReportsError()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string corruptWav = Path.Combine(_dir, "corrupt.wav");
+        File.WriteAllBytes(corruptWav, new byte[] { 0x52, 0x49, 0x46, 0x46, 0x00 });
+        window.RecoveryManager.RegisterFailedTake(Take(corruptWav, 0, 1), null, "bad header");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        bool restored = await window.RecoverFailedTakesAction();
+        Assert.False(restored);
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.True(File.Exists(corruptWav));
+        Assert.NotNull(window.LastApplyErrorMessage);
+        Assert.Equal(TakeRecoveryState.Pending, window.RecoveryManager.PendingFailedTakes[0].State);
+    }
+
+    [AvaloniaFact]
+    public async Task FailedDelete_LeavesTakeRecoverableAndReportsError()
+    {
+        var store = new ScriptedStore { FailAudioDelete = true };
+        VoiceOverWindow.RecoveryStoreSeam = store;
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string lockedWav = Wav("locked_delete.wav");
+        window.RecoveryManager.RegisterFailedTake(Take(lockedWav, 0, 1), null, "locked file");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => Task.FromResult(true);
+
+        bool deleted = await window.DiscardFailedTakesAction();
+        Assert.False(deleted);
+        Assert.True(window.HasUnresolvedFailedTakes);
+        Assert.True(File.Exists(lockedWav));
+        Assert.Contains("locked", window.LastApplyErrorMessage);
+        Assert.Equal(TakeRecoveryState.Pending, window.RecoveryManager.PendingFailedTakes[0].State);
+    }
+
+    [AvaloniaFact]
+    public async Task StaleConfirmation_AbortsCleanlyWithoutDeleting()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("stale.wav");
+        window.RecoveryManager.RegisterFailedTake(Take(wav, 0, 1), null, "stale take");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = async (_, _, _) =>
+        {
+            // Simulate take being resolved/discarded elsewhere while confirmation dialog was open
+            var take = window.RecoveryManager.PendingFailedTakes.First(t => t.Session.WavPath == wav);
+            take.State = TakeRecoveryState.Discarded;
+            await Task.Yield();
+            return true;
+        };
+
+        bool deleted = await window.DiscardFailedTakesAction();
+        Assert.False(deleted, "Stale confirmation must abort without error");
+    }
+
+    [AvaloniaFact]
+    public async Task ConcurrentlyAddedTake_DuringConfirmation_SurvivesAndIsNotDeleted()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav1 = Wav("initial.wav");
+        string wav2 = Wav("concurrent.wav");
+        window.RecoveryManager.RegisterFailedTake(Take(wav1, 0, 1), null, "initial take");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) =>
+        {
+            window.RecoveryManager.RegisterFailedTake(Take(wav2, 1, 2), null, "concurrent take");
+            return Task.FromResult(true);
+        };
+
+        bool deleted = await window.DiscardFailedTakesAction();
+        Assert.True(deleted);
+        Assert.False(File.Exists(wav1), "Snapshotted initial take must be deleted");
+        Assert.True(File.Exists(wav2), "Newly arriving take must NOT be deleted");
+        Assert.True(window.HasUnresolvedFailedTakes, "Newly arriving take remains pending");
+        Assert.Single(window.RecoveryManager.PendingFailedTakes.Where(t => t.BlocksApply), t => t.Session.WavPath == wav2);
+    }
+
+    [AvaloniaFact]
+    public async Task OwnershipOrClosing_DuringConfirmation_AbortsDeletion()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture) { IsMpvReady = true };
+        string wav = Wav("abort_on_owner_change.wav");
+        window.RecoveryManager.RegisterFailedTake(Take(wav, 0, 1), null, "owner change");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) =>
+        {
+            var cancel = new CancelEventArgs();
+            window.TriggerClosing(cancel);
+            return Task.FromResult(true);
+        };
+
+        bool deleted = await window.DiscardFailedTakesAction();
+        Assert.False(deleted, "Deletion must abort if close was requested during confirmation");
+        Assert.True(File.Exists(wav), "Audio file must survive");
+    }
+
+    [AvaloniaFact]
+    public async Task DuplicateClicks_WhileConfirmationOrRecoveryPending_AreSafelyIgnored()
+    {
+        using var capture = Capture();
+        var window = new VoiceOverWindow(capture);
+        string wav = Wav("duplicate_clicks.wav");
+        window.RecoveryManager.RegisterFailedTake(Take(wav, 0, 1), null, "dup clicks");
+        await window.RecoveryManager.WhenStoreIdle();
+        window.CheckAndOfferReopenRecovery();
+
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        VoiceOverWindow.ConfirmDeleteSeam = (_, _, _) => tcs.Task;
+
+        var firstClick = window.DiscardFailedTakesAction();
+        var secondClick = window.DiscardFailedTakesAction();
+        Assert.False(await secondClick);
+
+        var recoverClick = window.RecoverFailedTakesAction();
+        Assert.False(await recoverClick);
+
+        tcs.SetResult(false);
+        Assert.False(await firstClick);
+        Assert.True(File.Exists(wav));
     }
 
     /// <summary>Real file system with scriptable failures and explicit gates.</summary>

@@ -295,6 +295,16 @@ recurs: the *repeat* download.
 
 ---
 
+## 3d. Release Retention Policy, Local Artifacts & Rolling Changelog  {#DIST-RETENTION}
+
+* **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio-Setup.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
+* **Official GitHub Release Retention (Last 5 Releases):** When publishing official releases via `GitHubReleasePublisher.Publish`, the system retains the **last 5 releases** (the new release plus the 4 previous releases). Any releases beyond the latest 5 are automatically pruned (`gh release delete --yes --cleanup-tag`), keeping the GitHub release list clean and bounded while allowing older clients and interrupted downloads sufficient time to complete.
+* **Rolling Changelog Contract (`docs/CHANGELOG.md`):** Every release and code change populates `docs/CHANGELOG.md` with a plain-English, end-user-facing "What's New" entry. When `GitHubReleasePublisher` publishes a release, it extracts the release notes for that version directly from `docs/CHANGELOG.md` and attaches them to the GitHub release.
+* **Smart Update Delta Continuity:** To ensure delta patches are created even on fresh checkouts and in CI environments, `SmartUpdateBuilder.Prepare` automatically caches the prior release binary from GitHub if `obj/ReleaseHistory` is empty.
+* **Pre-Flight Disk Space & Connection Awareness:** Before initiating any 300MB+ background download, `UpdatePreparer` and `UpdateService` perform a pre-flight disk check requiring the download size plus a 256MB safety headroom, and check for metered connections according to user preferences.
+
+---
+
 ## 4. Repository Weight  {#DIST-REPOWEIGHT}
 
 * **`SYS-REPOWEIGHT` — LFS is enforced, not just declared.** `.github/workflows/lfs-guard.yml`

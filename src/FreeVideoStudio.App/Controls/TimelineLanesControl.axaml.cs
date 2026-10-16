@@ -1,4 +1,4 @@
-﻿
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -108,6 +108,7 @@ public partial class TimelineLanesControl : UserControl
         WireSeek(this.FindControl<Canvas>("RulerSeekCanvas"));
         WireSeek(LaneASeekCanvasCtl);
         WireSeek(LaneBSeekCanvasCtl);
+        WireSeek(LaneCSeekCanvasCtl);
         WireCaretDrag();
     }
 
@@ -131,6 +132,32 @@ public partial class TimelineLanesControl : UserControl
 
     /// <summary>Lower 60px lane. The host window adds its own content here.</summary>
     public Panel? LaneBHost => this.FindControl<Panel>("LaneBHostPanel");
+
+    /// <summary>Captions 36px lane (Lane C). The host window adds its caption blocks here.</summary>
+    public Panel? LaneCHost => LaneCHostPanelCtl;
+
+    /// <summary>
+    /// Whether clicking the CAPTIONS lane seeks. Default false when lane handles its own pointer input.
+    /// </summary>
+    public bool LaneCSeekable
+    {
+        get => LaneCSeekCanvasCtl?.IsVisible ?? false;
+        set { var c = LaneCSeekCanvasCtl; if (c != null) c.IsVisible = value; }
+    }
+
+    /// <summary>
+    /// Whether the third lane (captions) is visible. 36px height when visible, collapsed when false.
+    /// </summary>
+    public bool LaneCVisible
+    {
+        get => LaneCBorderCtl?.IsVisible ?? false;
+        set
+        {
+            var b = LaneCBorderCtl;
+            if (b != null) b.IsVisible = value;
+            QueueRefresh();
+        }
+    }
 
     /// <summary>
     /// MARKER_01 — the floating marker layer: above both seek surfaces, below the caret.

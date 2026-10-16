@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.Collections.Generic;
 using FreeVideoStudio.Core.Media;
 
@@ -31,6 +36,10 @@ public partial class MainWindow
         if (portrait) _cornerMemes.SetFrameSize(CoordinateConstants.PortraitW, CoordinateConstants.PortraitH);
         else
         {
+            // CORNERPARITY_01 — the export overlays onto the EVEN SOURCE size (ProcessWorker), and the box,
+            // the margin and the even rounding are pixel quantities of THAT frame. A 16x9 stand-in made the
+            // margin round to 0 and the box to whole ninths of the height (measured on 1920x1080, Medium:
+            // preview box 4/9 = 480 px with no margin vs. export 454 px inset 32 px).
             int w = host.IpcClient.VideoWidth, h = host.IpcClient.VideoHeight;
             if (w > 1 && h > 1) _cornerMemes.SetFrameSize(w - w % 2, h - h % 2);
             else _cornerMemes.SetFrameSize(1920, 1080);
@@ -54,5 +63,13 @@ public partial class MainWindow
         if (k != _cornerMemeKey) { _cornerMemeKey = k; _cornerMemes.SetSpans(spans); }
 
         _cornerMemes.Update(PreviewOutputSeconds(host.IpcClient.CurrentTime));
+    }
+
+    /// <summary>CACHEBOUND_05 — detaches and disposes the corner meme presenter on window close or source change.</summary>
+    private void TeardownCornerMemes()
+    {
+        _cornerMemes?.Dispose();
+        _cornerMemes = null;
+        _cornerMemeKey = "";
     }
 }

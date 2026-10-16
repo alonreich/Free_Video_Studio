@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -64,9 +69,9 @@ public partial class VideoMergerWindow
                 _scraperEnabled = cb.IsChecked == true;
                 bool scraperEnabled = _scraperEnabled;
                 _ = Task.Run(() => Infrastructure.SettingsManager.Update(s => s.MergerThumbnailScraper = scraperEnabled));
-                RuntimeLog.Info("MERGER", $"Thumbnail Scraper turned {(_scraperEnabled ? "ON" : "OFF")}.");
+                RuntimeLog.Info("MERGER", $"Skip cover pictures turned {(_scraperEnabled ? "ON" : "OFF")}.");
                 Controls.FloatingNotice.Show(this,
-                    _scraperEnabled ? "Thumbnail Scraper on: intros between clips will be cut." : "Thumbnail Scraper off: every clip is merged whole.",
+                    _scraperEnabled ? "Skip cover pictures on: cover pictures between clips will be cut." : "Skip cover pictures off: every clip is merged whole.",
                     Controls.NoticeKind.Info);
                 ScheduleTimelineRebuild();
             };
@@ -196,9 +201,9 @@ public partial class VideoMergerWindow
         {
             int tagged = introTags.Count(t => t > 0);
             ToolTip.SetTip(cb,
-                "Thumbnail Scraper: cut the short cover-picture intro this app adds to every export from the 2nd clip onward, " +
-                "so the joined video has no flashes between clips. The first clip keeps its intro unless you set a custom thumbnail.\n" +
-                $"This queue: {tagged} of {introTags.Count} clip(s) carry an intro; {removed} will be cut.");
+                "Removes the tiny cover picture added to the start of some clips, so it does not flash between videos. " +
+                "Eligible cover pictures are cut from the 2nd clip onward. The first clip keeps its cover picture unless you set a custom thumbnail.\n" +
+                $"This queue: {tagged} of {introTags.Count} clip(s) carry a cover picture; {removed} will be cut.");
         }
 
         InvalidateMergedTimelineDrawing();
@@ -234,7 +239,7 @@ public partial class VideoMergerWindow
         if (!TimelineMatchesQueue()) return;
         double speed = _baseSpeed > 0.01 ? _baseSpeed : 1.0;
         var length = this.FindControl<TextBlock>("EstimatedLengthText");
-        if (length != null) length.Text = FormatDuration(EdlOutputSec() ?? _timeline.TotalSec / speed + _timeline.SyntheticIntroSec);
+        if (length != null) length.Text = FormatDuration(EdlOutputSec() ?? _timeline.TotalSec / speed + _timeline.SyntheticIntroSec); // MERGESIZE_01
     }
 
     /// <summary>Merged (1.0x) length handed to the Music Wizard.</summary>
@@ -255,6 +260,7 @@ public partial class VideoMergerWindow
     /// <summary>SCRAPER_01..04 — hands the export the exact cut the preview shows.</summary>
     private void ApplyScraperToWorker(MergerWorker worker)
     {
+        // MERGEGRAPH_01 — the export renders the same edit list the editor, preview and undo use.
         CaptureEdlNow(flush: false);
         worker.Edl = CurrentEdl;
 

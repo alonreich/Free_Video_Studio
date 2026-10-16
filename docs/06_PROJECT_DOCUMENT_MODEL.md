@@ -15,6 +15,7 @@
 | ⚠ `src/FreeVideoStudio.App/MainWindow.Project.cs` | `MainWindow` (Partial) | `RefreshProjectTitle`, `OnProjectDocumentApplied`, `BeginProjectHistory`, `PushProjectEdit` | CO-GOVERNED by `07_UNDO_AND_HISTORY.md`, `08_APPLICATION_COMPOSITION.md` |
 | `src/FreeVideoStudio.Core/Abstractions/IProjectStore.cs` | `IProjectStore`, `FileProjectStore` | `Save`, `Load`, `NormalizeExtension` | Store seam; forwards to `ProjectStore` |
 | `src/FreeVideoStudio.Core/Project/MemePresentationJson.cs` | `MemePresentationJson` | `Write`, `Apply`, `KeyMode`, `KeyCorner`, `KeySize`, `KeySound` | MEMEMODE_01 — the one JSON mapping of a meme's presentation (project, recovery, editor session) |
+| `src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs` | `CaptionTrackJson` | `Write`, `Read` | CAPTIONS_01 — Reflection-free NativeAOT JSON serialization of CaptionTrack, lines and words |
 | `src/FreeVideoStudio.Core/Infrastructure/AotJson.cs` | `AotJson` | `AddNode` | Reflection-free `JsonArray` append (AOTSAFETY_02) |
 | `src/FreeVideoStudio.App/FreeVideoStudio.App.csproj` | build configuration | `AOTSAFETY_01`, `SuppressTrimAnalysisWarnings`, `SuppressAotAnalysisWarnings` | Publish-time safety analysis |
 
@@ -53,6 +54,8 @@ decide how those chunks render. Nothing derived is ever written to the file.
 ---
 
 ## 3. Schema Versioning & The Amputation Rule  {#PROJ-SCHEMA}
+* **CAPTIONS_01 — schema 6:** added `Captions` (`CaptionTrack?`), storing AI Live Commentary Captions lines, words, styling, tone, and placement. Serialized reflection-free via `CaptionTrackJson`. Legacy schema 1-5 documents roundtrip with `Captions = null`. Unrecognized future fields are preserved via the Amputation Rule.
+* **VOTIMING_01 — schema 5:** narration is now an ordered set of takes, with source anchor, output offset, actual duration, recorded source end, timing signature and review flag. `ProjectAudio` also stores both protection choices. The legacy single-file fields remain readable. The bump prevents schema 4 readers from silently reducing multiple takes to the legacy first file and dropping nested timing metadata on save. Collection equality is elementwise so unchanged captures remain no-ops in undo.
 * **PROJ_02 — Two numbers.** `SchemaVersion` is what this build WRITES. `MinimumReadableSchemaVersion`
   is the oldest it can still READ. Bump `SchemaVersion` only when the MEANING of an existing field
   changes; adding a new optional field needs no bump, because the reader tolerates missing keys.

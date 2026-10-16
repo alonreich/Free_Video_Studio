@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -49,6 +49,12 @@ public partial class CropToolWindow
     /// <summary>Set by STOP so a cancelled run says "stopped" rather than nothing.</summary>
     private bool _wandStopRequested;
 
+    /// <summary>
+    /// WANDPROGRESSIVE_01 — the offline finds are already on screen and only the AI is still pending.
+    /// The progress overlay is gone, the user can review, and MAGIC WAND reads "STOP AI SUGGESTIONS".
+    /// </summary>
+    private bool _wandAiPending;
+
     /// <summary>AIHUD_05 — the user said "offline only" in this session; do not ask again until restart.</summary>
     private static bool s_wandCloudDeclinedThisSession;
 
@@ -59,11 +65,13 @@ public partial class CropToolWindow
     /// </summary>
     private HudDetectionCoordinator? _wandDetection;
 
+    // AIPROVIDER_ROUTING_01 — routes magic wand through configured provider
     private HudDetectionCoordinator WandDetection => _wandDetection ??= new HudDetectionCoordinator(
         new GeminiHudDetectionService(
-            () => SettingsManager.Instance.GeminiApiKey,
-            () => SettingsManager.Instance.GeminiModelName,
-            Faults.Sink),
+            () => SettingsManager.Instance.GetApiKey(SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor),
+            () => SettingsManager.Instance.GetEffectiveModel(AiUsage.MagicWand),
+            Faults.Sink,
+            vendorProvider: () => SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor),
         Faults.Sink);
 
     /// <summary>STOP button, clip change: cancel and invalidate whatever is in flight.</summary>
@@ -113,15 +121,22 @@ public partial class CropToolWindow
     {
         if (SettingsManager.Instance.AiMagicWandCloudConsent) return true;
 
-        string provider = WandDetection.AiService?.ProviderName ?? "the AI provider";
+        var vendor = SettingsManager.Instance.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
+        string provider = vendor switch
+        {
+            FreeVideoStudio.App.Services.AiVendor.Google => "Google Gemini",
+            FreeVideoStudio.App.Services.AiVendor.Anthropic => "Anthropic Claude",
+            FreeVideoStudio.App.Services.AiVendor.OpenAI => "OpenAI",
+            _ => WandDetection.AiService?.ProviderName ?? "the AI provider"
+        };
         bool yes = await Controls.ConfirmDialogWindow.AskAsync(
             this,
             $"The Magic Wand can ask {provider} for extra HUD suggestions.\n\n" +
             $"To do that, ONE still image — the frozen frame you are looking at — will be sent to {provider} " +
-            "(the AI provider set in Settings › AI Tracking). Your video is never uploaded.\n\n" +
+            "(the AI provider set in Settings › AI Providers). Your video is never uploaded.\n\n" +
             "The offline Magic Wand runs either way, and nothing is applied until you pick a box yourself.\n\n" +
-            "Send this frame to the AI provider?",
-            "Magic Wand: send one frame?",
+            $"Send this frame to {provider}?",
+            $"Magic Wand: send one frame to {provider}?",
             "Send one frame",
             "Offline only");
 
@@ -140,6 +155,13 @@ public partial class CropToolWindow
 
     private async Task RunMagicWandAsync()
     {
+        if (_wandAiPending)
+        {
+            RuntimeLog.Info("CROP", "User stopped the pending AI suggestions; offline finds stay on screen.");
+            _wandStopRequested = true;
+            CancelMagicWand();
+            return;
+        }
         if (_wandRunning) return;
 
         if (_snapshotPath == null || _sourceCanvas == null)
@@ -229,16 +251,21 @@ public partial class CropToolWindow
                 }
             }
 
+            var localReady = new Progress<HudLocalPreview>(preview => OnWandLocalReady(preview, video));
             HudDetectionResult? result = await WandDetection.RunAsync(
-                new HudDetectionRequest(localDetect, frame, sourceW, sourceH), wandProgress);
+                new HudDetectionRequest(localDetect, frame, sourceW, sourceH), wandProgress, localReady);
 
             if (result == null || _wandDetection == null || !_wandDetection.IsCurrent(result.Generation)
              || _sourceCanvas == null || _snapshotPath == null || !string.Equals(_videoPath, video, StringComparison.Ordinal))
             {
-                if (_wandStopRequested && _sourceCanvas != null)
+                if (_wandAiPending && _sourceCanvas != null && _wandCandidates is { Count: > 0 } shown)
+                    SetWizardState(3, "Refine Box", $"AI suggestions stopped. The {shown.Count} offline find{(shown.Count == 1 ? " is" : "s are")} still shown.");
+                else if (_wandStopRequested && _sourceCanvas != null)
                     SetWizardState(3, "Refine Box", "Magic Wand stopped. Drag a box round a HUD piece yourself.");
                 return;
             }
+
+            bool userIsReviewing = _wandAiPending && (_sourceSelection != null || _candidateControls.Count == 0 || _wandPreviewIndex >= 0);
 
             if (result.LocalSucceeded) _wandLocalCandidates = result.LocalCandidates.ToList();
 
@@ -257,6 +284,18 @@ public partial class CropToolWindow
 
             _wandCandidates = candidates;
             _wandCandidatesFrame = frame != null ? frameIdentity : null;
+            if (userIsReviewing)
+            {
+                // WANDPROGRESSIVE_01 — never redraw under a box the user is already working on.
+                int added = candidates.Count(c => c.Source != HudCandidateSource.Local);
+                ClearMagicWandCandidates();
+                _wandPreviewIndex = -1;
+                string prov = WandDetection.AiService?.ProviderName ?? "The AI";
+                SetStatusSuccess(added > 0
+                    ? $"{prov} added {added} suggestion{(added == 1 ? "" : "s")}. Press MAGIC WAND to see all {candidates.Count} pieces."
+                    : $"{prov} had nothing to add. Press MAGIC WAND to see all pieces again.");
+                return;
+            }
             _wandPreviewIndex = -1;
             ShowMagicWandCandidates();
 
@@ -264,8 +303,9 @@ public partial class CropToolWindow
             int confirmed = candidates.Count(c => c.Source == HudCandidateSource.Fused);
             RuntimeLog.Info("CROP", $"Magic Wand found {candidates.Count} candidate region(s) (AI outcome {result.AiOutcome?.ToString() ?? "off"}, AI-only {aiOnly}, AI-confirmed {confirmed}).");
 
+            string shortProv = WandDetection.AiService?.ProviderName ?? "AI";
             string aiNote = result.AiOutcome == AiHudOutcome.Success && (aiOnly + confirmed) > 0
-                ? $" The AI confirmed {confirmed} and suggested {aiOnly} more (dashed)."
+                ? $" {shortProv} agreed on {confirmed} (✓) and suggested {aiOnly} more (dashed)."
                 : string.Empty;
             SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote} " +
                              "Click a box to select it, adjust it, then label it — nothing is added until you do.");
@@ -284,9 +324,36 @@ public partial class CropToolWindow
         {
             HideWandOverlay();
             _wandRunning = false;
+            _wandAiPending = false;
             SetEnabled("MagicWandButton", true);
             SetContent("MagicWandButton", "\U0001FA84 MAGIC WAND");
         }
+    }
+
+    /// <summary>
+    /// WANDPROGRESSIVE_01 — the offline scan is done and the AI is still thinking: show the offline
+    /// finds NOW (suggestions only, AIHUD_01) and let the user start reviewing. The final fused answer
+    /// replaces them only if the user has not started working on one (see RunMagicWandAsync).
+    /// </summary>
+    private void OnWandLocalReady(HudLocalPreview preview, string video)
+    {
+        if (!_wandRunning || _wandDetection == null || !_wandDetection.IsCurrent(preview.Generation)) return;
+        if (_sourceCanvas == null || _snapshotPath == null || !string.Equals(_videoPath, video, StringComparison.Ordinal)) return;
+
+        _wandLocalCandidates = preview.Candidates.ToList();
+        List<CandidateSpec> local = ToCandidateSpecs(preview.Candidates);
+        if (local.Count == 0) return;
+
+        _wandCandidates = local;
+        _wandCandidatesFrame = null;
+        _wandPreviewIndex = -1;
+        _wandAiPending = true;
+        HideWandOverlay();
+        ClearSourceSelection();
+        ShowMagicWandCandidates();
+        SetEnabled("MagicWandButton", true);
+        SetContent("MagicWandButton", "\u23F9 STOP AI SUGGESTIONS");
+        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. Google Gemini is still looking for more — you can start reviewing now.");
     }
 
     /// <summary>
@@ -403,8 +470,8 @@ public partial class CropToolWindow
             : _edit.TryGetRole(candidate.RoleKey, out HudRole role) ? role.DisplayName : candidate.RoleKey;
         return candidate.Source switch
         {
-            HudCandidateSource.Ai => name + " · AI",
-            HudCandidateSource.Fused => name + " · AI+local",
+            HudCandidateSource.Ai => name + " · AI suggestion",
+            HudCandidateSource.Fused => name + " · ✓ AI agrees",
             _ => name,
         };
     }
@@ -423,17 +490,21 @@ public partial class CropToolWindow
 
         double zoom = Math.Max(0.01, CurrentZoom());
         double stroke = 3.0 / zoom;
-
+        // WANDCOLOR_01 — Invariant #5: the wand's colours are theme tokens, not literals.
+        IBrush strokeBrush = ThemeResources.Brush(this, "AppWandCandidateBrush", Brushes.DeepPink);
+        IBrush fillBrush = ThemeResources.Brush(this, "AppWandCandidateFillBrush", Brushes.Transparent);
+        IBrush captionBrush = ThemeResources.Brush(this, "AppWandCaptionBrush", Brushes.DeepPink);
+        IBrush captionText = ThemeResources.Brush(this, "AppOnAccentTextBrush", Brushes.White);
         foreach (CandidateSpec candidate in _wandCandidates)
         {
             var rect = new Rectangle
             {
                 Width = candidate.Rect.Width,
                 Height = candidate.Rect.Height,
-                Stroke = new SolidColorBrush(Color.Parse("#e91e63")),
+                Stroke = strokeBrush,
                 StrokeThickness = stroke,
                 StrokeDashArray = candidate.Source == HudCandidateSource.Ai ? new Avalonia.Collections.AvaloniaList<double> { 4, 2 } : null,
-                Fill = new SolidColorBrush(Color.FromArgb(24, 233, 30, 99)),
+                Fill = fillBrush,
                 Tag = candidate,
                 Cursor = new Cursor(StandardCursorType.Hand),
                 ZIndex = 450
@@ -448,8 +519,8 @@ public partial class CropToolWindow
             {
                 Text = CandidateCaption(candidate),
                 FontSize = WandCaptionFontSize / zoom,
-                Foreground = Brushes.White,
-                Background = new SolidColorBrush(Color.FromArgb(200, 233, 30, 99)),
+                Foreground = captionText,
+                Background = captionBrush,
                 Padding = new Thickness(3 / zoom, 1 / zoom),
                 MaxWidth = Math.Max(candidate.Rect.Width, 40 / zoom),
                 TextTrimming = TextTrimming.CharacterEllipsis,

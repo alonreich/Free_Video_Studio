@@ -1,4 +1,9 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
+// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
+// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -58,6 +63,7 @@ public partial class VideoMergerWindow
             RuntimeLog.WarnThrottled("MERGER", "Clip id list re-synchronised with the queue.");
         if (e.Action == NotifyCollectionChangedAction.Remove && !_restoringSession && !_applyingHistory)
             NoteClipsRemoved(e.OldItems?.Count ?? 1);
+        // EMPTYQUEUE_01 — no clips: no picture. A clip arrives: the surface is shown again.
         if (VideoQueue.Count == 0) ClearPreviewSurface();
         else if (_videoHost is { IsVisible: false } host) host.IsVisible = true;
         if (e.Action == NotifyCollectionChangedAction.Move)
@@ -66,6 +72,8 @@ public partial class VideoMergerWindow
             _selectWithoutPreview = true;
             Dispatcher.UIThread.Post(() => _selectWithoutPreview = false, DispatcherPriority.Background);
         }
+        // D20 — the timeline follows the list at once when nothing needs probing. EDLNULL_01: this runs
+        // INSIDE the queue's CollectionChanged, so nothing it throws may escape (it would end the app).
         try { RebuildTimelineFromCacheNow(); }
         catch (Exception ex)
         {
@@ -95,7 +103,7 @@ public partial class VideoMergerWindow
     /// <summary>Something the edit list records changed: capture once, soon, on the UI thread.</summary>
     private void NoteEdlChanged()
     {
-        _appliedSpeed = double.NaN;
+        _appliedSpeed = double.NaN; // MERGEPREVIEW_01 — the wheel set mpv's speed directly; the tick re-asserts the schedule
         if (_restoringSession || _edlCapturePosted) return;
         _edlCapturePosted = true;
         Dispatcher.UIThread.Post(() =>
@@ -130,7 +138,7 @@ public partial class VideoMergerWindow
             RecordHistory(edl);
             Services.ToolNavigator.PublishMergeEdl(edl);
             if (changed) MergerAutosave.Value.Schedule(edl);
-            if (changed) { UpdateEstimatedSize(); PaintMergedLength(); }
+            if (changed) { UpdateEstimatedSize(); PaintMergedLength(); } // MERGESIZE_01 — effects/speed change the finished length
             if (flush) _ = MergerAutosave.Value.FlushAsync();
         }
         catch (Exception ex)
@@ -195,6 +203,8 @@ public partial class VideoMergerWindow
     {
         var edl = plan.Edl;
 
+        // RESTOREMISS_01 — the session is restored silently UNLESS files are gone or changed: then the
+        // user sees exactly which file, from which folder, and approves what happens next.
         foreach (var m in plan.Missing) RuntimeLog.Warn("MERGER", $"Restore: missing on disk: {m}");
         foreach (var c in plan.Changed) RuntimeLog.Info("MERGER", $"Restore: changed on disk: {c}");
         if (plan.Missing.Count > 0 || plan.Changed.Count > 0)
@@ -217,6 +227,13 @@ public partial class VideoMergerWindow
         }
         if (edl.Clips.Count == 0) return;
 
+        // SPEEDRESTORE_01 — heal legacy 0.1x BaseSpeed corrupted by previous slider binding default
+        if (edl.BaseSpeed <= 0.1001)
+        {
+            RuntimeLog.Warn("MERGER", $"Restore: BaseSpeed was {edl.BaseSpeed:0.##}x (corrupted by legacy slider binding default); repairing to 1.0x.");
+            edl = edl with { BaseSpeed = 1.0 };
+        }
+
         _lastEdl = null;
         await ApplyEdlStateAsync(edl, from: null);
         CaptureEdlNow(flush: false);
@@ -238,4 +255,7 @@ public partial class VideoMergerWindow
             Controls.FloatingNotice.Show(this, msg, Controls.NoticeKind.Info);
         }
     }
+
+    internal Task ApplyRestorePlanForTesting(MergerRestorePlan plan) => ApplyRestorePlanAsync(plan, "test");
 }
+

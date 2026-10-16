@@ -1,4 +1,8 @@
-﻿
+
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
+
 using System.Linq;
 using Avalonia.Input;
 using FreeVideoStudio.Core.Editing;
@@ -8,7 +12,7 @@ namespace FreeVideoStudio.App;
 
 /// <summary>
 /// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// UNDO_27 — THE CROP TOOL ON THE SHARED <see cref="UndoStack{T}"/> (docs/07 §5).
+/// UNDO_27 — THE CROP TOOL ON THE SHARED UndoStack<CropLayoutSnapshot> (docs/07 §5).
 ///
 /// The Crop Tool used to keep a raw <c>Stack&lt;EditorSnapshot&gt;</c> pair: no ceiling, no labels,
 /// and a snapshot record whose list made equality reference-based. It now holds ONE

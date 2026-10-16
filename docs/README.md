@@ -1,4 +1,4 @@
-﻿# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS
+# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS
 
 > ### ✅ REBRAND COMPLETE — read [`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)
 > This product was renamed to **Free Video Studio** (`FreeVideoStudio`). The rebrand record lists the
@@ -50,6 +50,7 @@ CanvasMath.cs  ⚠CompositeTimeline.cs  CoordinateMath.cs  ⚠GranularSpeedEdito
 ⚠GranularSpeedEditorWindow.Merge.cs  HudAutoDetector.cs  HudConfig.cs  HudImageOps.cs  KineticScrubController.cs
 AiHudDetection.cs  AiHudResponseParser.cs  AiHudResultCache.cs  HudCandidateFusion.cs  ⚠HudDetectionCoordinator.cs
 ⚠GeminiHudDetectionService.cs  AiHudFrameBuilder.cs  ⚠CropToolWindow.MagicWand.cs
+⚠GeminiTrackingService.cs  AiTrackingPrompts.cs  AiGameProfile.cs  ⚠AiTrajectorySmoother.cs  CaptionModel.cs  CaptionTimeline.cs  CaptionLayoutEngine.cs  CaptionAssWriter.cs  CaptionTrackJson.cs  ⚠GranularSpeedEditorWindow.AiZoom.cs  ⚠GranularSpeedEditorWindow.AiCommentary.cs  ⚠GranularSpeedEditorWindow.CaptionsLane.cs  EditCaptionDialogWindow.axaml.cs
 ⚠MainWindow.axaml.cs  MainWindow.Canvas.cs  ⚠MainWindow.Controls.cs  MainWindow.Shortcuts.cs
 MainWindow.Wireup.cs  ⚠MergeClipGraph.cs  ⚠MergedTimeline.cs  ⚠MergeEditorBridge.cs
 ⚠MergeEdl.cs  ⚠MergerPreviewPlan.cs  ⚠MergerSession.cs  ⚠MusicPadAlignment.cs
@@ -93,7 +94,7 @@ FloatingNotice.cs  ⚠FluidVolumeSlider.cs  GrabCursors.cs  ⚠GranularSpeedEdit
 ⚠LaneDiskCache.cs  MainViewModel.cs  ⚠MainWindow.axaml.cs  ⚠MainWindow.Controls.cs  MemePickerWindow.axaml
 MemeThumbnailCache.cs  OwnedLruCache.cs  ViewportThumbnailLoader.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
 ⚠MainWindow.CornerMemes.cs  ⚠VideoMergerWindow.CornerMemes.cs  ⚠MicrophoneSpectrumControl.cs  PreviewFidelityBadge.cs  ⚠PreviewFidelity.cs  ⚠MainWindow.PreviewFidelity.cs  ⚠PhoneFrameMockup.axaml.cs  PreviewDetachController.cs  PreviewMonitorWindow.axaml
-ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SpinningWheelSlider.cs  UpdateToastWindow.axaml.cs
+ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SpinningWheelSlider.cs  UpdateToastWindow.axaml.cs  AiCommentaryDialogWindow.axaml(.cs)  EditCaptionDialogWindow.axaml(.cs)  GranularSpeedEditorWindow.CaptionsLane.cs  GranularSpeedEditorWindow.AiCommentary.cs
 ⚠VideoMergerWindow.EdlPreview.cs  ⚠VideoMergerWindow.Lanes.cs  VideoMergerWindow.Playhead.cs
 ⚠VideoMergerWindow.Session.cs  ⚠VideoMergerWindow.TimelineSelect.cs  ViewModelBase.cs  WaveformPeaks.cs
 ⚠WindowBoundsHelper.cs  WindowResizeGrip.cs  ⚠GranularEditSession.cs  ⚠CropEditSession.cs  CropLayer.cs
@@ -110,6 +111,7 @@ IpcProtocol.cs  ⚠LaneDiskCache.cs  LatestEstimateWorker.cs  ⚠MainWindow.Tool
 MaskOverlayManager.cs  MergerAutosaveStore.cs  ⚠MergerSession.cs  NamedPipeStateClient.cs
 NamedPipeStateServer.cs  ProjectRecoveryService.cs  ⚠RecoveryManager.cs  RuntimeLog.cs
 SettingsManager.cs  SingleInstanceGuard.cs  StateTransferStore.cs  ⚠StorageProviderFilePicker.cs  ⚠ToolNavigator.cs
+GeminiClient.cs  IAiVisionProvider.cs  GeminiProvider.cs  ClaudeProvider.cs  OpenAiProvider.cs  AiVisionProviders.cs  AiFrameSequenceExtractor.cs  CommentaryService.cs  SecretProtector.cs  SecretLeakTests.cs
 UiStateStore.cs  ⚠UpdateService.cs  ⚠VideoMergerWindow.Session.cs  ⚠WindowBoundsHelper.cs
 GranularRecoveryCodec.cs  GranularJsonRead.cs  ⚠CropProfileCodec.cs  ⚠CropEditSession.cs
 ```
@@ -118,14 +120,14 @@ GranularRecoveryCodec.cs  GranularJsonRead.cs  ⚠CropProfileCodec.cs  ⚠CropEd
 
 ```
 AotJson.cs  ⚠AtomicJsonFile.cs  FreeVideoStudio.App.csproj  ⚠IProjectStore.cs
-⚠MainWindow.Project.cs  ⚠MergeEdl.cs  ⚠OutputTimeline.cs  ⚠ProjectDocument.cs  ProjectSerializer.cs  MemePresentationJson.cs
+⚠MainWindow.Project.cs  ⚠MergeEdl.cs  ⚠OutputTimeline.cs  ⚠ProjectDocument.cs  ProjectSerializer.cs  MemePresentationJson.cs  CaptionTrackJson.cs
 ⚠ProjectSession.cs  ProjectStore.cs  RecentProjects.cs  ⚠VideoMergerWindow.History.cs
 ```
 
 **[`07_UNDO_AND_HISTORY.md`](07_UNDO_AND_HISTORY.md)** — Undo, redo & edit history — the four inherited rules (gesture coalescing, ceiling on push, redo invalidation, no-op rejection), immutable state contract, re-entrancy guard, persistence.
 
 ```
-⚠GranularSpeedEditorWindow.axaml.cs  ⚠GranularSpeedEditorWindow.History.cs  ⚠MainWindow.Project.cs
+⚠GranularSpeedEditorWindow.axaml.cs  ⚠GranularSpeedEditorWindow.History.cs  ⚠GranularSpeedEditorWindow.AiCommentary.cs  ⚠GranularSpeedEditorWindow.CaptionsLane.cs  ⚠MainWindow.Project.cs
 ⚠ProjectDocument.cs  ⚠ProjectSession.cs  UndoSidecarStore.cs  UndoStack.cs
 ⚠GranularEditSession.cs  GranularEditSession.History.cs  ⚠CropEditSession.cs  CropLayer.cs
 ```
@@ -143,7 +145,7 @@ UserFacingFaultSink.cs  WindowsOnlyFactAttribute.cs  ⚠GranularEditSession.cs
 **[`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md)** — Distribution, update size & repository weight — the 322MB installer, the runtime/app package split, the fingerprint that decides which one a patch downloads, LFS enforcement and the history-rewrite runbook.
 
 ```
-⚠Build.cmd  dev_build.cmd  .gitattributes  ⚠.github/workflows/ci.yml  .github/workflows/lfs-guard.yml
+⚠Build.cmd  CHANGELOG.md  dev_build.cmd  .gitattributes  ⚠.github/workflows/ci.yml  .github/workflows/lfs-guard.yml
 GitHubReleasePublisher.cs  RuntimePayloadManifest.cs  Staging.cs  ⚠UpdateService.cs
 ```
 

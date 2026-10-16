@@ -1,5 +1,7 @@
-﻿using System.Reflection;
+using System.Linq;
+using System.Reflection;
 using System.Text.Json.Nodes;
+using FreeVideoStudio.Core.Editing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -45,6 +47,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         _previousRoot = Environment.GetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable);
         Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, _root);
         SettingsManager.Instance.ActiveMaskOverlay = "Fortnite";
+        SettingsManager.Instance.LastEditedCropProfile = "";
         return Task.CompletedTask;
     }
 
@@ -176,6 +179,274 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         edit.Dirty = false;
         window.Close();
         Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public void FirstUse_NoPreviousProfile_PickerEmpty_GateLocked()
+    {
+        SettingsManager.Instance.LastEditedCropProfile = "";
+        var window = new CropToolWindow();
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        var combo = window.FindControl<ComboBox>("CropToolMaskOverlayCombo");
+        var stateLabel = (TextBlock?)Get(window, "_profileStateLabel");
+
+        Assert.False(edit.GateUnlocked);
+        Assert.Null(edit.ActiveProfile);
+        Assert.Null(Get(window, "_verifiedEditingProfile"));
+        Assert.Null(combo?.SelectedItem);
+        Assert.Equal("No profile selected", stateLabel?.Text);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public async Task ReopenSavedValidProfile_GateUnlocked_IdentityVerified()
+    {
+        MaskOverlayManager.EnsureDefaults();
+        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        var window = new CropToolWindow();
+        Dispatcher.UIThread.RunJobs();
+        await Task.Delay(50);
+        Dispatcher.UIThread.RunJobs();
+
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        var combo = window.FindControl<ComboBox>("CropToolMaskOverlayCombo");
+        var stateLabel = (TextBlock?)Get(window, "_profileStateLabel");
+
+        Assert.True(edit.GateUnlocked);
+        Assert.Equal("Fortnite", edit.ActiveProfile);
+        Assert.Equal("Fortnite", (string?)Get(window, "_verifiedEditingProfile"));
+        Assert.Equal("Fortnite", combo?.SelectedItem);
+        Assert.Equal("EDITING PROFILE: Fortnite", stateLabel?.Text);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaTheory]
+    [InlineData("CorruptProfile", "{malformed json")]
+    [InlineData("No Mask", "")]
+    [InlineData("NonExistent", "")]
+    public void InvalidOrCorruptProfileChoice_DoesNotUnlockOrRelabel(string profileName, string content)
+    {
+        Directory.CreateDirectory(MaskOverlayManager.ProfilesDirectory);
+        if (!string.IsNullOrEmpty(content))
+        {
+            File.WriteAllText(Profile(profileName), content);
+        }
+        SettingsManager.Instance.LastEditedCropProfile = profileName;
+
+        var window = new CropToolWindow();
+        Dispatcher.UIThread.RunJobs();
+
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        var combo = window.FindControl<ComboBox>("CropToolMaskOverlayCombo");
+        var stateLabel = (TextBlock?)Get(window, "_profileStateLabel");
+
+        Assert.False(edit.GateUnlocked);
+        Assert.Null(edit.ActiveProfile);
+        Assert.Null(Get(window, "_verifiedEditingProfile"));
+        Assert.Null(combo?.SelectedItem);
+        Assert.Equal("No profile selected", stateLabel?.Text);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public async Task FailedProfileLoadAfterValidProfile_PreservesPriorValidStateWithoutRelabeling()
+    {
+        MaskOverlayManager.EnsureDefaults();
+        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        var window = new CropToolWindow();
+        Dispatcher.UIThread.RunJobs();
+        await Task.Delay(50);
+        Dispatcher.UIThread.RunJobs();
+
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        var stateLabel = (TextBlock?)Get(window, "_profileStateLabel");
+
+        Assert.True(edit.GateUnlocked);
+        Assert.Equal("Fortnite", edit.ActiveProfile);
+        int initialLayerCount = edit.Layers.Count;
+
+        File.WriteAllText(Profile("BrokenProfile"), "{bad json");
+
+        bool result = await (Task<bool>)Invoke(window, "OnProfileChosenAsync", "BrokenProfile")!;
+        Assert.False(result);
+
+        Assert.Equal("Fortnite", edit.ActiveProfile);
+        Assert.Equal("Fortnite", (string?)Get(window, "_verifiedEditingProfile"));
+        Assert.True(edit.GateUnlocked);
+        Assert.Equal(initialLayerCount, edit.Layers.Count);
+        Assert.Equal("EDITING PROFILE: Fortnite", stateLabel?.Text);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public async Task GlobalActiveMaskOverlayMismatch_SavesOnlyToVerifiedProfile()
+    {
+        MaskOverlayManager.EnsureDefaults();
+        
+        var otherConfig = CropConfigDefaults.Create();
+        otherConfig["overlays"]!["loot"]!["x"] = 999;
+        string otherProfilePath = Profile("OtherProfile");
+        AtomicJsonFile.WriteObject(otherProfilePath, otherConfig);
+        string originalOtherText = File.ReadAllText(otherProfilePath);
+
+        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        var window = new CropToolWindow();
+        Dispatcher.UIThread.RunJobs();
+        await Task.Delay(50);
+        Dispatcher.UIThread.RunJobs();
+
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        Assert.Equal("Fortnite", edit.ActiveProfile);
+
+        SettingsManager.Instance.ActiveMaskOverlay = "OtherProfile";
+
+        var role = CropEditSession.BuiltInRoles[0];
+        edit.AdoptSavedLayer(new CropLayer
+        {
+            RoleKey = role.Key,
+            DisplayName = role.DisplayName,
+            SourceRect = new CropSourceRect(100, 100, 200, 200),
+            CropImagePath = "",
+            X = 50,
+            Y = 50,
+            Width = 200,
+            Height = 200,
+            Z = 1,
+            GeometryVerified = true
+        });
+        edit.Dirty = true;
+        Assert.True(edit.Dirty);
+
+        bool saved = await (Task<bool>)Invoke(window, "SaveConfigAsync")!;
+        Assert.True(saved);
+        Assert.False(edit.Dirty);
+
+        string afterOtherText = File.ReadAllText(otherProfilePath);
+        Assert.Equal(originalOtherText, afterOtherText);
+
+        var savedFortnite = AtomicJsonFile.ReadObject(Profile("Fortnite"));
+        Assert.NotNull(savedFortnite);
+        var overlays = savedFortnite!["overlays"];
+        Assert.NotNull(overlays);
+        Assert.NotNull(overlays![role.Key]);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public async Task PartialWriteFailure_SyncFails_RemainsDirty()
+    {
+        MaskOverlayManager.EnsureDefaults();
+        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        var window = new CropToolWindow();
+        Dispatcher.UIThread.RunJobs();
+        await Task.Delay(50);
+        Dispatcher.UIThread.RunJobs();
+
+        var edit = (CropEditSession)Get(window, "_edit")!;
+        var role = CropEditSession.BuiltInRoles[0];
+        edit.AdoptSavedLayer(new CropLayer
+        {
+            RoleKey = role.Key,
+            DisplayName = role.DisplayName,
+            SourceRect = new CropSourceRect(100, 100, 200, 200),
+            CropImagePath = "",
+            X = 50,
+            Y = 50,
+            Width = 200,
+            Height = 200,
+            Z = 1,
+            GeometryVerified = true
+        });
+        edit.Dirty = true;
+        Assert.True(edit.Dirty);
+
+        File.Delete(Profile("Fortnite"));
+        Directory.CreateDirectory(Profile("Fortnite"));
+
+        bool saved = await (Task<bool>)Invoke(window, "SaveConfigAsync")!;
+        Assert.False(saved);
+        Assert.True(edit.Dirty);
+
+        Directory.Delete(Profile("Fortnite"));
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact]
+    public void ConfirmationPanels_ResponsiveLayoutAtNarrowWidth_WarningAndButtonsFitInsidePane()
+    {
+        var window = new CropToolWindow();
+        var deletePanel = window.FindControl<StackPanel>("DeleteConfirmPanel")!;
+        var resetPanel = window.FindControl<StackPanel>("ResetConfirmPanel")!;
+
+        Assert.NotNull(deletePanel);
+        Assert.NotNull(resetPanel);
+
+        foreach (var panel in new[] { deletePanel, resetPanel })
+        {
+            panel.IsVisible = true;
+
+            var textBlock = panel.Children.OfType<TextBlock>().First();
+            Assert.Equal(TextWrapping.Wrap, textBlock.TextWrapping);
+
+            var wrapPanel = panel.Children.OfType<WrapPanel>().First();
+            Assert.NotNull(wrapPanel);
+
+            var cancelBtn = wrapPanel.Children.OfType<Button>().First(b => b.Content?.ToString() == "CANCEL");
+            var confirmBtn = wrapPanel.Children.OfType<Button>().First(b => b.Content?.ToString()?.StartsWith("CONFIRM") == true);
+
+            Assert.Contains("Primary", cancelBtn.Classes);
+            Assert.Contains("Danger", confirmBtn.Classes);
+            Assert.False(confirmBtn.IsDefault);
+
+            double availableWidth = 336 - panel.Margin.Left - panel.Margin.Right;
+            panel.Measure(new Size(availableWidth, double.PositiveInfinity));
+            Assert.True(panel.DesiredSize.Width <= 336, $"DesiredSize.Width was {panel.DesiredSize.Width}");
+
+            panel.Arrange(new Rect(0, 0, 336, panel.DesiredSize.Height));
+            Assert.True(cancelBtn.Bounds.Width > 0);
+            Assert.True(confirmBtn.Bounds.Width > 0);
+            Assert.True(cancelBtn.Bounds.Right <= 336);
+            Assert.True(confirmBtn.Bounds.Right <= 336);
+        }
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaTheory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("No Mask", false)]
+    [InlineData("NonExistentProfile_999", false)]
+    [InlineData("Invalid:Name", false)]
+    [InlineData("Fortnite", true)]
+    public void MaskOverlayManager_LoadProfile_ValidatesExplicitly(string? name, bool expectedSuccess)
+    {
+        MaskOverlayManager.EnsureDefaults();
+        var result = MaskOverlayManager.LoadProfile(name);
+        Assert.Equal(expectedSuccess, result.Success);
+        if (expectedSuccess)
+        {
+            Assert.Equal(name, result.ProfileName);
+            Assert.NotNull(result.Config);
+            Assert.Null(result.ErrorMessage);
+        }
+        else
+        {
+            Assert.NotNull(result.ErrorMessage);
+        }
     }
 
     private string Profile(string name) => Path.Combine(MaskOverlayManager.ProfilesDirectory, name + ".json");

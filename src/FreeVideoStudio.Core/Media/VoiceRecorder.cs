@@ -6,13 +6,25 @@ using System.IO;
 using System.Threading;
 using System.Collections.Generic;
 using FreeVideoStudio.Core.Infrastructure;
-
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 namespace FreeVideoStudio.Core.Media;
 
 public class VoiceRecorder : IDisposable
 {
-    private WaveIn? _waveIn;
+    private IWaveIn? _waveIn;
     private WaveFileWriter? _writer;
+    private Stream? _outputStream;
+    private bool _createdOutputFile;
+    private readonly Func<IWaveIn>? _captureFactory;
+    private readonly Func<Stream>? _streamFactory;
+    private readonly object _lifecycleLock = new();
+    private int _stopRequested;
+    private int _faultPublished;
+    public VoiceCaptureBudget? Budget { get; set; }
+    /// <summary>Nonblocking request; the session queues StopRecording on its serialized worker.</summary>
+    public event EventHandler? StopRequested;
     private string _outputPath;
     private readonly int _deviceNumber;
     private volatile bool _isRecording;
@@ -30,13 +42,13 @@ public class VoiceRecorder : IDisposable
     private float _peakSeen;
     private int _buffersSeen;
 
-    /// <summary>Total PCM bytes handed over by the capture device for this recording.</summary>
+    /// <summary>PCM bytes successfully written within this take's sample budget.</summary>
     public long BytesCaptured => System.Threading.Interlocked.Read(ref _bytesCaptured);
 
     /// <summary>Loudest absolute sample seen (0..1). Exactly 0 over a long take means silence.</summary>
     public float PeakSeen => _peakSeen;
 
-    /// <summary>Number of DataAvailable callbacks received. Zero means the device never delivered.</summary>
+    /// <summary>Number of callbacks with successfully accepted PCM. Zero means no audio was saved.</summary>
     public int BuffersSeen => _buffersSeen;
 
     /// <summary>True while capture is actively running.</summary>
@@ -45,8 +57,9 @@ public class VoiceRecorder : IDisposable
     /// <summary>Last fault seen on this recorder instance, if any.</summary>
     public Exception? LastError => _lastError;
 
-    /// <summary>Runtime capture fault during active recording (unexpected driver stop, buffer failure).</summary>
+    /// <summary>Runtime capture fault (unexpected driver stop or WAV-write failure).</summary>
     public Exception? CaptureError { get; private set; }
+    public bool WriteFailed { get; private set; }
 
     /// <summary>Endpoint stop or disposal failure when closing waveIn.</summary>
     public Exception? ReleaseError { get; private set; }
@@ -63,13 +76,20 @@ public class VoiceRecorder : IDisposable
     /// </summary>
     public event EventHandler<PcmBuffer>? PcmAvailable;
 
-    /// <summary>MICHEALTH_01 — Raised when capture stops unexpectedly with a hardware or driver fault.</summary>
+    /// <summary>MICHEALTH_01 / VOWRITE_01 — one terminal hardware, driver or storage fault.</summary>
     public event EventHandler<Exception?>? Stopped;
 
     public VoiceRecorder(string outputPath, int deviceNumber = 0)
     {
         _outputPath = outputPath;
         _deviceNumber = Math.Max(0, deviceNumber);
+    }
+
+    internal VoiceRecorder(string outputPath, Func<IWaveIn> captureFactory, Func<Stream> streamFactory)
+        : this(outputPath)
+    {
+        _captureFactory = captureFactory;
+        _streamFactory = streamFactory;
     }
 
     public static Func<int>? DeviceCountProvider { get; set; }
@@ -122,14 +142,19 @@ public class VoiceRecorder : IDisposable
 
     public void StartRecording()
     {
+        lock (_lifecycleLock) StartRecordingCore();
+    }
+
+    private void StartRecordingCore()
+    {
         if (_isRecording) return;
 
-        if (!HasInputDevice)
+        if (_captureFactory == null && !HasInputDevice)
         {
             throw new InvalidOperationException("No microphone input device is available.");
         }
 
-        WaveIn? waveIn = null;
+        IWaveIn? waveIn = null;
         try
         {
             _intentionalStop = false;
@@ -137,18 +162,25 @@ public class VoiceRecorder : IDisposable
             _recordingStopped = new ManualResetEventSlim(false);
             _lastError = null;
             CaptureError = null;
+            WriteFailed = false;
             ReleaseError = null;
             FileFinalizationError = null;
+            _stopRequested = _faultPublished = 0;
+            _createdOutputFile = false;
 
-            int devIndex = Math.Min(_deviceNumber, Math.Max(0, WaveIn.DeviceCount - 1));
-            waveIn = new WaveIn
+            int devIndex = _captureFactory == null ? Math.Min(_deviceNumber, Math.Max(0, WaveIn.DeviceCount - 1)) : 0;
+            waveIn = _captureFactory?.Invoke() ?? new WaveIn
             {
                 DeviceNumber = devIndex,
                 WaveFormat = new WaveFormat(44100, 1),
                 BufferMilliseconds = 50
             };
 
-            _writer = new WaveFileWriter(_outputPath, waveIn.WaveFormat);
+            _outputStream = _streamFactory?.Invoke() ?? new FileStream(_outputPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
+            _createdOutputFile = _streamFactory == null;
+            _writer = new WaveFileWriter(_outputStream, waveIn.WaveFormat);
+            // Materialize the data header before a write can fail, including a zero-budget take.
+            _writer.Write(Array.Empty<byte>(), 0, 0);
 
             waveIn.DataAvailable += OnDataAvailable;
             waveIn.RecordingStopped += OnRecordingStopped;
@@ -159,39 +191,40 @@ public class VoiceRecorder : IDisposable
             _peakSeen = 0;
             _buffersSeen = 0;
 
+            Budget?.Start(waveIn.WaveFormat.SampleRate);
+            _isRecording = true;
             waveIn.StartRecording();
+            if (Budget?.MaximumFrames == 0) RequestStop();
 
-            if (_lastError != null)
+            if (_lastError != null && BytesCaptured == 0)
             {
                 var err = _lastError;
                 throw err;
             }
 
-            _isRecording = true;
-
             string deviceLabel;
-            try { deviceLabel = WaveIn.GetCapabilities(_waveIn.DeviceNumber).ProductName; }
+            try { deviceLabel = _captureFactory == null ? WaveIn.GetCapabilities(devIndex).ProductName : "test capture"; }
             catch (System.Exception swallowed)
             {
                 deviceLabel = "(name unavailable)";
                 global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed);
             }
             CoreLogger.Info("VoiceRecorder",
-                $"Capture started on device {_waveIn.DeviceNumber} '{deviceLabel}' at {_waveIn.WaveFormat.SampleRate}Hz/{_waveIn.WaveFormat.Channels}ch -> '{Path.GetFileName(_outputPath)}'.");
+                $"Capture started on device {devIndex} '{deviceLabel}' at {waveIn.WaveFormat.SampleRate}Hz/{waveIn.WaveFormat.Channels}ch -> '{Path.GetFileName(_outputPath)}'.");
         }
         catch (Exception ex)
         {
             _isRecording = false;
             CaptureError = ex;
             _lastError = ex;
-            if (waveIn != null)
+            if (waveIn != null && !ReferenceEquals(waveIn, _waveIn))
             {
                 try { waveIn.DataAvailable -= OnDataAvailable; } catch (Exception dex) { CoreLogger.Swallowed(dex); }
                 try { waveIn.RecordingStopped -= OnRecordingStopped; } catch (Exception dex) { CoreLogger.Swallowed(dex); }
                 try { waveIn.Dispose(); } catch (Exception dex) { CoreLogger.Swallowed(dex); }
             }
             StopRecording();
-            TryDeletePartialOutput();
+            if (BytesCaptured == 0 && _createdOutputFile) TryDeletePartialOutput();
             throw;
         }
     }
@@ -199,46 +232,75 @@ public class VoiceRecorder : IDisposable
     private void OnDataAvailable(object? sender, WaveInEventArgs a)
     {
         if (sender != _waveIn) return;
-
-        try
+        Exception? writeError = null;
+        bool endpoint = false;
+        lock (_writerLock)
         {
-            lock (_writerLock)
+            if (_stopping || CaptureError != null || _writer == null || sender is not IWaveIn source) return;
+            int align = source.WaveFormat.BlockAlign;
+            int accepted = Budget?.AcceptBytes(_bytesCaptured, a.BytesRecorded, align) ?? a.BytesRecorded / align * align;
+            if (accepted > 0)
             {
-                if (_stopping) return;
-                var writer = _writer;
-                if (writer == null) return;
-                writer.Write(a.Buffer, 0, a.BytesRecorded);
+                long? position = null;
+                try
+                {
+                    position = _outputStream!.Position;
+                    _writer.Write(a.Buffer, 0, accepted);
+                }
+                catch (Exception ex)
+                {
+                    // VOWRITE_01: NAudio increments data length only after a successful Write.
+                    // Roll back a partially written failed buffer, retaining the acknowledged prefix.
+                    CaptureError = _lastError = writeError = ex;
+                    WriteFailed = true;
+                    try
+                    {
+                        if (position is not long boundary) throw new IOException("Cannot recover the WAV write position.", ex);
+                        _outputStream!.SetLength(boundary);
+                        _outputStream.Position = boundary;
+                    }
+                    catch (Exception repair) { FileFinalizationError = repair; CoreLogger.Swallowed(repair); }
+                }
+                if (writeError == null)
+                {
+                    Interlocked.Add(ref _bytesCaptured, accepted);
+                    Interlocked.Increment(ref _buffersSeen);
+                    float max = 0;
+                    for (int i = 0; i + 1 < accepted; i += 2)
+                        max = Math.Max(max, Math.Abs((short)((a.Buffer[i + 1] << 8) | a.Buffer[i]) / 32768f));
+                    _peakSeen = Math.Max(_peakSeen, max);
+                    // Subscriber faults are not storage failures, and cannot hide accepted PCM.
+                    try { PcmAvailable?.Invoke(this, new PcmBuffer(a.Buffer, accepted, MicLevelMonitor.ToCaptureFormat(source.WaveFormat))); }
+                    catch (Exception ex) { CoreLogger.Swallowed(ex); }
+                    try { VolumeChanged?.Invoke(this, max); }
+                    catch (Exception ex) { CoreLogger.Swallowed(ex); }
+                }
             }
-
-            System.Threading.Interlocked.Add(ref _bytesCaptured, a.BytesRecorded);
-            int seen = System.Threading.Interlocked.Increment(ref _buffersSeen);
-            if (seen == 1)
-            {
-                CoreLogger.Info("VoiceRecorder", $"First audio buffer received ({a.BytesRecorded} bytes).");
-            }
-
-            float max = 0;
-            for (int i = 0; i + 1 < a.BytesRecorded; i += 2)
-            {
-                short sample = (short)((a.Buffer[i + 1] << 8) | a.Buffer[i]);
-                float sample32 = sample / 32768f;
-                if (sample32 < 0) sample32 = -sample32;
-                if (sample32 > max) max = sample32;
-            }
-            if (max > _peakSeen) _peakSeen = max;
-            VolumeChanged?.Invoke(this, max);
-
-            if (PcmAvailable is { } pcm && sender is WaveIn source)
-                pcm.Invoke(this, new PcmBuffer(a.Buffer, a.BytesRecorded, MicLevelMonitor.ToCaptureFormat(source.WaveFormat)));
+            endpoint = Budget != null && _bytesCaptured / align >= Budget.MaximumFrames;
+            if (endpoint) Budget!.Exhausted = true;
         }
-        catch (ObjectDisposedException swallowed2)
+        if (writeError != null) PublishFault(writeError);
+        if (endpoint || writeError != null) RequestStop();
+    }
+
+    private void RequestStop()
+    {
+        if (Interlocked.Exchange(ref _stopRequested, 1) != 0) return;
+        if (Budget?.MaximumFrames == 0) Budget.Exhausted = true;
+        if (StopRequested is { } requested)
         {
-            global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
+            try { requested(this, EventArgs.Empty); }
+            catch (Exception ex) { CoreLogger.Swallowed(ex); }
         }
-        catch (Exception ex)
-        {
-            CoreLogger.Fail("VoiceRecorder", $"Dropped a captured audio buffer: {ex.Message}");
-        }
+        else ThreadPool.QueueUserWorkItem(_ => StopRecording());
+    }
+
+    private void PublishFault(Exception error)
+    {
+        if (Interlocked.Exchange(ref _faultPublished, 1) != 0) return;
+        CoreLogger.Fail("VoiceRecorder", $"Capture failed: {error.Message}");
+        try { Stopped?.Invoke(this, error); }
+        catch (Exception ex) { CoreLogger.Swallowed(ex); }
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -251,8 +313,8 @@ public class VoiceRecorder : IDisposable
         if (!_intentionalStop || e.Exception != null)
         {
             var err = e.Exception ?? new InvalidOperationException("Capture stopped unexpectedly.");
-            CaptureError = err;
-            _lastError = err;
+            CaptureError ??= err;
+            _lastError ??= err;
             CoreLogger.Fail("VoiceRecorder", $"Capture stopped with an error: {err.Message}");
             errorToPublish = err;
         }
@@ -261,11 +323,16 @@ public class VoiceRecorder : IDisposable
 
         if (errorToPublish != null)
         {
-            Stopped?.Invoke(this, errorToPublish);
+            PublishFault(CaptureError ?? errorToPublish);
         }
     }
 
     public void StopRecording()
+    {
+        lock (_lifecycleLock) StopRecordingCore();
+    }
+
+    private void StopRecordingCore()
     {
         _intentionalStop = true;
         var waveIn = _waveIn;
@@ -348,6 +415,12 @@ public class VoiceRecorder : IDisposable
                     CoreLogger.Warn("VoiceRecorder", $"Closing the WAV writer threw: {ex.Message}");
                 }
             }
+            if (_outputStream != null)
+            {
+                try { _outputStream.Dispose(); }
+                catch (Exception ex) { FileFinalizationError ??= ex; CoreLogger.Swallowed(ex); }
+                _outputStream = null;
+            }
         }
 
         if (wasRecording)
@@ -386,6 +459,11 @@ public class VoiceRecorder : IDisposable
     }
 
     public void Dispose()
+    {
+        lock (_lifecycleLock) DisposeCore();
+    }
+
+    private void DisposeCore()
     {
         StopRecording();
         var waveIn = _waveIn;

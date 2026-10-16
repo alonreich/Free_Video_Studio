@@ -67,6 +67,15 @@
              colour "for the end marker" — both ends are one object, which is the whole point. -->
         <Color x:Key="AppMemeColor">#7c3aed</Color>
         <SolidColorBrush x:Key="AppMemeBrush" Color="{StaticResource AppMemeColor}" />
+
+        <!-- WANDCOLOR_01 — the Crop Tool Magic Wand's candidate outlines. They used to be "#e91e63"
+             literals inside CropToolWindow.MagicWand.cs (Invariant #5). One hue, three strengths:
+             outline, a faint fill so the box reads on any frame, and the caption plate. They sit on
+             top of video, so like AppZoomColor they do not follow the Light/Dark dictionaries. -->
+        <Color x:Key="AppWandCandidateColor">#e91e63</Color>
+        <SolidColorBrush x:Key="AppWandCandidateBrush" Color="{StaticResource AppWandCandidateColor}" />
+        <SolidColorBrush x:Key="AppWandCandidateFillBrush" Color="#18e91e63" />
+        <SolidColorBrush x:Key="AppWandCaptionBrush" Color="#c8e91e63" />
         <SolidColorBrush x:Key="AppZoomDeepBorderBrush" Color="#15306b" />
         <SolidColorBrush x:Key="AppOverlayBrush" Color="#aa000000" />
 

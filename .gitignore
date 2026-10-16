@@ -45,3 +45,11 @@ packages/
 src/FreeVideoStudio.App/payload.zip
 temp_staging/
 tests/MediaPipelineChecks/artifacts/
+
+# SECRETSCAN_01 — credentials never enter git (also enforced by tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs)
+*.pfx
+*.p12
+*.snk
+*.key.pem
+*.password.txt
+settings.json.corrupt-*.bak

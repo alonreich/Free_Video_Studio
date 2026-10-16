@@ -1,4 +1,4 @@
-﻿namespace FvsBuild;
+namespace FvsBuild;
 
 /// <summary>
 /// Step 1-2 of the pipeline: clean, stage the release (app publish output + backend/frontend
@@ -42,6 +42,9 @@ internal static class Staging
         "Cool Dance Background Music (No CopyRights).mp3",
     ];
 
+    // STARTERLIST_01 / MEMEFOLDER_01 — the meme starter set, all from the single repo `meme\`
+    // folder. ⚠️ Must equal MemeAssets.StarterFiles["meme"] exactly (ArchitectureRuleTests
+    // .StarterListsMatchTheStagingLists). Every name here is required: a missing file halts staging.
     private static readonly string[] StarterMeme =
     [
         "What the fuck am I doing here (Robert Deniro) - Landscape.mp4",
@@ -82,17 +85,22 @@ internal static class Staging
         _ = Cli.RunQuiet("dotnet", ["clean", ProjectFile, "-c", "Release", "-r", "win-x64", "--nologo", "-v", "q", "-nodeReuse:false"]);
     }
 
-    /// <summary>Release mode wipes .\compiled entirely; dev mode only ensures it exists (old Build.cmd vs dev_build.cmd).</summary>
+    /// <summary>Release mode wipes .\compiled entirely; dev mode cleans any extra artifacts to ensure only the latest installer is kept.</summary>
     public static void PrepareCompiledDir(BuildLog log, bool devMode)
     {
-        if (devMode)
-        {
-            Directory.CreateDirectory(OutputDir);
-            TryDeleteFile(Path.Combine(OutputDir, ProjectExe));
-            return;
-        }
-        TryDeleteDirectory(OutputDir);
         Directory.CreateDirectory(OutputDir);
+        foreach (string entry in Directory.EnumerateFileSystemEntries(OutputDir))
+        {
+            if (!string.Equals(Path.GetFileName(entry), OutputExe, StringComparison.OrdinalIgnoreCase))
+            {
+                TryDeleteDirectory(entry);
+                TryDeleteFile(entry);
+            }
+        }
+        if (!devMode)
+        {
+            TryDeleteFile(Path.Combine(OutputDir, OutputExe));
+        }
     }
 
     /// <summary>Removes stale staging folders and any leftover payload.zip before the publish runs.</summary>
@@ -264,6 +272,19 @@ internal static class Staging
                 Directory.CreateDirectory(symbols);
                 File.Move(pdb, Path.Combine(symbols, Path.GetFileName(pdb)), overwrite: true);
             }
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // SYS-PAYLOADSPLIT — FINGERPRINT THE RUNTIME AND SHIP THE ANSWER.
+            //
+            // Written twice, on purpose:
+            //   • INTO the staging folder, so it lands beside the installed binaries and the
+            //     updater on that machine can read what is actually installed.
+            //   • BESIDE compiled\ (obj\ReleaseAssets, RELEASEASSETS_01), so the release can publish it as a tiny sidecar asset and the
+            //     updater can read what the release EXPECTS without downloading 322 MB to find out.
+            // A fingerprint that exists in only one of those two places answers nothing.
+            //
+            // ⚠️ Computed BEFORE the zip is written into the staging tree, so the manifest
+            // describes the runtime binaries and not itself.
+            // ══════════════════════════════════════════════════════════════════════════════════
             var manifest = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromFolder(StagingDir);
             manifest.Write(StagingDir);
             FreeVideoStudio.Core.Infrastructure.InstallPayload.WriteManifest(StagingDir);
@@ -272,6 +293,7 @@ internal static class Staging
             manifest.Write(ReleaseAssetsDir);
             foreach (string retired in new[] { "FreeVideoStudio.App.update.zip", "full-payload.zip" })
                 TryDeleteFile(Path.Combine(ReleaseAssetsDir, retired));
+            // REBRAND_03: remove the old download alias from staging; publishing creates it transiently.
             string staleAlias = Path.Combine(ReleaseAssetsDir,
                 FreeVideoStudio.Core.Infrastructure.LegacyProductIdentity.DownloadName);
             if (File.Exists(staleAlias)) File.Delete(staleAlias);

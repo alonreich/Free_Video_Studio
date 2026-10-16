@@ -69,6 +69,8 @@ internal sealed class LiveMonitor : IMicMonitorDevice
 
 internal sealed class LiveRecorder(string path, LiveCaptureDevices devices) : IVoiceRecorderDevice
 {
+    private VoiceCaptureBudget? _budget;
+    public void ConfigureBudget(VoiceCaptureBudget budget) => _budget = budget;
     private readonly object _lock = new();
     private WaveFileWriter? _writer;
     private long _bytes;
@@ -90,6 +92,7 @@ internal sealed class LiveRecorder(string path, LiveCaptureDevices devices) : IV
     public void StartRecording()
     {
         devices.OpenGate.Wait(TimeSpan.FromSeconds(10));
+        _budget?.Start(44100);
         lock (_lock) _writer = new WaveFileWriter(Path, new WaveFormat(44100, 16, 1));
         IsRecording = true;
     }
@@ -97,6 +100,8 @@ internal sealed class LiveRecorder(string path, LiveCaptureDevices devices) : IV
     /// <summary>One driver callback: WAV write, level, raw PCM — the production order.</summary>
     public void Deliver(byte[] data)
     {
+        if (_budget != null) data = data[.._budget.AcceptBytes(BytesCaptured, data.Length, 2)];
+        if (data.Length == 0) return;
         float max = 0;
         for (int i = 0; i + 1 < data.Length; i += 2)
         {

@@ -1,4 +1,6 @@
-﻿
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -311,7 +313,8 @@ internal sealed class VoiceOverRecoveryManager
 
 
     private sealed record TakeRecord(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
-        double TrimRightSec, bool IsMuted, string Reason, RecoveryErrorKind ErrorKind, TakeRecoveryState State);
+        double TrimRightSec, bool IsMuted, string Reason, RecoveryErrorKind ErrorKind, TakeRecoveryState State,
+        double OutputOffsetSec, double? CapturedDurationSec, bool NeedsTimingReview);
 
     private sealed record PathPlan(string Path, bool IsOwn, HashSet<string> HeldIds, List<TakeRecord> Durable);
 
@@ -381,7 +384,7 @@ internal sealed class VoiceOverRecoveryManager
                 {
                     var s = t.Session;
                     durable.Add(new TakeRecord(t.Id, s.WavPath, s.StartSec, s.EndSec, s.TrimLeftSec, s.TrimRightSec,
-                        s.IsMuted, t.FailureReason, t.ErrorKind, t.State));
+                        s.IsMuted, t.FailureReason, t.ErrorKind, t.State, s.OutputOffsetSec, s.CapturedDurationSec, s.NeedsTimingReview));
                 }
             }
             paths.Add(new PathPlan(path, string.Equals(path, own, StringComparison.OrdinalIgnoreCase), held, durable));
@@ -552,6 +555,9 @@ internal sealed class VoiceOverRecoveryManager
                 w.WriteString("wavPath", t.WavPath);
                 w.WriteNumber("startSec", Finite(t.StartSec));
                 w.WriteNumber("endSec", Finite(t.EndSec));
+                w.WriteNumber("outputOffsetSec", Finite(t.OutputOffsetSec));
+                if (t.CapturedDurationSec is double captured) w.WriteNumber("capturedDurationSec", Finite(captured));
+                w.WriteBoolean("needsTimingReview", t.NeedsTimingReview);
                 w.WriteNumber("trimLeftSec", Finite(t.TrimLeftSec));
                 w.WriteNumber("trimRightSec", Finite(t.TrimRightSec));
                 w.WriteBoolean("isMuted", t.IsMuted);
@@ -571,7 +577,8 @@ internal sealed class VoiceOverRecoveryManager
 
     private sealed record LoadedManifest(string Path, List<LoadedTake> Takes);
     private sealed record LoadedTake(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
-        double TrimRightSec, bool IsMuted, string Reason, bool AudioPresent, bool TimingValid);
+        double TrimRightSec, bool IsMuted, string Reason, bool AudioPresent, bool TimingValid,
+        double OutputOffsetSec, double? CapturedDurationSec, bool NeedsTimingReview);
     private sealed record LoadBatch(List<LoadedManifest> Manifests, List<string> Errors);
 
     private static LoadBatch LoadManifests(IVoiceOverRecoveryStore store, string baseDir, string canonicalCurrent, string key)
@@ -631,7 +638,11 @@ internal sealed class VoiceOverRecoveryManager
                             Finite(Num(item, "trimLeftSec")), Finite(Num(item, "trimRightSec")),
                             item.TryGetProperty("isMuted", out var m) && m.ValueKind == JsonValueKind.True,
                             Str(item, "reason") is { Length: > 0 } r ? r : "Unfinalized take from previous session",
-                            store.AudioExists(wav), timingValid));
+                            store.AudioExists(wav), timingValid,
+                            Finite(Num(item, "outputOffsetSec")),
+                            item.TryGetProperty("capturedDurationSec", out var captured) && captured.ValueKind == JsonValueKind.Number && captured.TryGetDouble(out double duration)
+                                ? Math.Max(0, Finite(duration)) : null,
+                            item.TryGetProperty("needsTimingReview", out var review) && review.ValueKind == JsonValueKind.True));
                     }
                 }
                 manifests.Add(new LoadedManifest(path, takes));
@@ -678,7 +689,8 @@ internal sealed class VoiceOverRecoveryManager
                 var session = new VoiceOverWindow.VoiceOverSession
                 {
                     WavPath = t.WavPath, StartSec = t.StartSec, EndSec = t.EndSec,
-                    TrimLeftSec = t.TrimLeftSec, TrimRightSec = t.TrimRightSec, IsMuted = t.IsMuted
+                    TrimLeftSec = t.TrimLeftSec, TrimRightSec = t.TrimRightSec, IsMuted = t.IsMuted,
+                    OutputOffsetSec = t.OutputOffsetSec, CapturedDurationSec = t.CapturedDurationSec, NeedsTimingReview = t.NeedsTimingReview
                 };
                 string reason = t.Reason;
                 var kind = RecoveryErrorKind.Capture;
@@ -745,6 +757,7 @@ internal sealed class VoiceOverRecoveryManager
             }
             if (take.Session.EndSec <= take.Session.StartSec)
                 take.Session.EndSec = take.Session.StartSec + verdict.DurationSec;
+            take.Session.CapturedDurationSec = verdict.DurationSec;
             try
             {
                 if (!publish(take.Session))
@@ -821,7 +834,7 @@ internal sealed class VoiceOverRecoveryManager
     }
 
 
-    public bool DiscardTakes(IVoiceCaptureSession capture, out string? error)
+    public bool DiscardTakes(IVoiceCaptureSession capture, out string? error, IEnumerable<string>? takeIds = null)
     {
         if (capture.HasUnreleasedDevice)
         {
@@ -829,21 +842,32 @@ internal sealed class VoiceOverRecoveryManager
             return false;
         }
         if (IsOperationInFlight) { error = "Another recovery operation is still running."; return false; }
-        var targets = _pendingFailedTakes.FindAll(t => t.BlocksApply);
+        var idSet = takeIds != null ? new HashSet<string>(takeIds) : null;
+        var targets = idSet != null
+            ? _pendingFailedTakes.FindAll(t => t.BlocksApply && idSet.Contains(t.Id))
+            : _pendingFailedTakes.FindAll(t => t.BlocksApply);
+        if (targets.Count == 0) { error = null; return true; }
         var outcomes = targets.ConvertAll(t => DeleteOne(_store, t.Session.WavPath));
         return FinishDiscard(targets, outcomes, SaveManifestAfterDiscard, out error);
     }
 
     private RecoveryStoreResult SaveManifestAfterDiscard() => SaveManifest();
 
-    public async Task<(bool Success, string? Error)> DiscardTakesAsync(IVoiceCaptureSession capture)
-        => await DiscardAsync(capture, _pendingFailedTakes.FindAll(t => t.BlocksApply));
+    public async Task<(bool Success, string? Error)> DiscardTakesAsync(IVoiceCaptureSession capture, IEnumerable<string>? takeIds = null)
+    {
+        var idSet = takeIds != null ? new HashSet<string>(takeIds) : null;
+        var targets = idSet != null
+            ? _pendingFailedTakes.FindAll(t => t.BlocksApply && idSet.Contains(t.Id))
+            : _pendingFailedTakes.FindAll(t => t.BlocksApply);
+        return await DiscardAsync(capture, targets);
+    }
 
     private async Task<(bool Success, string? Error)> DiscardAsync(IVoiceCaptureSession capture, List<PendingFailedTake> targets)
     {
         if (capture.HasUnreleasedDevice)
             return (false, "Cannot discard: capture device is still releasing. Please wait a moment.");
         if (IsOperationInFlight) return (false, "Another recovery operation is still running.");
+        if (targets.Count == 0) return (true, null);
         IsOperationInFlight = true;
         try
         {

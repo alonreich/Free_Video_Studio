@@ -42,6 +42,8 @@ internal static class Program
     public static int Main(string[] args)
     {
         bool optInRun = args.Any(a => string.Equals(a, "--run", StringComparison.OrdinalIgnoreCase));
+        // MICSMOKE_01 — with --require-signal the user must speak: a peak below this fails the run,
+        // proving real samples (not just delivered digital zeros) reach the recorder.
         bool requireSignal = args.Any(a => string.Equals(a, "--require-signal", StringComparison.OrdinalIgnoreCase));
         const float SignalPeakThreshold = 0.01f;
         ReportExecutionMode();
