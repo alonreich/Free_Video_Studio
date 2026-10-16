@@ -4,6 +4,16 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 
 ---
 
+## v2026.10.16.1230 (Upcoming)
+**What's New in This Release:**
+- **No More Random Volume Drops:** Fixed an unexpected volume mute/drop bug across the Main App, Video Merger, and Crop tools; audio playback now remains steady and in sync.
+- **Rubberband Drag Selection in Video Merger:** You can now drag a selection box across multiple videos in the queue to highlight and select them simultaneously.
+- **Batch Queue Reorder & Delete:** Move or delete multiple selected videos at once using toolbar buttons or the `Delete` key, fully synchronized with timeline markers and preview.
+- **Social Media Music Shield (YouTube & TikTok):** Downloadable background tracks now come with copyright attribution info to keep your videos from getting muted or blocked on social platforms.
+- **1-Click Attribution Copy on Export:** The export completion screen features a 1-click **[COPY CREDIT TO CLIPBOARD]** button and automatically arms your clipboard when clicking YouTube or TikTok shortcuts.
+
+---
+
 ## v2026.10.13.2238
 **What's New in This Release:**
 - **No Surprise Restarts:** Choosing "Later" when an update is ready now defers the update until you close the app without unexpectedly reopening it.
@@ -42,10 +52,3 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 - **Thumbnail Intro Scraping:** Automatically removes cover frames when joining gameplay highlights.
 - **Rock-Solid Session Recovery:** Crash recovery now preserves your complete project layout, trim points, and audio settings.
 
----
-
-## v2026.09.28.0945
-**What's New in This Release:**
-- **Single-File Setup:** Bundled everything into one clean, verified installer package (`FreeVideoStudio-Setup.exe`).
-- **NativeAOT Performance:** Compiled ahead-of-time for near-instant application launch and minimal memory usage.
-- **Safe Background Updates:** Pinned publisher certificate verification ensures only authentic updates are installed.
