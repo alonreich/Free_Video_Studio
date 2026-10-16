@@ -807,37 +807,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>Reads the current running version using DeploymentLifecycle and Win32 file version.</summary>
-    private static bool TryGetLocalVersion(out Version version)
-    {
-        version = new Version(0, 0);
-        try
-        {
-            if (DevReleaseFolder is not null)
-            {
-                string installed = DeploymentFootprint.InstallPath;
-                if (!File.Exists(installed)) return true;
-                FileVersionInfo info = FileVersionInfo.GetVersionInfo(installed);
-                return DeploymentLifecycle.TryParseVersion((info.ProductVersion ?? info.FileVersion ?? string.Empty).Split('+')[0], out version);
-            }
-
-            string current = DeploymentLifecycle.GetCurrentVersion();
-            if (DeploymentLifecycle.TryParseVersion(current, out version))
-            {
-                return true;
-            }
-
-            string? exe = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe)) return false;
-            return DeploymentLifecycle.TryParseVersion(FileVersionInfo.GetVersionInfo(exe).FileVersion, out version);
-        }
-        catch (System.Exception swallowed3)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed3);
-            return false;
-        }
-    }
-
     /// <summary>
     /// SYS-PAYLOADSPLIT — DECIDES WHETHER THIS MACHINE NEEDS THE 322 MB INSTALLER OR JUST THE APP.
     ///

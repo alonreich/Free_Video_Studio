@@ -63,7 +63,7 @@ public partial class VideoMergerWindow
     }
 
     /// <summary>A press or drag on a queue row or a block is in progress: nothing may move the selection or rebuild the blocks under it.</summary>
-    private bool QueueGestureActive => _chipPressed || _draggingClipChip || _videoDragStartPoint.HasValue || _isVideoDragging;
+    private bool QueueGestureActive => _chipPressed || _draggingClipChip || _videoDragStartPoint.HasValue || _isVideoDragging || _isRubberbanding;
 
     /// <summary>
     /// D23 / MERGERPLAYHEAD_01 — the upper timeline (time scale + scrub row) AND the waveform lane seek; only the

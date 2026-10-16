@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
@@ -58,18 +58,6 @@ public partial class MainWindow
         }
         _recoveryWriteBehindTimer.Stop();
         _recoveryWriteBehindTimer.Start();
-    }
-
-    /// <summary>EDITHOT_01 — the volume preference write, off the UI thread. Never throws.</summary>
-    private async Task PersistMainVolumeAsync(double volume)
-    {
-        try
-        {
-            await new FreeVideoStudio.Core.Ipc.StateTransferStore(_paths)
-                .UpdatePropertiesAsync(new System.Text.Json.Nodes.JsonObject { ["MainVolume"] = volume })
-                .ConfigureAwait(false);
-        }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
     private const int RecoveryWriteBehindMs = 750;

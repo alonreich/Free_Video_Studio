@@ -128,6 +128,8 @@ Voiceover timing additions (all listed specs govern these files):
   IpcTests.cs                                05 SYS-IPCLIFETIME | 05 SYS-WRITEORDER
   IpcChildProcess.cs                         05 SYS-IPCLIFETIME
 ⚠ MusicWizardWindow.axaml.cs                 01 02
+  MusicAttributionDialogWindow.axaml.cs      04 UI-MERGER-MULTISELECT
+  MusicAttributionHelper.cs                  02 AUD-DIALOGS | ATTRIBUTION_01
 ⚠ OutputTimeline.cs                          01 06
   OutputFileSize.cs                          03
   OutputFileNaming.cs                        03 FFM-OUTNAME
@@ -633,6 +635,8 @@ MPVSHUTDOWN_01                               05 §3 SYS-WINSTATE
 MpvIpcClient                                 02 §1 AUD-MASTERVOL | 03 §9 FFM-BINPATH
 MusicVolSlider                               02 §6 AUD-DIALOGS
 MusicWizardWindow                            01 (mini-map only) | 02 (mini-map only)
+MusicAttributionHelper                       02 §6 AUD-DIALOGS | ATTRIBUTION_01
+MusicAttributionDialogWindow                 04 §16 UI-MERGER-MULTISELECT | ATTRIBUTION_01
 NormalizeCuts                                01 (mini-map only)
 Notify                                       08 (mini-map only)
 NotifyError                                  04   [code-only: GranularSpeedEditorWindow.axaml.cs]

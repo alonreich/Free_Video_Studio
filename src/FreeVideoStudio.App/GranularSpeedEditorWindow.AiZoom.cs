@@ -326,15 +326,6 @@ public partial class GranularSpeedEditorWindow
         return AiHudAvoidZones.DefaultsFor(profile);
     }
 
-    private static string AiErrorTitle(GeminiErrorKind kind) => kind switch
-    {
-        GeminiErrorKind.InvalidKey or GeminiErrorKind.PermissionDenied => "Gemini API Key Problem",
-        GeminiErrorKind.ModelNotFound => "Gemini Model Not Available",
-        GeminiErrorKind.RateLimited or GeminiErrorKind.QuotaExhausted => "Gemini Usage Limit Reached",
-        GeminiErrorKind.Timeout or GeminiErrorKind.Network or GeminiErrorKind.Overloaded => "Could Not Reach Google Gemini",
-        _ => "AI Smart Zoom Error",
-    };
-
     private static string AiProviderErrorTitle(AiVendor vendor, AiProviderErrorKind kind)
     {
         string name = vendor switch { AiVendor.Anthropic => "Anthropic Claude", AiVendor.OpenAI => "OpenAI", _ => "Google Gemini" };

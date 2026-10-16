@@ -1134,29 +1134,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             _qualitySliderInitialized = true;
         }
 
-        var vol = VolumeSliderCtl;
-        if (vol != null) 
-        {
-            try
-            {
-                var state = System.IO.File.Exists(_paths.SessionStateFile)
-                    ? System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(_paths.SessionStateFile))?.AsObject() ?? new System.Text.Json.Nodes.JsonObject()
-                    : new System.Text.Json.Nodes.JsonObject();
-                if (state.ContainsKey("MainVolume"))
-                {
-                    vol.Value = state["MainVolume"]?.GetValue<double>() ?? 100.0;
-                }
-                else
-                {
-                    vol.Value = 100.0;
-                }
-            }
-            catch (System.Exception swallowed9)
-            {
-                vol.Value = 100.0;
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed9);
-            }
-        }
+        // AUD-MASTERVOL — MasterVolumeUi.Bind (MainWindow.Wireup.cs) already bound and painted
+        // the rack from MpvIpcClient.GlobalMasterVolume with proper re-entrancy guarding.
 
         var portrait = PortraitModeCheckboxCtl;
         if (portrait != null) portrait.IsChecked = d.PortraitMode;

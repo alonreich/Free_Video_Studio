@@ -481,3 +481,11 @@ Governs the user interface, dialogs, progress overlay, and review flow for AI Li
   * **Cue Editing Modal (`EditCaptionDialogWindow`):** Double-clicking any cue opens the modal with time inputs, text editing, single-line AI regeneration via `CommentaryService`, and cue deletion.
   * **Keyboard Accelerators:** Selecting a cue block and pressing `Delete` or `Backspace` deletes the cue, checkpointed to undo stack. Escape cancels active dragging.
 
+---
+
+## 16. Video Merger Multi-Select & Music Attribution Workflow {#UI-MERGER-MULTISELECT}
+Governs multi-selection in the Video Merger right-pane queue (`VideoMergerWindow.axaml.cs`, `VideoMergerWindow.ClipActions.cs`, `VideoMergerWindow.TimelineSelect.cs`, `VideoMergerWindow.axaml`) and YouTube/TikTok copyright attribution guidance (`MusicAttributionHelper.cs`, `MusicAttributionDialogWindow.axaml`, `FinishedDialogWindow.axaml`).
+* **Multi-Select & Marquee Rubberband:** Dragging across items in the right-pane video queue draws a high-contrast marquee box and selects all intersecting clips. Selected items display with distinct accent border and fill. Multi-select batch operations (Keyboard Delete, toolbar Remove Selected, Up, and Down reordering) synchronously update the queue, timeline markers, and EDL.
+* **Music Attribution & Social Platform Guard (ATTRIBUTION_01):** Downloadable music tracks prefixed with `!_` or accompanied by companion `.txt` attribution notes provide automated copyright credentials. Upon export completion, a non-technical dialog presents an oversimplified 2-step guide (YouTube Description / TikTok Caption) with a 1-click [COPY CREDIT TO CLIPBOARD] action to prevent automatic audio muting.
+
+

@@ -52,6 +52,10 @@ Meme library:         .\meme\ holds ALL memes (videos + pictures); .\mp4\ and .\
                       starter set = .\src\FreeVideoStudio.App\Infrastructure\MemeAssets.cs StarterFiles
                       == .\build\FvsBuild\Staging.cs StarterMeme (STARTERLIST_01, MemeLibraryTests).
                       Spec: docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-MEMELIB.
+Song library:         .\mp3\ holds background music tracks and companion attribution notes (.txt).
+                      Downloadable library songs prefixed with '!_' or accompanied by .txt credentials
+                      provide copyright attribution for YouTube/TikTok to prevent automatic audio muting
+                      (ATTRIBUTION_01, MusicAttributionHelper.cs, MusicAttributionDialogWindow.axaml).
 Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Videos\FreeVideoStudio\Memes
                       (NOSPACE_01, MEMEFOLDER_02). Old spaced folders are migrated automatically.
                       Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.

@@ -1,4 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
@@ -1199,12 +1199,6 @@ public sealed class MpvVideoView : Control, IDisposable
             System.Threading.Monitor.Exit(_renderLock);
             System.Threading.Monitor.Exit(_swRenderGate);
         }
-    }
-
-    internal static async Task DisposeCompositorImagesCoreAsync(List<object> images)
-    {
-        var batch = new CompositorDisposalBatch(images);
-        await batch.ExecuteAsync().ConfigureAwait(false);
     }
 
     /// <summary>
