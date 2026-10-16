@@ -33,6 +33,8 @@ Voiceover timing additions (all listed specs govern these files):
   AiSetupWizardWindow.axaml.cs               04
   AiSubjectPickerWindow.axaml.cs             04
 ⚠ AiTrajectorySmoother.cs                    01 03
+  AGENTS.md                                  GOV | CHANGELOG_01
+  CHANGELOG.md                               GOV | CHANGELOG_01
   AiGameProfile.cs                           01
   AiTrackingPrompts.cs                       01
   GeminiClient.cs                            05
@@ -445,6 +447,7 @@ CalculateEffectiveDurationMs                 03 §8a FFM-QUALITY
 CalculateFreezeOutputMs                      03 §8a FFM-QUALITY
 CanvasMath                                   01 (mini-map only)
 CheckFault                                   05 §4 SYS-RECOVERY
+CHANGELOG_01                                 GOV §6 | build/sentinels.txt
 ChunkSpec                                    03 (mini-map only)
 ClampZoomInsideItsBlock                      01 (mini-map only)
 ClearLiveZoomCrop                            04 §6 UI-GRANULAR   [code-only: counterpart of UpdateLiveZoomCrop]
