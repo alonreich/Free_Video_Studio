@@ -82,32 +82,12 @@ public partial class MainWindow
         if (bedDuration <= 0) bedDuration = 1.0;
 
         var key = (result, startDelay, bedDuration, result.OffsetSeconds, result.LoopMusic,
-                   result.MusicFilePath, result.MusicFilePaths?.Count ?? 0, result.MusicDurationSeconds);
+                   result.MusicFilePath, result.MusicFilePaths?.Count ?? 0, result.MusicDurationSeconds,
+                   string.Join(",", result.MusicStartsSeconds ?? new List<double>()) + "|" + string.Join(",", result.MusicEndsSeconds ?? new List<double>()));
         if (Equals(key, _musicPlanKey)) return _musicPlan;
 
-        var paths = new List<string>();
-        if (result.MusicFilePaths != null && result.MusicFilePaths.Count > 0)
-        {
-            foreach (var p in result.MusicFilePaths)
-                if (!string.IsNullOrWhiteSpace(p) && System.IO.File.Exists(p)) paths.Add(p);
-        }
-        else
-        {
-            paths.Add(result.MusicFilePath);
-        }
-
-        var durations = new List<double>(paths.Count);
-        for (int i = 0; i < paths.Count; i++)
-        {
-            double known = 0;
-            if (result.MusicDurationsSeconds != null && i < result.MusicDurationsSeconds.Count)
-                known = result.MusicDurationsSeconds[i];
-            else if (i == 0)
-                known = result.MusicDurationSeconds;
-            durations.Add(known);
-        }
-
-        _musicPlan = MusicBedPlan.Build(paths, durations, result.OffsetSeconds, bedDuration, result.LoopMusic, startDelay);
+        // MUSICWIN_01 / XFADEPLAN_01 — the export's own layout (song windows + crossfade leads).
+        _musicPlan = MusicBedPlan.Build(result.ToBedTracks(), bedDuration, result.LoopMusic, startDelay);
         _musicPlanKey = key;
         return _musicPlan;
     }

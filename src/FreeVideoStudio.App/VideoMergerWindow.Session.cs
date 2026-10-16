@@ -172,8 +172,11 @@ public partial class VideoMergerWindow
         paths.RemoveAll(string.IsNullOrWhiteSpace);
         if (paths.Count == 0) return null;
         var durations = r.MusicDurationsSeconds.Count > 0 ? r.MusicDurationsSeconds.ToList() : new List<double> { r.MusicDurationSeconds };
+        // MUSICWIN_01 — each song's chosen part is part of the saved merge (only when it lines up).
+        IReadOnlyList<double>? starts = r.MusicStartsSeconds.Count == paths.Count ? r.MusicStartsSeconds.ToList() : null;
+        IReadOnlyList<double>? ends = r.MusicEndsSeconds.Count == paths.Count ? r.MusicEndsSeconds.ToList() : null;
         return new MergerMusicState(paths, durations, r.OffsetSeconds, r.TimelineStartSeconds, r.TimelineEndSeconds,
-            r.MusicVolume, r.VideoVolume, r.LoopMusic, r.EnableDucking, r.EnableCarving);
+            r.MusicVolume, r.VideoVolume, r.LoopMusic, r.EnableDucking, r.EnableCarving, starts, ends);
     }
 
     /// <summary>Opened with an empty queue: bring back the project's merge, or the autosaved one.</summary>

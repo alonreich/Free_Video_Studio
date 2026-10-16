@@ -33,15 +33,18 @@ namespace FreeVideoStudio.Core.Media;
 public class AudioFilterChain
 {
 
-    /// <summary>Song-to-song: the OUTGOING song starts fading out this long before its end.</summary>
-    private const double CrossfadeOutSec = 7.0;
+    /// <summary>Song-to-song: the OUTGOING song starts fading out this long before its end.
+    /// XFADEPLAN_01 — the number lives in <see cref="MusicCrossfade"/> so the music plan and the
+    /// previews lay songs out exactly the way this chain plays them.</summary>
+    private const double CrossfadeOutSec = MusicCrossfade.OutgoingFadeSec;
 
     /// <summary>
     /// Song-to-song: the INCOMING song starts this long before the outgoing song ends, and
     /// fades in across exactly that overlap — so the two are audible together for 3 seconds
     /// with the old one already 4 seconds into its 7-second decay.
+    /// XFADEPLAN_01 — shared with <see cref="MusicCrossfade"/>.
     /// </summary>
-    private const double CrossfadeInSec = 3.0;
+    private const double CrossfadeInSec = MusicCrossfade.IncomingOverlapSec;
 
     /// <summary>Fade applied at the very start and the very end of the whole music bed.</summary>
     private const double EdgeFadeSec = 1.5;
@@ -211,7 +214,7 @@ public class AudioFilterChain
 
             double overlap = isFirst
                 ? 0.0
-                : Math.Max(0.0, Math.Min(CrossfadeInSec, Math.Min(track.Duration, tracks[i - 1].Duration) / 2.0));
+                : MusicCrossfade.Overlap(track.Duration, tracks[i - 1].Duration);
 
             double playDur = Math.Max(0.01, track.Duration + overlap);
             double half = playDur / 2.0;

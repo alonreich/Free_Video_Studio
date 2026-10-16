@@ -129,7 +129,18 @@ Voiceover timing additions (all listed specs govern these files):
   NamedPipeStateServer.cs                    05
   IpcTests.cs                                05 SYS-IPCLIFETIME | 05 SYS-WRITEORDER
   IpcChildProcess.cs                         05 SYS-IPCLIFETIME
-⚠ MusicWizardWindow.axaml.cs                 01 02
+⚠ MusicWizardWindow.axaml.cs                 01 02 | 04 UI-MUSICWIZARD
+⚠ MusicWizardWindow.axaml                    04 UI-MUSICWIZARD | 02 AUD-DIALOGS
+⚠ MusicWizardWindow.Playlist.cs              02 AUD-MUSICWIN | 04 UI-MUSICWIZARD | 07 UNDO-MIGRATION
+⚠ MusicWizardWindow.SongLane.cs              01 | 02 AUD-MUSICWIN | 04 UI-MUSICWIZARD
+⚠ MusicWizardResult.Plan.cs                  02 AUD-PREVIEWSYNC | 03 (mini-map only)
+⚠ MusicWizardViewModel.cs                    04 UI-MUSICWIZARD | 02 AUD-MUSICWIN
+⚠ VideoMergerWindow.MusicButton.cs           02 AUD-DIALOGS | 04 UI-MUSICWIZARD
+  MusicCrossfade.cs                          02 AUD-MUSICFADE | XFADEPLAN_01
+⚠ MusicPlaylist.cs                           02 AUD-MUSICWIN | 04 UI-MUSICWIZARD
+⚠ MusicBedPlan.cs                            02 AUD-PREVIEWSYNC | 03 (mini-map only)
+  MusicPlaylistTests.cs                      02 AUD-MUSICWIN
+  MusicWizardResultPlanTests.cs              02 AUD-PREVIEWSYNC
   MusicAttributionDialogWindow.axaml.cs      04 UI-MERGER-MULTISELECT
   MusicAttributionHelper.cs                  02 AUD-DIALOGS | ATTRIBUTION_01
 ⚠ OutputTimeline.cs                          01 06
@@ -973,7 +984,35 @@ MUSICSYNC_01                                 02 §8 AUD-PREVIEWSYNC
 MUSICPAD_01                                  02 §8 AUD-PREVIEWSYNC
 MusicPadAlignment                            02 §8 AUD-PREVIEWSYNC | 03 §6 FFM-FADES
 MUSICSYNC_02                                 02 §8 AUD-PREVIEWSYNC
-MusicBedPlan                                 02 §8 AUD-PREVIEWSYNC
+MusicBedPlan                                 02 §8 AUD-PREVIEWSYNC | 02 §9 AUD-MUSICWIN
+MusicBedTrack                                02 §8 AUD-PREVIEWSYNC
+LeadInSec                                    02 §7 AUD-MUSICFADE
+OutgoingGainAt                               02 §7 AUD-MUSICFADE
+MusicCrossfade                               02 §7 AUD-MUSICFADE
+XFADEPLAN_01                                 02 §7 AUD-MUSICFADE
+MUSICWIN_01                                  02 §8 AUD-PREVIEWSYNC | 02 §9 AUD-MUSICWIN
+MusicStartsSeconds                           02 §9 AUD-MUSICWIN
+MusicEndsSeconds                             02 §9 AUD-MUSICWIN
+ToBedTracks                                  02 §8 AUD-PREVIEWSYNC
+MusicTracksArePlanned                        03 (mini-map only) | 02 §8 AUD-PREVIEWSYNC
+MusicPlaylistEntry                           02 §9 AUD-MUSICWIN
+MusicPlaylistMath                            02 §9 AUD-MUSICWIN
+MusicCoverage                                02 §9 AUD-MUSICWIN
+PLAYLIST_01                                  02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+SILENCETRIM_01                               02 §6 AUD-DIALOGS
+WIZ2STEP_01                                  02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+PREVIEWSTOP_01                               02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+PREVIEW1_03                                  02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+COVERSTRIP_01                                02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+COVERBAR_01                                  04 §17 UI-MUSICWIZARD
+SONGLANE_01                                  04 §17 UI-MUSICWIZARD | 02 §9 AUD-MUSICWIN
+SONGLANE_02                                  04 §17 UI-MUSICWIZARD
+SONGCARD_01                                  04 §17 UI-MUSICWIZARD | 02 §9 AUD-MUSICWIN
+SOUNDOPT_01                                  04 §17 UI-MUSICWIZARD
+LIST_08                                      02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+MERGERMUSIC_01                               02 §6 AUD-DIALOGS | 04 §17 UI-MUSICWIZARD
+MERGERMUSIC_02                               04 §17 UI-MUSICWIZARD
+MusicWizardViewModel                         04 §17 UI-MUSICWIZARD
 PreviewAudioSync                             02 §8 AUD-PREVIEWSYNC
 PreviewSourceToOutputSeconds                 02 §8 AUD-PREVIEWSYNC
 COLOR_01                                     03 §11 FFM-COLOR

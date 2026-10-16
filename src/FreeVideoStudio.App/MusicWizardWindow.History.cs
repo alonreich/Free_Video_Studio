@@ -43,16 +43,21 @@ public partial class MusicWizardWindow
     private bool _historyReady;
 
     private bool _restoringHistory;
-
+    /// <summary>
+    /// MUSICWIN_01 — the song list is the queue (all songs when there are two or more), the first
+    /// song is the track, and every song's chosen part rides along as in/out pairs.
+    /// </summary>
     private MusicWizardSnapshot CaptureWizardSnapshot() => MusicWizardSnapshot.Create(
-        _selectedTrack?.FilePath,
-        _pendingAutoFillMusicPaths,
+        _playlist.Count > 0 ? _playlist[0].Path : null,
+        _playlist.Count > 1 ? _playlist.Select(e => e.Path) : null,
         _songStartSeconds,
         VideoVolSliderCtl?.Value ?? 100.0,
         MusicVolSliderCtl?.Value ?? 100.0,
         DuckingCheckBoxCtl?.IsChecked ?? true,
         CarvingCheckBoxCtl?.IsChecked ?? true,
-        LoopMusicCheckBoxCtl?.IsChecked ?? false);
+        LoopMusicCheckBoxCtl?.IsChecked ?? false,
+        _playlist.SelectMany(e => new[] { e.InSec, e.OutSec }));
+
 
     private void WireWizardHistory()
     {
@@ -170,53 +175,41 @@ public partial class MusicWizardWindow
             RuntimeLog.Fail("MUSIC_WIZARD", $"{(undo ? "Undo" : "Redo")} of '{label}' failed: {ex.Message}");
         }
     }
-
     /// <summary>
-    /// Makes the wizard show <paramref name="target"/>. Order matters for the same reason as
-    /// EDIT3_01's resume: choosing a song clears the queue, and moving the song start clears it
-    /// too, so the song goes first, then the start, then the queue, then faders and switches.
-    /// Returns true when the song changed (phase 3 must be rebuilt).
+    /// Makes the wizard show <paramref name="target"/>: the song list is rebuilt from the snapshot
+    /// (songs in order, each with its chosen part), then the faders and switches. Songs never
+    /// require the Fit &amp; Mix video to be rebuilt — only the music changes — so this returns
+    /// false unless the list became empty, which returns the user to the song list.
     /// </summary>
-    private async Task<bool> ApplyWizardSnapshotAsync(MusicWizardSnapshot target)
+    private Task<bool> ApplyWizardSnapshotAsync(MusicWizardSnapshot target)
     {
-        bool trackChanged;
         _restoringHistory = true;
         try
         {
-            trackChanged = !string.Equals(_selectedTrack?.FilePath ?? string.Empty, target.TrackPath ?? string.Empty,
-                StringComparison.OrdinalIgnoreCase);
-            if (trackChanged) await RestoreWizardTrackAsync(target.TrackPath);
+            var paths = !target.QueuePaths.IsDefault && target.QueuePaths.Length > 0
+                ? target.QueuePaths.ToArray()
+                : (string.IsNullOrWhiteSpace(target.TrackPath) ? Array.Empty<string>() : new[] { target.TrackPath! });
+            var trims = target.Trims.IsDefault ? Array.Empty<double>() : target.Trims.ToArray();
 
-            if (Math.Abs(_songStartSeconds - target.SongStartSeconds) > MusicWizardSnapshot.SecondsTolerance)
-                ApplySongStartSeconds(target.SongStartSeconds, "");
-
-            var queue = target.QueuePaths.IsDefault ? Array.Empty<string>() : target.QueuePaths.ToArray();
-            bool sameQueue = queue.Length == _pendingAutoFillMusicPaths.Count
-                && queue.Zip(_pendingAutoFillMusicPaths).All(p => string.Equals(p.First, p.Second, StringComparison.OrdinalIgnoreCase));
-            if (!sameQueue)
+            var rebuilt = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicPlaylistEntry>(paths.Length);
+            for (int i = 0; i < paths.Length; i++)
             {
-                if (queue.Length == 0)
-                {
-                    ResetAutoFillQueueState();
-                }
-                else
-                {
-                    _pendingAutoFillMusicPaths.Clear();
-                    _pendingAutoFillMusicPaths.AddRange(queue);
-                    UpdateAutoFillQueuePreview();
-                    if (AutoFillSongsBtnCtl is { } autoFillBtn) autoFillBtn.Content = $"Auto-Filled {queue.Length} Songs";
-                }
-                UpdateCoverageBar();
-                UpdateFinalPlacementSummary();
-                UpdateProblemFlags();
-                DrawPhase3TimelineScale();
+                int existing = IndexOfPath(paths[i]);
+                var baseEntry = existing >= 0 ? _playlist[existing] : NewEntry(TrackFor(paths[i]));
+                double inSec = 2 * i + 1 < trims.Length ? trims[2 * i] : baseEntry.InSec;
+                double outSec = 2 * i + 1 < trims.Length ? trims[2 * i + 1] : baseEntry.OutSec;
+                rebuilt.Add(baseEntry with { InSec = inSec, OutSec = outSec, UserTrimmed = true });
             }
+            if (rebuilt.Count > 0)
+                rebuilt[0] = rebuilt[0] with { InSec = Math.Max(0, target.SongStartSeconds) };
+            _playlist.Clear();
+            _playlist.AddRange(rebuilt);
+            if (_playlist.Count > 1) _playlistExplicit = true;
 
             if (VideoVolSliderCtl is { } video && Math.Abs(video.Value - target.VideoVolumePercent) > MusicWizardSnapshot.PercentTolerance)
                 video.Value = target.VideoVolumePercent;
             if (MusicVolSliderCtl is { } music && Math.Abs(music.Value - target.MusicVolumePercent) > MusicWizardSnapshot.PercentTolerance)
                 music.Value = target.MusicVolumePercent;
-
             if (DuckingCheckBoxCtl is { } duck && (duck.IsChecked ?? true) != target.Ducking) duck.IsChecked = target.Ducking;
             if (CarvingCheckBoxCtl is { } carve && (carve.IsChecked ?? true) != target.Carving) carve.IsChecked = target.Carving;
             if (LoopMusicCheckBoxCtl is { } loop && (loop.IsChecked ?? false) != target.Loop) loop.IsChecked = target.Loop;
@@ -226,60 +219,11 @@ public partial class MusicWizardWindow
             _restoringHistory = false;
         }
 
+        OnPlaylistChanged();
+        if (_playlist.Count == 0 && _currentStep != StepChoose)
+            _ = OnBackClickedAsync(this, new RoutedEventArgs());
+
         _history.ReplaceCurrent(CaptureWizardSnapshot());
-        return trackChanged;
-    }
-
-    private async Task RestoreWizardTrackAsync(string? path)
-    {
-        var listbox = MusicListBoxCtl;
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            OnTrackSelected(null);
-            if (listbox != null) listbox.SelectedItem = null;
-            if (_currentStep != 1)
-            {
-                StopPreview();
-                CancelPhase3Load();
-                _phase3Ready = false;
-                _currentStep = 1;
-                UpdateStepVisibility();
-                UpdateNextButtonState();
-                UpdatePreviewControlsState();
-            }
-            return;
-        }
-
-        var track = FindTrackByPath(path)
-                    ?? AvailableTracks.FirstOrDefault(t => string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase))
-                    ?? new MusicTrackItem
-                    {
-                        Name = Path.GetFileNameWithoutExtension(path),
-                        FilePath = path,
-                        Title = Path.GetFileNameWithoutExtension(path),
-                    };
-
-        OnTrackSelected(track);
-        if (listbox != null && AvailableTracks.Contains(track)) listbox.SelectedItem = track;
-
-        if (_currentStep >= 2)
-        {
-            double duration = track.DurationSec;
-            if (duration <= 0.001)
-            {
-                var prober = new FreeVideoStudio.Core.Media.MediaProber(ResolveFfprobePath(), path);
-                duration = await prober.GetDurationAsync();
-            }
-            _trackDuration = Math.Max(1.0, duration > 0 ? duration : track.DurationSec);
-            track.DurationSec = _trackDuration;
-            _lastConfiguredTrackPath = path;
-            _lastLoadedTrackPath = null;
-
-            if (SelectedTrackLabelCtl is { } selectedLabel) selectedLabel.Text = track.Name;
-            _ = RenderWaveformAsync(path);
-            DrawTimelineScale();
-            UpdatePlayhead();
-        }
+        return Task.FromResult(false);
     }
 }

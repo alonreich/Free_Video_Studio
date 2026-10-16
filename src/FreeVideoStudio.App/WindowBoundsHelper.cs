@@ -220,7 +220,7 @@ public static class WindowBoundsHelper
     /// come out 150% too large on a 150%-scaled display — the exact machines this fix is for.
     ///
     /// MinWidth/MinHeight still win. A window whose floor is larger than the computed rectangle
-    /// (the Music Wizard's 1300x730 on a small laptop) is clamped up and stops being 16:9. That is
+    /// (the Music Wizard's 1100x760 on a small laptop) is clamped up and stops being 16:9. That is
     /// correct: a usable window in the wrong ratio beats a correctly-shaped window that cannot lay
     /// its own contents out.
     /// ══════════════════════════════════════════════════════════════════════════════════════════

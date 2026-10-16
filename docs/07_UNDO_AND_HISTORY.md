@@ -169,7 +169,7 @@ types by reflection as well.
 | :--- | :--- | :--- | :--- |
 | Granular | `GranularEditorSnapshot` (segments, cuts, memes, base speed, freeze, captions; selection carried, NOT compared) | the call sites' own (`add segment`, `change speed`, `move meme`, `delete parts`, `edit caption`, `delete caption`, `move caption`…) | every existing coalesce key; **700ms** window; `EndUndoGesture` on release |
 | Crop Tool | `CropLayoutSnapshot` (committed crops + layout; `DisplayName` carried, not compared) | `CropHistoryLabels`: `move crop`, `resize HUD`, `add HUD element`, `delete HUD element`, `change layer order` | a pointer drag/resize is recorded ONCE, on release, only if it changed something |
-| Music wizard | `MusicWizardSnapshot` (song, auto-fill queue in order, song start, video/music balance, ducking, smooth blend, loop) | `MusicWizardSnapshot.DescribeChange` (`choose song`, `move song start`, `change music balance`…) | fader sweeps, wheel spins, scrubs and keyboard nudges coalesce (900ms default); pointer release ends them |
+| Music wizard | `MusicWizardSnapshot` (first song, the song list in order, song start, every song's chosen part as in/out pairs — `Trims`, MUSICWIN_01 — video/music balance, ducking, smooth blend, loop) | `MusicWizardSnapshot.DescribeChange` (`choose song`, `move song start`, `add song(s)`, `remove song`, `reorder songs`, `trim song`, `change music balance`…) | fader sweeps, wheel spins, scrubs and keyboard nudges coalesce (900ms default); pointer release ends them |
 
 * **Granular call convention (UNDO_26).** The editor's ~40 call sites record the state BEFORE a change
   (`PushUndo` at the top of a handler); `UndoStack.Apply` takes the state AFTER. `GranularEditHistory`

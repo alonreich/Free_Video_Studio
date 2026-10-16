@@ -24,7 +24,8 @@ public sealed record MusicWizardSnapshot(
     double MusicVolumePercent,
     bool Ducking,
     bool Carving,
-    bool Loop)
+    bool Loop,
+    ImmutableArray<double> Trims = default)
 {
     /// <summary>Song start resolution: 1ms. Below that the export cannot tell the difference.</summary>
     public const double SecondsTolerance = 0.0005;
@@ -32,11 +33,27 @@ public sealed record MusicWizardSnapshot(
     /// <summary>Fader resolution: a twentieth of a percent.</summary>
     public const double PercentTolerance = 0.05;
 
+    /// <param name="trims">
+    /// MUSICWIN_01 — every song's chosen part, flattened as in/out pairs in song order
+    /// (<c>in0, out0, in1, out1, …</c>). Null for a wizard that has no trimmed songs.
+    /// </param>
     public static MusicWizardSnapshot Create(string? trackPath, IEnumerable<string>? queue, double songStart,
-        double videoPercent, double musicPercent, bool ducking, bool carving, bool loop) =>
+        double videoPercent, double musicPercent, bool ducking, bool carving, bool loop,
+        IEnumerable<double>? trims = null) =>
         new(string.IsNullOrWhiteSpace(trackPath) ? null : trackPath,
             (queue ?? Array.Empty<string>()).ToImmutableArray(),
-            songStart, videoPercent, musicPercent, ducking, carving, loop);
+            songStart, videoPercent, musicPercent, ducking, carving, loop,
+            (trims ?? Array.Empty<double>()).ToImmutableArray());
+
+    internal bool SameTrims(MusicWizardSnapshot other)
+    {
+        ImmutableArray<double> a = Trims.IsDefault ? ImmutableArray<double>.Empty : Trims;
+        ImmutableArray<double> b = other.Trims.IsDefault ? ImmutableArray<double>.Empty : other.Trims;
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
+            if (Math.Abs(a[i] - b[i]) > SecondsTolerance) return false;
+        return true;
+    }
 
     internal static bool SamePath(string? a, string? b) =>
         string.Equals(a ?? string.Empty, b ?? string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -57,6 +74,7 @@ public sealed record MusicWizardSnapshot(
         if (other is null) return false;
         return SamePath(TrackPath, other.TrackPath)
                && SameQueue(other)
+               && SameTrims(other)
                && Math.Abs(SongStartSeconds - other.SongStartSeconds) <= SecondsTolerance
                && Math.Abs(VideoVolumePercent - other.VideoVolumePercent) <= PercentTolerance
                && Math.Abs(MusicVolumePercent - other.MusicVolumePercent) <= PercentTolerance
@@ -90,11 +108,13 @@ public sealed record MusicWizardSnapshot(
         {
             int b = before.QueuePaths.IsDefault ? 0 : before.QueuePaths.Length;
             int a = after.QueuePaths.IsDefault ? 0 : after.QueuePaths.Length;
-            if (a == 0) return ("clear song queue", null);
-            if (b == 0 || a > b) return ("auto-fill songs", null);
-            if (a < b) return ("remove queued song", null);
+            if (a == 0) return ("clear song list", null);
+            if (b == 0 || a > b) return (a - b > 1 ? "add songs" : "add song", null);
+            if (a < b) return ("remove song", null);
             return ("reorder songs", null);
         }
+        if (!before.SameTrims(after))
+            return ("trim song", "song-trim");
 
         if (Math.Abs(before.MusicVolumePercent - after.MusicVolumePercent) > PercentTolerance)
             return ("change music balance", "music-balance");

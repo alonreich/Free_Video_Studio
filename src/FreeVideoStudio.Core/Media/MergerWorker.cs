@@ -50,6 +50,15 @@ public class MergerWorker : IDisposable
     public List<string> InputFiles { get; set; } = new();
     public MusicTrack? MusicTrack { get; set; }
     public List<MusicTrack> MusicTracks { get; set; } = new();
+
+    /// <summary>
+    /// MUSICWIN_01 — true when <see cref="MusicTracks"/> is ALREADY the finished bed laid out by
+    /// <see cref="MusicBedPlan"/> (every song's chosen part, the crossfade leads and any looping
+    /// applied). The tracks are then used exactly as given: re-probing them and re-looping them here
+    /// would throw away the windows the user chose in the Add Music wizard and lay the songs out
+    /// differently from the preview the user just approved.
+    /// </summary>
+    public bool MusicTracksArePlanned { get; set; }
     public JsonObject? MusicConfig { get; set; }
     public string? OutputDirectory { get; set; }
 
@@ -1293,6 +1302,9 @@ public class MergerWorker : IDisposable
                 : new List<MusicTrack>();
 
         if (sourceTracks.Count == 0)
+            return sourceTracks;
+
+        if (MusicTracksArePlanned)
             return sourceTracks;
 
         double musicWindowDuration = totalDuration;

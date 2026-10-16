@@ -205,6 +205,11 @@ public static class QueueRowOps
 }
 
 /// <summary>The music placement as the window holds it (merged seconds, pre base speed).</summary>
+/// <remarks>
+/// MUSICWIN_01 — <paramref name="StartsSec"/> / <paramref name="EndsSec"/> carry each song's chosen part
+/// (seconds inside its own file, index-aligned with <paramref name="Paths"/>). Null = the legacy layout:
+/// first song from <paramref name="OffsetSec"/>, the rest from 0, every song to its end.
+/// </remarks>
 public sealed record MergerMusicState(
     IReadOnlyList<string> Paths,
     IReadOnlyList<double> DurationsSec,
@@ -215,7 +220,9 @@ public sealed record MergerMusicState(
     double VideoVolume,
     bool Loop,
     bool Ducking,
-    bool Carving);
+    bool Carving,
+    IReadOnlyList<double>? StartsSec = null,
+    IReadOnlyList<double>? EndsSec = null);
 
 /// <summary>Everything the window owns today, captured on the UI thread.</summary>
 public sealed record MergerUiState
@@ -311,6 +318,8 @@ public static class MergerSession
             {
                 FilePaths = m.Paths,
                 DurationsSec = m.DurationsSec,
+                StartsSec = m.StartsSec ?? Array.Empty<double>(),
+                EndsSec = m.EndsSec ?? Array.Empty<double>(),
                 OffsetSec = m.OffsetSec,
                 Start = start,
                 End = end,
@@ -387,7 +396,8 @@ public static class MergerSession
         double start = ToMerged(m.Start, 0);
         double end = ToMerged(m.End, timeline.TotalSec);
         if (end <= start + 0.01) end = timeline.TotalSec;
-        return new MergerMusicState(m.FilePaths, m.DurationsSec, m.OffsetSec, start, end, m.MusicVolume, m.VideoVolume, m.Loop, m.Ducking, m.Carving);
+        return new MergerMusicState(m.FilePaths, m.DurationsSec, m.OffsetSec, start, end, m.MusicVolume, m.VideoVolume, m.Loop, m.Ducking, m.Carving,
+            m.StartsSec.Count > 0 ? m.StartsSec : null, m.EndsSec.Count > 0 ? m.EndsSec : null);
     }
 
     /// <summary>

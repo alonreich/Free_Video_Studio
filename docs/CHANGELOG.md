@@ -11,6 +11,16 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 - **Batch Queue Reorder & Delete:** Move or delete multiple selected videos at once using toolbar buttons or the `Delete` key, fully synchronized with timeline markers and preview.
 - **Social Media Music Shield (YouTube & TikTok):** Downloadable background tracks now come with copyright attribution info to keep your videos from getting muted or blocked on social platforms.
 - **1-Click Attribution Copy on Export:** The export completion screen features a 1-click **[COPY CREDIT TO CLIPBOARD]** button and automatically arms your clipboard when clicking YouTube or TikTok shortcuts.
+- **Simpler Add Music (2 steps instead of 3):** Pick your songs, then see and hear them with your video on one screen — no more choosing where a song starts without seeing the video.
+- **No Song Left Playing:** A song preview now stops the moment you move to the next screen.
+- **Clean, Full-Width Song List:** The song list now fills the window under the search box. Clicking a song only selects it; press ▶ to hear it and + to add it.
+- **Use As Many Songs As You Like:** Add several songs (in the Video Merger and the main app), put them in order, and remove any of them.
+- **See Every Song on Your Video:** Each song is a coloured, named block under the video. Drag the end of a block to make that song shorter or longer — the next song follows right after, with no silent gap.
+- **Pick the Part of Each Song:** Drag the bright box on a song's picture to choose which part plays, or press Beginning, Best part or End with the video.
+- **Silence Trimmed Automatically:** Quiet intros and endings are cut off so there is never dead air between two songs.
+- **Always Know If the Music Is Long Enough:** A simple line and bar tell you if music covers the whole video, with one-click fixes: loop your songs, add a song, or fill the rest automatically. The pop-up warning is gone.
+- **Edit or Remove Music in the Video Merger:** The music button now shows how many songs you have and lets you edit or remove them, just like the main app.
+- **What You Hear Is What You Get:** The preview now plays your songs exactly as the saved video does, including the smooth fade between songs.
 
 ---
 

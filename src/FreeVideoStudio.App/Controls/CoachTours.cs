@@ -171,36 +171,37 @@ public static class CoachTours
             "AcceptGranularBtn", CoachGesture.Click)
     };
 
+    // WIZ2STEP_01 / PLAYLIST_01 — the walkthrough follows the two-step wizard: pick songs, then fit & mix.
     public static readonly IReadOnlyList<CoachStep> MusicWizard = new[]
     {
         new CoachStep(
-            "Step one: pick a song",
-            "Choose a track from your music folder. Use the search box if the list is long, or point the app at a different folder.",
+            "Step one: pick your music",
+            "Press ▶ on a song to hear its best part, and press it again to stop. Press + to add the song. Nothing plays until you ask it to.",
             "MusicListBox", CoachGesture.Point),
 
         new CoachStep(
-            "Step two: pick the best bit",
-            "Songs rarely start at their best moment. Click on this picture of the song to choose where it should begin under your video.",
-            "WaveformImage", CoachGesture.DragHorizontal),
+            "Your songs",
+            "Songs you add line up here and play one after another. The bar shows whether they cover your whole video, and the button under it can fill the rest for you.",
+            "PlaylistPanel", CoachGesture.Point),
 
         new CoachStep(
-            "Let it find the beat",
-            "This lines the song up so the good part lands on your video instead of somewhere random. A good starting point if you are unsure.",
-            "SmartFitBtn", CoachGesture.Click),
+            "Step two: see it with your video",
+            "Press NEXT. Your video plays with the music, and each song is a coloured block under the film. Drag the right edge of a block to make that song end sooner or later.",
+            "NextBtn", CoachGesture.Click),
 
         new CoachStep(
-            "Protect your game sounds",
-            "Leave this on and the music automatically steps back whenever gunshots and game sounds get loud, so they are not buried.",
-            "DuckingCheckBox", CoachGesture.Click),
+            "Choose the part of each song",
+            "Click a song's block, then drag the bright box on its picture to choose which part plays, or use Beginning, Best part or End with the video.",
+            "SongCard", CoachGesture.DragHorizontal),
 
         new CoachStep(
-            "Step three: check the mix",
-            "Watch it through here and slide the two volumes until it sounds right. Left is your game, right is the music.",
+            "Check the mix",
+            "Slide the two volumes until it sounds right: the left one is your game, the right one is the music.",
             "VideoVolSlider", CoachGesture.DragHorizontal),
 
         new CoachStep(
-            "Send it back to the editor",
-            "When it sounds right, this hands the music setup back to the main editor. It is applied when you save your video.",
+            "Send it back",
+            "When it sounds right, APPLY puts the music on your video. It is mixed in when you save.",
             "NextBtn", CoachGesture.Click)
     };
 
