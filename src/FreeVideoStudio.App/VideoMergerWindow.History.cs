@@ -165,6 +165,8 @@ public partial class VideoMergerWindow
                             LoopMusic = m.Loop,
                             EnableDucking = m.Ducking,
                             EnableCarving = m.Carving,
+                            MusicStartsSeconds = m.StartsSec?.ToList() ?? new List<double>(),
+                            MusicEndsSeconds = m.EndsSec?.ToList() ?? new List<double>(),
                         };
                         _musicQueueSignature = string.Join("|", VideoQueue);
                         OnMusicPlaced();

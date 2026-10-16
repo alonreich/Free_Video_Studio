@@ -156,11 +156,21 @@ public partial class MainWindow
                     foreach (double durationSec in wizard.MusicDurationsSeconds)
                         durationsArray.AddNode(System.Text.Json.Nodes.JsonValue.Create(durationSec));
 
+                // MUSICWIN_01 — each song's chosen part survives a crash/restore too.
+                var startsArray = new System.Text.Json.Nodes.JsonArray();
+                foreach (double startSec in wizard.MusicStartsSeconds ?? new System.Collections.Generic.List<double>())
+                    startsArray.AddNode(System.Text.Json.Nodes.JsonValue.Create(startSec));
+                var endsArray = new System.Text.Json.Nodes.JsonArray();
+                foreach (double endSec in wizard.MusicEndsSeconds ?? new System.Collections.Generic.List<double>())
+                    endsArray.AddNode(System.Text.Json.Nodes.JsonValue.Create(endSec));
+
                 transient["musicResult"] = new System.Text.Json.Nodes.JsonObject
                 {
                     ["musicFilePath"] = wizard.MusicFilePath,
                     ["musicFilePaths"] = pathsArray,
                     ["musicDurationsSeconds"] = durationsArray,
+                    ["musicStartsSeconds"] = startsArray,
+                    ["musicEndsSeconds"] = endsArray,
                     ["offsetSeconds"] = wizard.OffsetSeconds,
                     ["timelineStartSeconds"] = wizard.TimelineStartSeconds,
                     ["timelineEndSeconds"] = wizard.TimelineEndSeconds,

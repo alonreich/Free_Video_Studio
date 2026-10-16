@@ -394,7 +394,7 @@ public sealed class ArchitectureRuleTests
     public void ImperativeControlLookupsDoNotIncrease()
     {
         // MVVM_03: ratchet repeated imperative control lookups down; never raise the ceiling.
-        const int Baseline = 686;
+        const int Baseline = 656;
 
         int count = 0;
         var perFile = new List<string>();
@@ -425,7 +425,7 @@ public sealed class ArchitectureRuleTests
         {
             ["GranularSpeedEditorWindow.axaml.cs"] = 6587,
             ["CropToolWindow.axaml.cs"]            = 5403,
-            ["MusicWizardWindow.axaml.cs"]         = 5422,
+            ["MusicWizardWindow.axaml.cs"]         = 3756,
             ["VoiceOverWindow.axaml.cs"]           = 3194,
             ["MainWindow.axaml.cs"]                = 3144,
             ["VideoMergerWindow.axaml.cs"]         = 2240,

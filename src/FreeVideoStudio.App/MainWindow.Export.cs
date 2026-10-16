@@ -350,43 +350,28 @@ public partial class MainWindow
             musicTailOut = rawMusicEndMs <= (_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs) + MarkerToleranceMs;
             
             musicTracks = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicTrack>();
-            var musicPaths = new System.Collections.Generic.List<string>();
-            if (_musicWizardResult.MusicFilePaths != null && _musicWizardResult.MusicFilePaths.Count > 0)
-            {
-                foreach(var p in _musicWizardResult.MusicFilePaths) if (!string.IsNullOrWhiteSpace(p) && System.IO.File.Exists(p)) musicPaths.Add(p);
-            }
-            else
-            {
-                musicPaths.Add(_musicWizardResult.MusicFilePath);
-            }
 
-            var musicDurations = new System.Collections.Generic.List<double>(musicPaths.Count);
-            for (int i = 0; i < musicPaths.Count; i++)
+            // MUSICWIN_01 / XFADEPLAN_01 — every song's chosen part, laid out with the crossfade the
+            // filter graph applies, by the same plan the Add Music wizard and the preview use.
+            var bedTracks = _musicWizardResult.ToBedTracks();
+            for (int i = 0; i < bedTracks.Count; i++)
             {
-                double knownDuration = 0;
-                if (_musicWizardResult.MusicDurationsSeconds != null && i < _musicWizardResult.MusicDurationsSeconds.Count)
-                    knownDuration = _musicWizardResult.MusicDurationsSeconds[i];
-                else if (i == 0)
-                    knownDuration = _musicWizardResult.MusicDurationSeconds;
-
-                if (knownDuration <= 0)
-                {
-                    knownDuration = await ProbeMusicDurationSecondsAsync(musicPaths[i]);
-                }
-                musicDurations.Add(knownDuration);
+                if (bedTracks[i].KnownSec > 0) continue;
+                double probed = await ProbeMusicDurationSecondsAsync(bedTracks[i].Path);
+                bedTracks[i] = bedTracks[i] with { KnownSec = probed };
             }
 
             var bedPlan = FreeVideoStudio.Core.Media.MusicBedPlan.Build(
-                musicPaths, musicDurations, _musicWizardResult.OffsetSeconds, dur, _musicWizardResult.LoopMusic, startDelay);
+                bedTracks, dur, _musicWizardResult.LoopMusic, startDelay);
             foreach (var seg in bedPlan)
             {
                 musicTracks.Add(new FreeVideoStudio.Core.Media.MusicTrack(seg.Path, seg.FileOffsetSec, seg.DurationSec, startDelay, true));
             }
 
-            if (_musicWizardResult.LoopMusic && musicTracks.Count > musicPaths.Count)
+            if (_musicWizardResult.LoopMusic && musicTracks.Count > bedTracks.Count)
             {
                 RuntimeLog.Info("UI",
-                    $"Loop music: repeated the {musicPaths.Count} selected track(s) to {musicTracks.Count} segment(s) to cover the video.");
+                    $"Loop music: repeated the {bedTracks.Count} selected track(s) to {musicTracks.Count} segment(s) to cover the video.");
             }
 
             musicConfig = new System.Text.Json.Nodes.JsonObject

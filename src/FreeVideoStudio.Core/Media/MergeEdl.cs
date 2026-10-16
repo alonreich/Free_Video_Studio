@@ -169,17 +169,31 @@ public sealed record EdlMusic
     public bool Ducking { get; init; } = true;
     public bool Carving { get; init; } = true;
 
+    /// <summary>
+    /// MUSICWIN_01 — where each song's chosen part starts inside its own file (index-aligned with
+    /// <see cref="FilePaths"/>). Empty in files written before songs could be trimmed: the first
+    /// song then starts at <see cref="OffsetSec"/> and every other song at 0, exactly as before.
+    /// </summary>
+    private readonly IReadOnlyList<double> _startsSec = Array.Empty<double>();
+    public IReadOnlyList<double> StartsSec { get => _startsSec; init => _startsSec = value ?? Array.Empty<double>(); }
+
+    /// <summary>MUSICWIN_01 — where each song's chosen part ends inside its file; 0 (or missing) = to the end.</summary>
+    private readonly IReadOnlyList<double> _endsSec = Array.Empty<double>();
+    public IReadOnlyList<double> EndsSec { get => _endsSec; init => _endsSec = value ?? Array.Empty<double>(); }
+
     public bool Equals(EdlMusic? other)
         => other is not null
            && FilePaths.SequenceEqual(other.FilePaths)
            && DurationsSec.SequenceEqual(other.DurationsSec)
+           && StartsSec.SequenceEqual(other.StartsSec)
+           && EndsSec.SequenceEqual(other.EndsSec)
            && OffsetSec == other.OffsetSec
            && Start == other.Start && End == other.End
            && MusicVolume == other.MusicVolume && VideoVolume == other.VideoVolume
            && Loop == other.Loop && Ducking == other.Ducking && Carving == other.Carving;
 
     public override int GetHashCode()
-        => HashCode.Combine(EdlHash.Of(FilePaths, DurationsSec, Array.Empty<int>()), OffsetSec, Start, End, MusicVolume, VideoVolume, HashCode.Combine(Loop, Ducking, Carving));
+        => HashCode.Combine(EdlHash.Of(FilePaths, DurationsSec, StartsSec), EdlHash.Of(EndsSec, Array.Empty<int>(), Array.Empty<int>()), OffsetSec, Start, End, MusicVolume, VideoVolume, HashCode.Combine(Loop, Ducking, Carving));
 }
 
 /// <summary>The whole merge.</summary>

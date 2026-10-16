@@ -67,6 +67,15 @@ Song library:         .\mp3\ holds background music tracks and companion attribu
 Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Videos\FreeVideoStudio\Memes
                       (NOSPACE_01, MEMEFOLDER_02). Old spaced folders are migrated automatically.
                       Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.
+Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .Playlist.cs (song list, coverage)
+                      + .SongLane.cs (song blocks on the music lane, song card) + .History.cs (undo) +
+                      ViewModels\MusicWizardViewModel.cs (bound state). Two steps: Choose music -> Fit & mix
+                      (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
+                      laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
+                      Core\Media\MusicCrossfade.cs (XFADEPLAN_01); pure list maths in Core\Media\MusicPlaylist.cs.
+                      Saved windows: MusicWizardResult.Plan.cs (MusicStartsSeconds / MusicEndsSeconds, ToBedTracks).
+                      Merger EDIT/REMOVE + named song blocks: VideoMergerWindow.MusicButton.cs (MERGERMUSIC_01/02).
+                      Specs: docs/02 AUD-DIALOGS / AUD-MUSICWIN / AUD-MUSICFADE, docs/04 UI-MUSICWIZARD.
 Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01/02);
                       docs/04_UI_UX_AVALONIA_SPEC.md, UI-MEMESELECT.
 AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool), Google Gemini only.

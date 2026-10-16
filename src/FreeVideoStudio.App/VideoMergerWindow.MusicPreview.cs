@@ -44,25 +44,12 @@ public partial class VideoMergerWindow
         double bed = (_plan?.OutputSecAt(r.TimelineEndSeconds) ?? r.TimelineEndSeconds / speed) - startDelay;
         if (bed <= 0) bed = 1.0;
 
-        var key = (r, startDelay, bed, r.OffsetSeconds, r.LoopMusic, r.MusicFilePath, r.MusicFilePaths.Count, r.MusicDurationSeconds);
+        var key = (r, startDelay, bed, r.OffsetSeconds, r.LoopMusic, r.MusicFilePath, r.MusicFilePaths.Count, r.MusicDurationSeconds,
+                   string.Join(",", r.MusicStartsSeconds) + "|" + string.Join(",", r.MusicEndsSeconds));
         if (Equals(key, _mergerMusicPlanKey)) return _mergerMusicPlan;
 
-        var paths = new List<string>();
-        if (r.MusicFilePaths.Count > 0)
-        {
-            foreach (var p in r.MusicFilePaths)
-                if (!string.IsNullOrWhiteSpace(p) && System.IO.File.Exists(p)) paths.Add(p);
-        }
-        else paths.Add(r.MusicFilePath);
-
-        var durations = new List<double>(paths.Count);
-        for (int i = 0; i < paths.Count; i++)
-        {
-            double known = i < r.MusicDurationsSeconds.Count ? r.MusicDurationsSeconds[i] : (i == 0 ? r.MusicDurationSeconds : 0);
-            durations.Add(known);
-        }
-
-        _mergerMusicPlan = MusicBedPlan.Build(paths, durations, r.OffsetSeconds, bed, r.LoopMusic, startDelay);
+        // MUSICWIN_01 / XFADEPLAN_01 — every song's chosen part, laid out exactly as the export plays it.
+        _mergerMusicPlan = MusicBedPlan.Build(r.ToBedTracks(), bed, r.LoopMusic, startDelay);
         _mergerMusicPlanKey = key;
         return _mergerMusicPlan;
     }

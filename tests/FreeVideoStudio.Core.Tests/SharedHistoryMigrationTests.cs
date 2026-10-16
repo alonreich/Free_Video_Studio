@@ -186,10 +186,10 @@ public class SharedHistoryMigrationTests
             Music(track: "a.mp3", queue: new[] { "a.mp3", "c.mp3" }), Music(track: "b.mp3")).Label);
         Assert.Equal("move song start", MusicWizardSnapshot.DescribeChange(
             Music(queue: new[] { "a.mp3", "c.mp3" }), Music(start: 5)).Label);
-        Assert.Equal("auto-fill songs", MusicWizardSnapshot.DescribeChange(Music(), Music(queue: new[] { "a.mp3", "c.mp3" })).Label);
+        Assert.Equal("add songs", MusicWizardSnapshot.DescribeChange(Music(), Music(queue: new[] { "a.mp3", "c.mp3" })).Label);
         Assert.Equal("reorder songs", MusicWizardSnapshot.DescribeChange(
             Music(queue: new[] { "a.mp3", "c.mp3", "d.mp3" }), Music(queue: new[] { "a.mp3", "d.mp3", "c.mp3" })).Label);
-        Assert.Equal("remove queued song", MusicWizardSnapshot.DescribeChange(
+        Assert.Equal("remove song", MusicWizardSnapshot.DescribeChange(
             Music(queue: new[] { "a.mp3", "c.mp3", "d.mp3" }), Music(queue: new[] { "a.mp3", "d.mp3" })).Label);
         Assert.Equal("turn off ducking", MusicWizardSnapshot.DescribeChange(Music(), Music(duck: false)).Label);
         Assert.Equal("turn on looping", MusicWizardSnapshot.DescribeChange(Music(), Music(loop: true)).Label);

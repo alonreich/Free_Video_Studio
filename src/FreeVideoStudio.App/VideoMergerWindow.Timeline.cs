@@ -216,7 +216,8 @@ public partial class VideoMergerWindow
 
         double? thumb = ThumbnailMergedSec();
         var music = _musicResult != null && !_musicIsStale && !string.IsNullOrEmpty(_musicResult.MusicFilePath) ? _musicResult : null;
-        string key = $"{w:F0}|{h:F0}|{_timeline.Signature}|{thumb:F3}|{music?.TimelineStartSeconds:F3}|{music?.TimelineEndSeconds:F3}|{SelectionKey()}";
+        string musicKey = music == null ? "" : $"{music.TimelineStartSeconds:F3}|{music.TimelineEndSeconds:F3}|{music.LoopMusic}|{string.Join(",", music.OrderedPaths())}|{string.Join(",", music.MusicStartsSeconds)}|{string.Join(",", music.MusicEndsSeconds)}";
+        string key = $"{w:F0}|{h:F0}|{_timeline.Signature}|{thumb:F3}|{musicKey}|{SelectionKey()}";
         if (key == _mergedDrawKey) return;
         _mergedDrawKey = key;
         _isTimelineDrawn = true;
@@ -275,22 +276,7 @@ public partial class VideoMergerWindow
 
         DrawTimelineSelection(markers, w, h, total);
 
-        if (music != null)
-        {
-            double ms = Math.Clamp(music.TimelineStartSeconds / total, 0, 1) * w;
-            double me = Math.Clamp(music.TimelineEndSeconds / total, 0, 1) * w;
-            var strip = new Avalonia.Controls.Shapes.Rectangle
-            {
-                Width = Math.Max(2, me - ms),
-                Height = 3,
-                Fill = Infrastructure.ThemeResources.Brush(markers, "AppAccentBrush", Brushes.MediumPurple),
-                Opacity = 0.85,
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(strip, ms);
-            Canvas.SetTop(strip, h - 3);
-            markers.Children.Add(strip);
-        }
+        if (music != null) DrawMergedMusicSongs(markers, w, h, total, music);
 
         if (thumb is double t)
         {

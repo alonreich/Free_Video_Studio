@@ -916,3 +916,58 @@ CAPTIONS_01=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs
 CHANGELOG_01=docs/SPEC_GOVERNANCE.md
 
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# ADD MUSIC REFACTOR (2026-10-16) — both wizards (Main App + Video Merger). docs/02 AUD-DIALOGS /
+# AUD-MUSICWIN, docs/04 UI-MUSICWIZARD. LIST_05 / LIST_06 / LIST_07 stay: their frame, permanent
+# scrollbar and gutter were kept when LIST_08 made the song table full width.
+WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+PREVIEWSTOP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+PREVIEWSTOP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+PREVIEW1_03=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+PREVIEW1_03=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+LIST_08=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+LIST_08=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+PLAYLIST_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+PLAYLIST_01=src/FreeVideoStudio.Core/Media/MusicPlaylist.cs
+PLAYLIST_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+PLAYLIST_01=src/FreeVideoStudio.App/ViewModels/MusicWizardViewModel.cs
+PLAYLIST_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+SILENCETRIM_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+SILENCETRIM_01=src/FreeVideoStudio.Core/Media/MusicPlaylist.cs
+SONGLANE_01=src/FreeVideoStudio.App/MusicWizardWindow.SongLane.cs
+SONGLANE_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+SONGLANE_02=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+SONGCARD_01=src/FreeVideoStudio.App/MusicWizardWindow.SongLane.cs
+SONGCARD_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+COVERSTRIP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+COVERSTRIP_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+COVERBAR_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+COVERBAR_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
+SOUNDOPT_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
+MUSICWIN_01=src/FreeVideoStudio.App/MusicWizardResult.Plan.cs
+MUSICWIN_01=src/FreeVideoStudio.Core/Media/MusicBedPlan.cs
+MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
+MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergerSession.cs
+MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Export.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Recovery.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Restore.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
+MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.MusicPreview.cs
+MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
+MUSICWIN_01=src/FreeVideoStudio.App/MusicWizardWindow.History.cs
+MUSICWIN_01=src/FreeVideoStudio.Core/Undo/MusicWizardSnapshot.cs
+XFADEPLAN_01=src/FreeVideoStudio.Core/Media/MusicCrossfade.cs
+XFADEPLAN_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
+XFADEPLAN_01=src/FreeVideoStudio.Core/Media/MusicBedPlan.cs
+XFADEPLAN_01=src/FreeVideoStudio.App/MusicWizardWindow.SongLane.cs
+XFADEPLAN_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+MERGERMUSIC_01=src/FreeVideoStudio.App/VideoMergerWindow.MusicButton.cs
+MERGERMUSIC_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+MERGERMUSIC_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+MERGERMUSIC_02=src/FreeVideoStudio.App/VideoMergerWindow.MusicButton.cs

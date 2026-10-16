@@ -213,6 +213,23 @@ public partial class MainWindow
                             _musicWizardResult.MusicDurationsSeconds.Add(durationSec);
                     }
                 }
+                // MUSICWIN_01 — older recovery files have neither array: the legacy layout applies.
+                if (musicObj["musicStartsSeconds"] is JsonArray startsArr)
+                {
+                    foreach (var node in startsArr)
+                    {
+                        if (node != null && double.TryParse(node.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double startSec))
+                            _musicWizardResult.MusicStartsSeconds.Add(startSec);
+                    }
+                }
+                if (musicObj["musicEndsSeconds"] is JsonArray endsArr)
+                {
+                    foreach (var node in endsArr)
+                    {
+                        if (node != null && double.TryParse(node.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double endSec))
+                            _musicWizardResult.MusicEndsSeconds.Add(endSec);
+                    }
+                }
                 NormalizeMusicPlacement(_musicWizardResult);
             }
 

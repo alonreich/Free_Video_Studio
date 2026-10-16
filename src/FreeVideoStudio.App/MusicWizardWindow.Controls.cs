@@ -44,8 +44,6 @@ public partial class MusicWizardWindow
     private CheckBox? LoopMusicCheckBoxCtl => _cLoopMusicCheckBox ??= this.FindControl<CheckBox>("LoopMusicCheckBox");
     private TextBlock? _cOffsetLabel;
     private TextBlock? OffsetLabelCtl => _cOffsetLabel ??= this.FindControl<TextBlock>("OffsetLabel");
-    private Button? _cAutoFillSongsBtn;
-    private Button? AutoFillSongsBtnCtl => _cAutoFillSongsBtn ??= this.FindControl<Button>("AutoFillSongsBtn");
     private CheckBox? _cDuckingCheckBox;
     private CheckBox? DuckingCheckBoxCtl => _cDuckingCheckBox ??= this.FindControl<CheckBox>("DuckingCheckBox");
     private CheckBox? _cCarvingCheckBox;
@@ -54,12 +52,8 @@ public partial class MusicWizardWindow
     private FreeVideoStudio.App.Controls.TimelineLanesControl? Phase3LanesCtl => _cPhase3Lanes ??= this.FindControl<FreeVideoStudio.App.Controls.TimelineLanesControl>("Phase3Lanes");
     private Avalonia.Controls.Border? _cVideoHostBorder;
     private Avalonia.Controls.Border? VideoHostBorderCtl => _cVideoHostBorder ??= this.FindControl<Avalonia.Controls.Border>("VideoHostBorder");
-    private ListBox? _cAutoFillQueueList;
-    private ListBox? AutoFillQueueListCtl => _cAutoFillQueueList ??= this.FindControl<ListBox>("AutoFillQueueList");
     private Button? _cPlayBtn;
     private Button? PlayBtnCtl => _cPlayBtn ??= this.FindControl<Button>("PlayBtn");
     private Button? _cNextBtn;
     private Button? NextBtnCtl => _cNextBtn ??= this.FindControl<Button>("NextBtn");
-    private TextBlock? _cSelectedTrackLabel;
-    private TextBlock? SelectedTrackLabelCtl => _cSelectedTrackLabel ??= this.FindControl<TextBlock>("SelectedTrackLabel");
 }

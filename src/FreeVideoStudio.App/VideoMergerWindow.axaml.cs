@@ -358,29 +358,14 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         {
             addMusicBtn.Click += async (s, e) =>
             {
-                RuntimeLog.Info("UI", "User clicked Add Music in Video Merger.");
-                if (VideoQueue.Count < 1)
+                try
                 {
-                    UpdateQueueState();
-                    SetQueueStatus("Add at least one video before adding music.", true);
-                    return;
+                    await OnAddMusicClickedAsync();
                 }
-
-                await EnsureTimelineReadyAsync();
-                var wizard = new MusicWizardWindow(VideoQueue.ToList(), MusicTimelineTotalSec(), _baseSpeed) { MergerClipWindows = MusicClipWindows() };
-                await wizard.ShowDialog(this);
-
-                if (wizard.Result != null)
+                catch (Exception ex)
                 {
-                    _musicResult = wizard.Result;
-                    OnMusicPlaced();
-                    _musicQueueSignature = string.Join("|", VideoQueue);
-                    _musicIsStale = false;
-                    addMusicBtn.Classes.Clear();
-                    addMusicBtn.Classes.Add("Primary");
-                    addMusicBtn.Content = "MUSIC ADDED";
-                    ToolTip.SetTip(addMusicBtn, "Music: " + System.IO.Path.GetFileName(_musicResult.MusicFilePath));
-                    UpdateEstimatedSize();
+                    RuntimeLog.Fail("MERGER", $"Add Music failed: {ex.Message}");
+                    SetQueueStatus("Could not open the music wizard. Please try again.", true);
                 }
             };
         }
@@ -1141,25 +1126,30 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
             if (_musicResult != null)
             {
-                var musicPaths = (_musicResult.MusicFilePaths.Count > 0
-                        ? _musicResult.MusicFilePaths
-                        : new List<string> { _musicResult.MusicFilePath })
-                    .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
-                    .ToList();
+                // MUSICWIN_01 / XFADEPLAN_01 — the merger export used to hand the worker bare file
+                // names (every song after the first from 0:00 to its end) and let it re-probe and
+                // re-loop them its own way, so it ignored the part of each song the user chose and
+                // laid songs out differently from the preview. It now receives the finished bed from
+                // the same plan the preview plays.
+                var bedTracks = _musicResult.ToBedTracks();
 
-                if (musicPaths.Count > 0)
+                if (bedTracks.Count > 0)
                 {
                     double speedFactor = _baseSpeed > 0.01 ? _baseSpeed : 1.0;
                     double timelineStartSec = MusicExportSec(_musicResult.TimelineStartSeconds, speedFactor);
                     double timelineEndSec = MusicExportSec(_musicResult.TimelineEndSeconds, speedFactor);
-                    for (int i = 0; i < musicPaths.Count; i++)
+                    for (int i = 0; i < bedTracks.Count; i++)
                     {
-                        double offsetSeconds = i == 0 ? _musicResult.OffsetSeconds : 0.0;
-                        double durationSeconds = i == 0 && _musicResult.MusicDurationSeconds > 0
-                            ? Math.Max(0.01, _musicResult.MusicDurationSeconds - Math.Max(0, offsetSeconds))
-                            : 0.0;
-                        worker.MusicTracks.Add(new MusicTrack(musicPaths[i], offsetSeconds, durationSeconds));
+                        if (bedTracks[i].KnownSec > 0) continue;
+                        double probed = 0;
+                        try { probed = await new MediaProber(FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffprobe.exe", "backend", "binaries"), bedTracks[i].Path).GetDurationAsync(); }
+                        catch (Exception probeEx) { RuntimeLog.Swallowed(probeEx); }
+                        bedTracks[i] = bedTracks[i] with { KnownSec = probed };
                     }
+                    double bedSec = Math.Max(0.01, timelineEndSec - timelineStartSec);
+                    foreach (var seg in MusicBedPlan.Build(bedTracks, bedSec, _musicResult.LoopMusic, 0.0))
+                        worker.MusicTracks.Add(new MusicTrack(seg.Path, seg.FileOffsetSec, seg.DurationSec));
+                    worker.MusicTracksArePlanned = true;
 
                     worker.MusicConfig = new System.Text.Json.Nodes.JsonObject
                     {
@@ -1312,15 +1302,16 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             {
                 addMusicBtn.Classes.Clear();
                 addMusicBtn.Classes.Add("Danger");
-                if (txt != null) txt.Text = " ⚠ MUSIC STALE — RE-SETUP ";
-                ToolTip.SetTip(addMusicBtn, "The video queue changed after music was set up. Click to re-configure music.");
+                if (txt != null) txt.Text = " ⚠ CHECK MUSIC AGAIN ";
+                ToolTip.SetTip(addMusicBtn, "You changed the videos after adding music. Click to check where your songs play now — your songs are kept.");
             }
             else if (_musicResult != null)
             {
+                // MERGERMUSIC_01 — say WHAT is on the video and that clicking edits it.
                 addMusicBtn.Classes.Clear();
                 addMusicBtn.Classes.Add("Primary");
-                if (txt != null) txt.Text = " MUSIC ADDED ";
-                ToolTip.SetTip(addMusicBtn, "Music: " + System.IO.Path.GetFileName(_musicResult.MusicFilePath));
+                if (txt != null) txt.Text = $" {DescribeMusicForButton(_musicResult)} · EDIT ";
+                ToolTip.SetTip(addMusicBtn, MusicButtonTooltip(_musicResult));
             }
             else
             {

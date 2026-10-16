@@ -340,7 +340,10 @@ public partial class MainWindow
               .Append(',').Append(music.MusicVolume.ToString("F3", ci)).Append(music.EnableDucking).Append(music.EnableCarving)
               .Append(music.LoopMusic)
               .Append(',').Append(string.Join(";", (music.MusicDurationsSeconds ?? new()).Select(d => d.ToString("F3", ci))))
-              .Append(',').Append(music.MusicDurationSeconds.ToString("F3", ci));
+              .Append(',').Append(music.MusicDurationSeconds.ToString("F3", ci))
+              // MUSICWIN_01 — trimming a song changes the mix, so it must re-render the preview.
+              .Append(",S:").Append(string.Join(";", (music.MusicStartsSeconds ?? new()).Select(d => d.ToString("F3", ci))))
+              .Append(",E:").Append(string.Join(";", (music.MusicEndsSeconds ?? new()).Select(d => d.ToString("F3", ci))));
         }
         if (hasVo)
         {
