@@ -154,13 +154,14 @@ public sealed class ProjectRecoveryService
         bool memeSelected = mainVm.IsAddMeme || mainVm.SelectedMemeItem != null;
 
         bool noMask = MaskOverlayManager.IsNoMask(SettingsManager.Instance.ActiveMaskOverlay);
-        bool hudToggled = mainVm.IsTeammates != (!noMask && defaults.ShowTeammates)
+        // SETDEFAULTS_01 — compare against the values a fresh video actually STARTS with.
+        bool hudToggled = mainVm.IsTeammates != (!noMask && defaults.StartShowTeammates)
                        || mainVm.IsSpectating != !noMask;
 
-        bool exportTogglesChanged = mainVm.IsPortraitMode != defaults.PortraitMode
-                                 || mainVm.IsEnableFade != defaults.EnableFade;
+        bool exportTogglesChanged = mainVm.IsPortraitMode != defaults.StartPortrait
+                                 || mainVm.IsEnableFade != defaults.StartEnableFade;
 
-        bool speedChanged = Math.Abs(timelineVm.BaseSpeed - defaults.DefaultSpeed) > 0.01;
+        bool speedChanged = Math.Abs(timelineVm.BaseSpeed - defaults.StartSpeed) > 0.01;
 
         return timelineVm.IsTrimStartSet || timelineVm.IsTrimEndSet || timelineVm.IsThumbnailSet ||
                mainVm.IsGranularSpeedActive || mainVm.IsMusicActive || mainVm.VoiceOverResult != null ||

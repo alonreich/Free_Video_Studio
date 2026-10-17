@@ -71,6 +71,25 @@ public static class CaptionLayoutEngine
     public const double HudGapPx = 24.0;
 
     /// <summary>
+    /// CAPTIONPLACE_01 — the TOP of a <see cref="CaptionPosition.Middle"/> caption box, as a fraction of the canvas
+    /// height: just under the centre, so the crosshair / aim point in the middle of the screen stays clear while
+    /// the text still sits where the eyes are. HUD pieces it overlaps push it DOWN.
+    /// </summary>
+    public const double MiddleTopFraction = 0.54;
+
+    /// <summary>CAPTIONSIZE_01 — text size multiplier. Medium (1.0) is the size used before the option existed.</summary>
+    public static double SizeScale(CaptionSize size) => size switch
+    {
+        CaptionSize.Small => 0.8,
+        CaptionSize.Large => 1.25,
+        _ => 1.0,
+    };
+
+    /// <summary>CAPTIONSIZE_01 — the base font size for a canvas and a size choice.</summary>
+    public static int BaseFontSize(bool isPortrait, CaptionSize size) =>
+        (int)Math.Round((isPortrait ? PortraitFontSize : LandscapeFontSize) * SizeScale(size));
+
+    /// <summary>
     /// Computes the layout for a single <see cref="MappedCaptionLine"/> given canvas dimensions, mode,
     /// placement preset, and optional active HUD bounding boxes in output canvas pixels.
     /// </summary>
@@ -81,12 +100,13 @@ public static class CaptionLayoutEngine
         bool isPortrait,
         CaptionPosition position = CaptionPosition.BottomContent,
         IReadOnlyList<(double X, double Y, double W, double H)>? hudRects = null,
-        string fontFamily = "Arial")
+        string fontFamily = "Arial",
+        CaptionSize size = CaptionSize.Medium)
     {
         if (outputW <= 0) outputW = isPortrait ? PortraitWidth : LandscapeWidth;
         if (outputH <= 0) outputH = isPortrait ? PortraitHeight : LandscapeHeight;
 
-        int baseFontSize = isPortrait ? PortraitFontSize : LandscapeFontSize;
+        int baseFontSize = BaseFontSize(isPortrait, size);
         int fontSize = baseFontSize;
         double sideMargin = isPortrait ? 60.0 : 160.0;
         double maxTextWidth = Math.Max(200.0, outputW - (sideMargin * 2));
@@ -171,12 +191,15 @@ public static class CaptionLayoutEngine
     {
         // AICAPTION_LAYOUT_02 — BottomContent (the default) is centred on the 2/3 line of the canvas.
         double defaultY = outputH * DefaultCenterFraction - boxHeight / 2.0;
+        // CAPTIONPLACE_01 — Middle: the box's TOP sits just under the centre line.
+        double middleY = outputH * MiddleTopFraction;
         if (isPortrait)
         {
             return position switch
             {
                 CaptionPosition.Top => PortraitVoidTop + 40.0,
                 CaptionPosition.BottomVoid => (outputH - PortraitVoidBottom) + ((PortraitVoidBottom - boxHeight) / 2.0),
+                CaptionPosition.Middle => Math.Clamp(middleY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
                 _ => Math.Clamp(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
             };
         }
@@ -185,6 +208,7 @@ public static class CaptionLayoutEngine
         return position switch
         {
             CaptionPosition.Top => 60.0,
+            CaptionPosition.Middle => Math.Clamp(middleY, 40.0, outputH - boxHeight - 40.0),
             _ => Math.Clamp(defaultY, 40.0, outputH - boxHeight - 40.0),
         };
     }
@@ -216,7 +240,8 @@ public static class CaptionLayoutEngine
                 bool intersectsY = (currentY < hud.Y + hud.H + HudGapPx) && (currentY + boxH + HudGapPx > hud.Y);
                 if (!intersectsX || !intersectsY) continue;
 
-                double newY = position == CaptionPosition.Top
+                // Top and Middle move DOWN off a HUD piece (Middle must not climb onto the crosshair).
+                double newY = position is CaptionPosition.Top or CaptionPosition.Middle
                     ? hud.Y + hud.H + HudGapPx
                     : hud.Y - boxH - HudGapPx;
                 if (newY >= topLimit && newY + boxH <= bottomLimit && Math.Abs(newY - currentY) > 0.5)

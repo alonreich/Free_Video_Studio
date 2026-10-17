@@ -33,7 +33,7 @@ namespace FreeVideoStudio.Core.Media;
 /// ── KNOWN, ACCEPTED DIFFERENCE FROM THE EXPORT ───────────────────────────────────────────────
 /// Near the frame edges the export PADS with black where this preview CLAMPS the crop inside the
 /// picture. So a zoom box pushed hard against an edge previews very slightly differently from the
-/// rendered file. Documented in project_structure.txt; do not "fix" it by letting the crop leave
+/// rendered file. Documented in docs/README.md (formerly project_structure.txt); do not "fix" it by letting the crop leave
 /// the frame — mpv rejects an out-of-bounds crop and the preview would simply stop updating.
 /// PREVIEWFIDELITY_01 — the difference is no longer silent: <see cref="Result.EdgeClamped"/> and
 /// <see cref="AnyEdgePadding"/> report a material clamp so the window can say the preview is not the export.

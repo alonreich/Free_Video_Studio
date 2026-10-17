@@ -252,7 +252,13 @@ public partial class GranularSpeedEditorWindow
             // AICOMMENTARY_SPEED_01 — the AI is told how each part plays (speed, freezes, cuts) and every
             // line is kept readable in FINISHED-video time. The editor's timeline is trim-relative.
             Timeline: OutTimeline(),
-            TimelineOffsetSec: _edit.TrimStartMs / 1000.0);
+            TimelineOffsetSec: _edit.TrimStartMs / 1000.0,
+            // COMMENTARYMIX_01 — the slider mix; TACTICAL_03 — the kill tracker's red marks are sent as facts;
+            // CAPTIONLOOK_01 / CAPTIONSIZE_01 — how the text looks.
+            Personality: dialogResult.EffectivePersonality,
+            KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
+            Look: dialogResult.Look,
+            Size: dialogResult.Size);
 
         bool segmentOnly = !dialogResult.EntireTimeline && _edit.SelectedSegment != null;
 

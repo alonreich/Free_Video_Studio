@@ -73,6 +73,15 @@
     <InternalsVisibleTo Include="FreeVideoStudio.App.Tests" />
   </ItemGroup>
 
+  <!-- WORKERSTAGE_01: the program's STATIC imports resolve from System32 only (DependentLoadFlags =
+       LOAD_LIBRARY_SEARCH_SYSTEM32). Every DLL it imports statically is a Windows system DLL; the app's
+       own native libraries (Skia, HarfBuzz, ANGLE, libmpv, FFmpeg) are loaded at run time by full path,
+       which this flag does not affect. A DLL dropped beside the program can therefore never be loaded
+       as one of its imports - which matters most for the elevated update worker. -->
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <LinkerArg Include="/DEPENDENTLOADFLAG:0x800" />
+  </ItemGroup>
+
   <ItemGroup>
     <Watch Include="**\*.axaml" />
     <UpToDateCheckInput Include="**\*.axaml" />

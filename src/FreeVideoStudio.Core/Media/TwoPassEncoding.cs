@@ -33,7 +33,7 @@ namespace FreeVideoStudio.Core.Media;
 /// that costs ~2x. The FAST route renders the graph ONCE into a near-lossless master and points
 /// both passes at that file: ~1.3-1.4x instead of ~2x.
 ///
-/// ⚠️ `project_structure.txt` mandate #1 forbids caches for video pipelines. The master is NOT a
+/// ⚠️ `docs/README.md` (formerly `project_structure.txt`) mandate #1 forbids caches for video pipelines. The master is NOT a
 /// cache. It is created inside the job's own temp directory, consumed by the two passes, and
 /// deleted in the same job — it is never reused across exports and never outlives the job folder.
 /// Do NOT evolve it into anything that survives an export, and do not delete this feature on the

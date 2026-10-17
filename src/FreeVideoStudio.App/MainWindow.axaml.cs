@@ -1127,7 +1127,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     private void ApplyDefaults()
     {
         var d = SettingsManager.Instance.Defaults;
-        _baseSpeed = d.DefaultSpeed;
+        // SETDEFAULTS_01 — every start value comes from the DefaultValues resolver.
+        _baseSpeed = d.StartSpeed;
         var speedSliderReset = MainSpeedSliderCtl;
         if (speedSliderReset != null) speedSliderReset.Value = (int)Math.Round(_baseSpeed * 10.0, MidpointRounding.AwayFromZero);
         if (ActiveVideoHost?.IpcClient != null)
@@ -1136,7 +1137,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var qs = QualitySliderCtl;
         if (qs != null && !_qualitySliderInitialized) 
         {
-            qs.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(d.QualityIndex);
+            qs.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(d.StartQualityIndex);
             _qualitySliderInitialized = true;
         }
 
@@ -1144,16 +1145,16 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         // the rack from MpvIpcClient.GlobalMasterVolume with proper re-entrancy guarding.
 
         var portrait = PortraitModeCheckboxCtl;
-        if (portrait != null) portrait.IsChecked = d.PortraitMode;
+        if (portrait != null) portrait.IsChecked = d.StartPortrait;
 
         var teammates = TeammatesCheckboxCtl;
-        if (teammates != null) teammates.IsChecked = d.ShowTeammates;
+        if (teammates != null) teammates.IsChecked = d.StartShowTeammates;
 
         var spectating = SpectatingCheckboxCtl;
         if (spectating != null) spectating.IsChecked = true;
 
         var enableFade = EnableFadeCheckboxCtl;
-        if (enableFade != null) enableFade.IsChecked = d.EnableFade;
+        if (enableFade != null) enableFade.IsChecked = d.StartEnableFade;
 
         ApplyMaskProfileToOverlayUi();
     }
@@ -2692,7 +2693,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     /// and tells the user how to get out of it. Returns true when the caller must abort.
     ///
     /// Why block rather than open read-only: Crop Tools is a SEPARATE PROCESS that closes the Main
-    /// App to start (see Section 2 of project_structure.txt). Launching it only to disable every
+    /// App to start (see Section 2 of docs/README.md (formerly project_structure.txt)). Launching it only to disable every
     /// control would cost the user their whole session for a window that can do nothing.
     /// </summary>
     private bool BlockCropToolsForNoMaskProfile()

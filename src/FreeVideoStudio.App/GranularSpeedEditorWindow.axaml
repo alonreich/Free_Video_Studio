@@ -613,7 +613,7 @@
                              deliberately remove-then-redo. Visible only when the selected block
                              actually carries a zoom. -->
                         <Button Name="RemoveZoomBtn" Classes="ZoomAction" Content="🔍 REMOVE ZOOM" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Take the zoom off this block. The block itself and its speed stay exactly as they are."/>
-                        <Button Name="DeleteSegmentBtn" Classes="Danger" Content="DELETE SEGMENT" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Delete the currently selected speed segment" />
+                        <Button Name="DeleteSegmentBtn" Classes="Danger" Content="DELETE SEGMENT" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Delete the selected speed segment. Ctrl+Z brings it back." />
                         <Button Name="ClearAllSegmentsBtn" Classes="Danger" Content="CLEAR ALL SEGMENTS" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Remove all speed segments">
                             <Button.Flyout>
                                 <Flyout Placement="Top" FlyoutPresenterClasses="CustomFlyout">
@@ -624,11 +624,11 @@
                                         </StackPanel>
                                         <TextBlock Name="ClearAllDetailText" Text="Every speed segment will be removed." FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
                                         <Border Background="{DynamicResource AppOverlayBrush}" BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10">
-                                            <TextBlock Text="⚠️ This cannot be undone. Every speed block and every zoom on the timeline is erased in one go." Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Every speed block and every zoom on the timeline is erased in one go. Changed your mind? Press Ctrl+Z to bring them all back." Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                         </Border>
                                         <Grid ColumnDefinitions="*,12,*">
                                             <Button Grid.Column="0" Name="KeepAllSegmentsBtn" Classes="Secondary" Content="KEEP THEM" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Close this box and change nothing."/>
-                                            <Button Grid.Column="2" Name="ConfirmClearAllSegmentsBtn" Classes="Danger" Content="ERASE ALL" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Permanently remove every speed segment." />
+                                            <Button Grid.Column="2" Name="ConfirmClearAllSegmentsBtn" Classes="Danger" Content="ERASE ALL" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Remove every speed segment. Ctrl+Z brings them back." />
                                         </Grid>
                                     </StackPanel>
                                 </Flyout>

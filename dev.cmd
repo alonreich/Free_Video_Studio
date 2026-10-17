@@ -176,18 +176,20 @@ goto :EOF
 REM ======================================================================
 REM Subroutine: KILL EVERY STALE PROCESS THIS REPO OWNS.
 REM
-REM Name-based taskkill only catches what we can name. The PowerShell pass
-REM below is the real guard: it kills ANY process whose executable lives
-REM under this repository, which covers the app, its companion windows
-REM (Merger, Crop Tools), and every backend/frontend child it spawns
-REM (mpv.exe, ffmpeg.exe, ffprobe.exe) no matter how it was orphaned.
-REM An orphaned mpv keeps a libmpv IPC pipe and a D3D device alive; an
-REM orphaned app keeps a file lock on bin\, which is what makes the next
-REM build silently reuse a stale binary.
+REM BUILDKILL_01 - ONLY processes whose executable lives under this
+REM repository are stopped: the dev app, its companion windows (Merger,
+REM Crop Tools) and every backend/frontend child it spawns (mpv.exe,
+REM ffmpeg.exe, ffprobe.exe), no matter how it was orphaned. An orphaned
+REM mpv keeps a libmpv IPC pipe and a D3D device alive; an orphaned app
+REM keeps a file lock on bin\, which is what makes the next build silently
+REM reuse a stale binary.
+REM There used to be a "taskkill /F /IM FreeVideoStudio.exe /T" here. It
+REM matched by NAME, so it also force-closed the INSTALLED app in Program
+REM Files with a real project open, skipping its save question. Never add
+REM a name-based kill of the product back.
 REM ======================================================================
 :KILL_STALE
 echo [DEV] Purging stale processes owned by this repo...
-taskkill /F /IM FreeVideoStudio.exe /T >nul 2>nul
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$root = '%REPO_ROOT%';" ^

@@ -2,9 +2,10 @@
 
 > 🛑 AGENT RULES — they apply even when you came here directly: never run `.\Build.cmd` (it publishes to GitHub) —
 > use `.\dev_build.cmd` / `dotnet build` / `dotnet test`; open every edit with the Proof-of-Read header
-> (`SPEC_GOVERNANCE.md` §3); land a `TAG=path` line in `build/sentinels.txt` with every guarded fix; stage
-> end-user notes in `CHANGELOG.md` and update `project_structure.txt` (CHANGELOG_01). Full rules: `README.md`,
-> `SPEC_GOVERNANCE.md`, `AGENTS.md`.
+> (`SPEC_GOVERNANCE.md` §3); land a `TAG=path` line in `build/sentinels.txt` with every guarded fix; log the
+> change in `changes.md` (`## Unreleased`), stage end-user notes in `CHANGELOG.md` (`## Upcoming`) and update
+> the repository map in `README.md` §5 (CHANGELOG_01 / RELNOTES_01). Full rules: `README.md` §0 (the single
+> entry point), `SPEC_GOVERNANCE.md`.
 
 Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY the spec it names.
 Notation: `03 §9 FFM-BINPATH` = `03_FFMPEG_EXPORT_PIPELINE.md`, section 9, stable anchor `FFM-BINPATH`.
@@ -39,8 +40,11 @@ Voiceover timing additions (all listed specs govern these files):
   AiSetupWizardWindow.axaml.cs               04
   AiSubjectPickerWindow.axaml.cs             04
 ⚠ AiTrajectorySmoother.cs                    01 03
-  AGENTS.md                                  GOV | CHANGELOG_01
-  CHANGELOG.md                               GOV | CHANGELOG_01
+  AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
+  project_structure.txt                      GOV | README.md §0 (pointer only, ONBOARD_01)
+  README.md                                  GOV | GOV-START, GOV-REPOMAP (single entry point)
+  CHANGELOG.md                               GOV | CHANGELOG_01 | 09 DIST-RELEASENOTES
+  changes.md                                 GOV | CHANGELOG_01 | 09 DIST-RELEASENOTES (technical log)
   AiGameProfile.cs                           01
   AiTrackingPrompts.cs                       01
   GeminiClient.cs                            05
@@ -193,6 +197,9 @@ Voiceover timing additions (all listed specs govern these files):
   SettingsWindow.Merger.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-SCRAPER
   SettingsMusicFolderTests.cs                04 UI-SETTINGS-ABOUT | 05 SYS-IPCLIFETIME
   SettingsWindow.Output.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
+  SettingsWindow.Tools.cs                    04 UI-SETTINGS-ABOUT
+⚠ SettingsViewModel.cs                       04 05 UI-SETTINGS-ABOUT
+  SettingsAuditTests.cs                      04 UI-SETTINGS-ABOUT
   SpinningWheelSlider.cs                     04
   TextOverlayGenerator.cs                    03
   TimelineKnob.cs                            01
@@ -273,7 +280,12 @@ Voiceover timing additions (all listed specs govern these files):
   .github/workflows/lfs-guard.yml            09
 ⚠ UpdateService.cs                           05 09
   DevSandbox.ps1                             05 SYS-DEVBUILD
-  UpgradeCoordinator.cs                      05 SYS-UPGRADE | SYS-UPGRADEUX
+  UpgradeCoordinator.cs                      05 SYS-UPGRADE | SYS-UPGRADEUX | SYS-UPGRADE-TRUST
+  ProtectedWorkerStage.cs                    05 SYS-UPGRADE-TRUST (WORKERSTAGE_01)
+  CommentaryPersonality.cs                   01 TL-CAPTIONS | 04 UI-AICOMMENTARY (COMMENTARYMIX_01, TACTICAL_01..03)
+  AiCommentaryOptionsViewModel.cs            04 UI-AICOMMENTARY (COMMENTARYUI_02) | 01 TL-CAPTIONS
+  CommentaryPersonalityTests.cs              04 UI-AICOMMENTARY | 01 TL-CAPTIONS
+  CaptionLookTests.cs                        01 TL-CAPTIONS (CAPTIONPLACE_01, CAPTIONLOOK_01, CAPTIONSIZE_01, CAPTIONRTL_01)
   UpgradeInstallWorker.cs                    05 SYS-UPGRADE | SYS-UPGRADEUX
   UpgradeChannel.cs                          05 SYS-UPGRADE | SYS-UPGRADEUX
   InstallDiscovery.cs                        05 SYS-UPGRADE | SYS-UPGRADEUX
@@ -290,8 +302,12 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ UpdateDownloader.cs                        05 09 DLRESUME_01
   SmartUpdateManifest.cs                     09 DIST-SMART
   BinaryDelta.cs                             09 DIST-SMART (BINDELTA_01, BINDELTA_02)
-  BrotliFile.cs                              09 DIST-SMART
-  SmartUpdateBuilder.cs                      09 DIST-SMART
+  BrotliFile.cs                              09 DIST-SMART (ASSETHASH_01)
+  SmartUpdateBuilder.cs                      09 DIST-SMART (DELTABASE_01, ASSETHASH_01)
+  ReleaseChangelog.cs                        09 DIST-RELEASENOTES (RELNOTES_01..03)
+  ReleaseGate.cs                             09 DIST-RELEASEGATE | 05 SYS-AUTOUPDATE (RELGATE_01)
+  ReleaseChangelogTests.cs                   09 DIST-RELEASENOTES | DIST-RELEASEGATE | DIST-RETENTION
+  ReleaseHardeningTests.cs                   05 SYS-UPGRADE-TRUST | SYS-AUTOUPDATE | 09 DIST-SMART
   PublisherRoot.cs                           05 §5 SYS-SIGNING (UPDATEPIN_01)
   HardLink.cs                                05 SYS-UPGRADE (FASTINSTALL_01)
   SmartUpdateTests.cs                        09 DIST-SMART
@@ -299,8 +315,8 @@ Voiceover timing additions (all listed specs govern these files):
   VersionAndUpdaterTests.cs                  05 SYS-AUTOUPDATE | SYS-UPGRADEUX
   UpgradeProgressReportingTests.cs           05 SYS-UPGRADEUX
   Staging.cs                                 09
-  CHANGELOG.md                               09 (rolling release notes for latest 5 versions)
-  GitHubReleasePublisher.cs                  09 DIST-SPLIT
+  CHANGELOG.md                               09 DIST-RELEASENOTES (user notes, `## Upcoming`, latest 5 releases)
+  GitHubReleasePublisher.cs                  09 DIST-SPLIT | DIST-RELEASEGATE | DIST-RETENTION
   InnoInstaller.cs                           09 DIST-INSTALLER (NODROPPER_01)
   FreeVideoStudio.iss (build/installer)      09 DIST-INSTALLER (NODROPPER_01)
 ⚠ PeIdentity.cs                              05 09 SYS-SIGNING (PEIDENTITY_01)
@@ -824,7 +840,7 @@ CheckManualAsync                             05 §6 SYS-AUTOUPDATE
 ShowAboutAsync                               04 §11 UI-SETTINGS-ABOUT
 GetCurrentVersion                            05 §6 SYS-AUTOUPDATE
 TryParseVersion                              05 §6 SYS-AUTOUPDATE
-SynchronizeVersionFiles                      05 §6 SYS-AUTOUPDATE
+SynchronizeVersionFiles                      05 §6 SYS-AUTOUPDATE | 09 DIST-RELEASEGATE   (ReleaseGate; official releases only)
 ZoomPreviewSimulator                         02 §4 AUD-VOICEOVER | 03 (mini-map only)
 ZoomRampSeconds                              03  [= 0.5]   [code-only: GranularSpeedBuilder.cs, ZoomPreviewSimulator.cs]
 AOTSAFETY_01                                 06 §4 PROJ-AOT
@@ -945,6 +961,41 @@ DLRESUME_01                                  05 §6 SYS-AUTOUPDATE   (resumable 
 DIST-SMART                                   09 §3a DIST-SMART   (per-file smart updates)
 BINDELTA_01                                  09 §3a DIST-SMART   (binary patch of the main program)
 BINDELTA_02                                  09 §3a DIST-SMART   (streaming patch apply, 64 KiB buffers, bounded memory)
+DELTABASE_01                                 09 §3a DIST-SMART   (patch bases = verified programs of the last 3 published releases)
+ASSETHASH_01                                 09 §3a DIST-SMART | 05 SYS-AUTOUPDATE   (asset SHA-256 before use, capped decompression, patch header check)
+RELGATE_01                                   09 §3e DIST-RELEASEGATE   (release transaction: preflight, version commit + tag, undo, push)
+RELTAG_01                                    09 §3e DIST-RELEASEGATE | DIST-SPLIT   (release created from the pushed tag, --verify-tag)
+RETAIN_01                                    09 §3d DIST-RETENTION   (5 stable + newer betas kept; tags never deleted)
+BETA_01                                      09 §3e DIST-RELEASEGATE | 05 SYS-AUTOUPDATE   (pre-releases; Beta picks the highest version)
+RELNOTES_01                                  09 §3f DIST-RELEASENOTES   (changes.md → CHANGELOG.md, fixed staging headings, promotion)
+RELNOTES_02                                  09 §3f DIST-RELEASENOTES   (user-notes lint)
+RELNOTES_03                                  09 §3f DIST-RELEASENOTES | 05 SYS-AUTOUPDATE | 04   ("What's new" on the update card)
+WORKERSTAGE_01                               05 SYS-UPGRADE-TRUST   (elevated worker only from a protected %ProgramData% copy)
+UNSIGNEDDEV_01                               05 §5 SYS-SIGNING   (unsigned-update override is Debug-only)
+BUILDKILL_01                                 05 §4a SYS-DEVBUILD   (build scripts stop only repository processes)
+UPDATESPACE_01                               05 §6 SYS-AUTOUPDATE   (per-drive free-space check for what is written)
+RECHECK_01                                   05 §6 SYS-AUTOUPDATE   (re-check every 6 h while open)
+ONBOARD_01                                   GOV README.md §0   (single entry point; project_structure.txt / AGENTS.md are pointers)
+GOV-START                                    README.md §0
+GOV-REPOMAP                                  README.md §5
+SYS-UPGRADE-TRUST                            05 SYS-UPGRADE-TRUST
+DIST-RELEASEGATE                             09 §3e DIST-RELEASEGATE
+DIST-RELEASENOTES                            09 §3f DIST-RELEASENOTES
+COMMENTARYMIX_01                             01 TL-CAPTIONS | 04 UI-AICOMMENTARY   (Funny/Sarcastic/Energetic/Tactical amounts, 4 styles)
+COMMENTARYUI_02                              04 UI-AICOMMENTARY   (basic + always-closed Advanced options window)
+TACTICAL_01                                  01 TL-CAPTIONS   (every "why" must be visible; unsure tactical lines dropped)
+TACTICAL_02                                  01 TL-CAPTIONS   (12 words / 2.0 s at high Tactical)
+TACTICAL_03                                  01 TL-CAPTIONS   (kill-tracker marks sent as facts)
+SWEARING_01                                  01 TL-CAPTIONS   (clean by default)
+REWRITELINE_01                               04 UI-AICOMMENTARY | 01 TL-CAPTIONS   (right-click "Rewrite this line")
+CAPTIONPLACE_01                              01 TL-CAPTIONS   (Upper · Middle · Lower; Middle just under the centre)
+CAPTIONLOOK_01                               01 TL-CAPTIONS | 03 FFM-CAPTIONS   (Outline vs dark box; stronger outline)
+CAPTIONSIZE_01                               01 TL-CAPTIONS   (Small 0.8 · Medium 1.0 · Large 1.25)
+CAPTIONRTL_01                                01 TL-CAPTIONS | 03 FFM-CAPTIONS   (Hebrew: auto base direction, one plain RTL run)
+CommentaryPersonality                        01 TL-CAPTIONS
+AiCommentaryOptionsViewModel                 04 UI-AICOMMENTARY
+MiddleTopFraction                            01 TL-CAPTIONS   [= 0.54]
+TacticalMinConfidence                        01 TL-CAPTIONS   [= 0.4]
 FASTINSTALL_01                               05 SYS-UPGRADE   (build the new folder, link unchanged files)
 ONEBACKUP_01                                 05 SYS-UPGRADE   (keep one backup)
 NOSYSTEMTASK_01                              05 SYS-UPGRADE | 05 SYS-AVCLEAN   (no SYSTEM scheduled task)
@@ -1156,6 +1207,33 @@ DUCKSTRENGTH_01                              02 §3 AUD-SIDECHAIN
 RatioFor                                     02 §3 AUD-SIDECHAIN
 DefaultStrength                              02 §3 AUD-SIDECHAIN  [= 50]
 MixProtectionViewModel                       02 §3 AUD-SIDECHAIN
+SETTINGSVM_01                                04 §11 UI-SETTINGS-ABOUT
+SETTINGSIA_01                                04 §11 UI-SETTINGS-ABOUT
+SETUNSAVED_01                                04 §11 UI-SETTINGS-ABOUT
+SETPREVIEW_01                                04 §11 UI-SETTINGS-ABOUT
+SETKEYS_01                                   04 §11 UI-SETTINGS-ABOUT
+SETKEYS_02                                   04 §11 UI-SETTINGS-ABOUT
+SETLASTTAB_01                                04 §11 UI-SETTINGS-ABOUT
+SETSAVEFAIL_01                               04 §11 UI-SETTINGS-ABOUT
+SETTIPS_01                                   04 §11 UI-SETTINGS-ABOUT
+SETDEPS_01                                   04 §11 UI-SETTINGS-ABOUT
+SETLOUD_01                                   04 §11 UI-SETTINGS-ABOUT
+SETZOOM_01                                   04 §11 UI-SETTINGS-ABOUT
+SETGAME_01                                   04 §11 UI-SETTINGS-ABOUT
+SETMUSICDIR_01                               04 §11 UI-SETTINGS-ABOUT
+MEMEPENDING_01                               04 §11 UI-SETTINGS-ABOUT
+SETSEARCH_01                                 04 §11 UI-SETTINGS-ABOUT
+SETBACKUP_01                                 04 §11 UI-SETTINGS-ABOUT
+SETRESTORE_01                                04 §11 UI-SETTINGS-ABOUT
+SETDANGER_01                                 04 §11 UI-SETTINGS-ABOUT
+SETAITEST_01                                 04 §11 UI-SETTINGS-ABOUT
+SETWIDTH_01                                  04 §11 UI-SETTINGS-ABOUT
+SETPRIORITY_01                               04 §11 UI-SETTINGS-ABOUT
+SettingsViewModel                            04 §11 UI-SETTINGS-ABOUT
+CopySection                                  04 §11 UI-SETTINGS-ABOUT
+SETDEFAULTS_01                               04 §11 UI-SETTINGS-ABOUT | 03 FFM-QUALITY
+SETCONFIRM_01                                04 §4 UI-SAFEGUARDS
+SETMERGERDIR_01                              04 §11 UI-SETTINGS-ABOUT
 DuckingStrength                              02 §3 AUD-SIDECHAIN
 CarvingStrength                              02 §3 AUD-SIDECHAIN
 CrossoverLowHz                               02 §3 AUD-SIDECHAIN  [= 250]

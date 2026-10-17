@@ -27,6 +27,21 @@ public static class CaptionAssWriter
     public const string EmphasisColourDefault = "&H0000E5FF"; // Bright gaming gold / yellow
 
     /// <summary>
+    /// CAPTIONLOOK_01 — the Outline look. Stronger than before (outline 4.5 → 6, shadow 2 → 3, shadow 50 % → 75 %
+    /// opaque) so white text stays readable on snow, explosions and bright skies.
+    /// </summary>
+    public const double OutlineWidth = 6.0;
+    public const double ShadowDepth = 3.0;
+    public const string OutlineShadowColour = "&H40000000";
+
+    /// <summary>
+    /// CAPTIONLOOK_01 — the Box look: ASS BorderStyle 3 draws an opaque box per line in the OUTLINE colour
+    /// (here black at ~69 % opacity); the outline width is the box's padding.
+    /// </summary>
+    public const string BoxColour = "&H50000000";
+    public const double BoxPadding = 14.0;
+
+    /// <summary>
     /// Generates full .ass script text from a <see cref="CaptionTrack"/> and an optional <see cref="OutputTimeline"/>.
     /// </summary>
     public static string GenerateAss(
@@ -55,16 +70,25 @@ public static class CaptionAssWriter
         sb.AppendLine();
 
         // 2. V4+ Styles
-        int baseFontSize = isPortrait ? CaptionLayoutEngine.PortraitFontSize : CaptionLayoutEngine.LandscapeFontSize;
+        int baseFontSize = CaptionLayoutEngine.BaseFontSize(isPortrait, track.Size);
         sb.AppendLine("[V4+ Styles]");
         sb.AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
 
         // Main Commentary Style
         // Alignment 2 = bottom-center, 8 = top-center
         int alignCode = track.Position == CaptionPosition.Top ? 8 : 2;
+        var ci = CultureInfo.InvariantCulture;
+        bool box = track.Look == CaptionLook.Box;
+        string outlineColour = box ? BoxColour : OutlineColourDefault;
+        string backColour = box ? BackColourDefault : OutlineShadowColour;
+        int borderStyle = box ? 3 : 1;
+        string outline = (box ? BoxPadding : OutlineWidth).ToString("0.0", ci);
+        string shadow = (box ? 0.0 : ShadowDepth).ToString("0.0", ci);
         sb.Append($"Style: Commentary,{fontName},{baseFontSize},");
-        sb.Append($"{PrimaryColourDefault},{SecondaryColourKaraoke},{OutlineColourDefault},{BackColourDefault},");
-        sb.AppendLine($"-1,0,0,0,100,100,0,0,1,4.5,2.0,{alignCode},40,40,40,1");
+        sb.Append($"{PrimaryColourDefault},{SecondaryColourKaraoke},{outlineColour},{backColour},");
+        // CAPTIONRTL_01 — Encoding -1 lets libass pick each line's base direction from its text (Hebrew right to
+        // left, English left to right). With 1 the base direction was forced left-to-right.
+        sb.AppendLine($"-1,0,0,0,100,100,0,0,{borderStyle},{outline},{shadow},{alignCode},40,40,40,-1");
         sb.AppendLine();
 
         // 3. Events
@@ -74,7 +98,7 @@ public static class CaptionAssWriter
         foreach (var mapped in mappedLines)
         {
             var layout = CaptionLayoutEngine.ComputeLayout(
-                mapped, outputW, outputH, isPortrait, track.Position, hudRects, fontName);
+                mapped, outputW, outputH, isPortrait, track.Position, hudRects, fontName, track.Size);
 
             if (layout.Lines.Count == 0) continue;
 
@@ -143,6 +167,22 @@ public static class CaptionAssWriter
         return sb.ToString();
     }
 
+    /// <summary>
+    /// CAPTIONRTL_01 — true when <paramref name="text"/> contains Hebrew or Arabic letters (right-to-left scripts).
+    /// </summary>
+    public static bool IsRightToLeft(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        foreach (char c in text)
+        {
+            if (c is >= '\u0590' and <= '\u08FF' or >= '\uFB1D' and <= '\uFDFF' or >= '\uFE70' and <= '\uFEFC') return true;
+        }
+        return false;
+    }
+
+    /// <summary>U+200F RIGHT-TO-LEFT MARK: makes a line's base direction right-to-left whatever its first character.</summary>
+    public const char RightToLeftMark = '\u200F';
+
     private static string BuildDialogueText(CaptionLayout layout, CaptionStyle style)
     {
         var lineParts = new List<string>(layout.Lines.Count);
@@ -151,6 +191,16 @@ public static class CaptionAssWriter
         {
             var line = layout.Lines[i];
             var wordParts = new List<string>(line.Words.Count);
+
+            // CAPTIONRTL_01 — a right-to-left line (Hebrew) is written as ONE plain run, starting with a
+            // right-to-left mark. Override tags between words (karaoke \k, emphasis colour) split a line into
+            // separate runs, and some libass versions then lay the runs out left to right — the words of a Hebrew
+            // sentence came out in reverse order. One run is always ordered correctly by the bidi algorithm.
+            if (IsRightToLeft(line.Text))
+            {
+                lineParts.Add(RightToLeftMark + string.Join(" ", line.Words.Select(w => EscapeAssText(w.Text))));
+                continue;
+            }
 
             foreach (var w in line.Words)
             {

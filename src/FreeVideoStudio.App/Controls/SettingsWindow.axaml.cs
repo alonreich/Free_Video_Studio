@@ -1,54 +1,53 @@
 // [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
 using Avalonia.Threading;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.App.Infrastructure;
-using FreeVideoStudio.App.Services;
+using FreeVideoStudio.App.ViewModels;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Controls;
 
+/// <summary>
+/// Settings window (docs/04 UI-SETTINGS-ABOUT). SETTINGSVM_01: every value is bound to
+/// <see cref="Vm"/> and stays pending until SAVE; this code-behind only owns window behaviour —
+/// closing (SETUNSAVED_01), keys (Esc / Enter / shortcut capture), live theme preview and its revert
+/// (SETPREVIEW_01), the last tab (SETLASTTAB_01) and the folder pickers.
+/// </summary>
 public partial class SettingsWindow : Window
 {
-    private Dictionary<string, Key> _pendingKeys = new();
-    private Dictionary<string, Button> _keyButtons = new();
-    private string? _waitingForKeyAction;
-    private bool _isSafeToClose = false;
+    private const string LastTabStateKey = "SettingsLastTab";
 
-    private DefaultValues _pendingDefaults = new();
     private readonly ApplicationPaths _paths;
     private readonly SessionStateWriter _writer;
-    private string _pendingMusicFolder = "";
-    private string? _initialMusicFolder;
-    private bool _musicFolderEdited;
+    private bool _isSafeToClose;
+    private bool _closePromptOpen;
 
-    private string _pendingMaskOverlay = "";
-    /// <summary>G03 — pending value of <see cref="AppSettings.VideoEncoderOverride"/>.</summary>
-    private string _pendingVideoEncoder = "Auto";
-    private ThemeMode _pendingThemeMode = ThemeMode.FollowOS;
-    private FontScale _pendingFontScale = FontScale.Normal;
-    private AudioFixPrompt _pendingPeakPrompt = AudioFixPrompt.Ask;
+    /// <summary>The music folder as the state store held it when the window opened; null = unknown (unprimed writer).</summary>
+    private readonly string? _initialMusicFolder;
 
-    /// <summary>VOPROT_02 — pending voice-protection policy, applied on APPLY like the two above.</summary>
-    private VoiceProtectionMode _pendingVoiceProtectGame = VoiceProtectionMode.RememberLastChoice;
-    private VoiceProtectionMode _pendingVoiceProtectMusic = VoiceProtectionMode.RememberLastChoice;
+    /// <summary>SETPREVIEW_01 — the look the app had when Settings opened, restored by CANCEL / Discard.</summary>
+    private readonly ThemeMode _openTheme;
+    private readonly FontScale _openFontScale;
+    private readonly string _openMaskOverlay;
+    private readonly string _openEncoder;
+    private readonly string _openMemeFolder;
 
-    /// <summary>SETTX_01 — values the settings held when this window was built; change-only side effects (mask profile apply, encoder log) run after a successful commit.</summary>
-    private string _previousActiveMaskOverlay = "";
-    private string _previousVideoEncoderOverride = "Auto";
+    private KeyBindRowViewModel? _waitingRow;
+
+    /// <summary>All pending values (SETTINGSVM_01).</summary>
+    public SettingsViewModel Vm { get; }
 
     public SettingsWindow() : this(null, null) { }
 
@@ -56,800 +55,241 @@ public partial class SettingsWindow : Window
     {
         _paths = paths ?? ApplicationPaths.CreateDefault();
         _writer = writer ?? SessionStateWriter.For(_paths);
-        InitializeComponent();
-        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
 
-        _pendingDefaults = new DefaultValues
-        {
-            DefaultSpeed = SettingsManager.Instance.Defaults.DefaultSpeed,
-            SpeedBehavior = SettingsManager.Instance.Defaults.SpeedBehavior,
-            PortraitMode = SettingsManager.Instance.Defaults.PortraitMode,
-            PortraitBehavior = SettingsManager.Instance.Defaults.PortraitBehavior,
-            ShowTeammates = SettingsManager.Instance.Defaults.ShowTeammates,
-            ShowTeammatesBehavior = SettingsManager.Instance.Defaults.ShowTeammatesBehavior,
-            EnableFade = SettingsManager.Instance.Defaults.EnableFade,
-            EnableFadeBehavior = SettingsManager.Instance.Defaults.EnableFadeBehavior,
-            QualityIndex = SettingsManager.Instance.Defaults.QualityIndex,
-            QualityBehavior = SettingsManager.Instance.Defaults.QualityBehavior,
-            AutoSpikeFlattening = SettingsManager.Instance.Defaults.AutoSpikeFlattening,
-            AudioProtection = SettingsManager.Instance.Defaults.AudioProtection,
-            RememberMusicVolumes = SettingsManager.Instance.Defaults.RememberMusicVolumes,
-            DefaultZoomSlow = SettingsManager.Instance.Defaults.DefaultZoomSlow,
-            DefaultFreezeDurationS = SettingsManager.Instance.Defaults.DefaultFreezeDurationS
-        };
+        var settings = SettingsManager.Instance;
+        _openTheme = settings.ThemeMode;
+        _openFontScale = settings.FontScale;
+        _openMaskOverlay = settings.ActiveMaskOverlay;
+        _openEncoder = string.IsNullOrWhiteSpace(settings.VideoEncoderOverride) ? "Auto" : settings.VideoEncoderOverride;
+        _openMemeFolder = settings.MemeDirectoryPath ?? "";
 
-        _pendingThemeMode = SettingsManager.Instance.ThemeMode;
-        _pendingFontScale = SettingsManager.Instance.FontScale;
-        _pendingPeakPrompt = SettingsManager.Instance.PeakFlatteningPrompt;
-        _pendingVoiceProtectGame = SettingsManager.Instance.VoiceProtectGameMode;
-        _pendingVoiceProtectMusic = SettingsManager.Instance.VoiceProtectMusicMode;
-
-        _previousActiveMaskOverlay = SettingsManager.Instance.ActiveMaskOverlay;
-        _previousVideoEncoderOverride = SettingsManager.Instance.VideoEncoderOverride;
-
-        InitializeAiTrackingSettings();
-
-        LoadCurrentKeybinds();
-        BuildKeyBindsUi();
-        BuildDefaultsUi();
-        BuildMaskOverlayUi();
-        BuildVideoEncoderUi();
-        BuildAppearanceUi();
-        BuildMemeFolderUi();
-        BuildOutputFilesUi();
-
-        ConfirmVideoMergerRemove = SettingsManager.Instance.ConfirmVideoMergerRemove;
-        ConfirmVideoMergerClearAll = SettingsManager.Instance.ConfirmVideoMergerClearAll;
-        ConfirmCropToolReset = SettingsManager.Instance.ConfirmCropToolReset;
-        ConfirmCropToolDelete = SettingsManager.Instance.ConfirmCropToolDelete;
-        ConfirmGranularDeleteSegment = SettingsManager.Instance.ConfirmGranularDeleteSegment;
-        ConfirmGranularClearAll = SettingsManager.Instance.ConfirmGranularClearAll;
-        ConfirmMainAppCancel = SettingsManager.Instance.ConfirmMainAppCancel;
-        ConfirmMainAppCut = SettingsManager.Instance.ConfirmMainAppCut;
-        ConfirmMainAppSwitchTool = SettingsManager.Instance.ConfirmMainAppSwitchTool;
-        KeepOverlayTextBetweenVideos = SettingsManager.Instance.KeepOverlayTextBetweenVideos;
-        ConfirmVoiceOverDeleteTake = SettingsManager.Instance.ConfirmVoiceOverDeleteTake;
-        ConfirmFinishedDialogExit = SettingsManager.Instance.ConfirmFinishedDialogExit;
-        AutoUpdateChecks = SettingsManager.Instance.AutoUpdateChecks;
-        AutoDownloadUpdates = SettingsManager.Instance.AutoDownloadUpdates;
-        AvoidMeteredNetworkUpdates = SettingsManager.Instance.AvoidMeteredNetworkUpdates;
-        UpdateChannel = SettingsManager.Instance.UpdateChannel;
-
-        UiSoundsEnabled = SettingsManager.Instance.UiSoundsEnabled;
-        UiSoundVolume = SettingsManager.Instance.UiSoundVolume;
-
-        DataContext = this;
-        BuildUiSoundUi();
-        BuildAboutUi();
-        BuildAiTrackingUi();
-
-        this.FindControl<Button>("SaveBtn")!.Click += (s, e) => SaveAndClose();
-        this.FindControl<Button>("CancelBtn")!.Click += (s, e) => Close();
-
-        this.KeyDown += OnWindowKeyDown;
-        AttachTitleBarDrag();
-    }
-
-    public bool RememberMusicVolumes
-    {
-        get => _pendingDefaults.RememberMusicVolumes;
-        set => _pendingDefaults.RememberMusicVolumes = value;
-    }
-    /// <summary>AUDIO_09 — legacy master switch; kept in sync with the two switches below.</summary>
-    public bool AudioProtection
-    {
-        get => _pendingDefaults.AudioProtection;
-        set => _pendingDefaults.AudioProtection = value;
-    }
-
-    /// <summary>
-    /// DUCKSTRENGTH_01 — the "Music vs. game sound" switches and handles, bound in the XAML as
-    /// <c>Mix.*</c>. Seeded from settings when the window is built; written back on Save.
-    /// </summary>
-    public FreeVideoStudio.App.ViewModels.MixProtectionViewModel Mix { get; } = new(
-        SettingsManager.Instance.Defaults.DuckingEnabled,
-        SettingsManager.Instance.Defaults.CarvingEnabled,
-        SettingsManager.Instance.Defaults.DuckingStrength,
-        SettingsManager.Instance.Defaults.CarvingStrength);
-
-    public bool AutoSpikeFlattening
-    {
-        get => _pendingDefaults.AutoSpikeFlattening;
-        set => _pendingDefaults.AutoSpikeFlattening = value;
-    }
-    public string DefaultMusicFolder
-    {
-        get => _pendingMusicFolder;
-        set {
-            if (!string.IsNullOrWhiteSpace(value) && !System.IO.Directory.Exists(value))
-                throw new ArgumentException("Folder does not exist.");
-            _pendingMusicFolder = value ?? "";
-            _musicFolderEdited = true;
-        }
-    }
-
-    public bool ConfirmVideoMergerRemove { get; set; }
-    public bool ConfirmVideoMergerClearAll { get; set; }
-    public bool ConfirmCropToolReset { get; set; }
-    public bool ConfirmCropToolDelete { get; set; }
-
-    /// <summary>ISSUE_12 — pending values for the Speed Editor + Main App confirmations.</summary>
-    public bool ConfirmGranularDeleteSegment { get; set; }
-    public bool ConfirmGranularClearAll { get; set; }
-    public bool ConfirmMainAppCancel { get; set; }
-
-    /// <summary>CUT_01 — confirm before deleting a section from the middle of the clip.</summary>
-    public bool ConfirmMainAppCut { get; set; }
-    public bool ConfirmMainAppSwitchTool { get; set; }
-
-    /// <summary>CAPTIONWIPE_01 — pending value of <see cref="AppSettings.KeepOverlayTextBetweenVideos"/>
-    /// (ships OFF: the caption is wiped between videos).</summary>
-    public bool KeepOverlayTextBetweenVideos { get; set; }
-
-    /// <summary>ISSUE_07 / ISSUE_04 — pending values. Both ship OFF; see SettingsManager.</summary>
-    public bool ConfirmVoiceOverDeleteTake { get; set; }
-
-    /// <summary>AUTO-UPDATE — pending value of <see cref="AppSettings.AutoUpdateChecks"/> (ships ON).</summary>
-    public bool AutoUpdateChecks { get; set; } = true;
-    public bool AutoDownloadUpdates { get; set; } = true;
-    public bool AvoidMeteredNetworkUpdates { get; set; } = true;
-    public string UpdateChannel { get; set; } = "Stable";
-    public bool ConfirmFinishedDialogExit { get; set; }
-
-    /// <summary>AUDIO_06 — pending value for the UI sound master switch; committed by APPLY.</summary>
-    public bool UiSoundsEnabled { get; set; } = true;
-
-    /// <summary>AUDIO_06 — pending value for the UI sound level (0-100); committed by APPLY.</summary>
-    public int UiSoundVolume { get; set; } = 70;
-
-    /// <summary>
-    /// AUDIO_06: keeps the "NN%" readout beside the slider in step with the thumb. The slider's
-    /// VALUE is bound TwoWay in XAML like every other setting on this window; this only drives
-    /// the label, which has no binding source of its own.
-    /// </summary>
-    private void BuildUiSoundUi()
-    {
-        var slider = this.FindControl<Slider>("UiSoundVolumeSlider");
-        var label = this.FindControl<TextBlock>("UiSoundVolumeLabel");
-        if (slider == null || label == null) return;
-
-        void Render() => label.Text = $"{(int)Math.Round(slider.Value)}%";
-
-        Render();
-        slider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty) Render();
-        };
-    }
-
-    private void LoadCurrentKeybinds()
-    {
-        var kb = SettingsManager.Instance.KeyBinds;
-        _pendingKeys["PlayPause"] = kb.PlayPause;
-        _pendingKeys["MarkStart"] = kb.MarkStart;
-        _pendingKeys["MarkEnd"] = kb.MarkEnd;
-        _pendingKeys["SeekForward"] = kb.SeekForward;
-        _pendingKeys["SeekBackward"] = kb.SeekBackward;
-        _pendingKeys["VolumeUp"] = kb.VolumeUp;
-        _pendingKeys["VolumeDown"] = kb.VolumeDown;
-        _pendingKeys["FineSeekForward"] = kb.FineSeekForward;
-        _pendingKeys["FineSeekBackward"] = kb.FineSeekBackward;
-        _pendingKeys["AggressiveVolumeUp"] = kb.AggressiveVolumeUp;
-        _pendingKeys["AggressiveVolumeDown"] = kb.AggressiveVolumeDown;
-    }
-
-    private void BuildAppearanceUi()
-    {
-        var fontCombo = this.FindControl<ComboBox>("FontScaleComboBox");
-        if (fontCombo != null)
-        {
-            fontCombo.ItemsSource = new List<string>
-            {
-                "Extra Small",
-                "Small",
-                "Medium",
-                "Normal",
-                "Large",
-                "Extra Large"
-            };
-            fontCombo.SelectedIndex = (int)_pendingFontScale;
-
-            fontCombo.SelectionChanged += (s, e) =>
-            {
-                _pendingFontScale = (FontScale)fontCombo.SelectedIndex;
-                ThemeManager.ApplyFontScale(_pendingFontScale);
-            };
-        }
-
-        var themeCombo = this.FindControl<ComboBox>("ThemeComboBox");
-        if (themeCombo != null)
-        {
-            themeCombo.ItemsSource = new List<string>
-            {
-                "Follow OS Theme",
-                "Dark Theme",
-                "Light Theme"
-            };
-            themeCombo.SelectedIndex = (int)_pendingThemeMode;
-
-            themeCombo.SelectionChanged += (s, e) =>
-            {
-                _pendingThemeMode = (ThemeMode)themeCombo.SelectedIndex;
-                ThemeManager.ApplyTheme(_pendingThemeMode);
-            };
-        }
-
-        BuildAudioWarningUi();
-    }
-
-    /// <summary>
-    /// Settings → Audio. Mirrors whatever the user chose in the upload warning dialogs, so a
-    /// "never ask me again" is never a one-way door — this is the screen the dialog points at.
-    ///
-    /// The option order matches <see cref="AudioFixPrompt"/> exactly (Ask / AlwaysApply /
-    /// NeverApply), so the combo index IS the enum value. Keep them in step if either changes.
-    /// </summary>
-    private void BuildAudioWarningUi()
-    {
-        var peaks = this.FindControl<ComboBox>("PeakPromptComboBox");
-        if (peaks != null)
-        {
-            peaks.ItemsSource = new List<string>
-            {
-                "Ask me each time",
-                "Always soften sudden loud moments (do not ask)",
-                "Never soften them (do not ask)"
-            };
-            peaks.SelectedIndex = (int)_pendingPeakPrompt;
-            peaks.SelectionChanged += (_, _) =>
-            {
-                if (peaks.SelectedIndex >= 0)
-                    _pendingPeakPrompt = (AudioFixPrompt)peaks.SelectedIndex;
-            };
-        }
-
-        var protectGame = this.FindControl<ComboBox>("VoiceProtectGameComboBox");
-        if (protectGame != null)
-        {
-            protectGame.ItemsSource = new List<string>
-            {
-                "Remember what I picked last time",
-                "Always protect my voice (checkbox locked on)",
-                "Never protect my voice (checkbox locked off)"
-            };
-            protectGame.SelectedIndex = (int)_pendingVoiceProtectGame;
-            protectGame.SelectionChanged += (_, _) =>
-            {
-                if (protectGame.SelectedIndex >= 0)
-                    _pendingVoiceProtectGame = (VoiceProtectionMode)protectGame.SelectedIndex;
-            };
-        }
-
-        var protectMusic = this.FindControl<ComboBox>("VoiceProtectMusicComboBox");
-        if (protectMusic != null)
-        {
-            protectMusic.ItemsSource = new List<string>
-            {
-                "Remember what I picked last time",
-                "Always protect my voice (checkbox locked on)",
-                "Never protect my voice (checkbox locked off)"
-            };
-            protectMusic.SelectedIndex = (int)_pendingVoiceProtectMusic;
-            protectMusic.SelectionChanged += (_, _) =>
-            {
-                if (protectMusic.SelectedIndex >= 0)
-                    _pendingVoiceProtectMusic = (VoiceProtectionMode)protectMusic.SelectedIndex;
-            };
-        }
-    }
-
-    private void BuildKeyBindsUi()
-    {
-        var panel = this.FindControl<StackPanel>("KeyBindsPanel");
-        if (panel == null) return;
-
-        var labels = new Dictionary<string, string>
-        {
-            { "PlayPause", "Play / Pause Video" },
-            { "MarkStart", "Mark Start of Clip" },
-            { "MarkEnd", "Mark End of Clip" },
-            { "SeekForward", "Seek Forward" },
-            { "SeekBackward", "Seek Backward" },
-            { "FineSeekForward", "Fine Seek Forward (Ctrl + ...)" },
-            { "FineSeekBackward", "Fine Seek Backward (Ctrl + ...)" },
-            { "VolumeUp", "Volume Up" },
-            { "VolumeDown", "Volume Down" },
-            { "AggressiveVolumeUp", "Aggressive Volume Up (Ctrl + ...)" },
-            { "AggressiveVolumeDown", "Aggressive Volume Down (Ctrl + ...)" }
-        };
-
-        foreach (var kvp in labels)
-        {
-            var actionId = kvp.Key;
-            var description = kvp.Value;
-
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, 120") };
-            
-            var text = new TextBlock 
-            { 
-                Text = description, 
-                Foreground = this.TryFindResource("AppTextPrimaryBrush", out var brush) ? brush as IBrush : Brushes.White,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            
-            var btn = new Button 
-            { 
-                Content = _pendingKeys[actionId].ToString(),
-                Width = 120,
-                Classes = { "Primary" }
-            };
-            
-            btn.Click += (s, e) => 
-            {
-                if (_waitingForKeyAction != null)
-                {
-                    _keyButtons[_waitingForKeyAction].Content = _pendingKeys[_waitingForKeyAction].ToString();
-                }
-                _waitingForKeyAction = actionId;
-                btn.Content = "Press any key...";
-            };
-
-            _keyButtons[actionId] = btn;
-
-            Grid.SetColumn(text, 0);
-            Grid.SetColumn(btn, 1);
-            grid.Children.Add(text);
-            grid.Children.Add(btn);
-
-            panel.Children.Add(grid);
-        }
-
-        var resetBtn = this.FindControl<Button>("ResetKeyBindsBtn");
-        if (resetBtn != null)
-        {
-            resetBtn.Click += async (s, e) =>
-            {
-                var confirm = new ConfirmDialogWindow();
-                confirm.SetTitle("Reset to Factory Defaults");
-                confirm.SetMessage("Reset every keyboard shortcut back to its default?\nAll of your custom key binds will be lost.");
-                confirm.SetButtonText("YES, RESET", "CANCEL");
-                await confirm.ShowDialog(this);
-                if (!confirm.Result) return;
-
-                ResetPendingKeyBinds();
-            };
-        }
-    }
-
-    private void ResetPendingKeyBinds()
-    {
-        var def = new KeyBinds();
-        foreach (var kvp in _pendingKeys.Keys.ToList())
-        {
-            var prop = typeof(KeyBinds).GetProperty(kvp);
-            if (prop != null)
-            {
-                _pendingKeys[kvp] = (Key)prop.GetValue(def)!;
-                if (_keyButtons.TryGetValue(kvp, out var btnRef))
-                {
-                    btnRef.Content = _pendingKeys[kvp].ToString();
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// G03 — Performance tab. Maps the friendly labels shown to the user onto the exact strings
-    /// <c>EncoderManager.HardwareByStrategy</c> understands. Do not change the right-hand values.
-    /// </summary>
-    private static readonly (string Label, string Value)[] VideoEncoderChoices =
-    [
-        ("Automatic (recommended)", "Auto"),
-        ("NVIDIA graphics card (NVENC)", "NVIDIA"),
-        ("AMD graphics card (AMF)", "AMD"),
-        ("Intel built-in graphics (QuickSync)", "INTEL"),
-        ("Processor only — slowest (CPU)", "CPU"),
-    ];
-
-    private void BuildVideoEncoderUi()
-    {
-        _pendingVideoEncoder = string.IsNullOrWhiteSpace(SettingsManager.Instance.VideoEncoderOverride)
-            ? "Auto"
-            : SettingsManager.Instance.VideoEncoderOverride;
-
-        var combo = this.FindControl<ComboBox>("VideoEncoderComboBox");
-        var status = this.FindControl<TextBlock>("VideoEncoderStatusText");
-        if (combo == null) return;
-
-        var labels = VideoEncoderChoices.Select(c => c.Label).ToList();
-        combo.ItemsSource = labels;
-
-        int idx = Array.FindIndex(VideoEncoderChoices, c =>
-            c.Value.Equals(_pendingVideoEncoder, StringComparison.OrdinalIgnoreCase));
-        combo.SelectedIndex = idx >= 0 ? idx : 0;
-
-        combo.SelectionChanged += (_, _) =>
-        {
-            int i = combo.SelectedIndex;
-            if (i >= 0 && i < VideoEncoderChoices.Length)
-                _pendingVideoEncoder = VideoEncoderChoices[i].Value;
-        };
-
-        if (status != null)
-        {
-            _ = Task.Run(() =>
-            {
-                string text;
-                try
-                {
-                    var mgr = new EncoderManager(null, null);
-                    text = mgr.AvailableEncoders.Count == 0
-                        ? "Detected on this computer: no graphics-card encoder found."
-                        : "Detected on this computer: " + string.Join(", ", mgr.AvailableEncoders
-                            .Select(e => e switch
-                            {
-                                "h264_nvenc" => "NVIDIA",
-                                "h264_amf" => "AMD",
-                                "h264_qsv" => "Intel",
-                                _ => e
-                            }));
-                }
-                catch (System.Exception ex)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    text = "Could not check this computer's graphics encoders.";
-                }
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => status.Text = text);
-            });
-        }
-    }
-
-    private void BuildMaskOverlayUi()
-    {
-        _pendingMaskOverlay = SettingsManager.Instance.ActiveMaskOverlay;
-        
-        var combo = this.FindControl<ComboBox>("MaskOverlayProfileComboBox");
-        if (combo != null)
-        {
-            var profiles = MaskOverlayManager.GetAvailableProfiles();
-            combo.ItemsSource = profiles;
-            combo.SelectedItem = _pendingMaskOverlay;
-
-            combo.SelectionChanged += (s, e) =>
-            {
-                if (combo.SelectedItem is string selected)
-                {
-                    _pendingMaskOverlay = selected;
-                }
-            };
-        }
-    }
-
-    private void BuildDefaultsUi()
-    {
-        var panel = this.FindControl<StackPanel>("DefaultsPanel");
-        if (panel == null) return;
-
-        var speedNum = new NumericUpDown
-        {
-            Minimum = 0.1m, Maximum = 4.0m, Increment = 0.1m,
-            Value = (decimal)_pendingDefaults.DefaultSpeed,
-            FormatString = "0.0",
-            Width = 100, HorizontalAlignment = HorizontalAlignment.Right
-        };
-        speedNum.ValueChanged += (_, _) => _pendingDefaults.DefaultSpeed = (double)(speedNum.Value ?? (decimal)1.1);
-        panel.Children.Add(MakeValueBehaviorRow("Default Speed", _pendingDefaults.SpeedBehavior, v => _pendingDefaults.SpeedBehavior = v, speedNum));
-
-        var qCombo = new ComboBox { Width = 150, HorizontalAlignment = HorizontalAlignment.Right };
-        var qItems = new List<string>();
-        foreach (var tier in FreeVideoStudio.App.ViewModels.QualityLadder.Tiers) qItems.Add(tier.Name);
-        qCombo.ItemsSource = qItems;
-        qCombo.SelectedIndex = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(_pendingDefaults.QualityIndex);
-        qCombo.SelectionChanged += (_, _) =>
-            _pendingDefaults.QualityIndex = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(qCombo.SelectedIndex);
-        panel.Children.Add(MakeValueBehaviorRow("Default Video Quality", _pendingDefaults.QualityBehavior, v => _pendingDefaults.QualityBehavior = v, qCombo));
-
-        panel.Children.Add(MakeBehaviorCheckboxRow("Portrait Mode (9:16)", _pendingDefaults.PortraitBehavior, v => _pendingDefaults.PortraitBehavior = v));
-        panel.Children.Add(MakeBehaviorCheckboxRow("Show Teammates", _pendingDefaults.ShowTeammatesBehavior, v => _pendingDefaults.ShowTeammatesBehavior = v));
-        panel.Children.Add(MakeBehaviorCheckboxRow("Enable Fade-In/Out", _pendingDefaults.EnableFadeBehavior, v => _pendingDefaults.EnableFadeBehavior = v));
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Speed Editor",
-            FontWeight = Avalonia.Media.FontWeight.Bold,
-            Margin = new Thickness(0, 16, 0, 2)
-        });
-
-        var zoomCombo = new ComboBox { Width = 170, HorizontalAlignment = HorizontalAlignment.Right };
-        zoomCombo.ItemsSource = new List<string> { "Instant (hard cut)", "Slow (gradual)" };
-        zoomCombo.SelectedIndex = _pendingDefaults.DefaultZoomSlow ? 1 : 0;
-        zoomCombo.SelectionChanged += (_, _) => _pendingDefaults.DefaultZoomSlow = zoomCombo.SelectedIndex == 1;
-        panel.Children.Add(MakeSimpleRow("Default Zoom-In Type", zoomCombo));
-
-        var freezeVals = new[] { 0.5, 1.0, 1.5, 2.0, 2.5, 3.0 };
-        var freezeCombo = new ComboBox { Width = 170, HorizontalAlignment = HorizontalAlignment.Right };
-        freezeCombo.ItemsSource = new List<string> { "0.5s", "1.0s", "1.5s", "2.0s", "2.5s", "3.0s" };
-        int fi = Array.FindIndex(freezeVals, v => Math.Abs(v - _pendingDefaults.DefaultFreezeDurationS) < 0.01);
-        freezeCombo.SelectedIndex = fi >= 0 ? fi : 1;
-        freezeCombo.SelectionChanged += (_, _) =>
-        {
-            if (freezeCombo.SelectedIndex >= 0 && freezeCombo.SelectedIndex < freezeVals.Length)
-                _pendingDefaults.DefaultFreezeDurationS = freezeVals[freezeCombo.SelectedIndex];
-        };
-        panel.Children.Add(MakeSimpleRow("Default Freeze Duration", freezeCombo));
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Text Caption",
-            FontWeight = Avalonia.Media.FontWeight.Bold,
-            Margin = new Thickness(0, 16, 0, 2)
-        });
-
-        var keepCaption = new CheckBox
-        {
-            Content = "Leave text from Video to Video",
-            IsChecked = KeepOverlayTextBetweenVideos,
-            MinHeight = 44
-        };
-        ToolTip.SetTip(keepCaption,
-            "This is about the words you type across the top of the video.\n\n" +
-            "OFF (normal): the words are cleared as soon as a video finishes processing, and again " +
-            "when you open the next video. Every new video starts with an empty box, so you can " +
-            "never accidentally publish a clip carrying the last one's title.\n\n" +
-            "ON: the words stay exactly as you left them and carry over to the next video. Useful " +
-            "if you make a series and type the same title every single time — but then it is on " +
-            "you to change it when it needs changing.");
-        keepCaption.IsCheckedChanged += (_, _) => KeepOverlayTextBetweenVideos = keepCaption.IsChecked == true;
-        panel.Children.Add(keepCaption);
-
+        string music = "";
         try
         {
             var state = _writer.ReadSnapshot();
             if (state.TryGetPropertyValue("CustomMusicDirectory", out var node) && node != null)
             {
-                _pendingMusicFolder = node.GetValue<string>() ?? "";
-                _initialMusicFolder = _pendingMusicFolder;
+                music = node.GetValue<string>() ?? "";
+                _initialMusicFolder = music;
             }
             else if (_writer.IsPrimed)
             {
-                _pendingMusicFolder = "";
                 _initialMusicFolder = "";
             }
         }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
-        var txtFolder = this.FindControl<TextBox>("DefaultMusicFolderTextBox");
+        Vm = new SettingsViewModel(settings, music, SafeGameProfiles());
 
-        var btnFolder = this.FindControl<Button>("BrowseMusicFolderBtn");
-        if (btnFolder != null)
+        InitializeComponent();
+        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
+        DataContext = this;
+
+        Vm.PropertyChanged += OnVmPropertyChanged;
+        BuildVideoEncoderStatus();
+        BuildAiTrackingUi();
+        BuildAboutUi();
+        BuildSearch();
+        RestoreLastTab();
+
+        // SETKEYS_01 — shortcut capture must see the key BEFORE the focused button turns Space/Enter into a click.
+        AddHandler(KeyDownEvent, OnCaptureKeyDown, RoutingStrategies.Tunnel);
+        KeyDown += OnWindowKeyDown;
+        AttachTitleBarDrag();
+    }
+
+    private static IReadOnlyList<string> SafeGameProfiles()
+    {
+        try { return MaskOverlayManager.GetAvailableProfiles(); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); return Array.Empty<string>(); }
+    }
+
+    /// <summary>
+    /// The music folder the Add Music wizard scans ("" = Windows Music). Kept for callers and tests:
+    /// setting a folder that does not exist throws and keeps the previous value.
+    /// </summary>
+    public string DefaultMusicFolder
+    {
+        get => Vm.MusicFolder;
+        set
         {
-            btnFolder.Click += async (s, e) =>
-            {
-                string startPath = string.IsNullOrWhiteSpace(_pendingMusicFolder) || !System.IO.Directory.Exists(_pendingMusicFolder)
-                    ? Infrastructure.MemeDirectory.GetMusicRoot()
-                    : _pendingMusicFolder;
-                var folder = await this.StorageProvider.TryGetFolderFromPathAsync(new Uri(startPath));
-                
-                var result = await this.StorageProvider.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
-                {
-                    Title = "Select Default Music Folder",
-                    SuggestedStartLocation = folder,
-                    AllowMultiple = false
-                });
-
-                if (result != null && result.Count > 0)
-                {
-                    DefaultMusicFolder = result[0].Path.LocalPath;
-                    if (txtFolder != null) txtFolder.Text = DefaultMusicFolder;
-                }
-            };
+            if (!string.IsNullOrWhiteSpace(value) && !System.IO.Directory.Exists(value))
+                throw new ArgumentException("Folder does not exist.");
+            Vm.MusicFolder = value ?? "";
         }
     }
 
-    /// <summary>Meme System §3: path display + Open Folder + Change Folder (with
-    /// UnauthorizedAccessException revert guard). Applies IMMEDIATELY (not on APPLY):
-    /// the directory change saves, notifies the MainWindow to re-scan, and reverts on failure.</summary>
-    private void BuildMemeFolderUi()
+    // ───────────────────────────── Live preview (SETPREVIEW_01) ─────────────────────────────
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        var pathBox = this.FindControl<TextBox>("MemeFolderTextBox");
-        var statusText = this.FindControl<TextBlock>("MemeFolderStatusText");
-        if (pathBox != null) pathBox.Text = MemeDirectory.GetActive();
+        string n = e.PropertyName ?? "";
+        if (n.Length == 0 || n == nameof(SettingsViewModel.ThemeIndex))
+            ThemeManager.ApplyTheme(Vm.P.ThemeMode);
+        if (n.Length == 0 || n == nameof(SettingsViewModel.FontScaleIndex))
+            ThemeManager.ApplyFontScale(Vm.P.FontScale);
+    }
 
-        var openBtn = this.FindControl<Button>("OpenMemeFolderBtn");
-        if (openBtn != null) openBtn.Click += (s, e) =>
+    /// <summary>SETPREVIEW_01 — CANCEL / Discard puts back the look the app had when Settings opened.</summary>
+    private void RevertLivePreview()
+    {
+        if (Vm.P.ThemeMode != _openTheme) ThemeManager.ApplyTheme(_openTheme);
+        if (Vm.P.FontScale != _openFontScale) ThemeManager.ApplyFontScale(_openFontScale);
+    }
+
+    // ───────────────────────────── Closing (SETUNSAVED_01) ─────────────────────────────
+
+    private void OnSaveClicked(object? sender, RoutedEventArgs e) => SaveAndClose();
+
+    private void OnCancelClicked(object? sender, RoutedEventArgs e) => _ = RequestCloseAsync();
+
+    /// <summary>CANCEL, Esc and the window's ✕ all come here: unsaved changes are never dropped silently.</summary>
+    internal async Task RequestCloseAsync()
+    {
+        if (_closePromptOpen) return;
+        if (Vm.HasUnsavedChanges)
         {
+            _closePromptOpen = true;
+            ConfirmDialogWindow.ConfirmDialogResult answer;
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = MemeDirectory.GetActive(),
-                    UseShellExecute = true
-                });
-            }
-            catch (Exception ex) { RuntimeLog.Fail("Memes", $"Open meme folder failed: {ex.Message}"); }
-        };
-
-        var changeBtn = this.FindControl<Button>("ChangeMemeFolderBtn");
-        if (changeBtn != null) changeBtn.Click += async (s, e) =>
-        {
-            var start = await this.StorageProvider.TryGetFolderFromPathAsync(new Uri(MemeDirectory.GetActive()));
-            var result = await this.StorageProvider.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
-            {
-                Title = "Select Meme Folder",
-                SuggestedStartLocation = start,
-                AllowMultiple = false
-            });
-            if (result == null || result.Count == 0) return;
-
-            string newPath = result[0].Path.LocalPath;
-            string lastKnownGood = SettingsManager.Instance.MemeDirectoryPath;
-            try
-            {
-                _ = System.IO.Directory.GetFiles(newPath);
-
-                if (!SettingsManager.Update(s => s.MemeDirectoryPath = newPath))
-                {
-                    if (pathBox != null) pathBox.Text = MemeDirectory.GetActive();
-                    if (statusText != null) statusText.Text = "⚠ Could not save the new folder. Keeping the previous folder.";
-                    RuntimeLog.Fail("Memes", "Meme directory change could not be committed to settings.json.");
-                    return;
-                }
-                if (pathBox != null) pathBox.Text = newPath;
-                if (statusText != null) statusText.Text = "";
-                RuntimeLog.Info("Memes", $"Meme directory changed to: {System.IO.Path.GetFileName(newPath.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar))}");
-                RuntimeLog.Debug("Memes", $"Meme directory changed to: {newPath}");
-                MemeDirectory.NotifyChanged();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                SettingsManager.Update(s => s.MemeDirectoryPath = lastKnownGood);
-                if (pathBox != null) pathBox.Text = MemeDirectory.GetActive();
-                if (statusText != null) statusText.Text = "⚠ That folder can't be read (access denied). Keeping the previous folder.";
-                RuntimeLog.Fail("Memes", $"Meme directory change blocked (UnauthorizedAccess): {System.IO.Path.GetFileName(newPath.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar))} — {ex.Message}");
-                RuntimeLog.Debug("Memes", $"Meme directory change blocked full path: {newPath}");
+                var dlg = new ConfirmDialogWindow();
+                dlg.SetTitle("Save your changes?");
+                dlg.SetMessage("You changed some settings.\n\nSave them, keep editing, or throw the changes away?");
+                dlg.SetButtonText("Save", "Keep editing", "Discard");
+                dlg.SetButtonClasses("Success", "Secondary", "Danger");
+                await dlg.ShowDialog(this);
+                answer = dlg.DialogResult;
             }
             catch (Exception ex)
             {
-                SettingsManager.Update(s => s.MemeDirectoryPath = lastKnownGood);
-                if (pathBox != null) pathBox.Text = MemeDirectory.GetActive();
-                if (statusText != null) statusText.Text = "⚠ That folder can't be used. Keeping the previous folder.";
-                RuntimeLog.Fail("Memes", $"Meme directory change failed: {System.IO.Path.GetFileName(newPath.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar))} — {ex.Message}");
-                RuntimeLog.Debug("Memes", $"Meme directory change failed full path: {newPath}");
+                RuntimeLog.Fail("SETTINGS", $"Unsaved-changes prompt failed, keeping the window open: {ex.Message}");
+                answer = ConfirmDialogWindow.ConfirmDialogResult.No;
             }
-        };
+            finally { _closePromptOpen = false; }
+
+            if (answer == ConfirmDialogWindow.ConfirmDialogResult.Yes) { SaveAndClose(); return; }
+            if (answer != ConfirmDialogWindow.ConfirmDialogResult.Alt) return; // Keep editing / Esc / ✕
+        }
+        DiscardAndClose();
     }
 
-    private Grid MakeSimpleRow(string label, Control control)
+    private void DiscardAndClose()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, 170"), Margin = new Thickness(0, 0, 0, 5) };
-        var text = new TextBlock { Text = label, Foreground = this.TryFindResource("AppTextPrimaryBrush", out var brush) ? brush as IBrush : Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(text, 0); Grid.SetColumn(control, 1);
-        grid.Children.Add(text); grid.Children.Add(control);
-        return grid;
+        RevertLivePreview();
+        _isSafeToClose = true;
+        Close(false);
     }
 
-    private Grid MakeBehaviorCheckboxRow(string label, CheckboxDefaultBehavior initialBehavior, Action<CheckboxDefaultBehavior> onToggle)
+    protected override void OnClosing(WindowClosingEventArgs e)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, 160"), Margin = new Thickness(0, 0, 0, 5) };
-        var text = new TextBlock { Text = label, Foreground = this.TryFindResource("AppTextPrimaryBrush", out var brush) ? brush as IBrush : Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-        var combo = new ComboBox { Width = 160, HorizontalAlignment = HorizontalAlignment.Right };
-        combo.ItemsSource = new List<string> { "Always Off", "Always On", "Remember Last Choice" };
-        combo.SelectedIndex = (int)initialBehavior;
-        combo.SelectionChanged += (_, _) => onToggle((CheckboxDefaultBehavior)combo.SelectedIndex);
-        
-        Grid.SetColumn(text, 0); Grid.SetColumn(combo, 1);
-        grid.Children.Add(text); grid.Children.Add(combo);
-        return grid;
-    }
-
-    private Grid MakeValueBehaviorRow(string label, ValueDefaultBehavior initialBehavior, Action<ValueDefaultBehavior> onToggle, Control valueControl)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, 170, Auto"), Margin = new Thickness(0, 0, 0, 5) };
-        var text = new TextBlock { Text = label, Foreground = this.TryFindResource("AppTextPrimaryBrush", out var brush) ? brush as IBrush : Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-        var combo = new ComboBox { Width = 160, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0,0,10,0) };
-        combo.ItemsSource = new List<string> { "Fixed Value", "Remember Last Choice" };
-        combo.SelectedIndex = (int)initialBehavior;
-        
-        Grid.SetColumn(text, 0); Grid.SetColumn(combo, 1); Grid.SetColumn(valueControl, 2);
-        grid.Children.Add(text); grid.Children.Add(combo); grid.Children.Add(valueControl);
-        
-        Action updateEnable = () => valueControl.IsEnabled = combo.SelectedIndex == 0;
-        updateEnable();
-        
-        combo.SelectionChanged += (_, _) => {
-            onToggle((ValueDefaultBehavior)combo.SelectedIndex);
-            updateEnable();
-        };
-        return grid;
-    }
-
-    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (_waitingForKeyAction != null)
+        if (!_isSafeToClose)
         {
-            if (e.Key == Key.Escape || e.Key == Key.Enter || e.Key == Key.Tab)
+            if (e.IsProgrammatic)
             {
-                _keyButtons[_waitingForKeyAction].Content = _pendingKeys[_waitingForKeyAction].ToString();
-                _waitingForKeyAction = null;
-                e.Handled = true;
+                // A caller closed us in code: that is a CANCEL — nothing saved, the look put back.
+                RevertLivePreview();
+                _isSafeToClose = true;
+            }
+            else
+            {
+                e.Cancel = true;
+                Dispatcher.UIThread.Post(() => _ = RequestCloseAsync());
                 return;
             }
-
-            if (_pendingKeys.Values.Contains(e.Key) && _pendingKeys[_waitingForKeyAction] != e.Key)
-            {
-                _keyButtons[_waitingForKeyAction].Content = "In Use! (" + _pendingKeys[_waitingForKeyAction].ToString() + ")";
-                _waitingForKeyAction = null;
-                e.Handled = true;
-                return;
-            }
-
-            _pendingKeys[_waitingForKeyAction] = e.Key;
-            _keyButtons[_waitingForKeyAction].Content = e.Key.ToString();
-            _waitingForKeyAction = null;
-            e.Handled = true;
         }
-    }
-
-
-    protected override void OnOpened(EventArgs e)
-    {
-        base.OnOpened(e);
-    }
-
-    protected override async void OnClosing(WindowClosingEventArgs e)
-    {
-        if (_isSafeToClose)
-        {
-            base.OnClosing(e);
-            return;
-        }
-
-        e.Cancel = true;
-        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, "SettingsBounds");
-
-        this.Hide();
 
         try
         {
+            FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, "SettingsBounds");
+            RememberLastTab();
+        }
+        catch (Exception ex) { RuntimeLog.Fail("SETTINGS", $"Error saving window state during close: {ex.Message}"); }
+        base.OnClosing(e);
+    }
 
-        }
-        catch (Exception ex)
+    // ───────────────────────────── Keys ─────────────────────────────
+
+    private void OnKeyBindButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not KeyBindRowViewModel row) return;
+        if (_waitingRow != null) _waitingRow.IsWaiting = false;
+        _waitingRow = row;
+        row.IsWaiting = true;
+        Vm.KeyBindStatus = "";
+        e.Handled = true;
+    }
+
+    /// <summary>SETKEYS_01 — tunnel handler: while a shortcut button waits, the next key is the new shortcut.</summary>
+    private void OnCaptureKeyDown(object? sender, KeyEventArgs e)
+    {
+        var row = _waitingRow;
+        if (row == null) return;
+        e.Handled = true;
+        if (KeyBindRowViewModel.IsModifierOnly(e.Key)) return; // wait for the real key
+        _waitingRow = null;
+        row.IsWaiting = false;
+        if (e.Key == Key.Escape || e.Key == Key.Tab) { Vm.KeyBindStatus = ""; return; }
+        Vm.KeyBindStatus = Vm.TryAssignKey(row, e.Key) ?? "";
+    }
+
+    /// <summary>SETKEYS_02 — Esc = Cancel, Enter = Save, unless a control already used the key.</summary>
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled) return;
+        if (e.Key == Key.Escape)
         {
-            RuntimeLog.Fail("SETTINGS", $"Error saving state during close: {ex.Message}");
+            e.Handled = true;
+            if (ClearSearchIfActive()) return;
+            _ = RequestCloseAsync();
         }
-        finally
+        else if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
         {
-            _isSafeToClose = true;
-            this.Close();
+            e.Handled = true;
+            SaveAndClose();
         }
     }
 
-    private void AttachTitleBarDrag()
+    // ───────────────────────────── Tabs ─────────────────────────────
+
+    private TabControl? Tabs => this.FindNameScope()?.Find("SettingsTabControl") as TabControl;
+
+    private SettingsSection CurrentSection => (Tabs?.SelectedItem as TabItem)?.Name switch
     {
-        var titleBar = this.FindControl<Border>("TitleBarBorder");
-        if (titleBar != null)
+        "EditingTab" => SettingsSection.Editing,
+        "FilesTab" => SettingsSection.Files,
+        "SoundTab" => SettingsSection.Sound,
+        "ShortcutsTab" => SettingsSection.Shortcuts,
+        "AiFeaturesTab" => SettingsSection.Ai,
+        "AboutTab" => SettingsSection.About,
+        _ => SettingsSection.General,
+    };
+
+    /// <summary>SETLASTTAB_01 — Settings reopens on the tab you used last.</summary>
+    private void RestoreLastTab()
+    {
+        try
         {
-            titleBar.IsHitTestVisible = true;
-            titleBar.DoubleTapped += (s, e) =>
+            var state = _writer.ReadSnapshot();
+            if (state.TryGetPropertyValue(LastTabStateKey, out var node) && node != null && Tabs is { } tc)
             {
-                this.WindowState = this.WindowState == Avalonia.Controls.WindowState.Maximized 
-                    ? Avalonia.Controls.WindowState.Normal 
-                    : Avalonia.Controls.WindowState.Maximized;
-                e.Handled = true;
-            };
-            titleBar.PointerPressed += (s, e) =>
-            {
-                if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.ClickCount < 2)
-                {
-                    try { BeginMoveDrag(e); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-                }
-            };
+                int i = node.GetValue<int>();
+                if (i >= 0 && i < tc.ItemCount) tc.SelectedIndex = i;
+            }
         }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
+
+    private void RememberLastTab()
+    {
+        if (Tabs is not { } tc || tc.SelectedIndex < 0) return;
+        try { _writer.Enqueue(new JsonObject { [LastTabStateKey] = tc.SelectedIndex }); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
     public void SelectTab(string tabHeader)
     {
-        var tabControl = this.FindControl<TabControl>("SettingsTabControl");
+        var tabControl = Tabs;
         if (tabControl == null) return;
         for (int i = 0; i < tabControl.Items.Count; i++)
         {
@@ -867,5 +307,63 @@ public partial class SettingsWindow : Window
         settingsWin.SelectTab("About");
         return await settingsWin.ShowDialog<bool>(owner);
     }
-}
 
+    /// <summary>One line in the footer: what just happened, or why a save failed (SETSAVEFAIL_01).</summary>
+    private void SetFooterStatus(string text, bool isError = false)
+    {
+        if (this.FindNameScope()?.Find("FooterStatusText") is not TextBlock t) return;
+        t.Text = text;
+        t.Foreground = ThemeResources.Brush(this, isError ? "AppDangerBrush" : "AppTextMutedBrush", t.Foreground ?? Avalonia.Media.Brushes.Gray);
+    }
+
+    // ───────────────────────────── Encoder status ─────────────────────────────
+
+    private void BuildVideoEncoderStatus()
+    {
+        if (this.FindNameScope()?.Find("VideoEncoderStatusText") is not TextBlock status) return;
+        _ = Task.Run(() =>
+        {
+            string text;
+            try
+            {
+                var mgr = new EncoderManager(null, null);
+                text = mgr.AvailableEncoders.Count == 0
+                    ? "Found on this computer: no graphics-card video chip."
+                    : "Found on this computer: " + string.Join(", ", mgr.AvailableEncoders
+                        .Select(e => e switch
+                        {
+                            "h264_nvenc" => "NVIDIA",
+                            "h264_amf" => "AMD",
+                            "h264_qsv" => "Intel",
+                            _ => e
+                        }));
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Swallowed(ex);
+                text = "Could not check this computer's video chips.";
+            }
+            Dispatcher.UIThread.Post(() => status.Text = text);
+        });
+    }
+
+    // ───────────────────────────── Title bar ─────────────────────────────
+
+    private void AttachTitleBarDrag()
+    {
+        if (this.FindNameScope()?.Find("TitleBarBorder") is not Border titleBar) return;
+        titleBar.IsHitTestVisible = true;
+        titleBar.DoubleTapped += (s, e) =>
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            e.Handled = true;
+        };
+        titleBar.PointerPressed += (s, e) =>
+        {
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.ClickCount < 2)
+            {
+                try { BeginMoveDrag(e); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            }
+        };
+    }
+}

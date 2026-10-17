@@ -18,6 +18,14 @@ namespace FvsBuild;
 /// Patch bases come from obj\ReleaseHistory\&lt;version&gt;\ (the signed program file of earlier builds).
 /// A release build patches from the last versions that were actually PUBLISHED; a dev build from the
 /// last builds of any kind, so dev_build.cmd + dev.cmd exercise the same path (D1).
+/// <para>DELTABASE_01 — before a release build makes its patches, <see cref="EnsurePublishedBases"/>
+/// makes sure the program file of each of the last <see cref="PatchBases"/> PUBLISHED releases is in
+/// that history and marked released: it reads each release's signed update.json, takes the program's
+/// SHA-256 from it, and either marks a matching local copy as released or downloads that release's
+/// own content-addressed program asset (<c>f-&lt;sha&gt;.br</c>) and verifies it. It used to run only when
+/// the history folder was empty, and then fetched the release asset named <c>FreeVideoStudio.exe</c> —
+/// which is the INSTALLER under its pre-Inno alias, not the program — so a release patched from a
+/// file no installed copy has, or (with only unmarked local builds) from nothing at all.</para>
 /// </summary>
 internal static class SmartUpdateBuilder
 {
@@ -52,7 +60,7 @@ internal static class SmartUpdateBuilder
             }
 
             Directory.CreateDirectory(SmartDir);
-            EnsureHistoryFromGitHub(log);
+            if (!IsDevBuild) EnsurePublishedBases(signer.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256), log);
 
             string installManifestText = File.ReadAllText(Path.Combine(stagingDir, InstallPayload.ManifestName));
             InstallFileManifest install = InstallPayload.ReadManifest(stagingDir);
@@ -66,7 +74,11 @@ internal static class SmartUpdateBuilder
                 if (!File.Exists(target))
                     BrotliFile.CompressFile(Path.Combine(stagingDir, file.Path.Replace('/', Path.DirectorySeparatorChar)), target);
                 long assetLength = new FileInfo(target).Length;
-                manifest.Files.Add(new SmartFile { Path = file.Path, Length = file.Length, Sha256 = file.Sha256, Asset = asset, AssetLength = assetLength });
+                manifest.Files.Add(new SmartFile
+                {
+                    Path = file.Path, Length = file.Length, Sha256 = file.Sha256, Asset = asset, AssetLength = assetLength,
+                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target) // ASSETHASH_01
+                });
                 rawTotal += file.Length;
                 compressedTotal += assetLength;
             }
@@ -96,7 +108,11 @@ internal static class SmartUpdateBuilder
                     File.Delete(target);
                     continue;
                 }
-                manifest.Patches.Add(new SmartPatch { FromSha256 = oldSha, ToSha256 = newSha, Asset = asset, AssetLength = patchLength });
+                manifest.Patches.Add(new SmartPatch
+                {
+                    FromSha256 = oldSha, ToSha256 = newSha, Asset = asset, AssetLength = patchLength,
+                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target) // ASSETHASH_01
+                });
                 log.Info($"[Smart] Patch from {version}: {RuntimePayloadManifest.FormatBytes(patchLength)} "
                        + $"(instead of {RuntimePayloadManifest.FormatBytes(exeEntry.AssetLength)}).");
             }
@@ -216,46 +232,116 @@ internal static class SmartUpdateBuilder
         }
     }
 
-    private static void EnsureHistoryFromGitHub(BuildLog log)
+    /// <summary>
+    /// DELTABASE_01 — guarantees patch bases for the last <see cref="PatchBases"/> published releases.
+    /// Best effort: without the GitHub CLI, or for a release that predates update.json, it logs and
+    /// moves on (that release simply gets no patch; the client then downloads the compressed program).
+    /// Every downloaded byte is checked against the release's SIGNED update.json, so a base is either
+    /// exactly the program that release installed or it is not used.
+    /// </summary>
+    internal static void EnsurePublishedBases(string signerThumbprint, BuildLog log)
     {
+        if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)
+        {
+            log.Warn("[Smart] GitHub CLI unavailable: patch bases come only from local release history.");
+            return;
+        }
+        if (!Cli.TryCapture("gh", ["release", "list", "--limit", "20", "--json", "tagName,isDraft,isPrerelease"], out List<string> lines))
+        {
+            log.Warn("[Smart] Could not list published releases: patch bases come only from local release history.");
+            return;
+        }
+
+        List<string> tags;
         try
         {
-            if (Directory.Exists(HistoryDir) && Directory.GetDirectories(HistoryDir).Any())
-                return;
+            tags = (System.Text.Json.Nodes.JsonNode.Parse(string.Join("\n", lines))?.AsArray() ?? [])
+                .Where(r => r?["isDraft"]?.GetValue<bool>() == false && r?["isPrerelease"]?.GetValue<bool>() == false)
+                .Select(r => r?["tagName"]?.GetValue<string>())
+                .OfType<string>()
+                .Where(t => Version.TryParse(t.TrimStart('v', 'V'), out _))
+                .OrderByDescending(t => Version.Parse(t.TrimStart('v', 'V')))
+                .Take(PatchBases)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or FormatException)
+        {
+            log.Warn("[Smart] The release list could not be read: " + ex.Message);
+            return;
+        }
 
-            if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)
-                return;
-
-            if (!Cli.TryCapture("gh", ["release", "list", "--limit", "3", "--json", "tagName,isDraft,isPrerelease"], out var lines))
-                return;
-
-            var array = System.Text.Json.Nodes.JsonNode.Parse(string.Join("\n", lines))?.AsArray();
-            if (array == null) return;
-
-            foreach (var item in array)
+        foreach (string tag in tags)
+        {
+            try
             {
-                if (item?["isDraft"]?.GetValue<bool>() == true) continue;
-                string? tag = item?["tagName"]?.GetValue<string>();
-                if (string.IsNullOrWhiteSpace(tag)) continue;
-
-                string cleanVersion = tag.TrimStart('v', 'V');
-                string folder = Path.Combine(HistoryDir, cleanVersion);
-                Directory.CreateDirectory(folder);
-                string targetExe = Path.Combine(folder, InstallPayload.ExecutableName);
-
-                log.Info($"[Smart] Fetching previous release binary for {tag} to generate binary delta patches...");
-                int exit = Cli.RunQuiet("gh", ["release", "download", tag, "--pattern", InstallPayload.ExecutableName, "--dir", folder, "--clobber"]);
-                if (exit == 0 && File.Exists(targetExe))
-                {
-                    File.WriteAllText(Path.Combine(folder, ReleasedMarker), DateTimeOffset.UtcNow.ToString("O"));
-                    log.Info($"[Smart] Successfully cached previous release binary for {cleanVersion}.");
-                    break;
-                }
+                EnsureBase(tag, signerThumbprint, log);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+            {
+                log.Warn($"[Smart] No patch base for {tag}: {ex.Message}");
             }
         }
-        catch (Exception ex)
+    }
+
+    private static void EnsureBase(string tag, string signerThumbprint, BuildLog log)
+    {
+        string version = tag.TrimStart('v', 'V');
+        string folder = Path.Combine(HistoryDir, version);
+        string exe = Path.Combine(folder, InstallPayload.ExecutableName);
+        if (File.Exists(exe) && File.Exists(Path.Combine(folder, ReleasedMarker))) return;
+
+        string scratch = Path.Combine(AssetsDir, "base-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratch);
+        try
         {
-            log.Warn($"[Smart] Could not fetch prior release binary from GitHub: {ex.Message}");
+            if (Cli.RunQuiet("gh", ["release", "download", tag, "--pattern", SmartUpdateManifest.FileName,
+                    "--pattern", SmartUpdateManifest.SignatureFileName, "--dir", scratch, "--clobber"]) != 0 ||
+                !File.Exists(Path.Combine(scratch, SmartUpdateManifest.FileName)))
+            {
+                log.Info($"[Smart] {tag} has no signed update list (released before smart updates): no patch from it.");
+                return;
+            }
+            byte[] json = File.ReadAllBytes(Path.Combine(scratch, SmartUpdateManifest.FileName));
+            byte[] signature = File.ReadAllBytes(Path.Combine(scratch, SmartUpdateManifest.SignatureFileName));
+            if (!SmartUpdateManifest.VerifySignature(json, signature, signerThumbprint, out string detail))
+                throw new InvalidDataException("its update list is not signed by the publisher (" + detail + ")");
+            SmartUpdateManifest published = SmartUpdateManifest.Parse(json);
+            if (!string.Equals(published.Version, version, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"its update list describes {published.Version}, not {version}");
+            SmartFile program = published.Files.Single(f => f.Path == InstallPayload.ExecutableName);
+
+            Directory.CreateDirectory(folder);
+            if (File.Exists(exe) && new FileInfo(exe).Length == program.Length &&
+                string.Equals(SmartUpdateManifest.Sha256Hex(exe), program.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                File.WriteAllText(Path.Combine(folder, ReleasedMarker), DateTimeOffset.UtcNow.ToString("O"));
+                log.Info($"[Smart] Local copy of {version} is the published program: marked as a patch base.");
+                return;
+            }
+
+            log.Info($"[Smart] Fetching the published program of {tag} as a patch base...");
+            if (Cli.RunQuiet("gh", ["release", "download", tag, "--pattern", program.Asset, "--dir", scratch, "--clobber"]) != 0)
+                throw new IOException("its program asset could not be downloaded");
+            string compressed = Path.Combine(scratch, program.Asset);
+            if (!string.IsNullOrEmpty(program.AssetSha256) &&
+                !string.Equals(SmartUpdateManifest.Sha256Hex(compressed), program.AssetSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("its program asset does not match the signed list");
+            string partial = exe + ".partial";
+            BrotliFile.DecompressFile(compressed, partial, program.Length);
+            if (new FileInfo(partial).Length != program.Length ||
+                !string.Equals(SmartUpdateManifest.Sha256Hex(partial), program.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(partial);
+                throw new InvalidDataException("the downloaded program does not match the signed list");
+            }
+            File.Move(partial, exe, overwrite: true);
+            File.WriteAllText(Path.Combine(folder, ReleasedMarker), DateTimeOffset.UtcNow.ToString("O"));
+            log.Info($"[Smart] Patch base {version} ready (verified against its signed update list).");
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { log.Warn("[Smart] Temporary folder kept: " + ex.Message); }
         }
     }
 }

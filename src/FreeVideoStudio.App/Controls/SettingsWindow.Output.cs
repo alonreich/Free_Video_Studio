@@ -1,138 +1,31 @@
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/03_FFMPEG_EXPORT_PIPELINE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System;
 using System.IO;
-using Avalonia;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using FreeVideoStudio.App.Infrastructure;
+using FreeVideoStudio.App.ViewModels;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Controls;
 
 /// <summary>
-/// OUTNAME_01 — Settings › Output Files. Edits, per tool, the save folder
+/// OUTNAME_01 — Settings › Files &amp; Folders. Per tool (Main App, Video Merger): the save folder
 /// (<see cref="AppSettings.MainOutputDirectory"/> / <see cref="AppSettings.MergerOutputDirectory"/>,
-/// ISSUE_04) and the automatic file-name base (<see cref="AppSettings.MainOutputBaseName"/> /
-/// <see cref="AppSettings.MergerOutputBaseName"/>). Values are pending until SAVE, exactly like
-/// every other tab; <see cref="ApplyPendingOutputSettings"/> writes them inside the single
-/// SETTX_01 transaction in <c>SaveAndClose</c>.
-///
-/// MVVM_01 — the tab is driven by compiled bindings to the direct properties below and by XAML
-/// click handlers; it performs no imperative control lookups.
+/// ISSUE_04) and the automatic file-name base. Also the music folder (SETMUSICDIR_01: read-only box +
+/// Browse, so a half-typed path can never be saved) and the meme folder (MEMEPENDING_01: pending until
+/// SAVE). Values are pending in <see cref="SettingsViewModel"/>; <see cref="ApplyPendingOutputSettings"/>
+/// writes them inside the single SETTX_01 transaction in <c>SaveAndClose</c>.
 ///
 /// An empty folder means "the real Windows Downloads folder, resolved at export time"
 /// (<see cref="OutputFolderResolver"/>). A folder is only accepted when it is writable now.
 /// </summary>
 public partial class SettingsWindow
 {
-    private string _pendingMainOutputDir = SettingsManager.Instance.MainOutputDirectory ?? "";
-    private string _pendingMergerOutputDir = SettingsManager.Instance.MergerOutputDirectory ?? "";
-    private string _pendingMainOutputBase = SettingsManager.Instance.MainOutputBaseName ?? OutputFileNaming.MainDefaultBaseName;
-    private string _pendingMergerOutputBase = SettingsManager.Instance.MergerOutputBaseName ?? OutputFileNaming.MergerDefaultBaseName;
     private readonly string _previousMergerOutputDir = SettingsManager.Instance.MergerOutputDirectory ?? "";
-
-    private string _mainOutputFolderDisplay = "";
-    private string _mergerOutputFolderDisplay = "";
-    private string _mainOutputNamePreview = "";
-    private string _mergerOutputNamePreview = "";
-    private string _outputFilesStatus = "";
-
-    public static readonly DirectProperty<SettingsWindow, string> MainOutputBaseNameTextProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MainOutputBaseNameText),
-            o => o.MainOutputBaseNameText, (o, v) => o.MainOutputBaseNameText = v);
-
-    public static readonly DirectProperty<SettingsWindow, string> MergerOutputBaseNameTextProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MergerOutputBaseNameText),
-            o => o.MergerOutputBaseNameText, (o, v) => o.MergerOutputBaseNameText = v);
-
-    public static readonly DirectProperty<SettingsWindow, string> MainOutputFolderDisplayProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MainOutputFolderDisplay), o => o.MainOutputFolderDisplay);
-
-    public static readonly DirectProperty<SettingsWindow, string> MergerOutputFolderDisplayProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MergerOutputFolderDisplay), o => o.MergerOutputFolderDisplay);
-
-    public static readonly DirectProperty<SettingsWindow, string> MainOutputNamePreviewProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MainOutputNamePreview), o => o.MainOutputNamePreview);
-
-    public static readonly DirectProperty<SettingsWindow, string> MergerOutputNamePreviewProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(MergerOutputNamePreview), o => o.MergerOutputNamePreview);
-
-    public static readonly DirectProperty<SettingsWindow, string> OutputFilesStatusProperty =
-        AvaloniaProperty.RegisterDirect<SettingsWindow, string>(nameof(OutputFilesStatus), o => o.OutputFilesStatus);
-
-    /// <summary>Main App automatic file name, bound two-way to its text box.</summary>
-    public string MainOutputBaseNameText
-    {
-        get => _pendingMainOutputBase;
-        set
-        {
-            SetAndRaise(MainOutputBaseNameTextProperty, ref _pendingMainOutputBase, value ?? "");
-            RefreshOutputDisplays();
-        }
-    }
-
-    /// <summary>Video Merger automatic file name, bound two-way to its text box.</summary>
-    public string MergerOutputBaseNameText
-    {
-        get => _pendingMergerOutputBase;
-        set
-        {
-            SetAndRaise(MergerOutputBaseNameTextProperty, ref _pendingMergerOutputBase, value ?? "");
-            RefreshOutputDisplays();
-        }
-    }
-
-    public string MainOutputFolderDisplay
-    {
-        get => _mainOutputFolderDisplay;
-        private set => SetAndRaise(MainOutputFolderDisplayProperty, ref _mainOutputFolderDisplay, value);
-    }
-
-    public string MergerOutputFolderDisplay
-    {
-        get => _mergerOutputFolderDisplay;
-        private set => SetAndRaise(MergerOutputFolderDisplayProperty, ref _mergerOutputFolderDisplay, value);
-    }
-
-    public string MainOutputNamePreview
-    {
-        get => _mainOutputNamePreview;
-        private set => SetAndRaise(MainOutputNamePreviewProperty, ref _mainOutputNamePreview, value);
-    }
-
-    public string MergerOutputNamePreview
-    {
-        get => _mergerOutputNamePreview;
-        private set => SetAndRaise(MergerOutputNamePreviewProperty, ref _mergerOutputNamePreview, value);
-    }
-
-    public string OutputFilesStatus
-    {
-        get => _outputFilesStatus;
-        private set => SetAndRaise(OutputFilesStatusProperty, ref _outputFilesStatus, value);
-    }
-
-    private void BuildOutputFilesUi() => RefreshOutputDisplays();
-
-    private void RefreshOutputDisplays()
-    {
-        MainOutputFolderDisplay = FolderDisplay(_pendingMainOutputDir);
-        MergerOutputFolderDisplay = FolderDisplay(_pendingMergerOutputDir);
-        MainOutputNamePreview = NamePreview(_pendingMainOutputBase, OutputFileNaming.MainDefaultBaseName);
-        MergerOutputNamePreview = NamePreview(_pendingMergerOutputBase, OutputFileNaming.MergerDefaultBaseName);
-    }
-
-    private static string FolderDisplay(string folder) => string.IsNullOrWhiteSpace(folder)
-        ? "Downloads (" + (KnownFolders.GetDownloads() ?? "not available on this PC") + ")"
-        : folder;
-
-    private static string NamePreview(string baseName, string fallback)
-    {
-        string safe = OutputFileNaming.Sanitize(baseName, fallback);
-        return "Next files: " + OutputFileNaming.NumberedFileName(safe, 1) + ", " +
-               OutputFileNaming.NumberedFileName(safe, 2) + ", " +
-               OutputFileNaming.NumberedFileName(safe, 3) + " ...";
-    }
 
     private void OnChangeMainOutputFolder(object? sender, RoutedEventArgs e) =>
         _ = ChangeOutputFolderAsync(merger: false);
@@ -140,40 +33,71 @@ public partial class SettingsWindow
     private void OnChangeMergerOutputFolder(object? sender, RoutedEventArgs e) =>
         _ = ChangeOutputFolderAsync(merger: true);
 
-    /// <summary>ASYNCUI_02 — Task-returning; <see cref="PickOutputFolderAsync"/> never throws.</summary>
+    /// <summary>ASYNCUI_02 — Task-returning; <see cref="PickFolderAsync"/> never throws.</summary>
     private async System.Threading.Tasks.Task ChangeOutputFolderAsync(bool merger)
     {
-        string? picked = await PickOutputFolderAsync(
-            merger ? _pendingMergerOutputDir : _pendingMainOutputDir,
-            merger ? "Choose where the Video Merger saves merged videos" : "Choose where the Main App saves finished videos");
+        string? picked = await PickFolderAsync(
+            merger ? Vm.MergerOutputDirectory : Vm.MainOutputDirectory,
+            merger ? "Choose where the Video Merger saves merged videos" : "Choose where the Main App saves finished videos",
+            requireWritable: true);
         if (picked == null) return;
-        if (merger) _pendingMergerOutputDir = picked;
-        else _pendingMainOutputDir = picked;
-        RefreshOutputDisplays();
+        if (merger) Vm.MergerOutputDirectory = picked;
+        else Vm.MainOutputDirectory = picked;
     }
 
-    private void OnResetMainOutputFolder(object? sender, RoutedEventArgs e)
+    private void OnResetMainOutputFolder(object? sender, RoutedEventArgs e) { Vm.MainOutputDirectory = ""; Vm.OutputFilesStatus = ""; }
+    private void OnResetMergerOutputFolder(object? sender, RoutedEventArgs e) { Vm.MergerOutputDirectory = ""; Vm.OutputFilesStatus = ""; }
+    private void OnResetMainOutputBaseName(object? sender, RoutedEventArgs e) => Vm.MainOutputBaseName = OutputFileNaming.MainDefaultBaseName;
+    private void OnResetMergerOutputBaseName(object? sender, RoutedEventArgs e) => Vm.MergerOutputBaseName = OutputFileNaming.MergerDefaultBaseName;
+
+    private void OnBrowseMusicFolder(object? sender, RoutedEventArgs e) => _ = BrowseMusicFolderAsync();
+
+    private async System.Threading.Tasks.Task BrowseMusicFolderAsync()
     {
-        _pendingMainOutputDir = "";
-        OutputFilesStatus = "";
-        RefreshOutputDisplays();
+        string? picked = await PickFolderAsync(
+            string.IsNullOrWhiteSpace(Vm.MusicFolder) ? MemeDirectory.GetMusicRoot() : Vm.MusicFolder,
+            "Choose the folder that holds your music", requireWritable: false);
+        if (picked != null) Vm.MusicFolder = picked;
     }
 
-    private void OnResetMergerOutputFolder(object? sender, RoutedEventArgs e)
+    private void OnResetMusicFolder(object? sender, RoutedEventArgs e) => Vm.MusicFolder = "";
+
+    private void OnChangeMemeFolder(object? sender, RoutedEventArgs e) => _ = ChangeMemeFolderAsync();
+
+    private async System.Threading.Tasks.Task ChangeMemeFolderAsync()
     {
-        _pendingMergerOutputDir = "";
-        OutputFilesStatus = "";
-        RefreshOutputDisplays();
+        string current = string.IsNullOrWhiteSpace(Vm.MemeDirectoryPath) ? MemeDirectory.GetActive() : Vm.MemeDirectoryPath;
+        string? picked = await PickFolderAsync(current, "Choose your meme folder", requireWritable: false);
+        if (picked == null) return;
+        try
+        {
+            _ = Directory.GetFiles(picked); // must be readable now (the old guard, kept)
+            Vm.MemeDirectoryPath = picked;
+            Vm.OutputFilesStatus = "";
+        }
+        catch (Exception ex)
+        {
+            Vm.OutputFilesStatus = ex is UnauthorizedAccessException
+                ? "⚠ That folder can't be read (access denied). Keeping the previous meme folder."
+                : "⚠ That folder can't be used. Keeping the previous meme folder.";
+            RuntimeLog.Fail("Memes", $"Meme folder rejected in Settings: {ex.GetType().Name}");
+        }
     }
 
-    private void OnResetMainOutputBaseName(object? sender, RoutedEventArgs e) =>
-        MainOutputBaseNameText = OutputFileNaming.MainDefaultBaseName;
+    private void OnResetMemeFolder(object? sender, RoutedEventArgs e) => Vm.MemeDirectoryPath = "";
 
-    private void OnResetMergerOutputBaseName(object? sender, RoutedEventArgs e) =>
-        MergerOutputBaseNameText = OutputFileNaming.MergerDefaultBaseName;
+    private void OnOpenMemeFolder(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string dir = string.IsNullOrWhiteSpace(Vm.MemeDirectoryPath) ? MemeDirectory.GetActive() : Vm.MemeDirectoryPath;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        }
+        catch (Exception ex) { RuntimeLog.Fail("Memes", $"Open meme folder failed: {ex.Message}"); }
+    }
 
-    /// <summary>Returns a writable folder the user picked, or null (cancelled / unusable — status explains).</summary>
-    private async System.Threading.Tasks.Task<string?> PickOutputFolderAsync(string current, string title)
+    /// <summary>Returns a folder the user picked, or null (cancelled / unusable — the status line explains).</summary>
+    private async System.Threading.Tasks.Task<string?> PickFolderAsync(string current, string title, bool requireWritable)
     {
         try
         {
@@ -194,21 +118,20 @@ public partial class SettingsWindow
             if (picked == null || picked.Count == 0) return null;
 
             string? path = picked[0].TryGetLocalPath();
-            if (string.IsNullOrWhiteSpace(path) || !KnownFolders.IsWritableDirectory(path))
+            if (string.IsNullOrWhiteSpace(path) || (requireWritable && !KnownFolders.IsWritableDirectory(path)))
             {
-                OutputFilesStatus = "⚠ That folder cannot be written to. Pick a different folder.";
-                RuntimeLog.Fail("Output", "Settings: selected output folder is not writable.");
-                RuntimeLog.Debug("Output", $"Unwritable output folder: {path}");
+                Vm.OutputFilesStatus = "⚠ That folder cannot be written to. Pick a different folder.";
+                RuntimeLog.Fail("Output", "Settings: selected folder is not usable.");
                 return null;
             }
 
-            OutputFilesStatus = "";
+            Vm.OutputFilesStatus = "";
             return path;
         }
         catch (Exception ex)
         {
-            OutputFilesStatus = "⚠ The folder picker failed. The previous folder is kept.";
-            RuntimeLog.Fail("Output", $"Settings output folder picker failed: {ex.Message}");
+            Vm.OutputFilesStatus = "⚠ The folder picker failed. The previous folder is kept.";
+            RuntimeLog.Fail("Output", $"Settings folder picker failed: {ex.Message}");
             return null;
         }
     }
@@ -216,10 +139,7 @@ public partial class SettingsWindow
     /// <summary>OUTNAME_01 — applied inside the SaveAndClose settings transaction.</summary>
     private void ApplyPendingOutputSettings(AppSettings s)
     {
-        s.MainOutputDirectory = _pendingMainOutputDir ?? "";
-        s.MergerOutputDirectory = _pendingMergerOutputDir ?? "";
-        s.MainOutputBaseName = OutputFileNaming.Sanitize(_pendingMainOutputBase, OutputFileNaming.MainDefaultBaseName);
-        s.MergerOutputBaseName = OutputFileNaming.Sanitize(_pendingMergerOutputBase, OutputFileNaming.MergerDefaultBaseName);
+        SettingsViewModel.CopySection(Vm.P, s, SettingsSection.Files);
     }
 
     /// <summary>
@@ -228,12 +148,12 @@ public partial class SettingsWindow
     /// </summary>
     private void SyncMergerOutputDirectoryState()
     {
-        if (string.Equals(_previousMergerOutputDir, _pendingMergerOutputDir, StringComparison.OrdinalIgnoreCase)) return;
+        if (string.Equals(_previousMergerOutputDir, Vm.MergerOutputDirectory, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
             _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
             {
-                ["MergerOutputDirectory"] = _pendingMergerOutputDir ?? ""
+                ["MergerOutputDirectory"] = Vm.MergerOutputDirectory
             });
         }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }

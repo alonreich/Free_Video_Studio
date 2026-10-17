@@ -32,14 +32,21 @@ internal static class UpdatePreparer
     public static async Task<PreparedUpdate> PrepareAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
         Report report, CancellationToken cancel)
     {
-        EnsureDiskSpace(folder, release.Size);
+        // UPDATESPACE_01 — only the few MB the signed list needs are required up front. The real need is
+        // checked once it is KNOWN: after the smart plan (changed files only) or before the full installer.
+        EnsureDiskSpace([(folder, ListScratchBytes)]);
         Directory.CreateDirectory(folder);
+        long? unpackedTotal = null;
         try
         {
-            PreparedUpdate? smart = await TrySmartAsync(http, release, folder, report, cancel).ConfigureAwait(false);
+            PreparedUpdate? smart = await TrySmartAsync(http, release, folder, report, total => unpackedTotal = total, cancel).ConfigureAwait(false);
             if (smart is not null) return smart;
         }
         catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (InsufficientDiskSpaceException)
         {
             throw;
         }
@@ -47,42 +54,71 @@ internal static class UpdatePreparer
         {
             RuntimeLog.Info("UPDATE", "Smart update unavailable, using the installer instead: " + ex.Message);
         }
-        return await DownloadInstallerAsync(http, release, folder, report, cancel).ConfigureAwait(false);
+        return await DownloadInstallerAsync(http, release, folder, report, unpackedTotal, cancel).ConfigureAwait(false);
     }
 
-    private static void EnsureDiskSpace(string folder, long estimatedBytes)
+    /// <summary>UPDATESPACE_01 — headroom kept free on every drive an update writes to.</summary>
+    internal const long SafetyMarginBytes = 128L * 1024 * 1024;
+
+    /// <summary>UPDATESPACE_01 — what the signed list and its signature need before anything is known.</summary>
+    internal const long ListScratchBytes = 16L * 1024 * 1024;
+
+    /// <summary>
+    /// UPDATESPACE_01 — "is there room?", answered per DRIVE for every (folder, bytes) pair: two folders on
+    /// one drive add up, each drive must also keep <see cref="SafetyMarginBytes"/> free. It used to demand
+    /// the FULL installer size + 256 MB on the downloads drive for every update — a 9 MB smart update
+    /// failed on a nearly full disk for no reason — and never looked at the drive the full installer
+    /// unpacks itself onto.
+    /// </summary>
+    internal static void EnsureDiskSpace(IEnumerable<(string Folder, long Bytes)> needs, Func<string, long?>? freeSpace = null)
+    {
+        freeSpace ??= FreeBytes;
+        var byDrive = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string folder, long bytes) in needs)
+        {
+            string? root;
+            try { root = Path.GetPathRoot(Path.GetFullPath(folder)); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                RuntimeLog.Info("UPDATE", $"Disk space pre-flight skipped for an unusual path: {ex.Message}");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(root)) continue;
+            byDrive[root] = (byDrive.TryGetValue(root, out long sum) ? sum : 0) + Math.Max(0, bytes);
+        }
+        foreach ((string root, long bytes) in byDrive)
+        {
+            long? available = freeSpace(root);
+            if (available is null) continue;
+            long required = bytes + SafetyMarginBytes;
+            if (available.Value < required)
+                throw new InsufficientDiskSpaceException(
+                    $"Not enough free disk space on drive {root.TrimEnd('\\')} for the update. " +
+                    $"About {RuntimePayloadManifest.FormatBytes(required)} is needed, but only {RuntimePayloadManifest.FormatBytes(available.Value)} is free. " +
+                    "Free some space, then choose Try again.");
+        }
+    }
+
+    private static long? FreeBytes(string root)
     {
         try
         {
-            string? root = Path.GetPathRoot(Path.GetFullPath(folder));
-            if (string.IsNullOrWhiteSpace(root)) return;
-
             var drive = new DriveInfo(root);
-            if (!drive.IsReady) return;
-
-            const long safetyMargin = 256L * 1024 * 1024;
-            long requiredBytes = (estimatedBytes > 0 ? estimatedBytes : 350L * 1024 * 1024) + safetyMargin;
-
-            if (drive.AvailableFreeSpace < requiredBytes)
-            {
-                throw new IOException(
-                    $"Not enough free disk space on drive {drive.Name.TrimEnd('\\')} to download and stage the update. " +
-                    $"About {RuntimePayloadManifest.FormatBytes(requiredBytes)} is required, but only {RuntimePayloadManifest.FormatBytes(drive.AvailableFreeSpace)} is available.");
-            }
+            return drive.IsReady ? drive.AvailableFreeSpace : null;
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
         {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Info("UPDATE", $"Disk space pre-flight check bypassed: {ex.Message}");
+            RuntimeLog.Info("UPDATE", $"Disk space pre-flight bypassed for {root}: {ex.Message}");
+            return null;
         }
     }
 
+    /// <summary>UPDATESPACE_01 — a disk-space refusal is final for this attempt: no fallback to a BIGGER download.</summary>
+    internal sealed class InsufficientDiskSpaceException(string message) : IOException(message);
+
 
     private static async Task<PreparedUpdate?> TrySmartAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
-        Report report, CancellationToken cancel)
+        Report report, Action<long> unpackedTotal, CancellationToken cancel)
     {
         if (!release.TryGetAsset(SmartUpdateManifest.FileName, out string? manifestUrl) ||
             !release.TryGetAsset(SmartUpdateManifest.SignatureFileName, out string? signatureUrl)) return null;
@@ -108,6 +144,7 @@ internal static class UpdatePreparer
         if (!DeploymentLifecycle.TryParseVersion(manifest.Version, out Version listed) ||
             !DeploymentLifecycle.TryParseVersion(release.Tag, out Version tagged) || listed != tagged)
             throw new InvalidDataException("update.json describes a different version than the release.");
+        unpackedTotal(manifest.Files.Sum(f => f.Length));
 
         var installedByHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         string[] files = UpgradeFiles.Files(installed).ToArray();
@@ -131,6 +168,13 @@ internal static class UpdatePreparer
         if (manifest.FullInstaller is { Length: > 0 } full && downloadTotal >= full.Length * 9 / 10)
             return null;
 
+        // UPDATESPACE_01 — the smart update needs: each changed file compressed AND unpacked (the compressed
+        // copy is deleted after it is checked), the patch plus the rebuilt program and its .partial, and
+        // the installer copy of the program.
+        long smartBytes = needed.Sum(f => f.AssetLength + f.Length) + exe.Length
+                        + (patch is null ? 0 : patch.AssetLength + 2 * exe.Length);
+        EnsureDiskSpace([(folder, smartBytes)]);
+
         string sizeText = RuntimePayloadManifest.FormatBytes(downloadTotal);
         string what = plan.ChangedFiles == 0 ? "no file changes" : plan.ChangedFiles == 1 ? "1 changed file" : $"{plan.ChangedFiles} changed files";
         long doneBefore = 0;
@@ -145,8 +189,11 @@ internal static class UpdatePreparer
             if (File.Exists(target) && UpgradeFiles.Hash(target) == file.Sha256) { doneBefore += file.AssetLength; continue; }
             string url = release.AssetUrl(file.Asset);
             string compressed = Path.Combine(assets, file.Asset);
-            await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), compressed, file.AssetLength, null, Progress, cancel).ConfigureAwait(false);
-            BrotliFile.DecompressFile(compressed, target);
+            // ASSETHASH_01 — the compressed bytes are checked against the signed list BEFORE they are
+            // unpacked, and unpacking stops at the promised size, so a tampered asset cannot expand on disk.
+            await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), compressed, file.AssetLength,
+                NullIfEmpty(file.AssetSha256), Progress, cancel).ConfigureAwait(false);
+            BrotliFile.DecompressFile(compressed, target, file.Length);
             if (new FileInfo(target).Length != file.Length || UpgradeFiles.Hash(target) != file.Sha256)
             {
                 TryDelete(target);
@@ -164,7 +211,9 @@ internal static class UpdatePreparer
             {
                 string url = release.AssetUrl(patch.Asset);
                 string patchFile = Path.Combine(assets, patch.Asset);
-                await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), patchFile, patch.AssetLength, null, Progress, cancel).ConfigureAwait(false);
+                await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), patchFile, patch.AssetLength,
+                    NullIfEmpty(patch.AssetSha256), Progress, cancel).ConfigureAwait(false);
+                RequirePatchHeader(patchFile, installedExeSha, exe); // ASSETHASH_01
                 report("Getting the update ready…", "Building the new program file from the small patch…", null);
                 string partial = target + ".partial";
                 try
@@ -198,7 +247,7 @@ internal static class UpdatePreparer
 
 
     private static async Task<PreparedUpdate> DownloadInstallerAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
-        Report report, CancellationToken cancel)
+        Report report, long? unpackedTotal, CancellationToken cancel)
     {
         report("Getting the update ready…", "Checking which parts of the update you need…", null);
         bool appOnly = release.HasAppOnlyPackage && await UpdateService.RuntimeMatchesForCompactAsync(release, cancel).ConfigureAwait(false);
@@ -213,6 +262,13 @@ internal static class UpdatePreparer
             ? UpdateService.SetupAssetName : InstallPayload.ExecutableName;
         string target = Path.Combine(folder, appOnly ? "FreeVideoStudio.App.update.zip" : fullName);
         string sizeText = RuntimePayloadManifest.FormatBytes(size);
+
+        // UPDATESPACE_01 — the download itself, plus (full installer) everything the installer unpacks
+        // into the Windows temp folder before it installs. Unknown unpacked size → 3 × the download.
+        var needs = new List<(string, long)> { (folder, size) };
+        if (!appOnly && fullName == UpdateService.SetupAssetName)
+            needs.Add((DeploymentFootprint.TempRoot, unpackedTotal ?? size * 3));
+        EnsureDiskSpace(needs);
         await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), target, size, sha,
             p => report("Downloading the update…", p.Problem ?? UpdateService.DescribeDownloadProgress(p.Done, p.Total, p.BytesPerSecond),
                 p.Total > 0 ? Math.Clamp((double)p.Done / p.Total, 0, 1) : null), cancel).ConfigureAwait(false);
@@ -240,15 +296,37 @@ internal static class UpdatePreparer
             RuntimeLog.Info("UPDATE", "Publisher check passed: " + detail);
             return;
         }
-        if (verdict == AuthenticodeVerifier.TrustVerdict.NoAnchor &&
+#if DEBUG
+        // UNSIGNEDDEV_01 — the developer override exists ONLY in Debug builds (dev.cmd) and ONLY while the
+        // dev update source is active. A Release build — every copy a user can download — has no code
+        // path that skips this check, whatever its environment says.
+        if (verdict == AuthenticodeVerifier.TrustVerdict.NoAnchor && UpdateService.DevReleaseFolder is not null &&
             string.Equals(Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED_UPDATE"), "1", StringComparison.Ordinal))
         {
-            RuntimeLog.Fail("UPDATE", "SIGNATURE CHECK SKIPPED — " + detail + " FVS_ALLOW_UNSIGNED_UPDATE=1 (DEVELOPER OVERRIDE).");
+            RuntimeLog.Fail("UPDATE", "SIGNATURE CHECK SKIPPED — " + detail + " FVS_ALLOW_UNSIGNED_UPDATE=1 (DEBUG DEVELOPER OVERRIDE).");
             return;
         }
+#endif
         TryDelete(installer);
         throw new InvalidOperationException("The downloaded update failed its publisher check and was deleted. Nothing was installed."
             + Environment.NewLine + detail);
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// ASSETHASH_01 — before a patch is decoded, its header must promise exactly the signed program
+    /// (length and SHA-256) and start from exactly the installed one. The decoder never writes more than
+    /// the header's length, so the result is bounded by the signed size.
+    /// </summary>
+    internal static void RequirePatchHeader(string patchFile, string installedSha256, SmartFile program)
+    {
+        BinaryDelta.Header header;
+        using (var stream = File.OpenRead(patchFile)) header = BinaryDelta.ReadHeader(stream);
+        if (header.NewLength != program.Length ||
+            !string.Equals(header.NewSha256, program.Sha256, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header.OldSha256, installedSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The patch does not match the signed update list.");
     }
 
     private static void TryDelete(string path)

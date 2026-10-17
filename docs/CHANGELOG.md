@@ -1,55 +1,29 @@
 # Free Video Studio — What's New & Release Changelog
 
-This changelog records the latest 5 releases of Free Video Studio with plain-English summaries of user-facing improvements, new features, and reliability updates.
+What people who use Free Video Studio read: plain-English notes about what changed for them. The latest 5 releases are kept.
+
+> **How this file works (RELNOTES_01 — full rules in [`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASENOTES)):**
+> new notes go under `## Upcoming` — never under a guessed version number. One bullet per user-visible change, `**Headline:** one or two plain sentences`; merge with an existing bullet instead of adding a near-duplicate; at most 15 bullets; no code, file names or engineering tags.
+> When an official release is published, `## Upcoming` becomes that release's GitHub notes and the "What's new" on the in-app update card, is renamed to `## v<version> — <date>`, and a fresh `## Upcoming` appears. Technical details belong in [`changes.md`](changes.md).
 
 ---
 
-## v2026.10.16.1230 (Upcoming)
-**What's New in This Release:**
-- **See What Each AI Job Used:** After AI Smart Zoom or AI Commentary finishes (or fails, or is cancelled), the app shows how many AI requests and tokens that job used, and — for Anthropic and OpenAI — how much of your per-minute allowance was left before and after. Google doesn't share remaining quota with apps, so the app tells you where to check it.
-- **AI Commentary Remembers Your Choices:** Tone, caption style, top or bottom placement, language, whole video or one block, and your extra notes are kept for next time.
-- **AI Works Again After Today's AI Model Retirements:** Google, Anthropic and OpenAI retired the AI models the app used. The app now uses their current models, quietly updates your saved choice, and if a model ever disappears again it switches to a working one by itself and tells you.
-- **AI Commentary Now Appears in Your Saved Video:** The captions you accept in the speed editor are now burned into the exported video, exactly like the preview.
-- **Bigger, Better-Placed Captions:** Commentary text is larger and sits two-thirds of the way down the screen, above your health, shield, stamina and hotbar, so it never covers your HUD. Captions also stay in sync when a meme is cut into the video.
-- **AI Music Auto-Fit Shows What It Is Doing:** A line under the buttons shows each step and a seconds counter, the button becomes "Cancel AI", and it gives up after 2 minutes instead of hanging. The AI now picks a song from your list by number, and the app finds where the song gets going by itself, so the music always covers your whole video.
-- **AI Kill Tracker You Can See and Trust:** Bigger red ✕ badges that never hide behind other markers, a message when the scan finishes, sharper pictures so kill messages can be read, only YOUR kills are counted, longer videos get more moments checked, and the speed editor gets the markers even if it was already open.
-- **Commentary Works with Claude:** AI Commentary and the Viral Post Helper no longer fail when Anthropic Claude is your AI.
-- **One Simple "Connect Your AI" Window:** Every AI feature now opens the same short setup for whichever AI company you use (Google, Anthropic or OpenAI) instead of a "Smart Zoom" setup or a dead end.
-- **Honest Privacy Questions:** The app asks again when you switch AI company, and says exactly what that company gets (Gemini hears the game sound; Claude and OpenAI only see still pictures).
-- **One Game-Type Setting:** AI Commentary now uses the game type from Settings and remembers your choice there.
-- **Long Commentary Warning:** Before captioning a long video, the app tells you how many AI requests it will make and about how long it will take.
-- **Cleaner Caption Preview:** The preview never stacks old captions on top of new ones.
-- **AI Kill Tracker:** When turned on in Settings, the app checks the loudest action moments of each video you open and marks every kill with a red ✕ on the timeline and in the speed editor. Click a ✕ to jump straight to it. A small note on the timeline says how many kills were found, or why the check failed.
-- **Viral Post Helper:** When your video finishes exporting, the AI writes a catchy title, caption and hashtags for it, with 1-click copy buttons. Press NEW VERSION for a different take. If the AI can't answer, the card says so honestly (and why) instead of showing made-up text.
-- **One Simple AI Settings Tab:** Everything AI now lives in Settings › AI Features: pick one AI provider and model for all features, add its key, and turn features on or off. Want a different AI for just one feature? Open "Advanced" and tick it.
-- **AI Music Auto-Fit:** The Add Music wizard can now analyze your video scenes using cloud AI to automatically pick the best matching background song and optimal start point for your video's mood and pacing. It looks at every clip in the Video Merger (not just the first), sizes the song to your finished video (slow motion, fast forward and freezes included), and one Ctrl+Z brings back the songs you had before.
-- **Claude and OpenAI Now Work Everywhere:** Choosing Anthropic Claude or OpenAI no longer makes AI Smart Zoom, AI Commentary, Magic Wand, Music Auto-Fit, Viral Post or the Kill Tracker fail.
-- **AI Commentary in Perfect Sync:** Captions now appear exactly when the action happens, even on trimmed clips, single blocks, slow motion and fast forward. Lines stay on screen long enough to read at any speed, and the AI is told which parts are slowed down, sped up, frozen or cut.
-- **Commentary for One Block Keeps the Rest:** Making commentary for a single block now only replaces the captions inside that block.
-- **No Silent Gaps in Commentary:** If part of a clip can't be analysed, the app retries once and tells you how many parts are missing.
-- **No More Freezes While AI Prepares Your Video:** The behind-the-scenes video steps used by AI features can no longer hang, and Cancel stops them right away.
-- **Rock-Solid Preview Scrubbing:** Rapid scrubbing and seeking in the Add Music preview player no longer freezes or turns into a black screen.
-- **Accurate Music Timeline Markers:** The pink music notes and music coverage bar on the timeline now accurately reflect exactly where the music stops without stretching past the end of the song.
-- **Settings & Window Sizes Kept on Updates:** Updating the app now reliably preserves your custom window sizes, positions, and preferences without forgetting them.
-- **Clear AI Setup Guidance:** If an AI API key is not yet configured when using smart tools like Magic Wand or AI Music, a friendly guide helps you configure it or run offline with one click.
-- **Multi-Provider AI Names:** Messages and alerts throughout the app now dynamically display your chosen AI provider (such as Anthropic Claude or OpenAI) instead of always saying Google Gemini.
-- **No More Random Volume Drops:** Fixed an unexpected volume mute/drop bug across the Main App, Video Merger, and Crop tools; audio playback now remains steady and in sync.
-- **Rubberband Drag Selection in Video Merger:** You can now drag a selection box across multiple videos in the queue to highlight and select them simultaneously.
-- **Batch Queue Reorder & Delete:** Move or delete multiple selected videos at once using toolbar buttons or the `Delete` key, fully synchronized with timeline markers and preview.
-- **Social Media Music Shield (YouTube & TikTok):** Downloadable background tracks now come with copyright attribution info to keep your videos from getting muted or blocked on social platforms.
-- **1-Click Attribution Copy on Export:** The export completion screen features a 1-click **[COPY CREDIT TO CLIPBOARD]** button and automatically arms your clipboard when clicking YouTube or TikTok shortcuts.
-- **Simpler Add Music (2 steps instead of 3):** Pick your songs, then see and hear them with your video on one screen — no more choosing where a song starts without seeing the video.
-- **No Song Left Playing:** A song preview now stops the moment you move to the next screen.
-- **Clean, Full-Width Song List:** The song list now fills the window under the search box. Clicking a song only selects it; press ▶ to hear it and + to add it.
-- **Use As Many Songs As You Like:** Add several songs (in the Video Merger and the main app), put them in order, and remove any of them.
-- **See Every Song on Your Video:** Each song is a coloured, named block under the video. Drag the end of a block to make that song shorter or longer — the next song follows right after, with no silent gap.
-- **Pick the Part of Each Song:** Drag the bright box on a song's picture to choose which part plays, or press Beginning, Best part or End with the video.
-- **Silence Trimmed Automatically:** Quiet intros and endings are cut off so there is never dead air between two songs.
-- **Always Know If the Music Is Long Enough:** A simple line and bar tell you if music covers the whole video, with one-click fixes: loop your songs, add a song, or fill the rest automatically. The pop-up warning is gone.
-- **Edit or Remove Music in the Video Merger:** The music button now shows how many songs you have and lets you edit or remove them, just like the main app.
-- **What You Hear Is What You Get:** The preview now plays your songs exactly as the saved video does, including the smooth fade between songs.
-
----
+## Upcoming
+- **AI Commentary, Upgraded:** Pick a style (Hype, Chill, Coach, Roast) or mix Funny, Sarcastic, Energetic and Tactical yourself. Captions can sit high, middle or low, speak Hebrew, read clearer, land right on the action, and a right-click rewrites one line. Your choices are remembered.
+- **AI Works With Google, Anthropic and OpenAI, Everywhere:** Every AI feature works with whichever company you choose, uses their current models, and switches to a working model by itself if one is retired.
+- **One Simple AI Setup:** One "Connect Your AI" window and one AI Features tab in Settings cover every AI feature, and the privacy questions say exactly what each company receives.
+- **See What Each AI Job Used:** After AI Smart Zoom or AI Commentary, the app shows how many AI requests and tokens the job used and how much of your allowance was left.
+- **AI Kill Tracker:** When turned on, the app marks each of your kills with a red ✕ on the timeline and in the speed editor. Click a ✕ to jump straight to it.
+- **Viral Post Helper:** When your export finishes, the AI writes a title, caption and hashtags with one-click copy buttons, and says honestly when it cannot.
+- **AI Music Auto-Fit:** The Add Music wizard can pick the best song for your video's mood, shows each step it takes, can be cancelled, and one Ctrl+Z brings your old songs back.
+- **Simpler Add Music:** Two steps instead of three, as many songs as you like, each shown as a named block you can resize, quiet intros and endings trimmed automatically, and a clear bar that tells you whether the music covers your whole video.
+- **What You Hear Is What You Get:** Song previews stop when you move on, play exactly like the saved video, and the preview player no longer freezes or turns black while you scrub.
+- **Video Merger Upgrades:** Drag a box to select several videos, move or delete them together, and edit or remove music just like in the main app.
+- **Music Credits Made Easy:** Free background songs come with their credit text, and the export screen copies it in one click so YouTube and TikTok do not mute your video.
+- **A Clearer Settings Window:** 6 simple tabs, a search bar, plain help on every option, Backup and Import, and Restore buttons. It asks before throwing away changes, and starting choices like speed and phone format now really work. Updates keep your window sizes and preferences, and random volume drops are gone.
+- **Know What's New Before You Update:** The update card now lists the highlights of the new version, the app checks again during long sessions, and the Beta choice in Settings › General now really gets test versions first.
+- **Smaller, Safer Updates:** Updates download only the parts that changed and check every piece before using it, and the free-space check now asks only for the space an update really needs.
+- **Safer Installation:** The part of an update that needs administrator permission now runs only from a folder other programs cannot change.
 
 ## v2026.10.13.2238
 **What's New in This Release:**
@@ -88,4 +62,3 @@ This changelog records the latest 5 releases of Free Video Studio with plain-Eng
 - **Video Merger Loudness Leveling:** Auto-levels audio across multiple stitched video clips so volume remains consistent.
 - **Thumbnail Intro Scraping:** Automatically removes cover frames when joining gameplay highlights.
 - **Rock-Solid Session Recovery:** Crash recovery now preserves your complete project layout, trim points, and audio settings.
-

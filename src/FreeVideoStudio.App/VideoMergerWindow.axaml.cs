@@ -310,6 +310,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 var settingsWin = new FreeVideoStudio.App.Controls.SettingsWindow();
                 await settingsWin.ShowDialog<bool>(this);
                 SyncScraperFromSettings();
+                SyncOutputFolderFromSettings();
             };
         }
 
@@ -1011,6 +1012,20 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
         string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         return Directory.Exists(documents) ? documents : string.Empty;
+    }
+
+    /// <summary>
+    /// SETMERGERDIR_01 — Settings › Files &amp; Folders changed the merger's save folder while this
+    /// window was open: show the new folder now, not only after the next merge resolves it.
+    /// </summary>
+    private void SyncOutputFolderFromSettings()
+    {
+        string next = GetDownloadsPath();
+        if (string.IsNullOrWhiteSpace(next) || string.Equals(next, _outputDirectory, StringComparison.OrdinalIgnoreCase)) return;
+        _outputDirectory = next;
+        var btn = MenuOutputFolderCtl;
+        if (btn != null) btn.Header = $"Output Folder: {System.IO.Path.GetFileName(next)}";
+        UpdateOutputPathDisplay();
     }
 
     private async void OnChooseOutputFolder()

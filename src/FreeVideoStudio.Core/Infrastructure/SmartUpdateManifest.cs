@@ -186,6 +186,14 @@ public sealed class SmartFile
     public string Sha256 { get; set; } = string.Empty;
     public string Asset { get; set; } = string.Empty;
     public long AssetLength { get; set; }
+
+    /// <summary>
+    /// ASSETHASH_01 — SHA-256 of the compressed asset itself (the bytes on the wire). The downloaded
+    /// asset is checked against it BEFORE it is decompressed, so a tampered asset is rejected before
+    /// it can expand on disk. Empty in lists written before this field existed; the client then
+    /// relies on the size-capped decompression and the hash of the result.
+    /// </summary>
+    public string AssetSha256 { get; set; } = string.Empty;
 }
 
 public sealed class SmartPatch
@@ -195,6 +203,9 @@ public sealed class SmartPatch
     public string ToSha256 { get; set; } = string.Empty;
     public string Asset { get; set; } = string.Empty;
     public long AssetLength { get; set; }
+
+    /// <summary>ASSETHASH_01 — SHA-256 of the patch file; checked before the patch is applied.</summary>
+    public string AssetSha256 { get; set; } = string.Empty;
 }
 
 public sealed class SmartAsset

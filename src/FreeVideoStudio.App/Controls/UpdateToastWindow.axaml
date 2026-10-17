@@ -34,6 +34,16 @@
                        FontSize="{DynamicResource AppFontSize12}"
                        Foreground="{DynamicResource AppTextMutedBrush}"/>
 
+            <!-- RELNOTES_03 — what this version brings: up to four headlines from its release notes. -->
+            <StackPanel Spacing="2" IsVisible="{Binding HasWhatsNew}">
+                <TextBlock Text="What's new" FontWeight="SemiBold"
+                           FontSize="{DynamicResource AppFontSize12}"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="{Binding WhatsNew}" TextWrapping="Wrap"
+                           FontSize="{DynamicResource AppFontSize12}"
+                           Foreground="{DynamicResource AppTextMutedBrush}"/>
+            </StackPanel>
+
             <ProgressBar Height="8" Minimum="0" Maximum="100"
                          Value="{Binding Percent}" IsIndeterminate="{Binding IsIndeterminate}"
                          IsVisible="{Binding IsWorking}"

@@ -132,7 +132,7 @@ public class GranularSpeedBuilder
     /// Equal to <see cref="ZoomRampSeconds"/> by construction: a side either has room for the
     /// whole ramp or it gets none. There is no partial ramp any more.
     /// A side with less than this snaps instantly — see the Slow-zoom notes in
-    /// project_structure.txt Section 9.
+    /// docs/README.md (formerly project_structure.txt) Section 9.
     /// </summary>
     public const double ZoomRampMinAvailableSeconds = ZoomRampSeconds;
 
@@ -887,7 +887,7 @@ public class GranularSpeedBuilder
     /// twice, so it is marginally sharper as well.
     ///
     /// The padding is kept at +-resW/-+resH (the value the audited instant-zoom path uses) so the
-    /// coordinate chain documented in project_structure.txt is unchanged; with no per-frame scale
+    /// coordinate chain documented in docs/README.md (formerly project_structure.txt) is unchanged; with no per-frame scale
     /// in this branch the padding costs nothing meaningful.
     /// </summary>
     private static string BuildConstantZoomFilter(

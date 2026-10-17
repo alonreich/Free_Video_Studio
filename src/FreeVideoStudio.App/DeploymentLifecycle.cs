@@ -368,7 +368,10 @@ internal static class DeploymentLifecycle
         await DeploymentReporter.StepAsync("CLEANUP TASKS", "Removing scheduled startup task if it exists.", start + 10).ConfigureAwait(false);
         await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000).ConfigureAwait(false);
 
+        // WORKERSTAGE_01 — the protected installer copies under %ProgramData% are scratch the user cannot
+        // delete; the elevated cleanup removes them with everything else.
         List<string> targets = DeploymentFootprint.GetDirectoryPurgeTargets(includeInstallFolder: true, includeUserData: includeUserData)
+            .Concat(OperatingSystem.IsWindows() ? Services.ProtectedWorkerStage.ExistingFolders() : [])
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 

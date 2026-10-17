@@ -182,6 +182,7 @@ public partial class MainWindow
             $"(worker quality level {resolvedQuality}).");
 
         var payload = await ComposeExportPayloadAsync(outputDirectory, memeFile, resolvedQuality, resolvedTargetMb);
+        RememberStartChoices(payload, qualityIdx);
 
         var controller = new FreeVideoStudio.App.Services.MainMediaController();
         
@@ -449,5 +450,21 @@ public partial class MainWindow
                 return memeSel.FullPath;
         }
         return null;
+    }
+
+    /// <summary>
+    /// SETDEFAULTS_01 — Settings › Editing › "Same as last time" remembers what this export used,
+    /// so the next fresh video starts the same way. Written only when a start value follows the
+    /// last choice; a failed write is logged and never blocks the export.
+    /// </summary>
+    private static void RememberStartChoices(FreeVideoStudio.App.Models.ExportPayload payload, int qualityIdx)
+    {
+        try
+        {
+            if (!Infrastructure.SettingsManager.Instance.Defaults.RemembersAnything) return;
+            Infrastructure.SettingsManager.Update(s => s.Defaults.RememberChoices(
+                payload.IsMobileFormat, payload.ShowTeammates, payload.EnableFades, payload.BaseSpeed, qualityIdx));
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 }

@@ -32,7 +32,23 @@ public sealed record CommentaryRequest(
     string? CustomNotes = null,
     IAiVisionProvider? Provider = null,
     OutputTimeline? Timeline = null,
-    double TimelineOffsetSec = 0.0);
+    double TimelineOffsetSec = 0.0,
+    CommentaryPersonality? Personality = null,
+    IReadOnlyList<double>? KillTimesSec = null,
+    string? RewriteOf = null,
+    CaptionLook Look = CaptionLook.Outline,
+    CaptionSize Size = CaptionSize.Medium)
+{
+    /// <summary>
+    /// COMMENTARYMIX_01 — the slider mix that drives the prompt; a request made with only a tone uses that tone's
+    /// one-click style.
+    /// </summary>
+    public CommentaryPersonality EffectivePersonality =>
+        (Personality ?? CommentaryPersonality.FromPreset(CommentaryPersonality.PresetForTone(Tone))).Normalized();
+
+    /// <summary>The tone recorded on the generated track (the mix's dominant tone).</summary>
+    public CaptionTone EffectiveTone => Personality?.Normalized().DominantTone ?? Tone;
+}
 
 /// <summary>AICOMMENTARY_REPORT_01 — the generated track plus how many request parts could not be read.</summary>
 public sealed record CommentaryResult(CaptionTrack Track, int FailedChunks, int TotalChunks);
@@ -54,6 +70,25 @@ public static class CommentaryService
 
     /// <summary>Test seam: replaces FFmpeg frame sampling for the Claude / OpenAI path (null in the app).</summary>
     internal static Func<string, double, double, CancellationToken, Task<IReadOnlyList<AiImageInput>>>? FrameSamplerForTests { get; set; }
+
+    /// <summary>
+    /// TACTICAL_01 — with Tactical at "A lot" or "Max", lines the AI itself rated below this confidence are dropped:
+    /// an explanation the AI is unsure of is more likely invented than seen.
+    /// </summary>
+    public const double TacticalMinConfidence = 0.4;
+
+    /// <summary>
+    /// TACTICAL_03 — kill-tracker times (ABSOLUTE source seconds) inside one part, as seconds from the part's start.
+    /// Null when the tracker gave no times at all.
+    /// </summary>
+    public static IReadOnlyList<double>? KillTimesForPart(IReadOnlyList<double>? killTimesSec, double partStartSec, double partEndSec)
+    {
+        if (killTimesSec is null || killTimesSec.Count == 0) return null;
+        return killTimesSec.Where(t => t >= partStartSec && t < partEndSec)
+            .OrderBy(t => t)
+            .Select(t => Math.Round(t - partStartSec, 1))
+            .ToList();
+    }
 
     /// <summary>AICOMMENTARY_ESTIMATE_01 — more parts than this and the editor asks first, naming the count and time.</summary>
     public const int ConfirmAbovePartCount = 6;
@@ -119,7 +154,7 @@ public static class CommentaryService
             throw new ArgumentException("Video file does not exist", nameof(request));
 
         if (request.DurationSec <= 0.1)
-            return new CommentaryResult(new CaptionTrack(request.Style, request.Position, request.Tone, request.Language, Array.Empty<CaptionLine>()), 0, 0);
+            return new CommentaryResult(new CaptionTrack(request.Style, request.Position, request.EffectiveTone, request.Language, Array.Empty<CaptionLine>(), request.Look, request.Size), 0, 0);
 
         IAiVisionProvider provider = request.Provider ?? AiVisionProviders.Get(request.Vendor);
         string effectiveModel = request.Vendor switch
@@ -130,6 +165,7 @@ public static class CommentaryService
         };
 
         var chunks = PlanChunks(request.DurationSec);
+        CommentaryPersonality personality = request.EffectivePersonality;
         var rawLines = new List<CaptionLine>();
         int lineIdCounter = 1;
         int failed = 0;
@@ -147,9 +183,11 @@ public static class CommentaryService
             progress?.Report(statusMsg);
             consoleLog?.Invoke($"Commentary: {statusMsg}");
 
-            string prompt = AiCommentaryPrompts.BuildPrompt(request.Tone, request.Profile, request.Language, request.CustomNotes,
+            string prompt = AiCommentaryPrompts.BuildPrompt(personality, request.Profile, request.Language, request.CustomNotes,
                 DescribePlayback(request.Timeline, request.TimelineOffsetSec, chunkStartSec, chunkEndSec),
-                canHearAudio: AiVisionProviders.WatchesVideoWithAudio(request.Vendor));
+                canHearAudio: AiVisionProviders.WatchesVideoWithAudio(request.Vendor),
+                killTimesInPart: KillTimesForPart(request.KillTimesSec, chunkStartSec, chunkEndSec),
+                rewriteOf: request.RewriteOf);
 
             List<CaptionLine>? chunkLines = null;
             for (int attempt = 0; attempt < 2 && chunkLines == null; attempt++)
@@ -175,6 +213,13 @@ public static class CommentaryService
                 failed++;
                 continue;
             }
+            if (personality.Tactical >= CommentaryPersonality.LongLinesFromTactical)
+            {
+                int before = chunkLines.Count;
+                chunkLines = chunkLines.Where(l => l.Confidence >= TacticalMinConfidence).ToList();
+                if (chunkLines.Count < before)
+                    consoleLog?.Invoke($"Commentary: part {i + 1}: {before - chunkLines.Count} unsure line(s) left out (TACTICAL_01).");
+            }
             consoleLog?.Invoke($"Commentary: part {i + 1} yielded {chunkLines.Count} line(s).");
             rawLines.AddRange(chunkLines);
         }
@@ -184,7 +229,8 @@ public static class CommentaryService
                 $"{vendorName} did not return readable commentary for any part of this range. Please try again.");
 
         var deduplicated = DeduplicateLines(rawLines);
-        var readable = EnsureReadableOnScreen(deduplicated, request.Timeline, request.TimelineOffsetSec, request.StartSec, request.StartSec + request.DurationSec);
+        var readable = EnsureReadableOnScreen(deduplicated, request.Timeline, request.TimelineOffsetSec, request.StartSec, request.StartSec + request.DurationSec,
+            personality.MinReadableSec);
 
         var finalLines = new List<CaptionLine>(readable.Count);
         foreach (var l in readable)
@@ -193,7 +239,7 @@ public static class CommentaryService
         consoleLog?.Invoke($"Commentary generation complete: {finalLines.Count} line(s) ready{(failed > 0 ? $", {failed} of {chunks.Count} part(s) failed" : "")}.");
 
         return new CommentaryResult(
-            new CaptionTrack(request.Style, request.Position, request.Tone, request.Language, finalLines),
+            new CaptionTrack(request.Style, request.Position, request.EffectiveTone, request.Language, finalLines, request.Look, request.Size),
             failed,
             chunks.Count);
     }
@@ -278,7 +324,8 @@ public static class CommentaryService
     /// a line inside a 2x stretch is lengthened in source time so it is still readable, without running into the
     /// next line or past the range. Without a timeline the check is done 1:1.
     /// </summary>
-    public static List<CaptionLine> EnsureReadableOnScreen(IReadOnlyList<CaptionLine> lines, OutputTimeline? timeline, double timelineOffsetSec, double rangeStartSec, double rangeEndSec)
+    public static List<CaptionLine> EnsureReadableOnScreen(IReadOnlyList<CaptionLine> lines, OutputTimeline? timeline, double timelineOffsetSec, double rangeStartSec, double rangeEndSec,
+        double minReadableSec = MinReadableOutputSec)
     {
         var sorted = lines
             .Select(l => l with
@@ -299,11 +346,11 @@ public static class CommentaryService
         {
             var l = sorted[i];
             double outStart = ToOut(l.SourceStartSec), outEnd = ToOut(l.SourceEndSec);
-            if (outEnd - outStart >= MinReadableOutputSec - 0.001) { result.Add(l); continue; }
+            if (outEnd - outStart >= minReadableSec - 0.001) { result.Add(l); continue; }
 
             double limitOut = rangeOutEnd;
             if (i + 1 < sorted.Count) limitOut = Math.Min(limitOut, ToOut(sorted[i + 1].SourceStartSec));
-            double wantOut = Math.Min(outStart + MinReadableOutputSec, Math.Max(outEnd, limitOut));
+            double wantOut = Math.Min(outStart + minReadableSec, Math.Max(outEnd, limitOut));
             double newEnd = Math.Clamp(ToAbs(wantOut), l.SourceEndSec, rangeEndSec);
             result.Add(l with { SourceEndSec = newEnd });
         }

@@ -84,7 +84,7 @@ public static class MemeCatalog
 
     /// <summary>
     /// ISSUE_10 — repo folder holding the song library.
-    /// project_structure.txt documents mp3\ as an identically LFS-distributed asset folder, but
+    /// docs/README.md (formerly project_structure.txt) documents mp3\ as an identically LFS-distributed asset folder, but
     /// the sync only ever covered mp4 and jpeg, so there was no way for a user to get the songs
     /// — the music library was bring-your-own with no in-app path to the shared collection.
     /// </summary>

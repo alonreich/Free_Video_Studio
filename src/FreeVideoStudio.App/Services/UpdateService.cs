@@ -40,6 +40,11 @@ namespace FreeVideoStudio.App.Services;
 /// HOW IT NAGS (and how it stops):
 /// * At most ONE startup probe per 15 minutes (UiStateStore timestamp inside the preserved
 ///   ProgramData root). The result of every check is recorded for Settings › About (UPDATEUX_06).
+/// * RECHECK_01 — while the app stays open the automatic check repeats every
+///   <see cref="RecheckInterval"/> (same consent, settings, throttle and "skipped" rules), so a user who
+///   never closes the app still hears about a new version the same day.
+/// * BETA_01 — the Beta channel takes the HIGHEST version among published releases, pre-releases
+///   included; Stable reads /releases/latest, which never returns a pre-release.
 /// * "Remind me later" (UPDATEUX_01) = not now; the same release is offered again on a later
 ///   start (the user said not-now, not never).
 /// * "Skip this version" remembers THE TAG in UiStateStore; that exact release is never offered
@@ -219,6 +224,9 @@ internal static partial class UpdateService
     internal static readonly TimeSpan StartupGracePeriod = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan MinimumIntervalBetweenChecks = TimeSpan.FromMinutes(15);
+
+    /// <summary>RECHECK_01 — how often a long-running session checks again.</summary>
+    internal static readonly TimeSpan RecheckInterval = TimeSpan.FromHours(6);
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
     private static readonly HttpClient Http = CreateHttpClient();
@@ -300,6 +308,35 @@ internal static partial class UpdateService
             return;
         }
 
+        await RunAutomaticCheckAsync(owner).ConfigureAwait(false);
+
+        // RECHECK_01 — a session that stays open checks again every RecheckInterval. Nothing changes
+        // in what is asked or downloaded; the loop ends with the main window.
+        while (true)
+        {
+            try
+            {
+                await Task.Delay(DevReleaseFolder is null ? RecheckInterval : TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+            }
+            catch (System.Exception swallowed5)
+            {
+                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed5);
+                return;
+            }
+            if (!await Dispatcher.UIThread.InvokeAsync(() => owner.IsVisible)) return;
+            if (!SettingsManager.Instance.AutoUpdateChecks) continue;
+            if (PendingVersion is not null) continue;
+            await RunAutomaticCheckAsync(owner).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// One automatic check (startup or RECHECK_01): skipped while the window is hidden, throttled to one
+    /// per 15 minutes, silent on its own problems, and it downloads in the background only when the
+    /// settings and the connection allow it.
+    /// </summary>
+    private static async Task RunAutomaticCheckAsync(Window owner)
+    {
         bool ownerStillVisible = await Dispatcher.UIThread.InvokeAsync(() => owner.IsVisible);
         if (!ownerStillVisible) return;
 
@@ -307,17 +344,17 @@ internal static partial class UpdateService
 
         if (Interlocked.CompareExchange(ref _checkInProgress, 1, 0) != 0)
         {
-            RuntimeLog.Info("UPDATE", "Another update check is already in progress; skipping startup check.");
+            RuntimeLog.Info("UPDATE", "Another update check is already in progress; skipping the automatic check.");
             return;
         }
 
         try
         {
-            RuntimeLog.Info("UPDATE", "Running startup update probe against GitHub releases...");
+            RuntimeLog.Info("UPDATE", "Running automatic update probe against GitHub releases...");
             (UpdateRelease? release, string problem) = await QueryLatestReleaseAsync().ConfigureAwait(false);
             if (release is null)
             {
-                RecordResult(problem + " The app will try again the next time it starts.");
+                RecordResult(problem + " The app will try again later.");
                 return;
             }
 
@@ -362,7 +399,7 @@ internal static partial class UpdateService
         }
         catch (Exception ex)
         {
-            RuntimeLog.Fail("UPDATE", $"Startup update check failed (staying silent): {ex.Message}");
+            RuntimeLog.Fail("UPDATE", $"Automatic update check failed (staying silent): {ex.Message}");
             RecordResult("The update check failed: " + ex.Message);
         }
         finally
@@ -664,7 +701,7 @@ internal static partial class UpdateService
         try
         {
             bool isBeta = string.Equals(SettingsManager.Instance.UpdateChannel, "Beta", StringComparison.OrdinalIgnoreCase);
-            string targetUrl = isBeta ? ReleasesApiUrl + "?per_page=10" : LatestReleaseApiUrl;
+            string targetUrl = isBeta ? ReleasesApiUrl + "?per_page=30" : LatestReleaseApiUrl;
 
             using var cts = new CancellationTokenSource(ProbeTimeout);
             using var response = await Http.GetAsync(targetUrl, cts.Token).ConfigureAwait(false);
@@ -683,19 +720,7 @@ internal static partial class UpdateService
             JsonObject? root = null;
             if (isBeta)
             {
-                var array = JsonNode.Parse(json)?.AsArray();
-                if (array != null)
-                {
-                    foreach (var item in array)
-                    {
-                        var obj = item?.AsObject();
-                        if (obj != null && obj["draft"]?.GetValue<bool>() != true)
-                        {
-                            root = obj;
-                            break;
-                        }
-                    }
-                }
+                root = PickBetaRelease(JsonNode.Parse(json)?.AsArray());
             }
             else
             {
@@ -805,6 +830,28 @@ internal static partial class UpdateService
             RuntimeLog.Info("UPDATE", $"Release probe failed (offline or blocked?): {ex.Message}");
             return (null, "Could not reach GitHub to check for updates (no internet connection, or it is blocked).");
         }
+    }
+
+    /// <summary>
+    /// BETA_01 — the newest published release by VERSION (not by list order), pre-releases included.
+    /// Drafts and tags that are not versions are ignored. Null when there is none.
+    /// </summary>
+    internal static JsonObject? PickBetaRelease(JsonArray? releases)
+    {
+        JsonObject? best = null;
+        string? bestTag = null;
+        foreach (JsonNode? item in releases ?? [])
+        {
+            if (item is not JsonObject obj || obj["draft"]?.GetValue<bool>() == true) continue;
+            string? tag = obj["tag_name"]?.GetValue<string>();
+            if (!DeploymentLifecycle.TryParseVersion(tag, out _)) continue;
+            if (bestTag is null || DeploymentLifecycle.CompareVersions(tag, bestTag) > 0)
+            {
+                best = obj;
+                bestTag = tag;
+            }
+        }
+        return best;
     }
 
     /// <summary>

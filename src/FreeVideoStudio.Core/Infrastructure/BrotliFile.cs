@@ -1,4 +1,6 @@
-﻿
+﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/09_DISTRIBUTION_AND_RELEASE.md
+// Invariants, constants, and threading models must match spec bit-for-bit.
 using System.IO.Compression;
 
 namespace FreeVideoStudio.Core.Infrastructure;
@@ -33,13 +35,42 @@ public static class BrotliFile
         Compress(data, output, quality);
     }
 
-    /// <summary>Decompresses <paramref name="source"/> into <paramref name="destination"/>.</summary>
-    public static void DecompressFile(string source, string destination)
+    /// <summary>
+    /// Decompresses <paramref name="source"/> into <paramref name="destination"/>.
+    /// ASSETHASH_01 — when <paramref name="maxBytes"/> is given, decompression stops with
+    /// <see cref="InvalidDataException"/> the moment the output would exceed it, and the partial
+    /// output is deleted. A damaged or hostile asset can therefore never expand past the size the
+    /// signed update list promises (a "decompression bomb" cannot fill the disk).
+    /// </summary>
+    public static void DecompressFile(string source, string destination, long maxBytes = long.MaxValue)
     {
-        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
-        using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None);
-        brotli.CopyTo(output);
-        output.Flush(flushToDisk: true);
+        if (maxBytes < 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        bool complete = false;
+        try
+        {
+            using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+            using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None);
+            byte[] buffer = new byte[1 << 20];
+            long written = 0;
+            int read;
+            while ((read = brotli.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                written += read;
+                if (written > maxBytes)
+                    throw new InvalidDataException($"The compressed file expands beyond the expected {maxBytes} bytes.");
+                output.Write(buffer, 0, read);
+            }
+            output.Flush(flushToDisk: true);
+            complete = true;
+        }
+        finally
+        {
+            if (!complete)
+            {
+                try { if (File.Exists(destination)) File.Delete(destination); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { CoreLogger.Swallowed(ex); }
+            }
+        }
     }
 }

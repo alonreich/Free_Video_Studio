@@ -197,6 +197,9 @@ public partial class GranularSpeedEditorWindow
                 await ShowEditCaptionDialogAsync(lineId);
             };
 
+            // REWRITELINE_01 — right-click a caption: rewrite it with AI, edit it, or delete it.
+            centerBody.ContextMenu = BuildCaptionContextMenu(lineId, currentLine);
+
             Grid.SetColumn(centerBody, 1);
             grid.Children.Add(centerBody);
 
@@ -427,12 +430,29 @@ public partial class GranularSpeedEditorWindow
         Notify($"Caption #{lineId} saved. Ctrl+Z to undo.");
     }
 
+    /// <summary>
+    /// REWRITELINE_01 — the right-click menu of one caption cue: "Rewrite this line" (AI, same moment, a different
+    /// line in the remembered style), "Edit…" and "Delete". Each entry is undoable like the edit dialog.
+    /// </summary>
+    private ContextMenu BuildCaptionContextMenu(int lineId, CaptionLine line)
+    {
+        var rewrite = new MenuItem { Header = "✨ Rewrite this line" };
+        ToolTip.SetTip(rewrite, "The AI writes a new line for this moment, in your last commentary style.");
+        rewrite.Click += async (_, _) => await RegenerateCaptionLineAsync(lineId, line.SourceStartSec, line.SourceEndSec);
+        var edit = new MenuItem { Header = "✏ Edit…" };
+        edit.Click += async (_, _) => await ShowEditCaptionDialogAsync(lineId);
+        var delete = new MenuItem { Header = "🗑 Delete" };
+        delete.Click += (_, _) => DeleteCaptionLine(lineId);
+        return new ContextMenu { ItemsSource = new object[] { rewrite, edit, new Separator(), delete } };
+    }
+
     private async Task RegenerateCaptionLineAsync(int lineId, double startSec, double endSec)
     {
         if (_edit.CaptionTrack == null) return;
         var track = _edit.CaptionTrack;
         var settings = SettingsManager.Instance;
         var config = settings.GetUsageConfig(AiUsage.Commentary);
+        string? oldText = track.Lines?.FirstOrDefault(l => l.Id == lineId)?.Text;
 
         string apiKey = settings.GetApiKey(config.Vendor);
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -453,7 +473,13 @@ public partial class GranularSpeedEditorWindow
             AiGameProfiles.Parse(settings.AiTrackingGameProfile),
             track.Language,
             track.Style,
-            track.Position);
+            track.Position,
+            // REWRITELINE_01 — the remembered commentary style, the kill marks, and "replace THIS line".
+            Personality: Services.CommentaryPersonalitySettings.Remembered(settings, track.Tone),
+            KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
+            RewriteOf: oldText,
+            Look: track.Look,
+            Size: track.Size);
 
         Notify($"Regenerating caption line #{lineId} via {config.Vendor}...");
 

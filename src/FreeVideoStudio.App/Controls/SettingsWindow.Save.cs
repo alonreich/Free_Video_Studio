@@ -1,6 +1,7 @@
 // [SPEC CONTRACT] STRICT GOVERNANCE:
 // Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
 // Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using Avalonia.Controls;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
@@ -9,104 +10,63 @@ namespace FreeVideoStudio.App.Controls;
 
 public partial class SettingsWindow : Window
 {
+    /// <summary>
+    /// SETTX_01 — ONE settings transaction writes every pending value (SettingsViewModel.WriteTo).
+    /// Side effects that are not settings.json (crop layout, meme rescan, state-store copies) run only
+    /// after that commit succeeded.
+    /// </summary>
     internal void SaveAndClose()
     {
         bool committed = SettingsManager.Update(s =>
         {
-            KeyBinds kb = s.KeyBinds;
-            kb.PlayPause = _pendingKeys["PlayPause"];
-            kb.MarkStart = _pendingKeys["MarkStart"];
-            kb.MarkEnd = _pendingKeys["MarkEnd"];
-            kb.SeekForward = _pendingKeys["SeekForward"];
-            kb.SeekBackward = _pendingKeys["SeekBackward"];
-            kb.VolumeUp = _pendingKeys["VolumeUp"];
-            kb.VolumeDown = _pendingKeys["VolumeDown"];
-            kb.FineSeekForward = _pendingKeys["FineSeekForward"];
-            kb.FineSeekBackward = _pendingKeys["FineSeekBackward"];
-            kb.AggressiveVolumeUp = _pendingKeys["AggressiveVolumeUp"];
-            kb.AggressiveVolumeDown = _pendingKeys["AggressiveVolumeDown"];
-
-            _pendingDefaults.DuckingEnabled = Mix.DuckingEnabled;
-            _pendingDefaults.CarvingEnabled = Mix.CarvingEnabled;
-            _pendingDefaults.DuckingStrength = Mix.DuckingStrengthValue;
-            _pendingDefaults.CarvingStrength = Mix.CarvingStrengthValue;
-            _pendingDefaults.AudioProtection = Mix.DuckingEnabled || Mix.CarvingEnabled;
-            s.Defaults = _pendingDefaults;
-
-            s.ConfirmVideoMergerRemove = ConfirmVideoMergerRemove;
-            s.ConfirmVideoMergerClearAll = ConfirmVideoMergerClearAll;
-            s.ConfirmCropToolReset = ConfirmCropToolReset;
-            s.ConfirmCropToolDelete = ConfirmCropToolDelete;
-            s.ConfirmGranularDeleteSegment = ConfirmGranularDeleteSegment;
-            s.ConfirmGranularClearAll = ConfirmGranularClearAll;
-            s.ConfirmMainAppCancel = ConfirmMainAppCancel;
-            s.ConfirmMainAppCut = ConfirmMainAppCut;
-            s.ConfirmMainAppSwitchTool = ConfirmMainAppSwitchTool;
-            s.KeepOverlayTextBetweenVideos = KeepOverlayTextBetweenVideos;
-            s.ConfirmVoiceOverDeleteTake = ConfirmVoiceOverDeleteTake;
-            s.ConfirmFinishedDialogExit = ConfirmFinishedDialogExit;
-            var autoCheckCb = this.FindControl<CheckBox>("AutoUpdateChecksCheckbox");
-            if (autoCheckCb != null && autoCheckCb.IsChecked.HasValue)
-            {
-                AutoUpdateChecks = autoCheckCb.IsChecked.Value;
-            }
             // UPDATECONSENT_01: an explicit settings choice answers the update-consent prompt.
-            if (s.AutoUpdateChecks != AutoUpdateChecks) s.UpdateConsentAsked = true;
-            s.AutoUpdateChecks = AutoUpdateChecks;
-            s.AutoDownloadUpdates = AutoDownloadUpdates;
-            s.AvoidMeteredNetworkUpdates = AvoidMeteredNetworkUpdates;
-            s.UpdateChannel = UpdateChannel;
-            s.MergerThumbnailScraper = MergerThumbnailScraper;
-            s.MergerMatchClipLoudness = MergerMatchClipLoudness;
-            s.UiSoundsEnabled = UiSoundsEnabled;
-            s.UiSoundVolume = Math.Clamp(UiSoundVolume, 0, 100);
-
-            s.ThemeMode = _pendingThemeMode;
-            s.FontScale = _pendingFontScale;
-            s.PeakFlatteningPrompt = _pendingPeakPrompt;
-            s.VoiceProtectGameMode = _pendingVoiceProtectGame;
-            s.VoiceProtectMusicMode = _pendingVoiceProtectMusic;
-            s.VideoEncoderOverride = _pendingVideoEncoder;
-
-            ApplyPendingAiSettings(s);
-
+            if (s.AutoUpdateChecks != Vm.AutoUpdateChecks) s.UpdateConsentAsked = true;
+            Vm.WriteTo(s);
             ApplyPendingOutputSettings(s);
         });
 
         if (!committed)
         {
-            var btn = this.FindControl<Button>("SaveBtn");
-            if (btn != null) btn.Content = "SAVE FAILED";
+            // SETSAVEFAIL_01 — say why and what to do; the button keeps saying SAVE so it can be retried.
+            SetFooterStatus("⚠ Your settings could not be saved. Another Free Video Studio window may be saving at the same moment, " +
+                            "or the settings file is read-only. Wait a second and press SAVE again.", isError: true);
+            RuntimeLog.Fail("SETTINGS", "Settings save failed: the settings transaction did not commit.");
             return;
         }
 
         SyncMergerOutputDirectoryState();
 
-        ThemeManager.ApplyTheme(_pendingThemeMode);
-        ThemeManager.ApplyFontScale(_pendingFontScale);
+        ThemeManager.ApplyTheme(Vm.P.ThemeMode);
+        ThemeManager.ApplyFontScale(Vm.P.FontScale);
 
-        if (_pendingMaskOverlay != _previousActiveMaskOverlay)
-        {
-            MaskOverlayManager.ApplyProfile(_pendingMaskOverlay);
-        }
+        if (!string.Equals(Vm.P.ActiveMaskOverlay, _openMaskOverlay, StringComparison.Ordinal))
+            MaskOverlayManager.ApplyProfile(Vm.P.ActiveMaskOverlay);
 
-        if (_pendingVideoEncoder != _previousVideoEncoderOverride)
+        string encoder = SettingsManager.Instance.VideoEncoderOverride;
+        if (!string.Equals(encoder, _openEncoder, StringComparison.OrdinalIgnoreCase))
+            RuntimeLog.Info("Settings", $"Video encoder override changed: {_openEncoder} -> {encoder}");
+
+        // MEMEPENDING_01 — the meme folder is committed with everything else; then every open list rescans.
+        if (!string.Equals(Vm.MemeDirectoryPath, _openMemeFolder, StringComparison.OrdinalIgnoreCase))
         {
-            RuntimeLog.Info("Settings", $"Video encoder override changed: {_previousVideoEncoderOverride} -> {_pendingVideoEncoder}");
+            RuntimeLog.Info("Memes", "Meme directory changed in Settings.");
+            MemeDirectory.NotifyChanged();
         }
 
         try
         {
-            if (_musicFolderEdited || _initialMusicFolder != null)
+            // An unprimed writer with no music folder known and none chosen must not write a blank.
+            if (_initialMusicFolder != null || !string.IsNullOrEmpty(Vm.MusicFolder))
             {
                 _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
                 {
-                    ["CustomMusicDirectory"] = _pendingMusicFolder
+                    ["CustomMusicDirectory"] = Vm.MusicFolder
                 });
             }
         }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
+        _isSafeToClose = true;
         Close(true);
     }
 }
