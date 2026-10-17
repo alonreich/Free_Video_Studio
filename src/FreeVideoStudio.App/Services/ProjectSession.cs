@@ -755,6 +755,7 @@ public sealed class ProjectSession
                 timeline.TrimEndMs = document.SourceCutStartMs + document.TrimmedDurationMs;
                 timeline.IsTrimEndSet = true;
             }
+            timeline.MarkMemesAnchored();
 
             _viewModel.IsPortraitMode = document.Export.PortraitMode;
             if (document.Export.QualityIndex >= 0)

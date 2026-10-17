@@ -68,8 +68,12 @@ public sealed record ProjectDocument
     /// instead. Files at 1..3 read unchanged: no keys = full-screen with sound.
     /// <b>5 — VOTIMING_01.</b> v4 readers would discard nested voice takes, freeze offsets and review state.
     /// <b>6 — CAPTIONS_01.</b> Added <see cref="Captions"/> (AI Live Commentary Captions track).
+    /// <b>7 — MEMEAUDIT_01.</b> Each meme may carry <c>clipIn</c> / <c>posX</c> / <c>posY</c> /
+    /// <c>animation</c> / <c>transition</c>. Inside a meme object, where a v6 reader keeps no unknown
+    /// keys: it would play a trimmed meme in full (a longer video) and drop the keys on save. Refused
+    /// instead. Files at 1..6 read unchanged: no keys = the whole meme, in its corner, no effects.
     /// </remarks>
-    public const int SchemaVersion = 6;
+    public const int SchemaVersion = 7;
 
     /// <summary>
     /// PROJ_02 — the oldest schema this build can still READ. A file below this is refused with an

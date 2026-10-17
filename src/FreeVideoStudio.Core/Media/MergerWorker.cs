@@ -180,7 +180,7 @@ public class MergerWorker : IDisposable
 
     /// <summary>A meme file opened as an extra FFmpeg input for one clip's graph.</summary>
     private sealed record MemeInputFile(int Clip, string Path, bool IsImage, bool HasAudio, double DurationSec, double AtRelSec, double GainDb = 0,
-        EdlMeme? Source = null);
+        EdlMeme? Source = null, double ClipInSec = 0);
 
     /// <summary>
     /// CLIPLEVEL_01 / PEAKSAFE_01 — one measurement per clip with sound, over its kept window, at most
@@ -535,11 +535,22 @@ public class MergerWorker : IDisposable
                             bool isImage = ext is ".png" or ".jpg" or ".jpeg";
                             bool memeAudio = false;
                             double dur = m.DurationSec;
+                            double clipIn = 0;
                             if (!isImage)
                             {
                                 var mp = new MediaProber(_ffprobePath, m.FilePath);
                                 memeAudio = await mp.HasAudioAsync();
-                                if (dur <= 0) dur = await mp.GetDurationAsync();
+                                double fileSec = await mp.GetDurationAsync();
+                                // MEMETRIM_01 — only the chosen part [ClipIn, ClipIn + Duration) of the file.
+                                if (fileSec > 0)
+                                {
+                                    clipIn = Math.Clamp(m.ClipInSec, 0, Math.Max(0, fileSec - MemePlacement.MinClipDurationSec));
+                                    dur = dur > 0 ? Math.Min(dur, fileSec - clipIn) : fileSec - clipIn;
+                                }
+                            }
+                            else if (dur > 0)
+                            {
+                                dur = Math.Clamp(dur, MemePlacement.MinStillDurationSec, MemePlacement.MaxStillDurationSec);
                             }
                             if (dur <= 0) dur = MemePlacement.StillImageDurationSec;
                             double gainDb = 0;
@@ -554,7 +565,7 @@ public class MergerWorker : IDisposable
                                 CoreLogger.Info("Audio", $"MERGER MEME LEVEL: '{Path.GetFileName(m.FilePath)}' -> clip [{i + 1}] = {gainDb:+0.00;-0.00} dB.");
                             }
                             memeFiles.Add(new MemeInputFile(i, m.FilePath, isImage, memeAudio, dur,
-                                CompositeTimeline.MemeAtRelSec(c, m, keepIn, keepOut, keepSec), gainDb, m));
+                                CompositeTimeline.MemeAtRelSec(c, m, keepIn, keepOut, keepSec), gainDb, m, clipIn));
                         }
                         CoreLogger.Info("Merger", $"  [{i + 1}] granular effects: {c.Effects.Speed.Count} speed, {c.Effects.Freezes.Count} freeze, {c.Effects.Cuts.Count} cut, {c.Effects.Memes.Count} meme.");
                     }
@@ -623,12 +634,7 @@ public class MergerWorker : IDisposable
                         args.AddRange(["-ss", thumbAt.ToString("F3", CultureInfo.InvariantCulture), "-t", "0.300", "-i", InputFiles[ThumbnailClipIndex]]);
                     }
                     foreach (var mf in memeFiles)
-                    {
-                        if (mf.IsImage)
-                            args.AddRange(["-loop", "1", "-framerate", "60", "-t", mf.DurationSec.ToString("F3", CultureInfo.InvariantCulture), "-i", mf.Path]);
-                        else
-                            args.AddRange(["-i", mf.Path]);
-                    }
+                        args.AddRange(CornerMemeOverlayGraph.InputArgs(mf.Path, mf.IsImage, mf.DurationSec, "60", mf.ClipInSec));
                     return args;
                 }
 
@@ -680,7 +686,9 @@ public class MergerWorker : IDisposable
                                 var src = memeFiles[k].Source;
                                 clipMemes.Add(new MergeMemeInput(memeBase + k, memeFiles[k].IsImage, memeFiles[k].HasAudio, memeFiles[k].DurationSec, memeFiles[k].AtRelSec, memeFiles[k].GainDb,
                                     src?.Mode ?? MemePresentationMode.InlineFullScreen, src?.Corner ?? MemeOverlayCorner.BottomRight,
-                                    src?.Size ?? MemeOverlaySize.Medium, src?.PlaySound ?? true));
+                                    src?.Size ?? MemeOverlaySize.Medium, src?.PlaySound ?? true,
+                                    src?.PosX ?? -1, src?.PosY ?? -1, src?.Animation ?? MemeOverlayAnimation.None,
+                                    src?.Transition ?? MemeTransition.Cut));
                             }
                         string memeCanvas = $"scale={canvasW}:{canvasH}:force_original_aspect_ratio=decrease:flags=lanczos,pad={canvasW}:{canvasH}:(ow-iw)/2:(oh-ih)/2,format=yuv420p";
                         var fxGraph = MergeClipGraph.Build(i, $"[{i}:v]", fileHasAudio[i] ? $"[{i}:a]" : null,

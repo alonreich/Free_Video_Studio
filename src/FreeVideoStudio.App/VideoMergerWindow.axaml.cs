@@ -1124,6 +1124,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 await dialog.ShowDialog(this);
                 targetRatio = dialog.Result ? FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16 : FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Landscape16x9;
             }
+            // CORNERPARITY_03 — from now on the preview lays corner memes out on this canvas.
+            _mergeCanvasForCorners = targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16 ? (1080, 1920) : (1920, 1080);
 
             string mergerStrategy = FreeVideoStudio.Core.Media.ExportEncoderStrategy.Resolve(
                 FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.VideoEncoderOverride,

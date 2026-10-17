@@ -119,7 +119,7 @@ Voiceover timing additions (all listed specs govern these files):
   MemePresentationJson.cs                    06
 ⚠ MemeChoiceViewModel.cs                     04 01
 ⚠ CornerMemeOverlayPresenter.cs              04 03
-⚠ GranularSpeedEditorWindow.Memes.cs         01 04 07
+⚠ GranularSpeedEditorWindow.Memes.cs          01 04 07 (MEMEMODE_01, MEMESTRIP_02, CORNERPARITY_02, MERGEMEME_02, MEMELIST_01)
 ⚠ MainWindow.CornerMemes.cs                  01 04
 ⚠ VideoMergerWindow.CornerMemes.cs           01 04
 ⚠ MergeClipGraph.cs                          01 03
@@ -239,7 +239,12 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ GranularEditSession.cs                     01 04 07 08 §3a COMP-MVVM | 07 §8 UNDO-EDITSTATE (EDITSTATE_01)
   GranularEditSession.History.cs             07 §8 UNDO-EDITSTATE | 07 §7 UNDO-MIGRATION
 ⚠ GranularEditSession.Segments.cs            01 04 07
-⚠ GranularEditSession.Memes.cs               01 04 07 (MEMEMODE_01)
+⚠ GranularEditSession.Memes.cs               01 04 07 (MEMEMODE_01, MEMESNAP_02/03, MEMESEP_02, MEMECUT_02, MEMEDRAG_02/03)
+⚠ GranularSpeedEditorWindow.MemeBands.cs      01 03 04 (MEME_06..09, MEMEDRAG_02, MEMEDRAG_03)
+⚠ MainWindow.Memes.cs                         01 02 04 (MEMEMAIN_02, MEMEMARK_02, MEMEMUSIC_02)
+  MemeTransitions.cs                          03 §4 FFM-MEMECONCAT | 03 §4a FFM-MEMECORNER (MEMETRANS_01, MEMEANIM_01)
+⚠ MemePlacementPreview.cs                     03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT (MEMEPICK_03, MEMEPOS_01)
+  MemePickerPrefsStore.cs                     04 §10 UI-MEMESELECT | 05 (MEMEFAV_01, MEMELAST_01)
   GranularRecoveryCodec.cs                   05 (RECOVERY_03)
   GranularJsonRead.cs                        05 (GRANJSON_01)
 ⚠ CropEditSession.cs                         01 04 05 07 | 08 §3a COMP-MVVM (EDITSTATE_01)
@@ -478,6 +483,39 @@ AVSYNC_04                                    03 §3a FFM-TEMPO
 CUDATAG_01                                   03 §1 FFM-HWENC
 MERGESCRIPT_01                               03 §1 FFM-HWENC
 MEMEMODE_01                                  01 §7 TL-MEME | 03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT | 06 §8 | 07 §5
+MEMEAUDIT_01                                 01 §7 TL-MEME | 03 §4/4a/5 | 04 §10 UI-MEMESELECT | 06 §3 PROJ-SCHEMA (schema 7)
+MEMETRIM_01                                  03 §4 FFM-MEMECONCAT | 04 §10 UI-MEMESELECT
+MEMETRIM_02                                  01 §7 TL-MEME
+MEMERULER_01                                 01 §7 TL-MEME
+MEMEMAIN_02                                  01 §7 TL-MEME
+MEMEMARK_02                                  01 §7 TL-MEME | 04 §10 UI-MEMESELECT
+MEMEMUSIC_02                                 02 §7 AUD-MUSICFADE | 04 §10 UI-MEMESELECT
+MEMECUT_02                                   01 §7 TL-MEME
+MEMESNAP_02                                  01 §7 TL-MEME
+MEMESNAP_03                                  01 §7 TL-MEME
+MEMESEP_02                                   01 §7 TL-MEME
+MEMEDRAG_02                                  01 §7 TL-MEME
+MEMEDRAG_03                                  01 §7 TL-MEME | 04 §10 UI-MEMESELECT
+MEMESTRIP_02                                 01 §7 TL-MEME
+CORNERPARITY_02                              01 §7 TL-MEME | 03 §4a FFM-MEMECORNER
+CORNERPARITY_03                              03 §4a FFM-MEMECORNER
+MERGEMEME_02                                 01 §7 TL-MEME
+MEMEPREV_02                                  03 §5 FFM-MEMEPREVIEW
+MEMELEVEL_03                                 03 §5 FFM-MEMEPREVIEW
+MEMESOUND_02                                 03 §5 FFM-MEMEPREVIEW | 04 §10 UI-MEMESELECT
+MEMEEND_01                                   03 §4a FFM-MEMECORNER
+MEMEPOS_01                                   03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT
+MEMEANIM_01                                  03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT
+MEMEDUCK_01                                  03 §4a FFM-MEMECORNER | 02 §7 AUD-MUSICFADE
+MEMETRANS_01                                 03 §4 FFM-MEMECONCAT | 04 §10 UI-MEMESELECT
+MEMEPICK_03                                  04 §10 UI-MEMESELECT
+MEMEPICK_04                                  04 §10 UI-MEMESELECT
+MEMEPICK_05                                  04 §10 UI-MEMESELECT
+MEMEFAV_01                                   04 §10 UI-MEMESELECT
+MEMELAST_01                                  04 §10 UI-MEMESELECT
+MEMEWARN_02                                  04 §10 UI-MEMESELECT
+MEMELIST_01                                  04 §10 UI-MEMESELECT
+MEMEKEYS_01                                  04 §10 UI-MEMESELECT
 MemePresentationMode                         01 §7 TL-MEME
 MemeOverlayCorner                            01 §7 TL-MEME  [default BottomRight]
 MemeOverlaySize                              01 §7 TL-MEME  [default Medium]

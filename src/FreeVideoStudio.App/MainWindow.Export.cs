@@ -418,9 +418,8 @@ public partial class MainWindow
             SpeedSegments = allSegments,
             Cuts = new List<FreeVideoStudio.Core.Media.CutRange>(_cuts),
 
-            MemePlacements = _memePlacements.Count > 0
-                ? new List<FreeVideoStudio.Core.Media.MemePlacement>(_memePlacements)
-                : null,
+            // MEMEMAIN_02 — the editor's memes AND the panel's START/END meme, together.
+            MemePlacements = EffectiveMemePlacements() is { Count: > 0 } allMemes ? allMemes : null,
             QualityLevel = resolvedQuality,
             TargetMbOverride = resolvedTargetMb,
             MusicLeadFadeIn = musicLeadIn,

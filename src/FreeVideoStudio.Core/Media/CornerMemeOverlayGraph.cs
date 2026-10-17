@@ -19,7 +19,10 @@ public sealed record CornerMemeInput(
     MemeOverlayCorner Corner,
     MemeOverlaySize Size,
     bool PlaySound,
-    double GainDb = 0);
+    double GainDb = 0,
+    double PosX = -1,
+    double PosY = -1,
+    MemeOverlayAnimation Animation = MemeOverlayAnimation.None);
 
 /// <summary>Filters plus the labels that carry the overlaid video and the mixed audio.</summary>
 public sealed record CornerMemeOverlayResult(IReadOnlyList<string> Filters, string VideoLabel, string AudioLabel);
@@ -41,6 +44,13 @@ public sealed record CornerMemeOverlayResult(IReadOnlyList<string> Filters, stri
 /// </summary>
 public static class CornerMemeOverlayGraph
 {
+    /// <summary>
+    /// MEMEDUCK_01 — the game sound under a corner meme that plays its own sound, as a linear gain
+    /// (0.5 ≈ −6 dB). Without it the meme's voice was summed at the SAME loudness as the gameplay
+    /// (MEMELEVEL_02 matches them) and the two fought each other.
+    /// </summary>
+    public const double DuckGain = 0.5;
+
     public static CornerMemeOverlayResult Build(
         string videoIn,
         string audioIn,
@@ -65,14 +75,20 @@ public static class CornerMemeOverlayGraph
 
             string ov = $"[{labelPrefix}cm{k}_v]";
             string outV = $"[{labelPrefix}cm{k}_o]";
-            var (x, y) = MemeOverlayLayout.OverlayPosition(frameW, frameH, m.Corner);
+            var (x, y) = MemeOverlayLayout.OverlayPosition(frameW, frameH, m.Corner, m.PosX, m.PosY);
+            bool fromRight = m.PosX >= 0 && m.PosY >= 0
+                ? m.PosX >= 0.5
+                : m.Corner is MemeOverlayCorner.TopRight or MemeOverlayCorner.BottomRight;
+            // MEMEANIM_01 — fade (alpha) or slide (moving overlay X); none = the original behaviour.
+            string ox = MemeTransitions.CornerOverlayX(m.Animation, x, fromRight, m.StartSec, m.EndSec);
 
             filters.Add(
                 $"[{m.InputIndex}:v]trim=duration={F(len)},setpts=PTS-STARTPTS,fps={fps}:round=near," +
-                $"{MemeOverlayLayout.ScaleFilter(frameW, frameH, m.Size)},format=yuva420p," +
+                $"{MemeOverlayLayout.ScaleFilter(frameW, frameH, m.Size)},format=yuva420p" +
+                $"{MemeTransitions.CornerAlphaFilters(m.Animation, len)}," +
                 $"setpts=PTS+{F(m.StartSec)}/TB{ov}");
             filters.Add(
-                $"{currentV}{ov}overlay=x={x}:y={y}:eof_action=pass:" +
+                $"{currentV}{ov}overlay=x={ox}:y={y}:eof_action=pass:" +
                 $"enable='between(t,{F(m.StartSec)},{F(m.EndSec)})'{outV}");
             currentV = outV;
 
@@ -92,8 +108,15 @@ public static class CornerMemeOverlayGraph
         string currentA = audioIn;
         if (audioPads.Count > 0)
         {
+            // MEMEDUCK_01 — the game sound dips while a corner meme's own sound plays.
+            var windows = new List<string>();
+            foreach (var m in memes)
+                if (m.PlaySound && m.HasAudio && !m.IsImage && m.EndSec - m.StartSec > 0.001)
+                    windows.Add($"between(t,{F(m.StartSec)},{F(m.EndSec)})");
+            string ducked = $"[{labelPrefix}cm_duck]";
+            filters.Add($"{audioIn}volume=volume='if({string.Join("+", windows)},{DuckGain.ToString("0.###", CultureInfo.InvariantCulture)},1)':eval=frame{ducked}");
             string mixed = $"[{labelPrefix}cm_amix]";
-            filters.Add($"{audioIn}{string.Concat(audioPads)}amix=inputs={audioPads.Count + 1}:normalize=0:duration=first:dropout_transition=0{mixed}");
+            filters.Add($"{ducked}{string.Concat(audioPads)}amix=inputs={audioPads.Count + 1}:normalize=0:duration=first:dropout_transition=0{mixed}");
             currentA = mixed;
         }
 
@@ -101,12 +124,18 @@ public static class CornerMemeOverlayGraph
     }
 
     /// <summary>The meme inputs as FFmpeg arguments: images looped for their visible length, videos as-is.</summary>
-    public static IEnumerable<string> InputArgs(string path, bool isImage, double durationSec, string fps)
+    public static IEnumerable<string> InputArgs(string path, bool isImage, double durationSec, string fps, double clipInSec = 0)
     {
         if (isImage)
         {
             yield return "-loop"; yield return "1";
             yield return "-framerate"; yield return fps;
+            yield return "-t"; yield return durationSec.ToString("F3", CultureInfo.InvariantCulture);
+        }
+        else if (durationSec > 0.001)
+        {
+            // MEMETRIM_01 — only the chosen part of a video meme is read.
+            if (clipInSec > 0.0005) { yield return "-ss"; yield return clipInSec.ToString("F3", CultureInfo.InvariantCulture); }
             yield return "-t"; yield return durationSec.ToString("F3", CultureInfo.InvariantCulture);
         }
         yield return "-i"; yield return path;

@@ -345,7 +345,11 @@ public partial class MainWindow
             {
                 RuntimeLog.Info("UI", "User clicked GRANULAR SPEED button.");
 
-                if (_isGranularSpeedActive)
+                // MEMEMARK_02 — opened from a meme marker: straight in, no EDIT / REMOVE question.
+                string? focusMemeId = _openEditorAtMemeId;
+                _openEditorAtMemeId = null;
+
+                if (_isGranularSpeedActive && focusMemeId == null)
                 {
                     var choice = await ConfirmDialogWindow.AskEditOrRemoveAsync(
                         this,
@@ -418,6 +422,7 @@ public partial class MainWindow
                     existingCaptions: _viewModel.CaptionTrack);
 
                 editor.AvailableMemes = _memeItems;
+                if (focusMemeId != null) editor.FocusMemeOnOpen(focusMemeId);
                 editor.SetAiEliminations(_aiEliminationTimestamps);
 
                 // AIELIM_03 — a kill scan that finishes while the editor is open still reaches it.
@@ -449,6 +454,8 @@ public partial class MainWindow
 
                     _memePlacements.Clear();
                     _memePlacements.AddRange(editor.ResultMemes);
+                    _viewModel.Timeline.MarkMemesAnchored();
+                    _ = AskKeepMusicIfNeededAsync();
 
                     _viewModel.CaptionTrack = editor.ResultCaptionTrack;
                     RuntimeLog.Info("UI", $"Granular editor: {editor.ResultCaptionTrack?.Lines?.Count ?? 0} commentary caption line(s) kept for the export.");
@@ -814,12 +821,8 @@ public partial class MainWindow
 
                     SetMusicButtonActive(true);
 
-                    var addMemeCb = AddMemeCheckboxCtl;
-                    var memeCb = MemeComboBoxCtl;
-                    if (addMemeCb?.IsChecked == true && memeCb?.SelectedItem != null)
-                    {
-                        await AskKeepMusicDuringMemeAsync();
-                    }
+                    // MEMEMUSIC_02 — any full-screen meme (panel or editor) asks again here.
+                    await AskKeepMusicIfNeededAsync(force: true);
 
                     ApplyPreviewPlayersVolume();
 
@@ -862,6 +865,7 @@ public partial class MainWindow
                     if (cb != null) cb.IsDropDownOpen = true;
                 }
                 SaveRecoveryState(label: "toggle meme");
+                UpdateTimelineMarkers();
             };
         }
         
@@ -886,11 +890,8 @@ public partial class MainWindow
             }
 
             SaveRecoveryState(label: "choose meme");
-            if (addMemeCb?.IsChecked == true && memeCb.SelectedItem != null && _musicWizardResult != null &&
-                !string.IsNullOrEmpty(_musicWizardResult.MusicFilePath) && _keepMusicDuringMeme == null)
-            {
-                _ = AskKeepMusicDuringMemeAsync();
-            }
+            _ = AskKeepMusicIfNeededAsync();
+            UpdateTimelineMarkers();
         };
 
         var volSliderForRecovery = VolumeSliderCtl;
@@ -1032,6 +1033,7 @@ public partial class MainWindow
 
             Infrastructure.MemePlacementStore.Set(sel.FullPath, chosen);
             SaveRecoveryState(label: "change meme placement");
+            UpdateTimelineMarkers();
 
             if (Infrastructure.MemePlacementStore.ContradictsShippedDefault(sel.FullPath, chosen))
             {

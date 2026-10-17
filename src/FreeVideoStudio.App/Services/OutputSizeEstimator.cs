@@ -37,8 +37,7 @@ public sealed class OutputSizeEstimator
     {
         if (string.IsNullOrWhiteSpace(request.Path)) return OutputSizeEstimate.Empty;
         if (request.EndMs <= request.StartMs) return null;
-        if (QualityLadder.IsOriginal(request.Quality) ||
-            (request.Memes.Length == 0 && !string.IsNullOrWhiteSpace(request.LegacyMeme))) return null;
+        if (QualityLadder.IsOriginal(request.Quality) || !string.IsNullOrWhiteSpace(request.LegacyMeme)) return null;
         var timeline = OutputTimeline.Create(Math.Max(0, request.EndMs - request.StartMs), request.Segments,
             request.Speed, request.StartMs, cuts: CutRange.ToClipRelative(request.Cuts, request.StartMs));
         double freezeSeconds = timeline.Chunks.Where(c => c.IsFreeze).Sum(c => c.OutputLengthSec);
@@ -105,14 +104,16 @@ public sealed class OutputSizeEstimator
         var source = await ReadMediaAsync(request.Path, token).ConfigureAwait(false);
         if (source == null) return OutputSizeEstimate.Empty;
         var memes = new List<EstimateMedia>();
-        var paths = request.Memes.Length > 0 ? request.Memes.Select(m => m.FilePath)
-            : string.IsNullOrWhiteSpace(request.LegacyMeme) ? [] : new[] { request.LegacyMeme };
-        foreach (string path in paths)
+        // MEMEMODE_01 / MEMETRIM_01 / MEMEMAIN_02 — only FULL SCREEN memes add length, each by the part
+        // that plays; the main screen's START/END meme now plays TOGETHER with the editor's memes.
+        var wanted = request.Memes.Where(m => !m.IsCornerOverlay).Select(m => (m.FilePath, (double?)m.DurationSec)).ToList();
+        if (!string.IsNullOrWhiteSpace(request.LegacyMeme)) wanted.Add((request.LegacyMeme!, null));
+        foreach (var (path, length) in wanted)
         {
             token.ThrowIfCancellationRequested();
             var media = await ReadMediaAsync(path, token).ConfigureAwait(false);
             if (media == null && File.Exists(path)) return OutputSizeEstimate.Empty;
-            if (media != null) memes.Add(media);
+            if (media != null) memes.Add(length is double d && d > 0.01 ? media with { Duration = d } : media);
         }
         return CalculateMain(request, source, memes);
     }

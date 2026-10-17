@@ -138,7 +138,7 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
     public void SetSpans(IReadOnlyList<CornerMemeSpan>? spans)
     {
         _spans = spans ?? Array.Empty<CornerMemeSpan>();
-        foreach (var s in _spans) CornerMemeFrames.PrefetchWindow(s.Meme.FilePath, 0);
+        foreach (var s in _spans) CornerMemeFrames.PrefetchWindow(s.Meme.FilePath, CornerMemeFrames.WindowIndexForTime(s.Meme.ClipInSec));
         if (_spans.Count == 0) Hide();
     }
 
@@ -240,7 +240,9 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         for (int sIdx = 0; sIdx < active.Count; sIdx++)
         {
             var span = active[sIdx];
-            double memeSec = gameplaySec - span.GameStartSec;
+            double visibleSec = gameplaySec - span.GameStartSec;
+            // MEMETRIM_01 — frames come from the chosen part of the file, which starts at ClipInSec.
+            double memeSec = span.Meme.ClipInSec + visibleSec;
             int winIdx = CornerMemeFrames.WindowIndexForTime(memeSec);
 
             var currentLease = _leases[shown];
@@ -270,7 +272,7 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
 
             if (currentLease != null)
             {
-                if (winIdx + 1 < CornerMemeFrames.TotalWindowsForDuration(span.Meme.DurationSec))
+                if (winIdx + 1 < CornerMemeFrames.TotalWindowsForDuration(span.Meme.ClipInSec + span.Meme.DurationSec))
                 {
                     CornerMemeFrames.PrefetchWindow(span.Meme.FilePath, winIdx + 1);
                 }
@@ -280,12 +282,24 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
                 {
                     var (x, y, w, h) = MemeOverlayLayout.Place(_frame.W, _frame.H,
                         bmp.PixelSize.Width, bmp.PixelSize.Height,
-                        span.Meme.Corner, span.Meme.Size);
+                        span.Meme.Corner, span.Meme.Size, span.Meme.PosX, span.Meme.PosY);
+
+                    // MEMEANIM_01 — the export's fade (alpha) and slide (moving X), on the same clock.
+                    double spanLen = span.GameEndSec - span.GameStartSec;
+                    double slide = MemeTransitions.CornerSlideOffsetAt(span.Meme.Animation, visibleSec, spanLen);
+                    if (slide > 0)
+                    {
+                        bool fromRight = span.Meme.HasCustomPosition ? span.Meme.PosX >= 0.5
+                            : span.Meme.Corner is MemeOverlayCorner.TopRight or MemeOverlayCorner.BottomRight;
+                        double offX = fromRight ? _frame.W : -w;
+                        x = (int)Math.Round(x + (offX - x) * slide);
+                    }
 
                     var image = _images[shown];
                     image.Source = bmp;
                     image.Width = w * scale;
                     image.Height = h * scale;
+                    image.Opacity = MemeTransitions.CornerOpacityAt(span.Meme.Animation, visibleSec, spanLen);
                     Canvas.SetLeft(image, ox + x * scale);
                     Canvas.SetTop(image, oy + y * scale);
                     image.IsVisible = true;

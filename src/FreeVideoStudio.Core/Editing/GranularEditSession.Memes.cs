@@ -30,17 +30,26 @@ public sealed partial class GranularEditSession
     public const double MemeMinSeparationOutSec = 0.05;
 
     /// <summary>
-    /// MEME_06 — refuses a placement within <see cref="MemeMinSeparationOutSec"/> of another meme.
-    /// NOT COSMETIC: see the constant.
+    /// MEME_06 / MEMESEP_02 — refuses a FULL SCREEN placement within <see cref="MemeMinSeparationOutSec"/>
+    /// OUTPUT seconds of another FULL SCREEN meme. NOT COSMETIC: see the constant.
+    ///
+    /// <para>Corner memes never take part (they are never spliced, so they can never be merged onto
+    /// one seam), and the distance is measured on <paramref name="ruler"/> (the output ruler without
+    /// memes) when one is given, because the export's rule is in OUTPUT seconds: at 2x, two memes
+    /// 0.06 s of source apart are 0.03 s of output apart and would be merged. Without a ruler the
+    /// source distance is used (it is never smaller than the output distance at 1x or slower).</para>
     /// </summary>
-    public bool MemeSeparationIsSafe(double snappedSourceRelSec, string? ignoreId, out string? reason)
+    public bool MemeSeparationIsSafe(double snappedSourceRelSec, string? ignoreId, out string? reason, OutputTimeline? ruler = null)
     {
+        double here = ruler?.SourceToOutput(snappedSourceRelSec) ?? snappedSourceRelSec;
         foreach (var m in Memes)
         {
             if (ignoreId != null && m.Id == ignoreId) continue;
-            if (Math.Abs(m.AtSourceSecRelative - snappedSourceRelSec) < MemeMinSeparationOutSec)
+            if (m.IsCornerOverlay) continue;
+            double there = ruler?.SourceToOutput(m.AtSourceSecRelative) ?? m.AtSourceSecRelative;
+            if (Math.Abs(there - here) < MemeMinSeparationOutSec)
             {
-                reason = $"That is too close to '{Path.GetFileName(m.FilePath)}'. Leave at least a moment between two memes.";
+                reason = $"That is too close to the full-screen meme '{Path.GetFileName(m.FilePath)}'. Leave at least a moment between two full-screen memes.";
                 return false;
             }
         }
@@ -62,7 +71,9 @@ public sealed partial class GranularEditSession
             return EditOutcome.Success;
         }
 
-        at = live.SnapInsertionPoint(rawSourceRelSec);
+        // MEMESNAP_02 — the NEAREST legal edge of a speed block, exactly like a drag; a forward-only
+        // snap could throw the meme to the far end of a 30 s slow-motion block.
+        at = live.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out _));
         if (live.HasInsertionAtSource(at))
             return EditOutcome.Refused("A full-screen meme already sits at that exact point. Move the playhead a little.");
         if (!MemeSeparationIsSafe(at, null, out string? clash)) return EditOutcome.Refused(clash!);
@@ -72,9 +83,13 @@ public sealed partial class GranularEditSession
     /// <summary>MEME_06 — adds a meme at an anchor already resolved by <see cref="ResolveNewMemeAnchor"/>, and selects it.</summary>
     public MemePlacement AddMeme(string filePath, double at, double durationSec, MemePresentationMode mode,
         MemeOverlayCorner corner, MemeOverlaySize size, bool playSound)
+        => AddMeme(new MemePlacement(filePath, at, durationSec, "", mode, corner, size, playSound));
+
+    /// <summary>MEMETRIM_01 / MEMEPOS_01 — adds a fully described meme (its Id is replaced by a fresh one) and selects it.</summary>
+    public MemePlacement AddMeme(MemePlacement template)
     {
         Checkpoint("add meme");
-        var placement = new MemePlacement(filePath, at, durationSec, NewMemeId(), mode, corner, size, playSound);
+        var placement = template with { Id = NewMemeId() };
         Memes.Add(placement);
         SelectedMemeId = placement.Id;
         return placement;
@@ -89,7 +104,30 @@ public sealed partial class GranularEditSession
         MemeOverlayCorner corner, MemeOverlaySize size, bool playSound, double clipDurMs,
         out MemePlacement? before, out MemePlacement? after)
     {
+        int i0 = Memes.FindIndex(m => m.Id == memeId);
+        var baseline = i0 >= 0 ? Memes[i0] : new MemePlacement(filePath, 0, durationSec, memeId);
+        return UpdateMeme(memeId, baseline with
+        {
+            FilePath = filePath, DurationSec = durationSec, Mode = mode, Corner = corner, Size = size, PlaySound = playSound,
+        }, clipDurMs, out before, out after);
+    }
+
+    /// <summary>
+    /// MEMEMODE_01 / MEMETRIM_01 / MEMEPOS_01 — replaces every property of a placed meme except its
+    /// Id and anchor with those of <paramref name="wanted"/>, as ONE undo step. Going full screen
+    /// re-applies D7/D8; <paramref name="movedBySec"/> reports how far that moved it (MEMESNAP_02),
+    /// so the window can say so instead of moving it silently.
+    /// </summary>
+    public EditOutcome UpdateMeme(string memeId, MemePlacement wanted, double clipDurMs,
+        out MemePlacement? before, out MemePlacement? after)
+        => UpdateMeme(memeId, wanted, clipDurMs, out before, out after, out _);
+
+    public EditOutcome UpdateMeme(string memeId, MemePlacement wanted, double clipDurMs,
+        out MemePlacement? before, out MemePlacement? after, out double movedBySec)
+    {
         before = after = null;
+        movedBySec = 0;
+        var mode = wanted.Mode;
         int idx = Memes.FindIndex(m => m.Id == memeId);
         if (idx < 0) return EditOutcome.Refused("That meme is no longer on the timeline.");
         var old = Memes[idx];
@@ -98,13 +136,14 @@ public sealed partial class GranularEditSession
         if (mode == MemePresentationMode.InlineFullScreen)
         {
             var others = TimelineExcludingMeme(memeId, clipDurMs);
-            at = others.SnapInsertionPoint(at);
+            at = others.SnapInsertionPoint(SnapMemeToNearestLegalEdge(at, out _));
             if (others.HasInsertionAtSource(at))
                 return EditOutcome.Refused("Another full-screen meme already sits at that point, so this one cannot go full screen there.");
             if (!MemeSeparationIsSafe(at, memeId, out string? clash)) return EditOutcome.Refused(clash!);
         }
 
-        var updated = new MemePlacement(filePath, at, durationSec, old.Id, mode, corner, size, playSound);
+        var updated = wanted with { Id = old.Id, AtSourceSecRelative = at };
+        movedBySec = at - old.AtSourceSecRelative;
         before = old;
         after = updated;
         if (updated == old) return EditOutcome.Success;
@@ -144,7 +183,8 @@ public sealed partial class GranularEditSession
         }
 
         var others = Memes.Where(m => m.Id != excludeId).ToList();
-        return OutputTimeline.Create(Math.Max(0.001, clipDurMs), segs, 1.0, 0,
+        // MEMERULER_01 — the editor's rulers run at the base speed, exactly like its playback and the export.
+        return OutputTimeline.Create(Math.Max(0.001, clipDurMs), segs, BaseSpeed > 0 ? BaseSpeed : 1.0, 0,
             MemePlacement.ToInsertions(others), CutsForTimeline());
     }
 
@@ -156,20 +196,87 @@ public sealed partial class GranularEditSession
     /// it, for the status line. Returns true when the model changed.
     /// </summary>
     public bool MoveMemeTo(string id, double rawSourceRelSec, OutputTimeline baseTimeline, string gestureKey, out SpeedSegment? blockedBy)
+        => MoveMemeTo(id, rawSourceRelSec, baseTimeline, gestureKey, out blockedBy, out _);
+
+    /// <summary>
+    /// MEMEDRAG_02 — as above, and <paramref name="refusal"/> says why a step was refused (a blocked
+    /// drag used to just stick with no word). A CORNER meme moves freely: it is only pushed out of
+    /// deleted footage, never snapped off blocks and never checked for spacing (it adds no length).
+    /// </summary>
+    public bool MoveMemeTo(string id, double rawSourceRelSec, OutputTimeline baseTimeline, string gestureKey,
+        out SpeedSegment? blockedBy, out string? refusal)
     {
         ArgumentNullException.ThrowIfNull(baseTimeline);
         blockedBy = null;
+        refusal = null;
         int idx = Memes.FindIndex(m => m.Id == id);
         if (idx < 0) return false;
 
         Checkpoint("move meme", gestureKey);
-        double snapped = baseTimeline.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out blockedBy));
+        double snapped;
+        if (Memes[idx].IsCornerOverlay)
+        {
+            double raw = Math.Clamp(rawSourceRelSec, 0, baseTimeline.TotalSourceSeconds);
+            snapped = baseTimeline.IsCutAtSource(raw) ? baseTimeline.NextSurvivingSource(raw) : raw;
+        }
+        else
+        {
+            snapped = baseTimeline.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out blockedBy));
+        }
 
         if (Math.Abs(snapped - Memes[idx].AtSourceSecRelative) < 0.0005) return false;
-        if (!MemeSeparationIsSafe(snapped, id, out _)) return false;
+        if (!Memes[idx].IsCornerOverlay && !MemeSeparationIsSafe(snapped, id, out refusal, baseTimeline)) return false;
 
         Memes[idx] = Memes[idx] with { AtSourceSecRelative = snapped };
         return true;
+    }
+
+    /// <summary>
+    /// MEMECUT_02 — a meme anchored inside deleted footage goes with it, in the Speed Editor exactly as
+    /// on the main screen (TimelineViewModel.DropMemesInsideCuts). Sliding it to the edge of the hole
+    /// would move it somewhere the user never put it. Called inside the DELETE PARTS step, so one
+    /// Ctrl+Z brings the scene AND its memes back. Returns the file names removed.
+    /// </summary>
+    public List<string> DropMemesInsideCuts()
+    {
+        var dropped = new List<string>();
+        if (Memes.Count == 0 || Cuts.Count == 0) return dropped;
+        for (int i = Memes.Count - 1; i >= 0; i--)
+        {
+            double at = Memes[i].AtSourceSecRelative * 1000.0;
+            foreach (var c in Cuts)
+            {
+                if (at > c.StartMs + 0.5 && at < c.EndMs - 0.5)
+                {
+                    dropped.Add(Path.GetFileName(Memes[i].FilePath));
+                    if (SelectedMemeId == Memes[i].Id) SelectedMemeId = null;
+                    Memes.RemoveAt(i);
+                    break;
+                }
+            }
+        }
+        return dropped;
+    }
+
+    /// <summary>
+    /// MEMESNAP_03 — D8 is re-checked after the speed blocks change: a FULL SCREEN meme a block now
+    /// covers is moved to that block's nearest edge (a block dragged over a meme pushes it along).
+    /// No checkpoint of its own: it runs right after the edit that caused it, so it belongs to that
+    /// edit's undo step. Returns the file names moved.
+    /// </summary>
+    public List<string> ResnapMemesOffBlocks()
+    {
+        var moved = new List<string>();
+        for (int i = 0; i < Memes.Count; i++)
+        {
+            var m = Memes[i];
+            if (m.IsCornerOverlay) continue;
+            double at = SnapMemeToNearestLegalEdge(m.AtSourceSecRelative, out var blocker);
+            if (blocker == null || Math.Abs(at - m.AtSourceSecRelative) < 0.0005) continue;
+            Memes[i] = m with { AtSourceSecRelative = at };
+            moved.Add(Path.GetFileName(m.FilePath));
+        }
+        return moved;
     }
 
     /// <summary>

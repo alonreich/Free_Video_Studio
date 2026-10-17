@@ -21,6 +21,11 @@ public static class MemePresentationJson
     public const string KeyCorner = "corner";
     public const string KeySize = "size";
     public const string KeySound = "sound";
+    public const string KeyClipIn = "clipIn";
+    public const string KeyPosX = "posX";
+    public const string KeyPosY = "posY";
+    public const string KeyAnimation = "animation";
+    public const string KeyTransition = "transition";
 
     /// <summary>Writes the four keys onto a meme object.</summary>
     public static void Write(JsonObject o, MemePlacement m)
@@ -29,6 +34,12 @@ public static class MemePresentationJson
         o[KeyCorner] = CornerText(m.Corner);
         o[KeySize] = SizeText(m.Size);
         o[KeySound] = m.PlaySound;
+        // MEMETRIM_01 / MEMEPOS_01 / MEMEANIM_01 / MEMETRANS_01 — optional; old readers ignore them.
+        o[KeyClipIn] = m.ClipInSec;
+        o[KeyPosX] = m.PosX;
+        o[KeyPosY] = m.PosY;
+        o[KeyAnimation] = AnimationText(m.Animation);
+        o[KeyTransition] = TransitionText(m.Transition);
     }
 
     /// <summary>Applies the four keys (when present) to a placement read without them.</summary>
@@ -41,6 +52,11 @@ public static class MemePresentationJson
             Corner = ParseCorner(Text(o[KeyCorner])),
             Size = ParseSize(Text(o[KeySize])),
             PlaySound = Bool(o[KeySound], true),
+            ClipInSec = Math.Max(0, Num(o[KeyClipIn], 0)),
+            PosX = Num(o[KeyPosX], -1),
+            PosY = Num(o[KeyPosY], -1),
+            Animation = ParseAnimation(Text(o[KeyAnimation])),
+            Transition = ParseTransition(Text(o[KeyTransition])),
         };
     }
 
@@ -78,6 +94,43 @@ public static class MemePresentationJson
         "large" => MemeOverlaySize.Large,
         _ => MemeOverlaySize.Medium,
     };
+
+    public static string AnimationText(MemeOverlayAnimation v) => v switch
+    {
+        MemeOverlayAnimation.Fade => "fade",
+        MemeOverlayAnimation.Slide => "slide",
+        _ => "none",
+    };
+
+    public static MemeOverlayAnimation ParseAnimation(string? s) => s?.ToLowerInvariant() switch
+    {
+        "fade" => MemeOverlayAnimation.Fade,
+        "slide" => MemeOverlayAnimation.Slide,
+        _ => MemeOverlayAnimation.None,
+    };
+
+    public static string TransitionText(MemeTransition v) => v switch
+    {
+        MemeTransition.Fade => "fade",
+        MemeTransition.Zoom => "zoom",
+        _ => "cut",
+    };
+
+    public static MemeTransition ParseTransition(string? s) => s?.ToLowerInvariant() switch
+    {
+        "fade" => MemeTransition.Fade,
+        "zoom" => MemeTransition.Zoom,
+        _ => MemeTransition.Cut,
+    };
+
+    private static double Num(JsonNode? n, double fallback)
+    {
+        if (n is not JsonValue v) return fallback;
+        if (v.TryGetValue(out double d) && double.IsFinite(d)) return d;
+        if (v.TryGetValue(out string? s) && double.TryParse(s, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double p) && double.IsFinite(p)) return p;
+        return fallback;
+    }
 
     private static string? Text(JsonNode? n) => n is JsonValue v && v.TryGetValue(out string? s) ? s : null;
 

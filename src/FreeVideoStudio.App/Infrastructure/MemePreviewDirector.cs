@@ -91,6 +91,20 @@ public sealed class MemePreviewDirector
     /// </summary>
     private const double ReArmGuardSec = 0.30;
 
+    /// <summary>
+    /// MEMEPREV_02 — when playback (re)starts right ON a meme's point (MARK START, the end of a
+    /// deleted part the player just jumped, the end of a freeze, a play after a pause or seek) there
+    /// is no "crossing": the first tick already sits at or just past the anchor. A meme at most this
+    /// far behind the playhead on that first tick is played. The re-arm guard keeps it from replaying.
+    /// </summary>
+    private const double FreshStartWindowSec = 0.15;
+
+    /// <summary>
+    /// MEMEPREV_02 — the player parks a little before MARK END (TL-ENDSTOP), so a meme placed AT the
+    /// end can never be crossed; it plays once the playhead is this close to it.
+    /// </summary>
+    private const double EndWindowSec = 0.15;
+
     private const int LoadTimeoutMs = 4000;
     private const int ReturnTimeoutMs = 5000;
     private const int PollMs = 25;
@@ -105,6 +119,15 @@ public sealed class MemePreviewDirector
     private readonly Stopwatch _memeClock = new();
 
     private double _lastSourceSec = double.NaN;
+    private bool _lastWasPaused = true;
+    private string? _savedVolume;
+    private string? _savedVolumeMax;
+    private string? _savedMute;
+    private readonly Func<double>? _trimEndSec;
+
+    /// <summary>MEMELEVEL_03 — measured loudness per file (memes and the gameplay), shared by every director.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, double?> _lufs = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _measuring = new(StringComparer.OrdinalIgnoreCase);
     private string? _suppressId;
     private double _suppressUntilSourceSec;
     private bool _resumePaused;
@@ -148,8 +171,10 @@ public sealed class MemePreviewDirector
         Func<string?> sourcePath,
         Func<double> trimStartSec,
         Action<bool, string> setBusy,
-        string logTag)
+        string logTag,
+        Func<double>? trimEndSec = null)
     {
+        _trimEndSec = trimEndSec;
         _client = client;
         _sourcePath = sourcePath;
         _trimStartSec = trimStartSec;
@@ -173,6 +198,14 @@ public sealed class MemePreviewDirector
         }
         _memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));
 
+        // MEMELEVEL_03 — measure what the preview needs to play memes at the export's level.
+        if (_memes.Count > 0)
+        {
+            foreach (var m in _memes) if (m.PlaySound) MeasureInBackground(m.FilePath, isMeme: true);
+            if (_sourcePath() is { Length: > 0 } src && !src.StartsWith("edl://", StringComparison.OrdinalIgnoreCase))
+                MeasureInBackground(src, isMeme: false);
+        }
+
         bool changed = Signature() != before;
         if (changed)
         {
@@ -188,7 +221,9 @@ public sealed class MemePreviewDirector
         foreach (var m in _memes)
             sb.Append(m.Id).Append(':')
               .Append(m.AtSourceSecRelative.ToString("0.####", CultureInfo.InvariantCulture)).Append(':')
-              .Append(m.DurationSec.ToString("0.####", CultureInfo.InvariantCulture)).Append(';');
+              .Append(m.DurationSec.ToString("0.####", CultureInfo.InvariantCulture)).Append(':')
+              .Append(m.ClipInSec.ToString("0.####", CultureInfo.InvariantCulture)).Append(':')
+              .Append(m.PlaySound ? '1' : '0').Append(';');
         return sb.ToString();
     }
 
@@ -223,21 +258,32 @@ public sealed class MemePreviewDirector
     {
         double now = ipc.CurrentTime;
         double prev = _lastSourceSec;
+        bool wasPaused = _lastWasPaused;
         _lastSourceSec = now;
+        _lastWasPaused = ipc.IsPaused;
 
         if (_memes.Count == 0 || Suspended) return;
-        if (double.IsNaN(prev)) return;
+        if (double.IsNaN(prev) && double.IsNaN(now)) return;
         if (ipc.IsPaused) return;
 
-        double delta = now - prev;
-        if (delta <= 0 || delta > SeekJumpSec) return;
+        // MEMEPREV_02 — a tick right after a start, a pause or a seek has nothing to "cross": use a
+        // short window BEHIND the playhead instead, so a meme exactly where playback began still plays.
+        // A jump (a seek, or the player skipping a deleted part) is a fresh start too: nothing between
+        // the old and the new position was played, so only the landing point counts.
+        double delta = double.IsNaN(prev) ? double.NaN : now - prev;
+        bool fresh = double.IsNaN(prev) || wasPaused || !(delta > 0) || delta > SeekJumpSec;
+        double hi = now + CrossEps;
+        double lo = fresh ? now - FreshStartWindowSec : prev + CrossEps;
 
         double trimStart = _trimStartSec();
+        double end = _trimEndSec?.Invoke() ?? double.NaN;
         foreach (var m in _memes)
         {
             double anchor = trimStart + m.AtSourceSecRelative;
-            if (anchor <= prev + CrossEps || anchor > now + CrossEps) continue;
+            bool atEnd = double.IsFinite(end) && anchor >= end - EndWindowSec && now >= anchor - EndWindowSec;
+            if (!atEnd && (anchor <= lo || anchor > hi)) continue;
             if (_suppressId == m.Id && now < _suppressUntilSourceSec) continue;
+            if (atEnd && _suppressId == m.Id) continue;
 
             CurrentPhase = Phase.LoadingMeme;
             _ = RunMemeAsync(ipc, m, anchor);
@@ -291,10 +337,28 @@ public sealed class MemePreviewDirector
             _savedSpeed = SafeGet(ipc, "speed");
             await SafeSet(ipc, "speed", "1.0");
 
+            // MEMELEVEL_03 / MEMESOUND_02 — the export's level for this meme (its loudness matched to the
+            // gameplay), or silence when its sound is off. Saved and put back on return.
+            _savedVolume = SafeGet(ipc, "volume");
+            _savedVolumeMax = SafeGet(ipc, "volume-max");
+            _savedMute = SafeGet(ipc, "mute");
+            if (!meme.PlaySound)
+            {
+                await SafeSet(ipc, "mute", "yes");
+            }
+            else if (GainDbFor(meme.FilePath) is double gainDb && Math.Abs(gainDb) > 0.05
+                     && double.TryParse(_savedVolume, NumberStyles.Float, CultureInfo.InvariantCulture, out double vol))
+            {
+                double target = Math.Clamp(vol * Math.Pow(10, gainDb / 20.0), 0, 400);
+                await SafeSet(ipc, "volume-max", "400");
+                await SafeSet(ipc, "volume", target.ToString("0.##", CultureInfo.InvariantCulture));
+            }
+
             await SafeSet(ipc, "image-display-duration",
                 MemeDurationSec.ToString("F3", CultureInfo.InvariantCulture));
 
-            await ipc.LoadFileAsync(meme.FilePath, 0);
+            // MEMETRIM_01 — the chosen part of the meme starts at ClipInSec.
+            await ipc.LoadFileAsync(meme.FilePath, Math.Max(0, meme.ClipInSec));
             await WaitUntilAsync(() => ipc.Duration > 0 || ipc.CurrentTime > 0.02, LoadTimeoutMs);
 
             _memeClock.Restart();
@@ -333,6 +397,10 @@ public sealed class MemePreviewDirector
             await SafeSet(ipc, "video-crop", _savedCrop ?? "");
             await SafeSet(ipc, "vf", _savedVf ?? "");
             await SafeSet(ipc, "speed", _savedSpeed ?? "1.0");
+            if (_savedVolume != null) await SafeSet(ipc, "volume", _savedVolume);
+            if (_savedVolumeMax != null) await SafeSet(ipc, "volume-max", _savedVolumeMax);
+            await SafeSet(ipc, "mute", _savedMute ?? "no");
+            _savedVolume = _savedVolumeMax = _savedMute = null;
 
             string? src = _sourcePath();
             if (!string.IsNullOrWhiteSpace(src))
@@ -378,6 +446,33 @@ public sealed class MemePreviewDirector
         if (ipc == null) { CurrentPhase = Phase.Idle; _setBusy(false, ""); return; }
         CurrentPhase = Phase.Returning;
         await ReturnToSourceAsync(ipc);
+    }
+
+    /// <summary>MEMELEVEL_03 — the export's gain for this meme (MEMELEVEL_02), or null while not measured yet.</summary>
+    private double? GainDbFor(string memePath)
+    {
+        string? src = _sourcePath();
+        if (string.IsNullOrEmpty(src)) return null;
+        if (!_lufs.TryGetValue(memePath, out double? memeLufs) || !_lufs.TryGetValue(src, out double? gameLufs)) return null;
+        return MemeLoudness.GainFor(memeLufs, gameLufs);
+    }
+
+    private static void MeasureInBackground(string path, bool isMeme)
+    {
+        if (string.IsNullOrWhiteSpace(path) || _lufs.ContainsKey(path) || !_measuring.TryAdd(path, 0)) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                string ffmpeg = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
+                double? lufs = isMeme
+                    ? await MemeLoudness.MeasureLufsAsync(ffmpeg, path, CancellationToken.None).ConfigureAwait(false)
+                    : (await AudioLoudnessProbe.MeasureAsync(ffmpeg, path).ConfigureAwait(false))?.IntegratedLufs;
+                _lufs[path] = lufs;
+            }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            finally { _measuring.TryRemove(path, out _); }
+        });
     }
 
     private static string? SafeGet(MpvIpcClient ipc, string name)

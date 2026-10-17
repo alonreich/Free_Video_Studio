@@ -429,6 +429,8 @@ public partial class MainWindow
                 i++;
             }
         }
+        // MEMETRIM_02 — these memes are measured from the MARK START restored just above.
+        _viewModel.Timeline.MarkMemesAnchored();
     }
 
     /// <summary>

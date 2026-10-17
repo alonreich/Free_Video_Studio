@@ -20,7 +20,11 @@ public sealed record MergeMemeInput(int InputIndex, bool IsImage, bool HasAudio,
     MemePresentationMode Mode = MemePresentationMode.InlineFullScreen,
     MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight,
     MemeOverlaySize Size = MemeOverlaySize.Medium,
-    bool PlaySound = true)
+    bool PlaySound = true,
+    double PosX = -1,
+    double PosY = -1,
+    MemeOverlayAnimation Animation = MemeOverlayAnimation.None,
+    MemeTransition Transition = MemeTransition.Cut)
 {
     public bool IsCornerOverlay => Mode == MemePresentationMode.CornerOverlay;
 }
@@ -123,7 +127,7 @@ public static class MergeClipGraph
             var vis = MemePlacement.VisibleInterval(start, m.DurationSec, bodyDur);
             if (vis is not { } v) continue;
             cornerInputs.Add(new CornerMemeInput(m.InputIndex, m.IsImage, m.HasAudio, v.StartSec, v.EndSec,
-                m.Corner, m.Size, m.PlaySound, m.GainDb));
+                m.Corner, m.Size, m.PlaySound, m.GainDb, m.PosX, m.PosY, m.Animation));
         }
         if (cornerInputs.Count > 0)
         {
@@ -190,9 +194,10 @@ public static class MergeClipGraph
             string d = m.DurationSec.ToString("F6", ci);
             string mv = $"[{p}m{k}_v]", ma = $"[{p}m{k}_a]";
             filters.Add($"[{m.InputIndex}:v]trim=duration={d},setpts=PTS-STARTPTS,{memeCanvasChain},setsar=1,fps=60:start_time=0:round=near," +
-                        $"tpad=stop_mode=clone:stop_duration={d},trim=duration={d},setpts=PTS-STARTPTS{mv}");
+                        $"tpad=stop_mode=clone:stop_duration={d},trim=duration={d},setpts=PTS-STARTPTS" +
+                        $"{MemeTransitions.VideoFilters(m.Transition, m.DurationSec, $"{canvasW}:{canvasH}")}{mv}");
             filters.Add(m.HasAudio && !m.IsImage && m.PlaySound
-                ? $"[{m.InputIndex}:a]atrim=duration={d},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=48000{MemeLoudness.Chain(m.GainDb)},apad,atrim=duration={d}{MemeLoudness.SpliceFade(m.DurationSec)}{ma}"
+                ? $"[{m.InputIndex}:a]atrim=duration={d},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=48000{MemeLoudness.Chain(m.GainDb)},apad,atrim=duration={d}{MemeLoudness.SpliceFade(m.DurationSec)}{MemeTransitions.AudioFilters(m.Transition, m.DurationSec)}{ma}"
                 : $"anullsrc=r=48000:cl=stereo,atrim=duration={d},asetpts=PTS-STARTPTS{ma}");
             memeLabels.Add((NearestCut(placed[k].Cut), mv, ma, m.DurationSec));
         }

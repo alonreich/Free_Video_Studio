@@ -95,7 +95,7 @@ public partial class MainWindow
                 if (_viewModel.Timeline.MemePlacements.Count > 0)
                 {
                     EnsureMemePreviewDirector();
-                    _memePreview?.SetMemes(_viewModel.Timeline.MemePlacements);
+                    _memePreview?.SetMemes(EffectiveMemePlacements());
                 }
 
                 RequestSizeEstimate();
