@@ -11,6 +11,11 @@ What ENGINEERS and AI agents read: every change, in technical terms, as it happe
 
 ## Unreleased
 
+### 2026-10-18 — AI Commentary lost on APPLY
+- 2026-10-18 · AICOMMENTARY_CLOSE_01 · The Speed Editor's APPLY closed the window and `Closing` called `EndAiCommentaryPreview(accept: false)`: an unapplied commentary preview was discarded and a running one cancelled, silently (field log: run 00:04–00:10, APPLY at 00:10:17, "0 commentary caption line(s) kept"). APPLY now calls `PrepareApplyWithCommentaryAsync` (commits a pending preview; asks Keep waiting / Apply without commentary while running); CANCEL/✕ during a run cancel the close and ask; APPLY reads "APPLY (incl. commentary)" while a preview waits. Speed changes were not the cause: captions map through the export's `OutputTimeline` (speed blocks + base speed). (`GranularSpeedEditorWindow.AiCommentary.cs`, `GranularSpeedEditorWindow.axaml.cs`; docs/04 UI-AICOMMENTARY)
+- 2026-10-18 · AICOMMENTARY_LOG_01 · Commentary runs log start, every progress line, result, cancel, apply and discard. (`GranularSpeedEditorWindow.AiCommentary.cs`)
+- 2026-10-18 · tests · New `AiCommentaryCloseTests` (App, 3).
+
 ### 2026-10-17 — Meme audit (MEMEAUDIT_01: 36 fixes and improvements across the Main App, Speed Editor and Merger)
 - 2026-10-17 · MEMETRIM_02 · Memes are clip-relative but cuts/segments/freeze are absolute ms, so moving MARK START slid every meme onto another gameplay frame. `TimelineViewModel.MemeOriginMs` + `RebaseMemesToTrim()` shift memes by the MARK START delta (end-anchored memes follow MARK END; memes now outside START–END are removed and announced); anchored by `MarkMemesAnchored()` after editor accept, recovery restore and project apply. (`ViewModels/TimelineViewModel.cs`, `MainWindow.axaml.cs`, `MainWindow.Canvas.cs`, `MainWindow.Shortcuts.cs`, `MainWindow.VoiceTiming.cs`, `MainWindow.Restore.cs`, `MainWindow.Wireup.cs`, `Services/ProjectSession.cs`; docs/01 TL-MEME)
 - 2026-10-17 · MEMERULER_01 · Every Speed Editor ruler (`OutTimeline`, `BaseTimeline`, `GameplayTimeline`, `TimelineExcludingMeme`) was built at 1.0x while playback (`SpeedAt`), the voice-over clock and the export use the base speed (default 1.1x). They now use `EditorBaseSpeed`. (`GranularSpeedEditorWindow.axaml.cs`, `.Memes.cs`, `Core/Editing/GranularEditSession.Memes.cs`)

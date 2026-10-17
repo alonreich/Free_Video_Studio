@@ -1182,3 +1182,8 @@ MEMEFAV_01=src/FreeVideoStudio.App/Infrastructure/MemePickerPrefsStore.cs
 MEMELAST_01=src/FreeVideoStudio.App/Infrastructure/MemePickerPrefsStore.cs
 MEMEWARN_02=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml.cs
 MEMEAUDIT_01=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
+
+# AICOMMENTARY_CLOSE_01 / AICOMMENTARY_LOG_01 — docs/04 UI-AICOMMENTARY: APPLY keeps a pending commentary preview; runs are logged.
+AICOMMENTARY_CLOSE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+AICOMMENTARY_CLOSE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+AICOMMENTARY_LOG_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs

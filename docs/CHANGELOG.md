@@ -9,7 +9,7 @@ What people who use Free Video Studio read: plain-English notes about what chang
 ---
 
 ## Upcoming
-- **AI Commentary, Upgraded:** Pick a style (Hype, Chill, Coach, Roast) or mix Funny, Sarcastic, Energetic and Tactical yourself. Captions can sit high, middle or low, speak Hebrew, read clearer, land right on the action, and a right-click rewrites one line. Your choices are remembered.
+- **AI Commentary, Upgraded:** Pick a style or mix Funny, Sarcastic, Energetic and Tactical yourself. Captions sit high, middle or low, speak Hebrew, land on the action, a right-click rewrites one line, and APPLY no longer loses commentary you have not applied yet.
 - **AI Works With Google, Anthropic and OpenAI, Everywhere:** Every AI feature works with whichever company you choose, uses their current models, and switches to a working model by itself if one is retired.
 - **One Simple AI Setup:** One "Connect Your AI" window and one AI Features tab in Settings cover every AI feature, and the privacy questions say exactly what each company receives.
 - **See What Each AI Job Used:** After AI Smart Zoom or AI Commentary, the app shows how many AI requests and tokens the job used and how much of your allowance was left.

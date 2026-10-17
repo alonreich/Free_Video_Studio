@@ -1709,8 +1709,11 @@ public partial class GranularSpeedEditorWindow : Window
         });
 
         var acceptBtn = this.FindControl<Button>("AcceptGranularBtn");
-        if (acceptBtn != null) acceptBtn.Click += (s, e) => {
+        _applyGranularBtn = acceptBtn;
+        if (acceptBtn != null) acceptBtn.Click += async (s, e) => {
             RuntimeLog.Info("UI", "User clicked Accept in Granular Speed Editor.");
+            // AICOMMENTARY_CLOSE_01 — keep an unapplied commentary preview; ask while one is still running.
+            if (!await PrepareApplyWithCommentaryAsync()) return;
             if (_zoomModeActive && _hasZoomBox && _edit.SelectedSegmentIndex >= 0 && _edit.SelectedSegmentIndex < _edit.Segments.Count && !_edit.Segments[_edit.SelectedSegmentIndex].ZoomW.HasValue)
             {
                 CommitZoomToSegment("AcceptedDefault");
