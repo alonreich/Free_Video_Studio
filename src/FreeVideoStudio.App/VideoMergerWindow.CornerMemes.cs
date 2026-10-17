@@ -12,6 +12,7 @@ public partial class VideoMergerWindow
 {
     private Infrastructure.CornerMemeOverlayPresenter? _cornerMemes;
     private object? _cornerMemePlan;
+    private (int W, int H)? _mergeCanvasForCorners;
 
     /// <summary>
     /// MEMEMODE_01 — corner memes in the Merger preview, on the plan's GAMEPLAY clock
@@ -32,7 +33,12 @@ public partial class VideoMergerWindow
         // CORNERPARITY_01 — geometry on the frame actually on screen (even, like every export canvas). The
         // presenter's old 16x9 stand-in rounded the margin to 0 and the box to ninths of the height.
         int fw = _videoHost.IpcClient.VideoWidth, fh = _videoHost.IpcClient.VideoHeight;
-        if (fw > 1 && fh > 1) _cornerMemes.SetFrameSize(fw - fw % 2, fh - fh % 2);
+        // CORNERPARITY_03 — the export overlays onto the MERGE CANVAS (1080x1920 or 1920x1080), which
+        // differs from a clip whose shape is not the canvas's (cropped or padded). Once the canvas is
+        // known (the queue is all one shape, or the mixed-shape question was answered) it is used;
+        // until then the clip on screen, which is the canvas whenever every clip has the same shape.
+        if (_mergeCanvasForCorners is { } mc) _cornerMemes.SetFrameSize(mc.W, mc.H);
+        else if (fw > 1 && fh > 1) _cornerMemes.SetFrameSize(fw - fw % 2, fh - fh % 2);
         if (!ReferenceEquals(_cornerMemePlan, plan))
         {
             _cornerMemePlan = plan;

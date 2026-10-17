@@ -295,6 +295,13 @@ public class ProcessWorker : IDisposable
         public MemeOverlaySize Size = MemeOverlaySize.Medium;
         public bool PlaySound = true;
         public bool IsCorner;
+        /// <summary>MEMETRIM_01 — where in the meme file the used part starts.</summary>
+        public double ClipInSec;
+        /// <summary>MEMEPOS_01 / MEMEANIM_01 / MEMETRANS_01 — presentation extras.</summary>
+        public double PosX = -1;
+        public double PosY = -1;
+        public MemeOverlayAnimation Animation = MemeOverlayAnimation.None;
+        public MemeTransition Transition = MemeTransition.Cut;
 
         public string VLabel => $"[{Id}_v]";
         public string ALabel => $"[{Id}_a]";
@@ -599,6 +606,11 @@ public class ProcessWorker : IDisposable
                             Corner = placement?.Corner ?? MemeOverlayCorner.BottomRight,
                             Size = placement?.Size ?? MemeOverlaySize.Medium,
                             PlaySound = placement?.PlaySound ?? true,
+                            ClipInSec = Math.Max(0, placement?.ClipInSec ?? 0),
+                            PosX = placement?.PosX ?? -1,
+                            PosY = placement?.PosY ?? -1,
+                            Animation = placement?.Animation ?? MemeOverlayAnimation.None,
+                            Transition = placement?.Transition ?? MemeTransition.Cut,
                         };
 
                         string memeExt = Path.GetExtension(path).ToLowerInvariant();
@@ -612,7 +624,22 @@ public class ProcessWorker : IDisposable
                             else m.HasAudio = await memeProber.HasAudioAsync();
                         }
 
-                        if (m.IsImage) m.DurationSec = MemePlacement.StillImageDurationSec;
+                        if (m.IsImage)
+                        {
+                            // MEMETRIM_01 — a picture shows for the length the user chose (1–10 s), 4 s by default.
+                            m.ClipInSec = 0;
+                            m.DurationSec = placement != null && placement.DurationSec > 0.01
+                                ? Math.Clamp(placement.DurationSec, MemePlacement.MinStillDurationSec, MemePlacement.MaxStillDurationSec)
+                                : MemePlacement.StillImageDurationSec;
+                        }
+                        else
+                        {
+                            // MEMETRIM_01 — a video meme plays only its chosen part [ClipIn, ClipIn + Duration).
+                            double fileSec = m.DurationSec;
+                            m.ClipInSec = Math.Clamp(m.ClipInSec, 0, Math.Max(0, fileSec - MemePlacement.MinClipDurationSec));
+                            double want = placement != null && placement.DurationSec > 0.01 ? placement.DurationSec : fileSec;
+                            m.DurationSec = Math.Max(Math.Min(MemePlacement.MinClipDurationSec, fileSec), Math.Min(want, fileSec - m.ClipInSec));
+                        }
 
                         if (!m.PlaySound) m.HasAudio = false;
 
@@ -1245,7 +1272,9 @@ public class ProcessWorker : IDisposable
                             : (absSourceSec - actualExtractStartMs / 1000.0) / SpeedFactor;
                         if (cm.AtSourceSecRelative <= 0.0005) bodyOutSec = padStartHumanSec;
                         double start = Math.Round((introDurationSec + bodyOutSec) * fpsValue) / fpsValue;
-                        var vis = MemePlacement.VisibleInterval(start, cm.DurationSec, renderDurationSec);
+                        // MEMEEND_01 — a corner meme ends at MARK END, as in the preview; it never runs on
+                        // into the closing fade-out pad over the black.
+                        var vis = MemePlacement.VisibleInterval(start, cm.DurationSec, Math.Max(0, renderDurationSec - padEndHumanSec));
                         if (vis is not { } v)
                         {
                             CoreLogger.Warn("Meme", $"Corner meme '{Path.GetFileName(cm.FilePath)}' falls after the end of the video and was skipped.");
@@ -1253,7 +1282,7 @@ public class ProcessWorker : IDisposable
                         }
                         double gain = cm.HasAudio ? MemeLoudness.GainFor(cm.MeasuredLufs, gameplayLufs) : 0;
                         cornerInputs.Add(new CornerMemeInput(cm.InputIndex, cm.IsImage, cm.HasAudio, v.StartSec, v.EndSec,
-                            cm.Corner, cm.Size, cm.PlaySound, gain));
+                            cm.Corner, cm.Size, cm.PlaySound, gain, cm.PosX, cm.PosY, cm.Animation));
                         CoreLogger.Info("Meme",
                             $"Corner meme '{Path.GetFileName(cm.FilePath)}' {cm.Corner}/{cm.Size} over {v.StartSec:F3}-{v.EndSec:F3}s " +
                             $"of the rendered video (sound {(cm.HasAudio ? $"{gain:+0.00;-0.00} dB" : "off")}); the video length is unchanged.");
@@ -1315,6 +1344,10 @@ public class ProcessWorker : IDisposable
                                 memeAudio += $",afade=t=out:st={memeFadeStart.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}:d={memeFadeDur.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}";
                             }
                         }
+
+                        // MEMETRANS_01 — the chosen way in and out of the gameplay (cut / fade / zoom punch).
+                        memeScale += MemeTransitions.VideoFilters(m.Transition, m.DurationSec, canvas);
+                        if (m.HasAudio) memeAudio += MemeTransitions.AudioFilters(m.Transition, m.DurationSec);
 
                         coreFilters.Add($"[{m.InputIndex}:v]{memeScale}{m.VLabel}");
                         if (m.HasAudio)
@@ -1544,12 +1577,9 @@ public class ProcessWorker : IDisposable
                     }
                     if (textPngPath != null) a.AddRange(["-i", textPngPath]);
                     foreach (var m in memes)
-                    {
-                        if (m.IsImage) a.AddRange(["-i", m.FilePath]);
-                        else a.AddRange(["-i", m.FilePath]);
-                    }
+                        a.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps, m.ClipInSec));
                     foreach (var m in cornerMemes)
-                        a.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps));
+                        a.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps, m.ClipInSec));
                     foreach (var voTake in GetEffectiveVoiceOverTakes()) a.AddRange(["-i", voTake.Path]);
                     a.AddRange(["-filter_complex_script", audioGraphPath, "-map", aOutputFinal,
                                 "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", AudioPreviewOutputPath!]);
@@ -1649,19 +1679,12 @@ public class ProcessWorker : IDisposable
 
                         foreach (var m in memes)
                         {
-                            if (m.IsImage)
-                            {
-                                ffmpegArgs.AddRange(["-loop", "1", "-framerate", targetFps, "-t", m.DurationSec.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), "-i", m.FilePath]);
-                            }
-                            else
-                            {
-                                ffmpegArgs.AddRange(decodeFlags);
-                                ffmpegArgs.AddRange(["-i", m.FilePath]);
-                            }
+                            if (!m.IsImage) ffmpegArgs.AddRange(decodeFlags);
+                            ffmpegArgs.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps, m.ClipInSec));
                         }
 
                         foreach (var m in cornerMemes)
-                            ffmpegArgs.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps));
+                            ffmpegArgs.AddRange(CornerMemeOverlayGraph.InputArgs(m.FilePath, m.IsImage, m.DurationSec, targetFps, m.ClipInSec));
 
                         var voTakes = GetEffectiveVoiceOverTakes();
                         foreach (var voTake in voTakes)

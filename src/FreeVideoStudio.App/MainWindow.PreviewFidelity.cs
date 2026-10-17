@@ -41,8 +41,9 @@ public partial class MainWindow
             ZoomEdgePadding = hasZoom && ZoomPreviewSimulator.AnyEdgePadding(segments, portrait),
             SourceColor = _fidelityColor,
             RenderedMixFailed = _mixGate.CurrentSignature != null && _mixGate.CurrentSignature == _mixGate.FailedSignature,
-            CornerMemeBeyondPreviewFrames = corners.Any(c => !IsStillImage(c.FilePath) && c.DurationSec > Infrastructure.CornerMemeFrames.MaxSeconds),
+            CornerMemeBeyondPreviewFrames = corners.Any(c => !IsStillImage(c.FilePath) && c.ClipInSec + c.DurationSec > Infrastructure.CornerMemeFrames.MaxSeconds),
             CornerMemeSoundNotPreviewed = false,
+            MemeTransitionNotPreviewed = _memePlacements.Any(m => !m.IsCornerOverlay && m.Transition != MemeTransition.Cut),
         });
 
         _fidelityBadge ??= new Infrastructure.PreviewFidelityBadge();

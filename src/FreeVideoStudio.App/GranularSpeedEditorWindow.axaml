@@ -410,16 +410,23 @@
                              press the button, it lands exactly there. -->
                         <Button Name="AddMemeBtn" Classes="Secondary" MinWidth="140"
                                 HorizontalContentAlignment="Center"
-                                ToolTip.Tip="Drop a meme at the playhead. The gameplay pauses, the meme plays in full, then the gameplay carries on from the exact frame it stopped on — so your video gets longer by the meme's length.">
+                                ToolTip.Tip="Drop a meme at the playhead. You then choose how it plays:&#x0a;• FULL SCREEN — the gameplay pauses, the meme plays, the gameplay carries on from the same frame. The video gets longer by the meme's length.&#x0a;• CORNER — the meme plays in a corner over the running gameplay. The video length stays the same.">
                             <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <TextBlock Text="🤡" FontSize="{DynamicResource AppFontSize14}" VerticalAlignment="Center"/>
                                 <TextBlock Text="ADD MEME" FontWeight="Bold"
                                            FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+                        <!-- MEMELIST_01: every meme in one list — jump to, change or remove it. -->
+                        <Button Name="MemeListBtn" Classes="Secondary" MinWidth="96" IsVisible="False"
+                                HorizontalContentAlignment="Center"
+                                ToolTip.Tip="See every meme in this video: jump to one, change it or remove it.">
+                            <TextBlock Name="MemeListBtnText" Text="MEMES ▾" FontWeight="Bold"
+                                       FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center"/>
+                        </Button>
                         <Button Name="RemoveMemeBtn" Classes="Danger" MinWidth="150" IsVisible="False"
                                 HorizontalContentAlignment="Center"
-                                ToolTip.Tip="Take this meme out of the video. Ctrl+Z brings it back.">
+                                ToolTip.Tip="Take this meme out of the video (or press Delete). Ctrl+Z brings it back.">
                             <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <TextBlock Text="🤡" FontSize="{DynamicResource AppFontSize14}" VerticalAlignment="Center"/>
                                 <TextBlock Text="REMOVE MEME" FontWeight="Bold"

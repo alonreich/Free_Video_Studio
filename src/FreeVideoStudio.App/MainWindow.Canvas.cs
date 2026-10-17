@@ -506,24 +506,10 @@ public partial class MainWindow
             }
         }
 
-        if (_memePlacements.Count > 0)
-        {
-            foreach (var meme in _memePlacements)
-            {
-                double memeAbsSec = (_trimStartMs / 1000.0) + meme.AtSourceSecRelative;
-                double memeX = (memeAbsSec / duration) * canvasWidth;
-
-                var memeMarker = CreateMemeTimelineCameraIcon();
-                memeMarker.IsHitTestVisible = false;
-                Avalonia.Controls.ToolTip.SetTip(memeMarker,
-                    $"Meme: {System.IO.Path.GetFileName(meme.FilePath)} ({meme.DurationSec:0.0}s)\n" +
-                    "Your gameplay pauses here and the meme plays, then carries on from this exact frame.\n" +
-                    "Open GRANULAR SPEED to move or remove it.");
-                Avalonia.Controls.Canvas.SetTop(memeMarker, -79);
-                Avalonia.Controls.Canvas.SetLeft(memeMarker, ClampTimelineCameraLeft(memeX, canvasWidth));
-                canvas.Children.Add(memeMarker);
-            }
-        }
+        // MEMEMARK_02 — memes on the source ruler (full screen = one clown head; corner = a strip
+        // over the gameplay it covers; the main-screen START/END meme too). Click = open the Speed
+        // Editor on it. See MainWindow.Memes.cs.
+        DrawMainMemeMarkers(canvas, duration, canvasWidth, trimMarkerTop, trimMarkerHeight);
 
         if (_freezeTimeMs >= 0)
         {
@@ -760,6 +746,7 @@ public partial class MainWindow
                     _draggingEndMarker = false;
                     e.Pointer.Capture(null);
                     _trimEndSet = true;
+                    RebaseMemesAfterTrimChange();
                     RuntimeLog.Info("UI", $"Trim END marker dragged to {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
 
                     if (ActiveVideoHost?.IpcClient?.IsPaused == true)

@@ -529,9 +529,13 @@ public sealed partial class GranularEditSession
         Cuts.Add(new CutRange(startMs, endMs));
         NormalizeCuts(clipDurMs);
         ApplyCutToSegmentsAndFreeze(startMs, endMs);
+        LastCutDroppedMemes = DropMemesInsideCuts();
         ClearPendingMarks();
         SelectedSegmentIndex = -1;
     }
+
+    /// <summary>MEMECUT_02 — the memes the last DELETE PARTS took with it, for the window's notice.</summary>
+    public List<string> LastCutDroppedMemes { get; private set; } = new();
 
     /// <summary>Runs the export's own normalisation so the editor can never show a cut the export would not make.</summary>
     public void NormalizeCuts(double durMs)

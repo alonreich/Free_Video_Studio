@@ -91,7 +91,8 @@ public sealed class SharedHistoryWiringTests
     [Fact]
     public void T16_Granular_EveryGestureCallSiteKeepsItsCoalesceKey()
     {
-        string code = Src("GranularSpeedEditorWindow.axaml.cs");
+        // MEMEAUDIT_01 — the meme band's drag lives in its own partial (MVVM_02 ceiling).
+        string code = Src("GranularSpeedEditorWindow.axaml.cs") + Src("GranularSpeedEditorWindow.MemeBands.cs");
         foreach (string key in new[] { "\"zoom-edge\"", "\"seg-edge\"", "\"seg-speed\"", "\"freeze-len\"", "\"freeze-drag\"", "\"meme-drag\"" })
             Assert.Contains(key, code);
         Assert.True(Count(code, @"\bEndUndoGesture\s*\(\s*\)") >= 4, "pointer releases must still close their gestures");

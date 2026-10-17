@@ -22,8 +22,8 @@ What people who use Free Video Studio read: plain-English notes about what chang
 - **Music Credits Made Easy:** Free background songs come with their credit text, and the export screen copies it in one click so YouTube and TikTok do not mute your video.
 - **A Clearer Settings Window:** 6 simple tabs, a search bar, plain help on every option, Backup and Import, and Restore buttons. It asks before throwing away changes, and starting choices like speed and phone format now really work. Updates keep your window sizes and preferences, and random volume drops are gone.
 - **Know What's New Before You Update:** The update card now lists the highlights of the new version, the app checks again during long sessions, and the Beta choice in Settings › General now really gets test versions first.
-- **Smaller, Safer Updates:** Updates download only the parts that changed and check every piece before using it, and the free-space check now asks only for the space an update really needs.
-- **Safer Installation:** The part of an update that needs administrator permission now runs only from a folder other programs cannot change.
+- **Smaller, Safer Updates:** Updates download only the parts that changed and check every piece before using it, the free-space check asks only for the space an update really needs, and the part that needs administrator permission runs only from a folder other programs cannot change.
+- **Memes, Rebuilt:** Memes stay on the moment you chose, match the final video, and the main-screen meme now plays too. The picker previews, trims, positions and styles each meme; corner memes can be dragged and lower the game sound while they talk.
 
 ## v2026.10.13.2238
 **What's New in This Release:**

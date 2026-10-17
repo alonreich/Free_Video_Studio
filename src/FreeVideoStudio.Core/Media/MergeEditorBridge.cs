@@ -159,7 +159,7 @@ public sealed class MergeEditorSource
                     _ => clip.ToMergedMs(m.AtUs),
                 };
                 memes.Add(new MemePlacement(m.FilePath, at / 1000.0, m.DurationSec, m.Id,
-                    m.Mode, m.Corner, m.Size, m.PlaySound));
+                    m.Mode, m.Corner, m.Size, m.PlaySound, m.ClipInSec, m.PosX, m.PosY, m.Animation, m.Transition));
             }
         }
         ExtraFreezes = Math.Max(0, freezes - 1);
@@ -223,7 +223,7 @@ public sealed class MergeEditorSource
                 _ => clip.ToSourceUs(at),
             };
             memes[i].Add(new EdlMeme(m.Id, m.FilePath, placement, atUs, m.DurationSec,
-                m.Mode, m.Corner, m.Size, m.PlaySound));
+                m.Mode, m.Corner, m.Size, m.PlaySound, m.ClipInSec, m.PosX, m.PosY, m.Animation, m.Transition));
         }
 
         var clips = new List<EdlClip>(edl.Clips);
@@ -239,6 +239,37 @@ public sealed class MergeEditorSource
             };
         }
         return edl with { Clips = clips, BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed };
+    }
+
+    /// <summary>
+    /// MERGEMEME_02 — what the merge will really do with a meme the editor holds at
+    /// <paramref name="mergedSec"/>: a FULL SCREEN meme inside a clip's fade-in / fade-out is moved to
+    /// that clip's start / where its fade-out begins (D17), and a CORNER meme stops where its clip ends
+    /// (effects stay inside one clip, D4). The editor applies the first at once, so what it shows is
+    /// what is exported, and draws the second.
+    /// </summary>
+    public double ResolveMemeAt(double mergedSec, bool corner, out double clipEndSec, out string? note)
+    {
+        note = null;
+        clipEndSec = TotalMs / 1000.0;
+        if (Clips.Count == 0) return mergedSec;
+        double atMs = mergedSec * 1000.0;
+        int i = ClipAt(atMs);
+        var clip = Clips[i];
+        clipEndSec = clip.EndMs / 1000.0;
+        if (corner) return mergedSec;
+        var placement = PlacementAt(clip, atMs);
+        double snapped = placement switch
+        {
+            EdlMemePlacement.AtStart => clip.StartMs,
+            EdlMemePlacement.AtEnd => clip.EndMs - clip.FadeOutMs,
+            _ => atMs,
+        };
+        if (Math.Abs(snapped - atMs) > 0.5)
+            note = placement == EdlMemePlacement.AtStart
+                ? $"Moved to the start of clip {i + 1} — a full-screen meme cannot cut into its fade-in."
+                : $"Moved to where clip {i + 1} fades out — a full-screen meme cannot cut into its fade-out.";
+        return snapped / 1000.0;
     }
 
     /// <summary>D17 — Start/Mid/End by where the meme was dropped.</summary>

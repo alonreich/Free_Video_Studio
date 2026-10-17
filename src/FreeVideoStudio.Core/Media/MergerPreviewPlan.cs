@@ -94,7 +94,8 @@ public sealed class MergerPreviewPlan
         var memes = new List<MemePlacement>();
         foreach (var st in steps)
             if (st.Kind == PreviewStepKind.Meme && st.Meme is { } m && st.HoldSec > 0.001)
-                memes.Add(new MemePlacement(m.FilePath, st.MergedStartSec, st.HoldSec, m.Id));
+                memes.Add(new MemePlacement(m.FilePath, st.MergedStartSec, st.HoldSec, m.Id,
+                    PlaySound: m.PlaySound, ClipInSec: m.ClipInSec, Transition: m.Transition));
         MemePlacements = memes;
     }
 
@@ -149,7 +150,8 @@ public sealed class MergerPreviewPlan
                 var vis = MemePlacement.VisibleInterval(plan.GameplaySecAt(anchorMerged) - gameClipStart, m.DurationSec, gameClipEnd - gameClipStart);
                 if (vis is not { } v) continue;
                 corners.Add(new CornerOverlaySpan(
-                    new MemePlacement(m.FilePath, anchorMerged, m.DurationSec, m.Id, m.Mode, m.Corner, m.Size, m.PlaySound),
+                    new MemePlacement(m.FilePath, anchorMerged, m.DurationSec, m.Id, m.Mode, m.Corner, m.Size, m.PlaySound,
+                        m.ClipInSec, m.PosX, m.PosY, m.Animation, m.Transition),
                     gameClipStart + v.StartSec, gameClipStart + v.EndSec));
             }
         }

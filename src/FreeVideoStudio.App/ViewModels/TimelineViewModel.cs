@@ -397,6 +397,20 @@ public sealed class TimelineViewModel : ViewModelBase
         return Math.Max(0.0, _previewTimeline.SourceToOutput(absSourceSec));
     }
 
+    /// <summary>
+    /// MEMEMARK_02 — the inverse of <see cref="PreviewSourceToOutputSeconds"/>: the ABSOLUTE source ms
+    /// the finished video (memes not counted) shows at <paramref name="outputSec"/>. Used to draw how
+    /// far a corner meme reaches on the main screen's source-time ruler.
+    /// </summary>
+    public double PreviewOutputToSourceMs(double outputSec)
+    {
+        double startMs = IsTrimStartSet ? TrimStartMs : 0.0;
+        PreviewSourceToOutputSeconds(startMs);
+        if (_previewTimeline == null) return startMs;
+        double rel = _previewTimeline.NextSurvivingSource(_previewTimeline.OutputToSourceRelative(outputSec));
+        return startMs + rel * 1000.0;
+    }
+
     public double SourceMsToOutputSeconds(double sourceMs, IReadOnlyList<SpeedSegment>? segments = null)
     {
         EnsureTrimPointsSet();
@@ -460,6 +474,68 @@ public sealed class TimelineViewModel : ViewModelBase
         return Math.Max(0, (spanMs - SurvivingMsFor(Cuts)) / 1000.0);
     }
 
+    /// <summary>
+    /// MEMETRIM_02 — the MARK START / MARK END the stored memes are measured from. Memes are kept in
+    /// CLIP-RELATIVE seconds (from MARK START) while cuts, speed blocks and the freeze are kept in
+    /// source milliseconds, so moving MARK START used to slide every meme onto a different gameplay
+    /// frame while nothing else moved. NaN = not anchored yet (the next rebase only records it).
+    /// </summary>
+    public double MemeOriginMs { get; private set; } = double.NaN;
+    private double _memeOriginEndMs = double.NaN;
+
+    private double EffectiveTrimStartMs => IsTrimStartSet ? TrimStartMs : 0.0;
+    private double EffectiveTrimEndMs => (IsTrimEndSet && TrimEndMs > EffectiveTrimStartMs) ? TrimEndMs : LoadedVideoDurationMs;
+
+    /// <summary>MEMETRIM_02 — the memes were just (re)built against the CURRENT trim: remember it.</summary>
+    public void MarkMemesAnchored()
+    {
+        MemeOriginMs = EffectiveTrimStartMs;
+        _memeOriginEndMs = EffectiveTrimEndMs;
+    }
+
+    /// <summary>
+    /// MEMETRIM_02 — call after MARK START or MARK END moved. Every meme keeps its GAMEPLAY frame:
+    /// its clip-relative second is shifted by how far MARK START moved. A meme that sat on the old
+    /// end follows the new end (it was placed "after my video"); one that now falls outside the kept
+    /// part is removed and named in the result, so the caller can say so.
+    /// </summary>
+    public List<string> RebaseMemesToTrim()
+    {
+        var dropped = new List<string>();
+        double newStart = EffectiveTrimStartMs, newEnd = EffectiveTrimEndMs;
+        if (double.IsNaN(MemeOriginMs) || MemePlacements.Count == 0)
+        {
+            MarkMemesAnchored();
+            return dropped;
+        }
+
+        double shiftSec = (MemeOriginMs - newStart) / 1000.0;
+        double oldSpanSec = Math.Max(0, (_memeOriginEndMs - MemeOriginMs) / 1000.0);
+        double newSpanSec = Math.Max(0, (newEnd - newStart) / 1000.0);
+        if (Math.Abs(shiftSec) < 0.0005 && Math.Abs(oldSpanSec - newSpanSec) < 0.0005)
+        {
+            MarkMemesAnchored();
+            return dropped;
+        }
+
+        var kept = new List<MemePlacement>(MemePlacements.Count);
+        foreach (var m in MemePlacements)
+        {
+            bool wasAtEnd = !double.IsNaN(_memeOriginEndMs) && m.AtSourceSecRelative >= oldSpanSec - 0.05;
+            double at = wasAtEnd ? newSpanSec : m.AtSourceSecRelative + shiftSec;
+            if (at < -0.0005 || at > newSpanSec + 0.0005)
+            {
+                dropped.Add(System.IO.Path.GetFileName(m.FilePath));
+                continue;
+            }
+            kept.Add(m with { AtSourceSecRelative = Math.Clamp(at, 0, newSpanSec) });
+        }
+        MemePlacements.Clear();
+        MemePlacements.AddRange(kept);
+        MarkMemesAnchored();
+        return dropped;
+    }
+
     public List<string> DropMemesInsideCuts()
     {
         var dropped = new List<string>();
@@ -513,6 +589,8 @@ public sealed class TimelineViewModel : ViewModelBase
         Cuts.Clear();
         SpeedSegments.Clear();
         MemePlacements.Clear();
+        MemeOriginMs = double.NaN;
+        _memeOriginEndMs = double.NaN;
         TimeElapsedText = "00:00:00";
         TimeRemainingText = "-00:00:00";
     }

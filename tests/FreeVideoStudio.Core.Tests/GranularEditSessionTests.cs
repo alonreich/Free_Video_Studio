@@ -143,7 +143,8 @@ public class GranularEditSessionTests
         double before = live.TotalOutputSeconds;
 
         Assert.True(s.ResolveNewMemeAnchor(live, 15.0, MemePresentationMode.InlineFullScreen, out double inlineAt).Ok);
-        Assert.Equal(20.0, inlineAt, 3);
+        // MEMESNAP_02 — the NEAREST edge of the block (a tie goes to its start), like a drag.
+        Assert.Equal(10.0, inlineAt, 3);
         Assert.True(s.ResolveNewMemeAnchor(live, 15.0, MemePresentationMode.CornerOverlay, out double cornerAt).Ok);
         Assert.Equal(15.0, cornerAt, 3);
 

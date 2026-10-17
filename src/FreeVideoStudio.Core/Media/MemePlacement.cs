@@ -55,8 +55,23 @@ public sealed record MemePlacement(
     MemePresentationMode Mode = MemePresentationMode.InlineFullScreen,
     MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight,
     MemeOverlaySize Size = MemeOverlaySize.Medium,
-    bool PlaySound = true)
+    bool PlaySound = true,
+    double ClipInSec = 0,
+    double PosX = -1,
+    double PosY = -1,
+    MemeOverlayAnimation Animation = MemeOverlayAnimation.None,
+    MemeTransition Transition = MemeTransition.Cut)
 {
+    /// <summary>MEMETRIM_01 — shortest and longest length a still picture may be given.</summary>
+    public const double MinStillDurationSec = 1.0;
+    public const double MaxStillDurationSec = 10.0;
+
+    /// <summary>MEMETRIM_01 — the shortest part of a video meme that may be kept.</summary>
+    public const double MinClipDurationSec = 0.5;
+
+    /// <summary>MEMEPOS_01 — true when the user dragged the corner meme to its own spot.</summary>
+    public bool HasCustomPosition => PosX >= 0 && PosY >= 0;
+
     /// <summary>Still images have no intrinsic duration; this is what they are given instead.</summary>
     public const double StillImageDurationSec = 4.0;
 
@@ -138,6 +153,22 @@ public enum MemePresentationMode
     CornerOverlay = 1,
 }
 
+/// <summary>MEMEANIM_01 — how a corner meme appears and leaves.</summary>
+public enum MemeOverlayAnimation
+{
+    None = 0,
+    Fade = 1,
+    Slide = 2,
+}
+
+/// <summary>MEMETRANS_01 — how a full-screen meme cuts in and out of the gameplay.</summary>
+public enum MemeTransition
+{
+    Cut = 0,
+    Fade = 1,
+    Zoom = 2,
+}
+
 /// <summary>MEMEMODE_01 — which corner a <see cref="MemePresentationMode.CornerOverlay"/> sits in.</summary>
 public enum MemeOverlayCorner
 {
@@ -189,7 +220,7 @@ public static class MemeOverlayLayout
     /// treated as a square.
     /// </summary>
     public static (int X, int Y, int W, int H) Place(int frameW, int frameH, int memeW, int memeH,
-        MemeOverlayCorner corner, MemeOverlaySize size)
+        MemeOverlayCorner corner, MemeOverlaySize size, double posX = -1, double posY = -1)
     {
         int box = BoxSide(frameW, frameH, size);
         double aspect = memeW > 0 && memeH > 0 ? (double)memeW / memeH : 1.0;
@@ -203,15 +234,40 @@ public static class MemeOverlayLayout
         bool bottom = corner is MemeOverlayCorner.BottomLeft or MemeOverlayCorner.BottomRight;
         int x = right ? frameW - m - w : m;
         int y = bottom ? frameH - m - h : m;
+        if (posX >= 0 && posY >= 0)
+        {
+            // MEMEPOS_01 — a dragged position: the fraction of the free room (frame − box), so the box
+            // can never leave the frame whatever its size.
+            x = (int)Math.Round(Math.Clamp(posX, 0, 1) * Math.Max(0, frameW - w));
+            y = (int)Math.Round(Math.Clamp(posY, 0, 1) * Math.Max(0, frameH - h));
+        }
         return (Math.Max(0, x), Math.Max(0, y), w, h);
     }
+
+    /// <summary>
+    /// MEMEPOS_01 — the corner a dragged position is closest to, so the corner buttons still show
+    /// something sensible after a drag.
+    /// </summary>
+    public static MemeOverlayCorner NearestCorner(double posX, double posY) =>
+        (posX >= 0.5, posY >= 0.5) switch
+        {
+            (false, false) => MemeOverlayCorner.TopLeft,
+            (true, false) => MemeOverlayCorner.TopRight,
+            (false, true) => MemeOverlayCorner.BottomLeft,
+            _ => MemeOverlayCorner.BottomRight,
+        };
 
     /// <summary>
     /// FFmpeg position expressions for the <c>overlay</c> filter, relative to the main (W,H) and
     /// overlay (w,h) sizes, so the export needs no probe of the meme's dimensions.
     /// </summary>
-    public static (string X, string Y) OverlayPosition(int frameW, int frameH, MemeOverlayCorner corner)
+    public static (string X, string Y) OverlayPosition(int frameW, int frameH, MemeOverlayCorner corner, double posX = -1, double posY = -1)
     {
+        if (posX >= 0 && posY >= 0)
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            return ($"(W-w)*{Math.Clamp(posX, 0, 1).ToString("0.####", ci)}", $"(H-h)*{Math.Clamp(posY, 0, 1).ToString("0.####", ci)}");
+        }
         string m = Margin(frameW, frameH).ToString(System.Globalization.CultureInfo.InvariantCulture);
         bool right = corner is MemeOverlayCorner.TopRight or MemeOverlayCorner.BottomRight;
         bool bottom = corner is MemeOverlayCorner.BottomLeft or MemeOverlayCorner.BottomRight;

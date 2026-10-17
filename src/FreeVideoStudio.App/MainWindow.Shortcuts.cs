@@ -337,6 +337,7 @@ public partial class MainWindow
         }
         _trimEndMs = time * 1000;
         _trimEndSet = true;
+        RebaseMemesAfterTrimChange();
         _prewarmArmed = true;
         SchedulePrewarm();
         var markEndButton = MarkEndButtonCtl;

@@ -24,6 +24,8 @@ public sealed record PreviewFidelityInputs
     public bool CornerMemeBeyondPreviewFrames { get; init; }
     /// <summary>A corner meme with sound, in a preview that has no rendered mix to play it.</summary>
     public bool CornerMemeSoundNotPreviewed { get; init; }
+    /// <summary>MEMETRANS_01 — a full-screen meme fades or zooms in the export; the preview cuts.</summary>
+    public bool MemeTransitionNotPreviewed { get; init; }
 }
 
 /// <summary>
@@ -46,6 +48,7 @@ public static class PreviewFidelity
     public const string MixFailed = "mix-failed";
     public const string CornerFrames = "corner-frames";
     public const string CornerSound = "corner-sound";
+    public const string MemeTransitionCode = "meme-transition";
 
     public static IReadOnlyList<PreviewFidelityIssue> Evaluate(PreviewFidelityInputs i)
     {
@@ -73,6 +76,10 @@ public static class PreviewFidelity
         if (i.CornerMemeSoundNotPreviewed)
             list.Add(new(CornerSound,
                 "Corner meme sound is not played in this preview; it is in the export."));
+
+        if (i.MemeTransitionNotPreviewed)
+            list.Add(new(MemeTransitionCode,
+                "A full-screen meme fades or zooms in the export; this preview simply cuts to it."));
 
         return list;
     }

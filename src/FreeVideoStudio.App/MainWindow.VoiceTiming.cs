@@ -131,6 +131,7 @@ public partial class MainWindow
             _freezeTimeMs = saved.FreezeMs; _freezeDurationS = saved.FreezeSeconds;
             _speedSegments.Clear(); _speedSegments.AddRange(saved.Segments);
             _cuts.Clear(); _cuts.AddRange(saved.Cuts);
+            RebaseMemesAfterTrimChange();
             SetGranularButtonActive(saved.Granular);
             SpeedPresetButtons.SetSpinningWheelValue(MainSpeedSliderCtl, saved.Speed);
             UpdateSpeedLabel(); UpdateTimelineMarkers(); UpdateEstimatedQuality();

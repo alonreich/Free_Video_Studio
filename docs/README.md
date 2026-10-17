@@ -125,7 +125,7 @@ AiHudDetection.cs  AiHudResponseParser.cs  AiHudResultCache.cs  HudCandidateFusi
 ⚠MainWindow.axaml.cs  MainWindow.Canvas.cs  ⚠MainWindow.Controls.cs  MainWindow.Shortcuts.cs
 MainWindow.Wireup.cs  ⚠MergeClipGraph.cs  ⚠MergedTimeline.cs  ⚠MergeEditorBridge.cs
 ⚠MergeEdl.cs  ⚠MergerPreviewPlan.cs  ⚠MergerSession.cs  ⚠MusicPadAlignment.cs
-⚠MemePlacement.cs  ⚠MusicWizardWindow.axaml.cs  ⚠OutputTimeline.cs  ⚠PhoneFrameMockup.axaml.cs  TimelineKnob.cs
+⚠MemePlacement.cs  ⚠GranularSpeedEditorWindow.Memes.cs  ⚠GranularSpeedEditorWindow.MemeBands.cs  ⚠MainWindow.Memes.cs  ⚠MusicWizardWindow.axaml.cs  ⚠OutputTimeline.cs  ⚠PhoneFrameMockup.axaml.cs  TimelineKnob.cs
 TimelineLanesControl.axaml.cs  TimelineViewModel.cs  ⚠VideoMergerWindow.EdlPreview.cs
 ⚠GranularEditSession.Segments.cs  ⚠GranularEditSession.Memes.cs  ⚠CropEditSession.cs  ⚠CropProfileCodec.cs
 ⚠VideoMergerWindow.History.cs  ⚠VideoMergerWindow.Lanes.cs  ⚠VideoMergerWindow.Session.cs
@@ -147,7 +147,7 @@ WaveformGenerator.cs  RenderedMixGate.cs  ⚠VoiceOverWindow.PreviewProtection.c
 ```
 AudioTempoFilterBuilder.cs  CornerMemeOverlayGraph.cs  ⚠CompositeTimeline.cs  EncoderManager.cs  ExportColorPolicy.cs  ExportTimingTag.cs
 ⚠ExportCoordinator.cs  ⚠IExportCoordinator.cs  ExportViewModel.cs  FfmpegDiagnosticCollector.cs  ⚠FfmpegJobLifetime.cs  FramePtsProbe.cs
-GpuCapabilityProbe.cs  GranularSpeedBuilder.cs  HardwareCapability.cs  HardwareScanner.cs  IntroTag.cs
+GpuCapabilityProbe.cs  GranularSpeedBuilder.cs  MemeTransitions.cs  ⚠MemePlacementPreview.cs  HardwareCapability.cs  HardwareScanner.cs  IntroTag.cs
 MainWindow.SizeEstimate.cs  MemeAssets.cs  MemeCatalog.cs  ⚠MemeLoudness.cs  MemePreviewDirector.cs
 MergeClipAnalyzer.cs  ⚠MergeClipGraph.cs  ⚠MergedTimeline.cs  ⚠MergeEditorBridge.cs  OutputFileNaming.cs
 ⚠MergeEdl.cs  ⚠MergerPreviewPlan.cs  MergerWorker.cs  MobileFilterBuilder.cs
@@ -163,7 +163,7 @@ AmbientBubblesBackground.cs  AvaloniaApp.axaml  CoachOverlay.cs  ConfirmDialogWi
 FloatingNotice.cs  ⚠FluidVolumeSlider.cs  GrabCursors.cs  ⚠GranularSpeedEditorWindow.axaml.cs
 ⚠GranularSpeedEditorWindow.History.cs  ⚠GranularSpeedEditorWindow.Merge.cs  ⚠IUserNotifier.cs
 ⚠LaneDiskCache.cs  MainViewModel.cs  ⚠MainWindow.axaml.cs  ⚠MainWindow.Controls.cs  MemePickerWindow.axaml
-MemeThumbnailCache.cs  OwnedLruCache.cs  ViewportThumbnailLoader.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
+MemeThumbnailCache.cs  MemePickerPrefsStore.cs  ⚠MemePlacementPreview.cs  OwnedLruCache.cs  ViewportThumbnailLoader.cs  ⚠MemeChoiceViewModel.cs  ⚠CornerMemeOverlayPresenter.cs  ⚠GranularSpeedEditorWindow.Memes.cs
 ⚠MainWindow.CornerMemes.cs  ⚠VideoMergerWindow.CornerMemes.cs  ⚠MicrophoneSpectrumControl.cs  PreviewFidelityBadge.cs  ⚠PreviewFidelity.cs  ⚠MainWindow.PreviewFidelity.cs  ⚠PhoneFrameMockup.axaml.cs  PreviewDetachController.cs  PreviewMonitorWindow.axaml
 ProgressiveLanes.cs  SettingsWindow.axaml.cs  SettingsWindow.Output.cs  SettingsWindow.Tools.cs  ⚠SettingsViewModel.cs  SpinningWheelSlider.cs  UpdateToastWindow.axaml.cs  AiCommentaryDialogWindow.axaml(.cs)  AiCommentaryOptionsViewModel.cs  EditCaptionDialogWindow.axaml(.cs)  GranularSpeedEditorWindow.CaptionsLane.cs  GranularSpeedEditorWindow.AiCommentary.cs
 ⚠VideoMergerWindow.EdlPreview.cs  ⚠VideoMergerWindow.Lanes.cs  VideoMergerWindow.Playhead.cs
@@ -311,8 +311,14 @@ Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .
                       Saved windows: MusicWizardResult.Plan.cs (MusicStartsSeconds / MusicEndsSeconds, ToBedTracks).
                       Merger EDIT/REMOVE + named song blocks: VideoMergerWindow.MusicButton.cs (MERGERMUSIC_01/02).
                       Specs: docs/02 AUD-DIALOGS / AUD-MUSICWIN / AUD-MUSICFADE, docs/04 UI-MUSICWIZARD.
-Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01/02);
-                      docs/04_UI_UX_AVALONIA_SPEC.md, UI-MEMESELECT.
+Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01..05)
+                      + Controls\MemePlacementPreview.cs (live preview, drag position) + ViewModels\MemeChoiceViewModel.cs
+                      + Infrastructure\MemePickerPrefsStore.cs (favourites, recent, last choice); docs/04 UI-MEMESELECT.
+Meme audit (2026-10-17, MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
+                      GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys),
+                      MainWindow.Memes.cs (main-screen meme as a placement, markers, music question);
+                      tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/03 FFM-MEMECONCAT /
+                      FFM-MEMECORNER / FFM-MEMEPREVIEW, docs/04 UI-MEMESELECT, docs/06 PROJ-SCHEMA (schema 7).
 AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool) + AI Commentary (captions)
                       + AI Music Auto-Fit (Add Music wizard: Services\AiMusicAutoFitService.cs)
                       + Modern Viral Post Helper (Export finished screen: Services\AiViralPostService.cs, Controls\FinishedDialogWindow.AiViral.cs)

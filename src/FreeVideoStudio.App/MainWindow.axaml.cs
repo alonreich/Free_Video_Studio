@@ -130,6 +130,7 @@ public partial class MainWindow : Window
     private void SetTrimStart(double valueMs)
     {
         _trimStartMs = valueMs;
+        RebaseMemesAfterTrimChange();
         if (_musicWizardResult != null && _isMusicActive)
         {
             double dur = _musicWizardResult.TimelineEndSeconds - _musicWizardResult.TimelineStartSeconds;
@@ -1637,10 +1638,11 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void PlaybackTimerTickCore()
     {
-        if (_memePlacements.Count > 0) EnsureMemePreviewDirector();
+        var previewMemes = EffectiveMemePlacements();
+        if (previewMemes.Count > 0) EnsureMemePreviewDirector();
         if (_memePreview != null)
         {
-            _memePreview.SetMemes(_memePlacements);
+            _memePreview.SetMemes(previewMemes);
             _memePreview.Tick();
             if (_memePreview.IsActive) { _cornerMemes?.Hide(); return; }
         }
@@ -2780,7 +2782,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             () => _loadedVideoPath,
             () => _trimStartMs / 1000.0,
             SetMemeSwapOverlay,
-            "MEME");
+            "MEME",
+            () => (_trimEndMs > _trimStartMs ? _trimEndMs : _loadedVideoDurationMs) / 1000.0);
 
         _memePreview.MemeStarted += StopMusicPreview;
     }
@@ -2828,6 +2831,23 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     /// meme somewhere they did not put it, and they would only find out at export. Deleting it is
     /// the honest reading of "I deleted that scene", and it is announced rather than silent.
     /// </summary>
+
+    /// <summary>
+    /// MEMETRIM_02 — after MARK START / MARK END moved: every meme stays on its gameplay frame
+    /// (TimelineViewModel.RebaseMemesToTrim); one now outside the kept part is removed and said so.
+    /// </summary>
+    private void RebaseMemesAfterTrimChange()
+    {
+        var dropped = _viewModel.Timeline.RebaseMemesToTrim();
+        _memePreview?.SetMemes(EffectiveMemePlacements());
+        if (dropped.Count > 0)
+        {
+            RuntimeLog.Info("MEME", $"Trim change removed {dropped.Count} meme(s) now outside MARK START–MARK END: {string.Join(", ", dropped)}.");
+            ShowTacticalFeedback(dropped.Count == 1
+                ? $"Meme '{dropped[0]}' was outside the new START–END, so it was removed"
+                : $"{dropped.Count} memes were outside the new START–END, so they were removed");
+        }
+    }
 
     private void DropMemesInsideCuts()
     {

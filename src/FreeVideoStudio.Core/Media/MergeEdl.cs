@@ -71,7 +71,12 @@ public sealed record EdlMeme(string Id, string FilePath, EdlMemePlacement Placem
     MemePresentationMode Mode = MemePresentationMode.InlineFullScreen,
     MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight,
     MemeOverlaySize Size = MemeOverlaySize.Medium,
-    bool PlaySound = true)
+    bool PlaySound = true,
+    double ClipInSec = 0,
+    double PosX = -1,
+    double PosY = -1,
+    MemeOverlayAnimation Animation = MemeOverlayAnimation.None,
+    MemeTransition Transition = MemeTransition.Cut)
 {
     /// <summary>MEMEMODE_01 — a corner overlay occupies zero output seconds.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
