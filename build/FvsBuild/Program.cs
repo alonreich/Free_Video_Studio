@@ -4,13 +4,14 @@ namespace FvsBuild;
 
 /// <summary>
 /// FvsBuild - structured replacement for the old monolithic Build.cmd.
-/// Pipeline: terminate processes -> clean -> detect MSVC toolchain -> NativeAOT publish
-/// to staging -> PE identity (PEIDENTITY_01) -> sign the program -> stage backend/frontend/starter
-/// files -> manifests -> smart-update assets + signed file list -> Inno Setup installer into
-/// .\compiled (NODROPPER_01) -> sign it -> release update.json -> validate exactly one file ->
-/// cleanup -> optional GitHub release replacement.
-/// Exit codes (consumed by CI and by Build.cmd): 0 = OK, 1 = BUILD FAILED, 2 = build OK
-/// but the GitHub publish did not complete.
+/// Pipeline: [release gate: preflight -> version commit + tag (RELGATE_01)] -> stop this repository's
+/// processes (BUILDKILL_01) -> clean -> detect MSVC toolchain -> NativeAOT publish to staging -> PE identity
+/// (PEIDENTITY_01) -> sign the program -> stage backend/frontend/starter files -> manifests -> smart-update
+/// assets + signed file list -> Inno Setup installer into .\compiled (NODROPPER_01) -> sign it -> release
+/// update.json -> validate exactly one file -> cleanup -> [push commit + tag -> GitHub release from that tag
+/// -> promote the release notes (RELNOTES_01)].
+/// Exit codes (consumed by CI and by Build.cmd): 0 = OK, 1 = BUILD FAILED (or the release gate refused),
+/// 2 = build OK but the GitHub publish did not complete.
 /// </summary>
 internal static class Program
 {
@@ -23,11 +24,15 @@ internal static class Program
         bool noPublish = args.Any(a => a.Equals("--no-publish", StringComparison.OrdinalIgnoreCase));
         bool devMode = args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
         bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
+        bool beta = args.Any(a => a.Equals("--beta", StringComparison.OrdinalIgnoreCase));
+        bool assumeYes = args.Any(a => a.Equals("--yes", StringComparison.OrdinalIgnoreCase));
         if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.OrdinalIgnoreCase)))
         {
-            Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev]");
-            Console.WriteLine("  (default)   build .\\compiled\\FreeVideoStudio-Setup.exe, then replace the GitHub release");
-            Console.WriteLine("  --no-publish  build only; GitHub is not touched");
+            Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev] [--beta] [--yes] [--stage-only]");
+            Console.WriteLine("  (default)     official STABLE release: release gate, build, publish to GitHub as latest");
+            Console.WriteLine("  --beta        official BETA release: published as a pre-release (Beta update channel only)");
+            Console.WriteLine("  --yes         skip the 'type PUBLISH' confirmation (required when there is no terminal)");
+            Console.WriteLine("  --no-publish  build only; GitHub and the repository's version files are not touched");
             Console.WriteLine("  --dev         local dev build: no GitHub, and .\\compiled is not wiped first");
             Console.WriteLine("  --stage-only  diagnostic: publish, stage dependencies and write the manifests, then stop.");
             Console.WriteLine("                Leaves the staging folder in place for inspection.");
@@ -40,7 +45,8 @@ internal static class Program
 
         DateTimeOffset started = DateTimeOffset.Now;
         using BuildLog log = new("build.log");
-        int exitCode = RunPipeline(log, noPublish, devMode, stageOnly, started);
+        bool publish = !noPublish && !devMode && !stageOnly;
+        int exitCode = RunPipeline(log, publish, devMode, stageOnly, beta, assumeYes, started);
         return exitCode;
     }
 
@@ -58,20 +64,31 @@ internal static class Program
         return Environment.CurrentDirectory;
     }
 
-    private static int RunPipeline(BuildLog log, bool noPublish, bool devMode, bool stageOnly, DateTimeOffset started)
+    private static int RunPipeline(BuildLog log, bool publish, bool devMode, bool stageOnly, bool beta, bool assumeYes, DateTimeOffset started)
     {
-        string buildVersion = DateTime.UtcNow.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
+        string buildVersion = ReleaseGate.NewVersion(DateTime.UtcNow);
         string tag = "v" + buildVersion;
         string flavor = devMode ? "Local Dev" : "NativeAOT win-x64";
         SmartUpdateBuilder.IsDevBuild = devMode;
         log.Info($"Build version: {buildVersion}  (tag {tag})");
-        if (!devMode)
+
+        // RELGATE_01 — an official release is checked and committed BEFORE anything is built, so the
+        // binary is compiled from the exact commit that gets tagged. Every other mode leaves the
+        // repository's tracked files alone (the version reaches the compiler through -p:Version).
+        ReleasePlan? plan = null;
+        if (publish)
         {
-            SynchronizeVersionFiles(buildVersion, log);
+            plan = ReleaseGate.Preflight(buildVersion, beta, assumeYes, log);
+            if (plan is null)
+            {
+                log.WriteVerdictAndClose(ExitBuildFailed, DateTimeOffset.Now - started);
+                return ExitBuildFailed;
+            }
+            if (!ReleaseGate.CommitVersion(plan, log)) return FailBuild(log, started);
         }
         else
         {
-            log.Info("[VERSION] Skipping disk synchronization of project files in dev mode to preserve clean working tree.");
+            log.Info("[VERSION] Not an official release: the repository's version files are left unchanged.");
         }
 
         try
@@ -110,7 +127,7 @@ internal static class Program
             log.Banner("###########################################################");
             if (!Cli.EnsureMsvcToolchain(log))
             {
-                return FailBuild(log, started);
+                return FailRelease(plan, log, started);
             }
 
             log.Banner(string.Empty);
@@ -119,7 +136,7 @@ internal static class Program
             log.Banner("###########################################################");
             if (!RunNativeAotStages(log, buildVersion))
             {
-                return FailBuild(log, started);
+                return FailRelease(plan, log, started);
             }
 
             log.Banner(string.Empty);
@@ -132,7 +149,7 @@ internal static class Program
             log.Info("Log file:  .\\build.log  (first line: OK / WARN / FAIL)");
             log.Banner("###########################################################");
 
-            if (noPublish || devMode)
+            if (plan is null)
             {
                 if (!devMode)
                 {
@@ -152,32 +169,55 @@ internal static class Program
                 log.Warn("[PUBLISH] (UPDATEPIN_01). New downloaders still see SmartScreen's 'unknown publisher' once.");
             }
 
+            if (!ReleaseGate.TreeStillClean(log)) return FailRelease(plan, log, started);
+
             log.Banner(string.Empty);
             log.Banner("###########################################################");
-            log.Banner("PUBLISHING RELEASE TO GITHUB...");
+            log.Banner(plan.Beta ? "PUBLISHING BETA TO GITHUB..." : "PUBLISHING RELEASE TO GITHUB...");
             log.Banner("###########################################################");
-            bool published = GitHubReleasePublisher.Publish(Staging.CompiledExePath, tag, log);
-            if (published) SmartUpdateBuilder.MarkReleased(buildVersion, log);
-            // NEWRELEASE_01: prepare the checklist only after a successful public release.
-            if (published) ReleaseChecklist.PrepareAndOpen(buildVersion, tag, Staging.CompiledExePath, log);
-            log.WriteVerdictAndClose(published ? ExitOk : ExitPublishIncomplete, DateTimeOffset.Now - started);
+            if (!ReleaseGate.PushRelease(plan, log))
+            {
+                ReleaseGate.Undo(plan, log);
+                log.Warn("BUILD OK - but nothing was published: the release commit and tag could not be pushed.");
+                log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
+                return ExitPublishIncomplete;
+            }
+            bool published = GitHubReleasePublisher.Publish(Staging.CompiledExePath, plan, log);
             if (published)
             {
+                SmartUpdateBuilder.MarkReleased(buildVersion, log);
+                // RELNOTES_01: the staged notes become the release's notes in the repository only now.
+                if (!plan.Beta) ReleaseGate.RecordReleaseNotes(plan, log);
+                // NEWRELEASE_01: prepare the checklist only after a successful public release.
+                ReleaseChecklist.PrepareAndOpen(buildVersion, tag, Staging.CompiledExePath, log);
+            }
+            if (published)
+            {
+                log.WriteVerdictAndClose(ExitOk, DateTimeOffset.Now - started);
                 return ExitOk;
             }
             log.Banner(string.Empty);
             log.Banner("###########################################################");
-            log.Warn("BUILD OK - but the release was NOT updated.");
+            log.Warn("BUILD OK - but the release was NOT published.");
+            log.Warn($"The commit and tag {tag} ARE on GitHub; only the release itself is missing (reason above).");
+            log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming', so the next release carries them.");
             log.Warn(".\\compiled\\FreeVideoStudio-Setup.exe is good and usable.");
-            log.Warn("Only the GitHub publish step did not finish - reason above.");
             log.Banner("###########################################################");
+            log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
             return ExitPublishIncomplete;
         }
         catch (Exception ex)
         {
             log.Error($"ERROR: unhandled build failure: {ex}");
-            return FailBuild(log, started);
+            return FailRelease(plan, log, started);
         }
+    }
+
+    /// <summary>RELGATE_01 — a failed release build takes its version commit and tag back with it.</summary>
+    private static int FailRelease(ReleasePlan? plan, BuildLog log, DateTimeOffset started)
+    {
+        if (plan is not null) ReleaseGate.Undo(plan, log);
+        return FailBuild(log, started);
     }
 
     /// <summary>
@@ -231,89 +271,4 @@ internal static class Program
         log.WriteVerdictAndClose(ExitBuildFailed, DateTimeOffset.Now - started);
         return ExitBuildFailed;
     }
-
-    private static void SynchronizeVersionFiles(string buildVersion, BuildLog log)
-    {
-        string root = FindRepoRoot();
-        log.Info($"[VERSION] Synchronizing version '{buildVersion}' across project files...");
-
-        string versionTxtPath = Path.Combine(root, "version.txt");
-        try
-        {
-            File.WriteAllText(versionTxtPath, buildVersion.Trim() + Environment.NewLine);
-            log.Info($"[VERSION] Updated {versionTxtPath}");
-        }
-        catch (Exception ex)
-        {
-            log.Warn($"[VERSION] Failed to update version.txt: {ex.Message}");
-        }
-
-        string propsPath = Path.Combine(root, "Directory.Build.props");
-        string propsContent = $"""
-<Project>
-  <PropertyGroup>
-    <Version>{buildVersion}</Version>
-    <AssemblyVersion>{buildVersion}</AssemblyVersion>
-    <FileVersion>{buildVersion}</FileVersion>
-    <InformationalVersion>{buildVersion}</InformationalVersion>
-    <ProductVersion>{buildVersion}</ProductVersion>
-  </PropertyGroup>
-</Project>
-
-""";
-        try
-        {
-            File.WriteAllText(propsPath, propsContent);
-            log.Info($"[VERSION] Updated {propsPath}");
-        }
-        catch (Exception ex)
-        {
-            log.Warn($"[VERSION] Failed to update Directory.Build.props: {ex.Message}");
-        }
-
-        string appCsproj = Path.Combine(root, "src", "FreeVideoStudio.App", "FreeVideoStudio.App.csproj");
-        UpdateCsprojVersion(appCsproj, buildVersion, log);
-
-        string coreCsproj = Path.Combine(root, "src", "FreeVideoStudio.Core", "FreeVideoStudio.Core.csproj");
-        UpdateCsprojVersion(coreCsproj, buildVersion, log);
-
-        string manifestPath = Path.Combine(root, "src", "FreeVideoStudio.App", "app.manifest");
-        try
-        {
-            string manifest = File.ReadAllText(manifestPath);
-            string updated = System.Text.RegularExpressions.Regex.Replace(manifest,
-                @"(<assemblyIdentity\s+version="")[^""]*("")", "${1}" + buildVersion + "${2}");
-            if (updated != manifest) File.WriteAllText(manifestPath, updated);
-            log.Info($"[VERSION] Updated {manifestPath}");
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            log.Warn($"[VERSION] Failed to update app.manifest: {ex.Message}");
-        }
-    }
-
-    private static void UpdateCsprojVersion(string csprojPath, string buildVersion, BuildLog log)
-    {
-        if (!File.Exists(csprojPath))
-        {
-            log.Warn($"[VERSION] Project file not found: {csprojPath}");
-            return;
-        }
-
-        try
-        {
-            string content = File.ReadAllText(csprojPath);
-            content = System.Text.RegularExpressions.Regex.Replace(content, @"<Version>.*?</Version>", $"<Version>{buildVersion}</Version>");
-            content = System.Text.RegularExpressions.Regex.Replace(content, @"<AssemblyVersion>.*?</AssemblyVersion>", $"<AssemblyVersion>{buildVersion}</AssemblyVersion>");
-            content = System.Text.RegularExpressions.Regex.Replace(content, @"<FileVersion>.*?</FileVersion>", $"<FileVersion>{buildVersion}</FileVersion>");
-            content = System.Text.RegularExpressions.Regex.Replace(content, @"<InformationalVersion>.*?</InformationalVersion>", $"<InformationalVersion>{buildVersion}</InformationalVersion>");
-            File.WriteAllText(csprojPath, content);
-            log.Info($"[VERSION] Updated {csprojPath}");
-        }
-        catch (Exception ex)
-        {
-            log.Warn($"[VERSION] Failed to update {csprojPath}: {ex.Message}");
-        }
-    }
 }
-

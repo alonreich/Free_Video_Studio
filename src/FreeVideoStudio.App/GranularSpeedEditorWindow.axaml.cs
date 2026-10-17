@@ -1651,7 +1651,8 @@ public partial class GranularSpeedEditorWindow : Window
         var deleteSegBtn = DeleteSegmentBtnCtl;
         deleteSegBtn?.AddHandler(Button.ClickEvent, (_, _) =>
         {
-            ExecuteDeleteSelectedSegment();
+            // SETCONFIRM_01 — the button goes through the same guarded path as the key and the ✕.
+            RequestDeleteSegment(_edit.SelectedSegmentIndex);
         });
 
         var clearBtn = ClearAllSegmentsBtnCtl;
@@ -4061,11 +4062,27 @@ public partial class GranularSpeedEditorWindow : Window
     /// ⚠️ IF THE CONFIRMATION CANNOT BE SHOWN, NOTHING IS DELETED. "Guard unavailable" must never
     ///    resolve to "delete anyway".
     /// </summary>
-    private void RequestDeleteSegment(int index)
+    private void RequestDeleteSegment(int index) => _ = RequestDeleteSegmentAsync(index);
+
+    private async System.Threading.Tasks.Task RequestDeleteSegmentAsync(int index)
     {
         if (index < 0 || index >= _edit.Segments.Count) return;
 
         if (_edit.SelectedSegmentIndex != index) SelectSegmentAt(index);
+
+        // SETCONFIRM_01 — Settings › Editing › "Ask before deleting a speed segment" was saved and
+        // shown but never READ: every door deleted at once. It is honoured here, for all three doors.
+        // A prompt that cannot be shown resolves to KEEP (ConfirmDialogWindow.AskAsync returns false).
+        if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmGranularDeleteSegment)
+        {
+            var seg = _edit.Segments[index];
+            bool ok = await FreeVideoStudio.App.Controls.ConfirmDialogWindow.AskAsync(this,
+                $"Delete the speed segment from {FormatMs(seg.StartMs)} to {FormatMs(seg.EndMs)}?\n\n" +
+                "Changed your mind later? Press Ctrl+Z to bring it back.",
+                "Delete this segment?", "DELETE", "KEEP IT", destructive: true);
+            if (!ok) { RuntimeLog.Info("UI", "User kept the speed segment (delete prompt)."); return; }
+            if (_edit.SelectedSegmentIndex != index && index < _edit.Segments.Count) SelectSegmentAt(index);
+        }
         ExecuteDeleteSelectedSegment();
     }
 
@@ -4516,7 +4533,7 @@ public partial class GranularSpeedEditorWindow : Window
     /// <summary>
     /// APPLY ZOOM-IN commit path. On the GPU preview path, stall the UI behind a
     /// blocking "Applying changes..." overlay while the simulated crop is primed in
-    /// mpv (buffering round-trip), per project_structure.txt Section 8 item (b).
+    /// mpv (buffering round-trip), per docs/README.md (formerly project_structure.txt) Section 8 item (b).
     /// On CPU-only machines this is a plain ExitZoomMode (no overlay, no simulation).
     /// </summary>
     private async System.Threading.Tasks.Task CommitZoomAndPrimePreviewAsync()

@@ -1,125 +1,13 @@
 ===============================================================================
-FREE VIDEO STUDIO — AI AGENT ROUTER & PROJECT ENTRY POINT
+FREE VIDEO STUDIO — POINTER TO THE ENTRY POINT
 ===============================================================================
-Architectural specifications and invariants live in docs/.
-Read the specifications before inspecting or editing governed source code.
+This file is only a pointer. Everything a developer or an AI agent must know
+before touching this repository lives in ONE document:
 
-Mandatory entry point and spec router: .\docs\README.md
-Zero-leakage governance contract:      .\docs\SPEC_GOVERNANCE.md
-AI agent rules & invariants:           .\AGENTS.md
-File, symbol and sentinel lookup:      .\docs\INDEX.md
-Changelog & What's New router:         .\docs\CHANGELOG.md (plain-English rolling release notes for the latest 5 releases)
+    .\docs\README.md        (start with §0 "Start Here")
 
-AGENT ROUTE (in this order): this file -> .\docs\README.md (rules + domain routing) -> .\docs\INDEX.md
-(file/symbol/tag -> ONE spec) -> that spec in .\docs\ -> code. Before ANY edit:
-- NEVER run .\Build.cmd (it publishes a public release to GitHub). Build/test only with .\dev_build.cmd,
-  dotnet build or dotnet test.
-- Start every edit proposal with the Proof-of-Read header (docs/SPEC_GOVERNANCE.md §3).
-- Land a TAG=path line in .\build\sentinels.txt with every guarded fix (docs/README.md §4.5).
-- Stage end-user notes in .\docs\CHANGELOG.md and update this file + docs/INDEX.md (CHANGELOG_01).
-
-MANDATORY AGENT INVARIANT (CHANGELOG_01):
-Whenever making changes to logic, UI, workflows, or project structure, an AI agent CANNOT finish
-without staging what was done in:
-1. .\docs\CHANGELOG.md under '## v... (Upcoming)' in plain, short, oversimplified English for end users.
-   (Feeds directly to GitHub release notes and in-app update card upon release; strictly keep latest 5 releases).
-2. .\project_structure.txt & docs if new files, classes, or architecture rules were added/removed.
-
-Solution:             .\FreeVideoStudio.sln
-Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj
-Core project:         .\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj
-Application tests:    .\tests\FreeVideoStudio.App.Tests\FreeVideoStudio.App.Tests.csproj
-Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Tests.csproj
-Local packaging:      .\dev_build.cmd
-Verification tool:    .\build\FvsVerify\FvsVerify.csproj
-Sentinel registry:     .\build\sentinels.txt
-Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; holds exactly one local installer; GitHub retains latest 5 releases)
-Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-INSTALLER)
-AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01 (docs/05 SYS-AVCLEAN)
-
-Product display name: Free Video Studio
-Naming rule:          "Free Video Studio" = user-visible text (title bars, About, dialogs,
-                      shortcuts, install folder). "FreeVideoStudio" = files, folders,
-                      projects, namespaces, mutexes, registry/IDs.
-Application assembly: FreeVideoStudio (root namespace: FreeVideoStudio.App)
-Core assembly:        FreeVideoStudio.Core (root namespace: FreeVideoStudio.Core)
-Internal tooling retains FvsBuild, FvsVerify and the FVS environment variables.
-GitHub repository:    alonreich/Free_Video_Studio (updater + meme sync; old address redirects)
-Rebrand record:       docs/REBRAND_MIGRATION.md (old->new map, update flow, output naming)
-Previous-brand guard: tests\FreeVideoStudio.Core.Tests\RebrandTests.cs (old name allowed ONLY in
-                      LegacyAppDataNames.txt and docs/REBRAND_MIGRATION.md)
-Legacy identity:      .\src\FreeVideoStudio.Core\Infrastructure\LegacyAppDataNames.txt (migration only)
-Storage migration:    docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND
-Residue removal:      docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND-SWEEP (REBRAND_02,
-                      .\src\FreeVideoStudio.Core\Infrastructure\LegacyResidueSweep.cs)
-Packaging identity:   docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-IDENTITY
-Old-client alias:     docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-SPLIT (REBRAND_03, created
-                      transiently by .\build\FvsBuild\GitHubReleasePublisher.cs, never kept in obj\)
-Output file names:    docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-OUTNAME (OUTNAME_01,
-                      .\src\FreeVideoStudio.Core\Media\OutputFileNaming.cs)
-                      Defaults: FreeVideoStudio-N.mp4 (Main App), Merged-Videos-N.mp4 (Merger);
-                      rescued: FreeVideoStudio-RECOVERED-*, Merged-Videos-RECOVERED-*
-Settings › Output Files: per-tool save folder + file name (settings schema v11:
-                      MainOutputBaseName, MergerOutputBaseName), docs/04_UI_UX_AVALONIA_SPEC.md,
-                      UI-SETTINGS-ABOUT (.\src\FreeVideoStudio.App\Controls\SettingsWindow.Output.cs)
-New sentinels:        REBRAND_02, REBRAND_03, OUTNAME_01 (registered in .\build\sentinels.txt)
-Meme library:         .\meme\ holds ALL memes (videos + pictures); .\mp4\ and .\jpeg\ are gone
-                      (MEMEFOLDER_01). Cloud sync lists repo meme/ via git/trees (MEMESYNC_01..03);
-                      starter set = .\src\FreeVideoStudio.App\Infrastructure\MemeAssets.cs StarterFiles
-                      == .\build\FvsBuild\Staging.cs StarterMeme (STARTERLIST_01, MemeLibraryTests).
-                      Spec: docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-MEMELIB.
-Song library:         .\mp3\ holds background music tracks and companion attribution notes (.txt).
-                      Downloadable library songs prefixed with '!_' or accompanied by .txt credentials
-                      provide copyright attribution for YouTube/TikTok to prevent automatic audio muting
-                      (ATTRIBUTION_01, MusicAttributionHelper.cs, MusicAttributionDialogWindow.axaml).
-Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Videos\FreeVideoStudio\Memes
-                      (NOSPACE_01, MEMEFOLDER_02). Old spaced folders are migrated automatically.
-                      Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.
-Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .Playlist.cs (song list, coverage)
-                      + .SongLane.cs (song blocks on the music lane, song card) + .History.cs (undo)
-                      + .AiAutoFit.cs (cloud AI song auto-fit: AI picks a song by NUMBER, start point measured
-                      locally from the song's loudness, visible steps + seconds counter + cancel, 45 s / 120 s
-                      limits — AIMUSIC_HONEST_01 / AIMUSIC_START_01 / AIMUSIC_PROGRESS_01) + .Scan.cs (folder scan & probes) +
-                      ViewModels\MusicWizardViewModel.cs (bound state). Two steps: Choose music -> Fit & mix
-                      (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
-                      laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
-                      Core\Media\MusicCrossfade.cs (XFADEPLAN_01); pure list maths in Core\Media\MusicPlaylist.cs.
-                      Saved windows: MusicWizardResult.Plan.cs (MusicStartsSeconds / MusicEndsSeconds, ToBedTracks).
-                      Merger EDIT/REMOVE + named song blocks: VideoMergerWindow.MusicButton.cs (MERGERMUSIC_01/02).
-                      Specs: docs/02 AUD-DIALOGS / AUD-MUSICWIN / AUD-MUSICFADE, docs/04 UI-MUSICWIZARD.
-Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01/02);
-                      docs/04_UI_UX_AVALONIA_SPEC.md, UI-MEMESELECT.
-AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool) + AI Commentary (captions)
-                      + AI Music Auto-Fit (Add Music wizard: Services\AiMusicAutoFitService.cs)
-                      + Modern Viral Post Helper (Export finished screen: Services\AiViralPostService.cs, Controls\FinishedDialogWindow.AiViral.cs)
-                      + AI Kill Tracker / Elimination Tracker (red ✕ badges over the timeline + result notice, also pushed into an
-                      open speed editor; 1280-px stills, own kills only, 24-60 moments by length, honest "no sound" —
-                      AIELIM_03: MainWindow.AiElimination.cs, Services\AiEliminationTrackerService.cs). Zero local models.
-                      Multi-vendor transport: Google Gemini, Anthropic Claude, OpenAI (IAiVisionProvider.cs).
-                      Schema translator for Claude/OpenAI: Services\AiJsonSchema.cs (AISCHEMA_01); standard JSON Schema
-                      -> Gemini's upper-case dialect (AISCHEMA_02). Temperature rules per vendor (AITEMP_02).
-                      AI helper FFmpeg jobs (stills, probe, PCM; timeout + kill on cancel): Services\AiFfmpeg.cs (AIFFMPEG_01).
-                      Settings: ONE "AI Features" tab (the old "AI Providers" tab is nested in it); one default
-                      AI for all features + per-feature overrides (AIDEFAULT_01, AppSettings.AiDefaultUsage / AiUsageOverrides).
-                      Key sealed with DPAPI in settings.json (KEYPROTECT_01, SecretProtector.cs).
-                      Plain-English map of every AI feature + 2026-10-16 audit closure: docs/05 SYS-AISETTINGS §7
-                      (AIAUDIT_01). Defaults gemini-3.8-flash / claude-sonnet-5-5 / gpt-6-luna, retired names
-                      migrated on load, one 404 fallback for all vendors (AIMODELS_02, AIMODELFALLBACK_02 in
-                      Services\AiVisionProviders.cs). Commentary captions reach the export via ExportPayload.CaptionTrack
-                      (AICAPTION_EXPORT_02). One "Connect Your AI" window for every feature (AISETUP_02).
-                      Caption burn-in: Core\Media\CaptionLayoutEngine.cs + CaptionAssWriter.cs — 76/64 px text centred on
-                      the 2/3 line, kept clear of the user's Crop Tool HUD (MobileFilterBuilder.HudCanvasRects), shifted
-                      for spliced memes (AICAPTION_LAYOUT_02, AICAPTION_MEMESHIFT_01); one caption track in the preview
-                      (AICAPTION_PREVIEWSUB_01). Commentary options window remembers tone, style, placement, language,
-                      scope and notes (AICOMMENTARY_REMEMBER_01, AppSettings.AiCommentaryLast*) and shares the game type
-                      with Settings (AIPROFILE_ONE_01). Cloud consents are per AI company (AICONSENT_02,
-                      AppSettings.Ai*CloudConsentVendor).
-                      Per-task AI usage report (tokens + allowance before/after) for Smart Zoom and Commentary:
-                      Services\AiUsageMeter.cs (AIUSAGE_01, docs/05 SYS-AISETTINGS §7.5).
-                      Tests: tests\FreeVideoStudio.App.Tests\AiAuditFixTests.cs, tests\FreeVideoStudio.App.Tests\AiUsageMeterTests.cs,
-                      tests\FreeVideoStudio.Core.Tests\CaptionAuditFixTests.cs.
-                      Specs: docs/01 TL-AITRACKING / TL-AIHUD / TL-CAPTIONS, docs/02 AUD-MUSICWIN, docs/03 FFM-CAPTIONS,
-                      docs/04 UI-AIZOOM / UI-AIHUDWAND / UI-AICOMMENTARY / UI-MUSICWIZARD / UI-MERGER-MULTISELECT,
-                      docs/05 SYS-AISETTINGS. Secret guard: tests\FreeVideoStudio.App.Tests\SecretLeakTests.cs
-                      (SECRETSCAN_01) — never commit keys, .pfx, *.key.pem or *.password.txt.
+It holds the non-negotiable rules (including the ban on running .\Build.cmd),
+the reading order, what to record before finishing a task (docs\changes.md and
+docs\CHANGELOG.md), the build/test commands, which document answers what, and
+the repository map (§5) that used to live in this file.
 ===============================================================================

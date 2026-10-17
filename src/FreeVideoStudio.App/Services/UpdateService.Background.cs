@@ -75,6 +75,8 @@ internal static partial class UpdateService
         {
             UpdateToastViewModel vm = EnsureToast();
             vm.Working(version, "Getting the update ready…", null);
+            // RELNOTES_03 — the card says what the update brings (headlines of the GitHub release notes).
+            vm.SetReleaseNotes(ReleaseChangelog.PlainHighlights(release.ReleaseNotes, 4, headlinesOnly: true));
             ShowToast(owner);
         });
 

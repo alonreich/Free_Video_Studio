@@ -11,7 +11,12 @@ using FreeVideoStudio.App.Services;
 try
 {
     RuntimeLog.SetDeploymentPhase(true);
-    if (args.FirstOrDefault() == "--upgrade-worker") return await UpgradeInstallWorker.RunAsync(args);
+    if (args.FirstOrDefault() == "--upgrade-worker")
+    {
+        // WORKERSTAGE_01 — the elevated worker loads DLLs from System32 only, never from its own folder.
+        NativeHelpers.RestrictDllSearchToSystem32();
+        return await UpgradeInstallWorker.RunAsync(args);
+    }
     if (args.FirstOrDefault() == "--upgrade-broker") return await UpgradeBrokerHost.RunAsync(args);
     if (args.FirstOrDefault() == "--upgrade-probe") return UpgradeInstallWorker.Probe();
     if (args.FirstOrDefault() == "--upgrade-maintenance") return await UpgradeInstallWorker.MaintainAsync();
@@ -399,6 +404,23 @@ internal static class NativeHelpers
 {
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     public static extern bool SetDllDirectory(string lpPathName);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetDefaultDllDirectories(uint directoryFlags);
+
+    private const uint LoadLibrarySearchSystem32 = 0x00000800;
+
+    /// <summary>
+    /// WORKERSTAGE_01 — every later LoadLibrary in this process searches System32 only (no application
+    /// folder, no current directory, no PATH). Static imports are already restricted by the linker flag
+    /// /DEPENDENTLOADFLAG:0x800 (FreeVideoStudio.App.csproj). Used by the elevated update worker.
+    /// </summary>
+    public static void RestrictDllSearchToSystem32()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        if (!SetDefaultDllDirectories(LoadLibrarySearchSystem32))
+            FreeVideoStudio.App.RuntimeLog.Info("Upgrade", "SetDefaultDllDirectories failed: " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+    }
 
 }
 

@@ -299,7 +299,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void AsyncVoidMethodsDoNotIncrease()
     {
-        const int Baseline = 30;
+        const int Baseline = 29;
 
         var sites = new List<string>();
 
@@ -394,7 +394,7 @@ public sealed class ArchitectureRuleTests
     public void ImperativeControlLookupsDoNotIncrease()
     {
         // MVVM_03: ratchet repeated imperative control lookups down; never raise the ceiling.
-        const int Baseline = 656;
+        const int Baseline = 631;
 
         int count = 0;
         var perFile = new List<string>();
@@ -430,7 +430,7 @@ public sealed class ArchitectureRuleTests
             ["MainWindow.axaml.cs"]                = 3144,
             ["VideoMergerWindow.axaml.cs"]         = 2240,
             ["PhaseOverlayControl.axaml.cs"]       = 2425,
-            ["SettingsWindow.axaml.cs"]            = 940,
+            ["SettingsWindow.axaml.cs"]            = 369,
         };
 
         const int LimitForNewFiles = 1000;
@@ -679,37 +679,35 @@ public sealed class ArchitectureRuleTests
     }
 
     /// <summary>
-    /// CHANGELOG_01 — docs/CHANGELOG.md must exist, retain at most 5 releases, have an upcoming staging
-    /// or active release block at the top, and describe changes in non-empty plain-English bullets.
-    /// Governs SPEC_GOVERNANCE.md §6 and project_structure.txt.
+    /// CHANGELOG_01 / RELNOTES_01 — docs/CHANGELOG.md (user-facing) opens with the fixed staging
+    /// section <c>## Upcoming</c>, whose bullets pass the release lint (plain English, no tags, no code,
+    /// no duplicates); it retains at most 5 releases, each with at least one bullet. docs/changes.md
+    /// (technical) has its <c>## Unreleased</c> staging section. Governs SPEC_GOVERNANCE.md §6 and
+    /// docs/README.md §0.
     /// </summary>
     [Fact]
     public void ChangelogEnforcesTopStagingAndFiveReleaseLimit()
     {
         string changelogPath = System.IO.Path.Combine(RepoRoot.Path, "docs", "CHANGELOG.md");
         Assert.True(File.Exists(changelogPath), "docs/CHANGELOG.md must exist (CHANGELOG_01).");
+        var changelog = FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.Parse(File.ReadAllText(changelogPath));
 
-        string[] lines = File.ReadAllLines(changelogPath);
-        var releaseHeaders = lines.Where(l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.True(changelog.Sections.Count > 0 && changelog.Sections[0].Title == FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.UpcomingTitle,
+            "docs/CHANGELOG.md must open with the '## Upcoming' staging section (RELNOTES_01) - never a guessed version.");
+        IReadOnlyList<string> problems = FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.LintUserNotes(changelog.Sections[0].Bullets);
+        if (changelog.Sections[0].Bullets.Count > 0)
+            Assert.True(problems.Count == 0, "docs/CHANGELOG.md '## Upcoming' fails the release lint (RELNOTES_02):"
+                + Environment.NewLine + string.Join(Environment.NewLine, problems));
 
-        Assert.True(releaseHeaders.Count > 0, "docs/CHANGELOG.md must contain at least one release header.");
-        Assert.True(releaseHeaders.Count <= 5, $"docs/CHANGELOG.md must retain at most 5 releases (found {releaseHeaders.Count}).");
+        Assert.True(changelog.Releases.Count <= FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.PublicReleasesKept,
+            $"docs/CHANGELOG.md must retain at most 5 releases (found {changelog.Releases.Count}).");
+        foreach (var release in changelog.Releases)
+            Assert.True(release.Bullets.Count > 0, $"{release.Heading} must describe its changes in at least one bullet.");
 
-        int firstReleaseIdx = Array.FindIndex(lines, l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase));
-        int nextReleaseIdx = Array.FindIndex(lines, firstReleaseIdx + 1, l => l.StartsWith("## v", StringComparison.OrdinalIgnoreCase));
-        if (nextReleaseIdx < 0) nextReleaseIdx = lines.Length;
-
-        var topSection = lines.Skip(firstReleaseIdx).Take(nextReleaseIdx - firstReleaseIdx).ToList();
-        Assert.Contains(topSection, l => l.Contains("**What's New", StringComparison.OrdinalIgnoreCase));
-
-        var bullets = topSection.Where(l => l.TrimStart().StartsWith("- ", StringComparison.Ordinal)).ToList();
-        Assert.True(bullets.Count > 0, "Top release in docs/CHANGELOG.md must contain at least one bullet point describing changes.");
-
-        foreach (string bullet in bullets)
-        {
-            string content = bullet.TrimStart()[2..].Trim();
-            Assert.False(string.IsNullOrWhiteSpace(content), "Changelog bullet items must not be blank.");
-        }
+        string technicalPath = System.IO.Path.Combine(RepoRoot.Path, "docs", "changes.md");
+        Assert.True(File.Exists(technicalPath), "docs/changes.md (the technical change log) must exist (RELNOTES_01).");
+        Assert.NotNull(FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.Parse(File.ReadAllText(technicalPath))
+            .Find(FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.UnreleasedTitle));
     }
 }
 

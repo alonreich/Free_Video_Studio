@@ -31,6 +31,7 @@ Do NOT read every spec. Route once, read one.
   - Zero GitHub releases created or updated.
   - Zero cloud network publishing.
 * **Prohibition Severity:** Any automated or agent execution of `.\Build.cmd` is classified as a severe operational violation.
+* **The release gate is not a licence.** Since RELGATE_01 `Build.cmd` refuses a dirty, unpushed or off-branch checkout and lint-failing notes, and asks a human to type `PUBLISH` (09 DIST-RELEASEGATE). That protects releases from mistakes; it does not make running it acceptable for an agent.
 
 ## 1. Absolute Stop-and-Read Mandate
 Developers and autonomous AI agents are strictly forbidden from inspecting, generating, refactoring, or modifying code in any source file (`.cs`, `.axaml`, `.cmd`, `.ps1`) without first loading, reading, and citing its mapped specification file from `docs/`. Speculative code modifications without active specification verification are classified as critical system defects.
@@ -64,11 +65,11 @@ When audits or tests reveal discrepancies between text documentation and active 
 2. Obsolete workflows (e.g., legacy checkmark-based zoom models) must be purged from documentation and replaced with live production invariants (e.g., ZOOMLIVE continuous gestures).
 3. Critical unwritten defenses present in source code (e.g., WASAPI 3-second preview clock aborts, render thread OpenGL deadlock mitigations, sub-pixel pointer capture releases, atomic file replacement safeguards) must be codified directly into the governing specifications.
 
-## 6. Mandatory End-User Changelog & Project Structure Staging (CHANGELOG_01)
-Every autonomous AI agent modifying application source code, UI elements, workflows, or architectural structure must stage end-user release notes before concluding:
-1. **Target:** The top release block in `docs/CHANGELOG.md` (`## vYYYY.MM.DD.xxxx (Upcoming)`).
-2. **Audience & Style:** Plain, short, oversimplified English for the end user. Technical jargon, internal method names, and class names are strictly forbidden. Describe the user-visible capability or bug fix directly.
-3. **5-Release Retention:** `docs/CHANGELOG.md` strictly retains the 5 latest releases. When adding a new release header, the oldest is pruned.
-4. **Automated Release Pipeline Integration:** When an official release is published via `Build.cmd` / `FvsBuild`, `GitHubReleasePublisher.GetReleaseNotesFromChangelog` automatically extracts the top notes for GitHub Releases and the in-app update card (`UpdateToastWindow`).
-5. **Project Structure Sync:** If new files, classes, or architecture rules are introduced, `project_structure.txt` and `docs/INDEX.md` must be updated in tandem.
-6. **Mandatory Completion Block:** An AI agent is strictly forbidden from finishing a task or committing code without completing this changelog staging step.
+## 6. Mandatory Change Logging & Project Map Staging (CHANGELOG_01 / RELNOTES_01)
+Every autonomous AI agent modifying application source code, UI elements, workflows, build tooling, tests or architectural structure must record the change before concluding (`docs/README.md` §0.3, `09_DISTRIBUTION_AND_RELEASE.md` DIST-RELEASENOTES):
+1. **Technical log:** an entry under `## Unreleased` in `docs/changes.md` — date, engineering tag, what changed and why, files touched.
+2. **User notes:** under the FIXED staging heading `## Upcoming` at the top of `docs/CHANGELOG.md` (never a guessed `## vYYYY.MM.DD.xxxx` heading — the build picks the version at release time). Plain, short, oversimplified English for the end user, `**Headline:** one or two sentences`. Technical jargon, internal method names, class names, file names and engineering tags are strictly forbidden. Merge with an existing bullet rather than adding a near-duplicate; at most 15 bullets. Purely internal changes need no user bullet.
+3. **Lint & retention are mechanical:** the release gate refuses notes that fail `ReleaseChangelog.LintUserNotes` (RELNOTES_02); an official release promotes `## Upcoming` / `## Unreleased` to `## v<version> — <date>` and keeps 5 releases in `docs/CHANGELOG.md` and 10 in `docs/changes.md`. Never prune or rename sections by hand.
+4. **Automated Release Pipeline Integration:** When an official release is published via `Build.cmd` / `FvsBuild`, `ReleaseGate.PrepareNotes` takes the `## Upcoming` bullets as the GitHub release notes, which the in-app update card (`UpdateToastWindow`, RELNOTES_03) shows as "What's new".
+5. **Project Map Sync:** If new files, classes, or architecture rules are introduced or removed, the repository map (`docs/README.md` §5 — formerly `project_structure.txt`, which is now only a pointer) and `docs/INDEX.md` must be updated in tandem.
+6. **Mandatory Completion Block:** An AI agent is strictly forbidden from finishing a task or committing code without completing this change-logging step.

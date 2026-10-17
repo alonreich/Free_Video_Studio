@@ -361,12 +361,13 @@ public sealed class MainViewModel : ViewModelBase
     public void ApplyDefaults()
     {
         var d = SettingsManager.Instance.Defaults;
-        Timeline.ApplyMainSpeedPreset(d.DefaultSpeed);
-        Export.QualitySliderValue = d.QualityIndex;
-        IsPortraitMode = d.PortraitMode;
-        IsTeammates = d.ShowTeammates;
+        // SETDEFAULTS_01 — Always On/Off and "same as last time" are resolved in ONE place.
+        Timeline.ApplyMainSpeedPreset(d.StartSpeed);
+        Export.QualitySliderValue = d.StartQualityIndex;
+        IsPortraitMode = d.StartPortrait;
+        IsTeammates = d.StartShowTeammates;
         IsSpectating = true;
-        IsEnableFade = d.EnableFade;
+        IsEnableFade = d.StartEnableFade;
 
         string stateFile = _paths.SessionStateFile;
         if (File.Exists(stateFile))

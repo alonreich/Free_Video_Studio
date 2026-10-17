@@ -30,8 +30,10 @@ internal static class UpgradeCoordinator
                 "Switching" or "AwaitingConfirmation" or "RollingBack");
 
     /// <summary>
-    /// UPGRADEUX_06 — "the elevated worker must run from this clean staging folder". The broker passes
-    /// it when it was started straight from the downloaded installer instead of from a staged copy.
+    /// UPGRADEUX_06 — "the broker's window libraries are in this clean staging folder". The launcher
+    /// passes it when the broker was started straight from the downloaded installer instead of from a
+    /// staged copy. (Since WORKERSTAGE_01 the ELEVATED worker never runs from this per-user folder: it
+    /// runs from a protected copy, <see cref="ProtectedWorkerStage"/>.)
     /// </summary>
     internal const string StageArgument = "--upgrade-stage";
 
@@ -72,7 +74,8 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>NOTEMPEXEC_01 — the worker copy is staged under the per-user updates folder, not %TEMP%.</summary>
+    /// <summary>NOTEMPEXEC_01 — the broker's staging folder lives under the per-user updates folder, not %TEMP%.
+    /// It is user-writable, so nothing elevated runs from it (WORKERSTAGE_01).</summary>
     internal static string StageRoot => DeploymentFootprint.UpdateStageRoot;
 
     public static async Task<int> LaunchAsync(string[] args, bool recovery = false)
@@ -176,15 +179,12 @@ internal static class UpgradeCoordinator
     }
 
     /// <summary>
-    /// UPGRADEUX_06 — copies this installer into the staging folder for the elevated worker. Runs
-    /// in the background while the window is already showing (or while the user is still working).
+    /// UPGRADEUX_06 — prepares the copy the elevated worker runs from. Runs in the background while the
+    /// window is already showing (or while the user is still working). WORKERSTAGE_01 — the copy goes to
+    /// a protected folder the user cannot change (<see cref="ProtectedWorkerStage"/>), never to the
+    /// user-writable staging folder, which now only holds the broker's window libraries.
     /// </summary>
-    private static string PrepareWorkerCopy(string stage)
-    {
-        string target = Path.Combine(stage, InstallPayload.ExecutableName);
-        if (!File.Exists(target)) UpgradeFiles.CopyVerified(Environment.ProcessPath!, target);
-        return target;
-    }
+    private static ProtectedWorkerStage PrepareWorkerCopy() => ProtectedWorkerStage.Create(Environment.ProcessPath!);
 
     private static void StageWindowLibraries(string stage)
     {
@@ -214,10 +214,7 @@ internal static class UpgradeCoordinator
         UpgradeKind kind = recovery ? UpgradeKind.Recovery : DetectKind();
         progress.Begin(kind, waitsForApp);
 
-        string? stage = StageFromArgs(args);
-        Task<string> workerExecutable = stage is null
-            ? Task.FromResult(Environment.ProcessPath!)
-            : Task.Run(() => PrepareWorkerCopy(stage));
+        Task<ProtectedWorkerStage> workerExecutable = Task.Run(PrepareWorkerCopy);
 
         if (waitsForApp) progress.Step(UpgradeStep.CloseOldVersion, "Waiting for Free Video Studio to close…");
         try { await WaitForSourceExitAsync(args).ConfigureAwait(false); }
@@ -260,7 +257,8 @@ internal static class UpgradeCoordinator
 
             if (!workerExecutable.IsCompleted)
                 progress.Step(UpgradeStep.CheckNothingOpen, "Getting the installer ready… (a few seconds)");
-            string workerPath = await workerExecutable.ConfigureAwait(false);
+            ProtectedWorkerStage protectedWorker = await workerExecutable.ConfigureAwait(false);
+            string workerPath = protectedWorker.ExecutablePath;
 
             // UPGRADEUX_02 — explain the Windows prompt before it appears.
             progress.Step(UpgradeStep.Permission, UpgradeText.PermissionDetail(kind));
@@ -280,6 +278,12 @@ internal static class UpgradeCoordinator
             {
                 uacDeclined = true;
                 throw new OperationCanceledException("The user declined the Windows permission prompt.", denied);
+            }
+            finally
+            {
+                // WORKERSTAGE_01 — writers were denied until the elevated process existed; its mapped image
+                // cannot be written from here on.
+                protectedWorker.Dispose();
             }
             channel = await AcceptAsync(listener, token).ConfigureAwait(false);
             channel.Progress = detail => ReportWorkerProgress(progress, detail);
@@ -436,6 +440,7 @@ internal static class UpgradeCoordinator
         finally
         {
             health?.Dispose(); channel?.Dispose(); worker?.Dispose(); app?.Dispose();
+            if (workerExecutable.IsCompletedSuccessfully) workerExecutable.Result.Dispose();
             listener.Stop(); healthListener.Stop(); gate.Release();
         }
     }

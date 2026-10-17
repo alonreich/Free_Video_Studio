@@ -35,6 +35,9 @@ internal static class UpgradeInstallWorker
         UpgradeRegistration? registration = null;
         try
         {
+            // WORKERSTAGE_01 — administrator work happens only from the protected copy the broker prepared.
+            if (!ProtectedWorkerStage.IsProtectedWorkerPath(Environment.ProcessPath))
+                throw new IOException("The installer was started from an unprotected folder, so it refused to run with administrator rights. Nothing was changed.");
             if (!ownsGate || !(ownsLegacy = legacyGate.WaitOne(0)))
                 throw new IOException("Another installation or uninstall is running. Try again when it finishes.");
             UpgradeFiles.RequirePlainPath(InstallDiscovery.Store);
@@ -295,6 +298,9 @@ internal static class UpgradeInstallWorker
             var all = Transactions().ToList();
             DateTimeOffset? newest = all.Where(x => x.Transaction.Phase is "Committed" or "Pruned")
                 .Select(x => x.Transaction.ConfirmedAt).Max();
+            // WORKERSTAGE_01 — the user cannot delete the protected worker folders; this elevated pass does.
+            int swept = ProtectedWorkerStage.SweepStale(Environment.ProcessPath);
+            if (swept > 0) RuntimeLog.Info("Upgrade maintenance", $"Removed {swept} old protected installer folder(s).");
             foreach (var (transaction, roots) in all)
             {
                 if (transaction.Phase is "Committed" or "Pruned")

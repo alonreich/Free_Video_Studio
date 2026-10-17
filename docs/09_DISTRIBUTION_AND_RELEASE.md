@@ -8,20 +8,25 @@
 | :--- | :--- | :--- | :--- |
 | `src/FreeVideoStudio.Core/Infrastructure/RuntimePayloadManifest.cs` | `RuntimePayloadManifest` | `FromFolder`, `Read`, `Write`, `SYS-PAYLOADSPLIT` | Runtime fingerprint. |
 | `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `AppOnlyAssetName`, `RuntimeAlreadyMatchesAsync`, `SYS-PAYLOADSPLIT` | Which package to download. **⚠ CO-GOVERNED BY: 05** |
-| `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature`, `DIST-SMART` | The signed per-file list of a release. |
+| `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature`, `AssetSha256`, `DIST-SMART`, `ASSETHASH_01` | The signed per-file list of a release. |
 | `src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs` | `BinaryDelta` | `Create`, `Apply`, `ApplyFile`, `StreamBufferSize`, `BINDELTA_01`, `BINDELTA_02` | Binary patch for the main program. |
-| `src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs` | `BrotliFile` | `CompressFile`, `DecompressFile` | Per-file asset compression. |
-| `build/FvsBuild/SmartUpdateBuilder.cs` | `SmartUpdateBuilder` | `Prepare`, `Finish`, `ReleaseFiles`, `MarkReleased`, `DIST-SMART`, `NODROPPER_01` | Builds the per-file assets, patches, the signed list packed into the installer and the release update.json. |
+| `src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs` | `BrotliFile` | `CompressFile`, `DecompressFile(maxBytes)`, `ASSETHASH_01` | Per-file asset compression; size-capped decompression. |
+| `src/FreeVideoStudio.Core/Infrastructure/ReleaseChangelog.cs` | `ReleaseChangelog`, `ReleaseChangelog.Section` | `Parse`, `Find`, `Promote`, `LintUserNotes`, `PlainHighlights`, `UpcomingTitle`, `UnreleasedTitle`, `RELNOTES_01`, `RELNOTES_02`, `RELNOTES_03` | The one parser of docs/CHANGELOG.md and docs/changes.md (§3f DIST-RELEASENOTES). |
+| `build/FvsBuild/SmartUpdateBuilder.cs` | `SmartUpdateBuilder` | `Prepare`, `Finish`, `ReleaseFiles`, `MarkReleased`, `EnsurePublishedBases`, `DIST-SMART`, `NODROPPER_01`, `DELTABASE_01`, `ASSETHASH_01` | Builds the per-file assets, patches, the signed list packed into the installer and the release update.json. |
 | `build/installer/FreeVideoStudio.iss` | Inno Setup script | `ForwardedArguments`, `NODROPPER_01`, `PEIDENTITY_01` | The single download: a non-elevated Inno Setup package that unpacks the release beside its signed list and starts the transactional installer. |
 | `build/FvsBuild/InnoInstaller.cs` | `InnoInstaller` | `Build`, `SetupFileName`, `NODROPPER_01` | Finds ISCC.exe (Inno Setup 6.3+, `FVS_ISCC`) and compiles the script into `compiled\FreeVideoStudio-Setup.exe`. |
 | `build/FvsBuild/PeIdentity.cs` | `PeIdentity` | `FixOriginalFilename`, `Patch`, `PEIDENTITY_01` | Rewrites OriginalFilename/InternalName to the shipped file name before signing. **⚠ CO-GOVERNED BY: 05** |
-| `src/FreeVideoStudio.App/Services/UpdatePreparer.cs` | `UpdatePreparer` | `PrepareAsync` | Client side of DIST-SMART. **⚠ CO-GOVERNED BY: 05** |
-| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01` | Draft-verify-publish; creates the previous-brand download alias transiently. |
+| `src/FreeVideoStudio.App/Services/UpdatePreparer.cs` | `UpdatePreparer` | `PrepareAsync`, `EnsureDiskSpace`, `RequirePatchHeader`, `UPDATESPACE_01`, `ASSETHASH_01`, `UNSIGNEDDEV_01` | Client side of DIST-SMART. **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PruneOldReleases`, `ReleasesToPrune`, `ReleaseTitle`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01`, `RELTAG_01`, `RETAIN_01`, `BETA_01` | Draft-verify-publish from the pushed tag; creates the previous-brand download alias transiently; retention. |
+| `build/FvsBuild/ReleaseGate.cs` | `ReleaseGate`, `ReleasePlan` | `Preflight`, `PrepareNotes`, `CommitVersion`, `Undo`, `TreeStillClean`, `PushRelease`, `RecordReleaseNotes`, `RELGATE_01`, `RELNOTES_01` | The release transaction (§3e DIST-RELEASEGATE). **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/Program.cs` | `Program` | `RunPipeline`, `FailRelease`, `RELGATE_01` | Orders the gate, the build and the publish. **⚠ CO-GOVERNED BY: 05** |
+| `docs/CHANGELOG.md` | User-facing release notes | `## Upcoming`, `RELNOTES_01`, `CHANGELOG_01` | What users read; becomes the GitHub release notes and the update card's "What's new". |
+| `docs/changes.md` | Technical change log | `## Unreleased`, `RELNOTES_01` | What engineers and agents read; promoted with every stable release. |
 | `build/FvsBuild/Staging.cs` | `Staging` | `WriteManifests`, `ValidateCompiledOutput`, `SYS-PAYLOADSPLIT`, `NODROPPER_01` | Stages the release folder and writes its manifests (nothing is zipped or embedded); `obj\ReleaseAssets\runtime.manifest.json`. |
 | `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish` | Runs the ratchets; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
-| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05, GOV** |
+| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes`, `--no-publish`, `RELGATE_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05, GOV** |
 | `dev_build.cmd` | Local Dev Build Harness | `dotnet run build\FvsBuild -- --dev` | Local compilation check and NativeAOT publish verification. Zero git tags, zero GitHub Cloud publishing. **⚠ CO-GOVERNED BY: 05, GOV** |
 
 ---
@@ -38,6 +43,8 @@
 > * It performs local compilation only.
 > * It never creates git release tags and **never touches GitHub or publishes to the cloud**.
 > * Testing compilation with `.\dev_build.cmd` is permitted; running `.\Build.cmd` is never permitted under any circumstances.
+>
+> Since RELGATE_01 (§3e) `Build.cmd` also refuses to start unless the checkout is clean, pushed and on the default branch, the release notes pass the lint, and a human types `PUBLISH` (or passes `--yes`). Those checks protect the release; they are NOT permission for an agent to run it.
 
 ---
 
@@ -186,9 +193,10 @@ recurs: the *repeat* download.
   them, because they do not pass `/VERYSILENT`). Its version resource says `FreeVideoStudio-Setup.exe` —
   the one place a file name and its `OriginalFilename` differ, and only for that download. Remove the
   alias only together with automatic updates for copies released before 2026-10-12.
-* **Publication transaction.** Upload all assets (setup, its two aliases, runtime manifest, smart files) to a draft, verify every asset by name and
-  SHA-256, then publish it as latest. Failed uploads stay unpublished. Existing releases and tags
-  are retained, supporting interrupted downloads and recovery; publication never deletes them first.
+* **Publication transaction.** Upload all assets (setup, its two aliases, runtime manifest, smart files) to a draft created FROM THE PUSHED
+  TAG (`--verify-tag`, RELTAG_01), verify every asset by name and SHA-256, then publish it as latest (a beta: as a pre-release, BETA_01).
+  Failed uploads stay unpublished. Publication never deletes an existing release first; after a successful
+  publish, releases beyond the retention window are deleted and their TAGS ARE KEPT (RETAIN_01, §3d).
 
 ---
 
@@ -217,7 +225,20 @@ recurs: the *repeat* download.
   stream. The header names old and new by length and SHA-256; `Apply` refuses another old file and
   re-hashes its result, so a wrong or damaged patch is an error, never a wrong file. Bases: the last 3
   PUBLISHED versions (`obj\ReleaseHistory\<version>\`, marked `released.txt` after a successful publish);
-  a patch larger than 60 % of the compressed program is dropped. Measured on a synthetic 120 MB
+  a patch larger than 60 % of the compressed program is dropped.
+* **DELTABASE_01 — the bases are guaranteed, not hoped for.** A release build (`SmartUpdateBuilder.EnsurePublishedBases`)
+  lists the last 3 published stable releases, downloads each one's signed `update.json` (+ signature, verified
+  against the pinned root), takes the program's SHA-256 from it, and either marks a matching local copy
+  `released.txt` or downloads that release's own content-addressed program asset (`f-<sha>.br`) and verifies
+  it byte for byte. Before this, the history was consulted only when `obj\ReleaseHistory` was EMPTY, and then
+  the asset named `FreeVideoStudio.exe` was fetched — the INSTALLER under its pre-Inno alias (DIST-SPLIT), not
+  the program — so no installed copy could ever use the patch; and on the build machine the history held
+  only unmarked builds, so release builds made NO patches at all and every user downloaded the whole
+  compressed program on every update. Without the GitHub CLI the build warns and uses local history only.
+* **ASSETHASH_01 — every asset is checked before it is used.** `update.json` carries the SHA-256 of each
+  compressed asset and patch (`AssetSha256`); the client verifies the download against it, decompression is
+  capped at the signed size, and a patch header must name exactly the signed program and the installed one
+  (05 SYS-AUTOUPDATE). Older lists without the field still work (size cap + final hash). Measured on a synthetic 120 MB
   "recompiled" file: 1.7 MB patch, 6 s to build, 0.4 s to apply (in-memory apply, before BINDELTA_02;
   streamed disk-to-disk: 160 MB in 1.2 s incl. both SHA-256 passes).
 * **BINDELTA_02 — applying streams, it never loads a program file.** `BinaryDelta.ApplyFile` /
@@ -268,8 +289,8 @@ recurs: the *repeat* download.
     `SmartUpdateBuilder.Prepare` WITHOUT the full-installer entry, which cannot name its own hash);
   * starts `{tmp}\fvs\FreeVideoStudio.exe --install --smart-update "{tmp}\fvs"` as the user who started
     Setup (`runasoriginaluser`) and waits for it. Everything after that is the existing transactional
-    installer (`05` SYS-UPGRADE): broker window, one UAC prompt, elevated worker (staged under
-    `%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage`, NOTEMPEXEC_01), which re-verifies the signed list
+    installer (`05` SYS-UPGRADE): broker window, one UAC prompt, elevated worker (run from a protected
+    `%ProgramData%\FreeVideoStudio-Worker-<id>` copy, WORKERSTAGE_01 / `05` SYS-UPGRADE-TRUST), which re-verifies the signed list
     itself, copies every file into its protected folder and hashes the copy
     (`InstallPayload.ExtractFromSmartUpdate`, which accepts real paths as well as content names), shortcuts,
     Apps & features entry, first-launch health check, rollback;
@@ -298,12 +319,82 @@ recurs: the *repeat* download.
 ## 3d. Release Retention Policy, Local Artifacts & Rolling Changelog  {#DIST-RETENTION}
 
 * **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio-Setup.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
-* **Official GitHub Release Retention (Last 5 Releases):** When publishing official releases via `GitHubReleasePublisher.Publish`, the system retains the **last 5 releases** (the new release plus the 4 previous releases). Any releases beyond the latest 5 are automatically pruned (`gh release delete --yes --cleanup-tag`), keeping the GitHub release list clean and bounded while allowing older clients and interrupted downloads sufficient time to complete.
-* **Rolling Changelog Contract (`docs/CHANGELOG.md`):** Every release and code change populates `docs/CHANGELOG.md` with a plain-English, end-user-facing "What's New" entry. When `GitHubReleasePublisher` publishes a release, it extracts the release notes for that version directly from `docs/CHANGELOG.md` and attaches them to the GitHub release.
-* **Smart Update Delta Continuity:** To ensure delta patches are created even on fresh checkouts and in CI environments, `SmartUpdateBuilder.Prepare` automatically caches the prior release binary from GitHub if `obj/ReleaseHistory` is empty.
-* **Pre-Flight Disk Space & Connection Awareness:** Before initiating any 300MB+ background download, `UpdatePreparer` and `UpdateService` perform a pre-flight disk check requiring the download size plus a 256MB safety headroom, and check for metered connections according to user preferences.
+* **RETAIN_01 — Official GitHub Release Retention (last 5 stable releases, tags kept forever):** after a successful publish `GitHubReleasePublisher.PruneOldReleases` keeps the newest **5 stable releases** (the new one included) and the newest **3 betas that are still newer than the newest stable** (`ReleasesToPrune`, ordered by VERSION, drafts ignored); every other release is deleted with `gh release delete --yes` — **without `--cleanup-tag`**. The old `--cleanup-tag` deleted the git tag too, so any version a user still ran stopped being traceable to its source after the sixth release, contradicting the publisher's own promise. Tags are never deleted.
+* **Rolling Changelog Contract (`docs/CHANGELOG.md` + `docs/changes.md`):** see §3f DIST-RELEASENOTES. The user changelog keeps exactly the 5 latest releases plus `## Upcoming`; the technical log keeps 10 plus `## Unreleased`. Both are pruned by the release itself (`ReleaseChangelog.Promote`), not by memory.
+* **Smart Update Delta Continuity:** DELTABASE_01 (§3a): every release build makes sure the last 3 published programs are patch bases, verified against their signed update lists.
+* **Pre-Flight Disk Space & Connection Awareness:** UPDATESPACE_01 (05 SYS-AUTOUPDATE): free space is checked per drive for what an update really writes (smart: the changed files; full: the download plus what the installer unpacks), and metered connections are honoured according to user preferences.
 
 ---
+
+## 3e. The Release Gate  {#DIST-RELEASEGATE}
+
+* **RELGATE_01 — WHY.** `Build.cmd` used to publish whatever was on disk: it never checked that the
+  working tree was committed or pushed; it rewrote five version files before building and left them
+  uncommitted (a failed build left them changed too); and `gh release create <tag>` without a target
+  tagged the REMOTE default branch — not the commit that was built. A release could ship code that exists
+  in no commit under a tag pointing at different code, while the repository's version fell behind
+  every release (the checked-in version said 2026.10.13.2238 while later builds were published).
+* **The transaction** (`build/FvsBuild/ReleaseGate.cs`, ordered by `Program.RunPipeline`):
+  1. `Preflight` — changes NOTHING. Refuses, listing every reason at once, unless: `git status --porcelain`
+     is empty (tracked AND untracked); HEAD is a branch, and for a stable release it is the default branch
+     (`origin/HEAD`, else `main`); after `git fetch` the branch equals `origin/<branch>` exactly (pushed, not
+     behind); the tag `v<version>` exists neither locally nor on GitHub (versions are the UTC minute — two
+     releases in one minute: wait a minute); the GitHub CLI is signed in; `docs/CHANGELOG.md` has a
+     `## Upcoming` section whose bullets pass `ReleaseChangelog.LintUserNotes`; `docs/changes.md` has its
+     `## Unreleased` section. It then prints the version, branch, commit and the notes and asks the human to
+     type `PUBLISH`. With no terminal (redirected input) it refuses unless `--yes` is given on purpose.
+  2. `CommitVersion` — stamps the five version files (`SynchronizeVersionFiles`), commits ONLY them as
+     `release: v<version>` and creates the annotated tag on that commit. The build compiles that commit.
+  3. Build. Any failure → `Undo`: `git reset --hard <starting commit>` + tag deleted. Safe by construction:
+     step 1 proved the tree was clean, so only the stamp is discarded.
+  4. `TreeStillClean` — the build must not have changed a tracked file (else the binary would not be the
+     tagged source) → `Undo`.
+  5. `PushRelease` — `git push --atomic origin HEAD:<branch> refs/tags/<tag>`. Failure (someone pushed
+     meanwhile, no network) → `Undo`, exit 2, nothing published.
+  6. `GitHubReleasePublisher.Publish` — draft from the pushed tag (`--verify-tag`, RELTAG_01), verify every
+     asset by SHA-256, publish (stable: `--latest`; `--beta`: `--prerelease`, BETA_01), prune (RETAIN_01).
+     A failure here leaves the commit and tag on GitHub without a release: exit 2, and the notes stay in
+     `## Upcoming` for the next attempt.
+  7. Stable only, after success: `RecordReleaseNotes` promotes `## Upcoming` (CHANGELOG.md) and
+     `## Unreleased` (changes.md) to `## v<version> — <date>`, prunes both, commits
+     `docs: release notes for v<version>` and pushes. Never fails the release (it is public); problems are
+     warnings with the manual step named. Then NEWRELEASE_01 (§3b).
+* **Modes.** `Build.cmd` = stable release (gate + publish). `Build.cmd --beta` = pre-release for the Beta
+  channel, from any pushed branch; its notes are the current `## Upcoming` prefixed with a beta line, and
+  nothing is promoted. `Build.cmd --no-publish` and `dev_build.cmd` (`--dev`) never touch git, GitHub or the
+  version files (the version reaches the compiler through `-p:Version=`). `--stage-only` is a diagnostic.
+* **Versioning.** Calendar version `yyyy.MM.dd.HHmm` (UTC). Why not SemVer: 05 SYS-AUTOUPDATE.
+* Tests: `ReleaseChangelogTests` (promotion, retention, lint, `ReleasesToPrune`, `NewVersion`). The git
+  and GitHub steps need a real repository and are verified by running `Build.cmd` (human only).
+
+## 3f. Release Notes: Technical Log → User Notes  {#DIST-RELEASENOTES}
+
+* **RELNOTES_01 — two logs, one parser (`Core/Infrastructure/ReleaseChangelog.cs`).**
+  * `docs/changes.md` — the TECHNICAL change log. Every change an agent or developer makes is recorded
+    under `## Unreleased` as it happens: date, engineering tag, what changed and why, files touched.
+    Jargon is welcome here. Kept: 10 releases.
+  * `docs/CHANGELOG.md` — what USERS read. Plain, short, oversimplified English under `## Upcoming`:
+    one bullet per user-visible capability or fix, `**Headline:** one or two sentences`. Kept: 5 releases.
+  * The staging headings are FIXED (`## Upcoming`, `## Unreleased`) — never a version. The old staging
+    heading was a GUESSED version (`## v2026.10.16.1230 (Upcoming)`) while the build takes its version from
+    the clock, so the publisher never found the notes and every release went out with the one-line
+    placeholder "Free Video Studio vX. Existing settings are preserved during migration." — and the update
+    card, documented as showing them, never displayed release notes at all.
+* **The translation step (technical → user) is a person's or an agent's job, done continuously.** With each
+  change, the author also adds or MERGES one user bullet in `## Upcoming` (update an existing bullet
+  rather than adding a near-duplicate). Before a release, the human preparing it reads `## Unreleased`,
+  checks every user-visible item there is represented, and condenses `## Upcoming` to at most 15 bullets.
+* **RELNOTES_02 — the lint (`ReleaseChangelog.LintUserNotes`), enforced by the release gate and by
+  `ArchitectureRuleTests.ChangelogEnforcesTopStagingAndFiveReleaseLimit`:** at least 1 and at most 15
+  bullets; each under 320 characters; no backticks; no engineering tags (`ABC_01`); no source file names
+  (`.cs`, `.axaml`, `.cmd`, …); no code (`Class.Member`, `Method()`); no repeated headline.
+* **What happens at release:** the `## Upcoming` bullets become the GitHub release body (`--notes-file`);
+  after a successful stable publish both staging sections are promoted to `## v<version> — <date>` with a
+  fresh empty staging section above, and the oldest releases beyond the retention are removed
+  (`ReleaseChangelog.Promote`). History is preserved: 5 public releases in CHANGELOG.md, 10 in
+  changes.md, and every GitHub release body for as long as the release exists (RETAIN_01).
+* **RELNOTES_03 — users see them.** The update card shows up to four headlines as "What's new"
+  (`ReleaseChangelog.PlainHighlights(…, headlinesOnly: true)`, 04 / 05 SYS-AUTOUPDATE).
 
 ## 4. Repository Weight  {#DIST-REPOWEIGHT}
 

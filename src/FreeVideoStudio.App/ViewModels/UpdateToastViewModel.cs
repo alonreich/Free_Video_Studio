@@ -22,6 +22,7 @@ public sealed class UpdateToastViewModel : ViewModelBase
     private double _percent;
     private bool _isIndeterminate = true;
     private ToastState _state = ToastState.Working;
+    private string _whatsNew = string.Empty;
 
     public enum ToastState { Working, Ready, Failed, Paused }
 
@@ -40,6 +41,14 @@ public sealed class UpdateToastViewModel : ViewModelBase
     public double Percent { get => _percent; private set => SetProperty(ref _percent, value); }
     public bool IsIndeterminate { get => _isIndeterminate; private set => SetProperty(ref _isIndeterminate, value); }
 
+    /// <summary>RELNOTES_03 — "What's new" in the version being installed, one highlight per line.</summary>
+    public string WhatsNew { get => _whatsNew; private set { if (SetProperty(ref _whatsNew, value)) OnPropertyChanged(nameof(HasWhatsNew)); } }
+    public bool HasWhatsNew => _whatsNew.Length > 0 && _state is ToastState.Working or ToastState.Ready;
+
+    /// <summary>RELNOTES_03 — shows up to four release-note highlights while downloading and when ready.</summary>
+    public void SetReleaseNotes(IReadOnlyList<string> highlights) =>
+        WhatsNew = string.Join(Environment.NewLine, highlights.Select(h => "• " + h));
+
     public ToastState State
     {
         get => _state;
@@ -51,6 +60,7 @@ public sealed class UpdateToastViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsFailed));
             OnPropertyChanged(nameof(IsPaused));
             OnPropertyChanged(nameof(IsFinished));
+            OnPropertyChanged(nameof(HasWhatsNew));
         }
     }
 

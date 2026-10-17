@@ -62,10 +62,44 @@ internal static class Staging
     public static string InstallerListDirPath => InstallerListDir;
     public static string StagedProgramPath => Path.Combine(StagingDir, ProjectExe);
 
-    /// <summary>Kills any running copies of the product and stops dotnet build servers, so locked files cannot survive a clean.</summary>
+    /// <summary>
+    /// BUILDKILL_01 — stops every process whose executable lives INSIDE this repository (a dev copy of
+    /// the app, its Merger/Crop windows, the mpv/ffmpeg children they started, a stale test host) and
+    /// the dotnet build servers, so locked files cannot survive a clean.
+    ///
+    /// <para>⚠️ It used to run <c>taskkill /F /IM FreeVideoStudio.exe /T</c>: every copy of the product on
+    /// the machine, by NAME. That included the INSTALLED app in Program Files with a real project open,
+    /// and <c>/F</c> skips the app's own "save your work?" question, so starting a build silently threw
+    /// away unsaved edits (and <c>/T</c> killed a running export with it). A copy outside the repository is
+    /// never touched now. This process (FvsBuild runs from build\FvsBuild\bin) is excluded.</para>
+    /// </summary>
     public static void TerminateProcesses(BuildLog log)
     {
-        _ = Cli.RunQuiet("taskkill.exe", ["/F", "/IM", "FreeVideoStudio.exe", "/T"]);
+        string root = Path.GetFullPath(Environment.CurrentDirectory).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+        foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcesses())
+        {
+            using (process)
+            {
+                if (process.Id == Environment.ProcessId) continue;
+                string? executable;
+                try { executable = process.MainModule?.FileName; }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+                {
+                    continue; // another user's or a protected process: not ours to stop
+                }
+                if (executable is null || !executable.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    log.Info($"  -> Stopping {Path.GetFileName(executable)} (PID {process.Id}): it runs from this repository.");
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(10_000);
+                }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+                {
+                    log.Warn($"  -> Could not stop PID {process.Id}: {ex.Message}");
+                }
+            }
+        }
         _ = Cli.RunQuiet("dotnet", ["build-server", "shutdown"]);
     }
 

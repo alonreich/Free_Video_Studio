@@ -25,6 +25,9 @@ public static class CaptionTrackJson
             ["position"] = track.Position.ToString(),
             ["tone"] = track.Tone.ToString(),
             ["language"] = track.Language,
+            // CAPTIONLOOK_01 / CAPTIONSIZE_01 — additive: a file without them reads as Outline / Medium.
+            ["look"] = track.Look.ToString(),
+            ["size"] = track.Size.ToString(),
         };
 
         if (track.Lines != null)
@@ -84,6 +87,8 @@ public static class CaptionTrackJson
         CaptionPosition pos = Enum.TryParse<CaptionPosition>(ReadString(obj, "position"), ignoreCase: true, out var p) ? p : CaptionPosition.BottomContent;
         CaptionTone tone = Enum.TryParse<CaptionTone>(ReadString(obj, "tone"), ignoreCase: true, out var t) ? t : CaptionTone.Hype;
         string lang = ReadString(obj, "language") ?? "en";
+        CaptionLook look = Enum.TryParse<CaptionLook>(ReadString(obj, "look"), ignoreCase: true, out var lk) ? lk : CaptionLook.Outline;
+        CaptionSize size = Enum.TryParse<CaptionSize>(ReadString(obj, "size"), ignoreCase: true, out var sz) ? sz : CaptionSize.Medium;
 
         List<CaptionLine>? lines = null;
         if (obj["lines"] is JsonArray linesArray)
@@ -130,7 +135,7 @@ public static class CaptionTrackJson
             }
         }
 
-        return new CaptionTrack(style, pos, tone, lang, lines);
+        return new CaptionTrack(style, pos, tone, lang, lines, look, size);
     }
 
     private static string? ReadString(JsonObject o, string key)

@@ -57,9 +57,11 @@
 | `src/FreeVideoStudio.App/UpgradeProgressWindow.axaml.cs` | `UpgradeProgressWindow` | `AllowClose`, `OnClosing` | The install/update checklist window (UPGRADEUX_01). |
 | `src/FreeVideoStudio.App/ViewModels/UpgradeProgressViewModel.cs` | `UpgradeProgressViewModel`, `UpgradeStepItem` | `SetSteps`, `MoveTo`, `Ask`, `Succeed`, `Fail` | State of the checklist window. |
 | `src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs` | `UpgradeFinishedNotice` | `Attach`, `Describe`, `KindArgument`, `FromArgument`, `UPGRADEUX_05` | First launch after install/update: "Finishing…" then "Updated from X to Y". |
-| `build/FvsBuild/Program.cs` | `Program` | `SynchronizeVersionFiles`, `RunPipeline`, `RunNativeAotStages`, `PEIDENTITY_01` | Unified build pipeline synchronizing version.txt, Directory.Build.props, project files and app.manifest. |
+| `build/FvsBuild/Program.cs` | `Program` | `RunPipeline`, `FailRelease`, `RunNativeAotStages`, `RELGATE_01`, `PEIDENTITY_01` | Unified build pipeline; an official release runs inside the release gate (09 DIST-RELEASEGATE). **⚠ CO-GOVERNED BY: 09** |
+| `build/FvsBuild/ReleaseGate.cs` | `ReleaseGate`, `ReleasePlan` | `Preflight`, `CommitVersion`, `Undo`, `TreeStillClean`, `PushRelease`, `RecordReleaseNotes`, `SynchronizeVersionFiles`, `NewVersion`, `RELGATE_01`, `RELNOTES_01` | The release transaction and the version stamp (version.txt, Directory.Build.props, both project files, app.manifest). **⚠ CO-GOVERNED BY: 09** |
+| `src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs` | `ProtectedWorkerStage` | `Create`, `IsProtectedWorkerPath`, `ExistingFolders`, `SweepStale`, `WORKERSTAGE_01` | The protected copy the elevated update worker runs from (SYS-UPGRADE-TRUST). |
 | `build/FvsBuild/PeIdentity.cs` | `PeIdentity` | `FixOriginalFilename`, `Patch`, `PEIDENTITY_01` | OriginalFilename/InternalName of the shipped program = its file name. **⚠ CO-GOVERNED BY: 09** |
-| `build/FvsBuild/Staging.cs` | `Staging` | `Publish`, `RunPublish`, `StageDependencies` | Build output staging, packaging, and publish validation. |
+| `build/FvsBuild/Staging.cs` | `Staging` | `Publish`, `RunPublish`, `StageDependencies`, `TerminateProcesses`, `BUILDKILL_01` | Build output staging, packaging, and publish validation; stops only processes that run from the repository. |
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `FVS_SIGN_PFX`, `FVS_SIGN_PASS`, `FVS_ALLOW_UNSIGNED` | Mandatory Authenticode digital signing of the release executable. **⚠ CO-GOVERNED BY: 08**|
 | `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild` | **STRICT AGENT BAN**: Thin entry-point triggering production release, git tagging, and live GitHub Cloud release deployment. Never execute by autonomous agents. **⚠ CO-GOVERNED BY: 09, GOV** |
 | `dev_build.cmd` | Dev Compile Harness | `dotnet run build\FvsBuild -- --dev` | Safe local-only build and NativeAOT publish compilation test harness. Zero git tags, zero GitHub Cloud publishing. Mandatory for agent build tests. **⚠ CO-GOVERNED BY: 09, GOV** |
@@ -213,6 +215,7 @@
 `dev.cmd` is the only supported way to run a development build. Three guarantees, in order, before every mode:
 
 1. **KILL_STALE** — kills every process whose executable lives under the repo (the app, its companion windows, and orphaned `mpv.exe` / `ffmpeg.exe` children), then shuts down the Roslyn/MSBuild servers. An orphaned app holds a lock on `bin\`, which is what makes the next build silently reuse a stale binary.
+   * **`BUILDKILL_01` — nothing outside the repository is ever stopped.** `dev.cmd` (KILL_STALE) and `FvsBuild` (`Staging.TerminateProcesses`, every dev, `--no-publish` and release build) used to start with `taskkill /F /IM FreeVideoStudio.exe /T` — every copy of the product BY NAME, including the INSTALLED app in Program Files with a real project open. `/F` skips the app's own save question and `/T` takes a running export with it, so starting a build silently destroyed unsaved work. Both now stop only processes whose executable path is under the repository root (FvsBuild excludes itself). Never add a name-based kill of the product back; `ReleaseHardeningTests.BuildKill01_*` fails if one returns.
 2. **NUKE_BUILD** — deletes `bin` and `obj` for EVERY project under `src\` and `tests\`. Runs for `dev rebuild`, `dev fresh`, `dev run`, `dev build` and `dev clean`.
    * **`DEVFAST_01` — the default `dev` (hot reload) and `dev trace` are INCREMENTAL.** The wipe plus `dotnet clean` on every launch cost ~30 s of full restore and rebuild while the app itself starts in ~2 s. KILL_STALE (step 1) already removes the real cause of a stale binary — a running process locking `bin\` — and MSBuild rebuilds whatever changed. If a fix ever seems missing, `dev rebuild` is the full wipe; VERIFY_PATCHES (step 3) still runs on every mode.
 3. **VERIFY_PATCHES** — runs `build/FvsVerify`, which checks every `build/sentinels.txt` entry for the **fix sentinel** tag that sits beside a specific fix, and halts loudly if one is absent (SYS-VERIFYTOOL). Fixes have been reverted between a commit and a build more than once, silently producing a binary without them and costing a full test cycle to discover.
@@ -268,7 +271,8 @@
   script never deletes anything and never fails the run. Logs stay in `%TMP%` and are still cleared.
 * **DEVUPDATE_01 — dev updates come from `.\compiled`, through the production flow.** `dev.cmd` sets
   `FVS_DEV_UPDATE_SOURCE` (the repo root) and the documented developer override
-  `FVS_ALLOW_UNSIGNED_UPDATE=1` (the dev app is unsigned, UPDATETRUST_02). With both
+  `FVS_ALLOW_UNSIGNED_UPDATE=1` (the dev app is unsigned, UPDATETRUST_02; honoured ONLY by Debug
+  builds while the dev update source is active — UNSIGNEDDEV_01). With both
   `FVS_DEV_LOG_DIR` and `FVS_DEV_UPDATE_SOURCE` set, `UpdateService.QueryLocalDevReleaseAsync` treats
   `.\compiled\FreeVideoStudio-Setup.exe` (NODROPPER_01) as the latest release (version from its file version, size, SHA-256
   taken like GitHub's digest) and compares it with the copy INSTALLED in Program Files (nothing
@@ -347,6 +351,13 @@
   and behaviourally by `SettingsTransactionTests` (concurrent unrelated updates, cross-process writer
   blocked between read and write, unknown/future data preserved, failed write publishes nothing,
   corruption, SettingsWindow one-transaction, UpdateService helper usage).
+  **SETTINGSVM_01:** the Settings window holds a private clone of `AppSettings` as its pending state and
+  writes it through `SettingsViewModel.WriteTo` inside its ONE `Update`; it copies only the fields its
+  tabs own (`CopySection`), never remembered "last" values, window state or first-run answers.
+  **SETDEFAULTS_01 (additive, no schema bump):** `DefaultValues.LastSpeed` / `LastQualityIndex` hold the
+  last exported speed/quality; `PortraitMode` / `ShowTeammates` / `EnableFade` now mean "last choice" for
+  the `RememberLast` behaviour. `Start*` resolves Always On/Off/Remember for every fresh-video path, and
+  an export records its choices (`RememberChoices`) only when a start value follows the last choice.
 
 * **`CACHEBOUND_01` / `ATOMICBYTES_01` — disposable cache bytes use the same publish sequence, without the mutex.**
   `LaneDiskStore.Write` (the Merger's lane cache, `ProgramDataRoot\cache\lanes`, SYS-USERSCOPE) calls
@@ -470,7 +481,7 @@
 
 ## 5. Binary Metadata & Authenticode Signing Mandate  {#SYS-SIGNING}
 * **Win32 Executable Metadata:** The compiled `.exe` embeds complete production metadata (Product Name, Publisher, Assembly Version, File Version, Legal Copyright).
-* **PEIDENTITY_01 — the binary names its own file.** NativeAOT copies the version resource from the managed assembly, so the program said `OriginalFilename = InternalName = FreeVideoStudio.dll` while it is `FreeVideoStudio.exe` — the renamed-binary masquerading pattern (MITRE T1036.003) antivirus scores. The SDK has no property for these strings, so `FvsBuild` (`PeIdentity.FixOriginalFilename`) rewrites them in the VS_VERSION_INFO block of the `.rsrc` section, in place (`.dll` → `.exe` is length-preserving; no offset, size or checksum moves; nothing outside that block can change), right after the publish and BEFORE signing. Idempotent; a file without a version resource fails the build. Measured on the 2026.10.11.1008 program: exactly 6 bytes changed. `SynchronizeVersionFiles` also stamps `app.manifest`'s `assemblyIdentity version` with the build version (it said `1.0.0.0`). The Inno Setup installer's own resource says `OriginalFilename = FreeVideoStudio-Setup.exe`, Company `Alon Reich`, the same version (09 DIST-INSTALLER). Tests: `PeIdentityTests`.
+* **PEIDENTITY_01 — the binary names its own file.** NativeAOT copies the version resource from the managed assembly, so the program said `OriginalFilename = InternalName = FreeVideoStudio.dll` while it is `FreeVideoStudio.exe` — the renamed-binary masquerading pattern (MITRE T1036.003) antivirus scores. The SDK has no property for these strings, so `FvsBuild` (`PeIdentity.FixOriginalFilename`) rewrites them in the VS_VERSION_INFO block of the `.rsrc` section, in place (`.dll` → `.exe` is length-preserving; no offset, size or checksum moves; nothing outside that block can change), right after the publish and BEFORE signing. Idempotent; a file without a version resource fails the build. Measured on the 2026.10.11.1008 program: exactly 6 bytes changed. `ReleaseGate.SynchronizeVersionFiles` (official releases only, inside the release commit — RELGATE_01) also stamps `app.manifest`'s `assemblyIdentity version` with the build version (it said `1.0.0.0`). The Inno Setup installer's own resource says `OriginalFilename = FreeVideoStudio-Setup.exe`, Company `Alon Reich`, the same version (09 DIST-INSTALLER). Tests: `PeIdentityTests`.
 * **Authenticode Integrity Enforcement:**
   `Build.cmd` executes Authenticode signing when `FVS_SIGN_PFX` and `FVS_SIGN_PASS` environment variables are detected.
   ⚠️ **Agent Restriction**: `Build.cmd` triggers public GitHub Cloud release deployment and is strictly banned for autonomous agents. For local compilation checks and signing validation, agents must run `dev_build.cmd`.
@@ -483,7 +494,8 @@
   `UpdateService` previously logged one line on `TrustVerdict.NoAnchor` and fell through to `Process.Start`. Because production *was* the unsigned build, that degraded path was the **only** path that ever ran, and the attack `AuthenticodeVerifier` was written to close was never actually closed.
   The download is now deleted and the user is told to install the signed build by hand **once**; from then on they have an anchor and auto-update verifies normally.
   * ⚠️ This is a real, accepted regression: in-app auto-update stops working for installs that are themselves unsigned. Refusing to execute unverified code with elevation is the correct trade.
-  * **`FVS_ALLOW_UNSIGNED_UPDATE=1`** restores the old behaviour for developers. It is read from the **environment** on purpose — it cannot be set by a downloaded payload, a settings file or a server response, so nothing an attacker controls can re-open the door.
+  * **`FVS_ALLOW_UNSIGNED_UPDATE=1`** restores the old behaviour for developers. It is read from the **environment** on purpose — it cannot be set by a downloaded payload, a settings file or a server response.
+  * **`UNSIGNEDDEV_01` — and it exists ONLY in Debug builds.** The override used to be honoured by every build, released ones included, so any program running as the user could set one environment variable and make the user's installed copy run an unsigned "update" with administrator rights. The branch is now compiled only under `#if DEBUG` (`dev.cmd` runs Debug) and additionally requires the dev update source (`UpdateService.DevReleaseFolder`). A Release build — every copy a user can download — has no code path that accepts `NoAnchor`. The same rule governs the protected worker copy (`ProtectedWorkerStage`, SYS-UPGRADE-TRUST). Enforced by `ReleaseHardeningTests.UnsignedDev01_*`.
   * The three-way `TrustVerdict` is unchanged: *what to do* about a missing anchor is policy, and policy belongs with the caller that owns the consequence, not with the primitive that reads the signature.
 * **Mandatory Signing Failure Abort:**
   If certificate signing environment variables are present but the signing tool (`signtool.exe`) fails or returns a non-zero exit code, the build script MUST FAIL IMMEDIATELY. Silently producing or packaging an unsigned binary when signing was explicitly requested is classified as a severe security failure.
@@ -512,12 +524,14 @@
 ---
 
 ## 6. Auto-Update Lifecycle & Universal Build Versioning  {#SYS-AUTOUPDATE}
-* **Universal Build Version Synchronization:** Every execution of `Build.cmd` via `FvsBuild` generates a uniform four-part timestamp version (`yyyy.MM.dd.HHmm`). `SynchronizeVersionFiles` synchronizes this exact version across:
+* **Universal Build Version Synchronization:** Every `FvsBuild` run (dev, `--no-publish`, release) generates a uniform four-part calendar version (`yyyy.MM.dd.HHmm`, UTC minute — `ReleaseGate.NewVersion`) and passes it to the NativeAOT publish (`-p:Version=`, `-p:AssemblyVersion=`, `-p:FileVersion=`, `-p:InformationalVersion=`), the Inno Setup installer and the signed update list. **`RELGATE_01` — only an official release writes it into the repository**, and only inside the release commit `release: vX` that is tagged and built (09 DIST-RELEASEGATE). `ReleaseGate.SynchronizeVersionFiles` stamps:
   1. `version.txt` in the repository root.
   2. `Directory.Build.props` (`<Version>`, `<AssemblyVersion>`, `<FileVersion>`, `<InformationalVersion>`, `<ProductVersion>`).
   3. `src/FreeVideoStudio.App/FreeVideoStudio.App.csproj`.
   4. `src/FreeVideoStudio.Core/FreeVideoStudio.Core.csproj`.
-  5. NativeAOT compilation and publish flags (`-p:Version=`, `-p:AssemblyVersion=`, `-p:FileVersion=`, `-p:InformationalVersion=`).
+  5. `src/FreeVideoStudio.App/app.manifest` (`assemblyIdentity version`).
+  Dev and `--no-publish` builds leave all five untouched (before RELGATE_01 a `--no-publish` build rewrote them and left the tree dirty, and a release left them uncommitted, so the repository's version fell behind every release).
+* **Why calendar versions and not SemVer (decision, 2026-10-17).** Every installed copy compares versions numerically (`CompareVersions`); a switch to `1.x` SemVer would sort BELOW every installed `2026.x` copy and turn the next update into a refused downgrade. The calendar scheme stays; it is strictly increasing because the gate refuses a tag that already exists (two releases in the same UTC minute: wait a minute). What SemVer would add — "how big is this change" — is said in plain words in the release notes (RELNOTES_01).
 * **Title Bar Version Invariant:** The running executable extracts its stamped version via `DeploymentLifecycle.GetCurrentVersion()` (reading Win32 `ProductVersion` and `FileVersion`, assembly metadata, and root `version.txt` fallbacks). Custom window title bars format `Free Video Studio v{version}` and `Free Video Studio - Video Merger v{version}` directly, ensuring zero discrepancies.
 * **Version Parsing Robustness:** `DeploymentLifecycle.TryParseVersion` trims leading `'v'`/`'V'` prefixes before filtering numeric dot segments. Tags such as `v2026.09.12.0159` parse accurately into .NET `Version` objects (`2026.9.12.159`) with strict numerical comparison. Invalid or non-numeric inputs return `false` and guarantee a safe non-null `0.0` fallback.
 * **Schema v13 (DUCKSTRENGTH_01):** adds `Defaults.DuckingEnabled` / `CarvingEnabled` (seeded ONCE from the legacy `Defaults.AudioProtection`, so a user who had protection off keeps it off) and `Defaults.DuckingStrength` / `CarvingStrength` (default 50 = tuned). Values the user sets are never reset by a later migration.
@@ -575,19 +589,19 @@
   * **Migration Invariant:** Upgrading from schema v9 or older preserves all existing preferences and initializes AI tracking fields to defaults. Files from a higher schema version are loaded best-effort without destructive rewrites.
 * **`SECRETSCAN_01` — nothing secret reaches git.** `tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs` (run by CI on every push) scans every file git tracks or would add (`git ls-files --cached --others --exclude-standard`; without git: `src`, `tests`, `docs`, `build`, `.github`) for Google API keys, private-key blocks, GitHub tokens and `sk-…` keys, fails if a `.pfx`/`.p12`/`.key.pem`/`.password.txt`/`.snk` file is visible to git, and checks that `.gitignore` covers those types. Git-ignored files (the developer's own `ssl-certificate/*.pfx`, `*.key.pem`, `*.password.txt`) are deliberately NOT read. Fake test keys carry `SECRETSCAN_ALLOW` on their line.
 * **Schema v9 (REMOVEUX_01):** upgrading from v8 or older sets `ConfirmVideoMergerRemove = false` once (product decision 2026-09-27: removal is instant and undoable); a v9 file keeps the user's choice. `ApplicationPaths.LaneCacheDirectory` (`ProgramDataRoot/cache/lanes`) holds the Merger's per-clip filmstrip PNGs and waveform peaks (LANECACHE_02), best-effort, pruned to 800 files.
-* **UPDATECONSENT_01 — no network at startup, and only after a yes (2026-10-12).** An unknown program that contacts a server and downloads executables the moment it starts is what downloader malware does, and antivirus behaviour engines score it that way. `RunStartupCheckAsync` therefore (1) asks ONCE — "Check for updates automatically?" (`AskUpdateConsentAsync`, a `ConfirmDialogWindow` over the main window, 3 s after it opens) — while `AppSettings.UpdateConsentAsked` is false, and sends nothing before the answer; Yes/No are stored by `SettingsManager.SetUpdateConsent` (`AutoUpdateChecks` = the answer, `UpdateConsentAsked` = true); closing the question counts as "not now" and it is asked on the next start; (2) waits `StartupGracePeriod` = **5 minutes** after the window opens before the first request (dev source: 2 s). `UpdateConsentAsked` is additive (missing reads as false, no schema bump), so every existing install is asked once as well. Changing the Settings › About checkbox also records the answer. Help › Check for Updates is unaffected. `--upgrade-health` launches never ask. Meme/song cloud sync and the AI features were already user-triggered only. Test: `VersionAndUpdaterTests.UpdateConsent01_*`.
+* **UPDATECONSENT_01 — no network at startup, and only after a yes (2026-10-12).** An unknown program that contacts a server and downloads executables the moment it starts is what downloader malware does, and antivirus behaviour engines score it that way. `RunStartupCheckAsync` therefore (1) asks ONCE — "Check for updates automatically?" (`AskUpdateConsentAsync`, a `ConfirmDialogWindow` over the main window, 3 s after it opens) — while `AppSettings.UpdateConsentAsked` is false, and sends nothing before the answer; Yes/No are stored by `SettingsManager.SetUpdateConsent` (`AutoUpdateChecks` = the answer, `UpdateConsentAsked` = true); closing the question counts as "not now" and it is asked on the next start; (2) waits `StartupGracePeriod` = **5 minutes** after the window opens before the first request (dev source: 2 s). `UpdateConsentAsked` is additive (missing reads as false, no schema bump), so every existing install is asked once as well. Changing the Settings › General update checkbox also records the answer. Help › Check for Updates is unaffected. `--upgrade-health` launches never ask. Meme/song cloud sync and the AI features were already user-triggered only. Test: `VersionAndUpdaterTests.UpdateConsent01_*`.
 * **Schema v7 Migration Invariant:** When upgrading from older application installations lacking update checking (or whenever `settings.json` lacks an explicit `AutoUpdateChecks` configuration), `SettingsManager` automatically initializes and persists `AutoUpdateChecks = true`. On fresh installs without an existing config file, default settings with `AutoUpdateChecks = true` are saved immediately to disk, ensuring new releases are never silently missed. Since UPDATECONSENT_01 that default only takes effect after the user's yes.
 * **Network Stall Guard:** `UpdateDownloader` wraps chunk stream reads in a 45-second stall cancellation timeout (`CancellationTokenSource.CreateLinkedTokenSource`). A frozen HTTP pipe stops the download and is REPORTED as a failure ("stopped receiving data for 45 seconds"); it is never treated as the user's own Cancel (UPDATEUX_03 — it used to close the window silently).
-* **Release Notes:** GitHub release `body` is read during the probe (the question window that showed it was removed with BGUPDATE_01).
+* **Release Notes (RELNOTES_03):** GitHub release `body` is read during the probe. It is the `## Upcoming` section of `docs/CHANGELOG.md` at release time (09 DIST-RELEASENOTES). The update card shows up to four of its headlines as "What's new" while the update downloads and when it is ready (`ReleaseChangelog.PlainHighlights`, `UpdateToastViewModel.SetReleaseNotes`). Before this the body was read and never shown, and it was a one-line placeholder anyway because the publisher never found the notes.
 * **State Persistence Protocol:**
   * Last startup probe timestamp is recorded in `update_last_check_utc.txt` under `UiStateStore` enforcing a 15-minute rate limit (`MinimumIntervalBetweenChecks`) between startup probes.
   * UPDATEUX_06 — the time and plain-English result of every check, startup or manual (up to date / version X available / skipped / could not reach GitHub, and why), is written to `update_last_result.txt` and shown in Settings › About as "Last checked 5 minutes ago: …". The startup check still never interrupts the user over its own problems; it is no longer invisible.
-  * Explicit version skips write the release tag to `update_skipped_tag.txt`. Users can inspect or clear this filter at any time via the About tab in Settings.
+  * Explicit version skips write the release tag to `update_skipped_tag.txt`. Users can inspect or clear this filter at any time via the About tab in Settings (the update preferences themselves are on the General tab, SETTINGSIA_01).
 * **BGUPDATE_01 — background update and user control (R2/R3).** A newer version found by the startup
   check (or Help › Check for Updates) is downloaded in the BACKGROUND (`UpdateService.StartBackgroundUpdate`
   → `UpdatePreparer`) while the user keeps working; the update card (`UpdateToastWindow`, 04) shows
   progress. Background downloads respect user settings for metered connections (`AvoidMeteredNetworkUpdates`)
-  and auto-download toggles (`AutoDownloadUpdates`), with pre-flight disk space headroom verification.
+  and auto-download toggles (`AutoDownloadUpdates`), with per-drive disk space verification (UPDATESPACE_01, below).
   When everything is verified the installer is started and waits (`--wait-pid`, plus
   `--smart-update <folder>` for a smart update); the card then presents: **Restart & update**
   (closes the app through its NORMAL close path — unsaved work is still asked about, nothing is killed,
@@ -605,6 +619,34 @@
   rebuilt by streaming the installed EXE + patch through 64 KiB buffers into `<sha>.partial`; it is
   promoted only after length, patch-header hashes, the signed update.json hash and the publisher check
   pass. Any failure deletes the partial and falls back as before (compact, then full installer).
+* **RECHECK_01 — a session that stays open checks again.** The automatic check used to run once, five
+  minutes after start; a user who leaves the app open for days never heard of a new version. After the
+  first check `RunStartupCheckAsync` repeats `RunAutomaticCheckAsync` every `RecheckInterval` (6 h)
+  while the main window is open, the checkbox is on and no update is already downloading or waiting.
+  Same consent, throttle, metered, auto-download and "skipped" rules as the first check.
+* **BETA_01 — the Beta channel is real.** `Build.cmd --beta` publishes a PRE-release (09
+  DIST-RELEASEGATE); `/releases/latest` never returns one, so Stable users never see it. The Beta
+  channel reads `/releases` and takes the HIGHEST version among non-draft releases, pre-releases
+  included (`PickBetaRelease`; it used to take whatever GitHub listed first — and nothing published
+  pre-releases, so the setting did nothing). A Beta user is offered the next stable release as soon as
+  it is newer than their beta.
+* **UPDATESPACE_01 — free space is checked for what is really written, per drive.** `UpdatePreparer`
+  used to demand the FULL installer size + 256 MB on the downloads drive before every update, so a 9 MB
+  smart update failed on a nearly full disk, while the full installer's own unpacking into `%TEMP%`
+  was never checked. Now: 16 MB for the signed list up front; after the smart plan, the changed files
+  compressed + unpacked, the patch and the rebuilt program; for the full installer, the download plus
+  what the installer unpacks into the temp folder (the release's file total, or 3 × the download when
+  unknown). Folders on one drive add up; each drive keeps a 128 MB margin
+  (`EnsureDiskSpace(IEnumerable<(folder, bytes)>)`). A refusal is final for that attempt
+  (`InsufficientDiskSpaceException`: no fallback to a bigger download) and the card says how much is
+  needed and to choose TRY AGAIN after freeing space. The worker still checks Program Files itself.
+* **ASSETHASH_01 — nothing is unpacked before it is checked.** The signed update list now also carries
+  the SHA-256 of every compressed asset and patch (`SmartFile.AssetSha256`, `SmartPatch.AssetSha256`);
+  `UpdateDownloader` checks it before the file is used. Decompression is capped at the signed file size
+  (`BrotliFile.DecompressFile(…, maxBytes)`), and a patch header must promise exactly the signed program
+  and start from exactly the installed one (`UpdatePreparer.RequirePatchHeader`) before it is decoded.
+  A tampered asset can no longer expand on disk ("decompression bomb") before the final hash rejects it.
+  Lists written before the field existed still work (size cap + final hash).
 ---
 
 ## SYS-VERIFYTOOL — The Fix-Sentinel Check Is Code Now  {#SYS-VERIFYTOOL}
@@ -725,6 +767,43 @@ settings initialization. The install entry point always uses this flow; uninstal
   first lands in `MaintainAsync` and removes itself). Consequence, accepted: a backup's 30-day expiry is
   applied at the next update instead of on the day it expires.
 
+### Elevation trust: the worker runs from a protected copy  {#SYS-UPGRADE-TRUST}
+
+* **WORKERSTAGE_01 — the only administrator process of an install or update runs from a folder its own
+  user cannot change.** The elevated worker used to be copied into
+  `%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage\<id>` and started from there with `Verb = "runas"`. Every
+  program the user runs can write to that folder: between the copy and the user's "Yes" it could swap
+  the file or drop a DLL beside it, and the user — who EXPECTS a prompt at that moment, and whose prompt
+  says "Unknown publisher" for this certificate anyway — would hand it administrator rights.
+* `ProtectedWorkerStage.Create` copies the broker's own program into
+  `%ProgramData%\FreeVideoStudio-Worker-<32 hex>\FreeVideoStudio.exe`:
+  * the folder is created with a PROTECTED access list: SYSTEM and Administrators full control, the
+    user read/execute; the `OWNER RIGHTS` (S-1-3-4) entry removes the rights an owner keeps implicitly
+    (changing the access list) and grants the creator only "add a file". Standard users have no "delete
+    child" right on `%ProgramData%`, so the folder cannot be renamed or replaced;
+  * the program file is created WITH its final access list (read/execute for the user); the creating
+    handle is the only one that could ever write it;
+  * the protection is PROVEN, never assumed: writing the file, changing the folder's access list,
+    deleting the file and renaming the folder are attempted and must ALL be refused; the folder must
+    hold exactly that file; the copy must hash to the bytes written and (Release builds) pass the
+    publisher check (`AuthenticodeVerifier.EvaluateUpdateCandidate`). Any doubt stops the update before
+    Windows is asked ("…not started with administrator rights… Nothing was changed"). There is no
+    fallback to the user-writable folder;
+  * a read handle that denies writers is held until `Process.Start` returns.
+* The worker refuses to do anything as administrator unless it runs from such a path
+  (`UpgradeInstallWorker.RunAsync` → `ProtectedWorkerStage.IsProtectedWorkerPath`), restricts its DLL
+  search to System32 before anything else (`NativeHelpers.RestrictDllSearchToSystem32`,
+  `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32)`), and the program's static imports resolve
+  from System32 only (linker `/DEPENDENTLOADFLAG:0x800`, App csproj). A file added to the folder is
+  never loaded.
+* The user cannot delete these folders. `UpgradeInstallWorker.MaintainAsync` (elevated, end of every
+  install) removes all but the one in use (`SweepStale`); the uninstaller removes them all
+  (`DeploymentLifecycle.PerformFullHostCleanupAsync`).
+* Accepted consequence: on a machine where a standard user may not create folders in `%ProgramData%`
+  (unusual hardening), installs and updates stop with that message instead of running elevated from a
+  user-writable place. Tests: `ReleaseHardeningTests.WorkerStage01_*`. Real-Windows verification still
+  required: standard user + UAC, admin account with UAC, and an AV-locked `%ProgramData%`.
+
 ### Antivirus-clean deployment behaviour  {#SYS-AVCLEAN}
 
 New releases were reported as a trojan by Microsoft Defender and others. Besides the missing
@@ -742,9 +821,10 @@ with a plain Windows API doing the same job. Do NOT reintroduce any of them:
   What is still in use — the worker itself, its hard-linked twin `FreeVideoStudio.exe`, its two window
   libraries — and the then-empty program folder go on Windows' own delete-on-restart list
   (`QueueSelfCleanup`, `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`), so they disappear at the next restart
-  and no copy is ever made. Update downloads and the staged copy of the elevated update worker moved from
+  and no copy is ever made. Update downloads and the broker's staging folder moved from
   `%TEMP%\FVS_AutoUpdate` / `%TEMP%\FVS_Upgrade` to `%LOCALAPPDATA%\FreeVideoStudioUpdates\Downloads` /
-  `\Stage` (`DeploymentFootprint.UpdatesRoot`, deliberately OUTSIDE `%LOCALAPPDATA%\FreeVideoStudio`,
+  `\Stage` (the elevated worker itself runs from a protected `%ProgramData%` copy since WORKERSTAGE_01,
+  SYS-UPGRADE-TRUST) (`DeploymentFootprint.UpdatesRoot`, deliberately OUTSIDE `%LOCALAPPDATA%\FreeVideoStudio`,
   which the update transaction itself moves). The old folders are still accepted from older updaters,
   swept on the next update and by the uninstaller, which also removes `UpdatesRoot`. The cleanup worker
   no longer unpacks window libraries into `%TEMP%\FreeVideoStudio_SetupUI_*` (old ones are swept).
@@ -814,11 +894,12 @@ steps, the gates, or whether a failure rolls back.
   executable is NOT inside a folder the update replaces (`RunsFromAnInstallRoot`: the install path,
   any discovered root, the legacy spaced folder; any doubt counts as inside), the launcher stages only
   the two window libraries and starts the broker straight from the original file with
-  `--upgrade-stage <folder>`. The broker sets `SetDllDirectory` to it, shows its window, and copies the
-  installer there IN THE BACKGROUND (`PrepareWorkerCopy`, started at once — during the wait for the
-  old app in an in-app update). The elevated worker is still started only from that fresh staging
-  copy, never from Downloads, so no planted DLL beside a downloaded file can reach an administrator
-  process. `StageFromArgs` accepts the folder only as an existing direct child of
+  `--upgrade-stage <folder>`. The broker sets `SetDllDirectory` to it, shows its window, and prepares
+  the worker copy IN THE BACKGROUND (`PrepareWorkerCopy`, started at once — during the wait for the
+  old app in an in-app update). **Since WORKERSTAGE_01 that copy is NOT in this per-user folder** — a
+  folder every program the user runs can write to — but in a protected folder under `%ProgramData%`
+  (SYS-UPGRADE-TRUST); the per-user stage keeps only the broker's two window libraries.
+  `StageFromArgs` accepts the folder only as an existing direct child of
   `UpgradeCoordinator.StageRoot` (`%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage`, NOTEMPEXEC_01). If the copy is still running when Windows is about to be asked, the window says
   "Getting the installer ready…". Recovery and installs from inside a program folder keep the old
   staged-broker path (a running executable cannot be moved).
@@ -827,7 +908,7 @@ Local regression coverage for this section: `VersionAndUpdaterTests` (UPDATEUX/U
 progress messages never satisfying a reply) and `UpgradeProgressReportingTests` (monotonic progress,
 verification unchanged). Real-Windows verification still required: UAC Yes/No, close-it-for-me with
 unsaved work, compact and full installer windows, first-launch notice, a double-clicked
-installer from Downloads (window within a second, worker from `%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage`).
+installer from Downloads (window within a second, worker from `%ProgramData%\FreeVideoStudio-Worker-<id>`, WORKERSTAGE_01).
 
 Local regression coverage: `UpgradeTransactionTests` injects failure at each directory rename,
 checks source precedence, retention, conflicting files, journal traversal and compact runtime
@@ -910,7 +991,7 @@ every AI step is ONE HTTPS call to the user's own key (Google Gemini, Anthropic 
 | U5 | **Music Auto-Fit** (Add Music wizard) | One recommended song and where it starts | 4–8 stills of the finished video + the song list | Stills from the whole finished video + numbered song list → the AI names a song → the app picks the start point locally from the song's loudness so the song covers the video. Spec: `02` AUD-MUSICWIN. |
 | U6 | **Viral Post Helper** (Export finished screen) | A title, caption and hashtags with copy buttons | 3 stills of the exported file | Runs after export when switched on; the badge always says what really happened (WRITING… / AI WRITTEN / NO AI KEY / AI FAILED); NEW VERSION asks for a different angle. Spec: `04` UI-SETTINGS-ABOUT (Viral Post card). |
 | U7 | **AI Kill Tracker** (main timeline + speed editor) | A red ✕ over every kill; click jumps there | 2 stills after each loud moment | Local audio energy finds the loud moments → 2 stills just after each → the AI answers yes/no per moment ID (it can never land on the wrong moment) → ✕ markers + a status chip. Spec: `01` TL-AITRACKING (AIELIM_02), `04` UI-SETTINGS-ABOUT. |
-| — | **Settings › AI Features** | One AI for everything, optional per-feature override | nothing | One default vendor + model (`AIDEFAULT_01`), per-feature overrides under Advanced, keys sealed with DPAPI for the Windows account (`KEYPROTECT_01`). |
+| — | **Settings › AI** | One AI for everything, optional per-feature override | nothing | One default vendor + model (`AIDEFAULT_01`), per-feature overrides under Advanced, keys sealed with DPAPI for the Windows account (`KEYPROTECT_01`). |
 
 ### 7.2 Shared contracts (every feature)
 * **Transport:** `IAiVisionProvider` (`GeminiProvider`, `ClaudeProvider`, `OpenAiProvider`) — key only in headers, classified errors (`AiProviderException`), per-attempt timeout ≠ user cancel, key redaction in every log (`GEMINICLIENT_01`, `AIPROVIDER_01`).

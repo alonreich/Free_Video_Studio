@@ -401,6 +401,22 @@ public class AppSettings
     public string AiCommentaryLastLanguage { get; set; } = "";
     public bool? AiCommentaryLastEntireTimeline { get; set; }
     public string AiCommentaryLastNotes { get; set; } = "";
+
+    /// <summary>
+    /// COMMENTARYMIX_01 — the remembered commentary "brain": the one-click style last picked and the four slider
+    /// amounts (0 = Off … 4 = Max; null = never moved, the style's own amounts apply), how often it talks, and
+    /// whether swearing is allowed. CAPTIONLOOK_01 / CAPTIONSIZE_01 — the text look and size. Additive (missing
+    /// reads as "never chosen"), so no schema bump.
+    /// </summary>
+    public string AiCommentaryLastPreset { get; set; } = "";
+    public int? AiCommentaryLastFunny { get; set; }
+    public int? AiCommentaryLastSarcastic { get; set; }
+    public int? AiCommentaryLastEnergy { get; set; }
+    public int? AiCommentaryLastTactical { get; set; }
+    public string AiCommentaryLastChattiness { get; set; } = "";
+    public bool? AiCommentaryLastAllowSwearing { get; set; }
+    public string AiCommentaryLastLook { get; set; } = "";
+    public string AiCommentaryLastSize { get; set; } = "";
     public string AiMagicWandCloudConsentVendor { get; set; } = "";
     public string AiCommentaryCloudConsentVendor { get; set; } = "";
 
@@ -986,6 +1002,51 @@ public class DefaultValues
     public bool DefaultZoomSlow { get; set; } = false;
     /// <summary>Default freeze-image hold duration in seconds (matches the preset buttons 0.5–3.0).</summary>
     public double DefaultFreezeDurationS { get; set; } = 1.0;
+
+    /// <summary>
+    /// SETDEFAULTS_01 — the speed used last time (written at export), read only when
+    /// <see cref="SpeedBehavior"/> is <see cref="ValueDefaultBehavior.RememberLast"/>.
+    /// Until SETDEFAULTS_01 the Behavior fields were saved but NOTHING read them: "Remember Last
+    /// Choice" never remembered and "Always On/Off" never forced anything (placebo settings).
+    /// <see cref="PortraitMode"/>, <see cref="ShowTeammates"/> and <see cref="EnableFade"/> now hold
+    /// the LAST choice for their RememberLast behaviour; Always On/Off ignores them.
+    /// </summary>
+    public double LastSpeed { get; set; } = 1.1;
+
+    /// <summary>SETDEFAULTS_01 — the quality tier used last time (see <see cref="LastSpeed"/>).</summary>
+    public int LastQualityIndex { get; set; } = 8;
+
+    /// <summary>SETDEFAULTS_01 — the ONE resolver every "fresh video" path reads.</summary>
+    public static bool Resolve(CheckboxDefaultBehavior behavior, bool lastChoice) => behavior switch
+    {
+        CheckboxDefaultBehavior.AlwaysOff => false,
+        CheckboxDefaultBehavior.AlwaysOn => true,
+        _ => lastChoice
+    };
+
+    public bool StartPortrait => Resolve(PortraitBehavior, PortraitMode);
+    public bool StartShowTeammates => Resolve(ShowTeammatesBehavior, ShowTeammates);
+    public bool StartEnableFade => Resolve(EnableFadeBehavior, EnableFade);
+    public double StartSpeed => SpeedBehavior == ValueDefaultBehavior.RememberLast ? LastSpeed : DefaultSpeed;
+    public int StartQualityIndex => QualityBehavior == ValueDefaultBehavior.RememberLast ? LastQualityIndex : QualityIndex;
+
+    /// <summary>True when any start value follows "same as last time", i.e. an export must be remembered.</summary>
+    public bool RemembersAnything =>
+        PortraitBehavior == CheckboxDefaultBehavior.RememberLast
+        || ShowTeammatesBehavior == CheckboxDefaultBehavior.RememberLast
+        || EnableFadeBehavior == CheckboxDefaultBehavior.RememberLast
+        || SpeedBehavior == ValueDefaultBehavior.RememberLast
+        || QualityBehavior == ValueDefaultBehavior.RememberLast;
+
+    /// <summary>SETDEFAULTS_01 — records the choices of a started export for the RememberLast behaviours.</summary>
+    public void RememberChoices(bool portrait, bool showTeammates, bool enableFade, double speed, int qualityIndex)
+    {
+        if (PortraitBehavior == CheckboxDefaultBehavior.RememberLast) PortraitMode = portrait;
+        if (ShowTeammatesBehavior == CheckboxDefaultBehavior.RememberLast) ShowTeammates = showTeammates;
+        if (EnableFadeBehavior == CheckboxDefaultBehavior.RememberLast) EnableFade = enableFade;
+        if (SpeedBehavior == ValueDefaultBehavior.RememberLast) LastSpeed = Math.Clamp(speed, 0.1, 4.0);
+        if (QualityBehavior == ValueDefaultBehavior.RememberLast) LastQualityIndex = qualityIndex;
+    }
 }
 
 [JsonSerializable(typeof(AppSettings))]
