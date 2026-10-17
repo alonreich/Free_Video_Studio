@@ -483,6 +483,8 @@ AVSYNC_04                                    03 §3a FFM-TEMPO
 CUDATAG_01                                   03 §1 FFM-HWENC
 MERGESCRIPT_01                               03 §1 FFM-HWENC
 MEMEMODE_01                                  01 §7 TL-MEME | 03 §4a FFM-MEMECORNER | 04 §10 UI-MEMESELECT | 06 §8 | 07 §5
+AICOMMENTARY_CLOSE_01                        04 §15 UI-AICOMMENTARY
+AICOMMENTARY_LOG_01                          04 §15 UI-AICOMMENTARY
 MEMEAUDIT_01                                 01 §7 TL-MEME | 03 §4/4a/5 | 04 §10 UI-MEMESELECT | 06 §3 PROJ-SCHEMA (schema 7)
 MEMETRIM_01                                  03 §4 FFM-MEMECONCAT | 04 §10 UI-MEMESELECT
 MEMETRIM_02                                  01 §7 TL-MEME

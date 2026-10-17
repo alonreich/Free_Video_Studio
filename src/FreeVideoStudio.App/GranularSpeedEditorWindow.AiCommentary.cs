@@ -30,6 +30,15 @@ public partial class GranularSpeedEditorWindow
     private string? _aiCommentaryTempAssPath;
     private string? _liveCaptionsAssPath;
 
+    /// <summary>AICOMMENTARY_CLOSE_01 — true while the AI is still writing the commentary.</summary>
+    private bool _aiCommentaryRunning;
+
+    /// <summary>AICOMMENTARY_CLOSE_01 — set once the user agreed to close and lose a running commentary.</summary>
+    private bool _closeDuringCommentaryConfirmed;
+
+    /// <summary>AICOMMENTARY_CLOSE_01 — the editor's APPLY button, cached where it is wired (no extra lookup).</summary>
+    private Button? _applyGranularBtn;
+
     private void WireAiCommentaryControls()
     {
         if (AiCommentaryBtnCtl is { } btn) btn.Click += async (_, _) => await OnAiCommentaryClickedAsync();
@@ -37,14 +46,95 @@ public partial class GranularSpeedEditorWindow
         if (AiCommentaryAcceptBtnCtl is { } acceptBtn) acceptBtn.Click += (_, _) => EndAiCommentaryPreview(accept: true);
         if (AiCommentaryDiscardBtnCtl is { } discardBtn) discardBtn.Click += (_, _) => EndAiCommentaryPreview(accept: false);
 
-        this.Closing += (_, _) =>
+        this.Closing += (_, e) =>
         {
+            // AICOMMENTARY_CLOSE_01 — closing while the AI is still writing used to cancel the run without a
+            // word. Ask first (APPLY asks before it gets here; this covers CANCEL and the window's ✕).
+            if (_aiCommentaryRunning && !_closeDuringCommentaryConfirmed)
+            {
+                e.Cancel = true;
+                _ = ConfirmCloseDuringCommentaryAsync();
+                return;
+            }
             _aiCommentaryCts?.Cancel();
+            if (_isAiCommentaryPreviewing)
+                RuntimeLog.Info("AiCommentary", "Speed Editor closed without APPLY — the unapplied commentary preview was discarded.");
             EndAiCommentaryPreview(accept: false);
             CleanupAiCommentaryTempFile();
         };
 
         UpdateAiCommentaryBtnVisualState();
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_CLOSE_01 — called by the editor's APPLY before it closes. A commentary preview that was
+    /// never ACCEPTED is kept (APPLY means "keep everything I see"; it used to be thrown away silently). While
+    /// the AI is still writing, the user chooses: keep waiting (returns false) or apply without it.
+    /// </summary>
+    internal async Task<bool> PrepareApplyWithCommentaryAsync()
+    {
+        if (_aiCommentaryRunning)
+        {
+            // A dismissed dialog answers "no" = keep waiting (the safe side).
+            bool applyAnyway = await ConfirmDialogWindow.AskAsync(
+                this,
+                "The AI is still writing your commentary.\n\n" +
+                "If you apply now, the commentary is cancelled and your video will have no captions from this run.",
+                "Commentary Still Running",
+                "Apply without commentary",
+                "Keep waiting",
+                destructive: true);
+            if (!applyAnyway)
+            {
+                RuntimeLog.Info("AiCommentary", "APPLY pressed while commentary was running — user chose to keep waiting.");
+                return false;
+            }
+            RuntimeLog.Info("AiCommentary", "APPLY pressed while commentary was running — user chose to apply without it (run cancelled).");
+            _closeDuringCommentaryConfirmed = true;
+            _aiCommentaryCts?.Cancel();
+        }
+
+        if (_isAiCommentaryPreviewing && _aiCommentaryCandidateTrack != null)
+        {
+            RuntimeLog.Info("AiCommentary",
+                $"APPLY pressed with an unapplied commentary preview — kept ({_aiCommentaryCandidateTrack.Lines?.Count ?? 0} line(s)).");
+            EndAiCommentaryPreview(accept: true);
+        }
+        return true;
+    }
+
+    /// <summary>AICOMMENTARY_CLOSE_01 — CANCEL / ✕ while the AI is still writing.</summary>
+    private async Task ConfirmCloseDuringCommentaryAsync()
+    {
+        bool closeAnyway = await ConfirmDialogWindow.AskAsync(
+            this,
+            "The AI is still writing your commentary.\n\nIf you close now, the commentary is cancelled.",
+            "Commentary Still Running",
+            "Close without commentary",
+            "Keep waiting",
+            destructive: true);
+        if (!closeAnyway)
+        {
+            RuntimeLog.Info("AiCommentary", "Close requested while commentary was running — user chose to keep waiting.");
+            return;
+        }
+        RuntimeLog.Info("AiCommentary", "Close requested while commentary was running — user chose to close (run cancelled).");
+        _closeDuringCommentaryConfirmed = true;
+        _aiCommentaryCts?.Cancel();
+        Close();
+    }
+
+    /// <summary>
+    /// AICOMMENTARY_CLOSE_01 — while a commentary preview waits for ACCEPT &amp; APPLY, the editor's APPLY says
+    /// it will keep it, so the two buttons can no longer be mistaken for each other.
+    /// </summary>
+    private void UpdateApplyButtonForCommentary()
+    {
+        if (_applyGranularBtn == null) return;
+        _applyGranularBtn.Content = _isAiCommentaryPreviewing ? "APPLY (incl. commentary)" : "APPLY";
+        ToolTip.SetTip(_applyGranularBtn, _isAiCommentaryPreviewing
+            ? "Apply all changes, INCLUDING the AI commentary you are previewing, and return"
+            : "Apply all speed segments and return");
     }
 
     private void UpdateAiCommentaryBtnVisualState()
@@ -222,6 +312,8 @@ public partial class GranularSpeedEditorWindow
 
         Action<string> consoleLog = msg =>
         {
+            // AICOMMENTARY_LOG_01 — every step of a run also reaches the app log (a run used to leave no trace).
+            RuntimeLog.Info("AiCommentary", msg);
             Dispatcher.UIThread.Post(() =>
             {
                 if (AiCommentaryConsoleTextCtl != null)
@@ -261,6 +353,11 @@ public partial class GranularSpeedEditorWindow
             Size: dialogResult.Size);
 
         bool segmentOnly = !dialogResult.EntireTimeline && _edit.SelectedSegment != null;
+        RuntimeLog.Info("AiCommentary",
+            $"Run started: {(segmentOnly ? "selected block" : "whole video")} {startSec:0.###}s + {durationSec:0.###}s of source, " +
+            $"{plannedParts} part(s), {commentaryConfig.Vendor} {model}, tone {dialogResult.Tone}, base speed {_edit.BaseSpeed:0.00}x, " +
+            $"{_edit.Segments.Count} speed block(s), {_edit.Cuts.Count} cut(s).");
+        _aiCommentaryRunning = true;
 
         // AIUSAGE_01 — count every token this run uses and read the allowance before → after.
         using var usage = AiUsageMeter.BeginTask("AI Commentary", commentaryConfig.Vendor);
@@ -272,6 +369,9 @@ public partial class GranularSpeedEditorWindow
                 async () => await CommentaryService.GenerateCommentaryWithReportAsync(request, apiKey, progress, consoleLog, token),
                 token);
             var generatedTrack = result.Track;
+            _aiCommentaryRunning = false;
+            RuntimeLog.Info("AiCommentary",
+                $"Run finished: {generatedTrack.Lines?.Count ?? 0} caption line(s), {result.FailedChunks} of {result.TotalChunks} part(s) failed. Waiting for ACCEPT & APPLY.");
 
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
@@ -301,6 +401,7 @@ public partial class GranularSpeedEditorWindow
         }
         catch (OperationCanceledException)
         {
+            RuntimeLog.Info("AiCommentary", "Run cancelled.");
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
             var (u, _) = ReportAiUsage(usage, consoleLog);
@@ -316,6 +417,10 @@ public partial class GranularSpeedEditorWindow
                 this,
                 "Commentary Generation Failed",
                 $"AI Commentary generation encountered an error:\n\n{ex.Message}\n\n{u}\n{a}");
+        }
+        finally
+        {
+            _aiCommentaryRunning = false;
         }
     }
 
@@ -335,6 +440,7 @@ public partial class GranularSpeedEditorWindow
         MountPreviewCaptions(candidate);
 
         if (AiCommentaryPreviewBarCtl is { } bar) bar.IsVisible = true;
+        UpdateApplyButtonForCommentary();
 
         // Position playhead at beginning of commentary and play
         double relStartMs = Math.Max(0, (playbackStartSec * 1000.0) - _edit.TrimStartMs);
@@ -358,6 +464,10 @@ public partial class GranularSpeedEditorWindow
     {
         if (!_isAiCommentaryPreviewing) return;
         _isAiCommentaryPreviewing = false;
+        UpdateApplyButtonForCommentary();
+        RuntimeLog.Info("AiCommentary", accept
+            ? $"Commentary applied: {_aiCommentaryCandidateTrack?.Lines?.Count ?? 0} caption line(s) will be burned into the export."
+            : "Commentary preview discarded.");
 
         if (AiCommentaryPreviewBarCtl is { } bar) bar.IsVisible = false;
 
