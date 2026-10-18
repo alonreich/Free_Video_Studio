@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using System.Collections.Immutable;
@@ -739,8 +736,6 @@ public partial class GranularSpeedEditorWindow : Window
                 HideDragReadout();
                 RefreshSegmentList();
 
-                // DRAGCOST_01 — the drag is over (_segDragMode/_draggingSegmentIndex were cleared
-                // above), so these now run for real, once, instead of on every pointer move.
                 _redrawDeferredByDrag = false;
                 RedrawTimeline();
                 QueueRelayoutFrameLane();
@@ -1083,7 +1078,6 @@ public partial class GranularSpeedEditorWindow : Window
             return;
         }
 
-        // MEMEKEYS_01 — a selected meme: Delete removes it, Enter opens it, Esc lets go of it.
         if (_edit.SelectedMemeId != null && _draggingMemeId == null && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
         {
             if (e.Key is Avalonia.Input.Key.Delete or Avalonia.Input.Key.Back)
@@ -1520,13 +1514,6 @@ public partial class GranularSpeedEditorWindow : Window
                 double newStart = _dragOrigStartMs;
                 double newEnd = _dragOrigEndMs;
 
-                // EDGEGUARD_01 — THE RIGHT EDGE OF THE CLIP IS A HARD WALL.
-                // This line exists so a sandwiched block always has room for its 200ms minimum, but
-                // it raised upperBound with NO ceiling: a previous block ending within 200ms of the
-                // clip end pushed upperBound PAST totalMs, and the resize clamp then happily let
-                // the segment end beyond the footage. A segment past the clip end feeds source time
-                // that does not exist into OutputTimeline, and the output ruler grows to cover it —
-                // which is the timeline "ever expanding" under the drag.
                 upperBound = Math.Min(totalMs, Math.Max(upperBound, lowerBound + GranularEditSession.SegMinWidthMs));
 
                 bool hitLeftWall = false;
@@ -1679,7 +1666,6 @@ public partial class GranularSpeedEditorWindow : Window
         var deleteSegBtn = DeleteSegmentBtnCtl;
         deleteSegBtn?.AddHandler(Button.ClickEvent, (_, _) =>
         {
-            // SETCONFIRM_01 — the button goes through the same guarded path as the key and the ✕.
             RequestDeleteSegment(_edit.SelectedSegmentIndex);
         });
 
@@ -1712,7 +1698,6 @@ public partial class GranularSpeedEditorWindow : Window
         _applyGranularBtn = acceptBtn;
         if (acceptBtn != null) acceptBtn.Click += async (s, e) => {
             RuntimeLog.Info("UI", "User clicked Accept in Granular Speed Editor.");
-            // AICOMMENTARY_CLOSE_01 — keep an unapplied commentary preview; ask while one is still running.
             if (!await PrepareApplyWithCommentaryAsync()) return;
             if (_zoomModeActive && _hasZoomBox && _edit.SelectedSegmentIndex >= 0 && _edit.SelectedSegmentIndex < _edit.Segments.Count && !_edit.Segments[_edit.SelectedSegmentIndex].ZoomW.HasValue)
             {
@@ -2728,7 +2713,6 @@ public partial class GranularSpeedEditorWindow : Window
             }
             canvas.Children.Clear();
 
-            // MEMESNAP_03 — a block that now covers a full-screen meme pushes it to the block's edge.
             if (_draggingMemeId == null) ResnapMemesAfterBlockEdit();
 
             var emptyLabel = _emptyLaneLabel;
@@ -2782,7 +2766,6 @@ public partial class GranularSpeedEditorWindow : Window
 
                     pendingZoomHeads.Add((i, zx1, zx2));
 
-                    // SLOWZOOMGLIDE_01: subtle non-hit-testable glide guides for selected/actively edited slow zoom
                     int activeZoomSegIndex = (_zoomDragSegment >= 0 && _zoomDragSegment < _edit.Segments.Count)
                         ? _zoomDragSegment
                         : ((_draggingSegmentIndex >= 0 && _draggingSegmentIndex < _edit.Segments.Count)
@@ -3082,8 +3065,6 @@ public partial class GranularSpeedEditorWindow : Window
                 var elimBaseColor = Infrastructure.ThemeResources.Colour(this, "AppDangerColor", Avalonia.Media.Color.FromRgb(168, 50, 50));
                 var elimBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, elimBaseColor.R, elimBaseColor.G, elimBaseColor.B));
 
-                // AIELIM_02 — markers are ABSOLUTE source seconds; they are placed through the output timeline
-                // (speed changes, freezes), hidden when the moment was cut away, and jump the playhead on click.
                 var elimTimeline = OutTimeline();
                 foreach (double elimSec in _aiEliminationTimestamps)
                 {
@@ -3095,7 +3076,6 @@ public partial class GranularSpeedEditorWindow : Window
                     double ex = SrcMsToX(elimRelMs, w);
                     double outSec = elimTimeline.SourceToOutput(elimRelMs / 1000.0);
 
-                    // AIELIM_03 — same solid red badge as the main timeline, raised above every other marker.
                     var xMark = new Avalonia.Controls.Border
                     {
                         Width = 18,
@@ -3489,7 +3469,6 @@ public partial class GranularSpeedEditorWindow : Window
     /// <summary>ZOOM_02 — how tight the auto-placed box starts. 2x = half the usable width.</summary>
     private const double DefaultZoomFactor = 2.0;
 
-    // SLOWZOOMGLIDE_01: tracks attempted conflict during edge drag
     private bool _zoomDragAttemptedConflict;
 
     private Avalonia.Media.IBrush TryFindBrush(string key, string fallbackHex)
@@ -3652,9 +3631,6 @@ public partial class GranularSpeedEditorWindow : Window
 
         if (_edit.SelectedSegmentIndex != index) SelectSegmentAt(index);
 
-        // SETCONFIRM_01 — Settings › Editing › "Ask before deleting a speed segment" was saved and
-        // shown but never READ: every door deleted at once. It is honoured here, for all three doors.
-        // A prompt that cannot be shown resolves to KEEP (ConfirmDialogWindow.AskAsync returns false).
         if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmGranularDeleteSegment)
         {
             var seg = _edit.Segments[index];
@@ -5181,7 +5157,7 @@ public partial class GranularSpeedEditorWindow : Window
         var loading = _thumbLoadingOverlay;
         if (laneGrid == null) return;
 
-        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath)) { if (IsMergeMode) await BuildMergeFrameLaneAsync(laneGrid, loading); return; } // MERGEEDIT_02
+        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath)) { if (IsMergeMode) await BuildMergeFrameLaneAsync(laneGrid, loading); return; }
 
         double dur = GetDuration();
         if (dur <= 0) return;
@@ -5516,7 +5492,6 @@ public partial class GranularSpeedEditorWindow : Window
     {
         if (_removeMemeBtn != null) _removeMemeBtn.IsVisible = _edit.SelectedMemeId != null;
 
-        // MEMELIST_01 — the list button appears once there is something to list.
         if (_memeListBtn != null)
         {
             _memeListBtn.IsVisible = _edit.Memes.Count > 0;
@@ -5820,7 +5795,6 @@ public partial class GranularSpeedEditorWindow : Window
             _baseTimelineCache.Clear();
             _gameplayTimelineCache.Clear();
 
-            // MEMECUT_02 — memes inside the deleted scene went with it (same rule as the main screen).
             var droppedMemes = _edit.LastCutDroppedMemes;
             if (droppedMemes.Count > 0)
             {

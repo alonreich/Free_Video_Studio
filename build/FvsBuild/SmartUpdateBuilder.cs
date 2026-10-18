@@ -1,4 +1,4 @@
-using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography.X509Certificates;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
@@ -64,7 +64,10 @@ internal static class SmartUpdateBuilder
 
             string installManifestText = File.ReadAllText(Path.Combine(stagingDir, InstallPayload.ManifestName));
             InstallFileManifest install = InstallPayload.ReadManifest(stagingDir);
-            var manifest = new SmartUpdateManifest { Version = buildVersion, InstallManifest = installManifestText };
+            var manifest = new SmartUpdateManifest
+            {
+                Version = buildVersion, InstallManifest = installManifestText, RevokedSigners = [.. CodeSigning.RevokedSigners()]
+            };
 
             long rawTotal = 0, compressedTotal = 0;
             foreach (InstallFile file in install.Files)
@@ -77,7 +80,7 @@ internal static class SmartUpdateBuilder
                 manifest.Files.Add(new SmartFile
                 {
                     Path = file.Path, Length = file.Length, Sha256 = file.Sha256, Asset = asset, AssetLength = assetLength,
-                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target) // ASSETHASH_01
+                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target)
                 });
                 rawTotal += file.Length;
                 compressedTotal += assetLength;
@@ -111,7 +114,7 @@ internal static class SmartUpdateBuilder
                 manifest.Patches.Add(new SmartPatch
                 {
                     FromSha256 = oldSha, ToSha256 = newSha, Asset = asset, AssetLength = patchLength,
-                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target) // ASSETHASH_01
+                    AssetSha256 = SmartUpdateManifest.Sha256Hex(target)
                 });
                 log.Info($"[Smart] Patch from {version}: {RuntimePayloadManifest.FormatBytes(patchLength)} "
                        + $"(instead of {RuntimePayloadManifest.FormatBytes(exeEntry.AssetLength)}).");

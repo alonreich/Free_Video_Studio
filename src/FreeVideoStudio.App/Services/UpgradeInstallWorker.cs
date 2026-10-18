@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Principal;
@@ -35,7 +32,6 @@ internal static class UpgradeInstallWorker
         UpgradeRegistration? registration = null;
         try
         {
-            // WORKERSTAGE_01 — administrator work happens only from the protected copy the broker prepared.
             if (!ProtectedWorkerStage.IsProtectedWorkerPath(Environment.ProcessPath))
                 throw new IOException("The installer was started from an unprotected folder, so it refused to run with administrator rights. Nothing was changed.");
             if (!ownsGate || !(ownsLegacy = legacyGate.WaitOne(0)))
@@ -82,7 +78,6 @@ internal static class UpgradeInstallWorker
             }
             else
             {
-                // NODROPPER_01: full installs use the separate Inno Setup executable.
                 throw new IOException("This program is not an installer. Download FreeVideoStudio-Setup.exe to install Free Video Studio.");
             }
             await relay.RunAsync("install", report => transaction.Prepare(candidate =>
@@ -92,7 +87,6 @@ internal static class UpgradeInstallWorker
                 {
                     string target = Path.Combine(candidate, Path.GetRelativePath(extracted, newFiles[i]));
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    // FASTINSTALL_01: move extracted files into the prepared candidate without a second payload copy.
                     File.Move(newFiles[i], target, overwrite: true);
                     report(0.3 + 0.2 * (i + 1) / newFiles.Length);
                 }
@@ -251,6 +245,9 @@ internal static class UpgradeInstallWorker
             _ = probe.StandardError.ReadToEndAsync();
             if (!probe.WaitForExit(30000)) { probe.Kill(); throw new IOException("The media runtime check timed out."); }
             if (probe.ExitCode != 0) throw new IOException("The media runtime check failed.");
+            if (OperatingSystem.IsWindows() &&
+                !FreeVideoStudio.Core.Media.Native.LibAvMediaBackend.TryInitialize(Path.Combine(AppContext.BaseDirectory, "backend", "ffprobe.exe"), out string libAv))
+                throw new IOException("The media decoder libraries did not load: " + libAv);
             return 0;
         }
         catch (Exception ex) { RuntimeLog.Fail("Upgrade probe", ex.ToString()); return 1; }
@@ -265,9 +262,6 @@ internal static class UpgradeInstallWorker
             string path = Path.Combine(directory, "journal.json");
             if (!File.Exists(path)) continue;
             JsonObject journal = AtomicJsonFile.ReadObject(path) ?? throw new IOException("An installation recovery record is unreadable. Backups were preserved.");
-            // NOSPACE_01 — journals written before the move to the space-free folder name the spaced
-            // folder as their destination. They are still ours and must still recover and prune;
-            // rejecting them would block every future install on that machine.
             string destination = UpgradeFiles.FullPath(journal["Destination"]!.GetValue<string>());
             if (!InstallDiscovery.KnownDestinations.Contains(destination, StringComparer.OrdinalIgnoreCase))
                 throw new IOException("Unexpected destination in protected installation journal.");
@@ -298,7 +292,6 @@ internal static class UpgradeInstallWorker
             var all = Transactions().ToList();
             DateTimeOffset? newest = all.Where(x => x.Transaction.Phase is "Committed" or "Pruned")
                 .Select(x => x.Transaction.ConfirmedAt).Max();
-            // WORKERSTAGE_01 — the user cannot delete the protected worker folders; this elevated pass does.
             int swept = ProtectedWorkerStage.SweepStale(Environment.ProcessPath);
             if (swept > 0) RuntimeLog.Info("Upgrade maintenance", $"Removed {swept} old protected installer folder(s).");
             foreach (var (transaction, roots) in all)
@@ -308,7 +301,6 @@ internal static class UpgradeInstallWorker
                     await new UpgradeRegistration(true, transaction.DirectoryPath, roots).RemoveLegacyAsync().ConfigureAwait(false);
                     UpgradeFiles.DeleteTree(Path.Combine(transaction.DirectoryPath, "payload"), transaction.DirectoryPath);
                 }
-                // ONEBACKUP_01: prune older confirmed backups when a newer committed installation exists.
                 transaction.PruneBackup(DateTimeOffset.UtcNow,
                     supersededByNewer: newest is { } latest && transaction.ConfirmedAt is { } at && at < latest);
             }
@@ -319,7 +311,6 @@ internal static class UpgradeInstallWorker
             if (!string.IsNullOrWhiteSpace(xml) && System.Xml.Linq.XDocument.Parse(xml).Descendants()
                     .Where(x => x.Name.LocalName == "Command").Any(x => oldExecutables.Contains(x.Value.Trim('"'))))
                 _ = await TaskCommandAsync("/Delete", "/TN", LegacyProductIdentity.CompactName, "/F").ConfigureAwait(false);
-            // NOSYSTEMTASK_01: remove the former scheduled maintenance task; maintenance runs through the installer gate.
             string ownTask = await TaskCommandAsync("/Query", "/TN", DeploymentFootprint.ScheduledTaskName, "/XML").ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(ownTask))
                 _ = await TaskCommandAsync("/Delete", "/TN", DeploymentFootprint.ScheduledTaskName, "/F").ConfigureAwait(false);

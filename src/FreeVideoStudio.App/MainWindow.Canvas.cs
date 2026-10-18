@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -506,9 +506,6 @@ public partial class MainWindow
             }
         }
 
-        // MEMEMARK_02 — memes on the source ruler (full screen = one clown head; corner = a strip
-        // over the gameplay it covers; the main-screen START/END meme too). Click = open the Speed
-        // Editor on it. See MainWindow.Memes.cs.
         DrawMainMemeMarkers(canvas, duration, canvasWidth, trimMarkerTop, trimMarkerHeight);
 
         if (_freezeTimeMs >= 0)

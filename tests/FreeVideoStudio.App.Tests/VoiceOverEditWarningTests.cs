@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Avalonia.Headless.XUnit;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.ViewModels;
@@ -25,7 +25,7 @@ public class VoiceOverEditWarningTests
         using var isolated = LiveCaptureDriver.IsolateProgramData(root);
         FreeVideoStudio.App.Infrastructure.AppServices.Initialize(new FreeVideoStudio.Core.Infrastructure.ApplicationPaths(root));
         string voice = Path.Combine(root, "take.wav");
-        File.WriteAllBytes(voice, [1]); // guard reads metadata; it must not open or modify this file.
+        File.WriteAllBytes(voice, [1]);
         var w = new MainWindow();
         var vm = (MainViewModel)w.DataContext!;
         vm.Timeline.LoadedVideoDurationMs = 20000;

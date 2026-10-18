@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/06_PROJECT_DOCUMENT_MODEL.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -25,7 +22,6 @@ public static class CaptionTrackJson
             ["position"] = track.Position.ToString(),
             ["tone"] = track.Tone.ToString(),
             ["language"] = track.Language,
-            // CAPTIONLOOK_01 / CAPTIONSIZE_01 — additive: a file without them reads as Outline / Medium.
             ["look"] = track.Look.ToString(),
             ["size"] = track.Size.ToString(),
         };

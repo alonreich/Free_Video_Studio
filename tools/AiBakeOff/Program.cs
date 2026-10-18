@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -91,7 +88,6 @@ public static class Program
 
         var results = new List<BakeOffResult>();
 
-        // 1x1 synthetic sample calibration frame (640x360 JPEG representation)
         byte[] sampleJpeg = CreateTestJpeg();
         var sampleImage = new AiImageInput(sampleJpeg, "image/jpeg", "00:01.000");
 
@@ -104,7 +100,6 @@ public static class Program
             {
                 Console.WriteLine($"Benchmarking {provider.Vendor} ({model})...");
 
-                // U3: Magic Wand HUD Detection
                 var u3Result = await BenchmarkUsageAsync(
                     provider, key, model, "U3 Magic Wand HUD Detection",
                     prompt: "Detect any game HUD elements (minimap, health, ammo) in this frame. Return 0-1000 bounding boxes.",
@@ -130,7 +125,6 @@ public static class Program
                     """);
                 results.Add(u3Result);
 
-                // U1: Discovery (3 stills)
                 var u1Result = await BenchmarkUsageAsync(
                     provider, key, model, "U1 Subject Discovery",
                     prompt: "Identify the main subject in these frames. Return 0-1000 bounding boxes [ymin, xmin, ymax, xmax].",
@@ -186,7 +180,6 @@ public static class Program
                 ct: cts.Token);
             sw.Stop();
 
-            // Simple validation that output parsed
             using var doc = JsonDocument.Parse(json);
             return new BakeOffResult(
                 provider.Vendor,
@@ -194,7 +187,7 @@ public static class Program
                 usageName,
                 Success: true,
                 LatencyMs: sw.ElapsedMilliseconds,
-                MeanIoU: 0.85, // Calibrated IoU metric baseline
+                MeanIoU: 0.85,
                 ErrorKind: null,
                 Summary: $"OK ({json.Length} chars returned)");
         }
@@ -252,7 +245,6 @@ public static class Program
 
     private static void RunSelfTests()
     {
-        // Test IoU calculation
         var boxA = new Box(100, 100, 500, 500);
         var boxB = new Box(100, 100, 500, 500);
         double perfectIoU = CalculateIoU(boxA, boxB);
@@ -264,7 +256,7 @@ public static class Program
         if (Math.Abs(zeroIoU - 0.0) > 0.001)
             throw new InvalidOperationException($"IoU self-test failed: expected 0.0, got {zeroIoU}");
 
-        var boxHalf = new Box(100, 300, 500, 700); // 400x400 offset by 200 horizontally. Intersection: 400x200 = 80,000. Union: 160k+160k-80k = 240,000. IoU = 1/3
+        var boxHalf = new Box(100, 300, 500, 700);
         double halfIoU = CalculateIoU(boxA, boxHalf);
         if (Math.Abs(halfIoU - (1.0 / 3.0)) > 0.001)
             throw new InvalidOperationException($"IoU self-test failed: expected 0.333, got {halfIoU}");

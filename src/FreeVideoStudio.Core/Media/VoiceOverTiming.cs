@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -24,7 +21,6 @@ public static class VoiceOverTiming
         void N(double x) => b.Append('|').Append(x.ToString("0.######", CultureInfo.InvariantCulture));
         N(Math.Max(startSec, trimStartSec));
         N(Math.Min(endSec, trimEndSec));
-        // Merge adjacent equal-rate normal pieces: adding a zoom must not change this signature.
         double? lastStart = null, lastEnd = null, lastSpeed = null;
         void Flush()
         {

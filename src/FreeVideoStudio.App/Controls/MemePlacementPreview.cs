@@ -1,9 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using Avalonia;
 using Avalonia.Controls;
@@ -197,7 +192,6 @@ public sealed class MemePlacementPreview : Canvas
 
         if (!IsCorner)
         {
-            // FULL SCREEN — fitted inside the canvas with black bars, never cropped (FFM-MEMECONCAT).
             double a = mw > 0 && mh > 0 ? (double)mw / mh : 1;
             double w = vw, h = vw / a;
             if (h > vh) { h = vh; w = vh * a; }

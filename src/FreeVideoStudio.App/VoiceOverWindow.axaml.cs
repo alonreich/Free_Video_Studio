@@ -1,12 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -100,7 +92,6 @@ public partial class VoiceOverWindow : Window
     /// </summary>
     private void UpdateLiveZoomCrop()
     {
-        // VOCLOCK_01: the export compiler has already rendered zoom into the recording picture.
         if (_playbackPlan != null) return;
         var ipc = _videoHost?.IpcClient;
         if (ipc == null || !_isMpvReady) return;
@@ -286,9 +277,6 @@ public partial class VoiceOverWindow : Window
     private List<PreviewPlayer> _previewPlayers = new();
 
 
-    // LOUDSTD_REMOVED_01 — PREVIEW_03's take gain offset (SourceMeasuredLufs / VoicePreviewOffsetDb)
-    // compensated for a -14 LUFS export normalisation that no longer exists; takes preview at unity,
-    // exactly as they are exported.
     private Button? _micRecordButton;
     private Button? _playPauseButton;
     private Button? _applyButton;
@@ -360,7 +348,7 @@ public partial class VoiceOverWindow : Window
     internal VoiceOverWindow(FreeVideoStudio.App.Services.IVoiceCaptureSession capture)
     {
         _capture = capture;
-        _recovery = CreateRecoveryManager(); // VORECOVERY_01
+        _recovery = CreateRecoveryManager();
         _outputWavPath = CreateTempVoiceOverPath();
         InitializeComponent();
         CacheControls();
@@ -1517,7 +1505,7 @@ public partial class VoiceOverWindow : Window
         bool isApplyingOrClosing = _isApplying || _isClosing || _isCommitted;
         if (_micRecordButton != null)
         {
-            _micRecordButton.IsEnabled = !isApplyingOrClosing && _isMpvReady && (_isRecording || (hasInputDevice && CanAdmit(VoiceOverSessionOwner.Capture))); // SESSIONOWNER_01
+            _micRecordButton.IsEnabled = !isApplyingOrClosing && _isMpvReady && (_isRecording || (hasInputDevice && CanAdmit(VoiceOverSessionOwner.Capture)));
         }
         if (_playPauseButton != null)
         {
@@ -2601,8 +2589,6 @@ public partial class VoiceOverWindow : Window
 
         var openingSession = _currentSession!;
         var plan = _playbackPlan;
-        // VOSAMPLE_01: read the cached output clock on the device worker immediately before start.
-        // The immutable anchor already includes every opening buffer when the UI sees the verdict.
         var budget = plan == null ? null : new VoiceCaptureBudget(plan.Timeline.TotalOutputSeconds, () => PreviewOutputSeconds);
         openingSession.CaptureBudget = budget;
         void OpenSettled(FreeVideoStudio.App.Services.RecordingOpenResult result)
@@ -2759,8 +2745,6 @@ public partial class VoiceOverWindow : Window
         session.EndSec = SourceEndForCapturedAudio(session.StartSec, session.CapturedDurationSec.Value, session.OutputOffsetSec);
 
         bool isSafelyFinalized = takeOutcome == null || (takeOutcome.EndpointReleased && takeOutcome.FileFinalized);
-        // VOREC_02 — "too short" is judged on CAPTURED audio. A take ending inside a freeze hold spans
-        // almost no source time but is real speech; the source span must not decide whether it is kept.
         bool hasPositiveAudio = micWasOpen && capturedBuffers > 0 && capturedBytes > 0 && dur > 0 && System.IO.File.Exists(session.WavPath);
         if (hasPositiveAudio && session.EndSec <= session.StartSec) session.EndSec = session.StartSec + 0.001;
 
@@ -2907,9 +2891,6 @@ public partial class VoiceOverWindow : Window
     }
 
 
-    // VOAPPLY_01 — ApplyAndClose, persistence, FFmpeg trimming, transaction rollback
-    // and session file cleanup moved to VoiceOverWindow.Apply.cs (MVVM_02 code-behind ceiling).
-// VOTOOLS_01 — RetireGenerationCts moved verbatim; see the extracted type.
     private bool _isPreviewTeardownPosted;
     protected override void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {

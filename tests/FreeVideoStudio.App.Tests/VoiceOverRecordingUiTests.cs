@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -41,7 +41,7 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
             clock.Time = 0.02;
             window.TriggerTimerTick();
             await LiveCaptureDriver.PumpUntil(() => devices.Recorder?.IsRecording == true && !capture.IsOpeningRecorder, "microphone open");
-            devices.Input.Deliver(new byte[2]); // Even one complete frame is a usable prefix.
+            devices.Input.Deliver(new byte[2]);
             devices.File!.FailNext = true;
             devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
             await LiveCaptureDriver.PumpUntil(() => window.Sessions.Count == 1 && !capture.HasPendingFinalizations, "fault take saved");
@@ -245,7 +245,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.DoesNotContain("pulse", window.RecordingLightControl!.Classes);
         Assert.DoesNotContain("pulse", window.MicRecordButtonControl!.Classes);
 
-        // A late callback after device retirement is distinct from valid asynchronous drain PCM.
         await LiveCaptureDriver.PumpUntil(() => first.Disposed, "first recorder retired");
         first.Deliver(LiveCaptureDevices.Pcm(0.5, 0.9f));
         for (int i = 0; i < 5; i++) window.TriggerTimerTick();

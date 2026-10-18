@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using FreeVideoStudio.App;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
@@ -13,14 +10,12 @@ try
     RuntimeLog.SetDeploymentPhase(true);
     if (args.FirstOrDefault() == "--upgrade-worker")
     {
-        // WORKERSTAGE_01 — the elevated worker loads DLLs from System32 only, never from its own folder.
         NativeHelpers.RestrictDllSearchToSystem32();
         return await UpgradeInstallWorker.RunAsync(args);
     }
     if (args.FirstOrDefault() == "--upgrade-broker") return await UpgradeBrokerHost.RunAsync(args);
     if (args.FirstOrDefault() == "--upgrade-probe") return UpgradeInstallWorker.Probe();
     if (args.FirstOrDefault() == "--upgrade-maintenance") return await UpgradeInstallWorker.MaintainAsync();
-    // NOPOWERSHELL_02: execute the explicit elevated policy mode in this signed program.
     if (args.FirstOrDefault() == FreeVideoStudio.App.ViewModels.ExportViewModel.ApplyRdpGpuPolicyArgument)
         return FreeVideoStudio.App.ViewModels.ExportViewModel.ApplyRdpGpuPolicyElevated();
     if (args.FirstOrDefault() == "--complete-user-migration")
@@ -29,7 +24,6 @@ try
         return 0;
     }
     
-    // NOTEMPEXEC_01: route deployment work to the in-place lifecycle worker.
     if (DeploymentLifecycle.ShouldHandle(args))
     {
         return await DeploymentLifecycle.RunAsync(args);
@@ -93,7 +87,6 @@ bool isSiblingProcess = args.Any(a =>
 if (!isSiblingProcess)
 {
     _ = CrashLogDigest.RunAsync();
-    // REBRAND_02 — remove previous-brand residue once it is provably migrated (05 SYS-REBRAND).
     if (!args.Contains("--upgrade-health"))
         _ = Task.Run(FreeVideoStudio.Core.Infrastructure.LegacyResidueSweep.RunForCurrentUser);
 }
@@ -189,7 +182,6 @@ static async Task<int> BootstrapAsync(bool showDialog)
     RuntimeLog.Debug("PROGRAMDATA READY", $"logs={paths.LogsDirectory}; temp={paths.TempDirectory}");
 
     RuntimeLog.Info("BOOTSTRAP", "Loading session_state.json through named mutex.");
-    // UIIPC_01: asynchronously load and prime the memory snapshot before constructing the UI.
     JsonObject state = await new StateTransferStore(paths).LoadAsync();
     SessionStateWriter.For(paths).Prime(state);
     RuntimeLog.Success("SESSION STATE READY", $"properties={state.Count}");
@@ -304,19 +296,6 @@ static async Task<int> RunUiAsync(string[] args)
     RuntimeLog.Info("RUN UI", "Running bootstrapper before UI.");
     await BootstrapAsync(showDialog: false);
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // COMPOSITION_01 — build the application service graph exactly once, here.
-    //
-    // Position is load-bearing. It is AFTER BootstrapAsync, which is what calls
-    // ApplicationPaths.EnsureWritableDirectories() — a graph built before that would hand every
-    // service paths to directories that do not exist yet. It is BEFORE Avalonia starts, so that
-    // the very first window constructed already finds a complete graph; AppServices.Current
-    // throws rather than lazily half-building one, because a half-built graph is how a fault sink
-    // ends up null at exactly the moment something faults.
-    //
-    // AvaloniaWindowProvider reads the desktop lifetime lazily, so constructing it before any
-    // window exists is safe and deliberate.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     FreeVideoStudio.App.Infrastructure.AppServices.Initialize(ApplicationPaths.CreateDefault());
 
     if (OperatingSystem.IsWindows())

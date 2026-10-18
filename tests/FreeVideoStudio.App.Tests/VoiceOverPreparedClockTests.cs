@@ -1,4 +1,4 @@
-using Avalonia.Headless.XUnit;
+﻿using Avalonia.Headless.XUnit;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.Core.Media;
@@ -39,7 +39,7 @@ public class VoiceOverPreparedClockTests
             await LiveCaptureDriver.PumpUntil(() => devices.Recorder?.IsRecording == true && !capture.IsOpeningRecorder, "bounded recorder open");
             var take = w.CurrentSession!;
             double start = take.CaptureBudget!.OutputStart!.Value;
-            if (edited) Assert.True(take.OutputOffsetSec < 0); // Inside the rendered freeze hold.
+            if (edited) Assert.True(take.OutputOffsetSec < 0);
             int accepted = (int)VoiceCaptureBudget.FrameCount(plan.Timeline.TotalOutputSeconds, start, 44100) * 2;
             byte[] crossing = new byte[accepted + 882];
             Array.Fill(crossing, (byte)0x71, accepted, 882);
@@ -127,7 +127,7 @@ public class VoiceOverPreparedClockTests
     public void TrimMarkerBounds_WhenEndPrecedesStart_SafelyClampsToNonEmptyRange()
     {
         double trimStart = 5.0;
-        double trimEnd = 2.0; // Bad end before start
+        double trimEnd = 2.0;
         double duration = 10.0;
         if (trimEnd <= trimStart) trimEnd = Math.Max(trimStart + 0.1, duration);
         double effectiveEnd = Math.Max(trimStart + 0.1, Math.Min(duration, trimEnd));

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Editing;
@@ -39,7 +39,6 @@ public sealed class MemeAuditTests
 
         s.BaseSpeed = 4.0;
         s.AddMeme("a.mp4", 20.0, 2.0, MemePresentationMode.InlineFullScreen, MemeOverlayCorner.BottomRight, MemeOverlaySize.Medium, true);
-        // 0.12 s of source at 4x is 0.03 s of output: closer than MemeMinSeparationOutSec.
         Assert.False(s.MemeSeparationIsSafe(20.12, null, out _, Ruler(s)));
         Assert.True(s.MemeSeparationIsSafe(20.12, null, out _));
     }

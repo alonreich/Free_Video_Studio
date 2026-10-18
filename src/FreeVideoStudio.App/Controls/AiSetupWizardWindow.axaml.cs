@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -191,7 +188,6 @@ public partial class AiSetupWizardWindow : Window
             return true;
         }
 
-        // AISETUP_02 — the same in-place setup for every company (Claude / OpenAI used to dead-end).
         var wizard = new AiSetupWizardWindow(vendor);
         bool? result = await wizard.ShowDialog<bool?>(owner);
         return result == true && !string.IsNullOrWhiteSpace(SettingsManager.Instance.GetApiKey(vendor));

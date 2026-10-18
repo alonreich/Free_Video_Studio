@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AICOMMENTARY), docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -143,7 +140,6 @@ public partial class GranularSpeedEditorWindow
                 VerticalAlignment = VerticalAlignment.Stretch
             };
 
-            // Left edge resize handle
             var leftHandle = new Border
             {
                 Background = Brushes.Transparent,
@@ -160,7 +156,6 @@ public partial class GranularSpeedEditorWindow
             Grid.SetColumn(leftHandle, 0);
             grid.Children.Add(leftHandle);
 
-            // Center body
             var centerBody = new Border
             {
                 Background = Brushes.Transparent,
@@ -197,13 +192,11 @@ public partial class GranularSpeedEditorWindow
                 await ShowEditCaptionDialogAsync(lineId);
             };
 
-            // REWRITELINE_01 — right-click a caption: rewrite it with AI, edit it, or delete it.
             centerBody.ContextMenu = BuildCaptionContextMenu(lineId, currentLine);
 
             Grid.SetColumn(centerBody, 1);
             grid.Children.Add(centerBody);
 
-            // Right edge resize handle
             var rightHandle = new Border
             {
                 Background = Brushes.Transparent,
@@ -249,7 +242,6 @@ public partial class GranularSpeedEditorWindow
         Point pt = e.GetPosition(canvas);
         double dx = pt.X - _captionDragStartPoint.X;
 
-        // Convert dx to source seconds delta
         double startRelMs = Math.Max(0, (_captionDragOriginalStartSec * 1000.0) - _edit.TrimStartMs);
         double curX1 = SrcMsToX(startRelMs, w);
         double newX1 = curX1 + dx;
@@ -474,7 +466,6 @@ public partial class GranularSpeedEditorWindow
             track.Language,
             track.Style,
             track.Position,
-            // REWRITELINE_01 — the remembered commentary style, the kill marks, and "replace THIS line".
             Personality: Services.CommentaryPersonalitySettings.Remembered(settings, track.Tone),
             KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
             RewriteOf: oldText,

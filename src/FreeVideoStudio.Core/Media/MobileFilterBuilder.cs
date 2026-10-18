@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Nodes;
 
 using FreeVideoStudio.Core.Infrastructure;
@@ -56,7 +53,7 @@ public class MobileFilterBuilder
             {
                 string key = kvp.Key;
                 
-                if (HudConfig.IsRetiredRole(key)) continue; // NO_BOSS_HP_01: also guard unsanitized callers.
+                if (HudConfig.IsRetiredRole(key)) continue;
                 if (key == "spectating" && !showSpectating) continue;
                 else if (key == "team" && !showTeammates) continue;
 

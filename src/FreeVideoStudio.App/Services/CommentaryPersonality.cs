@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AICOMMENTARY)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;

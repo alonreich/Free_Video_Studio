@@ -387,7 +387,6 @@ public class IpcTests : IDisposable
     private byte[]? DiskBytes() => File.Exists(_paths.SessionStateFile) ? File.ReadAllBytes(_paths.SessionStateFile) : null;
 
     [Fact]
-    // IPCOWNER_01: a live owner prevents fallback writes behind the server.
     public async Task IpcOwner_DelayedAck_RetriesPipe_NeverWritesDiskBehindLiveServer()
     {
         using var server = NamedPipeStateServer.TryStart(_paths, new JsonObject { ["schema_version"] = 1, ["MainVolume"] = 10.0 });
@@ -609,7 +608,6 @@ public class IpcTests : IDisposable
     }
 
     [Fact]
-    // IPCDEADLINE_01: all exchanges must complete within an end-to-end deadline.
     public async Task IpcDeadline_PeerConnectsButNeverResponds_EveryClientCallReturnsWithinItsDeadline()
     {
         NamedPipeStateServer.ActiveInstance?.Dispose();

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Media;
@@ -154,9 +151,6 @@ public sealed class CropConfigStore
             }
         }
 
-        // CROPFALLBACK_02 — valid JSON and section names alone do not make a renderable profile.
-        // Reject damaged layer data before selecting a recovery backup or saving over good work.
-        // Empty sections and explicit zero rectangles remain legal (the user can remove all HUDs).
         var crops = config["crops_1080p"]!.AsObject();
         var scales = config["scales"]!.AsObject();
         var overlays = config["overlays"]!.AsObject();

@@ -1,11 +1,10 @@
-using FreeVideoStudio.App.Services;
+﻿using FreeVideoStudio.App.Services;
 using FreeVideoStudio.Core.Media;
 using NAudio.Wave;
 using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-// Uses the production recorder and session adapter; only hardware and failing storage are replaced.
 internal sealed class SampleCaptureDevices : IVoiceCaptureDeviceFactory
 {
     public bool HasInputDevice => true;

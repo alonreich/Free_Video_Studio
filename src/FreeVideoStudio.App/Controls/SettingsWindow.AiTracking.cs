@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -63,7 +60,6 @@ public partial class SettingsWindow : Window
         WireKeyCard(scope, AiVendor.Anthropic, "AiRemoveClaudeKeyBtn", "AiTestClaudeBtn", "AiClaudeStatusText", "AiGetClaudeKeyBtn");
         WireKeyCard(scope, AiVendor.OpenAI, "AiRemoveOpenAiKeyBtn", "AiTestOpenAiBtn", "AiOpenAiStatusText", "AiGetOpenAiKeyBtn");
 
-        // SETPRIORITY_01 — the keys panel opens by itself only while no key is saved yet.
         if (scope.Find("AiKeysExpander") is Expander keys) keys.IsExpanded = !Vm.HasAnyKey;
 
         BuildAiDefaultAndOverridesUi(scope);
@@ -113,7 +109,6 @@ public partial class SettingsWindow : Window
             {
                 if (vendor == AiVendor.Google)
                 {
-                    // SETAITEST_01 — test the model the user sees picked for Google, not a stale one.
                     string model = Vm.GeminiTestModel;
                     SetAiStatus(status, $"Contacting Google Gemini ({model})…", "AppTextMutedBrush");
                     var (success, msg) = await GeminiClient.Shared.TestKeyAsync(key, model, _aiSettingsCts.Token);
@@ -209,7 +204,6 @@ public partial class SettingsWindow : Window
             FillModelCombo(modelCombo, cfg);
         }
 
-        // Default row (handlers once; values every time).
         var defVendor = scope.Find("AiDefaultVendorCombo") as ComboBox;
         var defModel = scope.Find("AiDefaultModelCombo") as ComboBox;
         if (defVendor != null && defModel != null)
@@ -265,7 +259,6 @@ public partial class SettingsWindow : Window
                     };
                 }
 
-                // Keep key-card visibility and the "ready" flags live as keys are typed or removed.
                 Vm.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(ViewModels.SettingsViewModel.GeminiApiKey)
@@ -277,7 +270,6 @@ public partial class SettingsWindow : Window
             ShowVendorModel(defVendor, defModel, Vm.P.AiDefaultUsage);
         }
 
-        // Advanced override rows (rebuilt every time).
         if (scope.Find("AiOverridesPanel") is StackPanel panel)
         {
             panel.Children.Clear();
@@ -363,7 +355,6 @@ public partial class SettingsWindow : Window
 
         var statusText = scope.Find("UpdateStatusText") as TextBlock;
         var checkBtn = scope.Find("CheckUpdatesNowBtn") as Button;
-        // UPDATEUX_06 — "Last checked 5 minutes ago: You have the latest version (…)".
         var lastCheckText = scope.Find("UpdateLastCheckText") as TextBlock;
         var skipPendingBtn = scope.Find("SkipPendingBtn") as Button;
         void RefreshLastCheck()
@@ -383,6 +374,23 @@ public partial class SettingsWindow : Window
             {
                 UpdateService.SkipPendingVersion();
                 RefreshLastCheck();
+            };
+        }
+
+        if (scope.Find("WhatsNewBtn") is Button whatsNewBtn)
+        {
+            whatsNewBtn.Click += (_, _) =>
+            {
+                try
+                {
+                    using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        { FileName = UpdateService.ReleaseNotesPageUrl(), UseShellExecute = true });
+                }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+                {
+                    RuntimeLog.Swallowed(ex);
+                    if (statusText != null) statusText.Text = "The release notes page could not be opened: " + UpdateService.ReleasesPageUrl;
+                }
             };
         }
 

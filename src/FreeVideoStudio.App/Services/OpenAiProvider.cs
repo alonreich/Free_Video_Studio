@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -24,7 +21,7 @@ namespace FreeVideoStudio.App.Services;
 /// </summary>
 public sealed class OpenAiProvider : IAiVisionProvider
 {
-    public const string DefaultModelName = "gpt-6-luna"; // AIMODELS_02 — o3-mini shuts down 2026-10-23; gpt-6-luna is OpenAI's current vision model for high-volume work.
+    public const string DefaultModelName = "gpt-6-luna";
     public const string BaseUrl = "https://api.openai.com/v1/";
     public const string ChatEndpoint = BaseUrl + "chat/completions";
     public const string ModelsEndpoint = BaseUrl + "models";
@@ -106,7 +103,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 if (m.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String)
                 {
                     string name = id.GetString() ?? "";
-                    // AIMODELS_02 — any "gpt-N" (N ≥ 4) or o-series model; gpt-6 and later used to be hidden.
                     if ((Regex.IsMatch(name, @"^o\d", RegexOptions.IgnoreCase)
                       || Regex.IsMatch(name, @"^gpt-([4-9]|\d{2,})", RegexOptions.IgnoreCase))
                       && !Regex.IsMatch(name, "(audio|realtime|transcription|transcribe|tts|embedding|search|image|codex)", RegexOptions.IgnoreCase)
@@ -143,7 +139,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
         options ??= GeminiCallOptions.Tracking;
         string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
 
-        // AISCHEMA_01 — strict Structured Outputs need an object root, additionalProperties:false and every field required.
         AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: true);
         byte[] requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning, options.Temperature);
         bool fallbackTried = false;
@@ -165,7 +160,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
             }
             catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
             {
-                // AIMODELFALLBACK_02 — a retired model is replaced once by the newest live one of this key.
                 fallbackTried = true;
                 string? live = await AiVisionProviders.FindLiveReplacementAsync(this, key, resolvedModel, userLog, ct).ConfigureAwait(false);
                 if (live == null) throw;
@@ -209,7 +203,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
-                // AIUSAGE_01 — tokens from the body, the per-minute allowance from the headers.
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseOpenAiUsage(body);
                 AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseOpenAiLimits(response));
                 return body;
@@ -254,7 +247,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
             w.WriteStartObject();
             w.WriteString("model", model);
 
-            // Reasoning effort for reasoning models (o1, o3-mini, o4-mini)
             if (reasoning != null && reasoning.Level != AiReasoningLevel.Default && reasoning.Level != AiReasoningLevel.Off)
             {
                 string effort = reasoning.Level switch
@@ -267,11 +259,9 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 w.WriteString("reasoning_effort", effort);
             }
 
-            // AITEMP_01 — reasoning models (o-series, gpt-5 family) only accept their default temperature.
             if (temperature is double temp && SupportsTemperature(model))
                 w.WriteNumber("temperature", Math.Clamp(temp, 0, 2));
 
-            // Structured Outputs via json_schema response_format
             if (!string.IsNullOrWhiteSpace(jsonSchema))
             {
                 w.WriteStartObject("response_format");
@@ -292,23 +282,20 @@ public sealed class OpenAiProvider : IAiVisionProvider
                     w.WriteString("type", "object");
                     w.WriteEndObject();
                 }
-                w.WriteEndObject(); // json_schema
-                w.WriteEndObject(); // response_format
+                w.WriteEndObject();
+                w.WriteEndObject();
             }
 
-            // Messages array
             w.WriteStartArray("messages");
             w.WriteStartObject();
             w.WriteString("role", "user");
             w.WriteStartArray("content");
 
-            // Prompt text
             w.WriteStartObject();
             w.WriteString("type", "text");
             w.WriteString("text", prompt);
             w.WriteEndObject();
 
-            // Images as data URLs
             foreach (var img in images)
             {
                 if (!string.IsNullOrEmpty(img.Label))
@@ -327,11 +314,11 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 w.WriteEndObject();
             }
 
-            w.WriteEndArray(); // content
-            w.WriteEndObject(); // message
-            w.WriteEndArray(); // messages
+            w.WriteEndArray();
+            w.WriteEndObject();
+            w.WriteEndArray();
 
-            w.WriteEndObject(); // root
+            w.WriteEndObject();
         }
 
         return buffer.WrittenSpan.ToArray();

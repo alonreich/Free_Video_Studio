@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
@@ -201,7 +196,6 @@ public static class MusicBedPlan
                 if (string.IsNullOrWhiteSpace(t.Path)) continue;
                 double fileIn = Math.Max(0.0, t.InSec);
                 double window = t.WindowSec;
-                // An unknown length (no probe, no out point) covers whatever is left, as it always has.
                 if (double.IsPositiveInfinity(window)) window = remaining + MusicCrossfade.IncomingOverlapSec;
                 if (window <= 0.01) continue;
 

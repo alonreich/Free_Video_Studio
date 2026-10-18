@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -45,7 +42,7 @@ public static class CaptionLayoutEngine
     public const int PortraitHeight = 1920;
     public const int PortraitVoidTop = 150;
     public const int PortraitVoidBottom = 150;
-    public const int PortraitContentHeight = 1620; // 1920 - 300
+    public const int PortraitContentHeight = 1620;
 
     public const int LandscapeWidth = 1920;
     public const int LandscapeHeight = 1080;
@@ -117,7 +114,6 @@ public static class CaptionLayoutEngine
 
         var wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
 
-        // If wrapped into more than 2 lines, try scaling font size down to fit within max 2 lines
         if (wrappedLines.Count > MaxLinesOnScreen && fontSize > 48)
         {
             fontSize = (int)(baseFontSize * 0.85);
@@ -125,10 +121,8 @@ public static class CaptionLayoutEngine
             wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
         }
 
-        // Clamp to MaxLinesOnScreen if still overflowing
         if (wrappedLines.Count > MaxLinesOnScreen)
         {
-            // Coalesce excess into the second line
             var firstLine = wrappedLines[0];
             var remainderWords = new List<MappedCaptionWord>();
             for (int i = 1; i < wrappedLines.Count; i++)
@@ -152,13 +146,11 @@ public static class CaptionLayoutEngine
         double boxX = (outputW - boxWidth) / 2.0;
         double boxY = ComputeDefaultBoxY(outputH, boxHeight, isPortrait, position);
 
-        // Dynamic collision avoidance over active HUD rectangles
         if (hudRects != null && hudRects.Count > 0 && position != CaptionPosition.BottomVoid)
         {
             boxY = AvoidHudCollisions(boxX, boxY, boxWidth, boxHeight, outputH, isPortrait, position, hudRects);
         }
 
-        // Position individual lines vertically centered within the box
         double lineCursorY = boxY + 12.0;
         var positionedLines = new List<CaptionLayoutLine>(wrappedLines.Count);
 
@@ -189,9 +181,7 @@ public static class CaptionLayoutEngine
 
     private static double ComputeDefaultBoxY(int outputH, double boxHeight, bool isPortrait, CaptionPosition position)
     {
-        // AICAPTION_LAYOUT_02 — BottomContent (the default) is centred on the 2/3 line of the canvas.
         double defaultY = outputH * DefaultCenterFraction - boxHeight / 2.0;
-        // CAPTIONPLACE_01 — Middle: the box's TOP sits just under the centre line.
         double middleY = outputH * MiddleTopFraction;
         if (isPortrait)
         {
@@ -204,7 +194,6 @@ public static class CaptionLayoutEngine
             };
         }
 
-        // Landscape
         return position switch
         {
             CaptionPosition.Top => 60.0,
@@ -227,8 +216,6 @@ public static class CaptionLayoutEngine
         double topLimit = isPortrait ? PortraitVoidTop + 20.0 : 40.0;
         double bottomLimit = isPortrait ? outputH - PortraitVoidBottom : outputH - 40.0;
 
-        // AICAPTION_LAYOUT_02 — repeat until clear: moving off one HUD piece can land on another (the old single
-        // pass stopped after the first move). Bounded so a crowded layout can never loop.
         for (int pass = 0; pass < 8; pass++)
         {
             bool moved = false;
@@ -240,7 +227,6 @@ public static class CaptionLayoutEngine
                 bool intersectsY = (currentY < hud.Y + hud.H + HudGapPx) && (currentY + boxH + HudGapPx > hud.Y);
                 if (!intersectsX || !intersectsY) continue;
 
-                // Top and Middle move DOWN off a HUD piece (Middle must not climb onto the crosshair).
                 double newY = position is CaptionPosition.Top or CaptionPosition.Middle
                     ? hud.Y + hud.H + HudGapPx
                     : hud.Y - boxH - HudGapPx;
@@ -306,7 +292,6 @@ public static class CaptionLayoutEngine
         font.MeasureText(text, out SKRect bounds, paint);
         if (bounds.Width > 0.001f) return bounds.Width;
 
-        // Fallback approximation if font measurement returns zero (e.g. headless without font cache)
         return text.Length * (font.Size * 0.55f);
     }
 }

@@ -71,8 +71,6 @@ public sealed partial class GranularEditSession
             return EditOutcome.Success;
         }
 
-        // MEMESNAP_02 — the NEAREST legal edge of a speed block, exactly like a drag; a forward-only
-        // snap could throw the meme to the far end of a 30 s slow-motion block.
         at = live.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out _));
         if (live.HasInsertionAtSource(at))
             return EditOutcome.Refused("A full-screen meme already sits at that exact point. Move the playhead a little.");
@@ -183,7 +181,6 @@ public sealed partial class GranularEditSession
         }
 
         var others = Memes.Where(m => m.Id != excludeId).ToList();
-        // MEMERULER_01 — the editor's rulers run at the base speed, exactly like its playback and the export.
         return OutputTimeline.Create(Math.Max(0.001, clipDurMs), segs, BaseSpeed > 0 ? BaseSpeed : 1.0, 0,
             MemePlacement.ToInsertions(others), CutsForTimeline());
     }

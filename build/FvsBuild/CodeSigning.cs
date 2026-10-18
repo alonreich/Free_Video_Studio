@@ -73,6 +73,11 @@ internal static class CodeSigning
             log.Info("[Sign] install for everyone. Windows SmartScreen still shows 'unknown publisher' on a FIRST download.");
 
             using X509Certificate2? leaf = LoadSigningCertificate(pfx, password);
+            if (leaf is not null && IsListedAsRevoked(leaf))
+            {
+                log.Error("ERROR: " + LocalPfx + " is listed in " + RevokedSignersPath + " (REVOKE_01). Issue a new leaf from the root first.");
+                return false;
+            }
             if (leaf is null || !PublisherRoot.Vouches(leaf, out string pinDetail))
             {
                 log.Error("ERROR: " + LocalPfx + " does not chain to the publisher root built into the app (PublisherRoot.cs).");
@@ -163,8 +168,39 @@ internal static class CodeSigning
             pfx = Path.GetFullPath(LocalPfx);
             password = File.ReadAllText(LocalPasswordFile).Trim();
         }
-        return string.IsNullOrEmpty(pfx) || !File.Exists(pfx) ? null : LoadSigningCertificate(pfx, password ?? string.Empty);
+        X509Certificate2? signer = string.IsNullOrEmpty(pfx) || !File.Exists(pfx) ? null : LoadSigningCertificate(pfx, password ?? string.Empty);
+        if (signer is not null && IsListedAsRevoked(signer))
+        {
+            signer.Dispose();
+            return null;
+        }
+        return signer;
     }
+
+    /// <summary>REVOKE_01 — the public list of withdrawn publisher leaves (tracked in git).</summary>
+    public const string RevokedSignersPath = @"build\revoked-signers.txt";
+
+    /// <summary>REVOKE_01 — the SHA-256 thumbprints in <see cref="RevokedSignersPath"/>, upper-case.</summary>
+    public static IReadOnlyList<string> RevokedSigners() => ParseRevokedSigners(
+        File.Exists(RevokedSignersPath) ? File.ReadAllText(RevokedSignersPath) : string.Empty);
+
+    /// <summary>REVOKE_01 — pure parser (unit-tested): comments and blanks skipped, anything not a thumbprint refused.</summary>
+    internal static IReadOnlyList<string> ParseRevokedSigners(string text)
+    {
+        var list = new List<string>();
+        foreach (string raw in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            if (!PublisherRoot.IsThumbprint(line))
+                throw new InvalidDataException($"{RevokedSignersPath}: '{line}' is not a SHA-256 thumbprint (64 hex characters).");
+            list.Add(line.ToUpperInvariant());
+        }
+        return list.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static bool IsListedAsRevoked(X509Certificate2 certificate) =>
+        RevokedSigners().Contains(certificate.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256), StringComparer.OrdinalIgnoreCase);
 
     public const string LocalRootCertificate = @"ssl-certificate\fvs-dev-root-ca.cer";
     public const string LocalRootKey = @"ssl-certificate\fvs-dev-root-ca.key.pem";
@@ -189,9 +225,11 @@ internal static class CodeSigning
                 if (current is not null && current.NotAfter > DateTime.Now.AddDays(90) && PublisherRoot.Vouches(current, out _))
                     return;
             }
-            if (!File.Exists(LocalRootCertificate) || !File.Exists(LocalRootKey))
+            string rootKeyPath = RootKeyPath;
+            if (!File.Exists(LocalRootCertificate) || !File.Exists(rootKeyPath))
             {
-                log.Warn("[Sign] The publisher leaf needs renewing, but the root key is not here (" + LocalRootKey + "). Skipped.");
+                log.Warn("[Sign] The publisher leaf needs renewing, but the root key is not here (" + rootKeyPath + "). Skipped.");
+                log.Warn("[Sign] Plug in the drive that holds it and set FVS_ROOT_KEY=<path> and FVS_ROOT_KEY_PASS (ROOTKEY_01).");
                 return;
             }
 
@@ -203,10 +241,12 @@ internal static class CodeSigning
                 return;
             }
             string password = File.Exists(LocalPasswordFile) ? File.ReadAllText(LocalPasswordFile).Trim() : string.Empty;
-            string rootPem = File.ReadAllText(LocalRootKey);
-            using var rootKey = System.Security.Cryptography.RSA.Create();
-            if (rootPem.Contains("ENCRYPTED", StringComparison.Ordinal)) rootKey.ImportFromEncryptedPem(rootPem, password);
-            else rootKey.ImportFromPem(rootPem);
+            using System.Security.Cryptography.RSA? rootKey = OpenRootKey(rootKeyPath, rootPublic, interactive: !Console.IsInputRedirected, log);
+            if (rootKey is null)
+            {
+                log.Warn("[Sign] The publisher leaf needs renewing, but the root key could not be unlocked. Set FVS_ROOT_KEY_PASS (ROOTKEY_01). Skipped.");
+                return;
+            }
             using X509Certificate2 root = rootPublic.CopyWithPrivateKey(rootKey);
 
             using var leafKey = System.Security.Cryptography.RSA.Create(3072);
@@ -246,6 +286,172 @@ internal static class CodeSigning
         {
             log.Warn("[Sign] Could not renew the publisher leaf: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// ROOTKEY_01 — where the ROOT private key is: <c>FVS_ROOT_KEY</c> (e.g. a USB stick) or the repository's
+    /// ssl-certificate folder. The root key is needed only to issue a new leaf (every ~3 years, or after a
+    /// leak), so it does not have to live on the build PC at all.
+    /// </summary>
+    public static string RootKeyPath =>
+        Environment.GetEnvironmentVariable("FVS_ROOT_KEY") is { Length: > 0 } custom ? custom : LocalRootKey;
+
+    /// <summary>ROOTKEY_01 — the minimum length of the root key's own passphrase.</summary>
+    internal const int MinRootPassphraseLength = 12;
+
+    /// <summary>
+    /// ROOTKEY_01 — the root key used to be encrypted with the SAME password that sits in plain text in
+    /// fvs-codesign.password.txt beside it, so anyone who copied the folder held the key that every
+    /// installed copy trusts, for ten years. Opens the key with <c>FVS_ROOT_KEY_PASS</c>, else (interactive)
+    /// a typed passphrase, else — legacy, unprotected — the signing password file (warned).
+    /// Returns null when it cannot be opened. The public half must match the pinned root.
+    /// </summary>
+    internal static System.Security.Cryptography.RSA? OpenRootKey(string path, X509Certificate2 rootPublic, bool interactive, BuildLog? log)
+    {
+        if (!File.Exists(path)) return null;
+        string pem = File.ReadAllText(path);
+        var candidates = new List<(string Source, Func<string> Pass)>();
+        if (Environment.GetEnvironmentVariable("FVS_ROOT_KEY_PASS") is { Length: > 0 } envPass) candidates.Add(("FVS_ROOT_KEY_PASS", () => envPass));
+        if (File.Exists(LocalPasswordFile)) candidates.Add(("the signing password file (UNPROTECTED)", () => File.ReadAllText(LocalPasswordFile).Trim()));
+        if (interactive)
+            candidates.Add(("the typed passphrase", () =>
+            {
+                Console.Write("Root key passphrase (ROOTKEY_01, input hidden): ");
+                return ReadSecret();
+            }));
+        foreach ((string source, Func<string> passOf) in candidates)
+        {
+            string pass = passOf();
+            var rsa = System.Security.Cryptography.RSA.Create();
+            try
+            {
+                if (pem.Contains("ENCRYPTED", StringComparison.Ordinal)) rsa.ImportFromEncryptedPem(pem, pass);
+                else rsa.ImportFromPem(pem);
+                using System.Security.Cryptography.RSA? pub = rootPublic.GetRSAPublicKey();
+                if (pub is null || !pub.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(rsa.ExportSubjectPublicKeyInfo()))
+                {
+                    rsa.Dispose();
+                    log?.Error("[Sign] " + path + " is not the private key of the pinned publisher root.");
+                    return null;
+                }
+                if (!pem.Contains("ENCRYPTED", StringComparison.Ordinal) || source.Contains("UNPROTECTED", StringComparison.Ordinal))
+                    log?.Warn("[Sign] The root key is protected only by " + (pem.Contains("ENCRYPTED", StringComparison.Ordinal) ? source : "nothing")
+                            + ". Run: dotnet run --project build\\FvsBuild -- --protect-root-key (ROOTKEY_01).");
+                return rsa;
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                rsa.Dispose();
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// ROOTKEY_01 — true when the root key at <paramref name="path"/> is NOT unlockable with anything stored on
+    /// this PC (no plain key, and the signing password file does not open it). A missing key counts as protected:
+    /// it is somewhere else (offline), which is the best place for it.
+    /// </summary>
+    internal static bool RootKeyIsProtected(string path, string? storedPassword)
+    {
+        if (!File.Exists(path)) return true;
+        string pem = File.ReadAllText(path);
+        if (!pem.Contains("ENCRYPTED", StringComparison.Ordinal)) return false;
+        if (string.IsNullOrEmpty(storedPassword)) return true;
+        using var rsa = System.Security.Cryptography.RSA.Create();
+        try
+        {
+            rsa.ImportFromEncryptedPem(pem, storedPassword);
+            return false;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>ROOTKEY_01 — the root key passes the release gate (stable and beta).</summary>
+    public static bool RootKeyIsProtected() =>
+        RootKeyIsProtected(RootKeyPath, File.Exists(LocalPasswordFile) ? File.ReadAllText(LocalPasswordFile).Trim() : null);
+
+    /// <summary>
+    /// ROOTKEY_01 — <c>FvsBuild --protect-root-key</c>: re-encrypts the root key with its OWN passphrase
+    /// (AES-256, PBKDF2-SHA256, 600 000 rounds), which is never written to disk. Free; nothing to buy.
+    /// Afterwards keep a copy of the file on a USB stick or other offline storage and, ideally, delete it from
+    /// the build PC (set FVS_ROOT_KEY to the stick when a new leaf is needed).
+    /// </summary>
+    public static int ProtectRootKey(BuildLog log)
+    {
+        string path = RootKeyPath;
+        if (!File.Exists(path) || !File.Exists(LocalRootCertificate))
+        {
+            log.Error("ERROR: [ROOTKEY] " + path + " or " + LocalRootCertificate + " is missing. Nothing changed.");
+            return 1;
+        }
+        if (Console.IsInputRedirected)
+        {
+            log.Error("ERROR: [ROOTKEY] Run this in a console: the new passphrase must be typed, never passed on a command line.");
+            return 1;
+        }
+        using X509Certificate2 rootPublic = X509CertificateLoader.LoadCertificateFromFile(LocalRootCertificate);
+        if (!string.Equals(rootPublic.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256),
+                PublisherRoot.Sha256Thumbprint, StringComparison.OrdinalIgnoreCase))
+        {
+            log.Error("ERROR: [ROOTKEY] " + LocalRootCertificate + " is not the root built into the app. Nothing changed.");
+            return 1;
+        }
+        using System.Security.Cryptography.RSA? key = OpenRootKey(path, rootPublic, interactive: true, log);
+        if (key is null)
+        {
+            log.Error("ERROR: [ROOTKEY] The root key could not be unlocked. Nothing changed.");
+            return 1;
+        }
+        string stored = File.Exists(LocalPasswordFile) ? File.ReadAllText(LocalPasswordFile).Trim() : string.Empty;
+        Console.Write($"NEW root key passphrase (at least {MinRootPassphraseLength} characters, input hidden): ");
+        string first = ReadSecret();
+        Console.Write("Type it again: ");
+        string second = ReadSecret();
+        if (!string.Equals(first, second, StringComparison.Ordinal) || first.Length < MinRootPassphraseLength ||
+            string.Equals(first, stored, StringComparison.Ordinal))
+        {
+            log.Error($"ERROR: [ROOTKEY] The passphrases differ, are shorter than {MinRootPassphraseLength} characters, or equal the signing password. Nothing changed.");
+            return 1;
+        }
+        var pbe = new System.Security.Cryptography.PbeParameters(System.Security.Cryptography.PbeEncryptionAlgorithm.Aes256Cbc,
+            System.Security.Cryptography.HashAlgorithmName.SHA256, 600_000);
+        string protectedPem = key.ExportEncryptedPkcs8PrivateKeyPem(first, pbe);
+        using (var check = System.Security.Cryptography.RSA.Create())
+        {
+            check.ImportFromEncryptedPem(protectedPem, first);
+            if (!check.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(key.ExportSubjectPublicKeyInfo()))
+            {
+                log.Error("ERROR: [ROOTKEY] The re-encrypted key did not verify. Nothing changed.");
+                return 1;
+            }
+        }
+        string temp = path + ".new";
+        File.WriteAllText(temp, protectedPem);
+        File.Move(temp, path, overwrite: true);
+        log.Success("[ROOTKEY] The root key now has its own passphrase. It is NOT stored anywhere: remember it.");
+        log.Info("[ROOTKEY] Next: copy " + path + " to a USB stick (or other offline storage), then delete it from this PC.");
+        log.Info("[ROOTKEY] Normal builds and releases never need it; only issuing a new signing certificate does");
+        log.Info("[ROOTKEY] (set FVS_ROOT_KEY=<path on the stick> and FVS_ROOT_KEY_PASS for that one build).");
+        return 0;
+    }
+
+    /// <summary>Reads a line without echoing it.</summary>
+    private static string ReadSecret()
+    {
+        var text = new System.Text.StringBuilder();
+        while (true)
+        {
+            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter) break;
+            if (key.Key == ConsoleKey.Backspace) { if (text.Length > 0) text.Length--; continue; }
+            if (!char.IsControl(key.KeyChar)) text.Append(key.KeyChar);
+        }
+        Console.WriteLine();
+        return text.ToString();
     }
 
     private static X509Certificate2? LoadSigningCertificate(string pfx, string password)

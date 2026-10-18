@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -21,13 +18,10 @@ public sealed class CaptionExportPreviewParityTests
     [Fact]
     public void Export_CaptionAssWriter_MatchesOutputTimelineParity()
     {
-        // 10-second clip with:
-        // - Segment: 2000-4000 ms @ 0.5x speed (source 2s -> output 4s duration)
-        // - Freeze: at 6000 ms for 1.5 seconds
         var segments = new List<SpeedSegment>
         {
             new(2000, 4000, 0.5),
-            new(6000, 6000, 0.0) // Freeze
+            new(6000, 6000, 0.0)
         };
 
         var timeline = OutputTimeline.Create(
@@ -37,7 +31,6 @@ public sealed class CaptionExportPreviewParityTests
             sourceCutStartMs: 0);
 
         var line1 = new CaptionLine(1, 0.5, 1.5, "Quick setup here", null, 0.95);
-        // line 2 spans across the 0.5x slow-mo: 2.0 to 4.0 source sec
         var line2 = new CaptionLine(2, 2.0, 4.0, "Watch this clean movement", new[] { "clean" }, 0.98);
 
         var track = new CaptionTrack(
@@ -59,14 +52,10 @@ public sealed class CaptionExportPreviewParityTests
         Assert.Contains("[V4+ Styles]", ass);
         Assert.Contains("[Events]", ass);
 
-        // Line 1: before slow-mo: source 0.5s-1.5s -> output 0.50s - 1.50s (0:00:00.50, 0:00:01.50)
         Assert.Contains("0:00:00.50,0:00:01.50", ass);
 
-        // Line 2: 2.0s to 4.0s @ 0.5x:
-        // Output start = 2.00s (0:00:02.00)
-        // Output end = 2.00 + (2.0s / 0.5) = 6.00s (0:00:06.00)
         Assert.Contains("0:00:02.00,0:00:06.00", ass);
-        Assert.Contains(CaptionAssWriter.EmphasisColourDefault, ass); // Gold emphasis tag on "clean"
+        Assert.Contains(CaptionAssWriter.EmphasisColourDefault, ass);
     }
 
     [Fact]
@@ -78,7 +67,7 @@ public sealed class CaptionExportPreviewParityTests
             Tone: CaptionTone.Hype,
             Style: CaptionStyle.Karaoke);
 
-        double introStillSec = 1.5; // 1.5 second thumbnail still intro
+        double introStillSec = 1.5;
         string ass = CaptionAssWriter.GenerateAss(
             track,
             timeline: null,
@@ -87,7 +76,6 @@ public sealed class CaptionExportPreviewParityTests
             isPortrait: false,
             baseOffsetSec: introStillSec);
 
-        // Original 1.0s - 3.0s shifted by 1.5s -> 2.50s to 4.50s
         Assert.Contains("0:00:02.50,0:00:04.50", ass);
         Assert.Contains("First", ass);
         Assert.Contains("blood", ass);
@@ -103,7 +91,7 @@ public sealed class CaptionExportPreviewParityTests
         string filter = $"subtitles=filename='{escaped}'";
 
         Assert.Equal(@"subtitles=filename='C\:/Users/User/AppData/Local/Temp/captions.ass'", filter);
-        Assert.DoesNotContain(@"\", escaped.Replace(@"\:", "")); // No stray backslashes
+        Assert.DoesNotContain(@"\", escaped.Replace(@"\:", ""));
     }
 
     [Fact]

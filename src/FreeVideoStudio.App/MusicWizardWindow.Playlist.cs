@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -103,8 +96,6 @@ public partial class MusicWizardWindow
         Vm.StartAtBeginningCommand = new RelayCommand(StartSelectedSongAtBeginning);
         DataContext = Vm;
 
-        // PLAYLIST_01 — the ▶ / + buttons on song rows and the ▲ ▼ ✕ buttons on "Your songs" rows are
-        // template buttons; one routed handler reads their Tag and the row they sit on.
         AddHandler(Button.ClickEvent, OnTemplateButtonClick, RoutingStrategies.Bubble);
     }
 
@@ -144,7 +135,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    // ── lookups ──────────────────────────────────────────────────────────────────────────────
 
     private int IndexOfPath(string? path)
     {
@@ -204,7 +194,6 @@ public partial class MusicWizardWindow
         return null;
     }
 
-    // ── changing the list ───────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// PLAYLIST_01 — adds a song. <paramref name="explicitAdd"/> is false only when NEXT turns the
@@ -217,7 +206,6 @@ public partial class MusicWizardWindow
         {
             if (explicitAdd && !_playlistExplicit)
             {
-                // The Main App's selected song, now added on purpose: keep it and open "Your songs".
                 _playlistExplicit = true;
                 OnPlaylistChanged();
                 ShowToastSuccess($"Added: {track.Title}");
@@ -233,8 +221,6 @@ public partial class MusicWizardWindow
         }
         if (explicitAdd && !_playlistExplicit && !_isMergerMode && !_visitedFit)
         {
-            // Main App: the row that was merely SELECTED is not part of a list the user now builds
-            // with + (it is kept when they already worked with it on Fit & Mix).
             _playlist.Clear();
         }
         if (explicitAdd) _playlistExplicit = true;
@@ -395,7 +381,6 @@ public partial class MusicWizardWindow
     /// <summary>The + column turns into ✓ for songs already in the list.</summary>
     private void RefreshAddButtons()
     {
-        // In the Main App's one-song flow the selected song is not "added" yet: its button stays +.
         bool listShown = _isMergerMode || _playlistExplicit;
         foreach (var t in _allTracks) t.IsInPlaylist = listShown && IndexOfPath(t.FilePath) >= 0;
     }
@@ -603,7 +588,6 @@ public partial class MusicWizardWindow
         _silenceQueued.Clear();
     }
 
-    // ── step 1: list selection and row previews ─────────────────────────────────────────────
 
     /// <summary>
     /// The list's selection. Selecting never plays anything (PREVIEW1_03). In the Main App's

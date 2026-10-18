@@ -1,0 +1,14 @@
+# REVOKE_01 — publisher LEAF certificates that must never be trusted again (docs/05 SYS-SIGNING).
+#
+# One SHA-256 certificate thumbprint (64 hex characters) per line. Lines starting with # are comments.
+# These are PUBLIC fingerprints, not secrets: this file belongs in git.
+#
+# When a signing key may have leaked (stolen laptop, copied ssl-certificate folder, shared PFX):
+#   1. Issue a new leaf from the SAME root:  delete (or move away) ssl-certificate\fvs-codesign.pfx and run
+#      dev_build.cmd once with FVS_ROOT_KEY_PASS set — CodeSigning.EnsureLocalLeaf issues a fresh leaf.
+#   2. Add the OLD leaf's thumbprint below (certutil -dump old.pfx, "Cert Hash(sha256)").
+#   3. Add the same thumbprint to PublisherRoot.RevokedSignerThumbprints (a test fails if they differ).
+#   4. Publish a release. FvsBuild refuses to sign with a listed certificate, copies this list into every
+#      signed update.json, and every copy that checks for updates refuses the old leaf from then on.
+#
+# This costs nothing and needs no certificate authority.

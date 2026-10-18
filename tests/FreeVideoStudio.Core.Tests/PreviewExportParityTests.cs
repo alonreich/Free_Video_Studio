@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -703,19 +703,15 @@ public class MasterVolumeIsolationTests
             MpvIpcClient.SetGlobalMasterVolume(80);
             MpvIpcClient.SetGlobalMuted(false);
 
-            // With MasterAppliedBySystem false, player volume reflects GlobalMasterVolume directly
             double vol = MpvIpcClient.PlayerMpvVolume(1.0);
             Assert.Equal(80.0, vol);
 
-            // Perceptual gain: (80/100)^3 = 0.512
             Assert.True(Math.Abs(MpvIpcClient.MasterLinearGain - 0.512) < 0.001);
 
-            // Muting immediately zeros both player and master linear gain
             MpvIpcClient.SetGlobalMuted(true);
             Assert.Equal(0.0, MpvIpcClient.PlayerMpvVolume(1.0));
             Assert.Equal(0.0, MpvIpcClient.MasterLinearGain);
 
-            // Unmuting restores the exact master level
             MpvIpcClient.SetGlobalMuted(false);
             Assert.Equal(80.0, MpvIpcClient.PlayerMpvVolume(1.0));
             Assert.True(Math.Abs(MpvIpcClient.MasterLinearGain - 0.512) < 0.001);
@@ -742,7 +738,6 @@ public class MasterVolumeIsolationTests
 
             MpvIpcClient.SetGlobalMasterVolume(50);
             Assert.Equal(50, MpvIpcClient.GlobalMasterVolume);
-            // (50/100)^3 = 0.125
             Assert.Equal(0.125, MpvIpcClient.PerceptualGain(50));
             Assert.True(Math.Abs(MpvIpcClient.PositionForGain(0.125) - 50.0) < 0.001);
         }
@@ -774,7 +769,6 @@ public class AiTrajectoryPortraitTests
     [Fact]
     public void PortraitMode_EnforcesSafeMargins_Top20_Bottom72()
     {
-        // Target located in the upper zone: head at cy - h/2 = 400 - 100 = 300 (out of 1000 = 432px on 1440p)
         var waypoints = new List<RawSubjectWaypoint>
         {
             new() { Time = 0.5, Cx = 500, Cy = 400, W = 100, H = 200, Visible = true },
@@ -784,11 +778,10 @@ public class AiTrajectoryPortraitTests
         var portraitTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 1.5, portraitMode: true);
         var kf = portraitTraj.Keyframes.Find(k => k.TimeSec >= 0.5)!;
 
-        double headY = (400 - 100) / 1000.0 * 1440; // 432px
+        double headY = (400 - 100) / 1000.0 * 1440;
         double headRelCropY = headY - kf.CropY;
         double headFraction = headRelCropY / kf.CropH;
 
-        // Head must be at least 20% down from the crop window top to clear top HUD and letterbox padding
         Assert.True(headFraction >= 0.20 - 0.01, $"Expected head fraction >= 0.20, was {headFraction:F3}");
     }
 

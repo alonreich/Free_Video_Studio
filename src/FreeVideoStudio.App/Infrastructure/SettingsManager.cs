@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Linq;
@@ -1598,7 +1595,6 @@ public static class SettingsManager
             from = 14;
         }
 
-        // AISETTINGS_01 (docs/05 SYS-AISETTINGS) — ensure configured custom Gemini model is preserved across usages:
         if (!string.IsNullOrEmpty(loaded.GeminiModelName) && loaded.GeminiModelName != GeminiClient.DefaultModel)
         {
             if (loaded.AiUsageSubjectDiscovery?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageSubjectDiscovery.Model) || loaded.AiUsageSubjectDiscovery.Model == GeminiClient.DefaultModel))
@@ -1609,10 +1605,8 @@ public static class SettingsManager
                 loaded.AiUsageMagicWand.Model = loaded.GeminiModelName;
         }
 
-        // AIDEFAULT_01 — derive the shared AI default from the per-feature values once (additive, no bump).
         loaded.EnsureAiDefault();
 
-        // AIMODELS_02 — retired model names (gemini-2.5-*, claude-3*, o3-mini…) move to today's defaults.
         if (loaded.ReplaceRetiredAiModels())
             RuntimeLog.Info("Settings", "AI model names that the AI companies have retired were updated to their current defaults.");
 

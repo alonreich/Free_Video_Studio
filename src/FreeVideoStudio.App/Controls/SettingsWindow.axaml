@@ -706,6 +706,8 @@
                                             <TextBlock Name="UpdateStatusText" VerticalAlignment="Center" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" MaxWidth="400"/>
                                         </WrapPanel>
                                         <TextBlock Name="UpdateLastCheckText" Classes="Hint" FontSize="{DynamicResource AppFontSize12}"/>
+                                        <Button Name="WhatsNewBtn" Classes="Secondary" Content="What's new in this version" Cursor="Hand" HorizontalAlignment="Left"
+                                                ToolTip.Tip="Opens the page that lists everything that changed in each version of Free Video Studio."/>
                                         <Button Name="SkipPendingBtn" Classes="Secondary" Content="Skip this version" IsVisible="False" Cursor="Hand" HorizontalAlignment="Left"
                                                 ToolTip.Tip="Stops the update that is downloading or waiting, and does not offer this version again. A newer version will still be offered."/>
                                         <Border Name="SkippedReleaseBorder" Classes="Card" Padding="10,8" IsVisible="False">

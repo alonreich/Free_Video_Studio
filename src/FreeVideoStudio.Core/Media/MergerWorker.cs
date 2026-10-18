@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -417,8 +414,6 @@ public class MergerWorker : IDisposable
                 return;
             }
 
-            // TEMPO_01 — Rubber Band capability, probed once per FFmpeg binary and cached, BEFORE any
-            // graph (plain clip or MergeClipGraph) is built. Never throws; failure means atempo.
             await AudioTempoFilterBuilder.EnsureProbedAsync(_ffmpegPath).ConfigureAwait(false);
 
             string jobId = Guid.NewGuid().ToString("N")[..8];
@@ -481,8 +476,6 @@ public class MergerWorker : IDisposable
 
                 ResolveOutputFades(clipWindows, fileDurations, speedFactor);
 
-                // CLIPLEVEL_01 / PEAKSAFE_01 / MEMELEVEL_02 — each clip's own loudness, measured once.
-                // Feeds the optional clip matching, the per-clip peak tamer and meme matching.
                 bool anyMemes = edlMatchesForMemes();
                 bool edlMatchesForMemes() => EdlMatchesInputs() && Edl!.Clips.Any(c => c.Effects.Memes.Count > 0);
                 double?[] clipLufs = (AutoSpikeFlattening || MatchClipLoudness || anyMemes)
@@ -541,7 +534,6 @@ public class MergerWorker : IDisposable
                                 var mp = new MediaProber(_ffprobePath, m.FilePath);
                                 memeAudio = await mp.HasAudioAsync();
                                 double fileSec = await mp.GetDurationAsync();
-                                // MEMETRIM_01 — only the chosen part [ClipIn, ClipIn + Duration) of the file.
                                 if (fileSec > 0)
                                 {
                                     clipIn = Math.Clamp(m.ClipInSec, 0, Math.Max(0, fileSec - MemePlacement.MinClipDurationSec));
@@ -663,8 +655,6 @@ public class MergerWorker : IDisposable
                     string vTrim = win.trimmed ? $"trim=start={trimStart}:end={trimEnd}," : "";
                     string aTrim = win.trimmed ? $"atrim=start={trimStart}:end={trimEnd}," : "";
 
-                    // COLOR_01 — each input is normalised to SDR BT.709 TV range BEFORE concat, so a
-                    // mixed HDR/SDR (or full/limited-range) queue cannot concat mismatched pixels.
                     VideoColorInfo clipColor = fileColors[i] ?? VideoColorInfo.Unknown;
                     bool clipCanToneMap = clipColor.IsHdr
                         && await ExportColorPolicy.HasFilterAsync(_ffmpegPath, "zscale")
@@ -697,18 +687,12 @@ public class MergerWorker : IDisposable
                             canvasW: canvasW, canvasH: canvasH);
                         filters.AddRange(fxGraph.Filters);
                         filters.Add($"{fxGraph.VideoLabel}null[v{i}]");
-                        // SPLICE_03 — de-click the join to the neighbouring clips.
                         filters.Add($"{fxGraph.AudioLabel}anull{(InputFiles.Count > 1 ? MemeLoudness.SpliceFade(fxGraph.DurationSec) : "")}[a{i}]");
                         CoreLogger.Info("Merger", $"  [{i + 1}] effects graph: {fxGraph.DurationSec:F3}s out, {fxGraph.MemeCount} meme(s) spliced.");
                         avInputs += $"[v{i}][a{i}]";
                         continue;
                     }
 
-                    // CLIPFRAMES_01 (P9, closes the P2.3 note) — fps=60 on a whole file emits frames up to the LAST
-                    // frame's end, one more than the composite's round(keep × 60) on e.g. a 59.94 clip (measured: 381
-                    // vs 380 over 3 odd-length clips). When the edit list describes the queue, every plain clip is
-                    // bounded to exactly the composite's frame count (a cloned frame pads a short one) and its audio to
-                    // the same length, so the file, the preview and the music all agree to the frame.
                     string frameBound = "", audioBound = "";
                     double boundSec = 0;
                     if (frameAuthority != null && i < frameAuthority.Clips.Count)
@@ -725,7 +709,6 @@ public class MergerWorker : IDisposable
                     double clipDur = clipDurations[i] > 0 ? clipDurations[i] : totalDuration;
                     if (fileHasAudio[i])
                     {
-                        // AVSYNC_04: each clip uses the same latency compensation and exact duration bound.
                         string atempoSegment = AudioTempoFilterBuilder.Segment(speedFactor, leadingComma: true, clipDur);
                         double clipOutSec = boundSec > 0 ? boundSec : clipDur / speedFactor;
                         string spliceFade = InputFiles.Count > 1 ? MemeLoudness.SpliceFade(clipOutSec) : "";
@@ -807,7 +790,6 @@ public class MergerWorker : IDisposable
                     _outputIntroSec = leadTag > 0 && clipWindows[0].start < 0.0005 ? leadTag / speedFactor : 0;
                 }
 
-                // AICAPTION_EXPORT_01 — burn in live commentary captions track if present
                 if (CaptionTrack != null && CaptionTrack.Lines is { Count: > 0 })
                 {
                     int canvasW = OutputRatio == TargetAspectRatio.Portrait9x16 ? 1080 : 1920;
@@ -832,7 +814,6 @@ public class MergerWorker : IDisposable
                 }
 
                 string filterScript = string.Join(";", filters.Where(p => !string.IsNullOrEmpty(p)));
-                // MERGESCRIPT_01: store the graph in a script so large merges do not exceed command-line limits.
                 string filterScriptPath = Path.Combine(tempJobDir, "filter_complex.txt");
                 await File.WriteAllTextAsync(filterScriptPath, filterScript, cancellationToken);
                 CoreLogger.Info("FFmpeg MERGE", $"Filter Script Content:\n{filterScript}");
@@ -872,10 +853,6 @@ public class MergerWorker : IDisposable
                 }
                 else if (QualityPercent < 100 && averageSourceVideoBitrateKbps > 0)
                 {
-                    // MERGEQUALITY_01 — below 100% the old path was an UNCAPPED constant quality (CQ 16–35):
-                    // on high-motion gameplay CQ 16–17 easily out-spent the 100% bitrate, so 95% made a BIGGER
-                    // file than 100%. Now: VBR at the 100% bitrate × the quality curve, never above the 100%
-                    // peak, the same number the TOTAL SIZE estimate shows.
                     int full = OutputFileSize.MergerTargetKbps(averageSourceVideoBitrateKbps);
                     int target = Math.Max(300, (int)Math.Round(full * OutputFileSize.MergerQualityRatio(QualityPercent)));
                     losslessBitrateKbps = target;

@@ -209,7 +209,6 @@ public partial class MemePickerWindow : Window
                 useBtn.IsEnabled = list.SelectedItem is MemePickerRow;
                 OnMemeSelected(list.SelectedItem as MemePickerRow);
             };
-            // MEMEPICK_05 — no DoubleTapped → Close: a double-click only selects.
             useBtn.Click += (_, _) =>
             {
                 if (list.SelectedItem is MemePickerRow picked)

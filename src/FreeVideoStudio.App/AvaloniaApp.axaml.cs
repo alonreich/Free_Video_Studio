@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
@@ -13,8 +10,6 @@ public partial class AvaloniaApp : Application
     {
         AvaloniaXamlLoader.Load(this);
 
-        // UPGRADEUX_01 — the update window needs styles only. No sounds: they read settings, and
-        // the broker must not touch settings while user data may be mid-migration.
         if (Services.UpgradeBrokerHost.IsActive) return;
 
         Avalonia.Controls.Button.ClickEvent.AddClassHandler<Avalonia.Controls.Button>(
@@ -160,6 +155,15 @@ public partial class AvaloniaApp : Application
 
                 if (isHealthCheck && isNoLaunch)
                 {
+                    try
+                    {
+                        _ = new MainWindow();
+                    }
+                    catch (System.Exception ex)
+                    {
+                        RuntimeLog.Fail("Upgrade health check", "The main window could not be built: " + ex);
+                        System.Environment.Exit(1);
+                    }
                     _ = System.Threading.Tasks.Task.Run(async () =>
                     {
                         try
@@ -176,10 +180,12 @@ public partial class AvaloniaApp : Application
                 }
                 else
                 {
+                    if (!isHealthCheck) Services.StartupCrashGuard.OnMainWindowStarting();
                     desktop.MainWindow = new MainWindow();
+                    desktop.MainWindow.Opened += (_, _) => { _ = Services.StartupCrashGuard.MarkStableAsync(); };
+                    desktop.Exit += (_, _) => Services.StartupCrashGuard.MarkGood();
                     if (isHealthCheck)
                     {
-                        // UPGRADEUX_05 — editing stays disabled until the commit, and now the user is told why.
                         Services.UpgradeFinishedNotice.Attach(desktop, desktop.MainWindow, argsList);
                     }
                 }

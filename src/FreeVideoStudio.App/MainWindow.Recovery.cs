@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
@@ -156,7 +156,6 @@ public partial class MainWindow
                     foreach (double durationSec in wizard.MusicDurationsSeconds)
                         durationsArray.AddNode(System.Text.Json.Nodes.JsonValue.Create(durationSec));
 
-                // MUSICWIN_01 — each song's chosen part survives a crash/restore too.
                 var startsArray = new System.Text.Json.Nodes.JsonArray();
                 foreach (double startSec in wizard.MusicStartsSeconds ?? new System.Collections.Generic.List<double>())
                     startsArray.AddNode(System.Text.Json.Nodes.JsonValue.Create(startSec));

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -81,7 +78,6 @@ public sealed class MusicAttributionTests : IDisposable
         Assert.NotNull(combined);
         Assert.Contains("Credit for Song A", combined);
         Assert.Contains("Credit for Song B", combined);
-        // Does not repeat duplicate track credit
         Assert.Equal(combined.IndexOf("Credit for Song A"), combined.LastIndexOf("Credit for Song A"));
     }
 

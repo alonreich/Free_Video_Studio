@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,7 +19,6 @@ namespace FreeVideoStudio.App.Controls;
 /// </summary>
 public partial class SettingsWindow
 {
-    // ───────────────────────────── Restore / Danger Zone ─────────────────────────────
 
     private static string SectionName(SettingsSection s) => s switch
     {
@@ -74,7 +70,6 @@ public partial class SettingsWindow
         SetFooterStatus("All AI keys will be deleted when you press SAVE.");
     }
 
-    // ───────────────────────────── Backup / Import ─────────────────────────────
 
     private void SetBackupStatus(string text)
     {
@@ -135,7 +130,6 @@ public partial class SettingsWindow
         }
     }
 
-    // ───────────────────────────── Search (SETSEARCH_01) ─────────────────────────────
 
     private sealed record SearchEntry(string Label, string Haystack, TabItem Tab, Control Target)
     {

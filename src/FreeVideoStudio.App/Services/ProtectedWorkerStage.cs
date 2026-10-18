@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -279,8 +276,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(exe, Environment.ProcessPath, out string detail);
         if (verdict == AuthenticodeVerifier.TrustVerdict.Trusted) return;
 #if DEBUG
-        // UNSIGNEDDEV_01 — an unsigned Debug build (dev.cmd) has no publisher to compare with. The
-        // copy is still byte-identical to the running program (hash checked above).
         if (verdict == AuthenticodeVerifier.TrustVerdict.NoAnchor)
         {
             RuntimeLog.Info("Upgrade", "WORKERSTAGE_01: unsigned Debug build, publisher check skipped: " + detail);

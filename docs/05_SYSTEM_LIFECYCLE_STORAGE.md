@@ -511,6 +511,29 @@
   accepted as before. What money still buys: no SmartScreen "unknown publisher" on a FIRST download.
   `CodeSigning` refuses to sign with a certificate that does not chain to the pinned root (a different
   root would make every installed copy refuse every future update).
+* **ROOTKEY_01 — the root key has its OWN passphrase and may live offline (2026-10-18, free).** The root
+  private key (`ssl-certificate\fvs-dev-root-ca.key.pem`) was encrypted with the SAME password that sits in
+  plain text in `fvs-codesign.password.txt` beside it, so a copy of that folder was a copy of the key every
+  installed copy trusts until 2036. `dotnet run --project build\FvsBuild -- --protect-root-key` re-encrypts it
+  (AES-256-CBC, PBKDF2-SHA256, 600 000 rounds) with a typed passphrase of ≥ 12 characters that is never stored,
+  verifies the result and replaces the file; keep a copy offline (USB stick) and delete it from the PC. The
+  key is needed only to issue a new leaf: `CodeSigning.OpenRootKey` takes it from `FVS_ROOT_KEY` (path) or the
+  folder, unlocked by `FVS_ROOT_KEY_PASS`, a typed passphrase, or — legacy, warned — the signing password file.
+  The release gate refuses (stable and beta) while the key opens with the stored password
+  (`RootKeyIsProtected`; an absent key counts as protected). The LEAF key stays usable unattended (it is
+  revocable, REVOKE_01).
+* **REVOKE_01 — a leaked leaf can be switched off (free, no CA).** `build/revoked-signers.txt` (public SHA-256
+  thumbprints, in git) = `PublisherRoot.RevokedSignerThumbprints` (compiled; a test keeps them equal).
+  `PublisherRoot.Vouches` refuses a listed leaf — for installers (Authenticode) and update lists alike;
+  `SmartUpdateManifest.VerifySignature` refuses it too. Every signed `update.json` carries the list
+  (`RevokedSigners`); the in-app updater remembers it per user (`update_revoked_signers.txt`,
+  `PublisherRoot.AddRevoked`) and never forgets. FvsBuild refuses to sign with a listed leaf. Procedure in the
+  file's header: new leaf from the same root, list the old thumbprint in both places, release.
+* **SIGNEXPIRY_01 — a list fetched now needs a leaf valid now.** The update-list signature is plain RSA with no
+  timestamp, so "timestamped, expiry does not matter" (UPDATEPIN_01) does not apply to it. The in-app updater
+  calls `VerifySignature(…, requireCurrentSigner: true, now)`; the elevated worker and an installer's packed
+  list (legitimately run years later) do not. Consequence: renew the leaf before it expires (UPDATEPIN_02 does
+  it at < 90 days) — a wrong PC clock shows a plain "check the date and time" reason.
 * **UPDATEPIN_02 — the leaf renews itself.** Before signing, `CodeSigning.EnsureLocalLeaf` issues a new
   leaf from the SAME root (key `ssl-certificate\fvs-dev-root-ca.key.pem`, never in git) when the leaf is
   missing, unreadable, not from the pinned root, or within 90 days of expiry; old files are kept as
@@ -619,6 +642,19 @@
   rebuilt by streaming the installed EXE + patch through 64 KiB buffers into `<sha>.partial`; it is
   promoted only after length, patch-header hashes, the signed update.json hash and the publisher check
   pass. Any failure deletes the partial and falls back as before (compact, then full installer).
+* **INSTALLONEXIT_01 — a ready update installs when the app closes.** The status line said so, but the
+  installer started only on RESTART or LATER; closing the card or quitting installed nothing. When an update
+  is ready, the app's `Exit` starts the waiting installer with `--no-launch` (`InstallPendingOnExit`) unless one
+  is already running or the version was skipped; closing the card says so ("installs when you close…").
+* **RESTARTSAFE_01 — Restart & update closes the app only when the installer runs.** If the installer cannot
+  start, the card shows the reason with TRY AGAIN and the app stays open (it used to close anyway).
+* **PAUSESTICK_01 — a pause stands for the session.** PAUSE remembers the release (`_pausedTag`); the 6-hourly
+  re-check (RECHECK_01) skips it and records "the download is paused". CONTINUE / TRY AGAIN and a manual check
+  clear it.
+* **WHATSNEW_01 — "What's new" after the update.** When an update is ready its GitHub notes are written to
+  `update_pending_notes.txt` (tag + body). The new version's first-launch card (`UpgradeFinishedNotice`) shows up
+  to six plain bullets when that tag equals the running version, and then waits for OK; Settings › About › "What's
+  new in this version" opens `releases/tag/<tag>` (else the releases list, `UpdateService.ReleasesPageUrl`).
 * **RECHECK_01 — a session that stays open checks again.** The automatic check used to run once, five
   minutes after start; a user who leaves the app open for days never heard of a new version. After the
   first check `RunStartupCheckAsync` repeats `RunAutomaticCheckAsync` every `RecheckInterval` (6 h)
@@ -743,6 +779,15 @@ settings initialization. The install entry point always uses this flow; uninstal
 * First launch verifies payload hashes, native library loading, ffprobe startup, settings loading
   and a Loaded main window. Editing stays disabled until commit. A PID by itself is insufficient.
   `--no-launch` still performs the health handshake, then closes the verified window.
+  **HEALTHWIN_01 (2026-10-18):** the `--no-launch` handshake used to skip the window entirely (only "settings
+  loaded" was proven before the backup was given up); it now BUILDS `MainWindow` (never shown) first and exits
+  non-zero if that fails. The worker's `--upgrade-probe` also loads the in-process libav decoder libraries
+  (`LibAvMediaBackend.TryInitialize`, the expected versions), not only libmpv and ffprobe.
+* **CRASHLOOP_01 — after the commit.** `StartupCrashGuard` counts main-window starts per version
+  (`startup_attempts.txt`); 20 s open, or a normal exit, resets it. From the fourth start after three that did
+  not stay open, the user is told plainly and offered the release page, which keeps the installers of the last
+  five versions (RETAIN_02; an older installer asks before going back). Nothing is removed or downloaded by
+  itself, and the app still starts.
 * User shell changes resolve the current user's Known Folders; machine changes use Public Desktop
   and common Start Menu. Owned shortcuts are identified by target. An unrelated name collision
   is preserved. A new shortcut is created before old shortcuts are removed. Offline user Desktops
@@ -912,7 +957,7 @@ installer from Downloads (window within a second, worker from `%ProgramData%\Fre
 
 Local regression coverage: `UpgradeTransactionTests` injects failure at each directory rename,
 checks source precedence, retention, conflicting files, journal traversal and compact runtime
-corruption. `CompactUpdateTests` rejects unexpected archive entries and checks settings preservation.
+corruption. `UpgradeSettingsPreservationTests` (formerly `CompactUpdateTests`; the archive tests left with the retired compact package, COMPACTGONE_01) checks settings preservation. `StartupCrashGuardTests` covers CRASHLOOP_01.
 Before production rollout, exercise real Windows UAC (same/different admin), OneDrive and network
 Desktop offline/online, two logged-in accounts, antivirus locks, power loss, and representative old
 signed releases in disposable Windows installations. Unit tests do not establish those OS outcomes.

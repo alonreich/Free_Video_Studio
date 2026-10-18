@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AICOMMENTARY)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using FreeVideoStudio.App.Services;
@@ -69,8 +66,6 @@ public partial class AiCommentaryDialogWindow : Window
         AiGameProfile initialProfile = AiGameProfile.ThirdPerson)
     {
         var dlg = new AiCommentaryDialogWindow();
-        // AIPROFILE_ONE_01 — start on the game type chosen in Settings › AI Features ("What are you recording?").
-        // AICOMMENTARY_REMEMBER_01 — every other choice opens as it was left last time; Advanced is always closed.
         dlg.Attach(AiCommentaryOptionsViewModel.FromSettings(
             Infrastructure.SettingsManager.Instance, hasSelectedSegment, initialTone, initialProfile));
         await dlg.ShowDialog(owner);

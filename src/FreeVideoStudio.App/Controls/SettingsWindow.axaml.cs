@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -92,7 +89,6 @@ public partial class SettingsWindow : Window
         BuildSearch();
         RestoreLastTab();
 
-        // SETKEYS_01 — shortcut capture must see the key BEFORE the focused button turns Space/Enter into a click.
         AddHandler(KeyDownEvent, OnCaptureKeyDown, RoutingStrategies.Tunnel);
         KeyDown += OnWindowKeyDown;
         AttachTitleBarDrag();
@@ -119,7 +115,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-    // ───────────────────────────── Live preview (SETPREVIEW_01) ─────────────────────────────
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -137,7 +132,6 @@ public partial class SettingsWindow : Window
         if (Vm.P.FontScale != _openFontScale) ThemeManager.ApplyFontScale(_openFontScale);
     }
 
-    // ───────────────────────────── Closing (SETUNSAVED_01) ─────────────────────────────
 
     private void OnSaveClicked(object? sender, RoutedEventArgs e) => SaveAndClose();
 
@@ -169,7 +163,7 @@ public partial class SettingsWindow : Window
             finally { _closePromptOpen = false; }
 
             if (answer == ConfirmDialogWindow.ConfirmDialogResult.Yes) { SaveAndClose(); return; }
-            if (answer != ConfirmDialogWindow.ConfirmDialogResult.Alt) return; // Keep editing / Esc / ✕
+            if (answer != ConfirmDialogWindow.ConfirmDialogResult.Alt) return;
         }
         DiscardAndClose();
     }
@@ -187,7 +181,6 @@ public partial class SettingsWindow : Window
         {
             if (e.IsProgrammatic)
             {
-                // A caller closed us in code: that is a CANCEL — nothing saved, the look put back.
                 RevertLivePreview();
                 _isSafeToClose = true;
             }
@@ -208,7 +201,6 @@ public partial class SettingsWindow : Window
         base.OnClosing(e);
     }
 
-    // ───────────────────────────── Keys ─────────────────────────────
 
     private void OnKeyBindButtonClick(object? sender, RoutedEventArgs e)
     {
@@ -226,7 +218,7 @@ public partial class SettingsWindow : Window
         var row = _waitingRow;
         if (row == null) return;
         e.Handled = true;
-        if (KeyBindRowViewModel.IsModifierOnly(e.Key)) return; // wait for the real key
+        if (KeyBindRowViewModel.IsModifierOnly(e.Key)) return;
         _waitingRow = null;
         row.IsWaiting = false;
         if (e.Key == Key.Escape || e.Key == Key.Tab) { Vm.KeyBindStatus = ""; return; }
@@ -250,7 +242,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-    // ───────────────────────────── Tabs ─────────────────────────────
 
     private TabControl? Tabs => this.FindNameScope()?.Find("SettingsTabControl") as TabControl;
 
@@ -316,7 +307,6 @@ public partial class SettingsWindow : Window
         t.Foreground = ThemeResources.Brush(this, isError ? "AppDangerBrush" : "AppTextMutedBrush", t.Foreground ?? Avalonia.Media.Brushes.Gray);
     }
 
-    // ───────────────────────────── Encoder status ─────────────────────────────
 
     private void BuildVideoEncoderStatus()
     {
@@ -347,7 +337,6 @@ public partial class SettingsWindow : Window
         });
     }
 
-    // ───────────────────────────── Title bar ─────────────────────────────
 
     private void AttachTitleBarDrag()
     {

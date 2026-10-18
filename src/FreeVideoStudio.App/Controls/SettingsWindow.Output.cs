@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -71,7 +68,7 @@ public partial class SettingsWindow
         if (picked == null) return;
         try
         {
-            _ = Directory.GetFiles(picked); // must be readable now (the old guard, kept)
+            _ = Directory.GetFiles(picked);
             Vm.MemeDirectoryPath = picked;
             Vm.OutputFilesStatus = "";
         }

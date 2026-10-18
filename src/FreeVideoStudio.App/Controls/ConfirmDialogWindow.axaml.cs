@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -17,8 +14,6 @@ public partial class ConfirmDialogWindow : Window
 
     public enum SaveChangesChoice { BackToEditing, Save, Discard }
 
-    // CROPUNSAVED_01 — explicit actions, with the harmless escape on Enter and Escape.
-    // Saving is green; discarding is red. Closing the prompt never discards anything.
     public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
         Window owner, string profileName, string destination)
     {

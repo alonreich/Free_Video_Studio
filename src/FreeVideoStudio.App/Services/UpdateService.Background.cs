@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
@@ -55,6 +52,7 @@ internal static partial class UpdateService
         CancellationTokenSource cancel;
         lock (BackgroundGate)
         {
+            _pausedTag = null;
             if (string.Equals(_backgroundTag, release.Tag, StringComparison.OrdinalIgnoreCase) &&
                 (_backgroundCancel is { IsCancellationRequested: false } || _waitingInstaller is { HasExited: false }))
             {
@@ -75,7 +73,6 @@ internal static partial class UpdateService
         {
             UpdateToastViewModel vm = EnsureToast();
             vm.Working(version, "Getting the update ready…", null);
-            // RELNOTES_03 — the card says what the update brings (headlines of the GitHub release notes).
             vm.SetReleaseNotes(ReleaseChangelog.PlainHighlights(release.ReleaseNotes, 4, headlinesOnly: true));
             ShowToast(owner);
         });
@@ -94,6 +91,8 @@ internal static partial class UpdateService
                     _preparedUpdate = prepared;
                     _waitingInstaller = null;
                 }
+                Dispatcher.UIThread.Post(EnsureInstallOnExit);
+                RememberPendingNotes(release);
                 RuntimeLog.Info("UPDATE", $"Update {release.Tag} ready: {prepared.Summary}");
                 RecordResult($"Version {version} is downloaded and ready. {prepared.Summary} It installs when you restart or close the app.");
                 Dispatcher.UIThread.Post(() =>
@@ -197,31 +196,40 @@ internal static partial class UpdateService
         var vm = new UpdateToastViewModel();
         vm.RestartRequested += () =>
         {
-            CloseToast();
             Window? main = MainWindowOrNull();
-            if (main != null)
+            if (main == null) { CloseToast(); return; }
+            bool started;
+            string reason = "The update could not be started.";
+            lock (BackgroundGate)
             {
-                lock (BackgroundGate)
+                if (_waitingInstaller is { HasExited: false })
                 {
-                    if (_waitingInstaller is { HasExited: false })
+                    try { _waitingInstaller.Kill(entireProcessTree: true); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                    _waitingInstaller = null;
+                }
+                if (_preparedUpdate != null)
+                {
+                    try
                     {
-                        try { _waitingInstaller.Kill(entireProcessTree: true); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-                        _waitingInstaller = null;
+                        _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: false);
                     }
-                    if (_preparedUpdate != null)
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: false);
-                        }
-                        catch (Exception ex)
-                        {
-                            RuntimeLog.Fail("UPDATE", $"Could not relaunch installer without --no-launch: {ex.Message}");
-                        }
+                        RuntimeLog.Fail("UPDATE", $"Could not relaunch installer without --no-launch: {ex.Message}");
+                        reason = "The update could not be started: " + ex.Message;
                     }
                 }
-                RestartToUpdate(main);
+                started = _waitingInstaller is { HasExited: false };
             }
+            if (!started)
+            {
+                RecordResult(reason + " Free Video Studio stayed open.");
+                _toastVm?.Failed(reason + " Free Video Studio stayed open; choose Try again, or update later from Help › Check for Updates.");
+                ShowToast(main);
+                return;
+            }
+            CloseToast();
+            RestartToUpdate(main);
         };
         vm.LaterRequested += () =>
         {
@@ -246,7 +254,11 @@ internal static partial class UpdateService
         vm.SkipRequested += SkipPendingVersion;
         vm.PauseRequested += () =>
         {
-            lock (BackgroundGate) _backgroundCancel?.Cancel();
+            lock (BackgroundGate)
+            {
+                _pausedTag = _backgroundTag;
+                _backgroundCancel?.Cancel();
+            }
         };
         vm.RetryRequested += () =>
         {
@@ -254,7 +266,14 @@ internal static partial class UpdateService
             lock (BackgroundGate) release = _backgroundRelease;
             if (release != null && MainWindowOrNull() is { } main) StartBackgroundUpdate(main, release);
         };
-        vm.CloseRequested += CloseToast;
+        vm.CloseRequested += () =>
+        {
+            CloseToast();
+            bool ready;
+            lock (BackgroundGate) ready = _preparedUpdate != null && _waitingInstaller is null;
+            if (ready && MainWindowOrNull() is { } main)
+                FloatingNotice.Info(main, "The update is ready. It installs when you close Free Video Studio (Windows asks for permission then).");
+        };
         _toastVm = vm;
         return vm;
     }
@@ -285,6 +304,99 @@ internal static partial class UpdateService
         try { _toast?.Close(); }
         catch (InvalidOperationException ex) { RuntimeLog.Swallowed(ex); }
         _toast = null;
+    }
+
+    /// <summary>PAUSESTICK_01 — the release the user paused in this session, or null.</summary>
+    private static string? _pausedTag;
+
+    /// <summary>PAUSESTICK_01 — true while the user's pause of <paramref name="tag"/> stands (this session).</summary>
+    internal static bool IsPaused(string tag)
+    {
+        lock (BackgroundGate) return _pausedTag is not null && string.Equals(_pausedTag, tag, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int _exitHookInstalled;
+
+    /// <summary>
+    /// INSTALLONEXIT_01 — the status line says a ready update "installs when you restart or close the app",
+    /// but the installer used to start only when the user clicked Restart or Later on the card. Dismissing
+    /// the card, or just quitting, installed nothing. Now the app's exit starts the waiting installer
+    /// (--no-launch: no surprise reopen) unless one is already running or the version was skipped.
+    /// </summary>
+    private static void EnsureInstallOnExit()
+    {
+        if (Interlocked.Exchange(ref _exitHookInstalled, 1) != 0) return;
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Exit += (_, _) => InstallPendingOnExit();
+        else
+            _exitHookInstalled = 0;
+    }
+
+    /// <summary>INSTALLONEXIT_01 — starts the deferred installer for a ready, not-skipped update.</summary>
+    internal static void InstallPendingOnExit()
+    {
+        lock (BackgroundGate)
+        {
+            if (_preparedUpdate is null || _waitingInstaller is { HasExited: false }) return;
+            try
+            {
+                _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: true);
+                RuntimeLog.Info("UPDATE", "The app is closing with an update ready: the installer was started and installs now (INSTALLONEXIT_01).");
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                RuntimeLog.Fail("UPDATE", "The ready update could not be started on exit: " + ex.Message);
+            }
+        }
+    }
+
+    /// <summary>WHATSNEW_01 — the notes of the update being installed, for the new version's first start.</summary>
+    internal const string PendingNotesFile = "update_pending_notes.txt";
+
+    private static void RememberPendingNotes(UpdateRelease release)
+    {
+        try
+        {
+            UiStateStore.WriteText(PendingNotesFile, release.Tag.Trim() + "\n" + (release.ReleaseNotes ?? string.Empty));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+    }
+
+    /// <summary>
+    /// WHATSNEW_01 — up to <paramref name="max"/> plain bullets of the notes remembered for the RUNNING
+    /// version (written by the previous version while it downloaded this one), else empty.
+    /// </summary>
+    internal static IReadOnlyList<string> WhatsNewForThisVersion(int max)
+    {
+        (string tag, string body) = ReadPendingNotes();
+        if (tag.Length == 0 || DeploymentLifecycle.CompareVersions(tag, DeploymentLifecycle.GetCurrentVersion()) != 0) return [];
+        return ReleaseChangelog.PlainHighlights(body, max);
+    }
+
+    /// <summary>WHATSNEW_01 — the GitHub page with this version's full notes (or the list of releases).</summary>
+    internal static string ReleaseNotesPageUrl()
+    {
+        (string tag, _) = ReadPendingNotes();
+        return tag.Length > 0 && DeploymentLifecycle.CompareVersions(tag, DeploymentLifecycle.GetCurrentVersion()) == 0 &&
+               TrySanitizeTagForPath(tag, out string safe)
+            ? ReleasesPageUrl + "/tag/" + safe
+            : ReleasesPageUrl;
+    }
+
+    private static (string Tag, string Body) ReadPendingNotes()
+    {
+        string text;
+        try { text = UiStateStore.ReadText(PendingNotesFile); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return (string.Empty, string.Empty);
+        }
+        int split = text.IndexOf('\n');
+        return split <= 0 ? (string.Empty, string.Empty) : (text[..split].Trim(), text[(split + 1)..]);
     }
 
     private static Window? MainWindowOrNull() =>

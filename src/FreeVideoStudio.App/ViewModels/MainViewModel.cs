@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -32,7 +29,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _isPortraitMode = true;
     private string _overlayText = string.Empty;
     private bool _isTeammates;
-    private bool _isSpectating = true; // SPECTATINGDEFAULT_01 — new projects start with the eye enabled.
+    private bool _isSpectating = true;
     private bool _isEnableFade = true;
     private bool _isAddMeme;
     private MemeItem? _selectedMemeItem;
@@ -361,7 +358,6 @@ public sealed class MainViewModel : ViewModelBase
     public void ApplyDefaults()
     {
         var d = SettingsManager.Instance.Defaults;
-        // SETDEFAULTS_01 — Always On/Off and "same as last time" are resolved in ONE place.
         Timeline.ApplyMainSpeedPreset(d.StartSpeed);
         Export.QualitySliderValue = d.StartQualityIndex;
         IsPortraitMode = d.StartPortrait;

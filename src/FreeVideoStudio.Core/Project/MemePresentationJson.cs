@@ -34,7 +34,6 @@ public static class MemePresentationJson
         o[KeyCorner] = CornerText(m.Corner);
         o[KeySize] = SizeText(m.Size);
         o[KeySound] = m.PlaySound;
-        // MEMETRIM_01 / MEMEPOS_01 / MEMEANIM_01 / MEMETRANS_01 — optional; old readers ignore them.
         o[KeyClipIn] = m.ClipInSec;
         o[KeyPosX] = m.PosX;
         o[KeyPosY] = m.PosY;

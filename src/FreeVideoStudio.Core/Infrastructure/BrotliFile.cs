@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/09_DISTRIBUTION_AND_RELEASE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.IO.Compression;
+﻿using System.IO.Compression;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 

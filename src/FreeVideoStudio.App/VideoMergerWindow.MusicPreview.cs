@@ -48,7 +48,6 @@ public partial class VideoMergerWindow
                    string.Join(",", r.MusicStartsSeconds) + "|" + string.Join(",", r.MusicEndsSeconds));
         if (Equals(key, _mergerMusicPlanKey)) return _mergerMusicPlan;
 
-        // MUSICWIN_01 / XFADEPLAN_01 — every song's chosen part, laid out exactly as the export plays it.
         _mergerMusicPlan = MusicBedPlan.Build(r.ToBedTracks(), bed, r.LoopMusic, startDelay);
         _mergerMusicPlanKey = key;
         return _mergerMusicPlan;

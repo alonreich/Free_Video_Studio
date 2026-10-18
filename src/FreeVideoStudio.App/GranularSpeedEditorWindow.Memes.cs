@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
@@ -419,8 +412,6 @@ public partial class GranularSpeedEditorWindow
 
         _cornerMemes ??= new Infrastructure.CornerMemeOverlayPresenter();
         _cornerMemes.Attach(_videoHost);
-        // CORNERPARITY_02 — this preview shows the SOURCE picture (16:9 even when exporting portrait), so
-        // the box is laid out on the source frame and lands in the corner the user is looking at.
         var (rw, rh) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
         if (rw > 1 && rh > 1) _cornerMemes.SetFrameSize(rw - rw % 2, rh - rh % 2);
 

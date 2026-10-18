@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -13,7 +10,7 @@ using Avalonia.Rendering.Composition;
 using FreeVideoStudio.App.Interop;
 using FreeVideoStudio.Core.Media;
 using System.Runtime.CompilerServices;
-using FreeVideoStudio.App.Interop.D3D; // AOTCLEAN_03 — first-party D3D11/DXGI calls (was Vortice)
+using FreeVideoStudio.App.Interop.D3D;
 
 namespace FreeVideoStudio.App;
 
@@ -1105,9 +1102,6 @@ public sealed class MpvVideoView : Control, IDisposable
 
         try
         {
-            // WGLUNBIND_01: startup already releases the UI binding. A live context handle
-            // does not imply it is current on this thread. Do not unbind an empty thread
-            // (which can fail) or disturb a context owned by another UI component.
             if (_hglrc != nint.Zero && NativeTeardownInvoker.WglGetCurrentContext() == _hglrc &&
                 !NativeTeardownInvoker.WglMakeCurrent(nint.Zero, nint.Zero))
             {

@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Globalization;
 using System.Windows.Input;
@@ -189,7 +184,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         set
         {
             bool changed = SetProperty(ref _corner, value);
-            // MEMEPOS_01 — pressing a corner button always puts the meme back IN that corner.
             if (HasCustomPosition) { SetPosition(-1, -1); changed = true; }
             if (!changed) return;
             OnPropertyChanged(nameof(IsTopLeft));
@@ -259,7 +253,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         if (!changed) return;
         if (HasCustomPosition)
         {
-            // The corner buttons show the nearest corner, so they never claim a spot it is not in.
             var near = MemeOverlayLayout.NearestCorner(nx, ny);
             if (near != _corner)
             {

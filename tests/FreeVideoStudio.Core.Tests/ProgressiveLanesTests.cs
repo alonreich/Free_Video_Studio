@@ -251,7 +251,6 @@ public class ProgressiveLanesTests
     [InlineData(12_001, 6000)]
     [InlineData(200_003, 6000)]
     [InlineData(200_003, 1)]
-    // PCMSTREAM_01: streaming reduction must match the full-buffer reference across fragmented reads.
     public async Task WaveformPeaks_StreamedReduce_IsBitIdenticalToReduce_AcrossFragmentedOddReads(int sampleCount, int peakCount)
     {
         short[] samples = DeterministicSamples(sampleCount, sampleCount ^ peakCount);

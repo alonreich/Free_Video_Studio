@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/03_FFMPEG_EXPORT_PIPELINE.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.Core.Abstractions;
 using static FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools;
@@ -71,7 +68,6 @@ public partial class VoiceOverWindow
         _playbackPlan = plan;
         await ipc.LoadFileAsync(_previewProxyPath, 0);
         await ipc.SetPropertyAsync("pause", "yes");
-        // Do not trust a cached 'last applied' value: a fresh mpv instance starts at 1x.
         await ipc.SetPropertyAsync("speed", "1");
         using var ready = CancellationTokenSource.CreateLinkedTokenSource(token);
         ready.CancelAfter(TimeSpan.FromSeconds(8));

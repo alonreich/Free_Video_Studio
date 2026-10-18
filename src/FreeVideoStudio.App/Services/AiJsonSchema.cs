@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
@@ -134,13 +131,12 @@ public static class AiJsonSchema
                 w.WriteStartObject();
                 foreach (JsonProperty p in node.EnumerateObject())
                 {
-                    if (p.Name == "additionalProperties") continue; // not part of Gemini's schema subset
+                    if (p.Name == "additionalProperties") continue;
                     w.WritePropertyName(p.Name);
                     if (p.Name == "type" && p.Value.ValueKind == JsonValueKind.String)
                         w.WriteStringValue((p.Value.GetString() ?? string.Empty).ToUpperInvariant());
                     else if (p.Name == "properties" && p.Value.ValueKind == JsonValueKind.Object)
                     {
-                        // property NAMES are data, never rewritten; only their schemas are.
                         w.WriteStartObject();
                         foreach (JsonProperty child in p.Value.EnumerateObject())
                         {

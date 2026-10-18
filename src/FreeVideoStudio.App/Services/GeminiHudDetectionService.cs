@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_TRANSFORMS.md (TL-AIHUD), docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -208,7 +205,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(_timeout);
 
-        // AIMODELFALLBACK_02 — skip a model this session already found gone.
         model = AiVisionProviders.EffectiveModel(AiVendor.Google, model);
         string? responseText;
         HttpStatusCode status;
@@ -257,7 +253,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
 
         if (status == HttpStatusCode.NotFound && !fallbackTried)
         {
-            // AIMODELFALLBACK_02 — a retired model: ask the key for its newest live one and try ONCE more.
             fallbackTried = true;
             string? live = await AiVisionProviders.FindLiveReplacementAsync(AiVisionProviders.Get(AiVendor.Google), apiKey, model, _log, timeoutCts.Token).ConfigureAwait(false);
             if (live != null)
@@ -344,7 +339,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
             w.WriteEndArray();
 
             w.WriteStartObject("generationConfig");
-            if (!GeminiClient.PrefersDefaultTemperature(model)) w.WriteNumber("temperature", 0); // AITEMP_02
+            if (!GeminiClient.PrefersDefaultTemperature(model)) w.WriteNumber("temperature", 0);
             w.WriteString("responseMimeType", "application/json");
             w.WriteStartObject("responseSchema");
             w.WriteString("type", "OBJECT");

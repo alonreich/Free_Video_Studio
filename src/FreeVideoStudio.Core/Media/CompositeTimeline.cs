@@ -1,9 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
@@ -145,7 +140,6 @@ public sealed class CompositeTimeline
         var insertions = new List<OutputTimeline.Insertion>(fx.Memes.Count);
         foreach (var m in fx.Memes)
         {
-            // MEMEMODE_01 — a corner overlay plays over the clip and adds zero output seconds.
             if (m.IsCornerOverlay) continue;
             insertions.Add(new OutputTimeline.Insertion(MemeAtRelSec(c, m, keepIn, keepOut, keepSec), m.DurationSec, m.Id));
         }

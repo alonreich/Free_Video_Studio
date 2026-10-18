@@ -171,7 +171,6 @@ public static class CoachTours
             "AcceptGranularBtn", CoachGesture.Click)
     };
 
-    // WIZ2STEP_01 / PLAYLIST_01 — the walkthrough follows the two-step wizard: pick songs, then fit & mix.
     public static readonly IReadOnlyList<CoachStep> MusicWizard = new[]
     {
         new CoachStep(

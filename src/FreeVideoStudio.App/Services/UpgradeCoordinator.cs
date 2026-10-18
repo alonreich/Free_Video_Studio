@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -260,7 +257,6 @@ internal static class UpgradeCoordinator
             ProtectedWorkerStage protectedWorker = await workerExecutable.ConfigureAwait(false);
             string workerPath = protectedWorker.ExecutablePath;
 
-            // UPGRADEUX_02 — explain the Windows prompt before it appears.
             progress.Step(UpgradeStep.Permission, UpgradeText.PermissionDetail(kind));
             listener.Start();
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -281,8 +277,6 @@ internal static class UpgradeCoordinator
             }
             finally
             {
-                // WORKERSTAGE_01 — writers were denied until the elevated process existed; its mapped image
-                // cannot be written from here on.
                 protectedWorker.Dispose();
             }
             channel = await AcceptAsync(listener, token).ConfigureAwait(false);

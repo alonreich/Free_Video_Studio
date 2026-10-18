@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.App.Services;
@@ -73,8 +73,7 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
                 pcm[2 * i] = (byte)sample;
                 pcm[2 * i + 1] = (byte)(sample >> 8);
             }
-            Array.Fill(pcm, (byte)0x71, count * 2, 9600); // Forbidden post-end pulse.
-            // Hold automatic stop until all synthetic drain callbacks have challenged the cap.
+            Array.Fill(pcm, (byte)0x71, count * 2, 9600);
             recorder.StopRequested += (_, _) => { };
             captureDevices.Input.Deliver(pcm);
             captureDevices.Input.Deliver(Enumerable.Repeat((byte)0x71, 9600).ToArray());

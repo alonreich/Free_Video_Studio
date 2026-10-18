@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (#TL-AITRACKING), docs/05_SYSTEM_LIFECYCLE_STORAGE.md (#SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -80,8 +77,6 @@ public partial class MainWindow
             }
 
             string ffmpegPath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
-            // AIELIM_03 — the real length. The player may not have reported it yet at load time, and the old
-            // 60-second guess made every moment after 0:60 send the picture of 0:59.95 instead.
             double durationSec = _loadedVideoDurationMs / 1000.0;
             if (durationSec <= 0)
                 durationSec = await AiFfmpeg.ProbeDurationSecAsync(ffmpegPath, videoPath, cts.Token).ConfigureAwait(false);
@@ -122,8 +117,6 @@ public partial class MainWindow
                 _aiEliminationStatusIsError = result.Failed;
                 QueueTimelineRedrawPass(DispatcherPriority.Background);
 
-                // AIELIM_03 — the result is announced once, where the user is looking (the chip alone was easy
-                // to miss), and handed to an open speed editor.
                 _openGranularEditor?.SetAiEliminations(_aiEliminationTimestamps);
                 if (result.Failed)
                     Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary);
@@ -155,8 +148,6 @@ public partial class MainWindow
             if (elimSec < 0 || elimSec > duration) continue;
             double ex = (elimSec / duration) * canvasWidth;
 
-            // AIELIM_03 — a solid red badge with a white ✕, drawn LAST (on top of every other marker) and
-            // ZIndex-raised, so it can never hide behind the trim region, cuts, music block or tick ruler.
             var xMark = new Border
             {
                 Width = 18,
@@ -182,7 +173,6 @@ public partial class MainWindow
             xMark.PointerPressed += (_, e) =>
             {
                 e.Handled = true;
-                // Land a beat before the sound so the build-up is visible.
                 SeekMainPreviewToMarkerMs(Math.Max(0, elimSec - 1.0) * 1000.0);
             };
             Canvas.SetLeft(xMark, Math.Max(0, Math.Min(canvasWidth - 18, ex - 9)));

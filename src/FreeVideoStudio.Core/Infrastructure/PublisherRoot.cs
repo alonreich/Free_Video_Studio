@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace FreeVideoStudio.Core.Infrastructure;
@@ -35,7 +32,51 @@ public static class PublisherRoot
 
     private const string CodeSigningOid = "1.3.6.1.5.5.7.3.3";
 
-    // UPDATEPIN_PEM_01: keep every base64 character, including // sequences.
+    /// <summary>
+    /// REVOKE_01 — publisher LEAF certificates (SHA-256 thumbprints) withdrawn by the publisher, compiled
+    /// in. A leaked leaf key is switched off by (1) issuing a new leaf from the same root, (2) adding the
+    /// old thumbprint to <c>build/revoked-signers.txt</c> AND here, (3) releasing. Every copy that installs
+    /// that release refuses the old leaf for good, and every copy that only DOWNLOADS its signed list
+    /// learns it too (<see cref="SmartUpdateManifest.RevokedSigners"/> → <see cref="AddRevoked"/>).
+    /// ⚠️ Must equal <c>build/revoked-signers.txt</c> (PublisherRootTests.CompiledRevocationListMatchesTheBuildList).
+    /// </summary>
+    public static readonly IReadOnlyList<string> RevokedSignerThumbprints = [];
+
+    private static readonly object RevokedSync = new();
+    private static readonly HashSet<string> RuntimeRevoked = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>REVOKE_01 — adds thumbprints learned at run time (a signed list, or the per-user store).</summary>
+    public static void AddRevoked(IEnumerable<string>? thumbprints)
+    {
+        if (thumbprints is null) return;
+        lock (RevokedSync)
+        {
+            foreach (string thumbprint in thumbprints)
+            {
+                string clean = (thumbprint ?? string.Empty).Trim();
+                if (IsThumbprint(clean)) RuntimeRevoked.Add(clean.ToUpperInvariant());
+            }
+        }
+    }
+
+    /// <summary>REVOKE_01 — true when the publisher withdrew this signer (compiled list or learned at run time).</summary>
+    public static bool IsRevoked(string? sha256Thumbprint)
+    {
+        if (string.IsNullOrWhiteSpace(sha256Thumbprint)) return false;
+        if (RevokedSignerThumbprints.Contains(sha256Thumbprint, StringComparer.OrdinalIgnoreCase)) return true;
+        lock (RevokedSync) return RuntimeRevoked.Contains(sha256Thumbprint);
+    }
+
+    /// <summary>The run-time revocations, for persisting them (REVOKE_01).</summary>
+    public static IReadOnlyList<string> RuntimeRevokedSnapshot()
+    {
+        lock (RevokedSync) return RuntimeRevoked.OrderBy(t => t, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>A SHA-256 thumbprint: 64 hexadecimal characters.</summary>
+    public static bool IsThumbprint(string? text) =>
+        text is { Length: 64 } && text.All(Uri.IsHexDigit);
+
     private const string RootPem = """
         -----BEGIN CERTIFICATE-----
         MIIFZzCCA0+gAwIBAgIUDodCP8CcVZun5SmWHiFFAsNG9kEwDQYJKoZIhvcNAQEL
@@ -57,7 +98,7 @@ public static class PublisherRoot
         dpVk7tEuqWtFlvECAwEAAaNFMEMwEgYDVR0TAQH/BAgwBgEB/wIBADAOBgNVHQ8B
         Af8EBAMCAQYwHQYDVR0OBBYEFPALMcbnVKrhjyTAdpsRru61bGeoMA0GCSqGSIb3
         DQEBCwUAA4ICAQBe71J8QVNMoYaPufE2klFX7rQZNsBvNeUZzRE8KMeitsiI/2s7
-        /FgvmUoKRUw5RXkJDFdiLzVcv4qNB3TQ2+U//RGDGcas1iGvEfz15iU260o82SrK
+        /FgvmUoKRUw5RXkJDFdiLzVcv4qNB3TQ2+U
         5l0DN/uff420y1oz3bxckTtn5rWFsvqnY9c2KyDN62H+ta1t+3aYoZtCydL4WO6d
         dSTRzIQgVfgP8k/iXQ9y6MVjm0VEpdpQDteo7jQ7xUlvtYyHRwYQ16clIQg24/+F
         pROHeBMrbaGoS/6WveM8q1OM4isxlvqc3SlMkYVymFEEjhe7TqZ4QOI3FwELtIgx
@@ -97,6 +138,11 @@ public static class PublisherRoot
         X509ChainElement? top = chain.ChainElements.Count > 0 ? chain.ChainElements[^1] : null;
         bool anchored = top != null && string.Equals(
             top.Certificate.GetCertHashString(HashAlgorithmName.SHA256), Sha256Thumbprint, StringComparison.OrdinalIgnoreCase);
+        if (built && anchored && IsRevoked(signer.GetCertHashString(HashAlgorithmName.SHA256)))
+        {
+            detail = "The signing certificate was withdrawn by the publisher (it may have been stolen).";
+            return false;
+        }
         if (built && anchored)
         {
             detail = "Signed by the Free Video Studio publisher key (pinned root).";

@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -90,7 +84,7 @@ public partial class VideoMergerWindow
         dlg.SetMessage((count == 1 ? "Remove the selected clip from the queue?" : $"Remove the {count} selected clips from the queue?")
                        + "\nThe files on your computer are not touched. Ctrl+Z brings them back.");
         dlg.SetButtonText("YES, REMOVE", "CANCEL");
-        dlg.UseDestructiveStyling(); // REMOVEUX_01 — a destructive answer is red and never the Enter key
+        dlg.UseDestructiveStyling();
         await dlg.ShowDialog(this);
         return dlg.Result;
     }
@@ -264,7 +258,6 @@ public partial class VideoMergerWindow
         RedrawTimelineSelection();
     }
 
-    // ── Test seams for queue occurrence actions ───────────────────────────────────────────────
     internal void MoveVideoForTesting(int direction) => MoveVideo(direction);
     internal void ExecuteRemoveSelectedForTesting() => ExecuteRemoveSelected();
     internal IReadOnlyList<Guid> CurrentQueueClipIds => CurrentClipIds();

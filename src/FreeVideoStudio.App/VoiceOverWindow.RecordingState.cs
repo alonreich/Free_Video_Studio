@@ -337,8 +337,6 @@ public partial class VoiceOverWindow
         _shownPulse = pulse;
     }
 
-    // VOREC_INIT_01: pure recording-state access must not require a platform renderer.
-    // Parse cached geometry only when a window first paints an indicator on the UI thread.
     private static class IndicatorGeometry
     {
         internal static readonly Geometry DotGlyph = Geometry.Parse("M7,1 A6,6 0 1 1 6.99,1 Z");

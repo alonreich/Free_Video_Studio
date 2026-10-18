@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-namespace FreeVideoStudio.Core.Media;
+﻿namespace FreeVideoStudio.Core.Media;
 
 /// <summary>
 /// VOSTALL_01: compare the actual output clock with captured PCM, never source seconds.

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -46,20 +43,6 @@ public class MpvIpcClient : IDisposable
     private ulong _fpsObsId;
 
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // AUD-MASTERVOL — THE SUITE-WIDE PREVIEW MASTER (Main App, Video Merger, Crop Tools and every
-    // dialog with a player). One level, one mute, one event; every window and player follows it.
-    //
-    // VOLCURVE_01 — the slider position is PERCEPTUAL: gain = (position/100)^3, the same cubic curve
-    //   mpv uses natively (50% ≈ -18 dB). The old code cancelled mpv's curve so the slider was linear
-    //   amplitude (50% = -6 dB) and most of its travel barely changed anything. The Music Wizard's
-    //   VIDEO/MUSIC faders stay LINEAR (they must match the export's `volume=` gain), so a player's
-    //   mpv volume is position × ∛balance:  ((position/100)·∛balance)³ = (position/100)³ · balance.
-    // VOLMUTE_01 — mute is its own flag: muting keeps the level, unmuting restores it exactly.
-    // VOLSYNC_01 — while the Windows audio session of this process carries the master level
-    //   (WindowsAudioSessionSync), MasterAppliedBySystem is true and players carry ONLY their balance,
-    //   so the master is applied once — never twice.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     public static int GlobalMasterVolume { get; private set; } = 100;
     public static bool GlobalMuted { get; private set; }
     public static bool MasterAppliedBySystem { get; private set; }
@@ -498,7 +481,6 @@ public class MpvIpcClient : IDisposable
                 _pendingSeekCommand = command;
                 _seekInProgress = true;
                 _seekObserved = false;
-                // MPVEOF_01 — the old end-of-file answer is invalid as soon as we seek.
                 IsEof = false;
                 result = MpvWrapper.mpv_command_string(_mpvHandle, command);
             }
@@ -681,7 +663,7 @@ public class MpvIpcClient : IDisposable
         {
             CoreLogger.Fail("MPV",
                 "The mpv event loop did not stop in time — abandoning the player handle instead of destroying it underneath a live thread.");
-            IsHandleAbandoned = true; // VOAPPLY_04 — mark handle abandoned
+            IsHandleAbandoned = true;
             _mpvHandle = nint.Zero;
             return;
         }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,8 +14,6 @@ public sealed class CommentaryServiceTests
 {
     static CommentaryServiceTests()
     {
-        // AIZEROFRAMES_01 — the fake video below decodes to no pictures; give the stills path two fake ones so the
-        // mock provider is exercised (an empty sample is now refused before any AI call, by design).
         CommentaryService.FrameSamplerForTests = (_, start, dur, _) => Task.FromResult<IReadOnlyList<AiImageInput>>(new[]
         {
             new AiImageInput(new byte[] { 1 }, "image/jpeg", "[Timestamp: 0.00s]"),
@@ -35,10 +33,6 @@ public sealed class CommentaryServiceTests
     [Fact]
     public void PlanChunks_LongDuration_YieldsOverlappingChunks()
     {
-        // 20s with 8s chunks and 1s overlap:
-        // Chunk 0: 0.0 - 8.0
-        // Chunk 1: 7.0 - 15.0
-        // Chunk 2: 14.0 - 20.0
         var chunks = CommentaryService.PlanChunks(20.0);
         Assert.True(chunks.Count >= 3);
         Assert.Equal(0.0, chunks[0].Start);
@@ -87,7 +81,6 @@ public sealed class CommentaryServiceTests
     {
         var line1 = new CaptionLine(1, 1.0, 3.5, "Pushing forward now", new[] { "Pushing" }, 0.9);
         var line2 = new CaptionLine(2, 6.5, 7.8, "He is low on health", new[] { "low" }, 0.85);
-        // Overlapping duplicate from next chunk:
         var line2Dup = new CaptionLine(3, 6.8, 8.2, "He is low on health", new[] { "health" }, 0.95);
         var line3 = new CaptionLine(4, 10.0, 13.0, "Victory achieved", new[] { "Victory" }, 0.99);
 
@@ -96,7 +89,6 @@ public sealed class CommentaryServiceTests
         Assert.Equal(3, deduplicated.Count);
         Assert.Equal("Pushing forward now", deduplicated[0].Text);
         Assert.Equal("He is low on health", deduplicated[1].Text);
-        // Combined span: 6.5 to 8.2
         Assert.Equal(6.5, deduplicated[1].SourceStartSec, precision: 2);
         Assert.Equal(8.2, deduplicated[1].SourceEndSec, precision: 2);
         Assert.Equal("Victory achieved", deduplicated[2].Text);
@@ -112,7 +104,6 @@ public sealed class CommentaryServiceTests
 """;
         var mockProvider = new MockAiVisionProvider(fakeJson);
 
-        // Create temporary dummy video file to satisfy File.Exists check
         string tempVideo = Path.Combine(Path.GetTempPath(), $"test_video_{Guid.NewGuid():N}.mp4");
         File.WriteAllBytes(tempVideo, new byte[] { 0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70 });
 
@@ -129,7 +120,7 @@ public sealed class CommentaryServiceTests
                 Language: "en",
                 Provider: mockProvider);
 
-            var track = await CommentaryService.GenerateCommentaryAsync(req, "test_api_key"); // SECRETSCAN_ALLOW
+            var track = await CommentaryService.GenerateCommentaryAsync(req, "test_api_key");
 
             Assert.NotNull(track);
             Assert.Equal(CaptionTone.Tactical, track.Tone);
@@ -183,8 +174,6 @@ public sealed class CommentaryTimingTests
 {
     static CommentaryTimingTests()
     {
-        // AIZEROFRAMES_01 — the fake video below decodes to no pictures; give the stills path two fake ones so the
-        // mock provider is exercised (an empty sample is now refused before any AI call, by design).
         CommentaryService.FrameSamplerForTests = (_, start, dur, _) => Task.FromResult<IReadOnlyList<AiImageInput>>(new[]
         {
             new AiImageInput(new byte[] { 1 }, "image/jpeg", "[Timestamp: 0.00s]"),
@@ -215,7 +204,6 @@ public sealed class CommentaryTimingTests
     [Fact]
     public void ReadableOnScreen_LengthensLinesInFastForward()
     {
-        // Trim-relative timeline: 0..10 s at 1x, 10..20 s at 4x. Captions are ABSOLUTE; trim starts at 100 s.
         var tl = OutputTimeline.Create(20000, new[] { new SpeedSegment(10000, 20000, 4.0) });
         var line = new CaptionLine(1, 112.0, 113.2, "quick one");
         var fixedLines = CommentaryService.EnsureReadableOnScreen(new[] { line }, tl, 100.0, 100.0, 120.0);
@@ -273,7 +261,7 @@ public sealed class CommentaryTimingTests
         try
         {
             var req = new CommentaryRequest(video, 42.0, 5.0, AiVendor.Anthropic, "m", Provider: provider);
-            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k"); // SECRETSCAN_ALLOW
+            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k");
             Assert.Equal(0, result.FailedChunks);
             Assert.Equal(2, provider.Calls);
             Assert.Equal(42.5, result.Track.Lines![0].SourceStartSec, 3);
@@ -290,7 +278,7 @@ public sealed class CommentaryTimingTests
         try
         {
             var req = new CommentaryRequest(video, 0, 15.0, AiVendor.Anthropic, "m", Provider: provider);
-            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k"); // SECRETSCAN_ALLOW
+            var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k");
             Assert.Equal(2, result.TotalChunks);
             Assert.Equal(1, result.FailedChunks);
             Assert.Single(result.Track.Lines!);

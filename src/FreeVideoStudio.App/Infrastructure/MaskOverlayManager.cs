@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -107,8 +104,6 @@ public static class MaskOverlayManager
 
         if (!File.Exists(ApplicationPaths.CreateDefault().CropCoordinatesFile))
         {
-            // CROPFIRSTBOOT_01 — ApplyProfile calls EnsureDefaults. Seed the missing live
-            // document directly so a fresh install cannot recurse before its first write.
             var activeName = SanitizeProfileName(SettingsManager.Instance.ActiveMaskOverlay);
             var active = activeName == null ? null
                 : AtomicJsonFile.ReadObject(Path.Combine(ProfilesDirectory, activeName + ".json"));

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -61,7 +58,6 @@ public static class AiFrameSequenceExtractor
                 RedirectStandardError = true,
             };
 
-            // Fast frame extraction: seek to start, set duration, apply fps and scaling filter, output sequential JPEGs
             foreach (string arg in new[]
             {
                 "-y",

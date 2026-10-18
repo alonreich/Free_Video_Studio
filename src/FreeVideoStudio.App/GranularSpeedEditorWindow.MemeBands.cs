@@ -1,11 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
@@ -154,7 +147,6 @@ public partial class GranularSpeedEditorWindow
     {
         if (_draggingMemeId == null || _memeDragTimeline == null) return false;
 
-        // THUMB_02 — the button was released somewhere this canvas never saw: end the drag here.
         if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed)
         {
             EndMemeDrag(e);
@@ -190,7 +182,6 @@ public partial class GranularSpeedEditorWindow
 
         if (refusal != null)
         {
-            // MEMEDRAG_02 — say why the band stopped instead of letting it stick silently.
             SetStatus(refusal + " Keep dragging to pass it.");
         }
         else if (blocker != null)
@@ -350,7 +341,6 @@ public partial class GranularSpeedEditorWindow
         try
         {
             double blockEndOut = OutTimeline().SourceToOutput(meme.AtSourceSecRelative);
-            // A corner meme has no block on this ruler: the caret goes to where it appears.
             _holdCaretOutSec = Math.Max(0, blockEndOut - meme.OutputDurationSec);
             _memeCaretSticky = true;
             _playheadMs = Math.Max(0, meme.AtSourceSecRelative * 1000.0);
@@ -392,7 +382,6 @@ public partial class GranularSpeedEditorWindow
         _memeDragLastX = -1;
 
         pointer?.Capture(null);
-        // MERGEMEME_02 — in a merge, a full-screen meme dropped into a clip's fade moves where the merge puts it.
         if (movedId != null && !wasCorner) ApplyMergeMemeRules(movedId);
         EndUndoGesture();
         InvalidateMemeTimelines();
