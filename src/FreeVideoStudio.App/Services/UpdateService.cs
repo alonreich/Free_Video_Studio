@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -63,6 +63,9 @@ internal static partial class UpdateService
 {
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases";
+
+    /// <summary>WHATSNEW_01 — the human-readable list of releases (each one keeps its notes forever, RETAIN_02).</summary>
+    internal const string ReleasesPageUrl = "https://github.com/alonreich/Free_Video_Studio/releases";
 
     [System.Runtime.InteropServices.DllImport("ole32.dll", ExactSpelling = true)]
     private static extern int CoCreateInstance(
@@ -149,39 +152,6 @@ internal static partial class UpdateService
     private const string LegacyFullAssetName = "FreeVideoStudio.exe";
     private const string ExpectedAssetName = SetupAssetName;
 
-    /// <summary>
-    /// SYS-PAYLOADSPLIT — the app-only update package, when a release publishes one.
-    ///
-    /// <para>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// <b>WHY A SECOND ASSET EXISTS.</b> <see cref="ExpectedAssetName"/> is a 322 MB NativeAOT
-    /// installer carrying FFmpeg and libmpv as an embedded payload. Downloading it to deliver a
-    /// one-line fix costs every user 322 MB, over a 30-minute timeout, to reinstall codec DLLs that
-    /// did not change. On a metered connection that is a reason to turn updates off — which turns
-    /// every shipped fix into a fix most users never get.
-    /// </para>
-    ///
-    /// <para>
-    /// This asset carries the application only. It is used when, and only when, the runtime already
-    /// installed on this machine is the one the release expects — proven by comparing
-    /// <c>RuntimePayloadManifest</c> fingerprints. Anything else, including "I could not read the
-    /// manifest", falls back to the full installer: a bigger download is always safe, a smaller one
-    /// is not.
-    /// </para>
-    ///
-    /// <para>⚠️ The size decision is the ONLY thing the fingerprint controls. Whatever is
-    /// downloaded is still SHA-256 verified and still Authenticode-checked before it is run
-    /// (UPDATETRUST_02). A fingerprint is a hint about what to fetch, never a reason to trust it.
-    /// </para>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
-    private const string AppOnlyAssetName = "FreeVideoStudio.App.update.zip";
-
-    /// <summary>
-    /// SYS-PAYLOADSPLIT — the release's runtime fingerprint, published as a tiny sidecar asset so
-    /// the updater can read it without downloading either package.
-    /// </summary>
-    private const string RuntimeManifestAssetName = "runtime.manifest.json";
 
     /// <summary>
     /// UPDATETRUST_01 — the ONLY hosts an update asset may be fetched from.
@@ -195,7 +165,8 @@ internal static partial class UpdateService
     /// <para>⚠️ This gates the URL AS PUBLISHED IN THE JSON. HttpClient still follows GitHub's
     /// redirect to its asset CDN without re-checking the hop, which is why the CDN hosts are listed
     /// too and why this is a defence-in-depth control rather than the primary one — the re-hash and
-    /// the Authenticode check before <c>Process.Start</c> are what actually decide.</para>
+    /// the Authenticode check before <c>Process.Start</c> (UPDATETRUST_02, <c>UpdatePreparer.RequirePublisher</c>)
+    /// are what actually decide.</para>
     /// </summary>
     private static readonly string[] AllowedAssetHosts =
     {
@@ -238,10 +209,6 @@ internal static partial class UpdateService
         string? Sha256Hex,
         long Size,
         string? ReleaseNotes,
-        string? AppOnlyUrl = null,
-        string? AppOnlySha256Hex = null,
-        long AppOnlySize = 0,
-        string? RuntimeManifestUrl = null,
         string? PageUrl = null,
         IReadOnlyDictionary<string, string>? Assets = null)
     {
@@ -256,13 +223,6 @@ internal static partial class UpdateService
         public string AssetUrl(string name) => TryGetAsset(name, out string? url) ? url
             : throw new IOException($"The release is missing the file {name}.");
 
-        /// <summary>SYS-PAYLOADSPLIT — true when this release published a small app-only package.</summary>
-        public bool HasAppOnlyPackage => !string.IsNullOrWhiteSpace(AppOnlyUrl) && AppOnlySize > 0;
-
-        /// <summary>What the user is about to spend, in the units they think in.</summary>
-        public string DescribeDownloadSize(bool appOnly)
-            => FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FormatBytes(
-                   appOnly ? AppOnlySize : Size);
     }
 
     private static HttpClient CreateHttpClient()
@@ -310,8 +270,6 @@ internal static partial class UpdateService
 
         await RunAutomaticCheckAsync(owner).ConfigureAwait(false);
 
-        // RECHECK_01 — a session that stays open checks again every RecheckInterval. Nothing changes
-        // in what is asked or downloaded; the loop ends with the main window.
         while (true)
         {
             try
@@ -370,6 +328,12 @@ internal static partial class UpdateService
             }
 
             RuntimeLog.Info("UPDATE", $"Newer version found: {release.Tag} (installed {currentVer}). Prompting user.");
+
+            if (IsPaused(release.Tag))
+            {
+                RecordResult($"Version {remote} is available — the download is paused. Choose Continue on the update card, or Check for updates now.");
+                return;
+            }
 
             string skipped = UiStateStore.ReadText(SkippedTagFile).Trim();
             if (string.Equals(skipped, release.Tag, StringComparison.OrdinalIgnoreCase))
@@ -571,7 +535,7 @@ internal static partial class UpdateService
 
             var assets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [ExpectedAssetName] = new Uri(exe).AbsoluteUri };
             string releaseAssets = Path.Combine(repoRoot, "obj", "ReleaseAssets");
-            foreach (string name in new[] { AppOnlyAssetName, RuntimeManifestAssetName, SmartUpdateManifest.FileName, SmartUpdateManifest.SignatureFileName })
+            foreach (string name in new[] { SmartUpdateManifest.FileName, SmartUpdateManifest.SignatureFileName })
             {
                 string path = Path.Combine(releaseAssets, name);
                 if (File.Exists(path)) assets[name] = new Uri(path).AbsoluteUri;
@@ -580,20 +544,8 @@ internal static partial class UpdateService
             if (Directory.Exists(smartAssets))
                 foreach (string path in Directory.GetFiles(smartAssets)) assets[Path.GetFileName(path)] = new Uri(path).AbsoluteUri;
 
-            string? appOnlyUrl = null, appOnlySha = null;
-            long appOnlySize = 0;
-            string appOnlyPath = Path.Combine(releaseAssets, AppOnlyAssetName);
-            if (assets.ContainsKey(AppOnlyAssetName) && File.GetLastWriteTimeUtc(appOnlyPath) >= file.LastWriteTimeUtc.AddMinutes(-30))
-            {
-                appOnlyUrl = assets[AppOnlyAssetName];
-                appOnlySize = new FileInfo(appOnlyPath).Length;
-                appOnlySha = await Task.Run(() => SmartUpdateManifest.Sha256Hex(appOnlyPath)).ConfigureAwait(false);
-            }
-            assets.TryGetValue(RuntimeManifestAssetName, out string? runtimeUrl);
-
             RuntimeLog.Info("UPDATE", $"DEV update source: {exe} (version {version}, {RuntimePayloadManifest.FormatBytes(file.Length)}, {assets.Count} assets).");
-            return (new UpdateRelease("v" + version, new Uri(exe).AbsoluteUri, sha256, file.Length, notes,
-                appOnlyUrl, appOnlySha, appOnlySize, runtimeUrl, null, assets), string.Empty);
+            return (new UpdateRelease("v" + version, new Uri(exe).AbsoluteUri, sha256, file.Length, notes, null, assets), string.Empty);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -746,8 +698,6 @@ internal static partial class UpdateService
             }
 
             JsonNode? asset = null;
-            JsonNode? appOnlyAsset = null;
-            string? runtimeManifestUrl = null;
             var assets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (JsonNode? candidate in root?["assets"]?.AsArray() ?? [])
@@ -761,10 +711,6 @@ internal static partial class UpdateService
                     asset = candidate;
                 else if (name.Equals(LegacyFullAssetName, StringComparison.OrdinalIgnoreCase))
                     asset ??= candidate;
-                else if (name.Equals(AppOnlyAssetName, StringComparison.OrdinalIgnoreCase))
-                    appOnlyAsset = candidate;
-                else if (name.Equals(RuntimeManifestAssetName, StringComparison.OrdinalIgnoreCase))
-                    runtimeManifestUrl = candidate?["browser_download_url"]?.GetValue<string>();
             }
 
             string? url = asset?["browser_download_url"]?.GetValue<string>();
@@ -796,32 +742,8 @@ internal static partial class UpdateService
 
             long size = asset?["size"]?.GetValue<long>() ?? 0;
 
-            string? appOnlyUrl = appOnlyAsset?["browser_download_url"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(appOnlyUrl) && !IsAllowedAssetUrl(appOnlyUrl!))
-            {
-                RuntimeLog.Fail("UPDATE",
-                    $"Release {tag} points its app-only package at an unexpected location; ignoring it "
-                  + "and using the full installer.");
-                appOnlyUrl = null;
-            }
-
-            if (!string.IsNullOrWhiteSpace(runtimeManifestUrl) && !IsAllowedAssetUrl(runtimeManifestUrl!))
-                runtimeManifestUrl = null;
-
-            string? appOnlyDigest = appOnlyAsset?["digest"]?.GetValue<string>();
-            string? appOnlySha = null;
-            if (!string.IsNullOrEmpty(appOnlyDigest))
-            {
-                int c2 = appOnlyDigest.IndexOf(':');
-                appOnlySha = c2 >= 0 ? appOnlyDigest[(c2 + 1)..].ToLowerInvariant() : null;
-            }
-
             return (new UpdateRelease(
                 tag, url, sha256, size, releaseNotes,
-                appOnlyUrl,
-                appOnlySha,
-                appOnlyAsset?["size"]?.GetValue<long>() ?? 0,
-                runtimeManifestUrl,
                 root?["html_url"]?.GetValue<string>(),
                 assets), string.Empty);
         }
@@ -855,83 +777,6 @@ internal static partial class UpdateService
     }
 
     /// <summary>
-    /// SYS-PAYLOADSPLIT — DECIDES WHETHER THIS MACHINE NEEDS THE 322 MB INSTALLER OR JUST THE APP.
-    ///
-    /// <para>
-    /// Returns true only when the release published an app-only package AND advertised a runtime
-    /// fingerprint AND that fingerprint matches what is installed here. Every other path — no small
-    /// package, no advertised fingerprint, an unreadable local manifest, a network failure reading
-    /// the sidecar, or a genuine mismatch — returns false and the user gets the full installer.
-    /// </para>
-    ///
-    /// <para>⚠️ THE ASYMMETRY IS THE WHOLE DESIGN. Wrongly choosing the big download costs
-    /// bandwidth. Wrongly choosing the small one installs an application against codec binaries it
-    /// was not built for, which fails at export time, on the user's machine, after they have done
-    /// the work. So every uncertainty resolves to the installer.</para>
-    /// </summary>
-    /// <param name="verifyInstalledBytes">UPDATEUX_02 — false only for the size shown in the
-    /// question, which must not hash hundreds of MB just to print a number. The download itself
-    /// always passes true, so the size estimate can never pick the package that is fetched.</param>
-    private static async Task<bool> RuntimeAlreadyMatchesAsync(UpdateRelease release, bool verifyInstalledBytes, CancellationToken cancel)
-    {
-        string installedFolder = DevReleaseFolder is not null ? DeploymentFootprint.InstallFolder : AppContext.BaseDirectory;
-        if (DevReleaseFolder is null && !DeploymentFootprint.IsRunningFromInstallPath()) return false;
-        if (!File.Exists(Path.Combine(installedFolder, InstallPayload.ManifestName))) return false;
-        if (!release.HasAppOnlyPackage || string.IsNullOrWhiteSpace(release.AppOnlySha256Hex) || string.IsNullOrWhiteSpace(release.RuntimeManifestUrl))
-            return false;
-
-        try
-        {
-            if (verifyInstalledBytes)
-                await Task.Run(() => InstallPayload.Verify(installedFolder), cancel).WaitAsync(cancel).ConfigureAwait(false);
-            var installed = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.Read(installedFolder);
-            if (installed is null)
-            {
-                RuntimeLog.Info("UPDATE",
-                    "No local runtime manifest, so the installed runtime cannot be proven current; "
-                  + "using the full installer.");
-                return false;
-            }
-
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-            cts.CancelAfter(ProbeTimeout);
-            string json = LocalDevSourcePath(release.RuntimeManifestUrl!) is { } localManifest
-                ? await File.ReadAllTextAsync(localManifest, cts.Token).ConfigureAwait(false)
-                : await Http.GetStringAsync(release.RuntimeManifestUrl!, cts.Token).ConfigureAwait(false);
-
-            var advertised = FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromJson(
-                JsonNode.Parse(json)?.AsObject());
-            if (advertised is null) return false;
-
-            bool match = string.Equals(installed.Fingerprint, advertised.Fingerprint, StringComparison.Ordinal);
-
-            RuntimeLog.Info("UPDATE", match
-                ? $"Runtime already matches release {release.Tag} ({installed.Fingerprint}); downloading the "
-                + $"app only ({release.DescribeDownloadSize(appOnly: true)} instead of "
-                + $"{release.DescribeDownloadSize(appOnly: false)})."
-                : $"Runtime differs from release {release.Tag} (local {installed.Fingerprint}, release "
-                + $"{advertised.Fingerprint}); the full installer is required.");
-
-            return match;
-        }
-        catch (OperationCanceledException)
-        {
-            cancel.ThrowIfCancellationRequested();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Info("UPDATE",
-                $"Could not compare runtime fingerprints ({ex.GetType().Name}); using the full installer.");
-            return false;
-        }
-    }
-
-    /// <summary>D1 / SYS-PAYLOADSPLIT — the app-only package decision, with the installed bytes verified.</summary>
-    internal static Task<bool> RuntimeMatchesForCompactAsync(UpdateRelease release, CancellationToken cancel)
-        => RuntimeAlreadyMatchesAsync(release, verifyInstalledBytes: true, cancel);
-
-    /// <summary>
     /// UPDATEUX_04 — "Restart &amp; update now". Closes the app through its NORMAL close path, so a
     /// project with unsaved work still asks first (05 SYS-UPGRADE: no editing process is killed).
     /// The waiting installer starts the moment the process exits. If the user chooses to keep
@@ -962,21 +807,6 @@ internal static partial class UpdateService
             FloatingNotice.Info(main, "Update postponed — it will install as soon as you close Free Video Studio.");
         };
         poll.Start();
-    }
-
-    internal static string ExtractCompactInstaller(string archivePath, string folder)
-    {
-        using var archive = System.IO.Compression.ZipFile.OpenRead(archivePath);
-        if (archive.Entries.Count != 1 || archive.Entries[0].FullName != InstallPayload.ExecutableName ||
-            archive.Entries[0].Length is < 1 or > 512L * 1024 * 1024 ||
-            ((archive.Entries[0].ExternalAttributes >> 16) & 0xF000) == 0xA000)
-            throw new IOException("The small update package has unexpected contents. Download the full installer.");
-        string path = Path.Combine(folder, InstallPayload.ExecutableName);
-        using var input = archive.Entries[0].Open();
-        using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        input.CopyTo(output);
-        output.Flush(flushToDisk: true);
-        return path;
     }
 
     /// <summary>UPDATEUX_03 — "43%  ·  140 of 322 MB  ·  1.0 MB/s  ·  about 4 min left".</summary>

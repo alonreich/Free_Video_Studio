@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (#TL-AITRACKING), docs/05_SYSTEM_LIFECYCLE_STORAGE.md (#SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -127,8 +124,6 @@ public static class AiEliminationTrackerService
             string tempPcm = Path.Combine(Path.GetTempPath(), $"fvs_elim_pcm_{Guid.NewGuid():N}.raw");
             tempFiles.Add(tempPcm);
 
-            // AIELIM_03 — the scan LISTENS for shots, so a video without sound cannot be scanned; say so plainly
-            // (it used to report "No loud action moments", as if it had listened and heard nothing).
             if (!await AiFfmpeg.HasAudioStreamAsync(ffmpegPath, videoPath, ct).ConfigureAwait(false))
                 return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), true,
                     "This video has no sound, and the kill scan finds kills by listening for shots — nothing was checked.", 0);

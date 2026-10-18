@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -302,7 +299,6 @@ public static class GeminiTrackingService
         }
     }
 
-    // ───────────────────────────── request bodies (AOT-safe, no reflection) ─────────────────────────────
 
     /// <summary>B4 — generateContent body: prompt, media parts, temperature 0 (omitted for Gemini 3+, AITEMP_02), JSON MIME type and a response schema.</summary>
     internal static byte[] BuildRequest(string prompt, IReadOnlyList<(string MimeType, byte[] Data, double? Fps)> media, Action<Utf8JsonWriter> writeSchema, string? model = null)
@@ -580,7 +576,6 @@ public static class GeminiTrackingService
         }
     }
 
-    // ───────────────────────────── tracking ─────────────────────────────
 
     /// <summary>AICHUNK_01 — how a segment of <paramref name="durationSec"/> is split: even chunks of at most <see cref="MaxChunkSec"/>.</summary>
     public static IReadOnlyList<(double Start, double End)> PlanChunks(double durationSec)
@@ -648,7 +643,6 @@ public static class GeminiTrackingService
             }
             catch (GeminiException ex) when (useFps && ex.Kind == GeminiErrorKind.BadRequest)
             {
-                // AIFPS_01 — an API that rejects videoMetadata.fps gets the plain request (1 s interval).
                 useFps = false;
                 consoleLog?.Invoke($"{session.VendorName} refused the custom frame rate; retrying at its default 1 frame per second.");
                 CoreLogger.Info("AI-Tracking", session.Redact($"fps metadata refused: {ex.Detail}"));
@@ -714,7 +708,6 @@ public static class GeminiTrackingService
             var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
             var sampledFrames = await AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync(
                 mp4, TrackingFps, targetWidth: 640, log: consoleLog, ct: ct).ConfigureAwait(false);
-            // AIZEROFRAMES_01 — no pictures means no request: the AI would invent positions for an empty clip.
             if (sampledFrames.Count == 0)
                 throw new AiProviderException(session.Vendor, AiProviderErrorKind.MalformedResponse,
                     "No pictures could be read from this part of the block, so it was not sent to the AI. Try again or pick a slightly different block.",
@@ -806,7 +799,6 @@ public static class GeminiTrackingService
         }
     }
 
-    // ───────────────────────────── exclusions ─────────────────────────────
 
     private static readonly Regex SelfLabel = new(
         @"\b(main player|local player|primary character|self|yourself|protagonist|user character|camera character|own character|my player|my character|player's own|own avatar|first[- ]person (hands|arms|weapon)|held weapon|player'?s (hands|arms|weapon))\b",

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -596,7 +593,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                 {
                     try
                     {
-                        // VOAPPLY_03 / Section 7: Resolve the current monitor owner on the chain immediately before handoff
                         if (monitorToStop != null)
                         {
                             try
@@ -652,7 +648,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
                         failure = _lastFault;
                     }
 
-                    // VOWRITE_01: opening buffers are real audio, including a fault before UI publication.
                     if (failure != null && current && hasOpeningAudio)
                     {
                         _recorder = recorder;
@@ -751,7 +746,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     {
         lock (_gate)
         {
-            // A bounded open owns a real sample anchor. Stop/EOF must drain it, not discard it.
             if (_openAttempt != null && _boundedOpen is { } opening)
             {
                 if (_openingFinalization != null) return _openingFinalization;

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md (UI-AICOMMENTARY), docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows.Input;
 using FreeVideoStudio.App.Controls;
@@ -64,7 +61,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
     /// <summary>COMMENTARYUI_02 — the Advanced section; always starts closed (never remembered open).</summary>
     public bool IsAdvancedOpen { get => _isAdvancedOpen; set => SetProperty(ref _isAdvancedOpen, value); }
 
-    // ── One-click styles ─────────────────────────────────────────────────────────────────────────────
     public CommentaryPreset Preset => _preset;
     public bool IsHypeStreamer { get => _preset == CommentaryPreset.HypeStreamer; set { if (value) ApplyPreset(CommentaryPreset.HypeStreamer); } }
     public bool IsChillFriend { get => _preset == CommentaryPreset.ChillFriend; set { if (value) ApplyPreset(CommentaryPreset.ChillFriend); } }
@@ -87,7 +83,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRoastMe));
     }
 
-    // ── The four sliders (0 = Off … 4 = Max) ────────────────────────────────────────────────────────
     public double Funny { get => _funny; set => SetLevel(ref _funny, value, nameof(Funny), nameof(FunnyText)); }
     public double Sarcastic { get => _sarcastic; set => SetLevel(ref _sarcastic, value, nameof(Sarcastic), nameof(SarcasticText)); }
     public double Energy { get => _energy; set => SetLevel(ref _energy, value, nameof(Energy), nameof(EnergyText)); }
@@ -111,7 +106,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         foreach (string name in names) OnPropertyChanged(name);
     }
 
-    // ── Placement: Upper · Middle · Lower ────────────────────────────────────────────────────────────
     public CaptionPosition Position => _position;
     public bool IsUpper { get => _position == CaptionPosition.Top; set { if (value) SetPosition(CaptionPosition.Top); } }
     public bool IsMiddle { get => _position == CaptionPosition.Middle; set { if (value) SetPosition(CaptionPosition.Middle); } }
@@ -119,7 +113,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
 
     private void SetPosition(CaptionPosition p)
     {
-        // The window offers three spots; an older remembered "BottomVoid" shows as Lower.
         _position = p == CaptionPosition.BottomVoid ? CaptionPosition.BottomContent : p;
         OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(IsUpper));
@@ -127,7 +120,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsLower));
     }
 
-    // ── Text look and size ───────────────────────────────────────────────────────────────────────────
     public CaptionLook Look => _look;
     public bool IsOutlineLook { get => _look == CaptionLook.Outline; set { if (value) SetLook(CaptionLook.Outline); } }
     public bool IsBoxLook { get => _look == CaptionLook.Box; set { if (value) SetLook(CaptionLook.Box); } }
@@ -154,7 +146,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsLarge));
     }
 
-    // ── How often it talks ───────────────────────────────────────────────────────────────────────────
     public CommentaryChattiness Chattiness => _chattiness;
     public bool IsQuiet { get => _chattiness == CommentaryChattiness.Quiet; set { if (value) SetChattiness(CommentaryChattiness.Quiet); } }
     public bool IsNormalChat { get => _chattiness == CommentaryChattiness.Normal; set { if (value) SetChattiness(CommentaryChattiness.Normal); } }
@@ -169,7 +160,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsBusy));
     }
 
-    // ── Caption animation ────────────────────────────────────────────────────────────────────────────
     public CaptionStyle Style => _style;
     public bool IsWordByWord { get => _style == CaptionStyle.Karaoke; set { if (value) SetStyle(CaptionStyle.Karaoke); } }
     public bool IsPlainLines { get => _style != CaptionStyle.Karaoke; set { if (value) SetStyle(CaptionStyle.PopIn); } }
@@ -182,7 +172,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsPlainLines));
     }
 
-    // ── The rest ─────────────────────────────────────────────────────────────────────────────────────
     public bool AllowSwearing { get => _allowSwearing; set => SetProperty(ref _allowSwearing, value); }
 
     public bool IsEntireTimeline

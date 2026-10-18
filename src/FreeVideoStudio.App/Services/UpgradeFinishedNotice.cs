@@ -48,7 +48,10 @@ internal static class UpgradeFinishedNotice
 
             window.IsEnabled = true;
             (string headline, string message) = Describe(args);
+            IReadOnlyList<string> whatsNew = UpdateService.WhatsNewForThisVersion(6);
+            vm.SetWhatsNew(whatsNew);
             vm.SetDone(headline, message);
+            if (whatsNew.Count > 0) return;
             await Task.Delay(AutoClose);
             try { if (card.IsVisible) card.Close(); }
             catch (InvalidOperationException ex) { RuntimeLog.Swallowed(ex); }

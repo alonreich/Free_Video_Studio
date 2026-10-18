@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -58,7 +58,6 @@ public sealed class AiAuditFixTests
     [Fact]
     public void Claude_NeverReceivesATemperature()
     {
-        // AITEMP_02 — Claude 4.7+ answers HTTP 400 to any non-default temperature.
         byte[] body = ClaudeProvider.BuildClaudeRequestBody("claude-sonnet-5-5", "p", Array.Empty<AiImageInput>(), null, """{"type":"object","properties":{}}""", null, 0.9);
         using var doc = JsonDocument.Parse(body);
         Assert.False(doc.RootElement.TryGetProperty("temperature", out _));
@@ -107,7 +106,6 @@ public sealed class AiAuditFixTests
         var songs = Songs();
         Assert.Equal(@"C:\m\Epic Battle.mp3", AiMusicAutoFitService.ParseChoice("""{"songNumber":2,"mood":"action","reason":"x"}""", songs)!.Value.Track.FilePath);
         Assert.Equal(@"C:\m\c.mp3", AiMusicAutoFitService.ParseChoice("""{"songNumber":"3","mood":"","reason":""}""", songs)!.Value.Track.FilePath);
-        // An empty / unknown answer is NOT silently song #1 (the old empty-title Contains bug).
         Assert.Null(AiMusicAutoFitService.ParseChoice("""{"songNumber":0,"selectedSong":"","reason":"x"}""", songs));
         Assert.Null(AiMusicAutoFitService.ParseChoice("""{"songNumber":9,"reason":"x"}""", songs));
         Assert.Null(AiMusicAutoFitService.ParseChoice("not json", songs));
@@ -117,13 +115,10 @@ public sealed class AiAuditFixTests
     public void MusicStart_SkipsQuietIntro_AndStillCoversTheVideo()
     {
         const double bucket = 0.05;
-        // 60 s song: 10 s quiet intro, then loud.
         var energy = Enumerable.Range(0, 1200).Select(i => i < 200 ? 0.05 : 0.9).ToArray();
         double start = AiMusicAutoFitService.PickStartSec(energy, bucket, 60, 30);
         Assert.InRange(start, 7.5, 10.0);
-        // Never so late that the song ends before the video does.
         Assert.Equal(5.0, AiMusicAutoFitService.PickStartSec(energy, bucket, 60, 55));
-        // A song shorter than the video starts at 0.
         Assert.Equal(0, AiMusicAutoFitService.PickStartSec(energy, bucket, 60, 90));
     }
 

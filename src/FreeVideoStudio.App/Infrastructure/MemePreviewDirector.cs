@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -193,12 +190,10 @@ public sealed class MemePreviewDirector
         if (memes != null)
         {
             foreach (var m in memes)
-                // MEMEMODE_01 — a corner overlay never pauses, seeks or swaps the gameplay: it is not a cutaway.
                 if (m.DurationSec > 0.001 && !m.IsCornerOverlay) _memes.Add(m);
         }
         _memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));
 
-        // MEMELEVEL_03 — measure what the preview needs to play memes at the export's level.
         if (_memes.Count > 0)
         {
             foreach (var m in _memes) if (m.PlaySound) MeasureInBackground(m.FilePath, isMeme: true);
@@ -266,10 +261,6 @@ public sealed class MemePreviewDirector
         if (double.IsNaN(prev) && double.IsNaN(now)) return;
         if (ipc.IsPaused) return;
 
-        // MEMEPREV_02 — a tick right after a start, a pause or a seek has nothing to "cross": use a
-        // short window BEHIND the playhead instead, so a meme exactly where playback began still plays.
-        // A jump (a seek, or the player skipping a deleted part) is a fresh start too: nothing between
-        // the old and the new position was played, so only the landing point counts.
         double delta = double.IsNaN(prev) ? double.NaN : now - prev;
         bool fresh = double.IsNaN(prev) || wasPaused || !(delta > 0) || delta > SeekJumpSec;
         double hi = now + CrossEps;
@@ -337,8 +328,6 @@ public sealed class MemePreviewDirector
             _savedSpeed = SafeGet(ipc, "speed");
             await SafeSet(ipc, "speed", "1.0");
 
-            // MEMELEVEL_03 / MEMESOUND_02 — the export's level for this meme (its loudness matched to the
-            // gameplay), or silence when its sound is off. Saved and put back on return.
             _savedVolume = SafeGet(ipc, "volume");
             _savedVolumeMax = SafeGet(ipc, "volume-max");
             _savedMute = SafeGet(ipc, "mute");
@@ -357,7 +346,6 @@ public sealed class MemePreviewDirector
             await SafeSet(ipc, "image-display-duration",
                 MemeDurationSec.ToString("F3", CultureInfo.InvariantCulture));
 
-            // MEMETRIM_01 — the chosen part of the meme starts at ClipInSec.
             await ipc.LoadFileAsync(meme.FilePath, Math.Max(0, meme.ClipInSec));
             await WaitUntilAsync(() => ipc.Duration > 0 || ipc.CurrentTime > 0.02, LoadTimeoutMs);
 

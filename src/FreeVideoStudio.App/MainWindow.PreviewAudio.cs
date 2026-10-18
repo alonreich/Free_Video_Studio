@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using FreeVideoStudio.Core.Media;
@@ -86,7 +80,6 @@ public partial class MainWindow
                    string.Join(",", result.MusicStartsSeconds ?? new List<double>()) + "|" + string.Join(",", result.MusicEndsSeconds ?? new List<double>()));
         if (Equals(key, _musicPlanKey)) return _musicPlan;
 
-        // MUSICWIN_01 / XFADEPLAN_01 — the export's own layout (song windows + crossfade leads).
         _musicPlan = MusicBedPlan.Build(result.ToBedTracks(), bedDuration, result.LoopMusic, startDelay);
         _musicPlanKey = key;
         return _musicPlan;
@@ -95,8 +88,6 @@ public partial class MainWindow
     /// <summary>MUSICSYNC_01/02 — called on every playback tick with the video's SOURCE time.</summary>
     private void UpdateMusicPreview(double sourceTimeSec, bool videoEnded)
     {
-        // PREVIEWMIX_01 — the rendered mix already contains the music bed (ducked and carved).
-        // PREVIEWMIX_02 — re-observe the edit FIRST: this follower runs before UpdatePreviewMix on the tick.
         RefreshPreviewMixState();
         if (PreviewMixActive)
         {
@@ -222,7 +213,6 @@ public partial class MainWindow
             }
             catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
         }
-        // VOPREVIEW_01 — the voice protection's level dip, live (voice first, gameplay, then music).
         UpdatePreviewVoicePulse(isPaused || videoEnded ? -1 : editedTime);
     }
 }

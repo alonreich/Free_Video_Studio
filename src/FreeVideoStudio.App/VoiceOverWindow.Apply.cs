@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -240,7 +237,6 @@ public partial class VoiceOverWindow
                             await Task.Run(() => File.Copy(session.WavPath, persistedPath, overwrite: true));
                         }
                         double Out(double source) => _timeline?.SourceToOutput(source) ?? source;
-                        // VOSAMPLE_01: a positive endpoint tail may be shorter than one millisecond.
                         double duration = Math.Max(0, (session.CapturedDurationSec ??
                             Math.Max(0, Out(session.EndSec) - Out(session.StartSec))) - session.RealTrimLeft - session.RealTrimRight);
                         double offset = Out(session.StartSec) + session.OutputOffsetSec + session.RealTrimLeft - Out(session.RenderStartSec);
@@ -564,7 +560,6 @@ public partial class VoiceOverWindow
         var unresolved = _recovery.PendingFailedTakes.Where(t => t.BlocksApply).ToList();
         if (unresolved.Count == 0) return false;
 
-        // 1. Snapshot intended recovery identities before confirmation
         var snapshotIds = unresolved.Select(t => t.Id).ToList();
 
         _isConfirmingDelete = true;
@@ -617,7 +612,6 @@ public partial class VoiceOverWindow
             return false;
         }
 
-        // 2. Revalidate ownership and existence after asynchronous confirmation
         if (!CanStartRecoveryOperation() || _closeRequestedDuringRecovery || _isClosing || _isCommitted || _isApplying)
         {
             EndRecoveryOperationUi();
@@ -628,13 +622,11 @@ public partial class VoiceOverWindow
         var targets = _recovery.PendingFailedTakes.Where(t => t.BlocksApply && snapshotIds.Contains(t.Id)).ToList();
         if (targets.Count == 0)
         {
-            // Stale confirmation: target takes were already resolved elsewhere or removed
             EndRecoveryOperationUi();
             UpdateFailedTakesUi();
             return false;
         }
 
-        // 3. Delete only confirmed items through established recovery manager
         var targetIds = targets.Select(t => t.Id).ToList();
         var pending = _recovery.DiscardTakesAsync(_capture, targetIds);
         BeginRecoveryOperationUi();

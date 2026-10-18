@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -47,11 +44,8 @@ public sealed class GeminiProvider : IAiVisionProvider
     {
         options ??= GeminiCallOptions.Tracking;
         string configured = GeminiClient.ResolveModel(model);
-        // AISCHEMA_02 — Gemini gets its own upper-case dialect whatever the feature wrote.
         string geminiSchema = AiJsonSchema.ToGeminiDialect(jsonSchema);
 
-        // AIMODELFALLBACK_02 — a model found gone earlier this session is skipped; a fresh 404 is answered once
-        // with the newest live model of the key, for EVERY feature (it used to be AI Smart Zoom only).
         string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured);
         try
         {
@@ -69,7 +63,6 @@ public sealed class GeminiProvider : IAiVisionProvider
         string apiKey, string model, string prompt, IReadOnlyList<AiImageInput> images, AiVideoInput? video,
         string jsonSchema, AiReasoningConfig? reasoning, GeminiCallOptions options, Action<string>? userLog, CancellationToken ct)
     {
-        // AITEMP_02 — Gemini 3+ keeps its default temperature unless the task asked for a creative one.
         double? temperature = options.Temperature ?? (GeminiClient.PrefersDefaultTemperature(model) ? null : 0);
         byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: true, temperature);
         try
@@ -79,7 +72,6 @@ public sealed class GeminiProvider : IAiVisionProvider
         catch (GeminiException ex) when (video != null && ex.Kind == GeminiErrorKind.BadRequest)
         {
             CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
-            // AIFPS_01 fallback: some API versions / models reject videoMetadata.fps; retry once without it.
             byte[] retryBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: false, temperature);
             return await _client.GenerateAsync(apiKey, model, retryBody, options, userLog, ct).ConfigureAwait(false);
         }
@@ -103,17 +95,14 @@ public sealed class GeminiProvider : IAiVisionProvider
         {
             w.WriteStartObject();
 
-            // contents array
             w.WriteStartArray("contents");
             w.WriteStartObject();
             w.WriteStartArray("parts");
 
-            // 1. Text prompt part
             w.WriteStartObject();
             w.WriteString("text", prompt);
             w.WriteEndObject();
 
-            // 2. Video part (if provided)
             if (video != null)
             {
                 w.WriteStartObject();
@@ -131,7 +120,6 @@ public sealed class GeminiProvider : IAiVisionProvider
                 w.WriteEndObject();
             }
 
-            // 3. Image parts (if provided)
             foreach (var img in images)
             {
                 if (!string.IsNullOrEmpty(img.Label))
@@ -149,13 +137,11 @@ public sealed class GeminiProvider : IAiVisionProvider
                 w.WriteEndObject();
             }
 
-            w.WriteEndArray(); // parts
-            w.WriteEndObject(); // contents[0]
-            w.WriteEndArray(); // contents
+            w.WriteEndArray();
+            w.WriteEndObject();
+            w.WriteEndArray();
 
-            // generationConfig
             w.WriteStartObject("generationConfig");
-            // AITEMP_02 — null means "the model's own default": no temperature field at all.
             if (temperature is double t) w.WriteNumber("temperature", Math.Clamp(t, 0, 2));
             w.WriteString("responseMimeType", "application/json");
 
@@ -170,7 +156,6 @@ public sealed class GeminiProvider : IAiVisionProvider
                 catch (JsonException ex)
                 {
                     CoreLogger.Swallowed(ex);
-                    // Fallback to empty object if schema parse failed
                     w.WriteStartObject();
                     w.WriteString("type", "OBJECT");
                     w.WriteEndObject();
@@ -193,9 +178,9 @@ public sealed class GeminiProvider : IAiVisionProvider
                 }
             }
 
-            w.WriteEndObject(); // generationConfig
+            w.WriteEndObject();
 
-            w.WriteEndObject(); // root
+            w.WriteEndObject();
         }
 
         return buffer.WrittenSpan.ToArray();

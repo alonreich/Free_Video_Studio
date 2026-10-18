@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
@@ -89,7 +89,6 @@ public static class GranularRecoveryCodec
             ["memes"] = memes
         };
 
-        // CAPTIONS_01 — crash recovery captions persistence.
         if (s.CaptionTrack is { } captions && CaptionTrackJson.Write(captions) is JsonObject captionsObj)
         {
             result["captions"] = captionsObj;

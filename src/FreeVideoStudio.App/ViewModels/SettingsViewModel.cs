@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -69,7 +66,6 @@ public sealed class SettingsViewModel : ViewModelBase
 
         _p = Clone(source);
         _p.EnsureAiDefault();
-        // AICONSENT_02 — a box is ticked only when the consent covers the company the feature uses NOW.
         _p.AiZoomCloudConsent = AppSettings.ConsentCovers(source.AiZoomCloudConsent, source.AiZoomCloudConsentVendor, _p.GetUsageConfig(AiUsage.DenseTracking).Vendor);
         _p.AiMagicWandCloudConsent = AppSettings.ConsentCovers(source.AiMagicWandCloudConsent, source.AiMagicWandCloudConsentVendor, _p.GetUsageConfig(AiUsage.MagicWand).Vendor);
         _p.AiCommentaryCloudConsent = AppSettings.ConsentCovers(source.AiCommentaryCloudConsent, source.AiCommentaryCloudConsentVendor, _p.GetUsageConfig(AiUsage.Commentary).Vendor);
@@ -87,7 +83,6 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Raised after a whole-tab change (restore, reset, import) so imperative rows can rebuild.</summary>
     public event Action? Reloaded;
 
-    // ───────────────────────────── General ─────────────────────────────
     public int ThemeIndex
     {
         get => (int)_p.ThemeMode;
@@ -158,7 +153,6 @@ public sealed class SettingsViewModel : ViewModelBase
         set { if (value < 0 || value >= EncoderChoices.Length || value == EncoderIndex) return; _p.VideoEncoderOverride = EncoderChoices[value].Value; OnPropertyChanged(); }
     }
 
-    // ───────────────────────────── Editing ─────────────────────────────
     public List<string> GameProfiles { get; }
     public int GameIndex
     {
@@ -168,7 +162,6 @@ public sealed class SettingsViewModel : ViewModelBase
             if (value < 0 || value >= GameProfiles.Count || value == GameIndex) return;
             _p.ActiveMaskOverlay = GameProfiles[value];
             OnPropertyChanged();
-            // SETGAME_01 — ONE game choice: a known game also sets the AI camera view.
             if (CameraViewForGame(_p.ActiveMaskOverlay) is { } view) AiCameraViewIndex = (int)view;
         }
     }
@@ -256,7 +249,6 @@ public sealed class SettingsViewModel : ViewModelBase
     public bool ConfirmVoiceOverDeleteTake { get => _p.ConfirmVoiceOverDeleteTake; set { if (_p.ConfirmVoiceOverDeleteTake == value) return; _p.ConfirmVoiceOverDeleteTake = value; OnPropertyChanged(); } }
     public bool ConfirmFinishedDialogExit { get => _p.ConfirmFinishedDialogExit; set { if (_p.ConfirmFinishedDialogExit == value) return; _p.ConfirmFinishedDialogExit = value; OnPropertyChanged(); } }
 
-    // ───────────────────────────── Files & Folders ─────────────────────────────
     public string MainOutputDirectory { get => _p.MainOutputDirectory ?? ""; set { _p.MainOutputDirectory = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MainOutputFolderDisplay)); } }
     public string MergerOutputDirectory { get => _p.MergerOutputDirectory ?? ""; set { _p.MergerOutputDirectory = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MergerOutputFolderDisplay)); } }
     public string MainOutputBaseName { get => _p.MainOutputBaseName ?? ""; set { if (_p.MainOutputBaseName == value) return; _p.MainOutputBaseName = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MainOutputNamePreview)); } }
@@ -295,7 +287,6 @@ public sealed class SettingsViewModel : ViewModelBase
                OutputFileNaming.NumberedFileName(safe, 3) + " …";
     }
 
-    // ───────────────────────────── Sound & Music ─────────────────────────────
     public MixProtectionViewModel Mix { get; }
 
     /// <summary>
@@ -341,7 +332,6 @@ public sealed class SettingsViewModel : ViewModelBase
         _p.Defaults.AudioProtection = Mix.DuckingEnabled || Mix.CarvingEnabled;
     }
 
-    // ───────────────────────────── Shortcuts ─────────────────────────────
     public ObservableCollection<KeyBindRowViewModel> KeyBindRows { get; }
 
     private string _keyBindStatus = "";
@@ -365,7 +355,6 @@ public sealed class SettingsViewModel : ViewModelBase
         return null;
     }
 
-    // ───────────────────────────── AI ─────────────────────────────
     public string GeminiApiKey { get => _gemini; set { if (_gemini == (value ?? "")) return; _gemini = value ?? ""; OnPropertyChanged(); RaiseAiReady(); } }
     public string ClaudeApiKey { get => _claude; set { if (_claude == (value ?? "")) return; _claude = value ?? ""; OnPropertyChanged(); RaiseAiReady(); } }
     public string OpenAiApiKey { get => _openAi; set { if (_openAi == (value ?? "")) return; _openAi = value ?? ""; OnPropertyChanged(); RaiseAiReady(); } }
@@ -475,7 +464,6 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
-    // ───────────────────────────── Copy / reset / import / dirty ─────────────────────────────
 
     /// <summary>
     /// SETTINGSVM_01 — THE list of what each tab owns. Used to save, restore a tab, reset all and import.
@@ -578,7 +566,6 @@ public sealed class SettingsViewModel : ViewModelBase
                 to.AiZoomCloudConsent = from.AiZoomCloudConsent;
                 to.AiMagicWandCloudConsent = from.AiMagicWandCloudConsent;
                 to.AiCommentaryCloudConsent = from.AiCommentaryCloudConsent;
-                // AICONSENT_02 — a ticked box is consent for the company each feature uses after this save.
                 to.AiZoomCloudConsentVendor = to.AiZoomCloudConsent ? to.GetUsageConfig(AiUsage.DenseTracking).Vendor.ToString() : "";
                 to.AiMagicWandCloudConsentVendor = to.AiMagicWandCloudConsent ? to.GetUsageConfig(AiUsage.MagicWand).Vendor.ToString() : "";
                 to.AiCommentaryCloudConsentVendor = to.AiCommentaryCloudConsent ? to.GetUsageConfig(AiUsage.Commentary).Vendor.ToString() : "";

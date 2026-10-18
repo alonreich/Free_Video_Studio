@@ -39,6 +39,14 @@ public sealed class SmartUpdateManifest
     /// <summary>The full installer, for any machine the smart path cannot serve.</summary>
     public SmartAsset? FullInstaller { get; set; }
 
+    /// <summary>
+    /// REVOKE_01 — publisher leaf thumbprints (SHA-256) the publisher has withdrawn, copied from
+    /// <c>build/revoked-signers.txt</c> into every signed list. A client that verifies this list
+    /// remembers them (<see cref="PublisherRoot.AddRevoked"/>) and refuses those leaves from then on.
+    /// Older clients ignore the field (unknown JSON members are skipped).
+    /// </summary>
+    public List<string> RevokedSigners { get; set; } = [];
+
     public static string ContentAssetName(string sha256) => "f-" + sha256.ToLowerInvariant() + ".br";
 
     public static string PatchAssetName(string fromSha256, string toSha256) =>
@@ -119,6 +127,17 @@ public sealed class SmartUpdateManifest
     /// — the certificate that signed the running program — and chains to a root Windows trusts.
     /// </summary>
     public static bool VerifySignature(byte[] json, byte[] signatureJson, string? alsoTrustThumbprint, out string detail)
+        => VerifySignature(json, signatureJson, alsoTrustThumbprint, requireCurrentSigner: false, DateTimeOffset.UtcNow, out detail);
+
+    /// <summary>
+    /// SIGNEXPIRY_01 — as above; with <paramref name="requireCurrentSigner"/> the signing leaf must also be
+    /// inside its validity period at <paramref name="now"/>. The list signature is a plain RSA signature
+    /// with NO timestamp, so ignoring expiry would let a leaf key sign lists forever. The in-app updater
+    /// (a list fetched from GitHub NOW) requires it; the elevated worker and an installer's packed list,
+    /// which may legitimately be run years after it was signed, do not.
+    /// </summary>
+    public static bool VerifySignature(byte[] json, byte[] signatureJson, string? alsoTrustThumbprint,
+        bool requireCurrentSigner, DateTimeOffset now, out string detail)
     {
         try
         {
@@ -140,6 +159,17 @@ public sealed class SmartUpdateManifest
                 detail = vouched ? "Signed by the same publicly trusted certificate as this program." : detail;
             }
             if (!vouched) return false;
+            if (PublisherRoot.IsRevoked(signer.GetCertHashString(HashAlgorithmName.SHA256)))
+            {
+                detail = "The update list was signed with a certificate the publisher withdrew.";
+                return false;
+            }
+            if (requireCurrentSigner &&
+                (now.UtcDateTime < signer.NotBefore.ToUniversalTime() || now.UtcDateTime > signer.NotAfter.ToUniversalTime()))
+            {
+                detail = $"The update list was signed with a certificate that is not valid now (valid {signer.NotBefore:yyyy-MM-dd} to {signer.NotAfter:yyyy-MM-dd}). Check the PC's date and time.";
+                return false;
+            }
 
             using RSA? key = signer.GetRSAPublicKey();
             if (key is null || !key.VerifyData(json, Convert.FromBase64String(signature.Signature), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))

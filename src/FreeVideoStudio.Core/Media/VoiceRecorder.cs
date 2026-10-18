@@ -6,9 +6,6 @@ using System.IO;
 using System.Threading;
 using System.Collections.Generic;
 using FreeVideoStudio.Core.Infrastructure;
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
 namespace FreeVideoStudio.Core.Media;
 
 public class VoiceRecorder : IDisposable
@@ -179,7 +176,6 @@ public class VoiceRecorder : IDisposable
             _outputStream = _streamFactory?.Invoke() ?? new FileStream(_outputPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
             _createdOutputFile = _streamFactory == null;
             _writer = new WaveFileWriter(_outputStream, waveIn.WaveFormat);
-            // Materialize the data header before a write can fail, including a zero-budget take.
             _writer.Write(Array.Empty<byte>(), 0, 0);
 
             waveIn.DataAvailable += OnDataAvailable;
@@ -249,8 +245,6 @@ public class VoiceRecorder : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    // VOWRITE_01: NAudio increments data length only after a successful Write.
-                    // Roll back a partially written failed buffer, retaining the acknowledged prefix.
                     CaptureError = _lastError = writeError = ex;
                     WriteFailed = true;
                     try
@@ -269,7 +263,6 @@ public class VoiceRecorder : IDisposable
                     for (int i = 0; i + 1 < accepted; i += 2)
                         max = Math.Max(max, Math.Abs((short)((a.Buffer[i + 1] << 8) | a.Buffer[i]) / 32768f));
                     _peakSeen = Math.Max(_peakSeen, max);
-                    // Subscriber faults are not storage failures, and cannot hide accepted PCM.
                     try { PcmAvailable?.Invoke(this, new PcmBuffer(a.Buffer, accepted, MicLevelMonitor.ToCaptureFormat(source.WaveFormat))); }
                     catch (Exception ex) { CoreLogger.Swallowed(ex); }
                     try { VolumeChanged?.Invoke(this, max); }

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -65,7 +65,6 @@ public partial class CropToolWindow
     /// </summary>
     private HudDetectionCoordinator? _wandDetection;
 
-    // AIPROVIDER_ROUTING_01 — routes magic wand through configured provider
     private HudDetectionCoordinator WandDetection => _wandDetection ??= new HudDetectionCoordinator(
         new GeminiHudDetectionService(
             () => SettingsManager.Instance.GetApiKey(SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor),
@@ -121,7 +120,6 @@ public partial class CropToolWindow
     {
         var wandSettings = SettingsManager.Instance;
         var vendor = wandSettings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
-        // AICONSENT_02 — consent is per company; switching company asks again.
         if (AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, vendor)) return true;
         string provider = FreeVideoStudio.App.Services.AiVisionProviders.DisplayName(vendor);
         bool yes = await Controls.ConfirmDialogWindow.AskAsync(
@@ -301,7 +299,6 @@ public partial class CropToolWindow
             _wandCandidatesFrame = frame != null ? frameIdentity : null;
             if (userIsReviewing)
             {
-                // WANDPROGRESSIVE_01 — never redraw under a box the user is already working on.
                 int added = candidates.Count(c => c.Source != HudCandidateSource.Local);
                 ClearMagicWandCandidates();
                 _wandPreviewIndex = -1;
@@ -506,7 +503,6 @@ public partial class CropToolWindow
 
         double zoom = Math.Max(0.01, CurrentZoom());
         double stroke = 3.0 / zoom;
-        // WANDCOLOR_01 — Invariant #5: the wand's colours are theme tokens, not literals.
         IBrush strokeBrush = ThemeResources.Brush(this, "AppWandCandidateBrush", Brushes.DeepPink);
         IBrush fillBrush = ThemeResources.Brush(this, "AppWandCandidateFillBrush", Brushes.Transparent);
         IBrush captionBrush = ThemeResources.Brush(this, "AppWandCaptionBrush", Brushes.DeepPink);

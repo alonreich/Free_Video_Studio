@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using NAudio.Wave;
@@ -308,7 +305,7 @@ public static class UiSoundEffect
 
         try
         {
-            if (WaveOut.DeviceCount <= 0) // AOTCLEAN_02 — WaveOut (umbrella package) is gone; same winmm call
+            if (WaveOut.DeviceCount <= 0)
             {
                 _engineFailed = true;
                 SafeLog("No audio output device present - UI sounds disabled for this session.");
@@ -335,13 +332,6 @@ public static class UiSoundEffect
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // UISND_01 — THE OUTPUT IS CLOSED WHEN IDLE. The mixer runs with ReadFully, so an open
-    // WaveOut streams SILENCE forever: an audio stream that never ends, which Windows reports as
-    // "An audio stream is currently in use" (powercfg /requests) and which can keep the machine from
-    // sleeping. The device is now released IdleCloseMs after the last sound finished and reopened on
-    // the next click (EnsureEngineLocked).
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     private const int IdleCloseMs = 2000;
     private static Timer? _idleTimer;
 

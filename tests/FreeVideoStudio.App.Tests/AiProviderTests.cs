@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -16,9 +16,9 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class AiProviderTests
 {
-    private const string FakeGoogleKey = "AIzaSyFAKE-PROVIDER-TEST-0000000000"; // SECRETSCAN_ALLOW
-    private const string FakeAnthropicKey = "sk-ant-api03-FAKE-ANTHROPIC-KEY-0000000000"; // SECRETSCAN_ALLOW
-    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-KEY-0000000000"; // SECRETSCAN_ALLOW
+    private const string FakeGoogleKey = "AIzaSyFAKE-PROVIDER-TEST-0000000000";
+    private const string FakeAnthropicKey = "sk-ant-api03-FAKE-ANTHROPIC-KEY-0000000000";
+    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-KEY-0000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -63,13 +63,12 @@ public sealed class AiProviderTests
         Assert.True(root.TryGetProperty("generationConfig", out JsonElement genConfig));
 
         Assert.Equal("application/json", genConfig.GetProperty("responseMimeType").GetString());
-        // AITEMP_02 — no temperature given = the model's own default: the field is absent.
         Assert.False(genConfig.TryGetProperty("temperature", out _));
         Assert.True(genConfig.TryGetProperty("thinkingConfig", out JsonElement thinking));
         Assert.Equal(4096, thinking.GetProperty("thinkingBudget").GetInt32());
 
         JsonElement parts = contents[0].GetProperty("parts");
-        Assert.True(parts.GetArrayLength() >= 3); // prompt, video, image
+        Assert.True(parts.GetArrayLength() >= 3);
     }
 
     [Fact]

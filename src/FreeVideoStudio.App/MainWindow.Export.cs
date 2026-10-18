@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -142,8 +139,6 @@ public partial class MainWindow
         int qualityIdx = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("QualitySlider")?.Value
                          ?? FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
         int resolvedQuality = FreeVideoStudio.App.ViewModels.QualityLadder.ToWorkerQualityLevel(qualityIdx);
-        // SIZEESTIMATE_01 — recapture current inputs; never export using a stale displayed result.
-        // Original's rough prediction remains separate from its null (uncapped) encoder target.
         var sizeRequest = CaptureSizeRequest();
         Services.OutputSizeEstimate sizeEstimate;
         try
@@ -352,8 +347,6 @@ public partial class MainWindow
             
             musicTracks = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicTrack>();
 
-            // MUSICWIN_01 / XFADEPLAN_01 — every song's chosen part, laid out with the crossfade the
-            // filter graph applies, by the same plan the Add Music wizard and the preview use.
             var bedTracks = _musicWizardResult.ToBedTracks();
             for (int i = 0; i < bedTracks.Count; i++)
             {
@@ -383,7 +376,6 @@ public partial class MainWindow
                 ["main_vol"] = _musicWizardResult.VideoVolume,
                 ["music_vol"] = _musicWizardResult.MusicVolume,
                 ["carving_enabled"] = _musicWizardResult.EnableCarving,
-                // DUCKSTRENGTH_01 — the two strength handles from Settings (50 = tuned).
                 ["ducking_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.DuckingStrength,
                 ["carving_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.CarvingStrength
             };
@@ -418,7 +410,6 @@ public partial class MainWindow
             SpeedSegments = allSegments,
             Cuts = new List<FreeVideoStudio.Core.Media.CutRange>(_cuts),
 
-            // MEMEMAIN_02 — the editor's memes AND the panel's START/END meme, together.
             MemePlacements = EffectiveMemePlacements() is { Count: > 0 } allMemes ? allMemes : null,
             QualityLevel = resolvedQuality,
             TargetMbOverride = resolvedTargetMb,
@@ -432,7 +423,6 @@ public partial class MainWindow
             VoiceOverTakes = _voiceOverResult != null ? GetExistingVoiceOverTakes(_voiceOverResult) : null,
             VoiceOverDuckAudio = _voiceOverResult?.DuckAudio ?? false,
             VoiceOverProtectFromMusic = _voiceOverResult?.ProtectFromMusic ?? false,
-            // AICAPTION_EXPORT_02 — the accepted commentary captions are burned into the export.
             CaptionTrack = _viewModel.CaptionTrack is { Lines.Count: > 0 } captions ? captions : null
         };
         return payload;

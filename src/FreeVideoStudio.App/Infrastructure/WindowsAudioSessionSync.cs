@@ -1,7 +1,4 @@
-
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
+﻿
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -119,8 +116,6 @@ internal static unsafe partial class WindowsAudioSessionSync
                     var setMute = (delegate* unmanaged[Stdcall]<IntPtr, int, Guid*, int>)vtbl[5];
                     Guid ctx = OurContext;
 
-                    // Ensure the process audio session is kept at unity (1.0) and unmuted
-                    // so Windows never attenuates or mutes the in-app player output.
                     setMaster(volume, 1.0f, &ctx);
                     setMute(volume, 0, &ctx);
                 }

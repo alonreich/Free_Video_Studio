@@ -1,10 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -97,7 +91,6 @@ public partial class MainWindow
     /// <summary>The voice-over pulse at output time <paramref name="outputSec"/>: the export's 0.3 s ramps, exactly.</summary>
     private void UpdatePreviewVoicePulse(double outputSec)
     {
-        // VOPREVIEW_02 — the export's own pulse (summed ramps), shared with the Voice Over studio.
         double pulse = outputSec < 0 ? 0 : AudioFilterChain.VoiceProtectionPulseAt(outputSec,
             _voiceOverPreviewTakes.Select(take => (take.StartProjectSec, take.StartProjectSec + take.Reader.TotalTime.TotalSeconds)));
         if (Math.Abs(pulse - _previewVoicePulse) < 0.02 && !(pulse == 0 && _previewVoicePulse != 0)) return;
@@ -341,7 +334,6 @@ public partial class MainWindow
               .Append(music.LoopMusic)
               .Append(',').Append(string.Join(";", (music.MusicDurationsSeconds ?? new()).Select(d => d.ToString("F3", ci))))
               .Append(',').Append(music.MusicDurationSeconds.ToString("F3", ci))
-              // MUSICWIN_01 — trimming a song changes the mix, so it must re-render the preview.
               .Append(",S:").Append(string.Join(";", (music.MusicStartsSeconds ?? new()).Select(d => d.ToString("F3", ci))))
               .Append(",E:").Append(string.Join(";", (music.MusicEndsSeconds ?? new()).Select(d => d.ToString("F3", ci))));
         }

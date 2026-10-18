@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -150,7 +147,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             videoList.AddHandler(Avalonia.Input.DragDrop.DragOverEvent, VideoList_DragOver);
             videoList.AddHandler(Avalonia.Input.DragDrop.DragLeaveEvent, VideoList_DragLeave);
             videoList.AddHandler(Avalonia.Input.DragDrop.DropEvent, VideoList_Drop);
-            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true); // MERGERUX_01 (P10 R-a) — tunnel to capture pre-click selection state
+            videoList.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, VideoList_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
             videoList.AddHandler(Avalonia.Input.InputElement.PointerMovedEvent, VideoList_PointerMoved, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
             videoList.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, VideoList_PointerReleased, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
             videoList.AddHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, VideoList_PointerCaptureLost, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
@@ -161,7 +158,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         var timelineOverlay = this.FindControl<Border>("TimelineOverlay");
         var canvas = this.FindControl<Avalonia.Controls.Canvas>("TimelineMarkersCanvas");
 
-        Controls.TimelineKnob.Attach(canvas, timelineSlider); AttachMergerPlayhead(canvas, timelineSlider); // MERGERPLAYHEAD_01
+        Controls.TimelineKnob.Attach(canvas, timelineSlider); AttachMergerPlayhead(canvas, timelineSlider);
 
         if (timelineSlider != null)
         {
@@ -607,8 +604,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private List<string> SnapshotVideoQueue() => new(VideoQueue);
 
-    // SIZEESTIMATE_01 / MERGERESTIMATE_01 — one shared background estimator, with a bounded
-    // metadata cache. Quality and speed changes reuse the probes instead of launching new ones.
     private void UpdateEstimatedSize()
     {
         _mergerSizeEstimator ??= new Services.OutputSizeEstimator(() => _ffprobePath);
@@ -616,7 +611,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             _mergerSizeEstimator.EstimateMergerAsync, PaintSizeEstimate,
             action => Avalonia.Threading.Dispatcher.UIThread.Post(action), Services.OutputSizeEstimator.QuickMergerEstimate);
         int quality = (this.FindControl<Controls.SpinningWheelSlider>("QualitySlider")?.Value + 1) * 5 ?? 100;
-        var request = new Services.MergerSizeRequest(VideoQueue.ToArray(), _baseSpeed, quality, _knownSizeSources, EdlOutputSec()); // MERGESIZE_01
+        var request = new Services.MergerSizeRequest(VideoQueue.ToArray(), _baseSpeed, quality, _knownSizeSources, EdlOutputSec());
         if (_lastMergerSizeRequest is { } previous && previous.Speed == request.Speed && previous.OutputSeconds == request.OutputSeconds &&
             previous.Quality == request.Quality && previous.Paths.SequenceEqual(request.Paths)) return;
         bool queueChanged = _lastMergerSizeRequest == null || !_lastMergerSizeRequest.Paths.SequenceEqual(request.Paths);
@@ -684,8 +679,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private void WireUpVolumeSlider()
     {
-        // VOLSHARED_01 — the shared master rack. AUTOPREVIEW_01: touching the rack (press, wheel,
-        // speaker) IS asking for sound, so it also takes manual control of the browsing preview.
         Infrastructure.MasterVolumeUi.Bind(this, VolumeSliderCtl,
             this.FindControl<TextBlock>("VolumeBadgeText"),
             this.FindControl<Avalonia.Controls.Shapes.Path>("VolumeSpeakerIcon"),
@@ -1124,7 +1117,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 await dialog.ShowDialog(this);
                 targetRatio = dialog.Result ? FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16 : FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Landscape16x9;
             }
-            // CORNERPARITY_03 — from now on the preview lays corner memes out on this canvas.
             _mergeCanvasForCorners = targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16 ? (1080, 1920) : (1920, 1080);
 
             string mergerStrategy = FreeVideoStudio.Core.Media.ExportEncoderStrategy.Resolve(
@@ -1143,11 +1135,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
             if (_musicResult != null)
             {
-                // MUSICWIN_01 / XFADEPLAN_01 — the merger export used to hand the worker bare file
-                // names (every song after the first from 0:00 to its end) and let it re-probe and
-                // re-loop them its own way, so it ignored the part of each song the user chose and
-                // laid songs out differently from the preview. It now receives the finished bed from
-                // the same plan the preview plays.
                 var bedTracks = _musicResult.ToBedTracks();
 
                 if (bedTracks.Count > 0)
@@ -1324,7 +1311,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             }
             else if (_musicResult != null)
             {
-                // MERGERMUSIC_01 — say WHAT is on the video and that clicking edits it.
                 addMusicBtn.Classes.Clear();
                 addMusicBtn.Classes.Add("Primary");
                 if (txt != null) txt.Text = $" {DescribeMusicForButton(_musicResult)} · EDIT ";
@@ -1814,9 +1800,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     protected override void OnClosed(EventArgs e)
     {
-        // PROJ_11 — the last word on the queue, before this window and its collection stop
-        // existing. Everything below is teardown; this is the one line that makes the user's
-        // merge survive the window it was assembled in. MERGESESSION_01: capture + autosave now.
         CaptureEdlNow(flush: true);
 
         _mergerSizeWorker?.Dispose();
@@ -1875,7 +1858,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
         if (!_isRubberbanding && dist > 5)
         {
-            // If dragging an already-selected item without modifier keys, start reordering drag-drop
             if (_dragItemWasSelected && e.KeyModifiers == Avalonia.Input.KeyModifiers.None && _dragStartItem != null)
             {
                 int fromIndex = videoList.IndexFromContainer(_dragStartItem);
@@ -1897,7 +1879,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 }
             }
 
-            // Otherwise initiate rubberband (marquee) selection
             _isRubberbanding = true;
             e.Pointer.Capture(videoList);
         }
@@ -1960,7 +1941,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         }
         else if (_videoDragStartPoint.HasValue && _dragStartItem == null)
         {
-            // Clicked empty space without dragging: clear selection
             var point = e.GetCurrentPoint(VideoListCtl);
             var diff = point.Position - _videoDragStartPoint.Value;
             if (Math.Max(Math.Abs(diff.X), Math.Abs(diff.Y)) <= 5)

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -256,7 +253,6 @@ public static class CommentaryService
     {
         if (request.Vendor == AiVendor.Google)
         {
-            // Native video chunk with audio
             byte[] mp4Bytes = await ExtractVideoChunkAsync(request.VideoPath, chunkStartSec, chunkDurSec, consoleLog, ct).ConfigureAwait(false);
             var videoInput = new AiVideoInput(mp4Bytes, "video/mp4", 2.0);
             return await provider.GenerateJsonAsync(
@@ -265,12 +261,10 @@ public static class CommentaryService
                 GeminiCallOptions.Creative, consoleLog, ct).ConfigureAwait(false);
         }
 
-        // Timestamped frame sequence extraction (2 fps)
         var frames = FrameSamplerForTests != null
             ? await FrameSamplerForTests(request.VideoPath, chunkStartSec, chunkDurSec, ct).ConfigureAwait(false)
             : await AiFrameSequenceExtractor.SampleFramesAsync(
                 request.VideoPath, chunkStartSec, chunkDurSec, 2.0, 640, consoleLog, ct).ConfigureAwait(false);
-        // AIZEROFRAMES_01 — never ask the AI about pictures it was not given (it would invent lines).
         if (frames.Count == 0)
             throw new AiProviderException(request.Vendor, AiProviderErrorKind.MalformedResponse,
                 "No pictures could be read from this part of the video.", "frame sampling produced 0 frames");
@@ -428,7 +422,6 @@ public static class CommentaryService
             }
             else if (root.ValueKind == JsonValueKind.Object)
             {
-                // Single object or wrapped array
                 if (root.TryGetProperty("lines", out JsonElement linesEl) && linesEl.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var el in linesEl.EnumerateArray())
@@ -489,7 +482,6 @@ public static class CommentaryService
 
         if (!double.IsFinite(start) || !double.IsFinite(end)) return false;
 
-        // Part-relative seconds -> ABSOLUTE source seconds, kept inside this part.
         double absStart = chunkOffsetSec + Math.Max(0, start);
         double absEnd = chunkOffsetSec + end;
         if (chunkLimitSec > chunkOffsetSec)
@@ -534,21 +526,18 @@ public static class CommentaryService
 
             var previous = result[^1];
 
-            // Check if overlapping significantly (start before previous end)
             if (current.SourceStartSec < previous.SourceEndSec - 0.2)
             {
                 double overlap = previous.SourceEndSec - current.SourceStartSec;
                 double minDur = Math.Min(previous.SourceEndSec - previous.SourceStartSec, current.SourceEndSec - current.SourceStartSec);
                 bool highTemporalOverlap = (overlap / minDur) > 0.45;
 
-                // Check text similarity (identical words or contains)
                 bool textSimilar = previous.Text.Equals(current.Text, StringComparison.OrdinalIgnoreCase)
                     || previous.Text.Contains(current.Text, StringComparison.OrdinalIgnoreCase)
                     || current.Text.Contains(previous.Text, StringComparison.OrdinalIgnoreCase);
 
                 if (highTemporalOverlap || textSimilar)
                 {
-                    // Merge: take higher confidence or extend bounds
                     if (current.Confidence > previous.Confidence)
                     {
                         result[^1] = current with
@@ -597,7 +586,6 @@ public static class CommentaryService
                 RedirectStandardError = true,
             };
 
-            // Attempt with audio first
             foreach (string a in new[]
             {
                 "-y", "-ss", startSec.ToString("0.000", ci), "-t", durationSec.ToString("0.000", ci),
@@ -609,7 +597,6 @@ public static class CommentaryService
 
             if (exitCode != 0 || !File.Exists(tempMp4Path))
             {
-                // Fallback to -an if audio track was absent
                 psi.ArgumentList.Clear();
                 foreach (string a in new[]
                 {

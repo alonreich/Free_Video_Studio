@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -30,7 +27,6 @@ public class MusicPlaylistTests
         Assert.Equal(10, plan[0].FileOffsetSec, 6);
         Assert.Equal(30, plan[0].DurationSec, 6);
         Assert.Equal(5, plan[1].FileOffsetSec, 6);
-        // b's window is 95 s; it starts 3 s early under a's end (the crossfade) — 92 s after the boundary.
         Assert.Equal(3, plan[1].LeadInSec, 6);
         Assert.Equal(92, plan[1].DurationSec, 6);
         Assert.Equal(30, plan[1].OutputStartSec, 6);
@@ -130,12 +126,10 @@ public class MusicPlaylistTests
         Assert.Equal(new MusicBedSegment("b.mp3", 0, 30, 25), plan[1]);
     }
 
-    // ── SILENCETRIM_01 ───────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void SilentIntroAndOutroAreTrimmedOff()
     {
-        // 20 s at 50 ms buckets: 2 s of silence, 15 s of music, 3 s of silence.
         var energy = new List<double>();
         for (int i = 0; i < 40; i++) energy.Add(0.0);
         for (int i = 0; i < 300; i++) energy.Add(0.6);
@@ -153,7 +147,6 @@ public class MusicPlaylistTests
         Assert.Equal((0.0, 30.0), MusicPlaylistMath.AudibleWindow(Array.Empty<double>(), 0.05, 30.0));
     }
 
-    // ── editing a song's window ──────────────────────────────────────────────────────────────
 
     [Fact]
     public void EdgesNeverCrossAndSlidingKeepsTheLength()
@@ -172,7 +165,6 @@ public class MusicPlaylistTests
         Assert.Equal(100, slid.OutSec, 6);
     }
 
-    // ── coverage ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void CoverageSaysExactlyHowMuchOfTheVideoIsSilent()
@@ -210,7 +202,6 @@ public class MusicPlaylistTests
         Assert.False(c.Looping);
     }
 
-    // ── persistence and history ──────────────────────────────────────────────────────────────
 
     [Fact]
     public void SongWindowsSurviveTheMergerEditListRoundTrip()

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FvsBuild;
 
@@ -26,12 +26,17 @@ internal static class Program
         bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
         bool beta = args.Any(a => a.Equals("--beta", StringComparison.OrdinalIgnoreCase));
         bool assumeYes = args.Any(a => a.Equals("--yes", StringComparison.OrdinalIgnoreCase));
+        bool resume = args.Any(a => a.Equals("--resume", StringComparison.OrdinalIgnoreCase));
+        bool protectRootKey = args.Any(a => a.Equals("--protect-root-key", StringComparison.OrdinalIgnoreCase));
         if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.OrdinalIgnoreCase)))
         {
             Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev] [--beta] [--yes] [--stage-only]");
             Console.WriteLine("  (default)     official STABLE release: release gate, build, publish to GitHub as latest");
             Console.WriteLine("  --beta        official BETA release: published as a pre-release (Beta update channel only)");
-            Console.WriteLine("  --yes         skip the 'type PUBLISH' confirmation (required when there is no terminal)");
+            Console.WriteLine("  --yes         skip the 'type PUBLISH' confirmation; also needs FVS_RELEASE_UNATTENDED=1 (RELQA_02)");
+            Console.WriteLine("  --resume      finish the last release whose commit + tag were pushed but whose publish or");
+            Console.WriteLine("                notes promotion failed. Builds nothing (RELRESUME_01).");
+            Console.WriteLine("  --protect-root-key  give the publisher root key its own passphrase (ROOTKEY_01).");
             Console.WriteLine("  --no-publish  build only; GitHub and the repository's version files are not touched");
             Console.WriteLine("  --dev         local dev build: no GitHub, and .\\compiled is not wiped first");
             Console.WriteLine("  --stage-only  diagnostic: publish, stage dependencies and write the manifests, then stop.");
@@ -45,6 +50,17 @@ internal static class Program
 
         DateTimeOffset started = DateTimeOffset.Now;
         using BuildLog log = new("build.log");
+        if (protectRootKey)
+        {
+            int protectedExit = CodeSigning.ProtectRootKey(log);
+            log.WriteVerdictAndClose(protectedExit, DateTimeOffset.Now - started);
+            return protectedExit;
+        }
+        if (resume)
+        {
+            int resumed = RunResume(log, beta, assumeYes, started);
+            return resumed;
+        }
         bool publish = !noPublish && !devMode && !stageOnly;
         int exitCode = RunPipeline(log, publish, devMode, stageOnly, beta, assumeYes, started);
         return exitCode;
@@ -72,9 +88,6 @@ internal static class Program
         SmartUpdateBuilder.IsDevBuild = devMode;
         log.Info($"Build version: {buildVersion}  (tag {tag})");
 
-        // RELGATE_01 — an official release is checked and committed BEFORE anything is built, so the
-        // binary is compiled from the exact commit that gets tagged. Every other mode leaves the
-        // repository's tracked files alone (the version reaches the compiler through -p:Version).
         ReleasePlan? plan = null;
         if (publish)
         {
@@ -160,7 +173,6 @@ internal static class Program
                 return ExitOk;
             }
 
-            // SIGNLOCAL_01 superseded by SIGNLOCAL_02: disclose the local publisher certificate before publishing.
             if (CodeSigning.SignedWithLocalDevCertificate)
             {
                 log.Banner(string.Empty);
@@ -186,9 +198,7 @@ internal static class Program
             if (published)
             {
                 SmartUpdateBuilder.MarkReleased(buildVersion, log);
-                // RELNOTES_01: the staged notes become the release's notes in the repository only now.
                 if (!plan.Beta) ReleaseGate.RecordReleaseNotes(plan, log);
-                // NEWRELEASE_01: prepare the checklist only after a successful public release.
                 ReleaseChecklist.PrepareAndOpen(buildVersion, tag, Staging.CompiledExePath, log);
             }
             if (published)
@@ -200,7 +210,7 @@ internal static class Program
             log.Banner("###########################################################");
             log.Warn("BUILD OK - but the release was NOT published.");
             log.Warn($"The commit and tag {tag} ARE on GitHub; only the release itself is missing (reason above).");
-            log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming', so the next release carries them.");
+            log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming'. Finish THIS release with: Build.cmd --resume (RELRESUME_01).");
             log.Warn(".\\compiled\\FreeVideoStudio-Setup.exe is good and usable.");
             log.Banner("###########################################################");
             log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
@@ -211,6 +221,37 @@ internal static class Program
             log.Error($"ERROR: unhandled build failure: {ex}");
             return FailRelease(plan, log, started);
         }
+    }
+
+    /// <summary>
+    /// RELRESUME_01 — finishes the last release from what its own run left behind: publishes it (or replaces
+    /// its unverified draft) and records its notes. Builds and stamps nothing.
+    /// </summary>
+    private static int RunResume(BuildLog log, bool beta, bool assumeYes, DateTimeOffset started)
+    {
+        ReleaseGate.ResumePlan? resume = ReleaseGate.PreflightResume(beta, assumeYes, log);
+        if (resume is null)
+        {
+            log.WriteVerdictAndClose(ExitBuildFailed, DateTimeOffset.Now - started);
+            return ExitBuildFailed;
+        }
+        ReleasePlan plan = resume.Plan;
+        if (resume.State != ReleaseGate.ResumeState.Published)
+        {
+            log.Banner(plan.Beta ? "PUBLISHING BETA TO GITHUB (RESUMED)..." : "PUBLISHING RELEASE TO GITHUB (RESUMED)...");
+            if (!GitHubReleasePublisher.Publish(Staging.CompiledExePath, plan, log))
+            {
+                log.Warn($"The release {plan.Tag} is still not published (reason above). Fix it and run Build.cmd --resume again.");
+                log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
+                return ExitPublishIncomplete;
+            }
+            SmartUpdateBuilder.MarkReleased(plan.Version, log);
+        }
+        if (!plan.Beta && !resume.NotesAlreadyPromoted) ReleaseGate.RecordReleaseNotes(plan, log);
+        if (resume.State != ReleaseGate.ResumeState.Published)
+            ReleaseChecklist.PrepareAndOpen(plan.Version, plan.Tag, Staging.CompiledExePath, log);
+        log.WriteVerdictAndClose(ExitOk, DateTimeOffset.Now - started);
+        return ExitOk;
     }
 
     /// <summary>RELGATE_01 — a failed release build takes its version commit and tag back with it.</summary>

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -65,21 +62,6 @@ public partial class MainWindow
         var overlay = OverlayLayerCtl;
         if (overlay != null)
         {
-            // ══════════════════════════════════════════════════════════════════════════════════
-            // EXPORTSESSION_01 — CANCEL SIGNALS. IT DOES NOT DECLARE THE FLOOR CLEAR.
-            //
-            // This used to call Cancel() and then, in the same breath, StopOverlay() and
-            // btn.IsEnabled = true — telling the user the export was over while FFmpeg was still
-            // being killed, the reader pipes were still draining and a multi-gigabyte temp directory
-            // was still being deleted. That re-armed button is what let a SECOND pipeline start on
-            // top of the first. See the EXPORTSESSION_01 block on ProcessVideoAsync in
-            // MainWindow.Export.cs and ExportCoordinator for the full three-part failure chain.
-            //
-            // Cancel now only: (a) signals the token, (b) shows "CANCELLING..." so the click is
-            // acknowledged within a frame. The overlay is dismissed and the button re-armed in the
-            // ONE place that knows the pipeline has genuinely stopped — ProcessVideoAsync, after
-            // ExportCoordinator reports the session Idle.
-            // ══════════════════════════════════════════════════════════════════════════════════
             overlay.CancelRequested += (s, e) =>
             {
                 if (_exportCoordinator.Cancel())
@@ -345,7 +327,6 @@ public partial class MainWindow
             {
                 RuntimeLog.Info("UI", "User clicked GRANULAR SPEED button.");
 
-                // MEMEMARK_02 — opened from a meme marker: straight in, no EDIT / REMOVE question.
                 string? focusMemeId = _openEditorAtMemeId;
                 _openEditorAtMemeId = null;
 
@@ -402,10 +383,6 @@ public partial class MainWindow
                     ? $"{zoomIpc.VideoWidth}x{zoomIpc.VideoHeight}"
                     : "1920x1080";
                 bool cutsChangedByEditor = false;
-                // GRANPROBE_01 — CreateAsync, not `new`. The duration probe this window needs before
-                // it can lay out a timeline used to run as a blocking Task.Wait inside the
-                // constructor, freezing the UI for up to half a second on every open. It now runs
-                // off the dispatcher and the window is constructed once the answer is in hand.
                 var editor = await GranularSpeedEditorWindow.CreateAsync(
                     _loadedVideoPath,
                     _trimStartMs,
@@ -425,7 +402,6 @@ public partial class MainWindow
                 if (focusMemeId != null) editor.FocusMemeOnOpen(focusMemeId);
                 editor.SetAiEliminations(_aiEliminationTimestamps);
 
-                // AIELIM_03 — a kill scan that finishes while the editor is open still reaches it.
                 _openGranularEditor = editor;
                 try
                 {
@@ -514,30 +490,6 @@ public partial class MainWindow
         }
 
 
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // DOUBLEFIRE_01 — THE PLAY BUTTON'S Click HANDLER IS GONE. THIS WAS THE WHOLE BUG.
-        //
-        // KEYFOCUS_01 moved Play/Pause onto `PlayPauseButton.Command` (RefreshTransportKeyBindings
-        // assigns `btn.Command = _playPauseCommand`) but LEFT the old `Click` handler attached here.
-        // Avalonia raises BOTH on a single press, so every click ran the toggle TWICE:
-        //
-        //     click -> Command -> TogglePlayPauseTransport()  : paused  -> PLAY
-        //           -> Click   -> TogglePlayPauseTransport()  : playing -> PAUSE
-        //
-        // Net effect of pressing PLAY: the player runs for the few milliseconds between the two
-        // calls — one frame — and stops. Pressing it again does exactly the same thing. That is
-        // the "play advances one frame at a time and pauses itself, trapped" fault, and it is why
-        // MARK START released it: ExecuteMarkStart issues an unconditional `pause=no` rather than a
-        // TOGGLE, so running it twice is idempotent and playback survives.
-        //
-        // It is invisible to reading because the two wirings live in different files and neither
-        // is wrong on its own — only their sum is. TRANSPORT_TRACE_01 is what exposed it: two
-        // `user-transport` lines, PLAY then PAUSE, in the same second, from one click.
-        //
-        // ⚠️ A TOGGLE MUST HAVE EXACTLY ONE ACTIVATION PATH. Do not re-add a Click handler to any
-        // control that already carries a Command. See TryExecutePlayPause for the guard that now
-        // makes a recurrence loud instead of silent.
-        // ══════════════════════════════════════════════════════════════════════════════════════
         var setThumbnailButton = SetThumbnailButtonCtl;
         if (setThumbnailButton != null)
         {
@@ -717,8 +669,6 @@ public partial class MainWindow
             UpdateSpeedLabel();
         }
 
-        // VOLSHARED_01 — the shared master rack (level, mute, badge, icon, wheel), identical in all
-        // three apps. Persistence is central (MasterVolumePersistence), not per gesture.
         Infrastructure.MasterVolumeUi.Bind(this, VolumeSliderCtl,
             this.FindControl<TextBlock>("VolumeBadgeText"),
             this.FindControl<Avalonia.Controls.Shapes.Path>("VolumeSpeakerIcon"),
@@ -734,8 +684,6 @@ public partial class MainWindow
                 labels.Add(tier.Name.ToUpperInvariant());
             qualitySlider.SetLabels(labels);
             qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
-            // QUALITY_04 / SIZEESTIMATE_01 — the estimate and tooltip bind to ExportViewModel.
-            // The shared background estimator publishes both from the same snapshot.
             qualitySlider.ValueChanged += (s, v) =>
             {
                 UpdateEstimatedQuality();
@@ -821,7 +769,6 @@ public partial class MainWindow
 
                     SetMusicButtonActive(true);
 
-                    // MEMEMUSIC_02 — any full-screen meme (panel or editor) asks again here.
                     await AskKeepMusicIfNeededAsync(force: true);
 
                     ApplyPreviewPlayersVolume();
@@ -912,7 +859,6 @@ public partial class MainWindow
             PopulateMemeComboBox();
 
             bool hadFault = _recovery.CheckFault();
-            // RESTORECRASH_01: quarantine a snapshot that repeatedly crashes restoration.
             if (hadFault && !_recovery.CanRetryRestore)
             {
                 RuntimeLog.Info("RECOVERY", $"Restore crashed {_recovery.CrashedRestoreAttempts} times. Quarantining the snapshot.");

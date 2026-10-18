@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class ClaudeProviderTests
 {
-    private const string FakeClaudeKey = "sk-ant-api03-FAKE-CLAUDE-TEST-KEY-00000000"; // SECRETSCAN_ALLOW
+    private const string FakeClaudeKey = "sk-ant-api03-FAKE-CLAUDE-TEST-KEY-00000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -66,7 +66,6 @@ public sealed class ClaudeProviderTests
         Assert.Equal(1, tools.GetArrayLength());
         Assert.Equal("submit_result", tools[0].GetProperty("name").GetString());
 
-        // Anthropic rejects a forced tool while extended thinking is on (AISCHEMA_01 / CLAUDEPROVIDER_01).
         Assert.True(root.TryGetProperty("tool_choice", out JsonElement toolChoice));
         Assert.Equal("auto", toolChoice.GetProperty("type").GetString());
         Assert.False(root.TryGetProperty("temperature", out _));
@@ -74,7 +73,7 @@ public sealed class ClaudeProviderTests
         JsonElement messages = root.GetProperty("messages");
         Assert.Equal(1, messages.GetArrayLength());
         JsonElement content = messages[0].GetProperty("content");
-        Assert.True(content.GetArrayLength() >= 2); // image, label/text
+        Assert.True(content.GetArrayLength() >= 2);
     }
 
     [Fact]

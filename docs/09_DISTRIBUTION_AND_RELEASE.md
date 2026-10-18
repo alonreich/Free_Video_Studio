@@ -7,26 +7,29 @@
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
 | `src/FreeVideoStudio.Core/Infrastructure/RuntimePayloadManifest.cs` | `RuntimePayloadManifest` | `FromFolder`, `Read`, `Write`, `SYS-PAYLOADSPLIT` | Runtime fingerprint. |
-| `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `AppOnlyAssetName`, `RuntimeAlreadyMatchesAsync`, `SYS-PAYLOADSPLIT` | Which package to download. **⚠ CO-GOVERNED BY: 05** |
-| `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature`, `AssetSha256`, `DIST-SMART`, `ASSETHASH_01` | The signed per-file list of a release. |
+| `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `QueryLatestReleaseAsync`, `ReleasesPageUrl`, `SYS-PAYLOADSPLIT` (retired here, COMPACTGONE_01) | Which release to update to. **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature(requireCurrentSigner)`, `AssetSha256`, `RevokedSigners`, `DIST-SMART`, `ASSETHASH_01`, `REVOKE_01`, `SIGNEXPIRY_01` | The signed per-file list of a release. |
 | `src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs` | `BinaryDelta` | `Create`, `Apply`, `ApplyFile`, `StreamBufferSize`, `BINDELTA_01`, `BINDELTA_02` | Binary patch for the main program. |
 | `src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs` | `BrotliFile` | `CompressFile`, `DecompressFile(maxBytes)`, `ASSETHASH_01` | Per-file asset compression; size-capped decompression. |
-| `src/FreeVideoStudio.Core/Infrastructure/ReleaseChangelog.cs` | `ReleaseChangelog`, `ReleaseChangelog.Section` | `Parse`, `Find`, `Promote`, `LintUserNotes`, `PlainHighlights`, `UpcomingTitle`, `UnreleasedTitle`, `RELNOTES_01`, `RELNOTES_02`, `RELNOTES_03` | The one parser of docs/CHANGELOG.md and docs/changes.md (§3f DIST-RELEASENOTES). |
+| `src/FreeVideoStudio.Core/Infrastructure/ReleaseChangelog.cs` | `ReleaseChangelog`, `ReleaseChangelog.Section` | `Parse`, `Find`, `Promote` (returns what it removes), `Archive`, `RELRECORD_01`, `LintUserNotes`, `PlainHighlights`, `UpcomingTitle`, `UnreleasedTitle`, `RELNOTES_01`, `RELNOTES_02`, `RELNOTES_03` | The one parser of docs/CHANGELOG.md and docs/changes.md (§3f DIST-RELEASENOTES). |
 | `build/FvsBuild/SmartUpdateBuilder.cs` | `SmartUpdateBuilder` | `Prepare`, `Finish`, `ReleaseFiles`, `MarkReleased`, `EnsurePublishedBases`, `DIST-SMART`, `NODROPPER_01`, `DELTABASE_01`, `ASSETHASH_01` | Builds the per-file assets, patches, the signed list packed into the installer and the release update.json. |
 | `build/installer/FreeVideoStudio.iss` | Inno Setup script | `ForwardedArguments`, `NODROPPER_01`, `PEIDENTITY_01` | The single download: a non-elevated Inno Setup package that unpacks the release beside its signed list and starts the transactional installer. |
 | `build/FvsBuild/InnoInstaller.cs` | `InnoInstaller` | `Build`, `SetupFileName`, `NODROPPER_01` | Finds ISCC.exe (Inno Setup 6.3+, `FVS_ISCC`) and compiles the script into `compiled\FreeVideoStudio-Setup.exe`. |
 | `build/FvsBuild/PeIdentity.cs` | `PeIdentity` | `FixOriginalFilename`, `Patch`, `PEIDENTITY_01` | Rewrites OriginalFilename/InternalName to the shipped file name before signing. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.App/Services/UpdatePreparer.cs` | `UpdatePreparer` | `PrepareAsync`, `EnsureDiskSpace`, `RequirePatchHeader`, `UPDATESPACE_01`, `ASSETHASH_01`, `UNSIGNEDDEV_01` | Client side of DIST-SMART. **⚠ CO-GOVERNED BY: 05** |
-| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PruneOldReleases`, `ReleasesToPrune`, `ReleaseTitle`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01`, `RELTAG_01`, `RETAIN_01`, `BETA_01` | Draft-verify-publish from the pushed tag; creates the previous-brand download alias transiently; retention. |
-| `build/FvsBuild/ReleaseGate.cs` | `ReleaseGate`, `ReleasePlan` | `Preflight`, `PrepareNotes`, `CommitVersion`, `Undo`, `TreeStillClean`, `PushRelease`, `RecordReleaseNotes`, `RELGATE_01`, `RELNOTES_01` | The release transaction (§3e DIST-RELEASEGATE). **⚠ CO-GOVERNED BY: 05** |
-| `build/FvsBuild/Program.cs` | `Program` | `RunPipeline`, `FailRelease`, `RELGATE_01` | Orders the gate, the build and the publish. **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PruneOldReleases`, `ReleasesToPrune`, `ReleaseTitle`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01`, `RELTAG_01`, `RETAIN_01`, `RETAIN_02`, `BETA_01`, `RELRESUME_01` | Draft-verify-publish from the pushed tag (replacing an earlier unfinished draft); creates the previous-brand download alias transiently; retention removes old FILES only. |
+| `build/FvsBuild/ReleaseGate.cs` | `ReleaseGate`, `ReleasePlan`, `ResumePlan`, `ResumeState` | `Preflight`, `PreflightResume`, `PrepareNotes`, `CommitVersion`, `Undo`, `TreeStillClean`, `PushRelease`, `RecordReleaseNotes`, `CiProblems`, `RequiredChecks`, `HeadingsWithoutTags`, `SameNotes`, `RELGATE_01`, `RELNOTES_01`, `RELQA_01`, `RELQA_02`, `RELRECORD_01`, `RELRECORD_02`, `RELRESUME_01`, `ROOTKEY_01` | The release transaction (§3e DIST-RELEASEGATE). **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/Program.cs` | `Program` | `RunPipeline`, `RunResume`, `FailRelease`, `RELGATE_01`, `RELRESUME_01`, `--protect-root-key` | Orders the gate, the build and the publish. **⚠ CO-GOVERNED BY: 05** |
 | `docs/CHANGELOG.md` | User-facing release notes | `## Upcoming`, `RELNOTES_01`, `CHANGELOG_01` | What users read; becomes the GitHub release notes and the update card's "What's new". |
 | `docs/changes.md` | Technical change log | `## Unreleased`, `RELNOTES_01` | What engineers and agents read; promoted with every stable release. |
+| `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` | Release-notes archives | `RELRECORD_01` | Sections beyond the retention move here; nothing is deleted (the technical archive appears with the first pruning). |
+| `build/revoked-signers.txt` | Withdrawn publisher leaves | `REVOKE_01` | Public SHA-256 thumbprints; copied into every signed list; must equal `PublisherRoot.RevokedSignerThumbprints`. |
+| `.github/workflows/upgrade-smoke.yml` | Upgrade smoke (manual) | `UPGRADESMOKE_01` | Installs an old public release on a free Windows runner and updates it to a new release or draft (§3g). |
 | `build/FvsBuild/Staging.cs` | `Staging` | `WriteManifests`, `ValidateCompiledOutput`, `SYS-PAYLOADSPLIT`, `NODROPPER_01` | Stages the release folder and writes its manifests (nothing is zipped or embedded); `obj\ReleaseAssets\runtime.manifest.json`. |
-| `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish` | Runs the ratchets; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
+| `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish`, `records` (`RELRECORD_01`, `CHANGELOG_02`) | Runs the ratchets; checks the release records and the change-log duty; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
-| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes`, `--no-publish`, `RELGATE_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05, GOV** |
+| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes` (+ `FVS_RELEASE_UNATTENDED=1`), `--no-publish`, `--resume`, `RELGATE_01`, `RELQA_01`, `RELRESUME_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05, GOV** |
 | `dev_build.cmd` | Local Dev Build Harness | `dotnet run build\FvsBuild -- --dev` | Local compilation check and NativeAOT publish verification. Zero git tags, zero GitHub Cloud publishing. **⚠ CO-GOVERNED BY: 05, GOV** |
 
 ---
@@ -64,7 +67,7 @@
 | Standalone installer output | `compiled/FreeVideoStudio-Setup.exe` — an Inno Setup package (NODROPPER_01, §3c DIST-INSTALLER) |
 | Installed executable | `FreeVideoStudio.exe` (version resource `OriginalFilename`/`InternalName` = `FreeVideoStudio.exe`, PEIDENTITY_01) |
 | Embedded payload resource | **none** — retired by NODROPPER_01; `AvCleanRuleTests` fails if one comes back |
-| App-only archive | **retired** (`FreeVideoStudio.App.update.zip` is no longer built or published; smart updates replace it) |
+| App-only archive | **retired** (`FreeVideoStudio.App.update.zip` is no longer built or published; smart updates replace it; the client code that could read one was removed too, COMPACTGONE_01) |
 | Runtime manifest | `runtime.manifest.json` in the staged release and under `obj/ReleaseAssets` |
 | Release-asset aliases | `FreeVideoStudio.exe` (same bytes as the setup, for updaters released before NODROPPER_01) and the previous-brand name (REBRAND_03); both created transiently at publish time |
 
@@ -164,7 +167,7 @@ recurs: the *repeat* download.
   (`05` §5 SYS-SIGNING, `UPDATETRUST_02`). A manifest is a hint, and hints are not a security
   boundary.
 
-* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio-Setup.exe`. The client code that reads a compact package stays dormant (no published asset ⇒ `RuntimeAlreadyMatchesAsync` is false ⇒ the full installer), so an older release that still carries one is handled as before.
+* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio-Setup.exe`. **COMPACTGONE_01 (2026-10-18): the client code that could read a compact package is removed** (`RuntimeAlreadyMatchesAsync`, `ExtractCompactInstaller`, the app-only fields of `UpdateRelease`). It was dormant code that could never run: a client only ever updates to the NEWEST release, and no release since NODROPPER_01 carries the package. The client chooses smart (§3a), else the full installer. The two bullets below are history.
 
 * **Operational compact updates (dormant since NODROPPER_01 — kept for releases that still publish the package).** `FromFolder` excludes the root application and uninstaller.
   Before selecting a compact update, the updater verifies the installed file manifest, requires
@@ -213,8 +216,7 @@ recurs: the *repeat* download.
   different bytes is downloaded. The client hashes the installed folder, downloads only the changed
   files (each decompressed file re-hashed against the signed list), rebuilds the main program from a
   patch made from exactly the installed program's SHA-256 when one exists, and falls back — on ANY doubt
-  — to the compact package (when a release still publishes one; none does since NODROPPER_01), then the
-  full installer. If the smart download would be ≥ 90 % of the full installer, the full installer is used.
+  — to the full installer (the compact step is gone, COMPACTGONE_01). If the smart download would be ≥ 90 % of the full installer, the full installer is used.
 * **Who installs it.** The new main program itself (Authenticode-checked against the pinned root) runs
   as the installer with `--smart-update <folder>`. The elevated worker re-verifies the signed list
   ITSELF, requires its version to equal its own, copies each downloaded file into its protected staging
@@ -319,8 +321,9 @@ recurs: the *repeat* download.
 ## 3d. Release Retention Policy, Local Artifacts & Rolling Changelog  {#DIST-RETENTION}
 
 * **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio-Setup.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
+* **RETAIN_02 — retention removes FILES, never history (2026-10-18).** `PruneOldReleases` used to run `gh release delete`, which deletes the release PAGE and its NOTES with the files. It now removes only the downloadable files of a release beyond the window (`gh release delete-asset`, oldest first, only after the new release is verified and public); the release, its title, its notes and its tag stay forever, and a release that already has no files is skipped. The decision (`ReleasesToPrune`) is unchanged. The bullet below is the older rule it refines.
 * **RETAIN_01 — Official GitHub Release Retention (last 5 stable releases, tags kept forever):** after a successful publish `GitHubReleasePublisher.PruneOldReleases` keeps the newest **5 stable releases** (the new one included) and the newest **3 betas that are still newer than the newest stable** (`ReleasesToPrune`, ordered by VERSION, drafts ignored); every other release is deleted with `gh release delete --yes` — **without `--cleanup-tag`**. The old `--cleanup-tag` deleted the git tag too, so any version a user still ran stopped being traceable to its source after the sixth release, contradicting the publisher's own promise. Tags are never deleted.
-* **Rolling Changelog Contract (`docs/CHANGELOG.md` + `docs/changes.md`):** see §3f DIST-RELEASENOTES. The user changelog keeps exactly the 5 latest releases plus `## Upcoming`; the technical log keeps 10 plus `## Unreleased`. Both are pruned by the release itself (`ReleaseChangelog.Promote`), not by memory.
+* **Rolling Changelog Contract (`docs/CHANGELOG.md` + `docs/changes.md`):** see §3f DIST-RELEASENOTES. The user changelog keeps exactly the 5 latest releases plus `## Upcoming`; the technical log keeps 10 plus `## Unreleased`. Both are pruned by the release itself (`ReleaseChangelog.Promote`), not by memory. **RELRECORD_01: pruned sections move to `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` (`ReleaseChangelog.Archive`, newest first, written before the main file, never duplicated); full history is kept.** Every `## v…` heading in `docs/CHANGELOG.md` must be a pushed tag (CI job `Release records`, and the gate). The four headings that named versions never published (v2026.10.04.1120 – v2026.10.13.2238) were moved to the archive on 2026-10-18.
 * **Smart Update Delta Continuity:** DELTABASE_01 (§3a): every release build makes sure the last 3 published programs are patch bases, verified against their signed update lists.
 * **Pre-Flight Disk Space & Connection Awareness:** UPDATESPACE_01 (05 SYS-AUTOUPDATE): free space is checked per drive for what an update really writes (smart: the changed files; full: the download plus what the installer unpacks), and metered connections are honoured according to user preferences.
 
@@ -342,7 +345,20 @@ recurs: the *repeat* download.
      releases in one minute: wait a minute); the GitHub CLI is signed in; `docs/CHANGELOG.md` has a
      `## Upcoming` section whose bullets pass `ReleaseChangelog.LintUserNotes`; `docs/changes.md` has its
      `## Unreleased` section. It then prints the version, branch, commit and the notes and asks the human to
-     type `PUBLISH`. With no terminal (redirected input) it refuses unless `--yes` is given on purpose.
+     type `PUBLISH`. With no terminal (redirected input) it refuses unless `--yes` is given on purpose —
+     **RELQA_02: and `--yes` also needs `FVS_RELEASE_UNATTENDED=1` in the environment** (one word on a
+     command line is too easy for a script or agent to add).
+     **RELQA_01 — before that question:** the GitHub check runs of the starting commit must be green —
+     the latest run of each of `Fix sentinels`, `Release records`, `Build + test (Windows)`,
+     `LFS pointers resolve`, and for a stable release `NativeAOT publish` (`RequiredChecks`, `AotCheck`,
+     `CiProblems`; read with `gh api repos/{owner}/{repo}/commits/<sha>/check-runs`). Then the fix
+     sentinels and both test suites run on this machine (`RunLocalChecks`) and must pass without touching
+     tracked files. It used to compile, sign and publish without running a single test.
+     **ROOTKEY_01:** the publisher root key must not open with the password stored beside it
+     (`CodeSigning.RootKeyIsProtected`; a key kept offline counts as protected).
+     **RELRECORD_01/02:** every version heading in `docs/CHANGELOG.md` is a tag on GitHub
+     (`HeadingsWithoutTags`), and (stable) the `## Upcoming` notes are not the newest published release's
+     notes again (`SameNotes`) — that is the "publish worked, promotion failed" state, finished by `--resume`.
   2. `CommitVersion` — stamps the five version files (`SynchronizeVersionFiles`), commits ONLY them as
      `release: v<version>` and creates the annotated tag on that commit. The build compiles that commit.
   3. Build. Any failure → `Undo`: `git reset --hard <starting commit>` + tag deleted. Safe by construction:
@@ -354,18 +370,26 @@ recurs: the *repeat* download.
   6. `GitHubReleasePublisher.Publish` — draft from the pushed tag (`--verify-tag`, RELTAG_01), verify every
      asset by SHA-256, publish (stable: `--latest`; `--beta`: `--prerelease`, BETA_01), prune (RETAIN_01).
      A failure here leaves the commit and tag on GitHub without a release: exit 2, and the notes stay in
-     `## Upcoming` for the next attempt.
+     `## Upcoming`. **RELRESUME_01 — `Build.cmd --resume` finishes THAT release** (it used to be a dead end: a
+     new run could only build a NEW version, leaving a tag with no release and version files naming a
+     download that never existed). `PreflightResume` changes nothing until confirmed and proves: clean tree,
+     HEAD is exactly the commit of `v<version.txt>`, the tag is on GitHub, `compiled\FreeVideoStudio-Setup.exe`
+     and `obj\ReleaseAssets\update.json` are that version. Then it publishes (an earlier unfinished draft of the
+     tag is deleted first — never published as it is; the tag stays), marks the patch base, and promotes the
+     notes; or, when the release is already public, only promotes the notes. It never builds or stamps.
   7. Stable only, after success: `RecordReleaseNotes` promotes `## Upcoming` (CHANGELOG.md) and
      `## Unreleased` (changes.md) to `## v<version> — <date>`, prunes both, commits
      `docs: release notes for v<version>` and pushes. Never fails the release (it is public); problems are
      warnings with the manual step named. Then NEWRELEASE_01 (§3b).
-* **Modes.** `Build.cmd` = stable release (gate + publish). `Build.cmd --beta` = pre-release for the Beta
+* **Modes.** `Build.cmd --resume` = finish the last release (RELRESUME_01). `FvsBuild --protect-root-key` = give the root key its own passphrase (ROOTKEY_01, `05` SYS-SIGNING). `Build.cmd` = stable release (gate + publish). `Build.cmd --beta` = pre-release for the Beta
   channel, from any pushed branch; its notes are the current `## Upcoming` prefixed with a beta line, and
   nothing is promoted. `Build.cmd --no-publish` and `dev_build.cmd` (`--dev`) never touch git, GitHub or the
   version files (the version reaches the compiler through `-p:Version=`). `--stage-only` is a diagnostic.
 * **Versioning.** Calendar version `yyyy.MM.dd.HHmm` (UTC). Why not SemVer: 05 SYS-AUTOUPDATE.
-* Tests: `ReleaseChangelogTests` (promotion, retention, lint, `ReleasesToPrune`, `NewVersion`). The git
-  and GitHub steps need a real repository and are verified by running `Build.cmd` (human only).
+* Tests: `ReleaseChangelogTests` (promotion, retention, lint, `ReleasesToPrune`, `NewVersion`),
+  `ReleaseIntegrityTests` (CI verdicts incl. reruns, the gate's job names exist in the workflows, headings
+  without tags, notes comparison, archive, revocation list, root-key protection). The git and GitHub steps
+  need a real repository and are verified by running `Build.cmd` (human only).
 
 ## 3f. Release Notes: Technical Log → User Notes  {#DIST-RELEASENOTES}
 
@@ -392,9 +416,29 @@ recurs: the *repeat* download.
   after a successful stable publish both staging sections are promoted to `## v<version> — <date>` with a
   fresh empty staging section above, and the oldest releases beyond the retention are removed
   (`ReleaseChangelog.Promote`). History is preserved: 5 public releases in CHANGELOG.md, 10 in
-  changes.md, and every GitHub release body for as long as the release exists (RETAIN_01).
+  changes.md, everything older in the two archives (RELRECORD_01), and every GitHub release body forever
+  (RETAIN_02 keeps the release pages).
+* **CHANGELOG_02 — the duty is enforced, not only asked for.** CI (`ci.yml` › `Release records`) fails a push
+  or pull request that changes `src/`, `build/`, `tests/` or the `.cmd` scripts without changing
+  `docs/changes.md`. FvsBuild's own release commits are exempt; `[no-changelog]` in a commit message exempts
+  a change on purpose. The user bullet in `## Upcoming` stays a judgement call (internal changes need none).
 * **RELNOTES_03 — users see them.** The update card shows up to four headlines as "What's new"
   (`ReleaseChangelog.PlainHighlights(…, headlinesOnly: true)`, 04 / 05 SYS-AUTOUPDATE).
+* **WHATSNEW_01 — and see them again after updating.** The downloaded release's notes are remembered
+  (`update_pending_notes.txt`); the new version's first-launch card lists up to six of them once the update is
+  confirmed (and then waits for OK), and Settings › About has "What's new in this version", which opens that
+  version's GitHub release page (or the list of releases). 05 SYS-AUTOUPDATE.
+
+## 3g. Upgrade Smoke Test  {#DIST-UPGRADESMOKE}
+
+* **UPGRADESMOKE_01.** `.github/workflows/upgrade-smoke.yml` (manual, free GitHub-hosted Windows runner):
+  installs the installer of an OLD public release (default `v2026.09.26.1215`, the only one published before
+  the rebrand/Inno/pinned-root changes) the way its own updater starts it (`--install --auto-update`), then
+  runs the NEW release's (or draft's) `FreeVideoStudio-Setup.exe` exactly as the in-app updater does
+  (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART --install --auto-update --source-current --no-launch`) and fails
+  unless `Program Files\FreeVideoStudio\FreeVideoStudio.exe` is the new version; logs are uploaded. Run it
+  before making a draft public. It writes nothing. ⚠️ Its first run is itself the verification of the
+  workflow (a hosted runner has no prior install, UAC is off there): read the logs once.
 
 ## 4. Repository Weight  {#DIST-REPOWEIGHT}
 
@@ -430,7 +474,8 @@ recurs: the *repeat* download.
 ## 5. What CI Watches  {#DIST-CIWATCH}
 
 `SYS-CI`'s `aot-publish` job prints the fifteen largest files in the publish output and the total
-size on every push to `main`.
+size on every push to `main`. Its `records` job (`Release records`) checks RELRECORD_01 and CHANGELOG_02 on
+every push and pull request; the release gate requires it green (RELQA_01).
 
 ⚠️ **It measures only the app's `dotnet publish` folder, NOT the user download.** CI never runs
 `FvsBuild` (and since NODROPPER_01 nothing is embedded in the program at all). The printed total is the app alone — roughly what an app-only

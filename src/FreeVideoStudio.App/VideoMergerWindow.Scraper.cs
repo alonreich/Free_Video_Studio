@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -239,7 +233,7 @@ public partial class VideoMergerWindow
         if (!TimelineMatchesQueue()) return;
         double speed = _baseSpeed > 0.01 ? _baseSpeed : 1.0;
         var length = this.FindControl<TextBlock>("EstimatedLengthText");
-        if (length != null) length.Text = FormatDuration(EdlOutputSec() ?? _timeline.TotalSec / speed + _timeline.SyntheticIntroSec); // MERGESIZE_01
+        if (length != null) length.Text = FormatDuration(EdlOutputSec() ?? _timeline.TotalSec / speed + _timeline.SyntheticIntroSec);
     }
 
     /// <summary>Merged (1.0x) length handed to the Music Wizard.</summary>
@@ -260,7 +254,6 @@ public partial class VideoMergerWindow
     /// <summary>SCRAPER_01..04 — hands the export the exact cut the preview shows.</summary>
     private void ApplyScraperToWorker(MergerWorker worker)
     {
-        // MERGEGRAPH_01 — the export renders the same edit list the editor, preview and undo use.
         CaptureEdlNow(flush: false);
         worker.Edl = CurrentEdl;
 

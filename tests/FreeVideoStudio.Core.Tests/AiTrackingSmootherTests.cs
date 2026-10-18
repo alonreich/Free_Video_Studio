@@ -49,7 +49,6 @@ public sealed class AiTrackingSmootherTests
     public void HudZone_IsAvoidedBySmallestShift_WhenTheTargetStaysInFrame()
     {
         var zones = new[] { new AiNormalizedRect(0.78, 0.0, 0.22, 0.32) };
-        // 600x400 window at (1200,100) overlaps the zone (x >= 1497.6, y <= 345.6); target sits at (1250..1300, 300..400).
         var (x, y) = AiTrajectorySmoother.AvoidHudZones(1200, 100, 600, 400, 1920, 1080, 1250, 300, 1300, 400, zones);
         Assert.True(x + 600 <= 1920 * 0.78 + 0.5 || y >= 1080 * 0.32 - 0.5, "window must clear the zone");
         Assert.True(1250 >= x && 1300 <= x + 600 && 300 >= y && 400 <= y + 400, "target must stay inside the window");
@@ -59,7 +58,6 @@ public sealed class AiTrackingSmootherTests
     public void HudZone_TargetWins_WhenNoShiftCanKeepIt()
     {
         var zones = new[] { new AiNormalizedRect(0.78, 0.0, 0.22, 0.32) };
-        // The target itself sits inside the zone: nothing may move.
         var (x, y) = AiTrajectorySmoother.AvoidHudZones(1300, 0, 620, 400, 1920, 1080, 1600, 50, 1700, 250, zones);
         Assert.Equal(1300, x);
         Assert.Equal(0, y);

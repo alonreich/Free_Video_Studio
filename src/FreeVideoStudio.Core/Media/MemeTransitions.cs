@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Globalization;
 
 namespace FreeVideoStudio.Core.Media;
@@ -84,7 +81,6 @@ public static class MemeTransitions
         if (s < 0.02) return restX;
         string off = fromRight ? "W" : "-w";
         string S = F(startSec), E = F(endSec), D = F(s);
-        // in: off -> rest over [S, S+D]; out: rest -> off over [E-D, E].
         return $"'if(lt(t,{S}+{D}),({restX})+(({off})-({restX}))*(1-(t-{S})/{D}),if(gt(t,{E}-{D}),({restX})+(({off})-({restX}))*((t-({E}-{D}))/{D}),{restX}))'";
     }
 

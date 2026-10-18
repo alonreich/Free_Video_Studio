@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AICOMMENTARY), docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -48,8 +45,6 @@ public partial class GranularSpeedEditorWindow
 
         this.Closing += (_, e) =>
         {
-            // AICOMMENTARY_CLOSE_01 — closing while the AI is still writing used to cancel the run without a
-            // word. Ask first (APPLY asks before it gets here; this covers CANCEL and the window's ✕).
             if (_aiCommentaryRunning && !_closeDuringCommentaryConfirmed)
             {
                 e.Cancel = true;
@@ -75,7 +70,6 @@ public partial class GranularSpeedEditorWindow
     {
         if (_aiCommentaryRunning)
         {
-            // A dismissed dialog answers "no" = keep waiting (the safe side).
             bool applyAnyway = await ConfirmDialogWindow.AskAsync(
                 this,
                 "The AI is still writing your commentary.\n\n" +
@@ -181,7 +175,6 @@ public partial class GranularSpeedEditorWindow
     {
         var settings = SettingsManager.Instance;
         var vendor = settings.GetUsageConfig(AiUsage.Commentary).Vendor;
-        // AICONSENT_02 — consent is per company: Gemini gets clips WITH sound, Claude / OpenAI get silent stills.
         if (AppSettings.ConsentCovers(settings.AiCommentaryCloudConsent, settings.AiCommentaryCloudConsentVendor, vendor)) return true;
 
         string vendorName = AiVisionProviders.DisplayName(vendor);
@@ -251,11 +244,8 @@ public partial class GranularSpeedEditorWindow
 
         if (dialogResult == null) return;
 
-        // AICOMMENTARY_REMEMBER_01 / AIPROFILE_ONE_01 — every option chosen here is remembered for next time, and
-        // the game type IS the app's one game-type setting (Smart Zoom uses it too).
         AiCommentaryDialogWindow.Remember(dialogResult);
 
-        // Resolve source range
         double startSec;
         double durationSec;
 
@@ -279,7 +269,6 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
-        // AICOMMENTARY_ESTIMATE_01 — a long range is many AI calls in a row: say how many and how long first.
         int plannedParts = CommentaryService.PlanChunks(durationSec).Count;
         if (plannedParts > CommentaryService.ConfirmAbovePartCount)
         {
@@ -295,7 +284,6 @@ public partial class GranularSpeedEditorWindow
             if (!goAhead) return;
         }
 
-        // Show Progress Overlay
         var overlay = AiCommentaryProgressOverlayCtl;
         if (overlay != null) overlay.IsVisible = true;
         if (AiCommentaryBtnCtl is { } aiBtn) aiBtn.IsEnabled = false;
@@ -312,7 +300,6 @@ public partial class GranularSpeedEditorWindow
 
         Action<string> consoleLog = msg =>
         {
-            // AICOMMENTARY_LOG_01 — every step of a run also reaches the app log (a run used to leave no trace).
             RuntimeLog.Info("AiCommentary", msg);
             Dispatcher.UIThread.Post(() =>
             {
@@ -341,12 +328,8 @@ public partial class GranularSpeedEditorWindow
             dialogResult.Style,
             dialogResult.Position,
             dialogResult.CustomNotes,
-            // AICOMMENTARY_SPEED_01 — the AI is told how each part plays (speed, freezes, cuts) and every
-            // line is kept readable in FINISHED-video time. The editor's timeline is trim-relative.
             Timeline: OutTimeline(),
             TimelineOffsetSec: _edit.TrimStartMs / 1000.0,
-            // COMMENTARYMIX_01 — the slider mix; TACTICAL_03 — the kill tracker's red marks are sent as facts;
-            // CAPTIONLOOK_01 / CAPTIONSIZE_01 — how the text looks.
             Personality: dialogResult.EffectivePersonality,
             KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
             Look: dialogResult.Look,
@@ -359,7 +342,6 @@ public partial class GranularSpeedEditorWindow
             $"{_edit.Segments.Count} speed block(s), {_edit.Cuts.Count} cut(s).");
         _aiCommentaryRunning = true;
 
-        // AIUSAGE_01 — count every token this run uses and read the allowance before → after.
         using var usage = AiUsageMeter.BeginTask("AI Commentary", commentaryConfig.Vendor);
         if (AiCommentaryPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiCommentary", null);
 
@@ -387,7 +369,6 @@ public partial class GranularSpeedEditorWindow
                 return;
             }
 
-            // AICOMMENTARY_MERGE_01 — commentary for ONE block replaces captions only inside that block.
             CaptionTrack candidate = segmentOnly
                 ? CommentaryService.MergeSegment(_edit.CaptionTrack, generatedTrack, startSec, startSec + durationSec)
                 : generatedTrack;
@@ -395,7 +376,6 @@ public partial class GranularSpeedEditorWindow
             BeginAiCommentaryPreview(candidate, startSec);
             if (AiCommentaryPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiCommentary", usageLines);
 
-            // AICOMMENTARY_REPORT_01 — never hide parts that came back empty.
             if (result.FailedChunks > 0)
                 NotifyError($"{result.FailedChunks} of {result.TotalChunks} part(s) could not be analysed, so they have no captions. Review the rest, or run AI COMMENTARY again on those parts.");
         }
@@ -436,13 +416,11 @@ public partial class GranularSpeedEditorWindow
         _aiCommentaryCandidateTrack = candidate;
         _isAiCommentaryPreviewing = true;
 
-        // AICAPTION_PREVIEWSUB_01 — exactly ONE caption track is ever loaded in the preview.
         MountPreviewCaptions(candidate);
 
         if (AiCommentaryPreviewBarCtl is { } bar) bar.IsVisible = true;
         UpdateApplyButtonForCommentary();
 
-        // Position playhead at beginning of commentary and play
         double relStartMs = Math.Max(0, (playbackStartSec * 1000.0) - _edit.TrimStartMs);
         SetPlayheadFromScrub(relStartMs);
         if (_videoHost?.IpcClient != null)
@@ -473,7 +451,6 @@ public partial class GranularSpeedEditorWindow
 
         if (accept && _aiCommentaryCandidateTrack != null)
         {
-            // Restore original state first so checkpoint captures "before" state (AIUNDO_01)
             _edit.CaptionTrack = _aiCommentaryOriginalTrack;
             PushUndo("apply AI commentary captions");
             _edit.CaptionTrack = _aiCommentaryCandidateTrack;
@@ -485,7 +462,6 @@ public partial class GranularSpeedEditorWindow
         }
         else
         {
-            // Discard candidate: the preview goes back to exactly what was there before (or nothing).
             _edit.CaptionTrack = _aiCommentaryOriginalTrack;
             SyncCaptionsPreviewSubtitles();
             UpdateAiCommentaryBtnVisualState();

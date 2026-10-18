@@ -1,8 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Forbidden to modify without reading: docs/09_DISTRIBUTION_AND_RELEASE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Net.Http;
+﻿using System.Net.Http;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
@@ -18,7 +14,6 @@ internal sealed record PreparedUpdate(string InstallerPath, string? SmartFolder,
 /// <item><b>Smart</b> — read the signed update.json, hash the installed files, download only the files
 ///   whose CONTENT is new (a same-named file with a different SHA-256 counts as new), and rebuild the
 ///   main program from a binary patch when one exists for the installed version (BINDELTA_01).</item>
-/// <item><b>Compact</b> — the app-only installer, when the whole runtime fingerprint matches (SYS-PAYLOADSPLIT).</item>
 /// <item><b>Full</b> — the complete installer.</item>
 /// </list>
 /// <para>Whatever is chosen, the program that will run elevated is publisher-checked (UPDATEPIN_01)
@@ -32,8 +27,6 @@ internal static class UpdatePreparer
     public static async Task<PreparedUpdate> PrepareAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
         Report report, CancellationToken cancel)
     {
-        // UPDATESPACE_01 — only the few MB the signed list needs are required up front. The real need is
-        // checked once it is KNOWN: after the smart plan (changed files only) or before the full installer.
         EnsureDiskSpace([(folder, ListScratchBytes)]);
         Directory.CreateDirectory(folder);
         long? unpackedTotal = null;
@@ -138,9 +131,12 @@ internal static class UpdatePreparer
         byte[] json = await File.ReadAllBytesAsync(manifestPath, cancel).ConfigureAwait(false);
         string? self = OperatingSystem.IsWindows() && AuthenticodeVerifier.Inspect(Environment.ProcessPath ?? string.Empty) is { ChainValid: true } own
             ? own.Thumbprint : null;
-        if (!SmartUpdateManifest.VerifySignature(json, await File.ReadAllBytesAsync(signaturePath, cancel).ConfigureAwait(false), self, out string why))
+        LoadRevokedSigners();
+        if (!SmartUpdateManifest.VerifySignature(json, await File.ReadAllBytesAsync(signaturePath, cancel).ConfigureAwait(false), self,
+                requireCurrentSigner: true, DateTimeOffset.UtcNow, out string why))
             throw new InvalidDataException(why);
         SmartUpdateManifest manifest = SmartUpdateManifest.Parse(json);
+        RememberRevokedSigners(manifest.RevokedSigners);
         if (!DeploymentLifecycle.TryParseVersion(manifest.Version, out Version listed) ||
             !DeploymentLifecycle.TryParseVersion(release.Tag, out Version tagged) || listed != tagged)
             throw new InvalidDataException("update.json describes a different version than the release.");
@@ -168,9 +164,6 @@ internal static class UpdatePreparer
         if (manifest.FullInstaller is { Length: > 0 } full && downloadTotal >= full.Length * 9 / 10)
             return null;
 
-        // UPDATESPACE_01 — the smart update needs: each changed file compressed AND unpacked (the compressed
-        // copy is deleted after it is checked), the patch plus the rebuilt program and its .partial, and
-        // the installer copy of the program.
         long smartBytes = needed.Sum(f => f.AssetLength + f.Length) + exe.Length
                         + (patch is null ? 0 : patch.AssetLength + 2 * exe.Length);
         EnsureDiskSpace([(folder, smartBytes)]);
@@ -189,8 +182,6 @@ internal static class UpdatePreparer
             if (File.Exists(target) && UpgradeFiles.Hash(target) == file.Sha256) { doneBefore += file.AssetLength; continue; }
             string url = release.AssetUrl(file.Asset);
             string compressed = Path.Combine(assets, file.Asset);
-            // ASSETHASH_01 — the compressed bytes are checked against the signed list BEFORE they are
-            // unpacked, and unpacking stops at the promised size, so a tampered asset cannot expand on disk.
             await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), compressed, file.AssetLength,
                 NullIfEmpty(file.AssetSha256), Progress, cancel).ConfigureAwait(false);
             BrotliFile.DecompressFile(compressed, target, file.Length);
@@ -213,12 +204,11 @@ internal static class UpdatePreparer
                 string patchFile = Path.Combine(assets, patch.Asset);
                 await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), patchFile, patch.AssetLength,
                     NullIfEmpty(patch.AssetSha256), Progress, cancel).ConfigureAwait(false);
-                RequirePatchHeader(patchFile, installedExeSha, exe); // ASSETHASH_01
+                RequirePatchHeader(patchFile, installedExeSha, exe);
                 report("Getting the update ready…", "Building the new program file from the small patch…", null);
                 string partial = target + ".partial";
                 try
                 {
-                    // BINDELTA_02: reconstruct disk-to-disk, then verify length, hash and publisher before promotion.
                     BinaryDelta.ApplyFile(exeOnDisk, patchFile, partial, cancel);
                     if (new FileInfo(partial).Length != exe.Length || UpgradeFiles.Hash(partial) != exe.Sha256)
                         throw new IOException("The patched program file did not match the signed update list.");
@@ -249,24 +239,20 @@ internal static class UpdatePreparer
     private static async Task<PreparedUpdate> DownloadInstallerAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
         Report report, long? unpackedTotal, CancellationToken cancel)
     {
-        report("Getting the update ready…", "Checking which parts of the update you need…", null);
-        bool appOnly = release.HasAppOnlyPackage && await UpdateService.RuntimeMatchesForCompactAsync(release, cancel).ConfigureAwait(false);
-        string url = appOnly ? release.AppOnlyUrl! : release.DownloadUrl;
-        string? sha = appOnly ? release.AppOnlySha256Hex : release.Sha256Hex;
-        long size = appOnly ? release.AppOnlySize : release.Size;
+        string url = release.DownloadUrl;
+        string? sha = release.Sha256Hex;
+        long size = release.Size;
         if (string.IsNullOrWhiteSpace(sha))
             throw new InvalidOperationException("The release has no published fingerprint, so the download cannot be verified. Nothing was installed.");
 
         string fullName = release.DownloadUrl.EndsWith("/" + UpdateService.SetupAssetName, StringComparison.OrdinalIgnoreCase)
             || release.DownloadUrl.EndsWith("\\" + UpdateService.SetupAssetName, StringComparison.OrdinalIgnoreCase)
             ? UpdateService.SetupAssetName : InstallPayload.ExecutableName;
-        string target = Path.Combine(folder, appOnly ? "FreeVideoStudio.App.update.zip" : fullName);
+        string target = Path.Combine(folder, fullName);
         string sizeText = RuntimePayloadManifest.FormatBytes(size);
 
-        // UPDATESPACE_01 — the download itself, plus (full installer) everything the installer unpacks
-        // into the Windows temp folder before it installs. Unknown unpacked size → 3 × the download.
         var needs = new List<(string, long)> { (folder, size) };
-        if (!appOnly && fullName == UpdateService.SetupAssetName)
+        if (fullName == UpdateService.SetupAssetName)
             needs.Add((DeploymentFootprint.TempRoot, unpackedTotal ?? size * 3));
         EnsureDiskSpace(needs);
         await UpdateDownloader.DownloadAsync(http, url, UpdateService.LocalDevSourcePath(url), target, size, sha,
@@ -275,15 +261,8 @@ internal static class UpdatePreparer
 
         report("Checking the update is safe…", "Making sure the file arrived complete, unchanged and signed by the publisher…", null);
         string installer = target;
-        if (appOnly)
-        {
-            string compactFolder = Path.Combine(folder, "compact");
-            if (Directory.Exists(compactFolder)) Directory.Delete(compactFolder, recursive: true);
-            Directory.CreateDirectory(compactFolder);
-            installer = UpdateService.ExtractCompactInstaller(target, compactFolder);
-        }
         RequirePublisher(installer);
-        return new PreparedUpdate(installer, null, size, appOnly ? $"App-only update, {sizeText}." : $"Full installer, {sizeText}.");
+        return new PreparedUpdate(installer, null, size, $"Full installer, {sizeText}.");
     }
 
     /// <summary>UPDATEPIN_01 / UPDATETRUST_02 — nothing runs elevated unless the publisher is proven.</summary>
@@ -297,9 +276,6 @@ internal static class UpdatePreparer
             return;
         }
 #if DEBUG
-        // UNSIGNEDDEV_01 — the developer override exists ONLY in Debug builds (dev.cmd) and ONLY while the
-        // dev update source is active. A Release build — every copy a user can download — has no code
-        // path that skips this check, whatever its environment says.
         if (verdict == AuthenticodeVerifier.TrustVerdict.NoAnchor && UpdateService.DevReleaseFolder is not null &&
             string.Equals(Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED_UPDATE"), "1", StringComparison.Ordinal))
         {
@@ -310,6 +286,40 @@ internal static class UpdatePreparer
         TryDelete(installer);
         throw new InvalidOperationException("The downloaded update failed its publisher check and was deleted. Nothing was installed."
             + Environment.NewLine + detail);
+    }
+
+    /// <summary>REVOKE_01 — per-user memory of withdrawn publisher leaves (one thumbprint per line).</summary>
+    internal const string RevokedSignersFile = "update_revoked_signers.txt";
+
+    /// <summary>REVOKE_01 — registers the withdrawn leaves this user's copy has learned so far.</summary>
+    internal static void LoadRevokedSigners()
+    {
+        try
+        {
+            PublisherRoot.AddRevoked(UiStateStore.ReadText(RevokedSignersFile)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+    }
+
+    /// <summary>REVOKE_01 — remembers the withdrawn leaves named by a VERIFIED signed list. Never forgets one.</summary>
+    internal static void RememberRevokedSigners(IEnumerable<string>? thumbprints)
+    {
+        if (thumbprints is null) return;
+        PublisherRoot.AddRevoked(thumbprints);
+        IReadOnlyList<string> all = PublisherRoot.RuntimeRevokedSnapshot();
+        if (all.Count == 0) return;
+        try
+        {
+            UiStateStore.WriteText(RevokedSignersFile, string.Join("\n", all));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;

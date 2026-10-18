@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -97,7 +90,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    // ── the song lane (lane B) ──────────────────────────────────────────────────────────────
 
     private void DrawSongLane()
     {
@@ -146,8 +138,6 @@ public partial class MusicWizardWindow
             if (x1 - x0 > 26)
             {
                 string name = System.IO.Path.GetFileNameWithoutExtension(seg.Path);
-                // Always light text on a dark chip with the song's colour as its edge: readable on
-                // every song colour (a light song colour under light text was not).
                 var label = new Border
                 {
                     Background = Infrastructure.ThemeResources.Brush(this, "AppScrimBrush", new SolidColorBrush(Color.FromArgb(190, 15, 23, 42))),
@@ -173,7 +163,6 @@ public partial class MusicWizardWindow
 
             if (!repeating && x1 - x0 >= 14)
             {
-                // The END handle of this song. Wider hit zone than it looks (EdgeGrabPx).
                 var handle = new Rectangle
                 {
                     Width = 4,
@@ -330,7 +319,6 @@ public partial class MusicWizardWindow
         UpdatePlayhead();
     }
 
-    // ── the song card ───────────────────────────────────────────────────────────────────────
 
     /// <summary>SONGCARD_01 — title, the part that plays and where in the video it is heard (all bound).</summary>
     private void RefreshSongCard()
@@ -621,7 +609,6 @@ public partial class MusicWizardWindow
         ApplySongStartSeconds(start, $"Starts from the beginning ({Clock(start)}).");
     }
 
-    // ── keeping the lane waveform and the preview in step with the list ────────────────────
 
     /// <summary>The music lane's waveform is an ffmpeg render: redone once the user stops changing things.</summary>
     private void QueuePhase3MusicLaneRefresh()

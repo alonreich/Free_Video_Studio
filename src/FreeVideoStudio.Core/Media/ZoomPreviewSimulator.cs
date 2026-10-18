@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-namespace FreeVideoStudio.Core.Media;
+﻿namespace FreeVideoStudio.Core.Media;
 
 /// <summary>
 /// LIVE ZOOM PREVIEW — ONE IMPLEMENTATION, SHARED BY EVERY PREVIEW SURFACE IN THE SUITE.
@@ -192,10 +189,6 @@ public static class ZoomPreviewSimulator
         var (sw, sh) = CoordinateMath.GetResolutionInts(active.ZoomOrigRes!);
         if (sw <= 0 || sh <= 0) return Result.None;
 
-        // AIPARITY_01 — the export runs the trajectory only where the zoom is HELD (instant zooms and the
-        // body of a slow zoom: BuildConstantZoomFilter); a slow glide in/out ramps the static box. The
-        // preview used to run the trajectory everywhere (ignoring the glide) and with a smoothstep the
-        // export never had. It now evaluates the export's own crop expression.
         if (!string.IsNullOrEmpty(active.AiTrackingTrajectory) && p >= 0.999)
         {
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(active.AiTrackingTrajectory);

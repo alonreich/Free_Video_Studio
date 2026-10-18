@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS), docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using FreeVideoStudio.Core.Media;
@@ -40,7 +37,6 @@ public static class AiCommentaryPrompts
         var mix = personality.Normalized();
         var ci = System.Globalization.CultureInfo.InvariantCulture;
 
-        // AIVENDORCAPS_01 — Claude / OpenAI get silent stills: never ask them to narrate sounds they cannot hear.
         string senses = canHearAudio
             ? "You receive this clip as video WITH its game sound."
             : "You receive this clip as still pictures, 2 per second, each labelled with its time. There is NO sound: judge only what is visible.";
@@ -53,7 +49,6 @@ public static class AiCommentaryPrompts
             _ => "Perspective: You are the player in the video narrating what you are doing in first person."
         };
 
-        // CAPTIONRTL_01 — Hebrew: real Hebrew letters, the way Israeli gamers talk.
         string languageLine = string.Equals(language, "Hebrew", StringComparison.OrdinalIgnoreCase)
             ? "Language: Hebrew. Write every line in Hebrew letters, in natural spoken Hebrew the way Israeli gamers talk. Keep game, weapon and item names as they appear in the game."
             : $"Language: {language}. Write every line in {language}.";
@@ -66,7 +61,6 @@ public static class AiCommentaryPrompts
             ? $"How this clip plays in the finished video (times from the start of this clip):\n{playbackNotes.Trim()}\nKeep every line readable at the speed it is shown.\n"
             : string.Empty;
 
-        // TACTICAL_03 — the kill tracker's red marks are FACTS; nothing else may be claimed as a kill.
         string kills = killTimesInPart is null
             ? string.Empty
             : killTimesInPart.Count == 0
@@ -75,7 +69,6 @@ public static class AiCommentaryPrompts
                   + string.Join(", ", killTimesInPart.Select(t => t.ToString("0.0", ci) + "s"))
                   + " (from the start of this clip). React to them at those times. Do not claim any other elimination.\n";
 
-        // TACTICAL_01 — the AI only sees the screen: every "why" must come from something on it.
         string tactical = mix.Tactical == 0
             ? string.Empty
             : $"""
@@ -91,7 +84,6 @@ NEVER invent thoughts, hopes, plans or feelings you cannot see evidence for. If 
             _ => "Leave silence/gaps when nothing notable happens; do not chatter non-stop.",
         };
 
-        // SWEARING_01 — clean by default.
         string language2 = mix.AllowSwearing
             ? "Casual swearing is allowed when it fits the moment; never slurs, hate, or attacks on real people."
             : "Keep it clean: no swearing, no profanity, no slurs.";

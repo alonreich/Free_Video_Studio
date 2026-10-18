@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -29,7 +26,6 @@ public static class AiVisionProviders
     public const AiVendor RecommendedVendor = AiVendor.Google;
     public const string RecommendedModel = GeminiClient.DefaultModel;
 
-    // AIMODELS_02 — offline catalogue shown before "Refresh" lists the key's live models. First = default.
     public static readonly string[] KnownGoogleModels = { GeminiClient.DefaultModel, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest" };
     public static readonly string[] KnownAnthropicModels = { ClaudeProvider.DefaultModelName, "claude-haiku-5-5", "claude-opus-5-5" };
     public static readonly string[] KnownOpenAiModels = { OpenAiProvider.DefaultModelName, "gpt-6.1-sol", "gpt-6-astra" };
@@ -62,7 +58,6 @@ public static class AiVisionProviders
     public static string ReplaceRetired(AiVendor vendor, string? model)
         => string.IsNullOrWhiteSpace(model) || IsRetiredModel(vendor, model) ? GetDefaultModel(vendor) : model.Trim();
 
-    // ───────────── AIMODELFALLBACK_02 — one 404 fallback for every vendor and every feature ─────────────
 
     private static readonly object RemapGate = new();
     private static readonly Dictionary<string, string> SessionRemap = new(StringComparer.OrdinalIgnoreCase);
@@ -122,7 +117,6 @@ public static class AiVisionProviders
         var live = available.Where(n => !string.Equals(n, exclude, StringComparison.OrdinalIgnoreCase) && !IsRetiredModel(vendor, n)).ToList();
         if (live.Count == 0) return null;
 
-        // The curated defaults first, in catalogue order, when the key can use them.
         foreach (string known in GetKnownModels(vendor))
             if (live.Contains(known, StringComparer.OrdinalIgnoreCase)) return known;
 

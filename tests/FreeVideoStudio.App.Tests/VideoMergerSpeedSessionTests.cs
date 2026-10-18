@@ -1,11 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -101,7 +94,7 @@ public sealed class VideoMergerSpeedSessionTests : IDisposable
             var edl = new MergeEdl
             {
                 Clips = new[] { dummyClip },
-                BaseSpeed = 0.1 // legacy corrupted speed
+                BaseSpeed = 0.1
             };
 
             var plan = new MergerRestorePlan(edl, Array.Empty<string>(), Array.Empty<string>());
@@ -135,7 +128,7 @@ public sealed class VideoMergerSpeedSessionTests : IDisposable
             var edl = new MergeEdl
             {
                 Clips = new[] { dummyClip },
-                BaseSpeed = 1.5 // deliberate 1.5x speed
+                BaseSpeed = 1.5
             };
 
             var plan = new MergerRestorePlan(edl, Array.Empty<string>(), Array.Empty<string>());

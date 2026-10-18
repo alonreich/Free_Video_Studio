@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -34,7 +31,6 @@ public static class MusicAttributionHelper
     {
         if (string.IsNullOrWhiteSpace(musicPath)) return null;
 
-        // 1. Check for exact .txt alongside the audio file (e.g., "!_Track.txt" next to "!_Track.mp3")
         string txtPath = Path.ChangeExtension(musicPath, ".txt");
         if (File.Exists(txtPath))
         {
@@ -49,7 +45,6 @@ public static class MusicAttributionHelper
             }
         }
 
-        // 2. Check if filename starts with "!_"
         string fileName = Path.GetFileNameWithoutExtension(musicPath);
         if (fileName.StartsWith("!_", StringComparison.OrdinalIgnoreCase))
         {

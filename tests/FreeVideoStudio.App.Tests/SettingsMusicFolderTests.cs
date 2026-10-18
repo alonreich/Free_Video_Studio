@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -38,7 +35,6 @@ public sealed class SettingsMusicFolderTests : IDisposable
         _testFolder = Path.Combine(_tempDir, "UserMusic");
         Directory.CreateDirectory(_testFolder);
 
-        // Ensure SettingsManager is loaded with a fresh file in _tempDir
         string settingsFile = Path.Combine(_tempDir, "settings.json");
         File.WriteAllText(settingsFile, "{ \"SchemaVersion\": " + SettingsManager.CurrentSchemaVersion + ", \"AutoUpdateChecks\": true }");
         SettingsManager.Load();
@@ -86,29 +82,22 @@ public sealed class SettingsMusicFolderTests : IDisposable
 
         writer.Prime(new JsonObject { ["CustomMusicDirectory"] = "" });
 
-        // 1. First window: user sets folder and saves
         var win1 = new SettingsWindow(_paths, writer);
         win1.DefaultMusicFolder = _testFolder;
         win1.SaveAndClose();
 
-        // The commit is delayed by gated.Gate; disk has NOT caught up yet!
         Assert.False(File.Exists(_paths.SessionStateFile) &&
             File.ReadAllText(_paths.SessionStateFile).Contains(_testFolder.Replace("\\", "\\\\")));
 
-        // 2. Immediate reopen: win2 must read from SessionStateWriter snapshot, not stale disk
         var win2 = new SettingsWindow(_paths, writer);
         Assert.Equal(_testFolder, win2.DefaultMusicFolder);
 
-        // 3. Unrelated Save in win2 (e.g. user toggles a keybind or just clicks save):
-        // Must NOT overwrite the pending music folder with blank!
         win2.SaveAndClose();
         Assert.Equal(_testFolder, writer.ReadSnapshot()["CustomMusicDirectory"]?.GetValue<string>());
 
-        // 4. Release the gate so background commit completes
         gated.Gate.SetResult(true);
         Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
 
-        // 5. Verify disk was updated with testFolder
         JsonObject disk = (await store.LoadAsync()).AsObject();
         Assert.Equal(_testFolder, disk["CustomMusicDirectory"]?.GetValue<string>());
     }
@@ -119,7 +108,6 @@ public sealed class SettingsMusicFolderTests : IDisposable
         var store = new StateTransferStore(_paths);
         await store.UpdatePropertiesAsync(new JsonObject { ["CustomMusicDirectory"] = _testFolder });
 
-        // Simulate new process: load state and prime writer (as Program.BootstrapAsync does)
         var writer = SessionStateWriter.For(_paths);
         JsonObject loaded = await store.LoadAsync();
         writer.Prime(loaded);
@@ -139,7 +127,7 @@ public sealed class SettingsMusicFolderTests : IDisposable
         Directory.CreateDirectory(otherFolder);
 
         win1.DefaultMusicFolder = otherFolder;
-        win1.Close(); // Cancel
+        win1.Close();
 
         var win2 = new SettingsWindow(_paths, writer);
         Assert.Equal(_testFolder, win2.DefaultMusicFolder);
@@ -162,7 +150,6 @@ public sealed class SettingsMusicFolderTests : IDisposable
     public void RemovedFolder_DisplaysSavedPath_WithoutCrashing()
     {
         string removedPath = Path.Combine(_tempDir, "RemovedFolder");
-        // Folder does not exist on disk
         var writer = SessionStateWriter.For(_paths);
         writer.Prime(new JsonObject { ["CustomMusicDirectory"] = removedPath });
 
@@ -173,15 +160,12 @@ public sealed class SettingsMusicFolderTests : IDisposable
     [AvaloniaFact]
     public void UnprimedWriter_UnrelatedSave_DoesNotOverwriteCustomMusicDirectory()
     {
-        // Gated writer that is UNPRIMED
         var writer = new SessionStateWriter((_, _) => Task.FromResult(true));
         Assert.False(writer.IsPrimed);
 
         var win = new SettingsWindow(_paths, writer);
-        // User does not touch music folder; clicks save
         win.SaveAndClose();
 
-        // Writer should not have queued an empty CustomMusicDirectory
         Assert.Null(writer.ReadSnapshot()["CustomMusicDirectory"]);
     }
 

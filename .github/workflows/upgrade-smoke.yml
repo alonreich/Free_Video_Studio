@@ -1,0 +1,96 @@
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# UPGRADESMOKE_01 — DOES A REAL OLD INSTALL UPDATE TO THE NEW RELEASE? (docs/09 DIST-UPGRADESMOKE)
+#
+# ⚠️ WHY THIS EXISTS. Every user today runs an older public release (before the rebrand, the Inno
+# installer and the pinned publisher root). Unit tests prove the pieces; nothing proved that such a
+# copy, installed for real, ends up on the new version. This workflow does exactly that on a clean,
+# free GitHub-hosted Windows machine:
+#   1. downloads the OLD release's installer and installs it the way its own updater does
+#      (--install --auto-update);
+#   2. downloads the NEW release's FreeVideoStudio-Setup.exe (a draft works too) and runs it the way
+#      the new in-app updater does (/VERYSILENT … --install --auto-update --no-launch);
+#   3. checks that the installed program is the new version, and uploads the logs.
+#
+# Run it by hand (Actions › Upgrade smoke › Run workflow) BEFORE making a draft public, or after
+# Build.cmd --resume left a draft. It changes nothing in the repository or its releases.
+# Free: GitHub-hosted runners cost nothing for public repositories.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+
+name: Upgrade smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_tag:
+        description: 'Installed first (an older public release)'
+        required: true
+        default: 'v2026.09.26.1215'
+      new_tag:
+        description: 'Updated to (a release or draft that carries FreeVideoStudio-Setup.exe)'
+        required: true
+
+permissions:
+  contents: write   # needed only to SEE draft releases; no step writes anything
+
+jobs:
+  upgrade:
+    name: Old install updates to the new release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OLD_TAG: ${{ inputs.old_tag }}
+      NEW_TAG: ${{ inputs.new_tag }}
+    steps:
+      - name: Download the old installer (its first .exe asset)
+        shell: pwsh
+        run: |
+          $assets = gh release view $env:OLD_TAG --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name'
+          $exe = ($assets | Where-Object { $_ -like '*.exe' } | Select-Object -First 1)
+          if (-not $exe) { throw "$env:OLD_TAG has no .exe asset." }
+          gh release download $env:OLD_TAG --repo $env:GITHUB_REPOSITORY --pattern $exe --dir old
+          "OLD_EXE=$(Resolve-Path (Join-Path old $exe))" >> $env:GITHUB_ENV
+
+      - name: Install the old release
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath $env:OLD_EXE -ArgumentList '--install','--auto-update' -PassThru
+          if (-not $p.WaitForExit(15 * 60 * 1000)) { $p.Kill($true); throw 'The old installer did not finish in 15 minutes.' }
+          Write-Host "Old installer exit code: $($p.ExitCode)"
+          Get-ChildItem "$env:ProgramFiles" -Directory | ForEach-Object {
+            Get-ChildItem $_.FullName -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.VersionInfo.CompanyName -eq 'Alon Reich' } |
+              ForEach-Object { Write-Host "Installed: $($_.FullName) $($_.VersionInfo.FileVersion)" }
+          }
+
+      - name: Download the new setup
+        shell: pwsh
+        run: gh release download $env:NEW_TAG --repo $env:GITHUB_REPOSITORY --pattern FreeVideoStudio-Setup.exe --dir new
+
+      - name: Update to the new release (as the in-app updater does)
+        shell: pwsh
+        run: |
+          $setupArgs = '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','--install','--auto-update','--source-current','--no-launch'
+          $p = Start-Process -FilePath (Resolve-Path new\FreeVideoStudio-Setup.exe) -ArgumentList $setupArgs -PassThru
+          if (-not $p.WaitForExit(20 * 60 * 1000)) { $p.Kill($true); throw 'The new setup did not finish in 20 minutes.' }
+          Write-Host "New setup exit code: $($p.ExitCode)"
+
+      - name: The installed program is the new version
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:ProgramFiles 'FreeVideoStudio\FreeVideoStudio.exe'
+          if (-not (Test-Path $exe)) { throw "$exe was not installed." }
+          $installed = [version]((Get-Item $exe).VersionInfo.FileVersion)
+          $expected = [version]($env:NEW_TAG.TrimStart('v','V'))
+          Write-Host "Installed $installed, expected $expected"
+          if ($installed -ne $expected) { throw "The update did not install $expected (found $installed)." }
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-smoke-logs
+          path: |
+            C:/ProgramData/FreeVideoStudio*/**/*.log
+            C:/ProgramData/FreeVideoStudio*/**/*.txt
+            ~/AppData/Local/FreeVideoStudio*/**/*.log
+          if-no-files-found: warn

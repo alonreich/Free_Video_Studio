@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -750,7 +750,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
 
         VoiceOverWindow.ConfirmDeleteSeam = async (_, _, _) =>
         {
-            // Simulate take being resolved/discarded elsewhere while confirmation dialog was open
             var take = window.RecoveryManager.PendingFailedTakes.First(t => t.Session.WavPath == wav);
             take.State = TakeRecoveryState.Discarded;
             await Task.Yield();

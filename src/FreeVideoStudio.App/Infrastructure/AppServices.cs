@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/08_APPLICATION_COMPOSITION.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -141,14 +138,6 @@ public sealed class AppServices
             projects:   FileProjectStore.Instance,
             filePicker: new StorageProviderFilePicker(windows, faults));
 
-        // FAULTTIER_02 — make the sink reachable from the ~900 catch blocks that cannot be handed
-        // one: static helpers, window code-behind Avalonia constructs, worker threads with no
-        // object graph in scope. Installed HERE, immediately after the graph is built, because
-        // every line of startup after this point can now report a classified failure instead of
-        // writing a log line nobody opens.
-        //
-        // ⚠️ This is a diagnostic channel, not a collaborator. See the note on Faults for why that
-        // distinction is what keeps it from being the service locator COMPOSITION_02 retires.
         Core.Abstractions.Faults.Install(faults);
 
         RuntimeLog.Info("COMPOSITION", "Application service graph constructed.");

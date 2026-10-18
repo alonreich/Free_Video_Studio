@@ -236,8 +236,6 @@ public static class MemeOverlayLayout
         int y = bottom ? frameH - m - h : m;
         if (posX >= 0 && posY >= 0)
         {
-            // MEMEPOS_01 — a dragged position: the fraction of the free room (frame − box), so the box
-            // can never leave the frame whatever its size.
             x = (int)Math.Round(Math.Clamp(posX, 0, 1) * Math.Max(0, frameW - w));
             y = (int)Math.Round(Math.Clamp(posY, 0, 1) * Math.Max(0, frameH - h));
         }

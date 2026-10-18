@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -209,8 +209,6 @@ public partial class VideoMergerWindow
                 });
             };
 
-            // AUD-MASTERVOL — MasterVolumeUi.Bind (VideoMergerWindow.axaml.cs) already bound and painted
-            // the rack from MpvIpcClient.GlobalMasterVolume with proper re-entrancy guarding.
 
             if (!_previewGate.MarkReady()) return;
         }

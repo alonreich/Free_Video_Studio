@@ -6,7 +6,7 @@ This folder holds a **code-signing certificate** (Authenticode) for `Build.cmd`.
 |---|---|---|
 | `fvs-codesign.pfx` | **yes** | Signing certificate + private key (CN = Alon Reich (FVS local development)), valid 3 years |
 | `fvs-codesign.password.txt` | **yes** | Password for the PFX |
-| `fvs-dev-root-ca.key.pem` | **yes** | Private key of the local root CA (AES-256, same password). The build uses it to renew the signing certificate by itself. **Never delete it** |
+| `fvs-dev-root-ca.key.pem` | **yes** | Private key of the local root CA (AES-256). Needed ONLY to issue a new signing certificate (about every 3 years, or after a leak). Give it its own passphrase (`--protect-root-key`, below) and keep a copy OFFLINE. **Never lose it** |
 | `fvs-dev-root-ca.cer` / `.pem` | no | Public certificate of the local root CA |
 | `fvs-codesign.pem` | no | Public signing certificate |
 | `install-dev-root.cmd` | no | Trusts the local root for YOUR Windows account (run once) |
@@ -26,6 +26,16 @@ This folder holds a **code-signing certificate** (Authenticode) for `Build.cmd`.
 - The build checks the signing certificate on every run. Missing, broken, or under 90 days left → it issues a new one from the root key, with the same password, and keeps a `.bak-<time>` copy. No human step.
 - **Never replace the root.** A new root means every copy already installed refuses all future updates.
 - Copies released before UPDATEPIN_01 must be updated by hand once (download and run the installer).
+
+## Protect the root key (ROOTKEY_01 — free)
+Until you do this, the root key opens with the password in `fvs-codesign.password.txt`, so anyone who copies this folder holds the key every installed copy trusts. The release build (`Build.cmd`) refuses to publish in that state.
+
+1. `dotnet run --project build\FvsBuild -- --protect-root-key` and type a NEW passphrase (12+ characters, not the signing password). It is not stored anywhere — write it down somewhere safe.
+2. Copy `fvs-dev-root-ca.key.pem` to a USB stick (or other offline storage). Ideally delete it from this PC.
+3. Only when a new signing certificate is needed: `set FVS_ROOT_KEY=E:\fvs-dev-root-ca.key.pem` and `set FVS_ROOT_KEY_PASS=…` (or type it when asked), then run `dev_build.cmd` once.
+
+## If the signing certificate may have leaked (REVOKE_01 — free)
+Issue a new one from the same root (step 3 above, after moving `fvs-codesign.pfx` away), then list the OLD certificate's SHA-256 thumbprint in `build\revoked-signers.txt` and in `PublisherRoot.RevokedSignerThumbprints`, and release. Every copy that updates refuses the old certificate from then on.
 
 ## What a bought certificate still adds
 Only the first download from the web: Windows SmartScreen shows "unknown publisher" for this root. To remove that, use a **publicly trusted** code-signing certificate (CA-issued OV/EV, or Azure Trusted Signing) and set:

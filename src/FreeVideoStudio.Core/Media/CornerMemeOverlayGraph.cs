@@ -79,7 +79,6 @@ public static class CornerMemeOverlayGraph
             bool fromRight = m.PosX >= 0 && m.PosY >= 0
                 ? m.PosX >= 0.5
                 : m.Corner is MemeOverlayCorner.TopRight or MemeOverlayCorner.BottomRight;
-            // MEMEANIM_01 — fade (alpha) or slide (moving overlay X); none = the original behaviour.
             string ox = MemeTransitions.CornerOverlayX(m.Animation, x, fromRight, m.StartSec, m.EndSec);
 
             filters.Add(
@@ -108,7 +107,6 @@ public static class CornerMemeOverlayGraph
         string currentA = audioIn;
         if (audioPads.Count > 0)
         {
-            // MEMEDUCK_01 — the game sound dips while a corner meme's own sound plays.
             var windows = new List<string>();
             foreach (var m in memes)
                 if (m.PlaySound && m.HasAudio && !m.IsImage && m.EndSec - m.StartSec > 0.001)
@@ -134,7 +132,6 @@ public static class CornerMemeOverlayGraph
         }
         else if (durationSec > 0.001)
         {
-            // MEMETRIM_01 — only the chosen part of a video meme is read.
             if (clipInSec > 0.0005) { yield return "-ss"; yield return clipInSec.ToString("F3", CultureInfo.InvariantCulture); }
             yield return "-t"; yield return durationSec.ToString("F3", CultureInfo.InvariantCulture);
         }

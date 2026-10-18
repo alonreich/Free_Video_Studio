@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
@@ -12,14 +9,6 @@ namespace FreeVideoStudio.Core.Media;
 
 
 /// <summary>One clip as a lane sees it.</summary>
-// ══════════════════════════════════════════════════════════════════════════════════════════════
-// LANES_01 — THE MERGER'S FILMSTRIP AND WAVEFORM FILL IN LEFT→RIGHT, IN THE BACKGROUND (P5, D9).
-//
-// The planner cuts the merged timeline into one tile per clip (x span on the lane + that clip's
-// kept source window). The runner starts tiles strictly in that left→right order with bounded
-// parallelism, and a new run (queue changed, lane resized) cancels the old one, so stale work never
-// competes with current work. Both are pure/UI-free and unit-tested; the window only paints.
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 public readonly record struct LaneClip(
     int Index, string Path, double KeepStartSec, double KeepEndSec,
     double MergedStartSec, double MergedEndSec, long SizeBytes, long WriteTicks);

@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Text.Json.Nodes;
@@ -73,21 +70,6 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
     /// when there is nothing pending. Guarded by <see cref="_stateLock"/>.</summary>
     private long _firstDirtyTicks;
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // WRITEORDER_02 — FLUSHES ARE SERIALISED END-TO-END AND NEVER GO BACKWARDS.
-    //
-    // FlushToDiskSafe used to snapshot under _stateLock, release it, and only THEN compete for
-    // the named mutex. The debounce timer and the FLUSHCEILING_01 forced Task.Run can run it
-    // concurrently. NamedSystemMutex polls WaitOne(100), which gives no FIFO order, so an older
-    // snapshot could be written AFTER a newer one and the disk kept stale state. Dispose's final
-    // flush could also return early (nothing dirty) while the flush holding the newest state was
-    // still in flight, and a failed write cleared the dirty flag anyway, losing that state.
-    //
-    // Now: _flushGate is held from snapshot to rename. Every mutation bumps _stateVersion, and a
-    // snapshot whose version is not newer than the last one written is skipped. A failed
-    // write re-arms the dirty flag. Dispose's flush therefore waits for any in-flight flush and
-    // then writes the latest state.
-    // ══════════════════════════════════════════════════════════════════════════════════════════
     private readonly object _flushGate = new();
     private long _stateVersion;
     private long _flushedVersion;
@@ -211,7 +193,6 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
                 global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
                 break;
             }
-            // IPCTEARDOWN_01: disposal ends the listener instead of spinning during shutdown.
             catch (ObjectDisposedException swallowed5)
             {
                 serverStream?.Dispose();

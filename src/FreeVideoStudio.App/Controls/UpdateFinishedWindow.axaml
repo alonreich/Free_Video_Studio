@@ -34,6 +34,15 @@
                 <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
                            FontSize="{DynamicResource AppFontSize13}"
                            Foreground="{DynamicResource AppTextMutedBrush}"/>
+                <!-- WHATSNEW_01 — what this version brings, after the update is confirmed. -->
+                <StackPanel Spacing="4" IsVisible="{Binding HasWhatsNew}">
+                    <TextBlock Text="What's new" FontWeight="Bold"
+                               FontSize="{DynamicResource AppFontSize13}"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding WhatsNew}" TextWrapping="Wrap"
+                               FontSize="{DynamicResource AppFontSize13}"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                </StackPanel>
                 <ProgressBar IsIndeterminate="True" Height="8" IsVisible="{Binding IsFinishing}"
                              Foreground="{DynamicResource AppInfoBrush}"
                              Background="{DynamicResource AppPanelBrush}"/>

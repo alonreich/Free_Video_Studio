@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -227,21 +227,17 @@ public class MergerSessionTests
     [Fact]
     public void QueueRowOps_CanMove_And_MoveSteps()
     {
-        // Boundary checks
         Assert.False(QueueRowOps.CanMove(new[] { 0 }, queueCount: 3, direction: -1));
         Assert.True(QueueRowOps.CanMove(new[] { 0 }, queueCount: 3, direction: 1));
         Assert.False(QueueRowOps.CanMove(new[] { 2 }, queueCount: 3, direction: 1));
         Assert.True(QueueRowOps.CanMove(new[] { 2 }, queueCount: 3, direction: -1));
 
-        // Multiselection touching top boundary
         Assert.False(QueueRowOps.CanMove(new[] { 0, 2 }, queueCount: 4, direction: -1));
         Assert.True(QueueRowOps.CanMove(new[] { 0, 2 }, queueCount: 4, direction: 1));
 
-        // Multiselection touching bottom boundary
         Assert.False(QueueRowOps.CanMove(new[] { 1, 3 }, queueCount: 4, direction: 1));
         Assert.True(QueueRowOps.CanMove(new[] { 1, 3 }, queueCount: 4, direction: -1));
 
-        // MoveSteps ordering: -1 yields ascending; +1 yields descending
         var upSteps = QueueRowOps.MoveSteps(new[] { 1, 3 }, direction: -1).ToList();
         Assert.Equal(new[] { (1, 0), (3, 2) }, upSteps);
 
@@ -267,28 +263,24 @@ public class MergerSessionTests
         var tl = Timeline(state.Paths, scraper: false, thumb: false);
         var firstEdl = MergerSession.Capture(state, Analysis, FileId, tl, previous: null);
 
-        // Attach effect specifically to second A (idA2)
         var fx = new EdlEffects { Freezes = new[] { new EdlFreeze(1_000_000, 2) } };
         var edlWithFx = firstEdl with
         {
             Clips = new[] { firstEdl.Clips[0], firstEdl.Clips[1], firstEdl.Clips[2] with { Effects = fx } }
         };
 
-        // Move second A from index 2 to index 1: queue becomes [A, A, B]
         ids.Move(2, 1, 1);
         var movedPaths = new[] { @"C:\c\a.mp4", @"C:\c\a.mp4", @"C:\c\b.mp4" };
         var movedState = state with { Paths = movedPaths, Ids = ids.Ids };
         var movedTl = Timeline(movedPaths, scraper: false, thumb: false);
         var nextEdl = MergerSession.Capture(movedState, Analysis, FileId, movedTl, previous: edlWithFx);
 
-        // idA2 is now at index 1, still carries fx, while idA1 at index 0 has no effects
         Assert.Equal(idA1, nextEdl.Clips[0].ClipId);
         Assert.True(nextEdl.Clips[0].Effects.IsEmpty);
         Assert.Equal(idA2, nextEdl.Clips[1].ClipId);
         Assert.Equal(fx, nextEdl.Clips[1].Effects);
         Assert.Equal(idB, nextEdl.Clips[2].ClipId);
 
-        // Simulate undo via SyncQueue: restore edlWithFx
         var queue = new System.Collections.ObjectModel.ObservableCollection<string>(movedPaths);
         queue.CollectionChanged += (s, e) => ids.Apply(e, queue.Count);
         MergerSession.SyncQueue(queue, ids, edlWithFx.Clips);
@@ -309,7 +301,6 @@ public class MergerSessionTests
         };
         queue.CollectionChanged += (s, e) => ids.Apply(e, queue.Count);
 
-        // Remove middle occurrence (index 1)
         queue.RemoveAt(1);
 
         Assert.Equal(2, queue.Count);

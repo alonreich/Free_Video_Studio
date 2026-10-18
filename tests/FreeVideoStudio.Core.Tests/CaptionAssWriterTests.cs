@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using FreeVideoStudio.Core.Media;
 using Xunit;
@@ -47,7 +47,6 @@ public sealed class CaptionAssWriterTests
             outputH: 1920,
             isPortrait: true);
 
-        // Header invariants
         Assert.Contains("[Script Info]", ass);
         Assert.Contains("PlayResX: 1080", ass);
         Assert.Contains("PlayResY: 1920", ass);
@@ -55,24 +54,19 @@ public sealed class CaptionAssWriterTests
         Assert.Contains("Style: Commentary", ass);
         Assert.Contains("[Events]", ass);
 
-        // Dialogue rows
         Assert.Contains("Dialogue: 0,0:00:01.00,0:00:03.50,Commentary", ass);
         Assert.Contains("Dialogue: 0,0:00:04.00,0:00:07.00,Commentary", ass);
 
-        // Karaoke tags \k
         Assert.Contains(@"\k", ass);
 
-        // Positioning \pos(x, y)
         Assert.Contains(@"\pos(", ass);
 
-        // Emphasis color override for "chased"
         Assert.Contains(CaptionAssWriter.EmphasisColourDefault, ass);
     }
 
     [Fact]
     public void GenerateAss_WithOutputTimeline_ReflectsSpeedRampTiming()
     {
-        // 10-20s is at 0.5x speed (doubles duration)
         var timeline = OutputTimeline.Create(
             totalDurationMs: 30_000.0,
             segments: new[] { new SpeedSegment(10_000.0, 20_000.0, 0.5) });
@@ -87,8 +81,6 @@ public sealed class CaptionAssWriterTests
             outputH: 1080,
             isPortrait: false);
 
-        // In output time, 12s in source maps past 10s (10s + (12-10)/0.5 = 14s)
-        // 16s in source maps to 10s + (16-10)/0.5 = 22s
         Assert.Contains("Dialogue: 0,0:00:14.00,0:00:22.00,Commentary", ass);
         Assert.Contains(@"\pos(", ass);
     }

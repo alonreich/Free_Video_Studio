@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -369,18 +366,10 @@ public static class AiTrajectorySmoother
         }
 
         baseScale = Math.Clamp(baseScale, 1.2, 5.0);
-        // AIPORTRAIT_ZOOM_01 — portrait exports already incur an implicit ~2.67x horizontal center crop
-        // (16:9 -> 2:3 / 9:16). Applying an additional full 2.2x+ scale magnifies the center >5.8x,
-        // which cuts off body/weapon context and causes 3rd-person avatar heads to dominate the screen.
-        // Capping portrait base scale to 1.65x preserves the player's action context while keeping clear magnification.
         double effectiveBaseScale = portraitMode ? Math.Min(baseScale, 1.65) : baseScale;
         double effectiveMinScale = Math.Clamp(minScale, 1.0, effectiveBaseScale);
         deadbandPercent = Math.Clamp(deadbandPercent, 0.0, 10.0);
 
-        // AITIME_01 — a waypoint past the segment end (the AI slice is never shorter than 1 s, and a
-        // model may overshoot) used to be kept and then the LAST one was re-timed to the segment end,
-        // leaving earlier points AFTER it: a non-monotonic timeline. Out-of-range and non-finite
-        // times are dropped here, before anything else looks at them.
         var tempSorted = new List<RawSubjectWaypoint>(rawWaypoints.Count);
         foreach (var wp in rawWaypoints)
         {
@@ -639,10 +628,6 @@ public static class AiTrajectorySmoother
             double feetY = ((pt.Cy + pt.H / 2.0) / 1000.0) * sourceH;
             double headY = ((pt.Cy - pt.H / 2.0) / 1000.0) * sourceH;
 
-            // AIPORTRAIT_MARGINS_01 — in portrait mobile export, the top 20% contains black letterbox
-            // padding (150px) and minimap/stats HUD overlays. The bottom 28% contains weapon inventory/health
-            // overlays and bottom letterbox padding. Framing with 0.20 headroom and 0.72 footroom keeps the
-            // target, weapons, and action safely in the clear central zone, preventing occlusion.
             double bottomMarginFrac = portraitMode ? 0.72 : 0.88;
             double topMarginFrac = portraitMode ? 0.20 : 0.10;
 

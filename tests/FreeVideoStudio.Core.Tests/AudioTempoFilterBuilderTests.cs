@@ -169,7 +169,6 @@ public class AudioTempoFilterBuilderTests
 
     [Theory]
     [MemberData(nameof(Rates))]
-    // AVSYNC_02: verify duration bounds and splice fades across tempo engines.
     public void TheEngineNeverChangesTheGraphDuration_TheBoundAndSpliceFadeFollowTheTempo(double rate)
     {
         var withRb = Built(rate, true);

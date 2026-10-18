@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -117,6 +117,16 @@ internal static partial class ReleaseGate
             problems.Add("docs/CHANGELOG.md could not be read: " + ex.Message);
         }
 
+        if (!CodeSigning.RootKeyIsProtected())
+            problems.Add("The publisher ROOT key (" + CodeSigning.RootKeyPath + ") opens with the password stored next to it. "
+                       + "Give it its own passphrase first: dotnet run --project build\\FvsBuild -- --protect-root-key (then keep it offline).");
+
+        RequireChangelogMatchesTags(problems);
+        if (!beta) RequireNotesNotAlreadyPublished(notes, problems);
+
+        if (baseSha.Length > 0) RequireGreenCi(baseSha, beta, problems);
+        if (problems.Count == 0) RunLocalChecks(problems, log);
+
         if (problems.Count > 0)
         {
             log.Error("ERROR: [RELEASE] The release was NOT started. Nothing was built, committed, tagged or published:");
@@ -136,6 +146,110 @@ internal static partial class ReleaseGate
             return null;
         }
         return plan;
+    }
+
+    /// <summary>RELRESUME_01 — what is left to do for a release whose commit and tag are already on GitHub.</summary>
+    internal enum ResumeState
+    {
+        /// <summary>No GitHub release exists for the tag: publish it.</summary>
+        NotPublished,
+        /// <summary>A draft (unverified or unpublished) exists: replace it with a verified one.</summary>
+        Draft,
+        /// <summary>The release is public: only the release-notes promotion may be missing.</summary>
+        Published,
+    }
+
+    /// <summary>RELRESUME_01 — a resumed release and the step it resumes at.</summary>
+    internal sealed record ResumePlan(ReleasePlan Plan, ResumeState State, bool NotesAlreadyPromoted);
+
+    /// <summary>
+    /// RELRESUME_01 — <c>Build.cmd --resume</c>. A publish that failed after the release commit and tag were
+    /// pushed used to be a dead end: running again refused the existing tag and built a NEW version, leaving
+    /// a tag with no release, an orphaned draft and version files that named a version nobody could download.
+    /// Resume finishes THAT release, from the files the failed run left in .\compiled and obj\ReleaseAssets,
+    /// after proving they are that version, and never rebuilds anything. Touches nothing until confirmed.
+    /// </summary>
+    public static ResumePlan? PreflightResume(bool beta, bool assumeYes, BuildLog log)
+    {
+        var problems = new List<string>();
+        log.Info("[RELEASE] Checking what is left to finish of the last release (--resume)...");
+        string version = File.Exists("version.txt") ? File.ReadAllText("version.txt").Trim() : string.Empty;
+        string tag = "v" + version;
+        if (!Version.TryParse(version, out _)) problems.Add("version.txt does not hold a release version.");
+
+        if (!Git(out List<string> status, "status", "--porcelain", "--untracked-files=normal") || status.Count > 0)
+            problems.Add("The working tree has uncommitted or untracked files. Commit (or remove) them first.");
+        string branch = Git(out List<string> head, "symbolic-ref", "--short", "HEAD") && head.Count == 1 ? head[0] : string.Empty;
+        if (branch.Length == 0) problems.Add("HEAD is detached. Check out the branch the release was made from.");
+        string headSha = Git(out List<string> h, "rev-parse", "HEAD") && h.Count == 1 ? h[0] : string.Empty;
+        string tagSha = Git(out List<string> t, "rev-parse", "-q", "--verify", "refs/tags/" + tag + "^{commit}") && t.Count == 1 ? t[0] : string.Empty;
+        if (tagSha.Length == 0) problems.Add($"The tag {tag} does not exist here. --resume only finishes a release whose tag was pushed.");
+        else if (!string.Equals(headSha, tagSha, StringComparison.OrdinalIgnoreCase))
+            problems.Add($"HEAD is not the release commit of {tag}. Check out {tag}'s branch at that commit (nothing may be committed after it).");
+        if (!(Git(out List<string> remoteTag, "ls-remote", "--tags", "origin", "refs/tags/" + tag) && remoteTag.Count > 0))
+            problems.Add($"The tag {tag} is not on GitHub. A release that was never pushed has nothing to resume: run Build.cmd normally.");
+        if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)
+            problems.Add("The GitHub CLI (gh) is missing or not signed in (`gh auth login`).");
+
+        if (!File.Exists(Staging.CompiledExePath)) problems.Add($"{Staging.CompiledExePath} is missing (a later build may have replaced it). Run Build.cmd normally.");
+        else
+        {
+            string installerVersion = (System.Diagnostics.FileVersionInfo.GetVersionInfo(Staging.CompiledExePath).ProductVersion ?? string.Empty).Split('+')[0].Trim();
+            if (!string.Equals(installerVersion, version, StringComparison.OrdinalIgnoreCase))
+                problems.Add($"{Staging.CompiledExePath} is version '{installerVersion}', not {version}. A later build replaced it: run Build.cmd normally.");
+        }
+        string listPath = Path.Combine("obj", "ReleaseAssets", SmartUpdateManifest.FileName);
+        try
+        {
+            if (!File.Exists(listPath) || SmartUpdateManifest.Parse(File.ReadAllBytes(listPath)).Version != version)
+                problems.Add($"{listPath} is missing or belongs to another version. Run Build.cmd normally.");
+        }
+        catch (InvalidDataException ex) { problems.Add($"{listPath} is unreadable: {ex.Message}"); }
+
+        ResumeState state = ResumeState.NotPublished;
+        bool releaseIsBeta = beta;
+        if (Cli.TryCapture("gh", ["release", "view", tag, "--json", "isDraft,isPrerelease"], out List<string> view))
+        {
+            try
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(string.Join("\n", view));
+                state = node?["isDraft"]?.GetValue<bool>() == true ? ResumeState.Draft : ResumeState.Published;
+                if (state == ResumeState.Published) releaseIsBeta = node?["isPrerelease"]?.GetValue<bool>() == true;
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                problems.Add("The GitHub release for " + tag + " could not be read.");
+            }
+        }
+
+        bool promoted = File.Exists(UserChangelogPath) &&
+                        ReleaseChangelog.Parse(File.ReadAllText(UserChangelogPath)).Releases.Any(r => r.Version == version);
+        string notes = string.Empty;
+        if (state != ResumeState.Published)
+        {
+            try { notes = PrepareNotes(releaseIsBeta, problems); }
+            catch (IOException ex) { problems.Add("docs/CHANGELOG.md could not be read: " + ex.Message); }
+        }
+        if (state == ResumeState.Published && (promoted || releaseIsBeta))
+            problems.Add($"{tag} is already published{(releaseIsBeta ? " (beta)" : " and its notes are recorded")}. Nothing to resume.");
+
+        if (problems.Count > 0)
+        {
+            log.Error("ERROR: [RELEASE] Nothing to resume, or it cannot be resumed safely. Nothing was changed:");
+            foreach (string problem in problems) log.Error("  - " + problem);
+            return null;
+        }
+
+        var plan = new ReleasePlan(version, tag, releaseIsBeta, branch, headSha, notes);
+        log.Banner("###########################################################");
+        log.Banner(state switch
+        {
+            ResumeState.Published => $"ABOUT TO RECORD THE RELEASE NOTES OF THE PUBLISHED {tag}",
+            ResumeState.Draft => $"ABOUT TO REPLACE THE DRAFT OF {tag} AND PUBLISH IT{(releaseIsBeta ? " AS A BETA" : " TO EVERY USER")}",
+            _ => $"ABOUT TO PUBLISH {tag}{(releaseIsBeta ? " AS A BETA" : " TO EVERY USER")} (its commit and tag are already on GitHub)",
+        });
+        log.Banner("###########################################################");
+        return Confirm(assumeYes, log) ? new ResumePlan(plan, state, promoted) : null;
     }
 
     /// <summary>The linted `## Upcoming` notes, or an empty string with the problems added.</summary>
@@ -164,11 +278,19 @@ internal static partial class ReleaseGate
             : body;
     }
 
+    /// <summary>RELQA_02 — the environment variable that must accompany <c>--yes</c>.</summary>
+    internal const string UnattendedVariable = "FVS_RELEASE_UNATTENDED";
+
     private static bool Confirm(bool assumeYes, BuildLog log)
     {
         if (assumeYes)
         {
-            log.Warn("[RELEASE] --yes given: publishing without the interactive confirmation.");
+            if (!string.Equals(Environment.GetEnvironmentVariable(UnattendedVariable), "1", StringComparison.Ordinal))
+            {
+                log.Error($"ERROR: [RELEASE] --yes also needs {UnattendedVariable}=1 in the environment. Nothing was changed.");
+                return false;
+            }
+            log.Warn($"[RELEASE] --yes and {UnattendedVariable}=1 given: publishing without the interactive confirmation.");
             return true;
         }
         if (Console.IsInputRedirected)
@@ -241,10 +363,12 @@ internal static partial class ReleaseGate
         try
         {
             var date = DateOnly.FromDateTime(DateTime.UtcNow);
-            PromoteFile(UserChangelogPath, ReleaseChangelog.UpcomingTitle, plan.Version, date, ReleaseChangelog.PublicReleasesKept);
+            PromoteFile(UserChangelogPath, ReleaseChangelog.UpcomingTitle, plan.Version, date, ReleaseChangelog.PublicReleasesKept,
+                UserChangelogArchivePath, "Free Video Studio — Older Release Notes");
             if (File.Exists(TechnicalLogPath))
-                PromoteFile(TechnicalLogPath, ReleaseChangelog.UnreleasedTitle, plan.Version, date, ReleaseChangelog.TechnicalReleasesKept);
-            string[] files = new[] { UserChangelogPath, TechnicalLogPath }.Where(File.Exists).ToArray();
+                PromoteFile(TechnicalLogPath, ReleaseChangelog.UnreleasedTitle, plan.Version, date, ReleaseChangelog.TechnicalReleasesKept,
+                    TechnicalLogArchivePath, "Free Video Studio — Older Technical Change Log");
+            string[] files = new[] { UserChangelogPath, TechnicalLogPath, UserChangelogArchivePath, TechnicalLogArchivePath }.Where(File.Exists).ToArray();
             if (Git(out _, ["add", "--", .. files]) &&
                 Git(out _, "commit", "--quiet", "-m", $"docs: release notes for {plan.Tag}", "-m", "Upcoming/Unreleased promoted by FvsBuild (RELNOTES_01).") &&
                 Git(out _, "push", "--quiet", "origin", "HEAD:refs/heads/" + plan.Branch))
@@ -260,10 +384,13 @@ internal static partial class ReleaseGate
         }
     }
 
-    internal static void PromoteFile(string path, string pendingTitle, string version, DateOnly date, int keep)
+    internal static void PromoteFile(string path, string pendingTitle, string version, DateOnly date, int keep,
+        string archivePath, string archiveTitle)
     {
         ReleaseChangelog log = ReleaseChangelog.Parse(File.ReadAllText(path));
-        log.Promote(pendingTitle, version, date, keep);
+        IReadOnlyList<ReleaseChangelog.Section> removed = log.Promote(pendingTitle, version, date, keep);
+        if (removed.Count > 0)
+            File.WriteAllText(archivePath, ReleaseChangelog.Archive(File.Exists(archivePath) ? File.ReadAllText(archivePath) : null, removed, archiveTitle));
         File.WriteAllText(path, log.ToString());
     }
 
@@ -336,6 +463,145 @@ internal static partial class ReleaseGate
             log.Warn($"[VERSION] Failed to update {csprojPath}: {ex.Message}");
         }
     }
+
+
+    /// <summary>RELQA_01 — CI jobs (ci.yml / lfs-guard.yml job names) that must be green on the release commit.</summary>
+    internal static readonly string[] RequiredChecks = ["Fix sentinels", "Release records", "Build + test (Windows)", "LFS pointers resolve"];
+
+    /// <summary>RELQA_01 — the NativeAOT link job; it runs on the default branch only, so stable releases require it.</summary>
+    internal const string AotCheck = "NativeAOT publish";
+
+    /// <summary>RELQA_01 — CI must have passed for <paramref name="sha"/> (the commit the release starts from).</summary>
+    private static void RequireGreenCi(string sha, bool beta, List<string> problems)
+    {
+        if (!Cli.TryCapture("gh", ["api", "repos/{owner}/{repo}/commits/" + sha + "/check-runs?per_page=100"], out List<string> lines))
+        {
+            problems.Add("Could not read the CI results for " + sha[..Math.Min(12, sha.Length)] + " from GitHub (gh api). A release needs green CI.");
+            return;
+        }
+        string[] required = beta ? RequiredChecks : [.. RequiredChecks, AotCheck];
+        foreach (string problem in CiProblems(string.Join("\n", lines), required))
+            problems.Add(problem + " Wait for CI to finish (or fix it) and run again.");
+    }
+
+    /// <summary>
+    /// RELQA_01 — the pure decision (unit-tested): for every required job, its MOST RECENT run on the commit
+    /// must be completed with conclusion "success". Missing, running, failed or cancelled is a problem.
+    /// </summary>
+    internal static IReadOnlyList<string> CiProblems(string checkRunsJson, IReadOnlyList<string> required)
+    {
+        var problems = new List<string>();
+        System.Text.Json.Nodes.JsonArray runs;
+        try
+        {
+            runs = System.Text.Json.Nodes.JsonNode.Parse(checkRunsJson)?["check_runs"]?.AsArray() ?? [];
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return ["The CI results from GitHub could not be read."];
+        }
+        foreach (string name in required)
+        {
+            System.Text.Json.Nodes.JsonNode? latest = runs
+                .Where(r => string.Equals(r?["name"]?.GetValue<string>(), name, StringComparison.Ordinal))
+                .OrderByDescending(r => r?["started_at"]?.GetValue<string>() ?? string.Empty, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (latest is null) { problems.Add($"CI job '{name}' has not run on this commit."); continue; }
+            string status = latest["status"]?.GetValue<string>() ?? "unknown";
+            string conclusion = latest["conclusion"]?.GetValue<string>() ?? string.Empty;
+            if (status != "completed") problems.Add($"CI job '{name}' is still {status}.");
+            else if (conclusion != "success") problems.Add($"CI job '{name}' did not pass ({conclusion}).");
+        }
+        return problems;
+    }
+
+    /// <summary>RELQA_01 — the fix sentinels and both test suites, on this machine, against this checkout.</summary>
+    private static void RunLocalChecks(List<string> problems, BuildLog log)
+    {
+        (string What, string[] Args)[] checks =
+        [
+            ("Fix sentinels", ["run", "--project", "build/FvsVerify/FvsVerify.csproj", "-c", "Release", "--", Environment.CurrentDirectory]),
+            ("Core tests", ["test", "tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj", "-c", "Release"]),
+            ("App tests (architecture ratchets)", ["test", "tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj", "-c", "Release"]),
+        ];
+        foreach ((string what, string[] args) in checks)
+        {
+            log.Info($"[RELEASE] Running {what} before anything is stamped (RELQA_01)...");
+            if (Cli.RunStreaming("dotnet", args, log) != 0)
+            {
+                problems.Add($"{what} failed on this machine (dotnet {string.Join(' ', args.Take(3))}). Fix it before releasing.");
+                return;
+            }
+        }
+        if (!TreeStillClean(log)) problems.Add("Running the checks changed tracked files. Commit or revert them.");
+    }
+
+    /// <summary>
+    /// RELRECORD_01 — every <c>## v…</c> heading in docs/CHANGELOG.md must be a tag on GitHub. Four headings
+    /// once described versions that were never published (no tag, no release), so the history users read
+    /// and the downloads that exist disagreed. (ci.yml checks the same on every push.)
+    /// </summary>
+    private static void RequireChangelogMatchesTags(List<string> problems)
+    {
+        if (!File.Exists(UserChangelogPath)) return;
+        if (!Git(out List<string> remoteTags, "ls-remote", "--tags", "origin"))
+        {
+            problems.Add("Could not list the tags on GitHub (git ls-remote --tags origin).");
+            return;
+        }
+        foreach (string missing in HeadingsWithoutTags(File.ReadAllText(UserChangelogPath), remoteTags))
+            problems.Add($"{UserChangelogPath} has a '## v{missing}' section but GitHub has no tag v{missing}. Move it to {UserChangelogArchivePath}.");
+    }
+
+    /// <summary>RELRECORD_01 — the pure check (unit-tested): release headings whose tag is not in <paramref name="lsRemoteLines"/>.</summary>
+    internal static IReadOnlyList<string> HeadingsWithoutTags(string changelogText, IEnumerable<string> lsRemoteLines)
+    {
+        var tags = new HashSet<string>(lsRemoteLines
+            .Select(l => l.Split('\t', ' ').LastOrDefault() ?? string.Empty)
+            .Select(r => r.Replace("refs/tags/", string.Empty, StringComparison.Ordinal).Replace("^{}", string.Empty, StringComparison.Ordinal)),
+            StringComparer.OrdinalIgnoreCase);
+        return ReleaseChangelog.Parse(changelogText).Releases
+            .Select(r => r.Version!)
+            .Where(v => !tags.Contains("v" + v))
+            .ToList();
+    }
+
+    /// <summary>
+    /// RELRECORD_02 — a stable release whose notes equal the newest published release's notes is the
+    /// "notes were never promoted" failure (the publish worked, the docs commit did not): publishing would
+    /// announce the old changes as new. <c>--resume</c> promotes them instead.
+    /// </summary>
+    private static void RequireNotesNotAlreadyPublished(string notes, List<string> problems)
+    {
+        if (notes.Length == 0) return;
+        if (!Cli.TryCapture("gh", ["release", "view", "--json", "tagName,body"], out List<string> lines)) return;
+        try
+        {
+            var latest = System.Text.Json.Nodes.JsonNode.Parse(string.Join("\n", lines));
+            string body = latest?["body"]?.GetValue<string>() ?? string.Empty;
+            if (SameNotes(body, notes))
+                problems.Add($"The '## Upcoming' notes are exactly the notes of the published {latest?["tagName"]?.GetValue<string>()}. "
+                           + "Its notes were never promoted: run Build.cmd --resume to finish that release, then add new notes.");
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            problems.Add("The newest GitHub release could not be read to compare its notes.");
+        }
+    }
+
+    /// <summary>RELRECORD_02 — notes compared without regard to line endings and surrounding blank space.</summary>
+    internal static bool SameNotes(string a, string b)
+    {
+        static string Norm(string t) => string.Join("\n", t.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n')
+            .Select(l => l.Trim()).Where(l => l.Length > 0));
+        return Norm(a).Length > 0 && string.Equals(Norm(a), Norm(b), StringComparison.Ordinal);
+    }
+
+    /// <summary>RELRECORD_01 — where release sections go when they leave docs/CHANGELOG.md (never deleted).</summary>
+    internal const string UserChangelogArchivePath = "docs/CHANGELOG_ARCHIVE.md";
+
+    /// <summary>RELRECORD_01 — where technical release sections go when they leave docs/changes.md.</summary>
+    internal const string TechnicalLogArchivePath = "docs/changes_ARCHIVE.md";
 
     private static bool Git(out List<string> output, params string[] args) => Cli.TryCapture("git", args, out output);
 

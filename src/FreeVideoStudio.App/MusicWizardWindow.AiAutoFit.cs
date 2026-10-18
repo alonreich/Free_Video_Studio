@@ -1,12 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md (#UI-MUSICWIZARD)
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (#SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -30,7 +22,6 @@ public partial class MusicWizardWindow
 
     private void OnAiAutoFitClicked(object? sender, RoutedEventArgs e)
     {
-        // AIMUSIC_PROGRESS_01 — while it runs, the same button is the CANCEL button.
         if (_aiAutoFitCts != null)
         {
             _aiAutoFitCts.Cancel();
@@ -117,8 +108,6 @@ public partial class MusicWizardWindow
             string ffmpegPath = ResolveFfmpegPath();
             step = "Step 1 of 3 — taking pictures of your video…";
             Refresh();
-            // AIMUSIC_SCENES_01 — frames from the WHOLE finished video (every Merger clip), and the song part
-            // sized to the FINISHED length (speed changes, freezes and cuts included).
             var (scenes, outputDurationSec) = await BuildAiMusicScenesAsync(ffmpegPath);
             var recommendation = await Task.Run(() => AiMusicAutoFitService.AutoFitMusicAsync(
                 ffmpegPath,
@@ -169,7 +158,6 @@ public partial class MusicWizardWindow
             if (_playlist[0].FullSec > 0) _trackDuration = _playlist[0].FullSec;
             _lastConfiguredTrackPath = _playlist[0].Path;
             QueueSilenceAnalysis();
-            // AIMUSIC_UNDO_01 — the AI's pick is ONE undo step: Ctrl+Z brings back the songs you had.
             EndWizardGesture();
 
             CancelPhase3Load();

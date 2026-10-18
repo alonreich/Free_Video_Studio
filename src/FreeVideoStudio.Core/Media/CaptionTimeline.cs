@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-CAPTIONS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -32,12 +29,10 @@ public static class CaptionTimeline
         var matches = VowelGroupRegex.Matches(clean);
         int count = matches.Count;
 
-        // Subtract silent terminal 'ed' unless preceded by 't' or 'd' (e.g. 'hated', 'started')
         if (clean.EndsWith("ed") && !clean.EndsWith("ted") && !clean.EndsWith("ded") && count > 1)
         {
             count--;
         }
-        // Subtract silent terminal 'e' unless preceded by 'l' (e.g., 'table', 'little')
         else if (clean.EndsWith("e") && !clean.EndsWith("le") && count > 1)
         {
             count--;
@@ -106,14 +101,12 @@ public static class CaptionTimeline
             if (string.IsNullOrWhiteSpace(line.Text)) continue;
             if (line.SourceEndSec <= line.SourceStartSec + 0.001) continue;
 
-            // If an OutputTimeline is provided, check if the entire line falls within a cut
             if (timeline != null && timeline.HasCuts)
             {
                 double relStart = timeline.ToClipRelative(line.SourceStartSec);
                 double relEnd = timeline.ToClipRelative(line.SourceEndSec);
                 if (timeline.IsCutAtSource(relStart) && timeline.IsCutAtSource(relEnd))
                 {
-                    // Check if entire span is inside the same cut
                     bool entirelyCut = false;
                     foreach (var cut in timeline.Cuts)
                     {
@@ -145,7 +138,6 @@ public static class CaptionTimeline
                     double wEndRel = timeline.ToClipRelative(w.EndSec);
                     if (timeline.IsCutAtSource(wStartRel) && timeline.IsCutAtSource(wEndRel))
                     {
-                        // Word is completely inside a cut
                         continue;
                     }
                 }
@@ -168,7 +160,6 @@ public static class CaptionTimeline
             double lineOutStart = mappedWords[0].OutputStartSec;
             double lineOutEnd = mappedWords[^1].OutputEndSec;
 
-            // Prune lines whose net surviving duration is below minimum readable flash threshold (0.2s)
             if (lineOutEnd - lineOutStart < 0.2) continue;
 
             mappedLines.Add(new MappedCaptionLine(

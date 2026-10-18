@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-
+﻿
 using System;
 using System.Buffers;
 using System.Collections.Concurrent;
@@ -241,7 +235,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         {
             var span = active[sIdx];
             double visibleSec = gameplaySec - span.GameStartSec;
-            // MEMETRIM_01 — frames come from the chosen part of the file, which starts at ClipInSec.
             double memeSec = span.Meme.ClipInSec + visibleSec;
             int winIdx = CornerMemeFrames.WindowIndexForTime(memeSec);
 
@@ -284,7 +277,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
                         bmp.PixelSize.Width, bmp.PixelSize.Height,
                         span.Meme.Corner, span.Meme.Size, span.Meme.PosX, span.Meme.PosY);
 
-                    // MEMEANIM_01 — the export's fade (alpha) and slide (moving X), on the same clock.
                     double spanLen = span.GameEndSec - span.GameStartSec;
                     double slide = MemeTransitions.CornerSlideOffsetAt(span.Meme.Animation, visibleSec, spanLen);
                     if (slide > 0)

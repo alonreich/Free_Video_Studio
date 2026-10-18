@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using FreeVideoStudio.App.Infrastructure;
@@ -201,7 +201,7 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema13_SealsAPlainTextApiKeyOnDisk()
     {
-        const string key = "AIzaSyFAKE-MIGRATION-ONLY-00000000000"; // SECRETSCAN_ALLOW (fake)
+        const string key = "AIzaSyFAKE-MIGRATION-ONLY-00000000000";
         File.WriteAllText(_settingsFile, "{ \"SchemaVersion\": 13, \"AutoUpdateChecks\": true, \"GeminiApiKey\": \"" + key + "\" }");
 
         SettingsManager.Load();
@@ -220,7 +220,7 @@ public sealed class SettingsMigrationTests : IDisposable
     public void SecretProtector_RoundTripsOnWindows_AndProducesDpapiPrefix()
     {
         if (!OperatingSystem.IsWindows()) return;
-        const string key = "AIzaSyFAKE-TEST-KEY-12345678901234567"; // SECRETSCAN_ALLOW
+        const string key = "AIzaSyFAKE-TEST-KEY-12345678901234567";
         string sealedKey = SecretProtector.Protect(key);
         Assert.StartsWith("dpapi1:", sealedKey);
         Assert.True(SecretProtector.IsProtectedForm(sealedKey));
@@ -338,8 +338,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema14_SealsPlainTextClaudeAndOpenAiKeysOnDisk()
     {
-        const string claudeKey = "sk-ant-api03-FAKE-TEST-CLAUDE-KEY-0000000000"; // SECRETSCAN_ALLOW
-        const string openAiKey = "sk-proj-FAKE-TEST-OPENAI-KEY-0000000000000000"; // SECRETSCAN_ALLOW
+        const string claudeKey = "sk-ant-api03-FAKE-TEST-CLAUDE-KEY-0000000000";
+        const string openAiKey = "sk-proj-FAKE-TEST-OPENAI-KEY-0000000000000000";
 
         File.WriteAllText(_settingsFile, $$"""
         {
@@ -386,8 +386,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MultiVendorSettings_RoundTripAndPersistCorrectly()
     {
-        const string claudeKey = "sk-ant-FAKE-ROUNDTRIP-CLAUDE-KEY-1111111"; // SECRETSCAN_ALLOW
-        const string openAiKey = "sk-FAKE-ROUNDTRIP-OPENAI-KEY-222222222222"; // SECRETSCAN_ALLOW
+        const string claudeKey = "sk-ant-FAKE-ROUNDTRIP-CLAUDE-KEY-1111111";
+        const string openAiKey = "sk-FAKE-ROUNDTRIP-OPENAI-KEY-222222222222";
 
         SettingsManager.Load();
 
@@ -403,7 +403,6 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.DoesNotContain(claudeKey, onDisk);
         Assert.DoesNotContain(openAiKey, onDisk);
 
-        // Load again from disk
         SettingsManager.Load();
 
         Assert.Equal(claudeKey, SettingsManager.Instance.ClaudeApiKey);
@@ -423,7 +422,6 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void RetiredModels_AreMovedToCurrentDefaults_OnLoad()
     {
-        // AIMODELS_02 — an old file naming retired models works again after an update, with no user action.
         var settings = new AppSettings
         {
             GeminiModelName = "gemini-2.5-flash",
@@ -440,14 +438,13 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, settings.AiDefaultUsage!.Model);
         Assert.Equal(FreeVideoStudio.App.Services.ClaudeProvider.DefaultModelName, settings.AiUsageCommentary.Model);
         Assert.Equal(FreeVideoStudio.App.Services.OpenAiProvider.DefaultModelName, settings.AiUsageViralPost.Model);
-        Assert.Equal("gemini-3.6-flash", settings.AiUsageMagicWand.Model); // a live model is never touched
+        Assert.Equal("gemini-3.6-flash", settings.AiUsageMagicWand.Model);
         Assert.False(settings.ReplaceRetiredAiModels());
     }
 
     [Fact]
     public void ConsentCovers_IsPerCompany_AndLegacyMeansGoogle()
     {
-        // AICONSENT_02
         Assert.True(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.Google));
         Assert.False(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.OpenAI));
         Assert.True(AppSettings.ConsentCovers(true, "OpenAI", FreeVideoStudio.App.Services.AiVendor.OpenAI));

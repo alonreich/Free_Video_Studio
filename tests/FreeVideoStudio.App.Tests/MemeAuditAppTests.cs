@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.Controls;
@@ -24,15 +24,15 @@ public sealed class MemeAuditAppTests
     public void MEMETRIM_02_MovingMarkStartKeepsEveryMemeOnItsGameplayFrame()
     {
         var t = Timeline();
-        t.MemePlacements.Add(new MemePlacement("a.mp4", 5.0, 2.0, "meme0"));   // gameplay 15 s
+        t.MemePlacements.Add(new MemePlacement("a.mp4", 5.0, 2.0, "meme0"));
         t.MarkMemesAnchored();
 
         t.SetTrimStart(12_000);
         Assert.Empty(t.RebaseMemesToTrim());
-        Assert.Equal(3.0, t.MemePlacements.Single().AtSourceSecRelative, 3);     // still gameplay 15 s
+        Assert.Equal(3.0, t.MemePlacements.Single().AtSourceSecRelative, 3);
 
         t.SetTrimStart(16_000);
-        Assert.Equal(new[] { "a.mp4" }, t.RebaseMemesToTrim());                 // 15 s is now cut off
+        Assert.Equal(new[] { "a.mp4" }, t.RebaseMemesToTrim());
         Assert.Empty(t.MemePlacements);
     }
 
@@ -40,8 +40,8 @@ public sealed class MemeAuditAppTests
     public void MEMETRIM_02_AMemeAtTheEndFollowsTheEnd_OnePastTheNewEndIsRemoved()
     {
         var t = Timeline();
-        t.MemePlacements.Add(new MemePlacement("end.mp4", 30.0, 2.0, "meme0"));  // at MARK END
-        t.MemePlacements.Add(new MemePlacement("late.mp4", 25.0, 2.0, "meme1")); // gameplay 35 s
+        t.MemePlacements.Add(new MemePlacement("end.mp4", 30.0, 2.0, "meme0"));
+        t.MemePlacements.Add(new MemePlacement("late.mp4", 25.0, 2.0, "meme1"));
         t.MarkMemesAnchored();
 
         t.TrimEndMs = 30_000;
@@ -63,7 +63,7 @@ public sealed class MemeAuditAppTests
             (placed.Mode, placed.PlaySound, placed.ClipInSec, placed.DurationSec));
         Assert.Equal("Video becomes +3.0 sec longer", vm.FullScreenLengthText);
 
-        vm.LengthSec = 99m;                                                     // never past the file
+        vm.LengthSec = 99m;
         Assert.Equal(7.5, vm.LengthSeconds, 3);
     }
 

@@ -154,7 +154,6 @@ public sealed class ProjectRecoveryService
         bool memeSelected = mainVm.IsAddMeme || mainVm.SelectedMemeItem != null;
 
         bool noMask = MaskOverlayManager.IsNoMask(SettingsManager.Instance.ActiveMaskOverlay);
-        // SETDEFAULTS_01 — compare against the values a fresh video actually STARTS with.
         bool hudToggled = mainVm.IsTeammates != (!noMask && defaults.StartShowTeammates)
                        || mainVm.IsSpectating != !noMask;
 

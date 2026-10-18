@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM), docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -205,7 +202,6 @@ public partial class GranularSpeedEditorWindow
     {
         var settings = SettingsManager.Instance;
         var vendor = settings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking).Vendor;
-        // AICONSENT_02 — consent is per company: what is sent differs, so a new company asks again.
         if (AppSettings.ConsentCovers(settings.AiZoomCloudConsent, settings.AiZoomCloudConsentVendor, vendor)) return true;
         string vendorName = AiVisionProviders.DisplayName(vendor);
         string blockPart = AiVisionProviders.WatchesVideoWithAudio(vendor)
@@ -391,7 +387,6 @@ public partial class GranularSpeedEditorWindow
         int segIndex = _edit.SelectedSegmentIndex;
         var seg = _edit.Segments[segIndex];
 
-        // AIRESMOOTH_01 — an existing AI zoom with stored waypoints can be re-framed without the AI.
         if (!string.IsNullOrEmpty(seg.AiTrackingTrajectory)
             && AiTrajectorySmoother.SmoothedTrajectory.FromJson(seg.AiTrackingTrajectory) is { RawWaypoints.Count: > 0, SourceW: > 0, SourceH: > 0 } existing)
         {
@@ -467,7 +462,6 @@ public partial class GranularSpeedEditorWindow
             });
         };
 
-        // AIPROVIDER_ROUTING_01 — resolves discovery (U1) and dense tracking (U2) sessions through configured providers
         string u1Key = settings.GetApiKey(u1Config.Vendor);
         string u1Model = settings.GetEffectiveModel(AiUsage.SubjectDiscovery);
         var discoverySession = new GeminiModelSession(u1Key, u1Model, consoleLog, vendor: u1Config.Vendor);
@@ -476,7 +470,6 @@ public partial class GranularSpeedEditorWindow
         string u2Model = settings.GetEffectiveModel(AiUsage.DenseTracking);
         var trackingSession = new GeminiModelSession(u2Key, u2Model, consoleLog, vendor: u2Config.Vendor);
         AiDiscoveryResult? discovery = null;
-        // AIUSAGE_01 — count every token this run uses and read the allowance before → after.
         using var usage = AiUsageMeter.BeginTask("AI Smart Zoom", u2Config.Vendor);
         if (AiTrackingPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiTracking", null);
         try
@@ -487,8 +480,6 @@ public partial class GranularSpeedEditorWindow
                 discoverySession, profile, consoleLog, token);
             if (token.IsCancellationRequested) return;
 
-            // AIMERGE_01 — the coordinates must be in THIS file's frame size. A merge clip can differ
-            // from the editor's reference resolution; the decoded still is the ground truth.
             var (fw, fh) = GeminiTrackingService.ReadImageSize(discovery.F2);
             if (IsMergeMode && fw > 0 && fh > 0 && (fw != sw || fh != sh))
             {
@@ -559,7 +550,6 @@ public partial class GranularSpeedEditorWindow
 
             if (token.IsCancellationRequested || target == null) return;
 
-            // AILOOKAHEAD_01 — the target was found AFTER the block: offer to extend the block to reach them.
             double trackDurationSec = source.DurationSec;
             double? newEndMs = null;
             if (discovery.LookaheadOffsetSec > 0 && !target.IsUserBox)

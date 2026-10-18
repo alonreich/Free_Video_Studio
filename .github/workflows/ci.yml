@@ -84,6 +84,62 @@ jobs:
           if-no-files-found: ignore
 
   # ────────────────────────────────────────────────────────────────────────────────────────────
+  # GATE 1b — the release records tell the truth (RELRECORD_01, CHANGELOG_02).
+  #
+  # • Every "## v<version>" heading in docs/CHANGELOG.md is a real tag. Four headings once named
+  #   versions that were never published, so the history users read and the downloads that
+  #   exist disagreed.
+  # • A push or PR that changes code (src/, build/, tests/, the .cmd scripts) also adds to the
+  #   technical log docs/changes.md. The rule used to be prose in AGENTS.md only. Release commits
+  #   made by FvsBuild are exempt; "[no-changelog]" in a commit message exempts a change on purpose.
+  # ────────────────────────────────────────────────────────────────────────────────────────────
+  records:
+    name: Release records
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Every changelog version heading is a pushed tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet origin || true
+          bad=0
+          for v in $(grep -oP '^## v\K[0-9]+(\.[0-9]+){1,3}' docs/CHANGELOG.md || true); do
+            if ! git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+              echo "::error file=docs/CHANGELOG.md::'## v$v' has no tag v$v. Move it to docs/CHANGELOG_ARCHIVE.md (RELRECORD_01)."
+              bad=1
+            fi
+          done
+          exit $bad
+
+      - name: Code changes are recorded in docs/changes.md
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then base="$PR_BASE";
+          elif [ -n "${BEFORE:-}" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then base="$BEFORE";
+          else base="$(git merge-base origin/main HEAD 2>/dev/null || true)"; fi
+          if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then echo "Nothing to compare."; exit 0; fi
+          subjects="$(git log --format=%s "$base..HEAD")"
+          if [ -n "$subjects" ] && ! echo "$subjects" | grep -qvE '^(release: v|docs: release notes for v)'; then
+            echo "Release commits made by FvsBuild only."; exit 0; fi
+          if git log --format=%B "$base..HEAD" | grep -qF '[no-changelog]'; then
+            echo "Exempted with [no-changelog]."; exit 0; fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if echo "$changed" | grep -qE '^(src/|build/|tests/|Build\.cmd$|dev\.cmd$|dev_build\.cmd$)'; then
+            if ! echo "$changed" | grep -qx 'docs/changes.md'; then
+              echo "::error::Code changed but docs/changes.md (## Unreleased) did not. Record the change (CHANGELOG_02, docs/README.md §0.3)."
+              exit 1
+            fi
+          fi
+          echo "Change log is in step."
+
+  # ────────────────────────────────────────────────────────────────────────────────────────────
   # GATE 2 — build and test the product.
   #
   # windows-latest, because the product is net9.0-windows/win-x64 and because

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/09_DISTRIBUTION_AND_RELEASE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -120,7 +117,7 @@ public sealed partial class ReleaseChangelog
     /// section above it, and removes the oldest releases beyond <paramref name="keepReleases"/>.
     /// Throws when the staging section is missing, so a release can never silently skip its notes.
     /// </summary>
-    public void Promote(string pendingTitle, string version, DateOnly date, int keepReleases)
+    public IReadOnlyList<Section> Promote(string pendingTitle, string version, DateOnly date, int keepReleases)
     {
         if (string.IsNullOrWhiteSpace(version)) throw new ArgumentException("A release needs a version.", nameof(version));
         if (keepReleases < 1) throw new ArgumentOutOfRangeException(nameof(keepReleases));
@@ -137,7 +134,30 @@ public sealed partial class ReleaseChangelog
         Sections.Insert(index, new Section("## " + pendingTitle, [string.Empty]));
 
         List<Section> releases = Sections.Where(s => s.IsRelease).ToList();
-        foreach (Section old in releases.Skip(keepReleases)) Sections.Remove(old);
+        List<Section> removed = releases.Skip(keepReleases).ToList();
+        foreach (Section old in removed) Sections.Remove(old);
+        return removed;
+    }
+
+    /// <summary>
+    /// RELRECORD_01 — <paramref name="archiveText"/> (or a new archive titled <paramref name="title"/>) with
+    /// <paramref name="sections"/> added at the TOP, newest first, keeping everything already archived.
+    /// A version already in the archive is not added twice.
+    /// </summary>
+    public static string Archive(string? archiveText, IEnumerable<Section> sections, string title)
+    {
+        ReleaseChangelog archive = Parse(string.IsNullOrWhiteSpace(archiveText)
+            ? $"# {title}{Environment.NewLine}{Environment.NewLine}Older releases, moved here from the main file so it stays short. Nothing here is ever deleted.{Environment.NewLine}"
+            : archiveText);
+        var known = new HashSet<string>(archive.Releases.Select(r => r.Version ?? string.Empty), StringComparer.OrdinalIgnoreCase);
+        int insertAt = 0;
+        foreach (Section section in sections)
+        {
+            if (section.Version is { } v && known.Contains(v)) continue;
+            List<string> body = [.. Trimmed(section.Body).Prepend(string.Empty), string.Empty];
+            archive.Sections.Insert(insertAt++, new Section(section.Heading, body));
+        }
+        return archive.ToString();
     }
 
     /// <summary>The whole document, with the line endings it was read with.</summary>

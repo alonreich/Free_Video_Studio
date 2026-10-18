@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -51,7 +48,6 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
-    // AIPARITY_01 — AiOriginSec is the zoom's UNCLAMPED clip-relative start: the trajectory's t = 0.
     private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
@@ -589,7 +585,6 @@ public class GranularSpeedBuilder
 
         if (nChunks == 0)
         {
-            // AVSYNC_04: compensate tempo latency and bound audio to the source duration divided by speed.
             string baseAtempoSegment = AudioTempoFilterBuilder.Segment(baseSpeed, leadingComma: true, totalDurationSec);
             string aChain = !string.IsNullOrEmpty(inputAudioLabel)
                 ? $"{inputAudioLabel}aresample=48000:async=1,asetpts=PTS-STARTPTS{baseAtempoSegment}[a_speed_out]"

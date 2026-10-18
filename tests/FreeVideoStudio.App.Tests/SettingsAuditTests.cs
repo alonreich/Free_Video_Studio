@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md, docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -29,7 +26,6 @@ public sealed class SettingsAuditTests
             MusicRootProvider = () => "M", MemeDefaultProvider = () => "D", DownloadsProvider = () => "DL",
         };
 
-    // ── SETDEFAULTS_01 — the Behavior fields are no longer placebo ──
 
     [Theory]
     [InlineData(CheckboxDefaultBehavior.AlwaysOn, false, true)]
@@ -58,7 +54,7 @@ public sealed class SettingsAuditTests
         Assert.Equal(2.0, d.StartSpeed);
         Assert.Equal(3, d.StartQualityIndex);
         Assert.False(d.StartPortrait);
-        Assert.False(d.StartShowTeammates); // Always Off wins over the remembered value
+        Assert.False(d.StartShowTeammates);
         Assert.False(d.StartEnableFade);
 
         d.SpeedBehavior = ValueDefaultBehavior.FixedValue;
@@ -79,7 +75,6 @@ public sealed class SettingsAuditTests
         Assert.Contains("RememberChoices", export);
     }
 
-    // ── SETCONFIRM_01 — the Speed Editor delete confirmation is read ──
 
     [Fact]
     public void ConfirmGranularDeleteSegment_IsReadByTheSpeedEditor()
@@ -90,7 +85,6 @@ public sealed class SettingsAuditTests
         Assert.DoesNotContain("This cannot be undone", xaml);
     }
 
-    // ── SETTINGSVM_01 — save / restore / dirty ──
 
     [Fact]
     public void WriteTo_CopiesPendingValues_AndLeavesForeignFieldsAlone()
@@ -111,8 +105,8 @@ public sealed class SettingsAuditTests
         Assert.DoesNotContain(":", target.MainOutputBaseName);
         Assert.Equal(42, target.Volume);
         Assert.Equal("Keep me", target.LastEditedCropProfile);
-        Assert.Equal("Battlefield", target.ActiveMaskOverlay); // applied by MaskOverlayManager after commit
-        Assert.Equal(3.3, target.Defaults.LastSpeed);           // remembered choices are not the window's
+        Assert.Equal("Battlefield", target.ActiveMaskOverlay);
+        Assert.Equal(3.3, target.Defaults.LastSpeed);
     }
 
     [Fact]
@@ -156,7 +150,6 @@ public sealed class SettingsAuditTests
         Assert.Equal("", vm.GeminiApiKey);
     }
 
-    // ── SETBACKUP_01 ──
 
     [Fact]
     public void Backup_NeverContainsKeys_AndImportRestoresPendingValues()
@@ -180,7 +173,6 @@ public sealed class SettingsAuditTests
         Assert.NotNull(other.ImportBackupJson("not json"));
     }
 
-    // ── SETKEYS_01 ──
 
     [Fact]
     public void KeyBinds_PlainAndCtrlKeysDoNotClash_ButSameGroupDoes()
@@ -191,21 +183,20 @@ public sealed class SettingsAuditTests
         var volUp = vm.KeyBindRows.Single(r => r.Id == "VolumeUp");
 
         Assert.Null(vm.TryAssignKey(seekFwd, Key.D));
-        Assert.Null(vm.TryAssignKey(fineFwd, Key.D));          // Ctrl+D is not D
-        Assert.NotNull(vm.TryAssignKey(volUp, Key.D));         // plain D already taken
+        Assert.Null(vm.TryAssignKey(fineFwd, Key.D));
+        Assert.NotNull(vm.TryAssignKey(volUp, Key.D));
         Assert.Equal(Key.Up, volUp.Key);
-        Assert.NotNull(vm.TryAssignKey(fineFwd, Key.Z));       // Ctrl+Z is undo
+        Assert.NotNull(vm.TryAssignKey(fineFwd, Key.Z));
         Assert.NotNull(vm.TryAssignKey(seekFwd, Key.LeftCtrl));
         Assert.Equal(Key.D, vm.P.KeyBinds.FineSeekForward);
     }
 
-    // ── SETLOUD_01 ──
 
     [Fact]
     public void LoudMoments_OneChoice_KeepsMasterSwitchConsistent()
     {
         var vm = NewVm(new AppSettings { PeakFlatteningPrompt = AudioFixPrompt.AlwaysApply, Defaults = new DefaultValues { AutoSpikeFlattening = false } });
-        Assert.True(vm.LoudNever); // contradiction resolves to what actually happened
+        Assert.True(vm.LoudNever);
         vm.LoudAlways = true;
         Assert.Equal(AudioFixPrompt.AlwaysApply, vm.P.PeakFlatteningPrompt);
         Assert.True(vm.P.Defaults.AutoSpikeFlattening);
@@ -213,7 +204,6 @@ public sealed class SettingsAuditTests
         Assert.False(vm.P.Defaults.AutoSpikeFlattening);
     }
 
-    // ── SETZOOM_01 / SETGAME_01 ──
 
     [Fact]
     public void FastMoveZoom_CanNeverExceedNormalZoom()
@@ -235,7 +225,7 @@ public sealed class SettingsAuditTests
         Assert.Equal((int)AiGameProfile.FirstPerson, vm.AiCameraViewIndex);
         vm.AiCameraViewIndex = (int)AiGameProfile.ThirdPerson;
         vm.GameIndex = vm.GameProfiles.IndexOf("My Custom Game");
-        Assert.Equal((int)AiGameProfile.ThirdPerson, vm.AiCameraViewIndex); // unknown game keeps the AI choice
+        Assert.Equal((int)AiGameProfile.ThirdPerson, vm.AiCameraViewIndex);
     }
 
     [Fact]
@@ -257,7 +247,6 @@ public sealed class SettingsAuditTests
         Assert.True(vm.CanChooseMetered);
     }
 
-    // ── Headless: bindings follow a whole-tab reload ──
 
     [AvaloniaFact]
     public void RestoreTab_UpdatesBoundControls()

@@ -1,4 +1,4 @@
-using FreeVideoStudio.Core.Media;
+﻿using FreeVideoStudio.Core.Media;
 using NAudio.Wave;
 using Xunit;
 
@@ -50,7 +50,7 @@ public class VoiceCaptureBudgetTests
     {
         var budget = new VoiceCaptureBudget(0.25, () => 0);
         budget.Start(48000);
-        int align = channels * 3; // PCM24 frames, not individual channel samples
+        int align = channels * 3;
         Assert.Equal(12000 * align, budget.AcceptBytes(0, 48000 * align + 1, align));
         Assert.Equal(0, budget.AcceptBytes(12000 * align, align * 10, align));
     }
@@ -74,7 +74,7 @@ public class VoiceCaptureBudgetTests
         recorder.StartRecording();
         int expected = (int)VoiceCaptureBudget.FrameCount(end, start, 44100) * input.WaveFormat.BlockAlign;
         var data = new byte[expected + 400];
-        Array.Fill(data, (byte)0x71, expected, 400); // identifiable forbidden pulse
+        Array.Fill(data, (byte)0x71, expected, 400);
         input.Deliver(data);
         input.Deliver(Enumerable.Repeat((byte)0x71, 600).ToArray());
         input.Drain = () => input.Deliver(Enumerable.Repeat((byte)0x71, 800).ToArray());

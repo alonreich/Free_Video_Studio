@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -111,7 +108,6 @@ public partial class MainWindow
             bool applied = _projectSession?.OpenDocument(document, allowMissingSource: true) ?? false;
             if (!applied)
             {
-                // RESTOREFAIL_01 — when OpenDocument fails, quarantine snapshot instead of clearing.
                 RuntimeLog.Fail("RECOVERY", "The recovered project document could not be applied to the editor.");
                 await PreserveFailedRestoreSnapshotAsync();
                 return;
@@ -213,7 +209,6 @@ public partial class MainWindow
                             _musicWizardResult.MusicDurationsSeconds.Add(durationSec);
                     }
                 }
-                // MUSICWIN_01 — older recovery files have neither array: the legacy layout applies.
                 if (musicObj["musicStartsSeconds"] is JsonArray startsArr)
                 {
                     foreach (var node in startsArr)
@@ -262,7 +257,6 @@ public partial class MainWindow
             var addMemeCbRestore = AddMemeCheckboxCtl;
             if (addMemeCbRestore != null) addMemeCbRestore.IsChecked = addMeme;
 
-            // MEMEFOLDER_02 — a meme saved under the old spaced folder resolves to where it moved.
             string memeFilePath = FreeVideoStudio.Core.Infrastructure.MigrationPathResolver.ResolveSavedFile((string?)state["memeFilePath"] ?? "");
             string memeFile = (string?)state["memeFile"] ?? "";
             string restoreTarget = !string.IsNullOrEmpty(memeFilePath) ? memeFilePath
@@ -429,7 +423,6 @@ public partial class MainWindow
                 i++;
             }
         }
-        // MEMETRIM_02 — these memes are measured from the MARK START restored just above.
         _viewModel.Timeline.MarkMemesAnchored();
     }
 

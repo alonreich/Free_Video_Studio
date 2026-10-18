@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS §7.5 AIUSAGE_01)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http;
@@ -101,7 +98,6 @@ public static class AiUsageMeter
         }
     }
 
-    // ───────────────────────────── response parsing (pure, AOT-safe) ─────────────────────────────
 
     /// <summary>Gemini: <c>usageMetadata.promptTokenCount / candidatesTokenCount / thoughtsTokenCount</c>.</summary>
     public static (long Input, long Output, long Thinking) ParseGeminiUsage(string? body)

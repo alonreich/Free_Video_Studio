@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
@@ -25,7 +22,7 @@ namespace FreeVideoStudio.App.Services;
 /// </summary>
 public sealed class ClaudeProvider : IAiVisionProvider
 {
-    public const string DefaultModelName = "claude-sonnet-5-5"; // AIMODELS_02 — every Claude 3.x model is retired.
+    public const string DefaultModelName = "claude-sonnet-5-5";
     public const string BaseUrl = "https://api.anthropic.com/v1/";
     public const string MessagesEndpoint = BaseUrl + "messages";
     public const string ModelsEndpoint = BaseUrl + "models";
@@ -144,9 +141,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
         options ??= GeminiCallOptions.Tracking;
         string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
 
-        // AISCHEMA_01 — Claude tools take JSON Schema with an object root.
         AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: false);
-        // AITEMP_02 — Claude 4.7 and later answer HTTP 400 to any non-default temperature, so none is ever sent.
         byte[] requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning);
         bool fallbackTried = false;
 
@@ -164,7 +159,6 @@ public sealed class ClaudeProvider : IAiVisionProvider
             }
             catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
             {
-                // AIMODELFALLBACK_02 — a retired model is replaced once by the newest live one of this key.
                 fallbackTried = true;
                 string? live = await AiVisionProviders.FindLiveReplacementAsync(this, key, resolvedModel, userLog, ct).ConfigureAwait(false);
                 if (live == null) throw;
@@ -209,7 +203,6 @@ public sealed class ClaudeProvider : IAiVisionProvider
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
-                // AIUSAGE_01 — tokens from the body, the per-minute allowance from the headers.
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseClaudeUsage(body);
                 AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseClaudeLimits(response));
                 return body;
@@ -250,7 +243,6 @@ public sealed class ClaudeProvider : IAiVisionProvider
 
         int budget = reasoning?.BudgetTokens ?? (reasoning?.Level == AiReasoningLevel.High ? 4096 : (reasoning?.Level == AiReasoningLevel.Medium ? 2048 : 0));
         bool enableThinking = budget > 0 && reasoning?.Level != AiReasoningLevel.Off;
-        // AICLAUDE_TOKENS_01 — 8192 so a long Commentary or Kill Tracker answer is never cut mid-JSON.
         int maxTokens = enableThinking ? Math.Max(8192, budget + 4096) : 8192;
 
         var buffer = new ArrayBufferWriter<byte>(estimatedSize);
@@ -267,11 +259,8 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteNumber("budget_tokens", Math.Max(1024, budget));
                 w.WriteEndObject();
             }
-            // AITEMP_02 — no temperature at all: Claude 4.7+ rejects non-default values with HTTP 400, and
-            // `temperature` is kept in the signature only so older callers still compile (it is ignored).
             _ = temperature;
 
-            // Tools: structured output definition
             if (!string.IsNullOrWhiteSpace(jsonSchema))
             {
                 w.WriteStartArray("tools");
@@ -291,11 +280,9 @@ public sealed class ClaudeProvider : IAiVisionProvider
                     w.WriteString("type", "object");
                     w.WriteEndObject();
                 }
-                w.WriteEndObject(); // tool
-                w.WriteEndArray(); // tools
+                w.WriteEndObject();
+                w.WriteEndArray();
 
-                // Anthropic rejects a FORCED tool choice while extended thinking is on; "any" is
-                // also refused, so thinking runs use "auto" and the prompt asks for the tool.
                 w.WriteStartObject("tool_choice");
                 if (enableThinking)
                 {
@@ -309,13 +296,11 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteEndObject();
             }
 
-            // Messages array
             w.WriteStartArray("messages");
             w.WriteStartObject();
             w.WriteString("role", "user");
             w.WriteStartArray("content");
 
-            // Images — each label BEFORE its image, the same order Gemini and OpenAI receive.
             foreach (var img in images)
             {
                 if (!string.IsNullOrEmpty(img.Label))
@@ -332,11 +317,10 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteString("type", "base64");
                 w.WriteString("media_type", img.MimeType);
                 w.WriteBase64String("data", img.Data);
-                w.WriteEndObject(); // source
-                w.WriteEndObject(); // image block
+                w.WriteEndObject();
+                w.WriteEndObject();
             }
 
-            // Prompt text
             w.WriteStartObject();
             w.WriteString("type", "text");
             w.WriteString("text", enableThinking && !string.IsNullOrWhiteSpace(jsonSchema)
@@ -344,11 +328,11 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 : prompt);
             w.WriteEndObject();
 
-            w.WriteEndArray(); // content
-            w.WriteEndObject(); // message
-            w.WriteEndArray(); // messages
+            w.WriteEndArray();
+            w.WriteEndObject();
+            w.WriteEndArray();
 
-            w.WriteEndObject(); // root
+            w.WriteEndObject();
         }
 
         return buffer.WrittenSpan.ToArray();
@@ -378,7 +362,6 @@ public sealed class ClaudeProvider : IAiVisionProvider
                     }
                 }
 
-                // Fallback: look for text block
                 foreach (JsonElement block in content.EnumerateArray())
                 {
                     if (block.TryGetProperty("type", out JsonElement type) && type.GetString() == "text")

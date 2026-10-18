@@ -1,9 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Forbidden to modify without reading: docs/04_UI_UX_AVALONIA_SPEC.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using FreeVideoStudio.App.Controls;
@@ -62,7 +57,6 @@ public partial class VideoMergerWindow
         }
         else if (_musicResult != null && _musicIsStale)
         {
-            // The clips changed under the music: keep the songs, let the user check them on the new timeline.
             resume = _musicResult;
         }
 

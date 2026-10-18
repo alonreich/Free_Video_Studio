@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md, docs/01_TIMELINE_COORDINATE_MATH.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-namespace FreeVideoStudio.Core.Media;
+﻿namespace FreeVideoStudio.Core.Media;
 
 /// <summary>VOSAMPLE_01: immutable output anchor established immediately before capture starts.
 /// Opening buffers spend the same budget as all later buffers; UI delivery never moves the anchor.</summary>

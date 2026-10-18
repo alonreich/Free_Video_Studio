@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FreeVideoStudio.Core.Media;
 
@@ -62,7 +59,6 @@ public sealed class VoiceOverPlaybackPlan
         var graph = GranularSpeedBuilder.Build((SourceEndSec - SourceStartSec) * 1000,
             Segments.ToList(), BaseSpeed, SourceStartSec * 1000,
             inputAudioLabel: hasAudio ? "[0:a]" : null, targetFps: "60", needHudBranch: false, cuts: Cuts);
-        // Size affects decode cost, never timing. CFR is the same 60 fps contract as ProcessWorker.
         string filters = graph.filterGraph + ";" + graph.videoLabel +
             "scale=w='trunc(min(1280,iw)/2)*2':h=-2:flags=fast_bilinear,fps=60,setsar=1[v_recording]";
         return (filters, "[v_recording]", graph.audioLabel, graph.finalDuration);

@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -16,7 +16,7 @@ namespace FvsBuild;
 /// so the tag always points at the exact commit that was built. RELNOTES_01 — the notes come from
 /// docs/CHANGELOG.md's `## Upcoming` section, prepared and linted by <see cref="ReleaseGate"/>.
 /// BETA_01 — a beta build is published as a PRE-release, which /releases/latest never returns.
-/// RETAIN_01 — old releases beyond the retention window are deleted, their tags are KEPT.</summary>
+/// RETAIN_01 / RETAIN_02 — old releases beyond the retention window lose their FILES; their pages, notes and tags are KEPT.</summary>
 internal static class GitHubReleasePublisher
 {
     /// <summary>Stable releases kept on GitHub (the new one included).</summary>
@@ -41,9 +41,6 @@ internal static class GitHubReleasePublisher
             return false;
         }
 
-        // REBRAND_03 — old-brand clients look for the previous download name in the latest
-        // release. That alias is created here, in a private temp folder, for the duration of the
-        // upload only, so no previous-brand file ever persists in the repository or obj/.
         string aliasDirectory = Path.Combine(Path.GetTempPath(), "fvs-release-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -74,6 +71,16 @@ internal static class GitHubReleasePublisher
             return false;
         }
         string tag = plan.Tag;
+        if (Cli.TryCapture("gh", ["release", "view", tag, "--repo", repo, "--json", "isDraft", "--jq", ".isDraft"], out var draftState) &&
+            draftState.Count == 1 && draftState[0] == "true")
+        {
+            log.Info($"[PUBLISH] Replacing the unfinished draft of {tag} left by an earlier attempt...");
+            if (Cli.RunQuiet("gh", ["release", "delete", tag, "--repo", repo, "--yes"]) != 0)
+            {
+                log.Warn("[PUBLISH] The old draft could not be removed. Nothing was published.");
+                return false;
+            }
+        }
         List<string> create = ["release", "create", tag];
         create.AddRange(assets);
         create.AddRange(["--repo", repo, "--title", ReleaseTitle(plan), "--notes-file", notesFile, "--draft", "--verify-tag"]);
@@ -108,10 +115,11 @@ internal static class GitHubReleasePublisher
         plan.Beta ? $"Free Video Studio {plan.Tag} (Beta)" : $"Free Video Studio {plan.Tag}";
 
     /// <summary>
-    /// RETAIN_01 — keeps the newest <see cref="StableReleasesKept"/> stable releases and the newest
-    /// <see cref="BetaReleasesKept"/> betas that are still newer than the newest stable; deletes the
-    /// rest. TAGS ARE NEVER DELETED: a version a user still runs must stay traceable to its source,
-    /// and a client that cached a release URL keeps a meaningful 404 instead of a missing tag.
+    /// RETAIN_01 / RETAIN_02 — keeps the INSTALLABLE FILES of the newest <see cref="StableReleasesKept"/> stable
+    /// releases and of the newest <see cref="BetaReleasesKept"/> betas that are still newer than the newest
+    /// stable. Older releases lose their files (oldest first, only after the new release is verified and
+    /// public), but the RELEASE ITSELF — its page, title and notes — and its TAG are kept forever: the old
+    /// <c>gh release delete</c> threw the notes away with the files. Runs only after a successful publish.
     /// </summary>
     internal static void PruneOldReleases(string repo, BuildLog log)
     {
@@ -123,17 +131,25 @@ internal static class GitHubReleasePublisher
                 return;
             }
             IReadOnlyList<string> doomed = ReleasesToPrune(string.Join("\n", output));
-            if (doomed.Count == 0)
-            {
-                log.Info($"[PUBLISH] Retention policy: within {StableReleasesKept} stable / {BetaReleasesKept} beta releases. No pruning required.");
-                return;
-            }
+            int pruned = 0;
             foreach (string oldTag in doomed)
             {
-                log.Info($"[PUBLISH] Pruning older release {oldTag} (its git tag is kept).");
-                int deleteExit = Cli.RunQuiet("gh", ["release", "delete", oldTag, "--repo", repo, "--yes"]);
-                if (deleteExit != 0) log.Warn($"[PUBLISH] Could not delete old release {oldTag} (exit code {deleteExit}).");
+                if (!Cli.TryCapture("gh", ["release", "view", oldTag, "--repo", repo, "--json", "assets", "--jq", ".assets[].name"], out var names))
+                {
+                    log.Warn($"[PUBLISH] Could not list the files of {oldTag}; left as it is.");
+                    continue;
+                }
+                if (names.Count == 0) continue;
+                log.Info($"[PUBLISH] Removing the {names.Count} downloadable file(s) of {oldTag} (its page, notes and tag are kept).");
+                pruned++;
+                foreach (string name in names)
+                {
+                    int exit = Cli.RunQuiet("gh", ["release", "delete-asset", oldTag, name, "--repo", repo, "--yes"]);
+                    if (exit != 0) log.Warn($"[PUBLISH] Could not remove {name} from {oldTag} (exit code {exit}).");
+                }
             }
+            if (pruned == 0)
+                log.Info($"[PUBLISH] Retention policy: files of the newest {StableReleasesKept} stable / {BetaReleasesKept} beta releases kept. Nothing to remove.");
         }
         catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or IOException)
         {

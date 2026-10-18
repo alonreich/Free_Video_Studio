@@ -403,6 +403,10 @@ Every window sets `ExtendClientAreaToDecorationsHint="True"`, so **the OS draws 
   answering). `05` SYS-AUTOUPDATE.
 * **Manual Update Trigger:** The `Check For Updates Now` button executes on-demand checking (`UpdateService.CheckManualAsync`), providing inline status feedback and bypassing the 15-minute startup probe throttle.
 * **Last Check Line (UPDATEUX_06):** under the button, `UpdateLastCheckText` shows `UpdateService.DescribeLastCheck()` — "Last checked 5 minutes ago: You have the latest version (…)" or the plain reason a check failed. Refreshed when the tab is built and after every manual check.
+* **What's new (WHATSNEW_01):** `WhatsNewBtn` ("What's new in this version", Secondary, tooltip) under the last-check
+  line opens the running version's GitHub release page (05 SYS-AUTOUPDATE). The first-launch card
+  (`UpdateFinishedWindow`) lists up to six "What's new" bullets once the update is confirmed (`HasWhatsNew`), and
+  then stays until OK.
 * **Skipped Release Filter Management:** Displays skipped release tags with a `Clear Skip` action button allowing users to re-enable skipped update prompts without modifying raw files.
 * **Direct Navigation Routes:**
   * Clicking `File -> About` or `Help -> About` in `MainWindow.axaml` and `VideoMergerWindow.axaml` invokes `SettingsWindow.ShowAboutAsync(owner)`, opening Settings directly to the About tab.
@@ -418,7 +422,9 @@ Every window sets `ExtendClientAreaToDecorationsHint="True"`, so **the OS draws 
   `RESTART & UPDATE` (Success — closes app and restarts into new version), `LATER` (Secondary — installs
   by itself with `--no-launch` when the app is next closed without reopening unexpectedly), and `SKIP`
   (Secondary — ignores this specific version). Failure: plain reason + `TRY AGAIN` / `CLOSE`; paused:
-  `CONTINUE NOW` / `CLOSE`. **RELNOTES_03 — "What's new":** while downloading and when ready, the card
+  `CONTINUE NOW` / `CLOSE`. `CLOSE` on a ready card says the update installs when the app is closed
+  (INSTALLONEXIT_01); a RESTART that cannot start the installer shows the failure and keeps the app open
+  (RESTARTSAFE_01). **RELNOTES_03 — "What's new":** while downloading and when ready, the card
   lists up to four headlines of the version's release notes (`HasWhatsNew` / `WhatsNew`, filled by
   `UpdateToastViewModel.SetReleaseNotes` from the GitHub release body; hidden when a release has no
   bullets and on failure/pause). Text tokens only (`AppTextPrimaryBrush`, `AppTextMutedBrush`).

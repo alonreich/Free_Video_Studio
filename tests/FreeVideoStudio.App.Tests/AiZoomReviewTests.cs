@@ -15,7 +15,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class AiZoomReviewTests
 {
-    private const string FakeKey = "AIzaSyFAKE-TEST-ONLY-000000000000000"; // SECRETSCAN_ALLOW (not a real key)
+    private const string FakeKey = "AIzaSyFAKE-TEST-ONLY-000000000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -46,7 +46,6 @@ public sealed class AiZoomReviewTests
 
     private static readonly GeminiCallOptions Fast = new(TimeSpan.FromSeconds(5), 3, TimeSpan.FromSeconds(30));
 
-    // ───────────── GEMINICLIENT_01: classification ─────────────
 
     [Fact]
     public void Classify_InvalidKeyArrivesAs400_AndIsReportedAsAKeyProblem()
@@ -83,11 +82,10 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void Redact_RemovesRawGoogleKeysAnywhere()
     {
-        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSyREALLOOKING0123456789abcdefghijklm", null); // SECRETSCAN_ALLOW (fake)
+        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSyREALLOOKING0123456789abcdefghijklm", null);
         Assert.DoesNotContain("AIza", red);
     }
 
-    // ───────────── GEMINICLIENT_01: transport ─────────────
 
     [Fact]
     public async Task Generate_SendsKeyOnlyInHeader_NeverInUrl()
@@ -160,7 +158,6 @@ public sealed class AiZoomReviewTests
         Assert.Equal("gemini-3.0-flash", GeminiClient.ResolveModel("models/gemini-3.0-flash"));
     }
 
-    // ───────────── AIGAME_01 / AIEXCLUDE_02 ─────────────
 
     [Fact]
     public void CloseRangeOpponent_IsNoLongerThrownAwayAsTheLocalPlayer()
@@ -202,7 +199,6 @@ public sealed class AiZoomReviewTests
         Assert.Equal(0, GeminiTrackingService.SanitizeWaypointsAgainstLocalPlayer(b, distant, (0, 0, 0, 0), AiGameProfile.Generic));
     }
 
-    // ───────────── AICHUNK_01 / AIFPS_01 / B4 ─────────────
 
     [Theory]
     [InlineData(3.0, 1)]
@@ -221,7 +217,6 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void TrackingRequest_HasSchemaTemperatureAndFrameRate()
     {
-        // AITEMP_02 — an older Gemini gets temperature 0; Gemini 3+ (the default) keeps its own default.
         byte[] body = GeminiTrackingService.BuildRequest("p", new List<(string, byte[], double?)> { ("video/mp4", new byte[] { 1, 2, 3 }, 2.0) }, GeminiTrackingService.WriteTrackingSchema, "gemini-2.5-flash");
         byte[] modern = GeminiTrackingService.BuildRequest("p", new List<(string, byte[], double?)> { ("video/mp4", new byte[] { 1, 2, 3 }, 2.0) }, GeminiTrackingService.WriteTrackingSchema);
         using (var modernDoc = JsonDocument.Parse(modern))
@@ -247,7 +242,6 @@ public sealed class AiZoomReviewTests
         Assert.Throws<GeminiException>(() => GeminiTrackingService.ParseDiscovery("{oops"));
     }
 
-    // ───────────── KEYPROTECT_01 ─────────────
 
     [Fact]
     public void ApiKey_IsNeverSerializedAsPlainText()
@@ -281,7 +275,6 @@ public sealed class AiZoomReviewTests
         Assert.Equal("", SecretProtector.Unprotect("dpapi1:not-base64!!"));
     }
 
-    // ───────────── AIUNDO_01 (source order: original back → checkpoint → candidate) ─────────────
 
     [Fact]
     public void AcceptingAnAiZoom_CheckpointsTheOriginalBlock()

@@ -1,10 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// CO-GOVERNED FILE - bound by EVERY spec below simultaneously.
-// Reading one is NOT compliance (SPEC_GOVERNANCE.md section 2).
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md
-// Forbidden to modify without reading: docs/02_AUDIO_ENGINE_MASTERING.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 
 using Avalonia.Interactivity;
 
@@ -59,7 +53,6 @@ public class MusicTrackItem : System.ComponentModel.INotifyPropertyChanged
     }
     public string PinText => IsRecent ? "RECENT" : "";
 
-    // PREVIEW1_03 / PLAYLIST_01 — the row's ▶ and + buttons follow these.
     private bool _isPreviewing;
     public bool IsPreviewing
     {
@@ -145,11 +138,6 @@ public partial class MusicWizardWindow : Window
         set => SetValue(MusicSearchTextProperty, value);
     }
 
-    // LIST_08 — the LIST_02..LIST_07 column measuring (TrackNameColumnWidth, TrackPinColumnWidth,
-    // TrackLengthColumnWidth, TrackTableWidth and RecalculateTrackNameColumnWidth) is gone. The table
-    // is full width with a star name column, so there is nothing left to measure — and nothing that
-    // can feed a measurement back into itself, which was LIST_06's stutter. (LIST_06's other half —
-    // the permanently visible scrollbar — is kept in the XAML.)
 
     private int _currentStep = 1;
 
@@ -374,7 +362,6 @@ public partial class MusicWizardWindow : Window
         ConfigurePhase3Timeline(baseSpeed, null);
         _playheadTimer?.Start();
         SharedInit();
-        // MERGERMUSIC_01 — the merger can reopen its music too (EDIT MUSIC), like the Main App.
         this.Loaded += async (_, _) => { await ResumeFromInitialStateAsync(); ResetWizardHistory(); };
     }
 
@@ -600,7 +587,6 @@ public partial class MusicWizardWindow : Window
         if (listbox != null)
         {
             listbox.ItemsSource = AvailableTracks;
-            // PREVIEW1_03 — selecting a row never plays it; the row's own ▶ does.
             listbox.SelectionChanged += (s, e) => OnListHighlight(listbox.SelectedItem as MusicTrackItem);
             listbox.DoubleTapped += (s, e) =>
             {
@@ -788,7 +774,6 @@ public partial class MusicWizardWindow : Window
         if (phase3Lanes != null)
         {
             phase3Lanes.LaneASeekable = true;
-            // SONGLANE_01 — lane B's song blocks take their own clicks (trim / select / seek).
             phase3Lanes.LaneBSeekable = false;
             phase3Lanes.SeekRequested += videoRelativeSec =>
             {
@@ -1024,7 +1009,6 @@ public partial class MusicWizardWindow : Window
     }
 
 
-
     private void OnMusicSearchKeyDown(object? sender, KeyEventArgs e)
     {
         var listbox = MusicListBoxCtl;
@@ -1203,7 +1187,6 @@ public partial class MusicWizardWindow : Window
             foreach (var track in visible)
                 AvailableTracks.Add(track);
 
-            // RESUME_01 rule 1: a rebuild may clear the LIST'S highlight, never the wizard's songs.
             var listbox = MusicListBoxCtl;
             if (listbox != null)
             {
@@ -1972,9 +1955,6 @@ public partial class MusicWizardWindow : Window
         {
             if (_currentStep == StepChoose)
             {
-                // PREVIEWSTOP_01 — whatever was previewing on the song list stops HERE. Before, the
-                // forward route never stopped it (only BACK did), so the next screen opened with the
-                // previous song still playing from its middle.
                 StopPreview();
 
                 if (_playlist.Count == 0)
@@ -2861,7 +2841,6 @@ public partial class MusicWizardWindow : Window
             await _audioIpcClient.SetPropertyAsync("start", audioStartOffset.ToString(System.Globalization.CultureInfo.InvariantCulture));
             await _audioIpcClient.SendCommandAsync("loadfile", targetPath, "replace");
             _phase3PreviewMusicPath = targetPath;
-            // The song-list preview shares this player: it must know which file is loaded now.
             _lastLoadedTrackPath = targetPath;
             _phase3PreviewMusicSegmentStartSec = segment.TimelineStartSec;
         }
@@ -2948,10 +2927,6 @@ public partial class MusicWizardWindow : Window
 
 
     /// <summary>VOLCURVE_01 — the MUSIC fader as a LINEAR gain, times the PREVIEW1_01 ease-in.</summary>
-    // LOUDSTD_REMOVED_01 — PREVIEW_04's balance correction (SourceMeasuredLufs, GameBusTargetLufs,
-    // EnsureMusicBedGainAsync) compensated for a -14 LUFS normalisation the export no longer does.
-    // Its measurement ran an ffmpeg pass per song and its result was already hard-wired to 0 dB. Both
-    // buses export at their recorded level times their fader, which is exactly what plays here.
     private double GetPreviewMusicBalance() =>
         Math.Clamp((MusicVolSliderCtl?.Value ?? 100.0) / 100.0 * CurrentPreviewFadeFactor() * CurrentCrossfadeGain(), 0.0, 1.0);
 
@@ -3025,7 +3000,6 @@ public partial class MusicWizardWindow : Window
     {
         if (_currentStep == StepChoose)
         {
-            // Space on the song list: hear / stop the selected row (PREVIEW1_03).
             var row = _highlightedTrack ?? _rowPreviewTrack;
             if (_isPreviewPlaying) StopPreview();
             else if (row != null) ToggleRowPreview(row);
@@ -3127,7 +3101,6 @@ public partial class MusicWizardWindow : Window
                 return;
             }
 
-            // PREVIEW1_03 — on the song list the only thing that plays is the row whose ▶ was pressed.
             var previewTrack = _rowPreviewTrack;
             if (previewTrack == null || !_isPreviewPlaying) return;
             double clampLimit = previewTrack.DurationSec;

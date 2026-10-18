@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -43,7 +43,6 @@ public sealed class CaptionTimelineTests
             Assert.True(words[i].StartSec < words[i].EndSec, "Word duration must be positive");
         }
 
-        // Long word "repositioning" should receive more duration than short word "I"
         var wordRepositioning = words.First(w => w.Text.Equals("repositioning", StringComparison.OrdinalIgnoreCase));
         var wordI = words.First(w => w.Text.Equals("I", StringComparison.OrdinalIgnoreCase));
         Assert.True(wordRepositioning.EndSec - wordRepositioning.StartSec > wordI.EndSec - wordI.StartSec);
@@ -69,7 +68,6 @@ public sealed class CaptionTimelineTests
     [Fact]
     public void Map_WithSlowMotionRamp_DoublesWordDurations()
     {
-        // 10-20s is at 0.5x speed (doubles duration)
         var timeline = OutputTimeline.Create(
             totalDurationMs: 30_000.0,
             segments: new[] { new SpeedSegment(10_000.0, 20_000.0, 0.5) });
@@ -80,7 +78,6 @@ public sealed class CaptionTimelineTests
         var mapped = CaptionTimeline.Map(track, timeline);
         Assert.Single(mapped);
 
-        // In source, 12-16s = 4.0s duration. At 0.5x speed, output duration should be 8.0s!
         double outputDuration = mapped[0].OutputEndSec - mapped[0].OutputStartSec;
         Assert.Equal(8.0, outputDuration, precision: 2);
     }
@@ -88,7 +85,6 @@ public sealed class CaptionTimelineTests
     [Fact]
     public void Map_LineInsideCut_IsDropped()
     {
-        // Cut between 5.0s and 10.0s
         var timeline = OutputTimeline.Create(
             totalDurationMs: 30_000.0,
             segments: null,
@@ -107,7 +103,6 @@ public sealed class CaptionTimelineTests
     [Fact]
     public void Map_WithFreezeInsertion_ExtendsTimingCorrectly()
     {
-        // Freeze frame at 5.0s holding for 3.0s
         var timeline = OutputTimeline.Create(
             totalDurationMs: 30_000.0,
             segments: new[] { new SpeedSegment(5_000.0, 8_000.0, 0.0) });
@@ -117,7 +112,6 @@ public sealed class CaptionTimelineTests
 
         var mapped = CaptionTimeline.Map(track, timeline);
         Assert.Single(mapped);
-        // Because of 3s freeze before line, start time 10s maps to output 13s
         Assert.Equal(13.0, mapped[0].OutputStartSec, precision: 2);
         Assert.Equal(17.0, mapped[0].OutputEndSec, precision: 2);
     }

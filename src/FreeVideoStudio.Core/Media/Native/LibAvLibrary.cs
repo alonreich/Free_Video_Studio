@@ -1,7 +1,4 @@
-﻿// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/03_FFMPEG_EXPORT_PIPELINE.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media.Native;
@@ -147,13 +144,6 @@ internal static class LibAvLibrary
     }
 
 
-    // ── LIBAVFRAME_02 — the single-frame decode tier ────────────────────────────────────────────
-    //
-    // NOT a second loader: it runs only after the tier above succeeded, loads exactly ONE more
-    // module (swscale-9) by absolute path from the SAME directory, binds LibAvFrame against the
-    // module handles already held, and checks swscale's major.minor. Latched separately, so a
-    // missing/mismatched swscale disables frame decoding (callers keep their ffmpeg subprocess)
-    // and never touches metadata. Never unloaded.
     private static LoadState? _frameState;
 
     /// <summary>Loads (once) the metadata tier and then the frame tier. Never throws.</summary>

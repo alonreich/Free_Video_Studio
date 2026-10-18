@@ -35,7 +35,6 @@ public sealed class VoiceCaptureSessionTests
             };
             devices.Input.OnStop = () =>
             {
-                // All remaining budget, then an identifiable post-end pulse in multiple drain callbacks.
                 devices.Input.Deliver(new byte[21168]);
                 devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
                 devices.Input.Deliver(Enumerable.Repeat((byte)0x71, 882).ToArray());
@@ -46,7 +45,7 @@ public sealed class VoiceCaptureSessionTests
             var open = capture.StartRecordingAsync(path, 0, _ => { }, budget)!;
             Assert.True(opening.Wait(Timeout));
             Assert.Null(capture.StartRecordingAsync(path, 0, _ => { }, new FreeVideoStudio.Core.Media.VoiceCaptureBudget(1, () => clock)));
-            clock = 1.5; // UI/open completion is late: it must not move the anchor.
+            clock = 1.5;
             int completions = 0;
             var drain = capture.FinalizeRecordingAsync(_ => completions++);
             Assert.NotNull(drain);
@@ -1262,7 +1261,6 @@ public sealed class VoiceCaptureSessionTests
 
 
     /// <summary>Holds the FIRST admitted buffer in flight (after admission, before analysis) until released.</summary>
-    // ── SPECTRUM_05 — a retired source can never publish, even its first in-flight spectrum ──────
     private sealed class InFlightGate : IDisposable
     {
         private int _calls;

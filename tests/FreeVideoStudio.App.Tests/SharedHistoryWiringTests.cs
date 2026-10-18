@@ -91,7 +91,6 @@ public sealed class SharedHistoryWiringTests
     [Fact]
     public void T16_Granular_EveryGestureCallSiteKeepsItsCoalesceKey()
     {
-        // MEMEAUDIT_01 — the meme band's drag lives in its own partial (MVVM_02 ceiling).
         string code = Src("GranularSpeedEditorWindow.axaml.cs") + Src("GranularSpeedEditorWindow.MemeBands.cs");
         foreach (string key in new[] { "\"zoom-edge\"", "\"seg-edge\"", "\"seg-speed\"", "\"freeze-len\"", "\"freeze-drag\"", "\"meme-drag\"" })
             Assert.Contains(key, code);
@@ -130,7 +129,6 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("_history.ReplaceCurrent(", Body(history, "ApplyWizardSnapshotAsync"));
         Assert.Contains("PointerReleasedEvent", Body(history, "WireWizardHistory"));
 
-        // PLAYLIST_01 / SONGLANE_01 — the song list and song lane live in their own partials.
         string window = Src("MusicWizardWindow.axaml.cs") + Src("MusicWizardWindow.Playlist.cs") + Src("MusicWizardWindow.SongLane.cs");
         Assert.True(Count(window, @"\bEndWizardGesture\s*\(\s*\)") >= 2, "both waveform scrubs must close their gesture");
         foreach (string method in new[] { "OnTrackSelected", "ApplySongStartSeconds", "SetOffsetFromPointer",

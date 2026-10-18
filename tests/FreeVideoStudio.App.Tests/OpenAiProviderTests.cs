@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class OpenAiProviderTests
 {
-    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-TEST-KEY-000000000"; // SECRETSCAN_ALLOW
+    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-TEST-KEY-000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -67,7 +67,7 @@ public sealed class OpenAiProviderTests
         JsonElement messages = root.GetProperty("messages");
         Assert.Equal(1, messages.GetArrayLength());
         JsonElement content = messages[0].GetProperty("content");
-        Assert.True(content.GetArrayLength() >= 2); // prompt, image
+        Assert.True(content.GetArrayLength() >= 2);
     }
 
     [Fact]

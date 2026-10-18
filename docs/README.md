@@ -49,7 +49,11 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
 3. **Map sync:** new or removed files, components or rules → update §5 Repository Map below and
    [`INDEX.md`](INDEX.md) (and the owning spec's Code Mini-Map).
 4. **Retention is automatic:** the official release promotes both staging sections and keeps 5 releases in
-   `CHANGELOG.md` and 10 in `changes.md`. Do not prune or rename sections by hand.
+   `CHANGELOG.md` and 10 in `changes.md`; older ones move to `CHANGELOG_ARCHIVE.md` / `changes_ARCHIVE.md`.
+   Do not prune or rename sections by hand.
+5. **Enforced:** CI (`Release records`) fails a push that changes `src/`, `build/`, `tests/` or the `.cmd`
+   scripts without changing `changes.md` (CHANGELOG_02; `[no-changelog]` in a commit message for a deliberate
+   exception).
 
 ### 0.4 Build, test, release
 
@@ -248,10 +252,14 @@ Sentinel registry:     .\build\sentinels.txt
 Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; holds exactly one local installer; GitHub retains latest 5 releases)
 Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-INSTALLER)
 AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01 (docs/05 SYS-AVCLEAN)
-Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + typed PUBLISH,
-                      version commit + tag, undo on failure) -> GitHubReleasePublisher.cs (--verify-tag, RETAIN_01,
-                      BETA_01 pre-releases). Spec: docs/09 DIST-RELEASEGATE.
+Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + green CI + local
+                      tests (RELQA_01) + protected root key (ROOTKEY_01) + typed PUBLISH, version commit + tag, undo
+                      on failure; --resume finishes a failed publish, RELRESUME_01) -> GitHubReleasePublisher.cs
+                      (--verify-tag, RETAIN_01/02 old files removed, pages + notes kept, BETA_01 pre-releases).
+                      Withdrawn signers: .\build\revoked-signers.txt (REVOKE_01). Upgrade smoke test:
+                      .\.github\workflows\upgrade-smoke.yml (UPGRADESMOKE_01). Spec: docs/09 DIST-RELEASEGATE.
 Release notes:        .\docs\changes.md (technical, '## Unreleased') -> .\docs\CHANGELOG.md (users, '## Upcoming');
+                      older releases in .\docs\CHANGELOG_ARCHIVE.md / changes_ARCHIVE.md (RELRECORD_01);
                       parser/lint/promotion .\src\FreeVideoStudio.Core\Infrastructure\ReleaseChangelog.cs
                       (RELNOTES_01..03). Spec: docs/09 DIST-RELEASENOTES.
 Update trust:         elevated worker runs only from a protected %ProgramData% copy:

@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md, docs/02_AUDIO_ENGINE_MASTERING.md, docs/04_UI_UX_AVALONIA_SPEC.md, docs/06_PROJECT_DOCUMENT_MODEL.md, docs/07_UNDO_AND_HISTORY.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Threading;
 using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.Core.Media;
@@ -100,8 +97,6 @@ public partial class MainWindow
             }
             _voiceTimingBaseline = CaptureVoiceTiming();
             RefreshVoiceTimingReviewBadge();
-            // A cancelled timing change may accompany a harmless colour/zoom edit; the normal
-            // no-op rule decides whether there is anything left to record in history.
             SaveRecoveryState(sync: _voiceTimingSyncSave, label: keep ? _voiceTimingEditLabel : "edit");
             EndProjectGesture();
         }

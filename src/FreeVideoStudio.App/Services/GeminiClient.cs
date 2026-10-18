@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-AISETTINGS)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
@@ -89,7 +86,7 @@ public sealed record GeminiCallOptions(TimeSpan Timeout, int MaxRetries, TimeSpa
 public sealed class GeminiClient
 {
     /// <summary>The single default model name (D3). Settings, both services and the wizard all read this.</summary>
-    public const string DefaultModel = "gemini-3.8-flash"; // AIMODELS_02 — gemini-2.5-flash shut down 2026-10-16.
+    public const string DefaultModel = "gemini-3.8-flash";
 
     /// <summary>
     /// AITEMP_02 — Gemini 3 and later are tuned for their default temperature (1.0); Google warns that lowering
@@ -136,7 +133,6 @@ public sealed class GeminiClient
         _delay = delay ?? ((d, ct) => Task.Delay(d, ct));
     }
 
-    // ───────────────────────────── shared helpers ─────────────────────────────
 
     /// <summary>The configured model if it is a plain identifier (it becomes part of the URL path), else <see cref="DefaultModel"/>.</summary>
     public static string ResolveModel(string? configured)
@@ -352,7 +348,6 @@ public sealed class GeminiClient
 
     private static TimeSpan BackoffFor(int attempt) => TimeSpan.FromSeconds(attempt switch { 0 => 2, 1 => 4, _ => 8 });
 
-    // ───────────────────────────── transport ─────────────────────────────
 
     /// <summary>
     /// POSTs <paramref name="requestBody"/> to <c>models/{model}:generateContent</c> and returns the
@@ -380,7 +375,6 @@ public sealed class GeminiClient
             try
             {
                 string body = await PostOnceAsync(url, key, requestBody, options.Timeout, cancellationToken).ConfigureAwait(false);
-                // AIUSAGE_01 — every answered request is billed: count it whether or not its text is readable.
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseGeminiUsage(body);
                 AiUsageMeter.Record(AiVendor.Google, inTok, outTok, thinkTok, null);
                 if (TryExtractModelText(body, out string text, out string? error, out bool blocked))
@@ -469,7 +463,6 @@ public sealed class GeminiClient
         }
         catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.MalformedResponse)
         {
-            // The key and model were accepted; only the tiny reply was empty (e.g. all thinking tokens).
             CoreLogger.Info("GEMINI", $"Key test: accepted, reply unreadable ({ex.Detail}).");
             return (true, $"Key verified with model {resolved}.");
         }
