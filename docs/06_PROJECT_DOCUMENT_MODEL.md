@@ -1,4 +1,4 @@
-# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
+﻿# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
 
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
@@ -54,6 +54,7 @@ decide how those chunks render. Nothing derived is ever written to the file.
 ---
 
 ## 3. Schema Versioning & The Amputation Rule  {#PROJ-SCHEMA}
+* **VOLEVEL_01 — schema 8:** each voice take stores optional `gain` (linear 0–1.5; missing/null = 1). `VoiceOverTakeJson` is shared by project and main-session recovery serialization. Gain participates in take equality, project dirty state and undo/redo. Old projects retain 100%; older writers cannot read schema 8 and silently discard nested gain. WAV samples are unchanged; gain is applied once on playback/export.
 * **MEMEAUDIT_01 — schema 7:** each meme object may carry `clipIn` (seconds into the file), `posX` / `posY` (dragged corner position, −1 = in its corner), `animation` (`none` | `fade` | `slide`) and `transition` (`cut` | `fade` | `zoom`), via `MemePresentationJson`. Missing keys read as the old behaviour. Bumped for the same reason as schema 4: the keys live inside a meme object, so a v6 reader would play a trimmed meme in full and drop them on save.
 * **CAPTIONS_01 — schema 6:** added `Captions` (`CaptionTrack?`), storing AI Live Commentary Captions lines, words, styling, tone, and placement. Serialized reflection-free via `CaptionTrackJson`. Legacy schema 1-5 documents roundtrip with `Captions = null`. Unrecognized future fields are preserved via the Amputation Rule.
 * **VOTIMING_01 — schema 5:** narration is now an ordered set of takes, with source anchor, output offset, actual duration, recorded source end, timing signature and review flag. `ProjectAudio` also stores both protection choices. The legacy single-file fields remain readable. The bump prevents schema 4 readers from silently reducing multiple takes to the legacy first file and dropping nested timing metadata on save. Collection equality is elementwise so unchanged captures remain no-ops in undo.
@@ -129,8 +130,13 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
 * **AUTOSAVEBG_01 - Autosave disk I/O is non-blocking.** `ProjectSession.AutosaveTick` captures an
   immutable snapshot on the UI thread and performs the atomic write (WriteThrough + hardware flush)
   and the history sidecar on the thread pool. Dirty clears only if no edit landed mid-write; a
-  failure is still Fatal. Explicit saves remain synchronous and share one ordered write gate with
-  autosave, so an older autosave can never overwrite a newer save. See `05` §4d.
+  failure is still Fatal. **PROJECTIO_01:** explicit saves, close-time naming, loads, source checks
+  and sidecars await the same ordered background task chain. Capture and history copies stay on
+  the UI thread; source metadata probes stay on the worker. Fast mask snapshots are captured with
+  the edit, rather than rereading a newer mask when queued work starts. One explicit command and
+  one autosave may be pending; repeated shortcuts are rejected with a notice. Session/edit/sequence
+  guards prevent stale completions from replacing current work. Close waits asynchronously for
+  outstanding writes. A load failure is reported without escaping the UI command. See `05` §4d.
 * **One generation of backup.** The previous file becomes `<name>.fvsproj.bak` BEFORE the new bytes
   are written — taken afterwards it would back up the save that just happened. The crop config keeps
   a five-tier cascade because it is machine state the user never sees; a project is different, and a
@@ -276,20 +282,12 @@ The model and its persistence exist and are unit-tested
   * ⚠️ Ignoring it reintroduced, one layer up, the exact wrong-state defect the
     `_exportedCleanSinceLastEdit` flag was added to fix.
 
-* **`PROJSESSION_09` — THE GUARD MUST NEVER TRAP THE USER IN THEIR OWN APPLICATION.**
-  It runs from `OnClosing`, which has already set `e.Cancel = true`, and `OnClosing` is `async void`.
-  If the guard returns false or throws, `_isSafeToClose` is never set, `Close()` is never re-posted,
-  and the next click on X repeats the whole thing. **The application cannot be closed.**
-  Two ways that happened, both now closed:
-  1. **An interactive Save As on the close path.** A never-saved project fell through to the file
-     picker, and a picker cannot open on a window that is mid-close: it returns null, the guard
-     reported "not saved" and refused the close. The user pressed **Save** and the app would not shut
-     down. `SaveForExitAsync` never shows a dialog — it writes beside the source clip under a
-     non-colliding name derived from it, and says where it went.
-  2. **An unguarded throw.** The whole body is now wrapped, and the failure direction is deliberate:
-     a broken dialog lets the close **proceed**. Losing an unsaved `.fvsproj` is bad; an application
-     that needs Task Manager to quit is worse, and the crash-recovery snapshot (`05` §4 SYS-RECOVERY)
-     still holds the session either way.
+* **`PROJSESSION_09` / `PROJECTIO_01` — close must honor the user's save decision.**
+  A never-saved project is written beside its source under a name reserved with `CreateNew` on the
+  worker; no file picker is opened during close. Failed saves or edits made while saving keep the
+  editor open and dirty. The user can retry or explicitly choose Discard changes. Exceptions are
+  reported as Fatal and never interpreted as permission to lose work. Outstanding project I/O is
+  awaited asynchronously before the close decision, leaving the dispatcher responsive.
 
 ---
 

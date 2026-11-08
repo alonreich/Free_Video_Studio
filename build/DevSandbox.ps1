@@ -1,136 +1,124 @@
 # [SPEC CONTRACT] STRICT GOVERNANCE:
-# Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-DEVBUILD, DEVDATA_01)
+# Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-DEVBUILD).
 # Invariants, constants, and threading models must match spec bit-for-bit.
-#
-# DEVDATA_01 - keeps the dev.cmd sandbox's settings and AI keys between runs.
-#
-# Called by dev.cmd AFTER KILL_STALE (no app process may hold settings.json) and BEFORE launch.
-#   1. One-time move: the sandbox used to live in %TMP%\FreeVideoStudio_DEV\.dev_data. %TMP% is
-#      emptied by Windows Storage Sense / Disk Cleanup, which silently threw away the dev settings
-#      and the Gemini key. If the new folder has no settings yet, the old one is copied across.
-#   2. AI settings are remembered in keep\ai_settings.json beside the sandbox (outside the folder
-#      'dev fresh' wipes) and put back when settings.json is missing or has no key. If nothing is
-#      remembered yet, the key is borrowed once from the installed app's own settings.
-# The script never removes anything and never fails the dev run: every problem is a warning.
-param(
-    [Parameter(Mandatory = $true)][string]$DevData,
-    [Parameter(Mandatory = $true)][string]$OldDevData,
-    [Parameter(Mandatory = $true)][string]$KeepDir,
-    [Parameter(Mandatory = $true)][string]$ProdData
-)
+# DEVDATA_01 / DEVCLEAN_01: only disposable paths are removed. Never import production settings.
 
-$ErrorActionPreference = 'Stop'
-$aiFields = @('GeminiApiKey', 'GeminiModelName', 'AiMagicWandCloudConsent',
-              'AiZoomBaseScale', 'AiZoomMinScale', 'AiZoomAvoidHud', 'AiZoomDeadbandPercent')
-$utf8 = New-Object System.Text.UTF8Encoding($false)
-
-function Read-Json([string]$path) {
-    if (-not (Test-Path -LiteralPath $path)) { return $null }
-    try { return (Get-Content -LiteralPath $path -Raw -Encoding UTF8) | ConvertFrom-Json }
-    catch { Write-Host "[DEV] WARNING: could not read $path ($($_.Exception.Message))"; return $null }
-}
-
-function Write-Json([string]$path, $object) {
-    $dir = Split-Path -Parent $path
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-    $tmp = "$path.devsandbox.tmp"
-    [System.IO.File]::WriteAllText($tmp, ($object | ConvertTo-Json -Depth 32), $utf8)
-    Move-Item -LiteralPath $tmp -Destination $path -Force
-}
-
-function Has-Key($settings) {
-    return $settings -and $settings.PSObject.Properties['GeminiApiKey'] -and
-           -not [string]::IsNullOrWhiteSpace([string]$settings.GeminiApiKey)
-}
-
-try {
-    $devSettings = Join-Path $DevData 'settings.json'
-    $devSessionState = Join-Path $DevData 'session_state.json'
-    $keepFile = Join-Path $KeepDir 'ai_settings.json'
-    $keepSettings = Join-Path $KeepDir 'settings.json'
-    $keepSessionState = Join-Path $KeepDir 'session_state.json'
-    $prodSessionState = Join-Path $ProdData 'session_state.json'
-
-    # 1. One-time move out of %TMP%. The marker keeps a later 'dev fresh' from importing it again.
-    $moved = Join-Path $KeepDir 'moved_from_tmp.txt'
-    if (-not (Test-Path -LiteralPath $moved)) {
-        if (-not (Test-Path -LiteralPath $devSettings) -and (Test-Path -LiteralPath (Join-Path $OldDevData 'settings.json'))) {
-            Write-Host "[DEV] Moving the dev sandbox out of %TMP% (Windows cleans %TMP%): $OldDevData -> $DevData"
-            New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-            Copy-Item -Path (Join-Path $OldDevData '*') -Destination $DevData -Recurse -Force
+function Assert-DevOwnedPath([string]$Path, [string]$Root) {
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    $boundary = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $full.StartsWith($boundary, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing path outside development boundary: $full"
+    }
+    # Inspect every existing ancestor as well as descendants: junctions must not escape the sandbox.
+    $cursor = $full
+    while ($cursor) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing linked path: $cursor" }
         }
-        New-Item -ItemType Directory -Path $KeepDir -Force | Out-Null
-        [System.IO.File]::WriteAllText($moved, (Get-Date -Format o), $utf8)
+        $cursor = Split-Path -Parent $cursor
     }
-
-    # 1b. Window bounds & sizes persistence (session_state.json)
-    if (Test-Path -LiteralPath $devSessionState) {
-        Copy-Item -LiteralPath $devSessionState -Destination $keepSessionState -Force
-    } elseif (Test-Path -LiteralPath $keepSessionState) {
-        New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-        Copy-Item -LiteralPath $keepSessionState -Destination $devSessionState -Force
-        Write-Host "[DEV] Restored window sizes and bounds from remembered dev session state."
-    } elseif (Test-Path -LiteralPath $prodSessionState) {
-        New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-        Copy-Item -LiteralPath $prodSessionState -Destination $devSessionState -Force
-        Write-Host "[DEV] Borrowed initial window sizes and bounds from installed app session state."
-    }
-
-    # 1c. Full settings persistence (settings.json)
-    if (-not (Test-Path -LiteralPath $devSettings)) {
-        if (Test-Path -LiteralPath $keepSettings) {
-            New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-            Copy-Item -LiteralPath $keepSettings -Destination $devSettings -Force
-            Write-Host "[DEV] Restored full settings from remembered dev settings."
-        } elseif (Test-Path -LiteralPath (Join-Path $ProdData 'settings.json')) {
-            New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-            Copy-Item -LiteralPath (Join-Path $ProdData 'settings.json') -Destination $devSettings -Force
-            Write-Host "[DEV] Borrowed full settings from installed app settings."
+    if (Test-Path -LiteralPath $full -PathType Container) {
+        $stack = New-Object 'System.Collections.Generic.Stack[string]'
+        $stack.Push($full)
+        while ($stack.Count) {
+            foreach ($entry in Get-ChildItem -LiteralPath $stack.Pop() -Force -ErrorAction Stop) {
+                if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing linked path: $($entry.FullName)" }
+                if ($entry.PSIsContainer) { $stack.Push($entry.FullName) }
+            }
         }
     }
+    return $full
+}
 
-    $dev = Read-Json $devSettings
+function Remove-DevCache([string]$Path, [string]$Root) {
+    $checked = Assert-DevOwnedPath $Path $Root
+    if (Test-Path -LiteralPath $checked) {
+        Remove-Item -LiteralPath $checked -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $checked) { throw "Cleanup incomplete: $checked" }
+    }
+}
 
-    # 2a. Remember the current settings and AI settings whenever available.
-    if ($null -ne $dev) {
-        Copy-Item -LiteralPath $devSettings -Destination $keepSettings -Force
+function Clear-DevManagedOutput([string]$App, [string]$Output) {
+    # DEVINCREMENTAL_01: republish into a clean managed output, retaining only stager-owned assets.
+    $null = Assert-DevOwnedPath $App $Output
+    if (Test-Path -LiteralPath $App) {
+        Get-ChildItem -LiteralPath $App -Force | Where-Object {
+            -not ($_.PSIsContainer -and $_.Name -in @('backend', 'frontend', 'starter'))
+        } | ForEach-Object { Remove-DevCache $_.FullName $Output }
     }
+}
 
-    if (Has-Key $dev) {
-        $keep = [ordered]@{ SchemaVersion = $dev.SchemaVersion }
-        foreach ($f in $aiFields) { if ($dev.PSObject.Properties[$f]) { $keep[$f] = $dev.$f } }
-        Write-Json $keepFile ([pscustomobject]$keep)
-        return
-    }
-
-    # 2b. No key in the sandbox: put back what was remembered, or borrow the installed app's key.
-    $source = Read-Json $keepFile
-    $from = 'the remembered dev AI settings'
-    if (-not (Has-Key $source)) {
-        $source = Read-Json (Join-Path $ProdData 'settings.json')
-        $from = 'the installed app''s settings'
-    }
-    if (-not (Has-Key $source)) {
-        Write-Host '[DEV] No Gemini key saved anywhere yet - add it once in Settings; dev.cmd keeps it from then on.'
-        return
-    }
-
-    if ($null -eq $dev) {
-        # Missing settings file: a minimal file. Every other setting takes defaults; SchemaVersion applies.
-        $dev = [pscustomobject]@{ SchemaVersion = $source.SchemaVersion }
-    }
-    foreach ($f in $aiFields) {
-        if ($source.PSObject.Properties[$f]) {
-            $dev | Add-Member -NotePropertyName $f -NotePropertyValue $source.$f -Force
+function New-DevHelperScratch([string]$HelperRoot, [string]$Boundary) {
+    # DEVHELPERTEMP_01: consoles/native helpers may retain OS temp handles after UI exit.
+    # Never reuse their directory, kill their owner, or weaken ordinary app-cache cleanup.
+    $checked = Assert-DevOwnedPath $HelperRoot $Boundary
+    $deferred = 0
+    if (Test-Path -LiteralPath $checked) {
+        foreach ($file in Get-ChildItem -LiteralPath $checked -File -Recurse -Force) {
+            try { [IO.File]::Delete($file.FullName) }
+            catch {
+                $cause = $_.Exception.GetBaseException()
+                $code = $cause.HResult -band 0xffff
+                if ($cause -is [IO.IOException] -and $code -in @(32, 33)) { $deferred++; continue }
+                throw
+            }
+        }
+        foreach ($dir in (Get-ChildItem -LiteralPath $checked -Directory -Recurse -Force | Sort-Object { $_.FullName.Length } -Descending)) {
+            if (@(Get-ChildItem -LiteralPath $dir.FullName -Force).Count -eq 0) {
+                try { [IO.Directory]::Delete($dir.FullName, $false) }
+                catch {
+                    $cause = $_.Exception.GetBaseException()
+                    if ($cause -is [IO.IOException] -and ($cause.HResult -band 0xffff) -in @(32, 33)) { $deferred++; continue }
+                    throw
+                }
+            }
         }
     }
-    Write-Json $devSettings $dev
-    $keep = [ordered]@{ SchemaVersion = $source.SchemaVersion }
-    foreach ($f in $aiFields) { if ($source.PSObject.Properties[$f]) { $keep[$f] = $source.$f } }
-    Write-Json $keepFile ([pscustomobject]$keep)
-    Write-Host "[DEV] Restored the Gemini key and AI settings from $from."
+    if ($deferred) { Write-Host "[DEV] Deferred $deferred locked helper-temp item(s); this launch uses a fresh folder." }
+    $fresh = Assert-DevOwnedPath (Join-Path $checked ([Guid]::NewGuid().ToString('N'))) $checked
+    New-Item -ItemType Directory -Path $fresh -Force | Out-Null
+    return $fresh
 }
-catch {
-    Write-Host "[DEV] WARNING: dev settings sandbox step skipped: $($_.Exception.Message)"
+
+function Initialize-DevSandbox([string]$DevData, [string]$OldDevData, [string]$KeepDir, [string]$OldMedia) {
+    $null = Assert-DevOwnedPath $DevData (Split-Path -Parent $DevData)
+    New-Item -ItemType Directory -Path $DevData -Force | Out-Null
+    # Recover only earlier DEVELOPMENT preferences. Copy-only, absent destinations only.
+    foreach ($name in @('settings.json', 'session_state.json')) {
+        $target = Join-Path $DevData $name
+        if (-not (Test-Path -LiteralPath $target)) {
+            foreach ($sourceRoot in @($KeepDir, $OldDevData)) {
+                $source = Join-Path $sourceRoot $name
+                if (Test-Path -LiteralPath $source) {
+                    $null = Assert-DevOwnedPath $source $sourceRoot
+                    Copy-Item -LiteralPath $source -Destination $target -ErrorAction Stop
+                    break
+                }
+            }
+        }
+    }
+    # Old dev media lived in TEMP. Preserve it outside the disposable scratch area.
+    $media = Join-Path $DevData 'media'
+    if (-not (Test-Path -LiteralPath $media) -and (Test-Path -LiteralPath $OldMedia)) {
+        $null = Assert-DevOwnedPath $OldMedia (Split-Path -Parent $OldMedia)
+        Copy-Item -LiteralPath $OldMedia -Destination $media -Recurse -ErrorAction Stop
+    }
 }
-exit 0
+
+function Clear-DevRuntimeCaches([string]$DevData) {
+    $null = Assert-DevOwnedPath $DevData (Split-Path -Parent $DevData)
+    foreach ($name in @('cache', 'updates', 'logs', 'uistate\meme_dimensions.json',
+        'uistate\update_last_check_utc.txt', 'uistate\update_last_result.txt', 'uistate\update_pending_notes.txt')) {
+        Remove-DevCache (Join-Path $DevData $name) $DevData
+    }
+    $scratch = Join-Path $DevData 'scratch'
+    $null = Assert-DevOwnedPath $scratch $DevData
+    if (Test-Path -LiteralPath $scratch) {
+        # Voice recordings/recovery indexes and rescued exports are user work, even in scratch.
+        # Keep them AT THEIR ORIGINAL PATH so saved recovery references remain valid.
+        Get-ChildItem -LiteralPath $scratch -File -Recurse -Force | Where-Object {
+            $_.Name -notlike 'voiceover_*' -and $_.Name -notlike '*RECOVERED*' -and $_.Extension -ne '.wav'
+        } | ForEach-Object { Remove-DevCache $_.FullName $scratch }
+    }
+}

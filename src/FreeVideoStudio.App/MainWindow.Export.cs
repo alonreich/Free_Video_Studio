@@ -219,12 +219,7 @@ public partial class MainWindow
                     ? _musicWizardResult.MusicFilePaths
                     : (_musicWizardResult?.MusicFilePath != null ? new[] { _musicWizardResult.MusicFilePath } : null));
 
-            if (!string.IsNullOrEmpty(attribution))
-            {
-                var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
-                attrDlg.SetAttributionText(attribution);
-                await attrDlg.ShowDialog(this);
-            }
+
 
             var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
             dlg.SetOutputPath(result.OutputPath ?? string.Empty);

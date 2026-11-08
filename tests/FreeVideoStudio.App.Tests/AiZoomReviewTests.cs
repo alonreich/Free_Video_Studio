@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,7 +15,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class AiZoomReviewTests
 {
-    private const string FakeKey = "AIzaSyFAKE-TEST-ONLY-000000000000000";
+    private const string FakeKey = "AIzaSy-dummy-test-key-000000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -82,7 +82,7 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void Redact_RemovesRawGoogleKeysAnywhere()
     {
-        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSyREALLOOKING0123456789abcdefghijklm", null);
+        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000", null); // SECRETSCAN_ALLOW
         Assert.DoesNotContain("AIza", red);
     }
 

@@ -1,4 +1,4 @@
-# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS — START HERE
+﻿# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS — START HERE
 
 > **This file is the ONE entry point for every developer and AI agent** (ONBOARD_01). `project_structure.txt`
 > and `AGENTS.md` at the repository root only point here. Read §0 completely before you inspect or change
@@ -21,10 +21,11 @@
   in `docs/` ([`SPEC_GOVERNANCE.md`](SPEC_GOVERNANCE.md) §1–§2). Files marked `⚠` are co-governed: read every spec they name.
 * **Proof-of-Read:** open every edit proposal with the three-line header of `SPEC_GOVERNANCE.md` §3 (cite the
   stable `{#ANCHOR}`, never a section number).
-* **In-Code Spec Contract:** every new production source file under `src/` starts with the `[SPEC CONTRACT]`
-  block (`SPEC_GOVERNANCE.md` §4).
+* **Spec routing:** maintain domain mini-maps and `INDEX.md`; repeated source headers are not required
+  (`SPEC_GOVERNANCE.md` §4, SPECROUTING_02).
 * **Land the sentinel with the fix:** a guarded fix adds its `TAG=path` line to `build/sentinels.txt` in the
   same change (§4 rule 5 below).
+* **Storage inventory (STORAGEPATHS_01):** every new/changed storage category (including API keys) must update the production/development table and retention rules in [05 SYS-STORAGE-TABLE](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-STORAGE-TABLE), with path/lifecycle tests.
 * **Never commit secrets:** no keys, `.pfx`, `*.key.pem` or `*.password.txt` (`05` SECRETSCAN_01).
 
 ### 0.2 Reading order (the agent route)
@@ -55,12 +56,34 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
    scripts without changing `changes.md` (CHANGELOG_02; `[no-changelog]` in a commit message for a deliberate
    exception).
 
+### 0.3a The A/V regression gate — NOT DONE UNTIL IT PASSES (AVREG_01)  {#GOV-AVGATE}
+
+> **No developer or AI agent may declare ANY change done, fixed or successful until `tests\run-av-tests.cmd`
+> has run and printed `PASS`.** It checks the playhead, scrubbing, click-to-seek, marks, thumbnails, memes
+> (full-screen and corner), music, voice-over, the Speed Editor, the Video Merger and the other windows for
+> stalls, stutter, hangs, A/V desync and preview-vs-export drift, using the real player and real exports.
+
+1. Run `tests\run-av-tests.cmd` from the repo root (5–10 min). Wait. Do not read logs while it runs.
+2. Read ONLY what it prints: `PASS`, or one block per failure saying what the user would see, the drift
+   in ms, and the scenario's `file:line`. Go to that file:line, and nowhere else, to start.
+3. Fix the PRODUCT. Never loosen `Budget` (tests/FreeVideoStudio.AvRegression.Tests/Infrastructure/Repo.cs)
+   or delete a scenario to turn a run green; that needs a human's explicit OK.
+4. `tests\run-av-tests.cmd quick` is for iterating only; it is not the gate.
+5. A failing `S03` means the app code a rig mirrors changed: update that rig (named in the message).
+
+`tests\run-all-tests.cmd` additionally exercises actual desktop pixels and the real merger window,
+standalone media exports and decoder soak. Its desktop tier requires an interactive, unobscured
+Windows desktop with hardware preview available; a model-only or null-video run cannot certify
+displayed-frame transitions. Generated outputs are replaced before each run, under an exclusive
+test-run lock and a checked directory allowlist (`TESTGATE_01`, `TESTCLEAN_01/02`).
+
 ### 0.4 Build, test, release
 
 | Goal | Command | Who |
 | :--- | :--- | :--- |
-| Run the app from source | `.\dev.cmd` (hot reload; `dev trace`, `dev rebuild`, `dev fresh`) | anyone |
+| Run the app from source | `.\dev.cmd` (incremental Release managed run; settings preserved; `dev fresh` for full-clean troubleshooting) | anyone |
 | Full local packaging check (NativeAOT + installer, no GitHub) | `.\dev_build.cmd` | anyone |
+| A/V regression gate (before declaring ANY change done) | `tests\run-av-tests.cmd` (§0.3a) | everyone |
 | Compile / test | `dotnet build FreeVideoStudio.sln -c Release`, `dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj`, `dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj` | anyone |
 | Fix sentinels | `dotnet run --project build/FvsVerify/FvsVerify.csproj` | anyone |
 | Official stable release | `.\Build.cmd` (release gate, `09` DIST-RELEASEGATE) | **human only** |
@@ -91,7 +114,7 @@ Free Video Studio is a specialized, hardware-accelerated desktop video editing s
 
 ### Product and repository identity
 
-`FreeVideoStudio.sln` contains the renamed `src/FreeVideoStudio.App`, `src/FreeVideoStudio.Core`, `tests/FreeVideoStudio.App.Tests` and `tests/FreeVideoStudio.Core.Tests` projects. The application assembly is `FreeVideoStudio`; its root namespace remains `FreeVideoStudio.App`. The core assembly and namespace are `FreeVideoStudio.Core`. `FvsBuild`, `FvsVerify`, `.fvsproj` and the existing `FVS_*` environment variables retain their internal names.
+`FreeVideoStudio.sln` contains `src/FreeVideoStudio.App`, `src/FreeVideoStudio.Core`, `build/FvsVerify`, `tests/FreeVideoStudio.App.Tests`, `tests/FreeVideoStudio.Core.Tests`, `tests/FvsVerify.Tests` and `tests/FreeVideoStudio.AvRegression.Tests` (`build/FvsBuild` is built separately). The application assembly is `FreeVideoStudio`; its root namespace remains `FreeVideoStudio.App`. The core assembly and namespace are `FreeVideoStudio.Core`. `FvsBuild`, `FvsVerify`, `.fvsproj` and the existing `FVS_*` environment variables retain their internal names.
 
 Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for packaging names and local validation commands, and [storage migration](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-REBRAND) for canonical AppData paths and legacy compatibility. `project_structure.txt` and `AGENTS.md` at the repository root only point to THIS file, the single entry point; the repository map that used to live in `project_structure.txt` is §5 below. Repository links are relative to the checkout; the GitHub repository is `alonreich/Free_Video_Studio` ([`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)).
 
@@ -100,7 +123,7 @@ Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for pa
 ## 2. The 9 North Star Architectural Invariants
 All subsystems, controls, and rendering components across `src/` must strictly enforce these nine non-negotiable architectural pillars:
 
-1. **Single Binary Executable Mandate:** Zero loose companion assets (`.gif`, `.png`, `.wav`, `.ico`) alongside the output binary. All UI overlays, guide indicators, brand icons, and animations must be generated dynamically via code or vector path geometry (`PathGeometry`) in memory. The user downloads ONE file, the Inno Setup package `FreeVideoStudio-Setup.exe`; the program itself never carries other executables inside its resources (NODROPPER_01, `09` DIST-INSTALLER).
+1. **Single Binary Executable Mandate:** Zero loose companion assets (`.gif`, `.png`, `.wav`, `.ico`) alongside the output binary. All UI overlays, guide indicators, brand icons, and animations must be generated dynamically via code or vector path geometry (`PathGeometry`) in memory. The user downloads ONE file, the Inno Setup package `FreeVideoStudio.exe`; the program itself never carries other executables inside its resources (NODROPPER_01, `09` DIST-INSTALLER).
 2. **Absolute Authority for Time:** `src/FreeVideoStudio.Core/Media/OutputTimeline.cs` is the authoritative mathematical model for single-clip linear edits and per-clip segment durations. For multi-clip NLE virtual timelines, `src/FreeVideoStudio.Core/Media/CompositeTimeline.cs` and `MergeEdl.cs` constitute the sole mathematical authority mapping source µs, 60 fps merged frames, and output seconds across `edl://` libmpv preview playback and FFmpeg multi-clip rendering.
 3. **Strict A/V Process Isolation:** Master preview volume (Windows OS PID session) and preview playback remain completely decoupled from FFmpeg export filtergraphs. Master preview slider adjustments must never alter export loudness.
 4. **Leak-Free Render Pipelines:** The deprecated FFmpeg `zoompan` filter is banned suite-wide due to fatal native heap leaks. Dynamic zooms must be achieved via frame-evaluated padding, dynamic scaling, cropping, and contrast-adaptive sharpening (`cas=0.5`).
@@ -108,7 +131,7 @@ All subsystems, controls, and rendering components across `src/` must strictly e
 6. **Thread-Bound Safety Contracts & GPU Preview Lock:** UI dispatchers must never block on native audio/video subsystem calls. WASAPI audio capture lifecycles run on an isolated serialized worker thread; SkiaSharp snapshot encoding and heavy image decodes execute off the UI thread.
    * ⚠️ **MANDATORY ARCHITECTURAL LOCK — libmpv PREVIEW ENGINE:** libmpv's Render API (`mpv_render_context_create`) does NOT support Direct3D 11 (`"d3d11"` returns `-19 / MPV_ERROR_NOT_IMPLEMENTED`). The `WGL_NV_DX_interop` bridge (rendering into OpenGL FBOs shared directly with Direct3D 11 textures in GPU VRAM) combined with non-blocking 0 ms 16-slot ring probing is the **frozen, permanently locked hardware architecture**. It provides zero-copy VRAM throughput, unlocked 120/240 FPS playback, and unobstructed Avalonia XAML overlays without Win32 HWND airspace occlusion. Attempting to bypass WGL with non-existent libmpv D3D11 APIs guarantees a pitch-black screen (audio-only), and re-introducing blocking KeyedMutex timeouts (e.g. 1,000 ms `AcquireSync`) reintroduces 1 FPS lock contention. Modifying this architecture or reintroducing blocking mutex waits is strictly prohibited.
 7. **Monotonic Progress Guarantee:** Render progress tracking must be cost-weighted and mathematically monotonic (P(n+1) >= P(n)). Progress bars may never snap, stutter, or lerp backward across multi-pass operations.
-8. **Every Rule That Can Be A Test Is A Test — AND A MACHINE RUNS THEM:** A specification paragraph only protects the codebase if the next person reads it. Where a rule can be mechanically asserted — one activation path per control, no raw hex in styling, no `zoompan`, no unexplained empty catch — it lives in `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` and the prose explains *why*. A sentinel proves a fix has not been deleted; a test proves it has not been broken. ⚠️ And neither proves anything until something runs them without being asked: `.github/workflows/ci.yml` (`SYS-CI`) is what makes the ratchets real. Before it existed the suite had been red on two genuine shipped bugs — the undo re-entrancy guard (`UNDO_23`) and the project fingerprint round-trip (`PROJ_10`) — for long enough that nobody looked, because five Windows-only tests were permanently red beside them.
+8. **Testable rules are tests, and CI runs them:** mechanically checkable rules (one activation path per control, no raw hex, no `zoompan`, no silent catch) live in `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs`; prose explains why. Sentinels prove a fix still exists; tests prove it still works; `.github/workflows/ci.yml` (`SYS-CI`) runs both (history: `UNDO_23`, `PROJ_10` stayed red unnoticed before CI).
 9. **No Failure Is Silent:** Every caught exception is classified through `IFaultSink` as Recoverable, Degraded or Fatal (`08_APPLICATION_COMPOSITION.md` §2). `catch { }` and `catch (Exception ex) { Log(ex); }` are not error handling — they leave the user to guess whether they mis-clicked.
 
 ---
@@ -144,6 +167,8 @@ AudioFilterChain.cs  AudioLoudnessProbe.cs  ⚠FluidVolumeSlider.cs  ⚠MainWind
 ⚠MusicPadAlignment.cs  ⚠MusicWizardWindow.axaml.cs  VoiceOverPreviewPlayer.cs
 ⚠VoiceOverWindow.axaml.cs  ⚠VoiceOverWindow.RecordingState.cs  VoiceRecorder.cs  VoiceCaptureSession.cs  LiveTakeMeter.cs  WavAudioReader.cs
 WaveformGenerator.cs  RenderedMixGate.cs  ⚠VoiceOverWindow.PreviewProtection.cs
+⚠VideoMergerWindow.EdlPreview.cs
+VoiceOverLevel.cs  ⚠VoiceOverGainSlider.cs  ⚠VoiceOverWindow.Volume.cs
 ```
 
 **[`03_FFMPEG_EXPORT_PIPELINE.md`](03_FFMPEG_EXPORT_PIPELINE.md)** — FFmpeg export pipeline — encoder discovery, zoom filtergraph, concat/bitrate, meme concat & cutaway preview, fades, progress, binary paths, meme library.
@@ -232,7 +257,7 @@ GitHubReleasePublisher.cs  RuntimePayloadManifest.cs  Staging.cs  ⚠UpdateServi
 2. **Context Routing:** Know the FILE -> use §3 above. Know only a SYMBOL, CONSTANT or TAG (e.g. `SnapInsertionPoint`, `SafetyCeilingDbtp`, `ZOOMLIVE_07`) -> grep [`INDEX.md`](INDEX.md). Read the ONE spec you land on; do not pre-load the others.
 3. **Co-Governed Files (⚠):** A file listed under more than one spec is bound by ALL of them. Reading one is NOT compliance — this is the exact leakage `SPEC_GOVERNANCE.md` §2 exists to prevent.
 4. **Cite Anchors, Not Numbers:** Quote the stable `{#ANCHOR}` id (e.g. `FFM-BINPATH`) in the Proof-of-Read header. Section numbers shift as specs grow.
-5. **Land The Sentinel With The Fix:** Any bug fix or safety invariant guarded mechanically gets a `TAG=path` line in `build/sentinels.txt` in the SAME change (checked by `build/FvsVerify`, which `dev.cmd`'s `VERIFY_PATCHES` runs, and by `ArchitectureRuleTests.EveryFixSentinelStillResolves` in CI). Distinguish mechanical fix-sentinels (`build/sentinels.txt`) from spec section anchors (`docs/INDEX.md` `{#ANCHOR}` tags): mechanical sentinels fail compilation/verification if their in-code token is deleted, while spec anchors route architectural requirements. That section also states why a correct source file is not evidence that the running binary contains the fix.
+5. **Land The Sentinel With The Fix:** Any bug fix or safety invariant guarded mechanically gets a `TAG=path` line in `build/sentinels.txt` in the SAME change (checked by `build/FvsVerify`, invoked directly by `dev.cmd` (DEVVERIFY_01 / SYS-VERIFYTOOL), and by `ArchitectureRuleTests.EveryFixSentinelStillResolves` in CI). Distinguish mechanical fix-sentinels (`build/sentinels.txt`) from spec section anchors (`docs/INDEX.md` `{#ANCHOR}` tags): mechanical sentinels fail compilation/verification if their in-code token is deleted, while spec anchors route architectural requirements. That section also states why a correct source file is not evidence that the running binary contains the fix.
 
 ---
 ## 5. Repository Map  {#GOV-REPOMAP}
@@ -246,11 +271,41 @@ Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj
 Core project:         .\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj
 Application tests:    .\tests\FreeVideoStudio.App.Tests\FreeVideoStudio.App.Tests.csproj
 Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Tests.csproj
+FvsVerify tests:      .\tests\FvsVerify.Tests\FvsVerify.Tests.csproj (sentinel checker; CI)
+Media checks:         .\tests\MediaPipelineChecks (console: real FFmpeg/GPU export checks; README.md inside)
+Voice-over smoke:     .\tests\VoiceOverNativeSmoke (console: native voice capture smoke)
+AI bake-off tool:     .\tools\AiBakeOff\AiBakeOff.csproj (AIBAKEOFF_01: developer-only console comparing AI vendors on subject
+                      discovery, dense tracking and HUD detection; keys from environment variables only;
+                      not in the solution, not shipped)
+A/V regression gate:  .\tests\run-av-tests.cmd -> .\tests\FreeVideoStudio.AvRegression.Tests (AVREG_01, section 0.3a):
+                      38 scenarios S01-S38 on the real player (PlayerRig/PlaybackProbe) and real exports
+                      (ExportRig/Verify/MergerRig) of generated marker media; output in tests\AvRegression (git-ignored).
+                      TestHarness.ps1 validates nonempty, complete TRX results and required scenarios; skipped tests fail the gate.
+                      TestHarness.Tests.ps1 guards parsing, exclusive runs and allowlisted output cleanup.
+All-suite runner:     .\tests\run-all-tests.cmd adds MediaPipelineChecks exports/decoder soak and DesktopPreviewSmoke.
+Desktop preview:      .\tests\DesktopPreviewSmoke (real WGL/D3D pixels, seek/resize/detach/shutdown;
+                      --merger runs the actual VideoMergerWindow across three clips added during playback;
+                      --silent-middle also covers a clip without audio). Requires an unobscured interactive Windows desktop.
+                      TestArtifactDirectory.cs bounds standalone generated output and shares the test-run lock.
+Export save retry:    .\src\FreeVideoStudio.Core\Media\FinalOutputCommit.cs (03 FFM-EXPORTLIFETIME).
+Voice gain binding:   .\src\FreeVideoStudio.App\ViewModels\VoiceOverGainViewModel.cs (02 AUD-VOICEOVER, 04 UI-THEME, 08 COMP-MVVM).
+Development runtime:  .\dev.cmd -> build\DevRun.ps1 + build\DevSandbox.ps1; .dev-run\app (incremental Release managed; `dev fresh`/`dev rebuild` for full clean).
+                      Core\Infrastructure\DevelopmentEnvironment.cs isolates paths/IPC and blocks installation.
+                      Storage defaults and retention: 05 SYS-STORAGE-TABLE (STORAGEPATHS_01). Shared Music/Memes/Downloads; separate TEMP voice files.
+                      Helper TEMP: fresh launch GUID folder; locked leftovers deferred (DEVHELPERTEMP_01).
+                      Shared production staging: FvsBuild --dev-runtime (DEVPARITY_01); 05 SYS-DEVBUILD.
+                      Tests: DevelopmentEnvironmentTests.cs, DevelopmentLaunchTests.cs, tests\DevHarness.Tests\DevSandbox.Tests.ps1.
 Local packaging:      .\dev_build.cmd
-Verification tool:    .\build\FvsVerify\FvsVerify.csproj
+Verification tool:    .\build\FvsVerify\FvsVerify.csproj; .\dev.cmd verify checks without launch cleanup (DEVVERIFY_01)
 Sentinel registry:     .\build\sentinels.txt
-Standalone output:    .\compiled\FreeVideoStudio-Setup.exe  (Inno Setup package, NODROPPER_01; holds exactly one local installer; GitHub retains latest 5 releases)
+AI source exporter:   .\developer_tools\Pull_Code_files.py (CODEEXPORT_01; docs/05 SYS-CODEEXPORT).
+                      At most ten attachments in a new dated Downloads\free_video_studio subfolder;
+                      full text/index, installer and tests, explicit omissions and secret filtering.
+                      Known legacy song attribution decoded with its declared encoding; other errors reported.
+                      Tests: .\tests\DeveloperTools.Tests\test_pull_code_files.py (Python unittest; CI).
+Standalone output:    .\compiled\FreeVideoStudio.exe  (Inno Setup package, NODROPPER_01; holds exactly one local installer; GitHub retains latest 5 releases)
 Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTION_AND_RELEASE.md, DIST-INSTALLER)
+App icon:             .\assets\icons\FreeVideoStudio.ico (from FreeVideoStudio.jpg, padding cropped; APPICON_01, docs/09 DIST-IDENTITY)
 AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01 (docs/05 SYS-AVCLEAN)
 Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + green CI + local
                       tests (RELQA_01) + protected root key (ROOTKEY_01) + typed PUBLISH, version commit + tag, undo
@@ -270,9 +325,10 @@ Update trust:         elevated worker runs only from a protected %ProgramData% c
                       ReleaseChangelogTests.cs.
 
 Product display name: Free Video Studio
-Naming rule:          "Free Video Studio" = user-visible text (title bars, About, dialogs,
-                      shortcuts, install folder). "FreeVideoStudio" = files, folders,
-                      projects, namespaces, mutexes, registry/IDs.
+Naming rule:          Display text uses "Free Video Studio". The installation folder,
+                      executable and namespaces use "FreeVideoStudio".
+                      Registry identifiers are defined individually by DeploymentFootprint;
+                      the application and uninstall keys retain "Free Video Studio".
 Application assembly: FreeVideoStudio (root namespace: FreeVideoStudio.App)
 Core assembly:        FreeVideoStudio.Core (root namespace: FreeVideoStudio.Core)
 Internal tooling retains FvsBuild, FvsVerify and the FVS environment variables.
@@ -280,6 +336,10 @@ GitHub repository:    alonreich/Free_Video_Studio (updater + meme sync; old addr
 Rebrand record:       docs/REBRAND_MIGRATION.md (old->new map, update flow, output naming)
 Previous-brand guard: tests\FreeVideoStudio.Core.Tests\RebrandTests.cs (old name allowed ONLY in
                       LegacyAppDataNames.txt and docs/REBRAND_MIGRATION.md)
+Cleanup boundary:     .\src\FreeVideoStudio.Core\Infrastructure\SafeDirectoryCleanup.cs
+                      + tests\FreeVideoStudio.Core.Tests\SafeDirectoryCleanupTests.cs (05 CLEANUPBOUND_01).
+Project persistence:  ProjectSession.cs ordered background save/load queue;
+                      tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
 Legacy identity:      .\src\FreeVideoStudio.Core\Infrastructure\LegacyAppDataNames.txt (migration only)
 Storage migration:    docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND
 Residue removal:      docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND-SWEEP (REBRAND_02,
@@ -316,6 +376,7 @@ Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .
                       (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
                       laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
                       Core\Media\MusicCrossfade.cs (XFADEPLAN_01); pure list maths in Core\Media\MusicPlaylist.cs.
+                      Coverage handoff: .Playlist.cs maps output coverage to source endpoints (MUSICEND_01).
                       Saved windows: MusicWizardResult.Plan.cs (MusicStartsSeconds / MusicEndsSeconds, ToBedTracks).
                       Merger EDIT/REMOVE + named song blocks: VideoMergerWindow.MusicButton.cs (MERGERMUSIC_01/02).
                       Specs: docs/02 AUD-DIALOGS / AUD-MUSICWIN / AUD-MUSICFADE, docs/04 UI-MUSICWIZARD.
@@ -327,6 +388,8 @@ Meme audit (2026-10-17, MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-scree
                       MainWindow.Memes.cs (main-screen meme as a placement, markers, music question);
                       tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/03 FFM-MEMECONCAT /
                       FFM-MEMECORNER / FFM-MEMEPREVIEW, docs/04 UI-MEMESELECT, docs/06 PROJ-SCHEMA (schema 7).
+Voiceover gain:       Core/Media/VoiceOverLevel.cs; Controls/VoiceOverGainSlider.cs + VoiceOverWindow.Volume.cs.
+                      0–150% across previews/export; schema 8 take gain (VOLEVEL_01, docs/02 AUD-VOICEOVER, docs/06 PROJ-SCHEMA).
 AI features:          AI SMART ZOOM (Granular editor) + Magic Wand AI (Crop Tool) + AI Commentary (captions)
                       + AI Music Auto-Fit (Add Music wizard: Services\AiMusicAutoFitService.cs)
                       + Modern Viral Post Helper (Export finished screen: Services\AiViralPostService.cs, Controls\FinishedDialogWindow.AiViral.cs)

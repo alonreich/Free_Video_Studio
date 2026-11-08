@@ -41,8 +41,8 @@
                 <!-- HEADERMERGE_01 - this bar carries the wizard too now. It had spare width, the
                      steps belong next to the profile they apply to, and merging them removed a whole
                      strip from the left column. Columns: label, picker, steps, goal/status, profile
-                     state, new-name, SAVE AS NEW, help. -->
-                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto">
+                     state, new-name, SAVE AS NEW, help, AI settings. -->
+                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto">
                     <TextBlock Text="Profile:" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
                     <!-- GATE_01: PlaceholderText, and a SelectedItem left deliberately null at
                          startup. Do NOT re-add `combo.SelectedItem = SettingsManager.ActiveMaskOverlay`
@@ -149,6 +149,7 @@
                         </DataValidationErrors>
                     </StackPanel>
                     <Button Name="CropToolHelpButton" Grid.Column="7" Classes="Secondary" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0" AutomationProperties.Name="Show me around the crop tools" ToolTip.Tip="New here? Play the short walkthrough that points out what everything on this screen does."/>
+                    <Button Name="CropToolAiSettingsButton" Grid.Column="8" Classes="Secondary" Content="⚙ AI" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="6,0" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0" AutomationProperties.Name="AI Settings" ToolTip.Tip="Configure your AI provider and key for Magic Wand HUD suggestions."/>
                     <!-- ISSUE_10 (audit round 6): was Classes="Secondary", identical to the "?"
                          walkthrough button sitting directly beside it. One of these two creates a
                          profile file; the other plays a tutorial. SAVE AS NEW is the real action of

@@ -19,19 +19,9 @@ Do NOT read every spec. Route once, read one.
 * Landed on a row marked `⚠` -> that file is CO-GOVERNED; read every spec the row names.
 
 ## 0a. CRITICAL AGENT MANDATE: STRICT BAN ON `Build.cmd` (CLOUD PUBLISH)
-**ALL AUTONOMOUS AI AGENTS ARE STRICTLY FORBIDDEN FROM EVER RUNNING `.\Build.cmd` OR `Build.cmd`.**
-
-* **`.\Build.cmd` Officially Publishes to Git Cloud:**
-  Running `.\Build.cmd` executes `FvsBuild` in production release mode, which creates release tags and **OFFICIALLY PUBLISHES A NEW PUBLIC VERSION ON GITHUB CLOUD**, making it instantly live and downloadable to everyone worldwide.
-* **MANDATORY LOCAL BUILD SCRIPT: `.\dev_build.cmd`:**
-  If an AI agent needs to perform a full build test, NativeAOT compilation verification, or packaging test, it **MUST ONLY USE `.\dev_build.cmd`** (or `dotnet build` / `dotnet test`).
-  `.\dev_build.cmd` passes `--dev` to `FvsBuild`:
-  - Builds strictly locally.
-  - Zero git tags created.
-  - Zero GitHub releases created or updated.
-  - Zero cloud network publishing.
-* **Prohibition Severity:** Any automated or agent execution of `.\Build.cmd` is classified as a severe operational violation.
-* **The release gate is not a licence.** Since RELGATE_01 `Build.cmd` refuses a dirty, unpushed or off-branch checkout and lint-failing notes, and asks a human to type `PUBLISH` (09 DIST-RELEASEGATE). That protects releases from mistakes; it does not make running it acceptable for an agent.
+* **Agents must never execute `Build.cmd`:** it runs the production release pipeline, creates Git tags and publishes publicly to GitHub. Agent execution is a severe operational violation.
+* For local NativeAOT/package validation, use `dev_build.cmd`, which passes `--dev` to `FvsBuild` and neither creates tags nor publishes or updates GitHub releases. Use `dotnet build` / `dotnet test` for compilation and tests.
+* `RELGATE_01` checks clean, pushed, on-branch state and release-note lint, and requires typed `PUBLISH` (09 DIST-RELEASEGATE). These safeguards do not authorize agent execution.
 
 ## 1. Absolute Stop-and-Read Mandate
 Developers and autonomous AI agents are strictly forbidden from inspecting, generating, refactoring, or modifying code in any source file (`.cs`, `.axaml`, `.cmd`, `.ps1`) without first loading, reading, and citing its mapped specification file from `docs/`. Speculative code modifications without active specification verification are classified as critical system defects.
@@ -51,13 +41,13 @@ Every code edit proposal, refactor plan, or architectural implementation block s
 [SCOPE CLAMP]: <Explicit confirmation of the precise method, struct, or file altered with zero outside side-effects>
 ```
 
-## 4. In-Code Source Sentinel
-Every production C# and AXAML code-behind source file across `src/` must carry the following immutable contract block at Line 1:
-```csharp
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/0X_<MAPPED_SPEC>.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-```
+## 4. Specification Routing Without Repeated Source Headers
+`SPECROUTING_02` (user-approved 2026-11-01): production files do not require repeated
+`[SPEC CONTRACT]` headers. Keep the governing specifications in `docs/INDEX.md`, the domain
+mini-maps and `docs/README.md`; read and cite them before code changes (§1–§3 still apply).
+Do not add boilerplate headers to satisfy a test. The former header-presence architecture test
+is retired by this explicit rule change. Fix-specific sentinel markers in `build/sentinels.txt`
+and behavioral tests remain required; they are distinct from the removed routing boilerplate.
 
 ## 5. Specification Invariant Audit Verification
 When audits or tests reveal discrepancies between text documentation and active C# implementation:
@@ -73,3 +63,7 @@ Every autonomous AI agent modifying application source code, UI elements, workfl
 4. **Automated Release Pipeline Integration:** When an official release is published via `Build.cmd` / `FvsBuild`, `ReleaseGate.PrepareNotes` takes the `## Upcoming` bullets as the GitHub release notes, which the in-app update card (`UpdateToastWindow`, RELNOTES_03) shows as "What's new".
 5. **Project Map Sync:** If new files, classes, or architecture rules are introduced or removed, the repository map (`docs/README.md` §5 — formerly `project_structure.txt`, which is now only a pointer) and `docs/INDEX.md` must be updated in tandem.
 6. **Mandatory Completion Block:** An AI agent is strictly forbidden from finishing a task or committing code without completing this change-logging step.
+
+## 7. Mandatory Storage Inventory (STORAGEPATHS_01)
+
+Any new or changed persistent/temporary storage, credentials/API keys, cache, media, profiles or recovery data must update the three-column [storage table](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-STORAGE-TABLE) and retention rules in the same change. Include defaults for production and development, override behavior, TEMP-loss behavior and path/lifecycle tests. Never document credential values.

@@ -126,7 +126,7 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                 {
                     try
                     {
-                        take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
+                        take.Reader.Volume = VoiceOverLevel.PreviewGain(take.Take.Gain, MpvIpcClient.MasterLinearGain);
                         take.StartProjectSec = VoiceOverTiming.OutputStart(take.Take, request.Mapper);
                         double voiceTime = request.Time - take.StartProjectSec;
                         bool play = (!request.Paused || request.Frozen) && !request.Ended &&

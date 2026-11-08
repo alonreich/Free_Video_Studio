@@ -1,4 +1,4 @@
-# SYMBOL & FILE INDEX (routing lookup)
+﻿# SYMBOL & FILE INDEX (routing lookup)
 
 > 🛑 AGENT RULES — they apply even when you came here directly: never run `.\Build.cmd` (it publishes to GitHub) —
 > use `.\dev_build.cmd` / `dotnet build` / `dotnet test`; open every edit with the Proof-of-Read header
@@ -17,6 +17,12 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ---
 
 ## 1. Source File -> Spec
+
+| File / tag | Spec |
+| :--- | :--- |
+| `AVREG_01` · `tests/run-av-tests.cmd` · `tests/FreeVideoStudio.AvRegression.Tests/` (`PlayerRig`, `PlaybackProbe`, `ExportRig`, `Verify`, `MergerRig`, `MainEdit`, `TestMedia`, `Budget`) | `README.md` GOV-AVGATE (§0.3a) |
+| `developer_tools/Pull_Code_files.py`, `tests/DeveloperTools.Tests/test_pull_code_files.py`, `CODEEXPORT_01` | 05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation |
+
 Voiceover timing additions (all listed specs govern these files):
 
 | File | Specs and tags |
@@ -54,6 +60,8 @@ Voiceover timing additions (all listed specs govern these files):
   AppDataPaths.cs                            05 SYS-REBRAND
   AppDataPathsTests.cs                       05 SYS-REBRAND
   LegacyAppDataNames.txt                     05 SYS-REBRAND
+  SafeDirectoryCleanup.cs                   05 SYS-AVCLEAN (CLEANUPBOUND_01)
+  SafeDirectoryCleanupTests.cs              05 SYS-AVCLEAN
   LegacyResidueSweep.cs                      05 SYS-REBRAND-SWEEP
   RebrandTests.cs                            05 SYS-REBRAND-SWEEP | 03 FFM-OUTNAME
   REBRAND_MIGRATION.md                       rebrand record (REBRAND)
@@ -208,13 +216,18 @@ Voiceover timing additions (all listed specs govern these files):
   UiStateStore.cs                            05
   UpdateToastWindow.axaml.cs                 04 UI-SETTINGS-ABOUT | 05 SYS-AUTOUPDATE
 ⚠ VideoMergerWindow.ClipActions.cs           01 04
-⚠ VideoMergerWindow.EdlPreview.cs            01 03 04
+⚠ VideoMergerWindow.EdlPreview.cs            01 02 03 04
 ⚠ VideoMergerWindow.Effects.cs               01 04
 ⚠ VideoMergerWindow.History.cs               01 06
 ⚠ VideoMergerWindow.Lanes.cs                 01 04
 ⚠ VideoMergerWindow.Session.cs               01 04 05
 ⚠ VideoMergerWindow.TimelineSelect.cs        01 04
   WindowResizeGrip.cs                        04
+  VoiceOverLevel.cs                          02 AUD-VOICEOVER
+⚠ VoiceOverGainSlider.cs                    02 AUD-VOICEOVER; 04 UI-PROMPTS
+⚠ VoiceOverWindow.Volume.cs                 02 AUD-VOICEOVER; 04 UI-PROMPTS
+  VoiceOverLevelTests.cs                     02 AUD-VOICEOVER
+  VoiceOverGainUiTests.cs                    02 AUD-VOICEOVER; 04 UI-PROMPTS
   VoiceOverPreviewPlayer.cs                  02
 ⚠ VoiceOverWindow.axaml.cs                   01 02
 ⚠ VoiceOverWindow.RecordingState.cs          01 02 04 (VOREC_01..03)
@@ -285,6 +298,13 @@ Voiceover timing additions (all listed specs govern these files):
   .github/workflows/lfs-guard.yml            09
 ⚠ UpdateService.cs                           05 09
   DevSandbox.ps1                             05 SYS-DEVBUILD
+  DevRun.ps1                                 05 SYS-DEVBUILD
+  DevelopmentEnvironment.cs                  05 SYS-DEVBUILD
+  KnownFolders.cs                            05 SYS-DEVBUILD / SYS-WINSTATE
+  NamedSystemMutex.cs                        05 SYS-MUTEX / SYS-DEVBUILD
+  DevelopmentEnvironmentTests.cs             05 SYS-DEVBUILD
+  DevelopmentLaunchTests.cs                  05 SYS-DEVBUILD
+  DevHarness.Tests/DevSandbox.Tests.ps1       05 SYS-DEVBUILD
   UpgradeCoordinator.cs                      05 SYS-UPGRADE | SYS-UPGRADEUX | SYS-UPGRADE-TRUST
   ProtectedWorkerStage.cs                    05 SYS-UPGRADE-TRUST (WORKERSTAGE_01)
   CommentaryPersonality.cs                   01 TL-CAPTIONS | 04 UI-AICOMMENTARY (COMMENTARYMIX_01, TACTICAL_01..03)
@@ -841,9 +861,9 @@ UpdateEstimatedQuality                       03 §8a FFM-QUALITY
 UpdateReadyLamp                              02 §4 AUD-VOICEOVER
 UpdateThumbnailButtonState                   01 (mini-map only)
 UpdateTimelineMarkers                        01 (mini-map only)
-VERIFY_PATCHES                               05 §4a SYS-DEVBUILD
 VideoVolSlider                               02 §6 AUD-DIALOGS
 VOEND_01                                     01 §8 TL-ENDSTOP
+VOLEVEL_01                                  02 AUD-VOICEOVER; 04 UI-PROMPTS; 06 PROJ-SCHEMA (schema 8)
 VoiceOverPreviewPlayer                       02 §4 AUD-VOICEOVER
 VoiceOverWindow                              01 (mini-map only) | 02 (mini-map only)
 VoiceRecorder                                02 §4 AUD-VOICEOVER
@@ -998,8 +1018,14 @@ UPGRADEUX_04                                 05 SYS-UPGRADEUX   (plain failures,
 UPGRADEUX_05                                 05 SYS-UPGRADEUX   (first-launch "Finishing… / Updated")
 UPGRADEUX_06                                 05 SYS-UPGRADEUX   (installer window first, worker copy in background)
 DEVDATA_01                                   05 §4a SYS-DEVBUILD   (dev sandbox in %LOCALAPPDATA%, AI keys kept)
-DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (dev updates from .\compiled)
-DEVFAST_01                                   05 §4a SYS-DEVBUILD   (default dev run is incremental; dev rebuild = full wipe)
+DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (legacy explicit updater tests only; disabled for ordinary dev launches)
+DEVVERIFY_01                                 05 SYS-DEVBUILD / SYS-VERIFYTOOL (direct dev.cmd verifier invocation before cleanup; dev verify)
+DEVPARITY_01 / DEVISOLATION_01 / DEVCLEAN_01   05 SYS-DEVBUILD (current-source Release runtime, isolated resources, preserved settings)
+DEVHELPERTEMP_01                            05 SYS-DEVBUILD / SYS-STORAGE-TABLE (fresh helper TEMP; defer locked leftovers)
+STORAGEPATHS_01                             05 SYS-STORAGE-TABLE (authoritative storage inventory; mandatory update on storage changes)
+DEVSHAREMEDIA_01                            05 SYS-DEVBUILD / SYS-STORAGE-TABLE (shared music/memes/Downloads; separate TEMP voice)
+DEVINCREMENTAL_01                           05 SYS-DEVBUILD (incremental compiler outputs, hash-verified assets, full-clean fallback)
+DEVFAST_01                                   05 §4a SYS-DEVBUILD   (retired hot reload; DEVINCREMENTAL_01 now retains compiler outputs without hot reload)
 UPDATEPIN_01                                 05 §5 SYS-SIGNING   (publisher root built into the app)
 UPDATEPIN_02                                 05 §5 SYS-SIGNING   (leaf renews itself from the root)
 UPDATEPIN_PEM_01                             05 §5 SYS-SIGNING   (preserve public PEM data and verify its pin)
@@ -1070,6 +1096,7 @@ NOSELFDELETE_01                              05 SYS-AVCLEAN   (uninstaller clean
 NODROPPER_01                                 09 DIST-INSTALLER | 05 SYS-AVCLEAN   (Inno Setup installer, no embedded payload)
 NOTEMPEXEC_01                                05 SYS-AVCLEAN   (no self-copy to %TEMP%; updates under %LOCALAPPDATA%\FreeVideoStudioUpdates)
 PEIDENTITY_01                                05 §5 SYS-SIGNING   (OriginalFilename = file name, manifest version)
+APPICON_01                                   09 DIST-IDENTITY   (padding-free app/installer icon, assets/icons/FreeVideoStudio.ico)
 UPDATECONSENT_01                             05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (ask once, first check after 5 min)
 DIST-INSTALLER                               09 §3c DIST-INSTALLER
 NOCMD_01                                     05 SYS-AVCLEAN   (whatsapp:// via shell, no cmd /c)
@@ -1129,6 +1156,7 @@ LeadInSec                                    02 §7 AUD-MUSICFADE
 OutgoingGainAt                               02 §7 AUD-MUSICFADE
 MusicCrossfade                               02 §7 AUD-MUSICFADE
 XFADEPLAN_01                                 02 §7 AUD-MUSICFADE
+MUSICEND_01                                  02 AUD-MUSICWIN (wizard output coverage -> source endpoint; no double speed conversion)
 MUSICWIN_01                                  02 §8 AUD-PREVIEWSYNC | 02 §9 AUD-MUSICWIN
 MusicStartsSeconds                           02 §9 AUD-MUSICWIN
 MusicEndsSeconds                             02 §9 AUD-MUSICWIN
@@ -1298,6 +1326,7 @@ SettingsViewModel                            04 §11 UI-SETTINGS-ABOUT
 CopySection                                  04 §11 UI-SETTINGS-ABOUT
 SETDEFAULTS_01                               04 §11 UI-SETTINGS-ABOUT | 03 FFM-QUALITY
 SETCONFIRM_01                                04 §4 UI-SAFEGUARDS
+FILEDELETE_01                                04 §4 UI-SAFEGUARDS
 SETMERGERDIR_01                              04 §11 UI-SETTINGS-ABOUT
 DuckingStrength                              02 §3 AUD-SIDECHAIN
 CarvingStrength                              02 §3 AUD-SIDECHAIN
@@ -1434,6 +1463,7 @@ AUTOZOOM_02                                  04   [code-only: CropToolWindow.axa
 CROSSHAIR_01                                 04   [code-only: CropToolWindow.axaml.cs]
 TOOLRETURN_01                                05 §3 SYS-WINSTATE
 AIAUDIT_01                                   05 §7 SYS-AISETTINGS (plain-English map of all AI features + audit closure)
+AIAUDIT_02                                   05 §7 SYS-AISETTINGS (audit fixes 6-10: window cancellation, multi-vendor 404 fallback, token toasts, onboarding)
 AIMODELS_02                                  05 §7.4 SYS-AISETTINGS
 AIMODELFALLBACK_02                           05 §7.4 SYS-AISETTINGS
 AITEMP_02                                    05 SYS-AISETTINGS
@@ -1458,11 +1488,23 @@ AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
 ```
 
 
+## Test audit and regression routes
+
+| File, symbol or tag | Specification |
+| :--- | :--- |
+| `tests/TestHarness.ps1`, `TestHarness.Tests.ps1`, `run-av-tests.ps1`, `run-all-tests.cmd`, `TESTGATE_01`, `TESTCLEAN_01` | `README.md` GOV-AVGATE; `08` COMP-ARCHTEST; `05` SYS-STORAGE-TABLE |
+| `tests/TestArtifactDirectory.cs`, `TESTCLEAN_02` | `05` SYS-STORAGE-TABLE; `08` COMP-ARCHTEST |
+| `tests/DesktopPreviewSmoke/Program.cs`, `MergerSmokeApp.cs`, `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | `04` UI-GPUPRESENT2, UI-MERGERQUEUE; `01` TL-COMPOSITE; `08` COMP-ARCHTEST |
+| `ProbeRegressionTests.cs`, `S37_SeekEvidenceTests.cs`, `S38_MutedAndDeletedMemeTests.cs`, `NativeTestBootstrap.cs` | `08` COMP-ARCHTEST; `02` AUD-IPCSTATE; `03` FFM-MEMECONCAT |
+| `FinalOutputCommit.cs`, `FinalOutputCommitTests.cs` | `03` FFM-EXPORTLIFETIME |
+| `VoiceOverGainViewModel.cs` | `02` AUD-VOICEOVER; `04` UI-THEME; `08` COMP-MVVM |
+| `MERGERGAPLESS_01`, `MergerRig.PlayerOptions` | `01` TL-COMPOSITE; `02` AUD-IPCSTATE |
+
 ## Rebrand identity and verification routes
 
 | File, symbol or tag | Specification |
 | :--- | :--- |
-| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio-Setup.exe`, retired `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
+| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio.exe`, retired `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
 | `REBRAND_01`, `AppDataDir`, `LocalCacheDir`, `MigrateDirectory`, `FvsFreeVideoStudioMutex` | `05` SYS-REBRAND |
 | `NOSPACE_01`, `LegacyInstallFolder`, `KnownDestinations`, `ReuseRoot`, `RetargetUserLinksAsync` | `05` SYS-NOSPACE |
 | `MEMEFOLDER_01`, `MEMEFOLDER_02`, `CloudMemeFolder`, `MemeCategory`, `MEMECAT_01`, `MEMESYNC_01`..`03`, `STARTERLIST_01`, `ResolveSavedFile` | `03` FFM-MEMELIB |
@@ -1472,3 +1514,7 @@ AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
 | Old→new identity map, old-brand update flow, allow list | `REBRAND_MIGRATION.md` |
 | `ProductionNamespacesUseTheProductRoot` | `08` COMP-ARCHTEST |
 <!-- WGLUNBIND_01: MpvVideoView.cs, Interop/WglInterop.cs and Interop/NativeTeardownInvoker.cs — 05 SYS-WINSTATE; WglInterop.cs also 04 UI-GPUPRESENT2. -->
+
+| `CLEANUPBOUND_01`, `SafeDirectoryCleanup` | `05` SYS-AVCLEAN |
+| `LEGACYKEEP_01` | `05` SYS-REBRAND-SWEEP |
+| `PROJECTIO_01` | `06` PROJ-DISK / PROJ-CLOSEGUARD; `07` UNDO-STATE; `08` COMP-FAULTS |

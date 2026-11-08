@@ -346,7 +346,8 @@ public partial class MainWindow
                 long len = 0;
                 try { len = new FileInfo(t.Path).Length; } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
                 sb.Append(';').Append(t.Path).Append('@').Append(t.StartSec.ToString("F3", ci))
-                  .Append('+').Append(t.OutputOffsetSec.ToString("F6", ci)).Append('#').Append(len);
+                  .Append('+').Append(t.OutputOffsetSec.ToString("F6", ci)).Append('#').Append(len)
+                  .Append("g").Append(VoiceOverLevel.Clamp(t.Gain).ToString("R", ci));
             }
         }
         return sb.ToString();

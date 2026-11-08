@@ -160,7 +160,13 @@ public static class KnownFolders
         ? new WindowsShellFolderResolver()
         : new FallbackShellFolderResolver();
 
-    public static string? GetDownloads() => _resolver.GetDownloads();
+    public static string? GetDownloads()
+    {
+        string? dev = DevelopmentEnvironment.ShareUserMedia ? null : DevelopmentEnvironment.DirectoryFor("exports");
+        if (dev is null) return _resolver.GetDownloads();
+        Directory.CreateDirectory(dev);
+        return dev;
+    }
     public static string? GetVideos() => _resolver.GetVideos();
     public static string? GetDesktop() => _resolver.GetDesktop();
     public static string? GetPublicDesktop() => _resolver.GetPublicDesktop();

@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -67,7 +67,7 @@ public sealed class AvCleanRuleTests
         foreach (string required in new[]
                  {
                      "PrivilegesRequired=lowest", "Uninstallable=no", "CreateAppDir=no",
-                     "VersionInfoOriginalFileName=FreeVideoStudio-Setup.exe", "OutputBaseFilename=FreeVideoStudio-Setup",
+                     "VersionInfoOriginalFileName=FreeVideoStudio.exe", "OutputBaseFilename=FreeVideoStudio",
                      @"DestDir: ""{tmp}\fvs""", "--install --smart-update", "runasoriginaluser",
                  })
             Assert.Contains(required, iss);

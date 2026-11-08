@@ -114,16 +114,29 @@ public static class AiVisionProviders
     public static string? PickReplacement(AiVendor vendor, IReadOnlyList<string> available, string? exclude)
     {
         if (available == null || available.Count == 0) return null;
-        var live = available.Where(n => !string.Equals(n, exclude, StringComparison.OrdinalIgnoreCase) && !IsRetiredModel(vendor, n)).ToList();
+        string cleanExclude = (exclude ?? string.Empty).Trim();
+        if (cleanExclude.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+            cleanExclude = cleanExclude["models/".Length..];
+
+        var live = available
+            .Select(n => (n ?? string.Empty).Trim())
+            .Select(n => n.StartsWith("models/", StringComparison.OrdinalIgnoreCase) ? n["models/".Length..] : n)
+            .Where(n => n.Length > 0 && !string.Equals(n, cleanExclude, StringComparison.OrdinalIgnoreCase) && !IsRetiredModel(vendor, n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (live.Count == 0) return null;
 
         foreach (string known in GetKnownModels(vendor))
-            if (live.Contains(known, StringComparer.OrdinalIgnoreCase)) return known;
+        {
+            string cleanKnown = known.StartsWith("models/", StringComparison.OrdinalIgnoreCase) ? known["models/".Length..] : known;
+            if (!string.Equals(cleanKnown, cleanExclude, StringComparison.OrdinalIgnoreCase) && live.Contains(cleanKnown, StringComparer.OrdinalIgnoreCase))
+                return cleanKnown;
+        }
 
         switch (vendor)
         {
             case AiVendor.Google:
-                return GeminiClient.PickFallbackModel(live, exclude);
+                return GeminiClient.PickFallbackModel(live, cleanExclude);
             case AiVendor.Anthropic:
                 return live.FirstOrDefault(n => n.Contains("sonnet", StringComparison.OrdinalIgnoreCase))
                     ?? live.FirstOrDefault(n => n.Contains("haiku", StringComparison.OrdinalIgnoreCase))

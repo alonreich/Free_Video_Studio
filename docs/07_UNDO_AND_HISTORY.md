@@ -1,4 +1,4 @@
-# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
+﻿# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
 
 ## Voiceover timing changes {#UNDO-VOICE-TIMING}
 `MainWindow.VoiceTiming.cs` also follows 02 AUD-VOICEOVER. `VOTIMING_01`: a 350 ms debounce groups timing gestures before the decision. Cancel restores timing and the no-op rule avoids a spurious undo step; Keep commits timing and review flags together. Every take participates in `ProjectAudio` equality. Undo and reapply preserve previously applied WAVs.
@@ -235,3 +235,5 @@ canvases and timers. It now lives in Core, in types that cannot reference Avalon
 * **Crop selection is identity.** `SelectedRoleKey` survives a restore that rebuilds every layer object
   when that element still exists; the window still clears it after Undo/Redo, as it always did.
 * Tests: `GranularEditSessionTests`, `CropEditSessionTests` (Core), `EditStateExtractionTests` (App).
+
+PROJECTIO_01: project save/open sidecars share the ordered background I/O queue. History branches are copied on the dispatcher before enqueueing; the saved fingerprint uses the metadata of the actual saved document. Delayed I/O never enumerates a live undo stack. Regression coverage: `tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs`.

@@ -14,7 +14,7 @@
 | `src/FreeVideoStudio.Core/Infrastructure/ReleaseChangelog.cs` | `ReleaseChangelog`, `ReleaseChangelog.Section` | `Parse`, `Find`, `Promote` (returns what it removes), `Archive`, `RELRECORD_01`, `LintUserNotes`, `PlainHighlights`, `UpcomingTitle`, `UnreleasedTitle`, `RELNOTES_01`, `RELNOTES_02`, `RELNOTES_03` | The one parser of docs/CHANGELOG.md and docs/changes.md (§3f DIST-RELEASENOTES). |
 | `build/FvsBuild/SmartUpdateBuilder.cs` | `SmartUpdateBuilder` | `Prepare`, `Finish`, `ReleaseFiles`, `MarkReleased`, `EnsurePublishedBases`, `DIST-SMART`, `NODROPPER_01`, `DELTABASE_01`, `ASSETHASH_01` | Builds the per-file assets, patches, the signed list packed into the installer and the release update.json. |
 | `build/installer/FreeVideoStudio.iss` | Inno Setup script | `ForwardedArguments`, `NODROPPER_01`, `PEIDENTITY_01` | The single download: a non-elevated Inno Setup package that unpacks the release beside its signed list and starts the transactional installer. |
-| `build/FvsBuild/InnoInstaller.cs` | `InnoInstaller` | `Build`, `SetupFileName`, `NODROPPER_01` | Finds ISCC.exe (Inno Setup 6.3+, `FVS_ISCC`) and compiles the script into `compiled\FreeVideoStudio-Setup.exe`. |
+| `build/FvsBuild/InnoInstaller.cs` | `InnoInstaller` | `Build`, `SetupFileName`, `NODROPPER_01` | Finds ISCC.exe (Inno Setup 6.3+, `FVS_ISCC`) and compiles the script into `compiled\FreeVideoStudio.exe`. |
 | `build/FvsBuild/PeIdentity.cs` | `PeIdentity` | `FixOriginalFilename`, `Patch`, `PEIDENTITY_01` | Rewrites OriginalFilename/InternalName to the shipped file name before signing. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.App/Services/UpdatePreparer.cs` | `UpdatePreparer` | `PrepareAsync`, `EnsureDiskSpace`, `RequirePatchHeader`, `UPDATESPACE_01`, `ASSETHASH_01`, `UNSIGNEDDEV_01` | Client side of DIST-SMART. **⚠ CO-GOVERNED BY: 05** |
 | `build/FvsBuild/GitHubReleasePublisher.cs` | `GitHubReleasePublisher` | `Publish`, `ReleaseAssets`, `VerifyAssets`, `PruneOldReleases`, `ReleasesToPrune`, `ReleaseTitle`, `PreSetupDownloadName`, `REBRAND_03`, `NODROPPER_01`, `RELTAG_01`, `RETAIN_01`, `RETAIN_02`, `BETA_01`, `RELRESUME_01` | Draft-verify-publish from the pushed tag (replacing an earlier unfinished draft); creates the previous-brand download alias transiently; retention removes old FILES only. |
@@ -25,7 +25,7 @@
 | `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` | Release-notes archives | `RELRECORD_01` | Sections beyond the retention move here; nothing is deleted (the technical archive appears with the first pruning). |
 | `build/revoked-signers.txt` | Withdrawn publisher leaves | `REVOKE_01` | Public SHA-256 thumbprints; copied into every signed list; must equal `PublisherRoot.RevokedSignerThumbprints`. |
 | `.github/workflows/upgrade-smoke.yml` | Upgrade smoke (manual) | `UPGRADESMOKE_01` | Installs an old public release on a free Windows runner and updates it to a new release or draft (§3g). |
-| `build/FvsBuild/Staging.cs` | `Staging` | `WriteManifests`, `ValidateCompiledOutput`, `SYS-PAYLOADSPLIT`, `NODROPPER_01` | Stages the release folder and writes its manifests (nothing is zipped or embedded); `obj\ReleaseAssets\runtime.manifest.json`. |
+| `build/FvsBuild/Staging.cs` | `Staging` | `WriteManifests`, `ValidateCompiledOutput`, `SYS-PAYLOADSPLIT`, `NODROPPER_01` | Stages the release folder and writes its manifests (nothing is zipped or embedded); development destinations reuse content-verified dependencies (DEVINCREMENTAL_01, 05 SYS-DEVBUILD); `obj\ReleaseAssets\runtime.manifest.json`. |
 | `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish`, `records` (`RELRECORD_01`, `CHANGELOG_02`) | Runs the ratchets; checks the release records and the change-log duty; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
@@ -64,12 +64,13 @@
 | Core project | `src/FreeVideoStudio.Core/FreeVideoStudio.Core.csproj` |
 | Core assembly / package ID / root namespace | `FreeVideoStudio.Core` |
 | Test projects and assemblies | `FreeVideoStudio.App.Tests`, `FreeVideoStudio.Core.Tests` |
-| Standalone installer output | `compiled/FreeVideoStudio-Setup.exe` — an Inno Setup package (NODROPPER_01, §3c DIST-INSTALLER) |
+| Standalone installer output | `compiled/FreeVideoStudio.exe` — an Inno Setup package (NODROPPER_01, §3c DIST-INSTALLER) |
 | Installed executable | `FreeVideoStudio.exe` (version resource `OriginalFilename`/`InternalName` = `FreeVideoStudio.exe`, PEIDENTITY_01) |
+| Application / installer icon | `assets/icons/FreeVideoStudio.ico` (csproj `ApplicationIcon` + `InnoInstaller.IconPath`), cropped from `assets/icons/FreeVideoStudio.jpg` with no outer padding and transparent rounded corners; sizes 16–256 px (APPICON_01) |
 | Embedded payload resource | **none** — retired by NODROPPER_01; `AvCleanRuleTests` fails if one comes back |
 | App-only archive | **retired** (`FreeVideoStudio.App.update.zip` is no longer built or published; smart updates replace it; the client code that could read one was removed too, COMPACTGONE_01) |
 | Runtime manifest | `runtime.manifest.json` in the staged release and under `obj/ReleaseAssets` |
-| Release-asset aliases | `FreeVideoStudio.exe` (same bytes as the setup, for updaters released before NODROPPER_01) and the previous-brand name (REBRAND_03); both created transiently at publish time |
+| Release download | `FreeVideoStudio.exe` (the single Inno Setup installer package) |
 
 The internal tool names `FvsBuild` and `FvsVerify` are unchanged. The GitHub repository is `alonreich/Free_Video_Studio`; GitHub redirects the previous repository address, so old clients still reach `releases/latest`. Game-specific crop profiles and recording-discovery folders remain gameplay identifiers, not product branding. Historical storage names are compatibility data in `LegacyAppDataNames.txt` (`05` SYS-REBRAND). The full old→new map and update flow are in `REBRAND_MIGRATION.md`.
 
@@ -84,7 +85,7 @@ dotnet run --project build/FvsVerify/FvsVerify.csproj -v q
 dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj --filter RebrandTests
 ```
 
-`RebrandTests.PreviousBrandNameAppearsOnlyInTheMigrationAllowList` fails if the previous product name appears outside `LegacyAppDataNames.txt` and `REBRAND_MIGRATION.md`. Project GUIDs stay unchanged; solution paths, project references, source-generated serializer types, XAML namespaces and sentinel paths use the renamed projects. `ProductionNamespacesUseTheProductRoot` enforces production namespace declarations; `AppDataPathsTests` guards migration behavior. Build output must contain only the Inno Setup installer (`FreeVideoStudio-Setup.exe`), with release sidecars under `obj/ReleaseAssets`.
+`RebrandTests.PreviousBrandNameAppearsOnlyInTheMigrationAllowList` fails if the previous product name appears outside `LegacyAppDataNames.txt` and `REBRAND_MIGRATION.md`. Project GUIDs stay unchanged; solution paths, project references, source-generated serializer types, XAML namespaces and sentinel paths use the renamed projects. `ProductionNamespacesUseTheProductRoot` enforces production namespace declarations; `AppDataPathsTests` guards migration behavior. Build output must contain only the Inno Setup installer (`FreeVideoStudio.exe`), with release sidecars under `obj/ReleaseAssets`.
 
 ---
 
@@ -167,7 +168,7 @@ recurs: the *repeat* download.
   (`05` §5 SYS-SIGNING, `UPDATETRUST_02`). A manifest is a hint, and hints are not a security
   boundary.
 
-* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio-Setup.exe`. **COMPACTGONE_01 (2026-10-18): the client code that could read a compact package is removed** (`RuntimeAlreadyMatchesAsync`, `ExtractCompactInstaller`, the app-only fields of `UpdateRelease`). It was dormant code that could never run: a client only ever updates to the NEWEST release, and no release since NODROPPER_01 carries the package. The client chooses smart (§3a), else the full installer. The two bullets below are history.
+* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio.exe`. **COMPACTGONE_01 (2026-10-18): the client code that could read a compact package is removed** (`RuntimeAlreadyMatchesAsync`, `ExtractCompactInstaller`, the app-only fields of `UpdateRelease`). It was dormant code that could never run: a client only ever updates to the NEWEST release, and no release since NODROPPER_01 carries the package. The client chooses smart (§3a), else the full installer. The two bullets below are history.
 
 * **Operational compact updates (dormant since NODROPPER_01 — kept for releases that still publish the package).** `FromFolder` excludes the root application and uninstaller.
   Before selecting a compact update, the updater verifies the installed file manifest, requires
@@ -180,7 +181,7 @@ recurs: the *repeat* download.
   assets and the signed file list for the installer (`SmartUpdateBuilder.Prepare`); compile the Inno
   Setup installer into `compiled` (`InnoInstaller.Build`); sign it; write the release `update.json`
   that names it (`SmartUpdateBuilder.Finish`); validate that `compiled` holds exactly
-  `FreeVideoStudio-Setup.exe`. The two extra NativeAOT publishes (embedding installer, compact
+  `FreeVideoStudio.exe`. The two extra NativeAOT publishes (embedding installer, compact
   installer) are gone, so a release build is also several minutes faster. The legacy filename aliases
   are never staged (REBRAND_03): `Staging` deletes any stale copy, and `GitHubReleasePublisher` creates
   them in a private temp folder for the upload only and deletes them afterwards.
@@ -193,7 +194,7 @@ recurs: the *repeat* download.
   --wait-pid <id>`. The release therefore also carries the setup's bytes under that name
   (`GitHubReleasePublisher.PreSetupDownloadName`), and the script forwards exactly those switches to the
   program it unpacks, so those copies update normally (Inno shows its own small "Unpacking…" window for
-  them, because they do not pass `/VERYSILENT`). Its version resource says `FreeVideoStudio-Setup.exe` —
+  them, because they do not pass `/VERYSILENT`). Its version resource says `FreeVideoStudio.exe` —
   the one place a file name and its `OriginalFilename` differ, and only for that download. Remove the
   alias only together with automatic updates for copies released before 2026-10-12.
 * **Publication transaction.** Upload all assets (setup, its two aliases, runtime manifest, smart files) to a draft created FROM THE PUSHED
@@ -257,9 +258,7 @@ recurs: the *repeat* download.
   +26 MB peak working set.
 * **Build cost.** Compressed assets are cached by content in `obj\ReleaseAssets\smart` (an unchanged file
   is not compressed again); assets no longer listed are removed.
-* **D1 — dev.** `dev_build.cmd` produces the same assets (patch bases: any of the last 6 builds) and the
-  dev updater (DEVUPDATE_01) reads them from `obj\ReleaseAssets`, so `dev.cmd` exercises the smart,
-  compact and full paths exactly like production.
+* **D1 — dev.** `dev_build.cmd` produces local installer/update assets. Ordinary `dev.cmd` never consumes them or installs anything (05 SYS-DEVBUILD, DEVISOLATION_01). It uses Release managed code and the same `Staging.StageDependencies` function through `FvsBuild --dev-runtime`, keeping native binaries and starter media aligned with production (DEVPARITY_01). NativeAOT and installation still require their own validation.
 
 ## 3b. After Every Public Release  {#DIST-NEWRELEASE}
 
@@ -268,7 +267,7 @@ recurs: the *repeat* download.
   (the signed program from `obj/ReleaseHistory/<version>/`, password `infected` when 7-Zip is installed)
   and `submission-text.txt` (every Microsoft WDSI form field, SHA-256 of program and installer, release
   URL). It then opens `docs/New-Release.md` and that text file in Notepad++ (`-multiInst`; Notepad as fallback).
-* Why the program and not the installer: the WDSI form accepts at most **50 MB**; the installer (`FreeVideoStudio-Setup.exe`) is ~300 MB.
+* Why the program and not the installer: the WDSI form accepts at most **50 MB**; the installer (`FreeVideoStudio.exe`) is ~300 MB.
 * It never fails the build: the release is already public when it runs. Problems are warnings.
 * The steps are manual by necessity: Microsoft's free submission form has no API (the API needs a paid
   Defender for Endpoint licence). `docs/New-Release.md` is the human checklist.
@@ -302,7 +301,7 @@ recurs: the *repeat* download.
   the running program was unpacked into; the elevated worker never trusts that check and verifies the
   list's signature against the pinned root (UPDATEPIN_01) and every byte against the list. A program
   started without a signed list refuses to install ("This program is not an installer. Download
-  FreeVideoStudio-Setup.exe…").
+  FreeVideoStudio.exe…").
 * **In-app full updates** start the setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` plus the usual
   switches, so the user sees only the update window (UPGRADEUX_01). The publisher check
   (`AuthenticodeVerifier`) is applied to the setup exactly as it was to the old installer.
@@ -320,7 +319,7 @@ recurs: the *repeat* download.
 
 ## 3d. Release Retention Policy, Local Artifacts & Rolling Changelog  {#DIST-RETENTION}
 
-* **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio-Setup.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
+* **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
 * **RETAIN_02 — retention removes FILES, never history (2026-10-18).** `PruneOldReleases` used to run `gh release delete`, which deletes the release PAGE and its NOTES with the files. It now removes only the downloadable files of a release beyond the window (`gh release delete-asset`, oldest first, only after the new release is verified and public); the release, its title, its notes and its tag stay forever, and a release that already has no files is skipped. The decision (`ReleasesToPrune`) is unchanged. The bullet below is the older rule it refines.
 * **RETAIN_01 — Official GitHub Release Retention (last 5 stable releases, tags kept forever):** after a successful publish `GitHubReleasePublisher.PruneOldReleases` keeps the newest **5 stable releases** (the new one included) and the newest **3 betas that are still newer than the newest stable** (`ReleasesToPrune`, ordered by VERSION, drafts ignored); every other release is deleted with `gh release delete --yes` — **without `--cleanup-tag`**. The old `--cleanup-tag` deleted the git tag too, so any version a user still ran stopped being traceable to its source after the sixth release, contradicting the publisher's own promise. Tags are never deleted.
 * **Rolling Changelog Contract (`docs/CHANGELOG.md` + `docs/changes.md`):** see §3f DIST-RELEASENOTES. The user changelog keeps exactly the 5 latest releases plus `## Upcoming`; the technical log keeps 10 plus `## Unreleased`. Both are pruned by the release itself (`ReleaseChangelog.Promote`), not by memory. **RELRECORD_01: pruned sections move to `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` (`ReleaseChangelog.Archive`, newest first, written before the main file, never duplicated); full history is kept.** Every `## v…` heading in `docs/CHANGELOG.md` must be a pushed tag (CI job `Release records`, and the gate). The four headings that named versions never published (v2026.10.04.1120 – v2026.10.13.2238) were moved to the archive on 2026-10-18.
@@ -373,7 +372,7 @@ recurs: the *repeat* download.
      `## Upcoming`. **RELRESUME_01 — `Build.cmd --resume` finishes THAT release** (it used to be a dead end: a
      new run could only build a NEW version, leaving a tag with no release and version files naming a
      download that never existed). `PreflightResume` changes nothing until confirmed and proves: clean tree,
-     HEAD is exactly the commit of `v<version.txt>`, the tag is on GitHub, `compiled\FreeVideoStudio-Setup.exe`
+     HEAD is exactly the commit of `v<version.txt>`, the tag is on GitHub, `compiled\FreeVideoStudio.exe`
      and `obj\ReleaseAssets\update.json` are that version. Then it publishes (an earlier unfinished draft of the
      tag is deleted first — never published as it is; the tag stays), marks the patch base, and promotes the
      notes; or, when the release is already public, only promotes the notes. It never builds or stamps.
@@ -434,7 +433,7 @@ recurs: the *repeat* download.
 * **UPGRADESMOKE_01.** `.github/workflows/upgrade-smoke.yml` (manual, free GitHub-hosted Windows runner):
   installs the installer of an OLD public release (default `v2026.09.26.1215`, the only one published before
   the rebrand/Inno/pinned-root changes) the way its own updater starts it (`--install --auto-update`), then
-  runs the NEW release's (or draft's) `FreeVideoStudio-Setup.exe` exactly as the in-app updater does
+  runs the NEW release's (or draft's) `FreeVideoStudio.exe` exactly as the in-app updater does
   (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART --install --auto-update --source-current --no-launch`) and fails
   unless `Program Files\FreeVideoStudio\FreeVideoStudio.exe` is the new version; logs are uploaded. Run it
   before making a draft public. It writes nothing. ⚠️ Its first run is itself the verification of the

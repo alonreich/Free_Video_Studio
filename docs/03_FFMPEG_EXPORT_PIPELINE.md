@@ -2,16 +2,20 @@
 
 **VOCLOCK_01 / VOSPLICE_01:** the voice studio's prepared picture uses `GranularSpeedBuilder` at 60 fps, with source trim applied before the graph and the output bounded to `OutputTimeline.TotalOutputSeconds`. `VoiceOverPreviewRenderer` emits a low-resolution H.264/PCM MKV. A take's placement adds its persisted `OutputOffsetSec`. When music is mixed after meme insertion, `VoiceOverSplice` splits narration at cutaways and builds sample-based delays and corresponding music-protection windows. `VoiceOverExportTimingTests` decodes both preview and finished export: 1x, 0.5x, 2x, mixed rates/cuts/freezes, continuous music with a meme, and a two-minute edit; picture/voice marker tolerance is 40 ms.
 
+**VOLEVEL_01:** ordinary and meme-spliced voice-over both use `VoiceOverLevel.Filter` (02 AUD-VOICEOVER): explicit unity mono-to-stereo mapping followed by saved take gain. The final limiter remains shared by rendered audio preview and export.
+
 ## Code Mini-Map: Bound Source Files & Symbols
 
 > **⚠ CO-GOVERNED rows are bound by EVERY spec listed on them.** Reading only this one is not compliance (`SPEC_GOVERNANCE.md` §2).
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
+| `src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs` | `VideoMergerWindow` | `EnsurePreviewPlan`, `TickPreviewEffects`, `LoadEdlAsync` | Preview follows the export schedule; continuous EDL audio device. **⚠ CO-GOVERNED BY: 01, 02, 04** |
 | `src/FreeVideoStudio.App/ViewModels/QualityLadder.cs` | `QualityLadder`, `Tier` | `Tiers`, `TargetMbFor`, `DefaultIndex`, `OriginalIndex`, `ColorFor` | The quality dial's tiers and the tier -> target-megabytes model. |
 | `src/FreeVideoStudio.App/ViewModels/ExportViewModel.cs` | `ExportViewModel` | `QualitySliderValue`, `EstimatedFileSizeText`, `EstimatedFileSizeDescription`, `ResolveHardwareMode` | Quality selection and bound output-size readout. |
 | `src/FreeVideoStudio.App/MainWindow.SizeEstimate.cs` | `MainWindow` | `CaptureSizeRequest`, `RequestSizeEstimate`, `MainWindow` | Immutable estimate inputs and UI publication. |
 | `src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs` | `OutputSizeEstimator` | `EstimateMainAsync`, `EstimateMergerAsync`, `CalculateMain`, `CalculateMerger`, `ReadMediaAsync` | Shared estimates and bounded media metadata cache. |
 | `src/FreeVideoStudio.Core/Media/OutputFileSize.cs` | `OutputFileSize` | `FormatMegabytes`, `MergerConstantQuality`, `MergerTargetKbps`, `FromBitrate` | MB/GB/TB formatting and shared merger encoder settings. |
+| `src/FreeVideoStudio.Core/Media/FinalOutputCommit.cs` | `FinalOutputCommit` | `MoveAsync`, `OUTPUTCOMMIT_01` | Bounded final-save retries shared by both exporters; FFM-EXPORTLIFETIME. |
 | `src/FreeVideoStudio.Core/Media/ProcessWorker.cs` | `ProcessWorker`, `VoiceOverTake` | `CancelledMessage`, `Cancel`, `RunAsync`, `Dispose` | Core FFmpeg rendering orchestrator, command builder, and progress monitor. |
 | `src/FreeVideoStudio.Core/Media/GpuCapabilityProbe.cs` | `GpuCapabilityProbe` | `Probe`, `Result`, `IGpuCapabilityProbe`, `WindowsGpuCapabilityProbe` | PREVIEW GPU check only (D3D11 device, feature level, real adapter; logs RDP) — hardware vs CPU software preview. Does not test encoders. |
 | `src/FreeVideoStudio.Core/Media/HardwareScanner.cs` | `HardwareScanner` | `ScanFailed`, `ScanSharedAsync`, `ScanAsync`, `HardwareScanner` | Boot encoder scan: one-frame test encode per encoder (NVIDIA → AMD → INTEL); result shared suite-wide. |
@@ -297,6 +301,7 @@ With **no video loaded at all**, the size readout shows an em dash, never a zero
 ---
 
 ## 8b. Export Is Single-Flight, And Its Child Processes Are Owned  {#FFM-EXPORTLIFETIME}
+* **OUTPUTCOMMIT_01:** `FinalOutputCommit.MoveAsync`, shared by `ProcessWorker` and `MergerWorker`, retries only Windows access/sharing/lock violations (native codes 5/32/33) while saving the finished file, at 100 ms intervals for up to 1.5 seconds. It preserves the caller's overwrite policy and propagates persistent failure. `FinalOutputCommitTests` covers released/persistent locks and preservation of an existing output; tests must not rerun the whole export to hide a failed save.
 * **`EXPORTSESSION_01` — the PROCESS button is not a lock.** Export previously had exactly one mutual
   exclusion mechanism — `processButton.IsEnabled` — and the overlay's `CancelRequested` handler
   defeated it by re-enabling the button and dismissing the overlay **in the same breath as** signalling
@@ -389,7 +394,7 @@ With **no video loaded at all**, the size readout shows an em dash, never a zero
   2. `..\..\..\..\..\backend\`
   3. `binaries\`, then `..\..\..\..\..\binaries\`
   4. Nothing found → the bare name (`ffmpeg.exe`) is returned, so Windows searches the system PATH. ⚠ RISK: this can bind a system FFmpeg of unknown version — exactly what the next bullet forbids.
-* **Why The Order Is Non-Negotiable:** The production MSI installs the binaries into `backend\` beside the executable. Probing anything else first lets a production build either fail to locate its executables or silently bind a system-wide FFmpeg of unknown version and build flags — a filtergraph this suite depends on (`cas`, `acrossover`, `sidechaincompress`) may not exist in that binary.
+* **Why The Order Is Non-Negotiable:** The production installer (Inno Setup, staged by `FvsBuild` `Staging.cs`) installs the binaries into `backend\` beside the executable. Probing anything else first lets a production build either fail to locate its executables or silently bind a system-wide FFmpeg of unknown version and build flags — a filtergraph this suite depends on (`cas`, `acrossover`, `sidechaincompress`) may not exist in that binary.
 * **Dev/Prod Parity:** Because MSBuild mirrors the installer's `backend\` layout into `bin\Debug`, the identical lookup satisfies both environments with no conditional compilation.
 * **`ffplay.exe` Is Not Copied:** It is unused — music preview runs through an isolated `MpvIpcClient`.
 

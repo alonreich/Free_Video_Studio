@@ -78,7 +78,7 @@ internal static class UpgradeInstallWorker
             }
             else
             {
-                throw new IOException("This program is not an installer. Download FreeVideoStudio-Setup.exe to install Free Video Studio.");
+                throw new IOException("This program is not an installer. Download FreeVideoStudio.exe to install Free Video Studio.");
             }
             await relay.RunAsync("install", report => transaction.Prepare(candidate =>
             {

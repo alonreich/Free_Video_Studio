@@ -53,3 +53,15 @@ tests/MediaPipelineChecks/artifacts/
 *.key.pem
 *.password.txt
 settings.json.corrupt-*.bak
+
+# Generated dev diagnostics and test scratch data.
+/.devlogs/
+/.dev-run/
+/.dev-run.lock
+/TestResults/
+/artifacts/code-export-tests/
+/artifacts/preview-check-*/
+/artifacts/preview-check-*.zip
+/tests/MediaPipelineChecks/artifacts/
+/tests/AvRegression/
+/tests/.test-run.lock

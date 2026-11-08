@@ -20,6 +20,19 @@ namespace FvsVerify.Tests;
 /// </summary>
 public sealed class SentinelListTests
 {
+    [Fact]
+    public void DevVerificationPrecedesCleanupAndHasAStandaloneMode()
+    {
+        string script = File.ReadAllText(Path.Combine(RepoRoot, "dev.cmd"));
+        int verify = script.IndexOf("dotnet run --project", StringComparison.Ordinal);
+        int halt = script.IndexOf("if errorlevel 1 exit /b 1", StringComparison.Ordinal);
+        int standalone = script.IndexOf("if /I \"%~1\"==\"verify\" exit /b 0", StringComparison.Ordinal);
+        Assert.True(verify >= 0 && halt > verify && standalone > halt);
+        Assert.True(script.IndexOf("powershell -NoProfile", StringComparison.Ordinal) > standalone);
+        Assert.DoesNotContain("taskkill", script);
+        Assert.DoesNotContain("rd /s", script);
+    }
+
     private static string RepoRoot =>
         SentinelList.FindRepositoryRoot(AppContext.BaseDirectory)
         ?? throw new InvalidOperationException("Could not locate the repository root from the test binary.");

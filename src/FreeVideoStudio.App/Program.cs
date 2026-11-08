@@ -7,6 +7,17 @@ using FreeVideoStudio.App.Services;
 
 try
 {
+    DevelopmentEnvironment.InitializeFromRuntimeMarker();
+    if (DevelopmentEnvironment.IsActive && args.Any(a =>
+        a.StartsWith("--upgrade-", StringComparison.OrdinalIgnoreCase) ||
+        a.StartsWith("--install", StringComparison.OrdinalIgnoreCase) ||
+        a.StartsWith("--uninstall", StringComparison.OrdinalIgnoreCase) ||
+        a.Equals("--cleanup-worker", StringComparison.OrdinalIgnoreCase) ||
+        a.Equals("--complete-user-migration", StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.Error.WriteLine("Installation and update workers are disabled for a development copy.");
+        return 1;
+    }
     RuntimeLog.SetDeploymentPhase(true);
     if (args.FirstOrDefault() == "--upgrade-worker")
     {
@@ -24,12 +35,12 @@ try
         return 0;
     }
     
-    if (DeploymentLifecycle.ShouldHandle(args))
+    if (!DevelopmentEnvironment.IsActive && DeploymentLifecycle.ShouldHandle(args))
     {
         return await DeploymentLifecycle.RunAsync(args);
     }
     
-    if (DeploymentFootprint.IsRunningFromInstallPath() && !args.Contains("--upgrade-health"))
+    if (!DevelopmentEnvironment.IsActive && DeploymentFootprint.IsRunningFromInstallPath() && !args.Contains("--upgrade-health"))
     {
         if (UpgradeCoordinator.HasPendingSession || UpgradeCoordinator.HasPendingMachine)
             return await UpgradeCoordinator.LaunchAsync(["--wait-pid", Environment.ProcessId.ToString()], recovery: true);
@@ -298,7 +309,7 @@ static async Task<int> RunUiAsync(string[] args)
 
     FreeVideoStudio.App.Infrastructure.AppServices.Initialize(ApplicationPaths.CreateDefault());
 
-    if (OperatingSystem.IsWindows())
+    if (OperatingSystem.IsWindows() && !DevelopmentEnvironment.IsActive)
         ShellFileAssociation.EnsureRegistered();
     
     RuntimeLog.Info("RUN UI", "Starting Avalonia App.");

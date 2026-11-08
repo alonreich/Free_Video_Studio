@@ -1154,7 +1154,7 @@ public class MergerWorker : IDisposable
                     }
                     try
                     {
-                        File.Move(successOutputPath, finalOutput);
+                        await FinalOutputCommit.MoveAsync(successOutputPath, finalOutput, overwrite: false).ConfigureAwait(false);
                         ProgressUpdate?.Invoke(100);
                         LastFailure = null;
                         FailureDetail = null;

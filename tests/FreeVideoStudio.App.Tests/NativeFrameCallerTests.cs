@@ -60,8 +60,13 @@ public sealed class NativeFrameCallerTests : IDisposable
         {
             Environment.SetEnvironmentVariable(VideoFrameGrabber.BackendEnvironmentVariable, backend);
             long nativeBefore = VideoFrameGrabber.NativeCount, fallbackBefore = VideoFrameGrabber.FallbackCount;
-            var tall = await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, CancellationToken.None);
-            Assert.NotNull(tall);
+            using var tall = await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, CancellationToken.None);
+            if (tall == null)
+            {
+                var diagnosis = await VideoFrameGrabber.DecodeNativeAsync(Ffmpeg, clip,
+                    VideoFrameRequest.AtFfmpegSeek("0.5", 160, evenHeight: true), TimeSpan.FromSeconds(10));
+                Assert.Fail($"Thumbnail backend={backend}; native diagnosis={diagnosis.Status}: {diagnosis.Detail}");
+            }
             Assert.NotNull(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, shortClip, CancellationToken.None));
             Assert.Null(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, garbage, CancellationToken.None));
             if (backend == "native")

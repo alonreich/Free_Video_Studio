@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 using Microsoft.Win32;
 

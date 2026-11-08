@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using FreeVideoStudio.Core.Infrastructure;
@@ -123,7 +123,7 @@ internal static class ReleaseChecklist
             The release installer is too big for this form (50 MB limit), so this zip contains the installed
             program file, which is part of the same release.
             SHA-256 of the program file (FreeVideoStudio.exe, inside this zip): {programHash}
-            SHA-256 of the release installer (FreeVideoStudio-Setup.exe on GitHub, an Inno Setup package): {installerHash}
+            SHA-256 of the release installer (FreeVideoStudio.exe on GitHub, an Inno Setup package): {installerHash}
             Please review the file and the installer and remove the false detection. Thank you.
             --------------------------------------------------------------------------
             """;

@@ -1,4 +1,7 @@
-﻿using System;
+// [SPEC CONTRACT] STRICT GOVERNANCE:
+// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
+// Invariants, constants, and threading models must match spec bit-for-bit.
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -117,12 +120,13 @@ public sealed class GeminiModelSession
         _log = log;
         Vendor = vendor;
         Provider = provider ?? (vendor != AiVendor.Google ? AiVisionProviders.Get(vendor) : null);
-        Model = vendor switch
+        string resolved = vendor switch
         {
             AiVendor.Anthropic => ClaudeProvider.ResolveModel(model),
             AiVendor.OpenAI => OpenAiProvider.ResolveModel(model),
-            _ => AiVisionProviders.EffectiveModel(AiVendor.Google, GeminiClient.ResolveModel(model)),
+            _ => GeminiClient.ResolveModel(model),
         };
+        Model = AiVisionProviders.EffectiveModel(vendor, resolved);
     }
 
     public string Model { get; private set; }
@@ -138,20 +142,11 @@ public sealed class GeminiModelSession
         {
             return await _client.GenerateAsync(_apiKey, Model, body, GeminiCallOptions.Tracking, _log, cancellationToken).ConfigureAwait(false);
         }
-        catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.ModelNotFound && !_fallbackTried)
+        catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !_fallbackTried)
         {
             _fallbackTried = true;
-            IReadOnlyList<string> available;
-            try
-            {
-                available = await _client.ListModelsAsync(_apiKey, cancellationToken).ConfigureAwait(false);
-            }
-            catch (GeminiException listEx)
-            {
-                CoreLogger.Info("AI-Tracking", Redact($"Model list unavailable after 404: {listEx.Kind} {listEx.Detail}"));
-                throw ex;
-            }
-            string? fallback = GeminiClient.PickFallbackModel(available, Model);
+            var provider = Provider ?? AiVisionProviders.Get(Vendor);
+            string? fallback = await AiVisionProviders.FindLiveReplacementAsync(provider, _apiKey, Model, _log, cancellationToken).ConfigureAwait(false);
             if (fallback == null) throw;
             _log?.Invoke($"Model '{Model}' is not available for your key — using '{fallback}' for this run. Choose a model in Settings › AI Features to make this permanent.");
             Model = fallback;
@@ -212,11 +207,14 @@ public static class GeminiTrackingService
         return (f1Path, f2Path, f3Path, t1, t2, t3);
     }
 
+    /// <summary>Maximum width or height of an AI candidate frame sent for subject discovery (bounds tokens and payload size).</summary>
+    public const int CandidateMaxDimension = 1280;
+
     /// <summary>
     /// LIBAVFRAME_05 — one candidate still at <paramref name="sec"/>, written to <paramref name="outPath"/> as JPEG.
     /// Native libav first (<see cref="VideoFrameGrabber"/>: the frame <c>ffmpeg -ss {sec:0.000} -i … -frames:v 1</c>
-    /// would output, full size, encoded with SkiaSharp at <see cref="CandidateJpegQuality"/>), the ORIGINAL
-    /// ffmpeg subprocess below once if native cannot answer. Timestamps, file names, the 10 s budget,
+    /// scaled to at most <see cref="CandidateMaxDimension"/> px on the longest side, encoded with SkiaSharp at <see cref="CandidateJpegQuality"/>),
+    /// the ORIGINAL ffmpeg subprocess below once if native cannot answer. Timestamps, file names, the 10 s budget,
     /// cancellation and "no frame → no file" are unchanged; FVS_FRAME_DECODE=ffmpeg|native forces one path.
     /// </summary>
     private static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
@@ -246,19 +244,56 @@ public static class GeminiTrackingService
     /// </summary>
     internal const int CandidateJpegQuality = 95;
 
-    /// <summary>Managed BGRA frame → JPEG bytes (SkiaSharp, the app's existing imaging library). Copies the pixels.</summary>
+    /// <summary>Managed BGRA frame → JPEG bytes (SkiaSharp, the app's existing imaging library). Scales down to <see cref="CandidateMaxDimension"/> px.</summary>
     internal static byte[] EncodeCandidateJpeg(DecodedVideoFrame frame)
     {
         var info = new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
         using SKData pixels = SKData.CreateCopy(frame.Pixels);
-        using SKImage image = SKImage.FromPixels(info, pixels, frame.Stride)
+        using SKImage original = SKImage.FromPixels(info, pixels, frame.Stride)
                               ?? throw new IOException("Could not wrap the decoded frame.");
-        using SKData jpeg = image.Encode(SKEncodedImageFormat.Jpeg, CandidateJpegQuality)
-                            ?? throw new IOException("Could not encode the decoded frame.");
-        return jpeg.ToArray();
+
+        SKImage imageToEncode = original;
+        SKBitmap? scaledBitmap = null;
+        try
+        {
+            if (frame.Width > CandidateMaxDimension || frame.Height > CandidateMaxDimension)
+            {
+                int targetW = frame.Width;
+                int targetH = frame.Height;
+                if (targetW >= targetH)
+                {
+                    targetH = Math.Max(1, (int)Math.Round((double)targetH * CandidateMaxDimension / targetW));
+                    targetW = CandidateMaxDimension;
+                }
+                else
+                {
+                    targetW = Math.Max(1, (int)Math.Round((double)targetW * CandidateMaxDimension / targetH));
+                    targetH = CandidateMaxDimension;
+                }
+                if ((targetW & 1) != 0) targetW++;
+                if ((targetH & 1) != 0) targetH++;
+
+                var scaledInfo = new SKImageInfo(targetW, targetH, SKColorType.Bgra8888, SKAlphaType.Opaque);
+                scaledBitmap = new SKBitmap(scaledInfo);
+                using var origBitmap = SKBitmap.FromImage(original);
+                if (origBitmap != null && origBitmap.ScalePixels(scaledBitmap, new SKSamplingOptions(SKFilterMode.Linear)))
+                {
+                    imageToEncode = SKImage.FromBitmap(scaledBitmap);
+                }
+            }
+
+            using SKData jpeg = imageToEncode.Encode(SKEncodedImageFormat.Jpeg, CandidateJpegQuality)
+                                ?? throw new IOException("Could not encode the decoded frame.");
+            return jpeg.ToArray();
+        }
+        finally
+        {
+            if (!ReferenceEquals(imageToEncode, original)) imageToEncode.Dispose();
+            scaledBitmap?.Dispose();
+        }
     }
 
-    /// <summary>The pre-LIBAVFRAME subprocess path, unchanged: ffmpeg -y -ss T -i video -frames:v 1 -q:v 2 out.jpg.</summary>
+    /// <summary>The pre-LIBAVFRAME subprocess path, scaled to at most <see cref="CandidateMaxDimension"/> px.</summary>
     private static async Task ExtractStillWithFfmpegAsync(string ffmpeg, string videoPath, string seek, string outPath, TimeSpan budget, CancellationToken token)
     {
         var psi = new ProcessStartInfo
@@ -276,6 +311,8 @@ public static class GeminiTrackingService
         psi.ArgumentList.Add(videoPath);
         psi.ArgumentList.Add("-frames:v");
         psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-vf");
+        psi.ArgumentList.Add($"scale='min({CandidateMaxDimension},iw)':-2");
         psi.ArgumentList.Add("-q:v");
         psi.ArgumentList.Add("2");
         psi.ArgumentList.Add(outPath);
@@ -512,8 +549,7 @@ public static class GeminiTrackingService
 
         double[] lookaheadDeltas =
         {
-            Math.Max(2.0, sourceDurationSec * 0.75),
-            Math.Max(4.0, sourceDurationSec * 1.50)
+            Math.Max(2.5, sourceDurationSec * 1.0)
         };
 
         foreach (double delta in lookaheadDeltas)

@@ -1,4 +1,4 @@
-﻿; ════════════════════════════════════════════════════════════════════════════════════════════════
+; ════════════════════════════════════════════════════════════════════════════════════════════════
 ; NODROPPER_01 — THE FREE VIDEO STUDIO INSTALLER (Inno Setup 6.3 or newer)
 ;
 ; Spec: docs/09_DISTRIBUTION_AND_RELEASE.md #DIST-INSTALLER. Compiled by build\FvsBuild\InnoInstaller.cs;
@@ -63,9 +63,9 @@ VersionInfoCompany=Alon Reich
 VersionInfoDescription=Free Video Studio Setup
 VersionInfoProductName=Free Video Studio
 VersionInfoCopyright=Copyright © 2026 Alon Reich. All rights reserved.
-VersionInfoOriginalFileName=FreeVideoStudio-Setup.exe
+VersionInfoOriginalFileName=FreeVideoStudio.exe
 OutputDir={#OutputDir}
-OutputBaseFilename=FreeVideoStudio-Setup
+OutputBaseFilename=FreeVideoStudio
 SetupIconFile={#IconFile}
 PrivilegesRequired=lowest
 CreateAppDir=no

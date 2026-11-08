@@ -25,7 +25,7 @@ public static class VoiceOverSplice
         return result;
     }
 
-    public static IEnumerable<string> Filters(int inputIndex, string outputLabel, string prefix, IReadOnlyList<Piece> pieces)
+    public static IEnumerable<string> Filters(int inputIndex, string outputLabel, string prefix, IReadOnlyList<Piece> pieces, double gain = 1.0)
     {
         string F(double n) => n.ToString("0.#########", CultureInfo.InvariantCulture);
         if (pieces.Count == 0)
@@ -42,7 +42,7 @@ public static class VoiceOverSplice
             string source = pieces.Count == 1 ? input : $"[{prefix}_src{i}]";
             string target = pieces.Count == 1 ? outputLabel : $"[{prefix}_part{i}]";
             long samples = (long)Math.Round(p.OutputStartSec * 48000);
-            yield return source + $"aresample=48000,atrim=start={F(p.AudioStartSec)}:duration={F(p.DurationSec)}," +
+            yield return source + $"{VoiceOverLevel.Filter(gain)},aresample=48000,atrim=start={F(p.AudioStartSec)}:duration={F(p.DurationSec)}," +
                 $"asetpts=PTS-STARTPTS,adelay={samples}S:all=1{target}";
         }
         if (pieces.Count > 1)

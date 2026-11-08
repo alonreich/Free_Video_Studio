@@ -6,10 +6,8 @@ namespace FreeVideoStudio.Core.Infrastructure;
 /// dismissed hints, etc.).
 ///
 /// Everything lives under <see cref="ApplicationPaths.UiStateDirectory"/>
-/// (<c>%PROGRAMDATA%\Free Video Studio\uistate</c>), which is inside the SAME root as
-/// settings.json and session_state.json. That is the whole point: one root means the
-/// installer's "preserve my settings" switch and the uninstaller's zero-footprint sweep each
-/// only have to know about one place.
+/// alongside settings.json and session_state.json. STORAGEPATHS_01 puts development
+/// preferences in the original OS TEMP folder; production preferences stay in LocalAppData.
 ///
 /// Files previously written to <c>%APPDATA%\FreeVideoStudio\Settings</c> are migrated
 /// across automatically the first time this class is touched.
@@ -34,6 +32,7 @@ public static class UiStateStore
         {
             if (_migrated) return;
             _migrated = true;
+            if (DevelopmentEnvironment.IsActive) return;
 
             try
             {

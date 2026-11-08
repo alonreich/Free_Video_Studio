@@ -9,6 +9,8 @@
        exercise MergerPreviewGate. -->
   <ItemGroup>
     <InternalsVisibleTo Include="FreeVideoStudio.App.Tests" />
+    <!-- AVREG_01: the playback/sync regression gate drives the same internal preview pieces. -->
+    <InternalsVisibleTo Include="FreeVideoStudio.AvRegression.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -137,7 +139,7 @@
          metadata the app needs at run time, not an analyser mute, and turning it on would change
          what the shipped binary can do. Unrelated to the two properties above. -->
     <IlcTrimMetadata>false</IlcTrimMetadata>
-    <ApplicationIcon>..\..\assets\icons\Video_Icon_File.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\assets\icons\FreeVideoStudio.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- AOTSAFETY_01: IL2104 ("assembly produced trim warnings") removed from NoWarn. It is the
        summary line that names which assembly is unsafe; muting it while re-enabling the detailed

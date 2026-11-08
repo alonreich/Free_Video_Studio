@@ -1205,12 +1205,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                                 ? _musicResult.MusicFilePaths
                                 : (_musicResult?.MusicFilePath != null ? new[] { _musicResult.MusicFilePath } : null));
 
-                        if (!string.IsNullOrEmpty(attribution))
-                        {
-                            var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
-                            attrDlg.SetAttributionText(attribution);
-                            await attrDlg.ShowDialog(this);
-                        }
+
 
                         var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
                         dlg.SetOutputPath(msg);

@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -121,6 +121,14 @@ public partial class CropToolWindow
         var wandSettings = SettingsManager.Instance;
         var vendor = wandSettings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
         if (AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, vendor)) return true;
+
+        // If key is configured, user explicitly configured it; auto-consent without interrupting (Proposal #12)
+        if (!string.IsNullOrWhiteSpace(wandSettings.GetApiKey(vendor)))
+        {
+            SettingsManager.Update(s => { s.AiMagicWandCloudConsent = true; s.AiMagicWandCloudConsentVendor = vendor.ToString(); });
+            return true;
+        }
+
         string provider = FreeVideoStudio.App.Services.AiVisionProviders.DisplayName(vendor);
         bool yes = await Controls.ConfirmDialogWindow.AskAsync(
             this,
@@ -170,26 +178,6 @@ public partial class CropToolWindow
         }
 
         string? frameIdentity = CurrentWandFrameIdentity();
-        bool aiConfigured = WandDetection.AiService is { IsConfigured: true };
-        if (!aiConfigured && !s_wandCloudDeclinedThisSession)
-        {
-            var choice = await Controls.ConfirmDialogWindow.AskThreeWayAsync(
-                this,
-                "AI HUD Detection",
-                "AI HUD detection gives more accurate suggestions for game interfaces.\n\n" +
-                "An AI provider key is not configured yet. Would you like to set up an AI key now, or run offline HUD detection only?",
-                "Set up AI Key",
-                "Run Offline");
-            if (choice == Controls.ConfirmDialogWindow.ConfirmDialogResult.Yes)
-            {
-                var vendor = SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
-                await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor);
-            }
-            else
-            {
-                s_wandCloudDeclinedThisSession = true;
-            }
-        }
         bool aiAvailable = WandAiAvailable();
 
         if (_wandCandidates != null && _wandCandidatesFrame != null && _wandCandidatesFrame != frameIdentity && !aiAvailable)
@@ -217,6 +205,8 @@ public partial class CropToolWindow
         _wandRunning = true;
         _wandStopRequested = false;
         SetEnabled("MagicWandButton", false);
+
+        using var usage = AiUsageMeter.BeginTask("Magic Wand", SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor);
 
         try
         {
@@ -319,7 +309,8 @@ public partial class CropToolWindow
             string aiNote = result.AiOutcome == AiHudOutcome.Success && (aiOnly + confirmed) > 0
                 ? $" {shortProv} agreed on {confirmed} (✓) and suggested {aiOnly} more (dashed)."
                 : string.Empty;
-            SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote} " +
+            string usageNote = usage.Tally.TotalTokens > 0 ? $" [{usage.Report().UsageLine}]" : string.Empty;
+            SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote}{usageNote} " +
                              "Click a box to select it, adjust it, then label it — nothing is added until you do.");
         }
         catch (OperationCanceledException swallowed2)

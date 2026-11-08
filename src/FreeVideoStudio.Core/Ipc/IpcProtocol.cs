@@ -114,7 +114,7 @@ public static class IpcProtocol
         }
     }
 
-    public static string PipeName => $"FreeVideoStudio_StateIpc_{UserScope}";
+    public static string PipeName => $"FreeVideoStudio_StateIpc_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
     /// <summary>
     /// IPCLEASE_01 — THE SINGLE-SERVER LEASE. IT IS THE OPEN HANDLE, NOT AN ACQUIRED LOCK.
     ///
@@ -150,7 +150,7 @@ public static class IpcProtocol
     /// takes the IPC test suite with them. Do not substitute one.
     /// ══════════════════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public static string ServerMutexName => $@"Local\FreeVideoStudio_IpcServerMutex_{UserScope}";
+    public static string ServerMutexName => $@"Local\FreeVideoStudio_IpcServerMutex_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
 
     public static bool IsConnectedClientTrusted(NamedPipeServerStream server)
     {

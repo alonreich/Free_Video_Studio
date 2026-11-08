@@ -64,6 +64,7 @@ public partial class VoiceOverWindow
         _isApplying = true;
         _lastApplyErrorMessage = null;
         UpdateTransportState();
+        UpdateApplyState();
 
         RuntimeLog.Info("VoiceOver", "[Stage: ApplyStart] VOAPPLY_01 — Applying voiceover session...");
 
@@ -104,6 +105,7 @@ public partial class VoiceOverWindow
 
             bool duckAudio = _duckAudioCb?.IsChecked == true;
             bool protectFromMusic = _duckMusicCb?.IsChecked == true;
+            double voiceGain = VoiceGain;
             if (_sessions.Any(s => !s.IsMuted && s.NeedsTimingReview))
             {
                 UpdateApplyState("Review the marked takes. Play each one, then choose Keep this timing, or trim or replace it.");
@@ -243,7 +245,7 @@ public partial class VoiceOverWindow
                         double end = SourceEndForCapturedAudio(session.RenderStartSec, duration, offset);
                         string? signature = _timeline == null ? null : VoiceOverTiming.Signature(
                             _timeline, _trimStartSec, _trimEndSec, session.RenderStartSec, end);
-                        persistedTakes.Add(new VoiceOverTake(persistedPath, session.RenderStartSec, offset, duration, end, signature));
+                        persistedTakes.Add(new VoiceOverTake(persistedPath, session.RenderStartSec, offset, duration, end, signature, Gain: voiceGain));
                         keepPaths.Add(persistedPath);
                     }
                     catch (Exception ex)
@@ -397,7 +399,7 @@ public partial class VoiceOverWindow
 
     private string CreatePersistedVoiceOverPath()
     {
-        string voiceOverDir = System.IO.Path.Combine(_paths.ProgramDataRoot, "voiceovers");
+        string voiceOverDir = _paths.VoiceOverDirectory;
         Directory.CreateDirectory(voiceOverDir);
         return System.IO.Path.Combine(voiceOverDir, $"voiceover_{Guid.NewGuid():N}.wav");
     }
@@ -424,6 +426,7 @@ public partial class VoiceOverWindow
 
     private void UpdateApplyState(string? message = null)
     {
+        VoiceVolume.CanEdit = !_isApplying && !_isCommitted && !_isClosing;
         if (message != null)
         {
             _lastApplyErrorMessage = message;

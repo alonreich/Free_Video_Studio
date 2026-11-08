@@ -11,16 +11,6 @@ namespace FreeVideoStudio.App;
 
 internal static class DeploymentLifecycle
 {
-    private const int DeleteRetries = 3;
-
-    private static int _pendingRebootDeletes;
-
-    [Flags]
-    private enum MoveFileFlags : uint
-    {
-        ReplaceExisting = 0x00000001,
-        DelayUntilReboot = 0x00000004
-    }
 
     public static bool ShouldHandle(string[] args)
     {
@@ -95,6 +85,7 @@ internal static class DeploymentLifecycle
         return 0;
     }
 
+    // NOTEMPEXEC_01: uninstall runs in place; never copy or launch an executable from TEMP.
     internal static async Task<int> RunUninstallWorkerAsync(string[] args)
     {
         bool quiet = args.Any(a => a.Equals("--quiet", StringComparison.OrdinalIgnoreCase));
@@ -129,7 +120,7 @@ internal static class DeploymentLifecycle
             await PerformFullHostCleanupAsync("Uninstall", 10, 90, requireZeroFootprint: true, purgeUserArtifacts: true, includeUserData: true, invokingUserDesktop: ReadUserDesktopArgument(args)).ConfigureAwait(false);
 
             bool clean = await VerifyZeroFootprintAsync().ConfigureAwait(false);
-            string status = clean && _pendingRebootDeletes == 0 ? "All components removed successfully." : "Cleanup finished. Some locked files may require a reboot for final removal.";
+            string status = clean ? "All components removed successfully." : "Cleanup finished. Locked or unsafe items were preserved; the uninstall log lists them.";
             await DeploymentReporter.StepAsync("UNINSTALL COMPLETE", status, 100).ConfigureAwait(false);
 
             return 0;
@@ -359,7 +350,6 @@ internal static class DeploymentLifecycle
         bool includeUserData,
         string? invokingUserDesktop = null)
     {
-        Interlocked.Exchange(ref _pendingRebootDeletes, 0);
         await DeploymentReporter.StepAsync("CLEANUP START", $"Performing thorough cleanup for {operation}.", start).ConfigureAwait(false);
 
         await DeploymentReporter.StepAsync("CLEANUP PROCESSES", "Terminating running app instances so files can be replaced safely.", start + 5).ConfigureAwait(false);
@@ -403,93 +393,37 @@ internal static class DeploymentLifecycle
             bool clean = await VerifyZeroFootprintAsync().ConfigureAwait(false);
             if (!clean)
             {
-                await DeploymentReporter.StepAsync("CLEANUP VERIFY", "Residual locked items were detected. They may require a reboot.", end).ConfigureAwait(false);
+                await DeploymentReporter.StepAsync("CLEANUP VERIFY", "Locked or unsafe items were preserved. Close the application and retry removal; see the uninstall log.", end).ConfigureAwait(false);
             }
         }
     }
 
+    // CLEANUPBOUND_01: no path-based recursion, attribute changes or reboot queue after failure.
     private static async Task PurgeDirectoryRecursiveAsync(string directory)
     {
-        if (!Directory.Exists(directory))
-        {
-            await DeploymentReporter.StepAsync("CLEANUP SKIP", $"Directory does not exist: {directory}", null).ConfigureAwait(false);
-            return;
-        }
-
         try
         {
-            Directory.Delete(directory, recursive: true);
-            await DeploymentReporter.StepAsync("CLEANUP OK", $"Deleted directory: {directory}", null).ConfigureAwait(false);
-            return;
+            SafeDirectoryCleanup.DeleteTree(Path.GetFullPath(directory));
+            await DeploymentReporter.StepAsync("CLEANUP OK", $"Cleaned directory: {directory}", null).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await DeploymentReporter.StepAsync("CLEANUP RETRY", $"Fast delete failed for {directory}: {ex.Message}. Deleting contents one by one.", null).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
+            await DeploymentReporter.FailAsync("CLEANUP PRESERVED", $"{directory}: {ex.Message}", null).ConfigureAwait(false);
+            RuntimeLog.Swallowed(ex);
         }
-
-        foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToArray())
-        {
-            await DeleteFileWithRetryAsync(file).ConfigureAwait(false);
-        }
-
-        foreach (string subDirectory in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).ToArray())
-        {
-            TryDeleteDirectory(subDirectory);
-        }
-
-        TryDeleteDirectory(directory);
     }
 
     private static async Task DeleteFileWithRetryAsync(string path)
     {
-        if (!File.Exists(path))
-        {
-            return;
-        }
-
-        for (int attempt = 1; attempt <= DeleteRetries; attempt++)
-        {
-            try
-            {
-                File.SetAttributes(path, FileAttributes.Normal);
-                File.Delete(path);
-                await DeploymentReporter.StepAsync("DELETE OK", path, null).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex)
-            {
-                if (attempt == DeleteRetries)
-                {
-                    if (MoveFileEx(path, null, MoveFileFlags.DelayUntilReboot))
-                    {
-                        Interlocked.Increment(ref _pendingRebootDeletes);
-                        await DeploymentReporter.StepAsync("DELETE REBOOT", $"Queued locked file for deletion after reboot: {path}. Reason: {ex.Message}", null).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await DeploymentReporter.FailAsync("DELETE FAILED", $"{path}: {ex.Message}", null).ConfigureAwait(false);
-                    }
-                }
-                else
-                {
-                await Task.Delay(250).ConfigureAwait(false);
-                }
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
-            }
-        }
-    }
-
-    private static void TryDeleteDirectory(string directory)
-    {
         try
         {
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory, recursive: true);
-            }
+            SafeDirectoryCleanup.DeleteFile(Path.GetFullPath(path));
         }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        catch (Exception ex)
+        {
+            await DeploymentReporter.FailAsync("DELETE PRESERVED", $"{path}: {ex.Message}", null).ConfigureAwait(false);
+            RuntimeLog.Swallowed(ex);
+        }
     }
 
     /// <param name="invokingUserDesktop">
@@ -1067,71 +1001,12 @@ internal static class DeploymentLifecycle
     }
 
     /// <summary>
-    /// NOSELFDELETE_01 — removes a folder the uninstaller may itself be running from (the program folder,
-    /// NOTEMPEXEC_01; older versions' scratch folders in %TEMP%) WITHOUT a "cmd /c ping … &amp; del"
-    /// chain. That chain (wait with ping, then delete the running program) is a ransomware signature
-    /// (Sigma "ping + del combined execution", MITRE T1070.004) and made antivirus flag new releases.
-    /// Everything that is not in use is deleted now. What is still locked — this running uninstaller,
-    /// its hard-linked twin FreeVideoStudio.exe and its two window libraries — is handed to Windows' own delete-on-restart list
-    /// (MoveFileEx MOVEFILE_DELAY_UNTIL_REBOOT; this worker is elevated, which that list requires).
-    /// Files are queued before their folders, so Windows removes them in a working order.
+    /// NOSELFDELETE_01 / CLEANUPBOUND_01: cleanup remains handle-bound on the final path too.
+    /// Locked running binaries are preserved and reported, never queued by a mutable pathname.
     /// </summary>
     private static void QueueSelfCleanup(string directory)
     {
-        try
-        {
-            string tempRoot = DeploymentFootprint.TempRoot;
-            foreach (string pattern in new[] { "FVS_*", "fvs_*" })
-            {
-                if (!Directory.Exists(tempRoot)) break;
-                foreach (string file in Directory.EnumerateFiles(tempRoot, pattern, SearchOption.TopDirectoryOnly))
-                {
-                    try { File.Delete(file); }
-                    catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-                }
-            }
-
-            if (!Directory.Exists(directory)) return;
-            try
-            {
-                Directory.Delete(directory, recursive: true);
-                return;
-            }
-            catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                RuntimeLog.Swallowed(ex);
-            }
-
-            foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                    File.Delete(file);
-                }
-                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    if (!MoveFileEx(file, null, MoveFileFlags.DelayUntilReboot))
-                        RuntimeLog.Info("Uninstall", $"Could not schedule removal after restart: {file}");
-                }
-            }
-
-            foreach (string folder in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories)
-                         .OrderByDescending(path => path.Length)
-                         .Append(directory))
-            {
-                try { Directory.Delete(folder, recursive: false); }
-                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    _ = MoveFileEx(folder, null, MoveFileFlags.DelayUntilReboot);
-                }
-            }
-        }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        try { SafeDirectoryCleanup.DeleteTree(Path.GetFullPath(directory)); }
+        catch (Exception ex) { RuntimeLog.Fail("Uninstall", $"Cleanup preserved {directory}: {ex.Message}"); }
     }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool MoveFileEx(string existingFileName, string? newFileName, MoveFileFlags flags);
 }

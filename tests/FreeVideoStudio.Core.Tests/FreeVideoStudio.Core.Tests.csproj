@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
+  </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>

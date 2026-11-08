@@ -436,11 +436,10 @@ public partial class MusicWizardWindow
         var first = _playlist[0];
         double timelineStartSec = _trimStartMs / 1000.0;
         bool loop = LoopMusicCheckBoxCtl?.IsChecked ?? false;
-        double videoDurationSec = GetPhase3SourceDurationSeconds();
         double coverageSec = GetQueuedMusicCoverageSeconds();
-        double timelineEndSec = loop
-            ? (timelineStartSec + videoDurationSec)
-            : (timelineStartSec + Math.Min(videoDurationSec, coverageSec));
+        double timelineEndSec = timelineStartSec + (loop || coverageSec >= GetPhase3VideoDurationSeconds()
+            ? GetPhase3SourceDurationSeconds()
+            : MapPhase3OutputToSourceRelativeSeconds(coverageSec));
         var mixDefaults = Infrastructure.SettingsManager.Instance.Defaults;
         return new MusicWizardResult
         {

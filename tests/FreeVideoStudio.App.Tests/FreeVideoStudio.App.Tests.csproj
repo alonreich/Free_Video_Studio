@@ -18,5 +18,6 @@
     <ProjectReference Include="..\..\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj" />
     <!-- SYS-VERIFYTOOL: the sentinel check is shared code, not a second regex scraper. -->
     <ProjectReference Include="..\..\build\FvsVerify\FvsVerify.csproj" />
+    <ProjectReference Include="..\..\build\FvsBuild\FvsBuild.csproj" />
   </ItemGroup>
 </Project>

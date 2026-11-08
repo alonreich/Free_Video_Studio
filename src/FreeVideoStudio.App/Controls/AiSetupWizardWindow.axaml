@@ -3,7 +3,7 @@
         x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.AiSetupWizardWindow"
         Title="Connect Your AI"
-        Width="580" MinHeight="560" SizeToContent="Height"
+        Width="580" MinHeight="620" SizeToContent="Height"
         Background="{DynamicResource AppSurfaceBrush}"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
@@ -13,17 +13,30 @@
     <Grid>
         <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, *">
-                <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                <Border Name="TitleBarBorder" Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
                     <TextBlock Text="Connect Your AI" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="24,20" Spacing="18">
+                    <StackPanel Margin="24,20" Spacing="16">
                         <StackPanel Spacing="4">
                             <TextBlock Name="WizardHeadline" Text="Connect your AI" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                             <TextBlock Name="WizardIntro" Text="AI features (Smart Zoom, Commentary, Magic Wand, Music Auto-Fit, Viral Post, Kill Tracker) use your own AI key. Paste it once here; it is stored encrypted for your Windows account only."
                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
                         </StackPanel>
+
+                        <!-- Provider Selection Tabs -->
+                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Select an AI provider to connect (you can connect more than one):"
+                                           Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
+                                <Grid ColumnDefinitions="*, *, *">
+                                    <Button Name="VendorGoogleBtn" Grid.Column="0" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Google Gemini"/>
+                                    <Button Name="VendorAnthropicBtn" Grid.Column="1" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Anthropic Claude"/>
+                                    <Button Name="VendorOpenAiBtn" Grid.Column="2" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="OpenAI"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
                         <!-- STEP 1: Get Your Free Key -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
@@ -61,9 +74,10 @@
 
                                 <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
                                     <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your API key here..."
+                                             AutomationProperties.Name="API Key"
                                              Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
                                     <Button Name="TestAndSaveBtn" Grid.Column="1" Classes="Success" Content="Test and Save Key" Cursor="Hand"
-                                            ToolTip.Tip="Checks the key with the AI company, then saves it encrypted."/>
+                                             ToolTip.Tip="Checks the key with the AI company, then saves it encrypted."/>
                                 </Grid>
 
                                 <TextBlock Name="VerificationStatusLabel" Text="Paste key and click Test and Save Key."
