@@ -1,4 +1,4 @@
-﻿# Free Video Studio — What's New & Release Changelog
+# Free Video Studio — What's New & Release Changelog
 
 What people who use Free Video Studio read: plain-English notes about what changed for them. The latest 5 releases are kept here; older ones move to [`CHANGELOG_ARCHIVE.md`](CHANGELOG_ARCHIVE.md) and are never deleted. Every version heading here is a published release (RELRECORD_01).
 
@@ -22,5 +22,5 @@ What people who use Free Video Studio read: plain-English notes about what chang
 - **Music Credits Made Easy:** Free background songs include credit instructions when clicking YouTube or TikTok shortcuts so your upload is not muted. The notice moves and closes with Escape, export text selection works smoothly, and setting start markers past end markers is cleanly blocked.
 - **A Clearer Settings Window:** 6 simple tabs, a search bar, plain help, Backup/Import and Restore buttons. It asks before discarding changes, and choices like speed now work. The app has a new icon for taskbar and tray. Project saving and opening stay responsive; failed saves keep your edits open.
 - **Know What's New, Before and After You Update:** The update card lists what the new version brings, the first start after updating shows it again, and Settings › About opens the full notes. A ready update installs when you close the app, Pause stays paused, and the Beta choice really gets test versions first.
-- **Smaller, Safer Updates:** Updates download changes only, check certificates and offer rollback after startup failures. Development shares music and memes; its temporary preferences and voice files are lost if temporary storage is cleared. Older data is retained, and uninstall refuses linked or locked folders.
+- **Smaller, Safer Updates:** Updates download changes only, check certificates and offer rollback after startup failures. Git history and test fixtures are fully sanitized to protect credentials and private paths. Development shares music and memes, older data is retained, and uninstall refuses linked or locked folders.
 - **Memes, Rebuilt:** Memes stay on the moment you chose, match the final video, and the main-screen meme now plays too. The picker previews, trims, positions and styles each meme; corner memes can be dragged and lower the game sound. With "keep music during memes" on, music starts on time and stops at its end mark.
