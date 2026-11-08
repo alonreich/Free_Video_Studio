@@ -21,6 +21,11 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (args.Contains("--dev-runtime") && args.Length != 1)
+        {
+            Console.Error.WriteLine("--dev-runtime must be used alone; no release pipeline was started.");
+            return ExitBuildFailed;
+        }
         bool noPublish = args.Any(a => a.Equals("--no-publish", StringComparison.OrdinalIgnoreCase));
         bool devMode = args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
         bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
@@ -46,6 +51,15 @@ internal static class Program
         }
 
         Environment.CurrentDirectory = FindRepoRoot();
+        if (args.Length == 1 && args[0] == "--dev-runtime")
+        {
+            string destination = Path.GetFullPath(".dev-run/app");
+            Directory.CreateDirectory(destination);
+            using BuildLog runtimeLog = new(Path.GetFullPath(".dev-run/staging.log"));
+            if (!Staging.StageDependencies(runtimeLog, destination)) return ExitBuildFailed;
+            FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromFolder(destination).Write(destination);
+            return ExitOk;
+        }
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { }
 
         DateTimeOffset started = DateTimeOffset.Now;
@@ -211,7 +225,7 @@ internal static class Program
             log.Warn("BUILD OK - but the release was NOT published.");
             log.Warn($"The commit and tag {tag} ARE on GitHub; only the release itself is missing (reason above).");
             log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming'. Finish THIS release with: Build.cmd --resume (RELRESUME_01).");
-            log.Warn(".\\compiled\\FreeVideoStudio-Setup.exe is good and usable.");
+            log.Warn(".\\compiled\\FreeVideoStudio.exe is good and usable.");
             log.Banner("###########################################################");
             log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
             return ExitPublishIncomplete;

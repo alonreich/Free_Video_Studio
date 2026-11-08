@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.Core.Infrastructure;
@@ -20,11 +21,29 @@ public partial class MusicWizardWindow
     /// <summary>The status line under the toolbar — the AI button's sibling in the same grid (found once, no name lookup).</summary>
     private TextBlock? _aiAutoFitStatusText;
 
+    /// <summary>Cancels any in-flight AI Auto-Fit background tasks and extractions.</summary>
+    public void CancelAiAutoFit()
+    {
+        try
+        {
+            _aiAutoFitCts?.Cancel();
+            _aiAutoFitCts?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+        finally
+        {
+            _aiAutoFitCts = null;
+        }
+    }
+
     private void OnAiAutoFitClicked(object? sender, RoutedEventArgs e)
     {
         if (_aiAutoFitCts != null)
         {
-            _aiAutoFitCts.Cancel();
+            CancelAiAutoFit();
             return;
         }
         if (sender is Button button)
@@ -74,12 +93,14 @@ public partial class MusicWizardWindow
         var usageConfig = settings.GetUsageConfig(AiUsage.MusicAutoFit);
         var vendor = usageConfig.Vendor;
 
-        if (!await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor))
+        if (!await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, AiUsage.MusicAutoFit))
         {
             SetAiAutoFitStatus("AI Auto-Fit needs an AI key. Add one in Settings › AI Features.", "AppWarningBrush");
             return;
         }
 
+        usageConfig = settings.GetUsageConfig(AiUsage.MusicAutoFit);
+        vendor = usageConfig.Vendor;
         string apiKey = settings.GetApiKey(vendor);
         if (string.IsNullOrWhiteSpace(apiKey)) return;
 
@@ -87,6 +108,7 @@ public partial class MusicWizardWindow
         string vendorName = AiVisionProviders.DisplayName(vendor);
 
         string originalContent = button.Content?.ToString() ?? "✨ AI Auto-Fit";
+        using var usage = AiUsageMeter.BeginTask("AI Music Auto-Fit", vendor);
         using var cts = new CancellationTokenSource(AiMusicAutoFitService.OverallDeadline);
         _aiAutoFitCts = cts;
         var started = DateTime.UtcNow;
@@ -126,6 +148,8 @@ public partial class MusicWizardWindow
 
             if (recommendation == null)
             {
+                var (u, _) = usage.Report();
+                if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
                 SetAiAutoFitStatus($"⚠ {vendorName} could not recommend a song for this video. Nothing was changed.", "AppWarningBrush");
                 return;
             }
@@ -133,6 +157,8 @@ public partial class MusicWizardWindow
             var track = AvailableTracks.FirstOrDefault(t => string.Equals(t.FilePath, recommendation.TrackFilePath, StringComparison.OrdinalIgnoreCase));
             if (track == null)
             {
+                var (u, _) = usage.Report();
+                if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
                 SetAiAutoFitStatus("⚠ The chosen song is no longer in the list. Nothing was changed.", "AppWarningBrush");
                 return;
             }
@@ -179,10 +205,14 @@ public partial class MusicWizardWindow
             int loadVersion = ++_phase3LoadVersion;
             await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
 
+            var (uDone, _) = usage.Report();
+            if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, uDone);
             ShowToastSuccess($"✨ AI picked '{songName}'");
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
+            var (u, _) = usage.Report();
+            if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
             bool timedOut = DateTime.UtcNow - started >= AiMusicAutoFitService.OverallDeadline - TimeSpan.FromSeconds(1);
             string text = timedOut
                 ? $"⚠ {vendorName} took longer than {(int)AiMusicAutoFitService.OverallDeadline.TotalSeconds} seconds, so AI Auto-Fit stopped. Nothing was changed — try again in a moment."
@@ -192,16 +222,22 @@ public partial class MusicWizardWindow
         }
         catch (AiMusicAutoFitException ex)
         {
+            var (u, _) = usage.Report();
+            if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
             SetAiAutoFitStatus("⚠ " + ex.Message, "AppWarningBrush");
             RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit: " + ex.Message);
         }
         catch (AiProviderException ex)
         {
+            var (u, _) = usage.Report();
+            if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
             SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message}", "AppDangerBrush");
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Kind} {ex.Message} {ex.Detail}", apiKey));
         }
         catch (Exception ex)
         {
+            var (u, _) = usage.Report();
+            if (usage.Tally.TotalTokens > 0) FloatingNotice.Info(this, u);
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Message}", apiKey));
             SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message}", "AppDangerBrush");
         }

@@ -5911,6 +5911,8 @@ public partial class GranularSpeedEditorWindow : Window
         e.Cancel = true;
         if (_editorClosing) return;
         _editorClosing = true;
+        CancelAiTracking();
+        CancelAiCommentary();
         _isSeeking = false;
         _nextSeekTarget = null;
         _seekFlushTimer?.Stop();
@@ -5943,6 +5945,8 @@ public partial class GranularSpeedEditorWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        CancelAiTracking();
+        CancelAiCommentary();
         ParkHistoryForReopen();
 
         _granularRecoveryTimer?.Stop();

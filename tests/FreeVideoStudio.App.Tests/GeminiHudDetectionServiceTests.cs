@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class GeminiHudDetectionServiceTests
 {
-    private const string SecretKey = "AIzaSyTEST-SECRET-KEY-0123456789abcdef";
+    private const string SecretKey = "AIzaSy-dummy-test-key-000000000000";
 
 
     private sealed class FakeHandler : HttpMessageHandler

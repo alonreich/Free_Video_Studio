@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -111,6 +111,8 @@ public partial class MainWindow
 
         var kb = SettingsManager.Instance.KeyBinds;
 
+        // FILEDELETE_01 — Direct file deletion from a focused ListBox item on Key.Delete is by design
+        // for speed and ease of use when managing/uploading video files from the picker.
         if (e.Key == Key.Delete)
         {
             if (FocusManager?.GetFocusedElement() is ListBox listBox && listBox.SelectedItem is string filePath)
@@ -287,6 +289,12 @@ public partial class MainWindow
         EnsureTrimPointsSet();
         RuntimeLog.Info("UI", $"User clicked MARK START at {TimeSpan.FromMilliseconds(_trimStartMs):hh\\:mm\\:ss\\.ff}.");
         double time = GetCurrentMpvTime();
+        if ((_trimEndSet || _trimEndMs > 0) && time * 1000.0 >= _trimEndMs)
+        {
+            ShowTacticalFeedback("⚠ START must be before END");
+            RuntimeLog.Info("UI", $"MARK START blocked: {TimeSpan.FromSeconds(time):hh\\:mm\\:ss\\.ff} is not before END {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
+            return;
+        }
         SetTrimStart(time * 1000);
         _trimStartSet = true;
         var markStartButton = MarkStartButtonCtl;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -203,6 +203,14 @@ public partial class GranularSpeedEditorWindow
         var settings = SettingsManager.Instance;
         var vendor = settings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.DenseTracking).Vendor;
         if (AppSettings.ConsentCovers(settings.AiZoomCloudConsent, settings.AiZoomCloudConsentVendor, vendor)) return true;
+
+        // If an API key is configured, user explicitly configured it; auto-consent without interrupting (Proposal #12)
+        if (!string.IsNullOrWhiteSpace(settings.GetApiKey(vendor)))
+        {
+            SettingsManager.Update(s => { s.AiZoomCloudConsent = true; s.AiZoomCloudConsentVendor = vendor.ToString(); });
+            return true;
+        }
+
         string vendorName = AiVisionProviders.DisplayName(vendor);
         string blockPart = AiVisionProviders.WatchesVideoWithAudio(vendor)
             ? "• a short, silent, low-resolution (640 px wide) copy of that block — at most 8 seconds per request.\n\n"
@@ -368,8 +376,12 @@ public partial class GranularSpeedEditorWindow
         var settings = SettingsManager.Instance;
         var u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
         var u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
-        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u1Config.Vendor)) return;
-        if (u2Config.Vendor != u1Config.Vendor && !await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u2Config.Vendor)) return;
+        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u1Config.Vendor, AiUsage.SubjectDiscovery)) return;
+        u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
+        u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
+        if (u2Config.Vendor != u1Config.Vendor && !await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u2Config.Vendor, AiUsage.DenseTracking)) return;
+        u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
+        u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
 
         double dur = GetDuration();
         if (dur <= 0)
@@ -480,12 +492,24 @@ public partial class GranularSpeedEditorWindow
                 discoverySession, profile, consoleLog, token);
             if (token.IsCancellationRequested) return;
 
-            var (fw, fh) = GeminiTrackingService.ReadImageSize(discovery.F2);
-            if (IsMergeMode && fw > 0 && fh > 0 && (fw != sw || fh != sh))
+            if (IsMergeMode)
             {
-                RuntimeLog.Info("AiTracking", $"Merge clip is {fw}x{fh}; using it instead of {sw}x{sh}.");
-                sw = fw; sh = fh;
-                userBox = GetUserZoomBox(seg, sw, sh);
+                try
+                {
+                    string ffprobe = BinaryPathResolver.Resolve("ffprobe.exe", "backend", "binaries");
+                    var prober = new MediaProber(ffprobe, source.VideoPath);
+                    var (pw, ph) = await prober.GetResolutionAsync();
+                    if (pw > 0 && ph > 0 && (pw != sw || ph != sh))
+                    {
+                        RuntimeLog.Info("AiTracking", $"Merge clip is {pw}x{ph}; using it instead of {sw}x{sh}.");
+                        sw = pw; sh = ph;
+                        userBox = GetUserZoomBox(seg, sw, sh);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                }
             }
 
             if (overlay != null) overlay.IsVisible = false;
@@ -603,11 +627,14 @@ public partial class GranularSpeedEditorWindow
             if (trajectory.Keyframes.Count > 0)
             {
                 BeginAiPreview(segIndex, seg, trajectory, sw, sh, newEndMs);
-                if (AiTrackingPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiTracking", ReportAiUsage(usage, consoleLog));
+                var (u, a) = ReportAiUsage(usage, consoleLog);
+                if (AiTrackingPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiTracking", (u, a));
+                FloatingNotice.Info(this, u);
             }
             else
             {
                 var (u, a) = ReportAiUsage(usage, consoleLog);
+                FloatingNotice.Info(this, u);
                 await ErrorReporter.ShowAsync(this, "AI Tracking Inconclusive",
                     $"{trackingSession.VendorName} could not follow the selected target through this block.\n\n" +
                     $"Try a block where the target is clearer, or set the zoom by hand.\n\n{u}\n{a}");
@@ -616,6 +643,7 @@ public partial class GranularSpeedEditorWindow
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             var (u, _) = ReportAiUsage(usage, consoleLog);
+            FloatingNotice.Info(this, u);
             Notify($"AI Smart Zoom was cancelled. {u}");
         }
         catch (AiProviderException ex)
@@ -624,6 +652,7 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Fail("AiTracking", $"{ex.Vendor} {ex.Kind}: {ex.Message} {safeDetail}");
             if (overlay != null) overlay.IsVisible = false;
             var (u, a) = ReportAiUsage(usage, consoleLog);
+            FloatingNotice.Info(this, u);
             await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{u}\n{a}", safeDetail);
         }
         catch (Exception ex)
@@ -632,6 +661,7 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Fail("AiTracking", err);
             if (overlay != null) overlay.IsVisible = false;
             var (u, a) = ReportAiUsage(usage, consoleLog);
+            FloatingNotice.Info(this, u);
             await ErrorReporter.ShowAsync(this, "AI Smart Zoom Error",
                 $"AI Smart Zoom stopped:\n{trackingSession.Redact(discoverySession.Redact(ex.Message))}\n\n{u}\n{a}", err);
         }

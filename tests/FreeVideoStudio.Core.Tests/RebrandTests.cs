@@ -51,7 +51,7 @@ public sealed class RebrandTests : IDisposable
     }
 
     [Fact]
-    public void SweepMovesRescuedRendersAndRemovesLegacyTemp()
+    public void SweepMovesRescuedRendersAndKeepsOtherLegacyTemp()
     {
         string legacyTemp = Path.Combine(_root, "legacy-temp");
         string currentTemp = Path.Combine(_root, "current-temp");
@@ -63,7 +63,8 @@ public sealed class RebrandTests : IDisposable
         var result = LegacyResidueSweep.Run([legacyTemp], currentTemp, [], blockedReason: null);
 
         Assert.Equal(2, result.RescuedRendersMoved);
-        Assert.False(Directory.Exists(legacyTemp));
+        Assert.True(Directory.Exists(legacyTemp));
+        Assert.Equal("x", File.ReadAllText(Path.Combine(legacyTemp, "staging", "junk.tmp")));
         Assert.Equal("main", File.ReadAllText(Path.Combine(currentTemp, "FreeVideoStudio-RECOVERED-20260101-1.mp4")));
         Assert.Equal("merge", File.ReadAllText(Path.Combine(currentTemp, "Merged-Videos-RECOVERED-20260101-1.mp4")));
     }
@@ -85,7 +86,7 @@ public sealed class RebrandTests : IDisposable
     }
 
     [Fact]
-    public void SweepRemovesOnlyFullyMirroredLegacyRoots()
+    public void SweepPreservesConflictsAndUnmigratedLegacyRoots()
     {
         string mirrored = Path.Combine(_root, "legacy-a");
         string partial = Path.Combine(_root, "legacy-b");
@@ -99,11 +100,35 @@ public sealed class RebrandTests : IDisposable
 
         var result = LegacyResidueSweep.Run([], Path.Combine(_root, "t"), [(mirrored, current), (partial, current)], blockedReason: null);
 
-        Assert.Equal(1, result.LegacyRootsRemoved);
-        Assert.Equal(1, result.LegacyRootsKept);
-        Assert.False(Directory.Exists(mirrored));
+        Assert.Equal(0, result.LegacyRootsRemoved);
+        Assert.Equal(2, result.LegacyRootsKept);
+        Assert.Equal("old", File.ReadAllText(Path.Combine(mirrored, "profiles", "crop.json")));
         Assert.True(File.Exists(Path.Combine(partial, "only-here.json")));
         Assert.Equal("new", File.ReadAllText(Path.Combine(current, "profiles", "crop.json")));
+    }
+
+    [Fact]
+    public void MigrationAndSweepKeepBothSameNamedVersionsAndReferencedVoiceAudio()
+    {
+        foreach (string name in new[] { "recent", "older" })
+        {
+            Directory.CreateDirectory(Path.Combine(_root, name));
+            File.WriteAllText(Path.Combine(_root, name, "settings.json"), name);
+        }
+        string current = AppDataPaths.MigrateDirectory(_root, "recent", "older");
+        string temp = Path.Combine(_root, "old-temp");
+        Directory.CreateDirectory(Path.Combine(temp, "voiceovers"));
+        File.WriteAllText(Path.Combine(temp, "voiceovers", "take.wav"), "referenced take");
+        var roots = new[] { (Path.Combine(_root, "recent"), current), (Path.Combine(_root, "older"), current) };
+        for (int i = 0; i < 2; i++)
+        {
+            var result = LegacyResidueSweep.Run([temp], Path.Combine(_root, "new-temp"), roots, null);
+            Assert.Equal(0, result.LegacyRootsRemoved);
+            Assert.Equal(3, result.LegacyRootsKept);
+        }
+        Assert.Equal("recent", File.ReadAllText(Path.Combine(current, "settings.json")));
+        Assert.Equal("older", File.ReadAllText(Path.Combine(_root, "older", "settings.json")));
+        Assert.Equal("referenced take", File.ReadAllText(Path.Combine(temp, "voiceovers", "take.wav")));
     }
 
     [Fact]

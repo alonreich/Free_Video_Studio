@@ -201,7 +201,7 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema13_SealsAPlainTextApiKeyOnDisk()
     {
-        const string key = "AIzaSyFAKE-MIGRATION-ONLY-00000000000";
+        const string key = "AIzaSy-dummy-migration-key-000000";
         File.WriteAllText(_settingsFile, "{ \"SchemaVersion\": 13, \"AutoUpdateChecks\": true, \"GeminiApiKey\": \"" + key + "\" }");
 
         SettingsManager.Load();
@@ -220,7 +220,7 @@ public sealed class SettingsMigrationTests : IDisposable
     public void SecretProtector_RoundTripsOnWindows_AndProducesDpapiPrefix()
     {
         if (!OperatingSystem.IsWindows()) return;
-        const string key = "AIzaSyFAKE-TEST-KEY-12345678901234567";
+        const string key = "AIzaSy-dummy-test-key-000000000000";
         string sealedKey = SecretProtector.Protect(key);
         Assert.StartsWith("dpapi1:", sealedKey);
         Assert.True(SecretProtector.IsProtectedForm(sealedKey));
@@ -338,8 +338,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema14_SealsPlainTextClaudeAndOpenAiKeysOnDisk()
     {
-        const string claudeKey = "sk-ant-api03-FAKE-TEST-CLAUDE-KEY-0000000000";
-        const string openAiKey = "sk-proj-FAKE-TEST-OPENAI-KEY-0000000000000000";
+        const string claudeKey = "sk-ant-dummy-test-claude-key-0000000000"; // SECRETSCAN_ALLOW
+        const string openAiKey = "sk-proj-dummy-test-openai-key-0000000000000000"; // SECRETSCAN_ALLOW
 
         File.WriteAllText(_settingsFile, $$"""
         {
@@ -386,8 +386,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MultiVendorSettings_RoundTripAndPersistCorrectly()
     {
-        const string claudeKey = "sk-ant-FAKE-ROUNDTRIP-CLAUDE-KEY-1111111";
-        const string openAiKey = "sk-FAKE-ROUNDTRIP-OPENAI-KEY-222222222222";
+        const string claudeKey = "sk-ant-dummy-roundtrip-claude-key-1111111"; // SECRETSCAN_ALLOW
+        const string openAiKey = "sk-dummy-roundtrip-openai-key-222222222222"; // SECRETSCAN_ALLOW
 
         SettingsManager.Load();
 

@@ -7,7 +7,7 @@
 # free GitHub-hosted Windows machine:
 #   1. downloads the OLD release's installer and installs it the way its own updater does
 #      (--install --auto-update);
-#   2. downloads the NEW release's FreeVideoStudio-Setup.exe (a draft works too) and runs it the way
+#   2. downloads the NEW release's FreeVideoStudio.exe (a draft works too) and runs it the way
 #      the new in-app updater does (/VERYSILENT … --install --auto-update --no-launch);
 #   3. checks that the installed program is the new version, and uploads the logs.
 #
@@ -26,7 +26,7 @@ on:
         required: true
         default: 'v2026.09.26.1215'
       new_tag:
-        description: 'Updated to (a release or draft that carries FreeVideoStudio-Setup.exe)'
+        description: 'Updated to (a release or draft that carries FreeVideoStudio.exe)'
         required: true
 
 permissions:
@@ -64,13 +64,13 @@ jobs:
 
       - name: Download the new setup
         shell: pwsh
-        run: gh release download $env:NEW_TAG --repo $env:GITHUB_REPOSITORY --pattern FreeVideoStudio-Setup.exe --dir new
+        run: gh release download $env:NEW_TAG --repo $env:GITHUB_REPOSITORY --pattern FreeVideoStudio.exe --dir new
 
       - name: Update to the new release (as the in-app updater does)
         shell: pwsh
         run: |
           $setupArgs = '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','--install','--auto-update','--source-current','--no-launch'
-          $p = Start-Process -FilePath (Resolve-Path new\FreeVideoStudio-Setup.exe) -ArgumentList $setupArgs -PassThru
+          $p = Start-Process -FilePath (Resolve-Path new\FreeVideoStudio.exe) -ArgumentList $setupArgs -PassThru
           if (-not $p.WaitForExit(20 * 60 * 1000)) { $p.Kill($true); throw 'The new setup did not finish in 20 minutes.' }
           Write-Host "New setup exit code: $($p.ExitCode)"
 

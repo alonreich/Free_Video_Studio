@@ -1,4 +1,4 @@
-﻿# NEW RELEASE — WHAT TO DO NOW (about 10 minutes, free)
+# NEW RELEASE — WHAT TO DO NOW (about 10 minutes, free)
 
 **Why:** every new release is a brand-new file, and Windows has never seen it before.
 Microsoft Defender's AI may call it a virus for the first few days. Telling Microsoft
@@ -16,7 +16,7 @@ Your files are ready in `C:\FreeVideoStudio\obj\ReleaseSubmit\`.
 ## STEP 1 — Scan the new file at VirusTotal (2 min)
 
 1. Open **https://www.virustotal.com**
-2. Drag in `C:\FreeVideoStudio\compiled\FreeVideoStudio-Setup.exe` (it takes files up to 650 MB).
+2. Drag in `C:\FreeVideoStudio\compiled\FreeVideoStudio.exe` (it takes files up to 650 MB).
    VirusTotal unpacks the Inno Setup package and scans every file inside it separately (NODROPPER_01).
 3. Wait for the result. Find the row named **Microsoft**.
 4. Write down every antivirus name that shows a red warning. You'll need them in Step 3.

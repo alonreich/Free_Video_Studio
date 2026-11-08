@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -12,11 +13,26 @@ public partial class MusicAttributionDialogWindow : Window
     public MusicAttributionDialogWindow()
     {
         InitializeComponent();
+        AttachTitleBarDrag();
     }
 
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
+    }
+
+    private void AttachTitleBarDrag()
+    {
+        if (this.FindNameScope()?.Find("TitleBarBorder") is Border titleBar)
+        {
+            titleBar.PointerPressed += (_, e) =>
+            {
+                if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.ClickCount < 2)
+                {
+                    try { BeginMoveDrag(e); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
+            };
+        }
     }
 
     public void SetAttributionText(string text)

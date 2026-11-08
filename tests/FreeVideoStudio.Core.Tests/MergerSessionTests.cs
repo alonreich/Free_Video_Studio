@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -167,7 +167,7 @@ public class MergerSessionTests
     public void RestoreDialog_NamesEveryMissingFileAndItsFolder()
     {
         string text = MergerSession.DescribeRestoreProblems(
-            new[] { @"C:\Users\alon\Videos\a.mp4", @"D:\clips\b.mp4" }, new[] { @"C:\x\c.mp4" }, keptCount: 5);
+            new[] { @"C:\media\a.mp4", @"D:\clips\b.mp4" }, new[] { @"C:\x\c.mp4" }, keptCount: 5);
         Assert.Contains("2 clips from your last session are no longer on disk", text);
         Assert.Contains("a.mp4", text);
         Assert.Contains("b.mp4", text);

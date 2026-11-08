@@ -32,7 +32,7 @@ public sealed class NamedSystemMutex : IDisposable
     /// with it or be denied by its DACL.
     /// </summary>
     public static string UserScopedName(string baseName)
-        => $@"Global\{baseName}_{FreeVideoStudio.Core.Ipc.IpcProtocol.UserScope}";
+        => $@"Global\{baseName}_{FreeVideoStudio.Core.Ipc.IpcProtocol.UserScope}{DevelopmentEnvironment.ScopeSuffix}";
 
     public static NamedSystemMutex Acquire(
         string name,

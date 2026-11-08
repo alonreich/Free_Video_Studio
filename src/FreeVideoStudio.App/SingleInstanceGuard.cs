@@ -75,8 +75,8 @@ public static class SingleInstanceGuard
         }
     }
 
-    private static string MutexName => $"{MutexNameBase}_{UserScope}";
-    private static string PipeName => $"{PipeNameBase}_{UserScope}";
+    private static string MutexName => $"{MutexNameBase}_{UserScope}{FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ScopeSuffix}";
+    private static string PipeName => $"{PipeNameBase}_{UserScope}{FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ScopeSuffix}";
 
     /// <summary>Raised on a background thread when another launch hands us a file path.</summary>
     public static event Action<string>? VideoPathReceived;

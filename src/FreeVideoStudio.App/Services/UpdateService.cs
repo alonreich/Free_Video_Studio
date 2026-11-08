@@ -61,6 +61,7 @@ namespace FreeVideoStudio.App.Services;
 /// </summary>
 internal static partial class UpdateService
 {
+    private const string DevelopmentUpdateMessage = "Development copy: close the app and run dev.cmd to rebuild the current source.";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
     private const string ReleasesApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases";
 
@@ -148,7 +149,7 @@ internal static partial class UpdateService
     /// as <see cref="LegacyFullAssetName"/> so copies released before the change still find an installer;
     /// this build prefers the setup name and accepts the old one.
     /// </summary>
-    internal const string SetupAssetName = "FreeVideoStudio-Setup.exe";
+    internal const string SetupAssetName = "FreeVideoStudio.exe";
     private const string LegacyFullAssetName = "FreeVideoStudio.exe";
     private const string ExpectedAssetName = SetupAssetName;
 
@@ -241,6 +242,7 @@ internal static partial class UpdateService
     /// </summary>
     public static async Task RunStartupCheckAsync(Window owner)
     {
+        if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive) return;
         if (Environment.GetCommandLineArgs().Contains("--upgrade-health")) return;
 
         if (RuntimeLog.IsDevMode && DevReleaseFolder is null)
@@ -415,6 +417,11 @@ internal static partial class UpdateService
     /// </summary>
     public static async Task CheckManualAsync(Window owner, Action<string>? statusCallback = null)
     {
+        if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive)
+        {
+            statusCallback?.Invoke(DevelopmentUpdateMessage);
+            return;
+        }
         if (Interlocked.CompareExchange(ref _checkInProgress, 1, 0) != 0)
         {
             RuntimeLog.Info("UPDATE", "Manual update check requested while an update check is already in progress.");
@@ -507,7 +514,7 @@ internal static partial class UpdateService
     }
 
     /// <summary>
-    /// DEVUPDATE_01 — reads .\compiled\FreeVideoStudio-Setup.exe as if it were the GitHub release. The
+    /// DEVUPDATE_01 — reads .\compiled\FreeVideoStudio.exe as if it were the GitHub release. The
     /// SHA-256 is taken now, like GitHub's published digest; if the file is rebuilt before the
     /// download finishes, the check fails exactly as a tampered download would.
     /// </summary>
@@ -583,6 +590,7 @@ internal static partial class UpdateService
     /// </summary>
     public static string DescribeLastCheck()
     {
+        if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive) return DevelopmentUpdateMessage;
         string text;
         try { text = UiStateStore.ReadText(LastResultFile); }
         catch (Exception ex)

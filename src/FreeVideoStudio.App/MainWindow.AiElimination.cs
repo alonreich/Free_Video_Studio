@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +23,7 @@ public partial class MainWindow
     /// <summary>AIELIM_02 — text of the timeline chip, null = hidden.</summary>
     private string? _aiEliminationStatus;
     private bool _aiEliminationStatusIsError;
+    private bool _isAiEliminationScanning;
 
     /// <summary>AIELIM_03 — the speed editor while it is open, so late scan results still reach it.</summary>
     private GranularSpeedEditorWindow? _openGranularEditor;
@@ -87,7 +88,9 @@ public partial class MainWindow
             }
             string model = settings.GetEffectiveModel(AiUsage.EliminationTracker);
 
+            _isAiEliminationScanning = true;
             SetAiEliminationStatus("AI: scanning for kills…", false, videoPath);
+            using var usage = AiUsageMeter.BeginTask("AI Kill Tracker", config.Vendor);
             var result = await Task.Run(() => AiEliminationTrackerService.ScanAsync(
                 ffmpegPath,
                 videoPath,
@@ -102,7 +105,9 @@ public partial class MainWindow
                 },
                 cts.Token), cts.Token).ConfigureAwait(false);
 
-            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
+            _isAiEliminationScanning = false;
+            string usageNote = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
+            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary}{usageNote} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
             Dispatcher.UIThread.Post(() =>
             {
                 if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
@@ -113,7 +118,7 @@ public partial class MainWindow
                     _aiEliminationTimestamps.Add(m.TimestampSec);
                     _aiEliminationMarkers.Add(m);
                 }
-                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary;
+                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary + usageNote;
                 _aiEliminationStatusIsError = result.Failed;
                 QueueTimelineRedrawPass(DispatcherPriority.Background);
 
@@ -126,9 +131,13 @@ public partial class MainWindow
                     Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary);
             });
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _isAiEliminationScanning = false;
+        }
         catch (Exception ex)
         {
+            _isAiEliminationScanning = false;
             RuntimeLog.Swallowed(ex);
             SetAiEliminationStatus("AI kill scan failed.", true, videoPath);
         }
@@ -182,6 +191,50 @@ public partial class MainWindow
 
         if (!string.IsNullOrEmpty(_aiEliminationStatus))
         {
+            Control chipContent;
+            if (_isAiEliminationScanning)
+            {
+                var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = _aiEliminationStatus,
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    Foreground = Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                });
+                var cancelBtn = new TextBlock
+                {
+                    Text = "✕ Cancel",
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    FontWeight = Avalonia.Media.FontWeight.Bold,
+                    Foreground = elimBrush,
+                    Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+                cancelBtn.PointerPressed += (_, e) =>
+                {
+                    e.Handled = true;
+                    _aiEliminationScanCts?.Cancel();
+                    _isAiEliminationScanning = false;
+                    SetAiEliminationStatus("AI kill scan cancelled", false, _loadedVideoPath);
+                };
+                panel.Children.Add(cancelBtn);
+                chipContent = panel;
+            }
+            else
+            {
+                chipContent = new TextBlock
+                {
+                    Text = _aiEliminationStatus,
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    Foreground = _aiEliminationStatusIsError
+                        ? elimBrush
+                        : Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                };
+            }
+
             var chip = new Border
             {
                 Background = Infrastructure.ThemeResources.Brush(this, "AppOverlayBrush", Avalonia.Media.Brushes.Black),
@@ -192,15 +245,7 @@ public partial class MainWindow
                 IsHitTestVisible = true,
                 ZIndex = 499,
                 MaxWidth = Math.Max(140, canvasWidth * 0.5),
-                Child = new TextBlock
-                {
-                    Text = _aiEliminationStatus,
-                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
-                    Foreground = _aiEliminationStatusIsError
-                        ? elimBrush
-                        : Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
-                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
-                },
+                Child = chipContent,
             };
             ToolTip.SetTip(chip, _aiEliminationStatus);
             chip.Measure(Avalonia.Size.Infinity);

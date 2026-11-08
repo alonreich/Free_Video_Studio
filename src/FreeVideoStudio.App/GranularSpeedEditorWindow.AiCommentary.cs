@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -177,6 +177,13 @@ public partial class GranularSpeedEditorWindow
         var vendor = settings.GetUsageConfig(AiUsage.Commentary).Vendor;
         if (AppSettings.ConsentCovers(settings.AiCommentaryCloudConsent, settings.AiCommentaryCloudConsentVendor, vendor)) return true;
 
+        // If an API key is configured, user explicitly configured it; auto-consent without interrupting (Proposal #12)
+        if (!string.IsNullOrWhiteSpace(settings.GetApiKey(vendor)))
+        {
+            SettingsManager.Update(s => { s.AiCommentaryCloudConsent = true; s.AiCommentaryCloudConsentVendor = vendor.ToString(); });
+            return true;
+        }
+
         string vendorName = AiVisionProviders.DisplayName(vendor);
         string whatIsSent = AiVisionProviders.WatchesVideoWithAudio(vendor)
             ? "• short, low-resolution (640 px wide) video clips of the chosen range, at most 8 seconds each,\n" +
@@ -226,14 +233,29 @@ public partial class GranularSpeedEditorWindow
 
         var settings = SettingsManager.Instance;
         var commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
-        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, commentaryConfig.Vendor)) return;
+        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, commentaryConfig.Vendor, AiUsage.Commentary)) return;
+        commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
 
+        string effectiveVideoPath = _edit.VideoPath;
         if (_edit.IsMergeMode)
         {
-            await ErrorReporter.ShowAsync(this, "Merged Timeline",
-                "AI Commentary generation is currently supported for single video clips in the Granular Speed Editor.\n" +
-                "Open the individual clip to generate commentary.");
-            return;
+            if (_edit.SelectedSegment is { } mSeg && _mergeSource != null)
+            {
+                var clip = _mergeSource.Clips.FirstOrDefault(c => mSeg.StartMs >= c.StartMs && mSeg.EndMs <= c.EndMs + MergeEditorSource.FrameMs);
+                if (clip == null)
+                {
+                    await ErrorReporter.ShowAsync(this, "Cross-Clip Block",
+                        "This speed block spans across two merged clips. Shorten or split the block so it lies within one clip to generate commentary.");
+                    return;
+                }
+                effectiveVideoPath = clip.Path;
+            }
+            else if (!_edit.HasSelectedSegment)
+            {
+                await ErrorReporter.ShowAsync(this, "Select a Speed Block",
+                    "In Video Merger mode, select a specific speed block to generate live commentary captions for that clip.");
+                return;
+            }
         }
 
         var dialogResult = await AiCommentaryDialogWindow.ShowDialogAsync(
@@ -270,13 +292,14 @@ public partial class GranularSpeedEditorWindow
         }
 
         int plannedParts = CommentaryService.PlanChunks(durationSec).Count;
+        int minutes = Math.Max(1, (int)Math.Ceiling(plannedParts * CommentaryService.TypicalSecondsPerPart / 60.0));
+        RuntimeLog.Info("AiCommentary", $"Range is {FormatDurationPlain(durationSec)} long: {plannedParts} part(s), ~{minutes} min estimated.");
         if (plannedParts > CommentaryService.ConfirmAbovePartCount)
         {
-            int minutes = Math.Max(1, (int)Math.Ceiling(plannedParts * CommentaryService.TypicalSecondsPerPart / 60.0));
             bool goAhead = await ConfirmDialogWindow.AskAsync(
                 this,
                 $"This range is {FormatDurationPlain(durationSec)} long, so AI COMMENTARY will make {plannedParts} AI requests " +
-                $"(about {minutes} minute{(minutes == 1 ? "" : "s")}; each request uses your AI key).\n\n" +
+                $"(estimated about {minutes} minute{(minutes == 1 ? "" : "s")}; each request uses your AI key).\n\n" +
                 "Tip: select one speed block and choose \"Selected block\" to caption only the best moment.",
                 "Long Commentary Run",
                 "Continue",
@@ -317,7 +340,7 @@ public partial class GranularSpeedEditorWindow
         string model = settings.GetEffectiveModel(AiUsage.Commentary);
 
         var request = new CommentaryRequest(
-            _edit.VideoPath,
+            effectiveVideoPath,
             startSec,
             durationSec,
             commentaryConfig.Vendor,

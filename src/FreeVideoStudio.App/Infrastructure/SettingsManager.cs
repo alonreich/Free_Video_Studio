@@ -731,12 +731,14 @@ public static class MemeDirectory
             FreeVideoStudio.Core.Infrastructure.ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable));
 
     private static string MediaRoot(Environment.SpecialFolder productionFolder) =>
-        IsDevSandbox
-            ? Path.Combine(Path.GetTempPath(), "FreeVideoStudio_DEV", "media")
+        IsDevSandbox && !FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ShareUserMedia
+            ? Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.DataRoot!, "media")
             : Environment.GetFolderPath(productionFolder);
 
-    /// <summary>Where background music lives. Sandboxed in dev — see the note above.</summary>
-    public static string GetMusicRoot() => MediaRoot(Environment.SpecialFolder.MyMusic);
+    /// <summary>DEVSHAREMEDIA_01: normal dev launches share the Windows Music folder.</summary>
+    public static string GetMusicRoot() => FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ShareUserMedia
+        ? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)
+        : MediaRoot(Environment.SpecialFolder.MyMusic);
 
     /// <summary>Where images/memes live. Sandboxed in dev — see the note above.</summary>
     public static string GetVideosRoot() => MediaRoot(Environment.SpecialFolder.MyVideos);
@@ -1101,7 +1103,7 @@ public static class SettingsManager
     /// </summary>
     public const int CurrentSchemaVersion = 14;
 
-    private static string SettingsPath => Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().ProgramDataRoot, "settings.json");
+    private static string SettingsPath => FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().SettingsFile;
 
     /// <summary>
     /// SETTINGSATOMIC_01 — cross-PROCESS lock. settings.json is shared by the Main App, the

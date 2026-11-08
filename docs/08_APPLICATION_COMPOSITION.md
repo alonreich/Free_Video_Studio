@@ -16,8 +16,11 @@
 | `src/FreeVideoStudio.App/Abstractions/IFilePickerService.cs` | `IFilePickerService`, `FilePickerRequest` | `SaveFileAsync`, `OpenFileAsync`, `INJSEAM_04`, `FilePickerRequest` | OS file-dialog seam. |
 | `src/FreeVideoStudio.App/Services/StorageProviderFilePicker.cs` | `StorageProviderFilePicker` | `PICKERMEMORY_01`, `SaveFileAsync`, `OpenFileAsync`, `StorageProviderFilePicker` | Picker implementation + directory memory. **⚠ CO-GOVERNED BY: 05** |
 | `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` | `ArchitectureRuleTests` | `ARCHTEST_01`, `ASYNCUI_01`, `ASYNCUI_02`, `NoControlCarriesBothCommandAndClick` | The specs' rules, made executable. |
+| `tests/TestHarness.ps1`, `tests/TestHarness.Tests.ps1`, `tests/run-av-tests.ps1`, `tests/run-all-tests.cmd` | Test gate | `TESTGATE_01`, `TESTCLEAN_01` | Fail-closed result validation and exclusive, bounded output cleanup; 05 SYS-STORAGE-TABLE. |
+| `tests/DesktopPreviewSmoke/Program.cs`, `tests/DesktopPreviewSmoke/MergerSmokeApp.cs` | Desktop smoke applications | `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | Actual GPU output and actual merger window playback across joins; 01 TL-COMPOSITE, 04 UI-MERGERQUEUE/UI-GPUPRESENT2. |
+| `src/FreeVideoStudio.App/ViewModels/VoiceOverGainViewModel.cs` | `VoiceOverGainViewModel` | `Percent`, `Gain`, `ResetCommand`, `CanEdit` | Voice gain bindings; co-governed by 02 AUD-VOICEOVER and 04 UI-THEME. |
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 05** |
-| `dev.cmd` | Developer Harness | `VERIFY_PATCHES`, `VERIFYHALT_01` | Fix-sentinel enforcement. **⚠ CO-GOVERNED BY: 05** |
+| `dev.cmd` | Developer Harness | `DEVVERIFY_01`, `SYS-VERIFYTOOL`, `VERIFYHALT_01` | Direct FvsVerify invocation and failure propagation before cleanup. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Abstractions/Faults.cs` | `Faults` | `Install`, `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_02` | Ambient fault channel installed once from the composition root. |
 | `src/FreeVideoStudio.App/Services/FaultCounters.cs` | `FaultCounters` | `Record`, `Describe`, `LOGVIS_01` | Per-session fault totals by tier and area, printed in the diagnostic bundle. |
 | `tests/FreeVideoStudio.Core.Tests/WindowsOnlyFactAttribute.cs` | `WindowsOnlyFactAttribute` | `Skip`, `CITEST_01` | Windows-only tests skip, not fail, off Windows. |
@@ -154,7 +157,7 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   | `ZoompanFilterIsNeverEmitted` | Invariant #4 | **clean — 0** |
   | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **25** |
   | `EveryCatchBlockReportsSomewhere` | `FAULTTIER_02` | ratchet, baseline **7** (seven reporting-path files exempt by name; injected `IFaultSink` `.Recoverable/.Degraded/.Fatal(` calls count as reporting) |
-  | `EveryProductionSourceFileCarriesTheSpecContract` | `SPEC_GOVERNANCE.md` §4 | **clean — 0** (121 fixed; see §4) |
+  | Repeated source-header presence rule | `SPEC_GOVERNANCE.md` §4 | Retired by SPECROUTING_02; domain maps and fix sentinels remain required. |
   | `BlockingWaitsOnAsyncCodeDoNotIncrease` | `ASYNCUI_01` | ratchet, baseline **5** |
   | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **31** |
   | `ServiceLocatorUsageDoesNotIncrease` | `COMPOSITION_02` | ratchet, baseline **3** |
@@ -242,11 +245,16 @@ CI runs the sentinels on Linux first (~40s, fails fast), then builds and tests o
 then proves the NativeAOT publish links on `main` — AOT failures do not appear in `dotnet build`,
 only at publish, in the linker.
 
+`CODEEXPORT_01`: the sentinel job also runs the Python source-export regression suite
+(`python -B -m unittest discover -s tests/DeveloperTools.Tests -v`). It guards coverage,
+credential filtering, encoding failures, attachment limits and preservation of previous exports;
+the contract lives in 05 SYS-CODEEXPORT.
+
 ---
 
 ## 4. Findings Closed By This Specification  {#COMP-FINDINGS}
 
-* **`SPEC_GOVERNANCE.md` §4 was unenforced: 121 of the 188 source files then present carried no `[SPEC CONTRACT]` sentinel** — 64% of the codebase was invisible to the routing protocol that governs it. Every file carries it now, mapped to its governing spec via `docs/README.md` §3, with co-governed files naming every binding spec and stating that reading one is not compliance. `EveryProductionSourceFileCarriesTheSpecContract` keeps it that way, so the count is enforced rather than recorded.
+* **SPECROUTING_02 (2026-11-01):** per user direction, repeated `[SPEC CONTRACT]` source headers and their presence-only architecture test are retired. Governing specs, the read-and-cite duty, file/domain maps, behavioral tests and fix-specific sentinels remain mandatory (SPEC_GOVERNANCE.md §4).
 
 * **`VERIFYHALT_01` — `VERIFY_PATCHES` was a no-op.** The subroutine built its `MISSING` list correctly and then returned. `MISSING` was **assigned in two places and read in none**, so all 133 fix sentinels were checked and the answer discarded. The mechanism `05` §4a calls "halts loudly if one is absent" could not halt, and could not be loud.
   Two defects, both closed: the unread variable, and `exit /b 1` inside a `call`ed subroutine returning from the *subroutine* rather than the script — so the call site now tests `if errorlevel 1`.

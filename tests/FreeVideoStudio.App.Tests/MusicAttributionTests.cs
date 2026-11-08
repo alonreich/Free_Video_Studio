@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -79,6 +79,44 @@ public sealed class MusicAttributionTests : IDisposable
         Assert.Contains("Credit for Song A", combined);
         Assert.Contains("Credit for Song B", combined);
         Assert.Equal(combined.IndexOf("Credit for Song A"), combined.LastIndexOf("Credit for Song A"));
+    }
+
+    [AvaloniaFact]
+    public void MusicAttributionDialog_HasTitleBarBorderAndEscapeDismissal()
+    {
+        var dlg = new MusicAttributionDialogWindow();
+        try
+        {
+            var titleBar = dlg.FindControl<Avalonia.Controls.Border>("TitleBarBorder");
+            Assert.NotNull(titleBar);
+
+            var btn = dlg.FindControl<Avalonia.Controls.Button>("GotItButton");
+            Assert.NotNull(btn);
+            Assert.True(btn.IsCancel);
+        }
+        finally
+        {
+            dlg.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void AiSetupWizard_TitleBarAndAccessibility_AreConfigured()
+    {
+        var wizard = new AiSetupWizardWindow();
+        try
+        {
+            var titleBar = wizard.FindControl<Avalonia.Controls.Border>("TitleBarBorder");
+            Assert.NotNull(titleBar);
+
+            var box = wizard.FindControl<Avalonia.Controls.TextBox>("ApiKeyInputBox");
+            Assert.NotNull(box);
+            Assert.Equal("API Key", Avalonia.Automation.AutomationProperties.GetName(box));
+        }
+        finally
+        {
+            wizard.Close();
+        }
     }
 
     [AvaloniaFact]

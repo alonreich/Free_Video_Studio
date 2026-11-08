@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -409,6 +409,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         });
 
         ButtonClick("MagicWandButton", async (_, _) => await RunMagicWandAsync());
+        ButtonClick("CropToolAiSettingsButton", async (_, _) =>
+        {
+            var vendor = Infrastructure.SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
+            if (await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, Services.AiUsage.MagicWand))
+            {
+                s_wandCloudDeclinedThisSession = false;
+            }
+        });
 
         ButtonClick("ZoomFitButton", (_, _) => ApplySnapshotZoom(null));
         ButtonClick("ZoomActualButton", (_, _) => { ApplySnapshotZoom(1.0); RecenterOnSelection(); });

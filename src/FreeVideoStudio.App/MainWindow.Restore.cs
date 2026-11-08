@@ -109,7 +109,7 @@ public partial class MainWindow
             if (!applied)
             {
                 RuntimeLog.Fail("RECOVERY", "The recovered project document could not be applied to the editor.");
-                await PreserveFailedRestoreSnapshotAsync();
+                await PreserveFailedRestoreSnapshotAsync(); // RESTOREFAIL_01
                 return;
             }
 

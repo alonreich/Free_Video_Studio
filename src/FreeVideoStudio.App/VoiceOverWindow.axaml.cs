@@ -243,7 +243,7 @@ public partial class VoiceOverWindow : Window
         public FreeVideoStudio.Core.Media.WavAudioReader Reader { get; }
         public NAudio.Wave.WaveOut Player { get; }
         public VoiceOverSession Session { get; }
-        private readonly float _previewGain;
+        private float _previewGain;
 
         public PreviewPlayer(VoiceOverSession session, float previewGain = 1.0f)
         {
@@ -258,6 +258,12 @@ public partial class VoiceOverWindow : Window
 
         /// <summary>VOLCURVE_01 — the suite master as a linear gain (level, mute, curve; 1.0 when Windows applies it).</summary>
         public void ApplyMasterVolume(int volume) => Reader.Volume = _previewGain * (float)MpvIpcClient.MasterLinearGain;
+
+        public void SetVoiceGain(double gain)
+        {
+            _previewGain = (float)VoiceOverLevel.Clamp(gain);
+            ApplyMasterVolume(MpvIpcClient.GlobalMasterVolume);
+        }
 
         /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>
         public int DriftStrikes;
@@ -352,6 +358,7 @@ public partial class VoiceOverWindow : Window
         _outputWavPath = CreateTempVoiceOverPath();
         InitializeComponent();
         CacheControls();
+        WireVoiceGain();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, BoundsKey, fitDisplayOnFirstRun: true);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         MpvIpcClient.GlobalMasterVolumeChanged += OnMasterVolumeChanged;
@@ -657,7 +664,7 @@ public partial class VoiceOverWindow : Window
             var snapshot = new List<(VoiceOverSession session, float gain)>();
             foreach (var session in _sessions)
             {
-                snapshot.Add((session, 1f));
+                snapshot.Add((session, (float)VoiceGain));
             }
 
             _ = Task.Run(() =>
@@ -685,6 +692,7 @@ public partial class VoiceOverWindow : Window
 
                     StopPreviewPlayers();
                     _previewPlayers.AddRange(built);
+                    ApplyVoiceGain();
                     OnMasterVolumeChanged(MpvIpcClient.GlobalMasterVolume);
                     _previewPlayersBuiltForCount = builtForCount;
                 });
@@ -2320,7 +2328,7 @@ public partial class VoiceOverWindow : Window
 
     private void OnKeyUpHandler(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        if (Avalonia.Controls.TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Avalonia.Controls.TextBox or Avalonia.Controls.NumericUpDown)
+        if (Avalonia.Controls.TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Avalonia.Controls.TextBox or Avalonia.Controls.NumericUpDown or VoiceOverGainSlider)
             return;
 
         if (e.Key == Avalonia.Input.Key.V)

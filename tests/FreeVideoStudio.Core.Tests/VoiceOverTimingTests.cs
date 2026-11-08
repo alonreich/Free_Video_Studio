@@ -78,7 +78,7 @@ public class VoiceOverTimingTests
     [Fact]
     public void AllTakeMetadataAndProtectionSurviveSaveReopenAndUndo()
     {
-        var takes = new[] { new VoiceOverTake("a.wav", 4, -1, 0.5, 4, "signature", true), new VoiceOverTake("b.wav", 8, 0, 2, 10) };
+        var takes = new[] { new VoiceOverTake("a.wav", 4, -1, 0.5, 4, "signature", true, Gain: 1.5), new VoiceOverTake("b.wav", 8, 0, 2, 10, Gain: 0) };
         var original = new ProjectDocument { Source = new SourceClip { FilePath = "source.mp4" }, Audio = new ProjectAudio { VoiceOverTakes = takes, VoiceOverDuckAudio = true, VoiceOverProtectFromMusic = false } };
         var restored = ProjectSerializer.Read(ProjectSerializer.Write(original), out var error);
         Assert.Null(error);
@@ -89,6 +89,11 @@ public class VoiceOverTimingTests
         history.Apply(changed, "remove take");
         Assert.Equal(original.Audio, history.Undo()!.Audio);
         Assert.Equal(changed.Audio, history.Redo()!.Audio);
+        var gainEdit = changed with { Audio = changed.Audio with { VoiceOverTakes = [takes[1] with { Gain = 0.5 }] } };
+        history.Apply(gainEdit, "voice volume");
+        Assert.NotEqual(changed.Audio, gainEdit.Audio);
+        Assert.Equal(changed.Audio, history.Undo()!.Audio);
+        Assert.Equal(gainEdit.Audio, history.Redo()!.Audio);
         Assert.Equal(new VoiceOverTake("legacy.wav", 2), Assert.Single(VoiceOverTakeJson.Read(JsonNode.Parse("[{\"path\":\"legacy.wav\",\"startSec\":2}]"))));
     }
 }

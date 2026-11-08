@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.Services;
@@ -295,7 +295,17 @@ public sealed class VersionAndUpdaterTests : IDisposable
     public void StagingFolderArgumentIsAcceptedOnlyInsideTheUpgradeStageRoot()
     {
         string root = UpgradeCoordinator.StageRoot;
-        Assert.False(root.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase), "NOTEMPEXEC_01: the worker is never staged in %TEMP%.");
+        Assert.StartsWith(_tempDir, root);
+        Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, null);
+        try
+        {
+            Assert.False(UpgradeCoordinator.StageRoot.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
+                "NOTEMPEXEC_01: production update staging must never use %TEMP%.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, _tempDir);
+        }
         string good = Path.Combine(root, "t" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(good);
         try

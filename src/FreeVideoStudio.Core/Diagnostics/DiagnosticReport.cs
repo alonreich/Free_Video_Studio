@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -39,7 +39,7 @@ namespace FreeVideoStudio.Core.Diagnostics;
 /// <para>
 /// ⚠️ <b>THE USER CAN READ EVERY BYTE OF IT, AND THAT CONSTRAINS WHAT GOES IN.</b> It is plain
 /// text, not an opaque blob. Paths are reduced to their file names, because a full path carries a
-/// Windows user name (<c>C:\Users\alonreich\...</c>) and nothing in a diagnosis needs it. The
+/// Windows user name (<c>C:\Users\&lt;user&gt;\...</c>) and nothing in a diagnosis needs it. The
 /// suite's own log privacy gate (05 §2 SYS-LOGGING) already makes this decision for log lines;
 /// this applies the same rule to everything else in the bundle.
 /// </para>

@@ -3430,6 +3430,7 @@ public partial class MusicWizardWindow : Window
 
     protected override async void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
+        CancelAiAutoFit();
         CancelAudioAnalysis();
         CancelMusicScan();
         CancelPhase3Load();
@@ -3455,6 +3456,7 @@ public partial class MusicWizardWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        CancelAiAutoFit();
         CancelSilenceAnalysis();
         DeleteSongWaveCache();
 

@@ -102,9 +102,118 @@ public sealed class AutosaveBackgroundTests : IDisposable
     }
 
 
+    [AvaloniaFact]
+    public async Task ExplicitSave_WaitsOffDispatcher_RejectsDuplicate_AndPreservesLaterEdits()
+    {
+        var store = new GatedStore();
+        var (session, clock) = await DirtySessionWithPathAsync(store, new RecordingFaults());
+        File.AppendAllText(_video, "updated source metadata");
+        store.Block();
+        int ui = Environment.CurrentManagedThreadId;
+        Task<bool> save = session.SaveAsync();
+        try
+        {
+            Assert.True(store.Entered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.False(save.IsCompleted);
+            Assert.NotEqual(ui, store.LastSaveThread);
+            Assert.False(await session.SaveAsync());
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _vm!.IsPortraitMode = !_vm.IsPortraitMode;
+                session.PushEdit("newer edit");
+            });
+        }
+        finally { store.Release(); }
+        Assert.True(await save);
+        Assert.True(session.IsDirty);
+        Assert.False(store.LastDocument!.Export.PortraitMode);
+        Assert.True(_vm!.IsPortraitMode);
+        clock.Advance(TimeSpan.FromSeconds(31));
+        session.AutosaveTick();
+        await session.PendingAutosave;
+        Assert.True(await session.OpenAsync());
+        Assert.True(session.CanUndo, "Autosave history must match the persisted source metadata, including edits during explicit saves.");
+    }
+
+    [AvaloniaFact]
+    public async Task ExplicitSave_QueuesBehindAutosave_WithoutBlockingDispatcher()
+    {
+        var store = new GatedStore();
+        var (session, clock) = await DirtySessionWithPathAsync(store, new RecordingFaults());
+        store.Block();
+        clock.Advance(TimeSpan.FromSeconds(31));
+        session.AutosaveTick();
+        Assert.True(store.Entered.Wait(TimeSpan.FromSeconds(10)));
+        _vm!.IsPortraitMode = true;
+        session.PushEdit("newer state");
+        Task<bool> save = session.SaveAsync();
+        try
+        {
+            Assert.False(save.IsCompleted);
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => Assert.True(session.IsDirty));
+        }
+        finally { store.Release(); }
+        Assert.True(await save);
+        await session.PendingAutosave;
+        Assert.True(store.LastDocument!.Export.PortraitMode);
+        Assert.Equal(3, store.SaveCount);
+        Assert.False(session.IsDirty);
+    }
+
+    [AvaloniaFact]
+    public async Task FailedCloseSave_KeepsEditorDirty_AndRetrySucceeds()
+    {
+        var store = new GatedStore();
+        var faults = new RecordingFaults();
+        var (session, _) = await DirtySessionWithPathAsync(store, faults, saveOnConfirm: true);
+        store.ThrowOnSave = true;
+        Assert.False(await session.ConfirmDiscardAsync("Close"));
+        Assert.True(session.IsDirty);
+        Assert.Single(faults.Fatals);
+        store.ThrowOnSave = false;
+        Assert.True(await session.ConfirmDiscardAsync("Close"));
+        Assert.False(session.IsDirty);
+    }
+
+    [AvaloniaFact]
+    public async Task Open_LoadRunsOffDispatcher_AndDoesNotOverwriteNewEdits()
+    {
+        var store = new GatedStore();
+        var (session, _) = await DirtySessionWithPathAsync(store, new RecordingFaults());
+        store.Block();
+        int ui = Environment.CurrentManagedThreadId;
+        Task<bool> open = session.OpenAsync();
+        try
+        {
+            Assert.True(store.Entered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.NotEqual(ui, store.LastLoadThread);
+            Assert.False(open.IsCompleted);
+            _vm!.IsPortraitMode = true;
+            session.PushEdit("edit while loading");
+        }
+        finally { store.Release(); }
+        Assert.False(await open);
+        Assert.True(_vm!.IsPortraitMode);
+        Assert.True(session.IsDirty);
+    }
+
+    [AvaloniaFact]
+    public async Task OpenFailure_IsReported_AndQueueAcceptsSubsequentSave()
+    {
+        var store = new GatedStore();
+        var faults = new RecordingFaults();
+        var (session, _) = await DirtySessionWithPathAsync(store, faults);
+        store.ThrowOnLoad = true;
+        Assert.False(await session.OpenAsync());
+        Assert.Single(faults.Fatals);
+        Assert.True(session.IsDirty);
+        Assert.True(await session.SaveAsync());
+        Assert.False(session.IsDirty);
+    }
+
     private MainViewModel? _vm;
 
-    private async Task<(ProjectSession, ManualClock)> DirtySessionWithPathAsync(GatedStore store, RecordingFaults faults)
+    private async Task<(ProjectSession, ManualClock)> DirtySessionWithPathAsync(GatedStore store, RecordingFaults faults, bool saveOnConfirm = false)
     {
         var paths = new ApplicationPaths(_root);
         _vm = new MainViewModel(paths) { LoadedVideoPath = _video };
@@ -114,7 +223,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
         var session = new ProjectSession(
             store,
             new FixedPicker(_project),
-            new SilentNotifier(),
+            new SilentNotifier(saveOnConfirm),
             faults,
             clock,
             _vm,
@@ -139,6 +248,9 @@ public sealed class AutosaveBackgroundTests : IDisposable
 
         public ManualResetEventSlim Entered { get; } = new(initialState: false);
         public volatile bool ThrowOnSave;
+        public bool ThrowOnLoad;
+        public int LastLoadThread;
+        public ProjectDocument? LastDocument;
         public int LastSaveThread { get; private set; }
         public int SaveCount => Volatile.Read(ref _saveCount);
 
@@ -151,15 +263,20 @@ public sealed class AutosaveBackgroundTests : IDisposable
             Entered.Set();
             if (ThrowOnSave) throw new IOException("Simulated disk failure.");
             _gate.Wait(TimeSpan.FromSeconds(30));
+            LastDocument = document;
             Interlocked.Increment(ref _saveCount);
             return ProjectIoResult.Ok(path);
         }
 
         public ProjectDocument? Load(string path, out string? error, out bool loadedFromBackup)
         {
-            error = "not supported";
+            LastLoadThread = Environment.CurrentManagedThreadId;
+            Entered.Set();
+            if (ThrowOnLoad) throw new IOException("Simulated load failure.");
+            _gate.Wait(TimeSpan.FromSeconds(30));
+            error = null;
             loadedFromBackup = false;
-            return null;
+            return LastDocument;
         }
 
         public string NormalizeExtension(string path) => ProjectStore.NormalizeExtension(path);
@@ -171,11 +288,11 @@ public sealed class AutosaveBackgroundTests : IDisposable
         public Task<string?> OpenFileAsync(FilePickerRequest request) => Task.FromResult<string?>(path);
     }
 
-    private sealed class SilentNotifier : IUserNotifier
+    private sealed class SilentNotifier(bool saveOnConfirm = false) : IUserNotifier
     {
         public void Notify(string text, NoticeKind kind = NoticeKind.Info) { }
         public void Alert(string title, string message) { }
-        public Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText) => Task.FromResult(false);
+        public Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText) => Task.FromResult(saveOnConfirm);
     }
 
     private sealed class RecordingFaults : IFaultSink

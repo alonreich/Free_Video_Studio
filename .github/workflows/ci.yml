@@ -6,7 +6,7 @@
 # This project enforces its architecture with executable rules: 15 ratchet tests in
 # ArchitectureRuleTests (no raw hex in shared styling, no `zoompan`, empty catches may not
 # increase, `async void` may not increase, service-locator reads may not increase, every source
-# file carries its [SPEC CONTRACT] sentinel), 169 fix sentinels in build/sentinels.txt, and ~190
+# fix sentinel resolves), 169 fix sentinels in build/sentinels.txt, and ~190
 # behavioural tests over the timeline maths, the document model and the undo stack. Invariant #8
 # says every rule that can be a test is a test — and the project honoured that.
 #
@@ -74,6 +74,14 @@ jobs:
         # (VERIFYLOOP_01, LISTCOMMENT_01, BATCHPARENS_01, VERIFYHALT_01) and every one of those was
         # a check that could not fail rather than a fix that was missing.
         run: dotnet test tests/FvsVerify.Tests/FvsVerify.Tests.csproj -c Release --logger "trx;LogFileName=fvsverify.trx"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test AI code exporter
+        # CODEEXPORT_01: source coverage, credential filtering, encoding and ten-file cap.
+        run: python -B -m unittest discover -s tests/DeveloperTools.Tests -v
 
       - name: Upload test results
         if: always()
@@ -179,7 +187,7 @@ jobs:
       - name: Test — App (the architecture ratchets)
         # ⚠️ THIS STEP IS THE POINT OF THE WHOLE FILE. ArchitectureRuleTests is where "no raw hex",
         # "no zoompan", "empty catches may not increase", "async void may not increase" and
-        # "every file carries its spec contract" are actually enforced. Before CI existed they
+        # "every fix sentinel resolves" are actually enforced. Before CI existed they
         # were enforced by remembering to run them.
         run: dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj -c Release --no-build --logger "trx;LogFileName=app.trx"
 

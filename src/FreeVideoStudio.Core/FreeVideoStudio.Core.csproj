@@ -14,6 +14,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="FreeVideoStudio.Core.Tests" />
     <InternalsVisibleTo Include="FreeVideoStudio.App.Tests" />
+    <InternalsVisibleTo Include="FreeVideoStudio.AvRegression.Tests" />
   </ItemGroup>
 
   <ItemGroup>

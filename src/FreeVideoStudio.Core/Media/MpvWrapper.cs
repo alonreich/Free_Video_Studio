@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -28,6 +28,33 @@ public static partial class MpvWrapper
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_command_string(nint ctx, string args);
+
+    [LibraryImport(LibraryName)]
+    private static partial int mpv_command_async(nint ctx, ulong replyUserdata, nint arguments);
+
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int mpv_get_property_async(nint ctx, ulong replyUserdata, string name, MpvFormat format);
+
+    public static int CommandAsync(nint handle, ulong replyUserdata, string[] arguments)
+    {
+        nint[] strings = new nint[arguments.Length];
+        nint argv = Marshal.AllocHGlobal((arguments.Length + 1) * nint.Size);
+        try
+        {
+            for (int i = 0; i < arguments.Length; i++)
+            {
+                strings[i] = Marshal.StringToCoTaskMemUTF8(arguments[i]);
+                Marshal.WriteIntPtr(argv, i * nint.Size, strings[i]);
+            }
+            Marshal.WriteIntPtr(argv, arguments.Length * nint.Size, nint.Zero);
+            return mpv_command_async(handle, replyUserdata, argv);
+        }
+        finally
+        {
+            foreach (nint value in strings) if (value != nint.Zero) Marshal.FreeCoTaskMem(value);
+            Marshal.FreeHGlobal(argv);
+        }
+    }
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_set_property_string(nint ctx, string name, string data);
@@ -62,7 +89,12 @@ public static partial class MpvWrapper
         None = 0,
         Shutdown = 1,
         LogMessage = 2,
+        GetPropertyReply = 3,
+        SetPropertyReply = 4,
+        CommandReply = 5,
+        StartFile = 6,
         EndFile = 7,
+        FileLoaded = 8,
         Seek = 20,
         PlaybackRestart = 21,
         PropertyChange = 22,

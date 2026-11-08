@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
+        xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
         x:Class="FreeVideoStudio.App.VoiceOverWindow"
         Title="Microphone Voice-Over Studio"
 
@@ -237,6 +238,30 @@
                             <StackPanel Orientation="Vertical" Spacing="15">
                                 <TextBlock Text="MICROPHONE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" />
                                 <ComboBox Name="MicDeviceComboBox" MinWidth="220" HorizontalAlignment="Stretch" PlaceholderText="No microphone found" ToolTip.Tip="Choose which microphone records the voiceover" />
+                                <!-- VOLEVEL_01: 76px travel at the minimum window height; grows with the window. -->
+                                <Border DataContext="{Binding $parent[local:VoiceOverWindow].VoiceVolume}" x:DataType="vm:VoiceOverGainViewModel" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <StackPanel Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock Text="VOICE VOLUME" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                            <TextBlock Name="VoiceGainReadout" Text="{Binding Label}" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                            <TextBlock Text="All takes · preview &amp; export" TextWrapping="Wrap" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                        </StackPanel>
+                                        <Grid Name="VoiceGainRail" Grid.Column="1" Height="120" ColumnDefinitions="Auto,Auto" ClipToBounds="False">
+                                            <Grid Grid.Column="0" Margin="0,16,10,16" IsHitTestVisible="False">
+                                                <TextBlock Text="150%" HorizontalAlignment="Right" VerticalAlignment="Top" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                                <TextBlock Text="0%" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                            </Grid>
+                                            <Grid Grid.Column="0" Margin="0,22,0,22" RowDefinitions="*,2*" IsHitTestVisible="False">
+                                                <Border Grid.Row="1" Height="2" Width="12" Background="{DynamicResource AppAccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                                            </Grid>
+                                            <Grid Grid.Column="0" Margin="0,22,0,22" RowDefinitions="*,2*">
+                                                <Button Name="VoiceGainReset" IsEnabled="{Binding CanEdit}" Command="{Binding ResetCommand}" Grid.Row="1" VerticalAlignment="Top" Margin="0,-12,10,0" Padding="4,2" MinHeight="0" Classes="Secondary" Content="100%" FontWeight="Bold" FontSize="{DynamicResource AppFontSize10}" ToolTip.Tip="Reset voice volume to its recorded level (100%)" AutomationProperties.Name="Reset voice volume to 100 percent"/>
+                                            </Grid>
+                                            <!-- Slider paints last, so its expanding thumb stays whole (SLIDER_09). -->
+                                            <controls:VoiceOverGainSlider Name="VoiceGainSlider" IsEnabled="{Binding CanEdit}" Value="{Binding Percent, Mode=TwoWay}" Grid.Column="1" Classes="CompactSlider" ClipToBounds="False" ToolTip.Tip="Voice volume: 0% silent, 100% recorded level, 150% louder. Snaps near 100%. Arrow keys adjust 1%." AutomationProperties.Name="Voice volume, 0 to 150 percent"/>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
                                 
                                 <!-- ════════════════════════════════════════════════════════
                                      VOPROT_01 — TWO INDEPENDENT PROTECTIONS, NAMED FOR WHAT THEY DO.

@@ -45,13 +45,11 @@ internal static class GitHubReleasePublisher
         try
         {
             Directory.CreateDirectory(aliasDirectory);
-            string alias = Path.Combine(aliasDirectory, LegacyProductIdentity.DownloadName);
-            File.Copy(exePath, alias, overwrite: true);
-            string bridge = Path.Combine(aliasDirectory, PreSetupDownloadName);
-            File.Copy(exePath, bridge, overwrite: true);
+
+
             string notesFile = Path.Combine(aliasDirectory, "release-notes.md");
             File.WriteAllText(notesFile, plan.Notes);
-            return PublishAssets(ReleaseAssets(exePath, alias, bridge), plan, notesFile, repo, exePath, log);
+            return PublishAssets(ReleaseAssets(exePath), plan, notesFile, repo, exePath, log);
         }
         finally
         {
@@ -178,11 +176,11 @@ internal static class GitHubReleasePublisher
     /// <summary>NODROPPER_01 — the full-installer name used by every release before the Inno Setup installer.</summary>
     internal const string PreSetupDownloadName = "FreeVideoStudio.exe";
 
-    internal static string[] ReleaseAssets(string exePath, string legacyAliasPath, string preSetupAliasPath) =>
+    internal static string[] ReleaseAssets(string exePath) =>
     [
         exePath,
-        legacyAliasPath,
-        preSetupAliasPath,
+
+
         Path.Combine("obj", "ReleaseAssets", RuntimePayloadManifest.FileName),
         .. SmartUpdateBuilder.ReleaseFiles()
     ];

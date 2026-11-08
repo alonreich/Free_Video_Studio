@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -455,8 +455,15 @@ public partial class GranularSpeedEditorWindow
         }
 
         double duration = Math.Max(0.5, endSec - startSec);
+        string videoPath = _edit.VideoPath;
+        if (_edit.IsMergeMode && _mergeSource != null)
+        {
+            var clip = _mergeSource.Clips.FirstOrDefault(c => startSec * 1000 >= c.StartMs && endSec * 1000 <= c.EndMs + MergeEditorSource.FrameMs);
+            if (clip != null) videoPath = clip.Path;
+        }
+
         var request = new CommentaryRequest(
-            _edit.VideoPath,
+            videoPath,
             startSec,
             duration,
             config.Vendor,
