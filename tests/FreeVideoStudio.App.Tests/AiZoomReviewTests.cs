@@ -82,7 +82,7 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void Redact_RemovesRawGoogleKeysAnywhere()
     {
-        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000", null); // SECRETSCAN_ALLOW
+        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000000000", null); // SECRETSCAN_ALLOW
         Assert.DoesNotContain("AIza", red);
     }
 

@@ -1,4 +1,4 @@
-﻿# SPECIFICATION 05: SYSTEM LIFECYCLE & STORAGE
+# SPECIFICATION 05: SYSTEM LIFECYCLE & STORAGE
 
 ## Voiceover preview and take ownership {#SYS-VOICE-TIMING}
 `VOSAMPLE_01` / `VOWRITE_01`: bounded opening captures settle before finalization; positive partial audio is retained. Recovery stores accepted sample duration and its original output offset/review flag. Apply must not inflate a positive sub-millisecond tail to one millisecond. WAV-write failures stop further writes and preserve the last acknowledged prefix; failed header repair remains a recovery error.
