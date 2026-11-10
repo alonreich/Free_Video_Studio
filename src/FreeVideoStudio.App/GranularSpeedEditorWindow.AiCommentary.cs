@@ -237,6 +237,7 @@ public partial class GranularSpeedEditorWindow
         commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
 
         string effectiveVideoPath = _edit.VideoPath;
+        MergeEditorClip? mergeClip = null;
         if (_edit.IsMergeMode)
         {
             if (_edit.SelectedSegment is { } mSeg && _mergeSource != null)
@@ -249,6 +250,7 @@ public partial class GranularSpeedEditorWindow
                     return;
                 }
                 effectiveVideoPath = clip.Path;
+                mergeClip = clip;
             }
             else if (!_edit.HasSelectedSegment)
             {
@@ -270,8 +272,9 @@ public partial class GranularSpeedEditorWindow
 
         double startSec;
         double durationSec;
+        bool segmentOnly = _edit.IsMergeMode || (!dialogResult.EntireTimeline && _edit.SelectedSegment != null);
 
-        if (!dialogResult.EntireTimeline && _edit.SelectedSegment is { } seg)
+        if (segmentOnly && _edit.SelectedSegment is { } seg)
         {
             startSec = (_edit.TrimStartMs + seg.StartMs) / 1000.0;
             durationSec = (seg.EndMs - seg.StartMs) / 1000.0;
@@ -285,7 +288,17 @@ public partial class GranularSpeedEditorWindow
             durationSec = Math.Max(0.1, (endMs - _edit.TrimStartMs) / 1000.0);
         }
 
-        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath))
+        double requestStartSec = startSec;
+        double timelineOffsetSec = _edit.TrimStartMs / 1000.0;
+
+        if (_edit.IsMergeMode && mergeClip != null && _edit.SelectedSegment is { } mSegment)
+        {
+            // AIMERGE_01 — convert merged timeline offset to clip local source time
+            requestStartSec = mergeClip.ToSourceUs(mSegment.StartMs) / 1_000_000.0;
+            timelineOffsetSec = requestStartSec - startSec;
+        }
+
+        if (string.IsNullOrWhiteSpace(effectiveVideoPath) || !File.Exists(effectiveVideoPath))
         {
             await ErrorReporter.ShowAsync(this, "File Not Found", "The video clip file could not be found.");
             return;
@@ -341,7 +354,7 @@ public partial class GranularSpeedEditorWindow
 
         var request = new CommentaryRequest(
             effectiveVideoPath,
-            startSec,
+            requestStartSec,
             durationSec,
             commentaryConfig.Vendor,
             model,
@@ -352,13 +365,12 @@ public partial class GranularSpeedEditorWindow
             dialogResult.Position,
             dialogResult.CustomNotes,
             Timeline: OutTimeline(),
-            TimelineOffsetSec: _edit.TrimStartMs / 1000.0,
+            TimelineOffsetSec: timelineOffsetSec,
             Personality: dialogResult.EffectivePersonality,
             KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
             Look: dialogResult.Look,
             Size: dialogResult.Size);
 
-        bool segmentOnly = !dialogResult.EntireTimeline && _edit.SelectedSegment != null;
         RuntimeLog.Info("AiCommentary",
             $"Run started: {(segmentOnly ? "selected block" : "whole video")} {startSec:0.###}s + {durationSec:0.###}s of source, " +
             $"{plannedParts} part(s), {commentaryConfig.Vendor} {model}, tone {dialogResult.Tone}, base speed {_edit.BaseSpeed:0.00}x, " +
@@ -392,9 +404,27 @@ public partial class GranularSpeedEditorWindow
                 return;
             }
 
+            CaptionTrack finalTrack = generatedTrack;
+            if (_edit.IsMergeMode && mergeClip != null && generatedTrack.Lines != null)
+            {
+                double timeShiftSec = startSec - requestStartSec;
+                var remappedLines = generatedTrack.Lines.Select(l =>
+                {
+                    double s = l.SourceStartSec + timeShiftSec;
+                    double e = l.SourceEndSec + timeShiftSec;
+                    return l with
+                    {
+                        SourceStartSec = s,
+                        SourceEndSec = e,
+                        Words = CaptionTimeline.DistributeWords(l.Text, s, e)
+                    };
+                }).ToList();
+                finalTrack = generatedTrack with { Lines = remappedLines };
+            }
+
             CaptionTrack candidate = segmentOnly
-                ? CommentaryService.MergeSegment(_edit.CaptionTrack, generatedTrack, startSec, startSec + durationSec)
-                : generatedTrack;
+                ? CommentaryService.MergeSegment(_edit.CaptionTrack, finalTrack, startSec, startSec + durationSec)
+                : finalTrack;
 
             BeginAiCommentaryPreview(candidate, startSec);
             if (AiCommentaryPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiCommentary", usageLines);

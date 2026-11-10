@@ -1,4 +1,4 @@
-﻿using Avalonia.Platform.Storage;
+using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -167,6 +167,7 @@ public partial class MainWindow : Window
 
     private bool _draggingStartMarker = false;
     private bool _draggingEndMarker = false;
+    private bool _userExplicitMarkEnd = false;
     private bool _qualitySliderInitialized = false;
     private bool _draggingMusicStart = false;
     private bool _draggingMusicEnd = false;
@@ -1738,12 +1739,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             if (timeRemaining != null) timeRemaining.Text = "-" + FormatTime(TimeSpan.FromSeconds(Math.Max(0, dur - displayTime)));
         }
 
-        if (ActiveVideoHost.IpcClient.IsEof)
+        if (ActiveVideoHost.IpcClient.IsEof || IsMainPreviewAtEnd())
         {
             if (!_mainEndParkIssued)
             {
                 _mainEndParkIssued = true;
-                TransportTrace("tick-eof-park", "pause");
+                TransportTrace("tick-end-park", "pause");
                 _ = ActiveVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
             }
         }
@@ -1863,12 +1864,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     }
 
 
-    /// <summary>MAINEND_01 — the last playable second: MARK END when trimmed, else the duration.</summary>
+    /// <summary>MAINEND_01 — the last playable second: the clip duration (preview plays past MARK END to inspect cut footage).</summary>
     private double MainTimelineEndSeconds()
     {
         double duration = ActiveVideoHost?.IpcClient?.Duration ?? 0;
-        double markEnd = _trimEndMs / 1000.0;
-        if (markEnd > _trimStartMs / 1000.0 && (duration <= 0 || markEnd <= duration)) return markEnd;
+
+
         return duration;
     }
 
@@ -1908,7 +1909,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             return;
         }
 
-        if (IsMainPreviewAtEnd())
+        if (IsMainPreviewAtEnd() && !_userExplicitMarkEnd)
         {
             double restartAt = Math.Max(0, _trimStartMs / 1000.0);
             RuntimeLog.Info("UI",
@@ -1918,6 +1919,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             _ = SeekInternal(restartAt);
         }
 
+        _userExplicitMarkEnd = false;
         TransportTrace("user-transport", "play");
         _ = ipc.SetPropertyAsync("pause", "no");
     }

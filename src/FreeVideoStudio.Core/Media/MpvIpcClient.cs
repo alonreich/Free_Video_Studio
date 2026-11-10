@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
@@ -135,6 +135,17 @@ public class MpvIpcClient : IDisposable
     public bool IsPaused { get => _isPaused; private set => _isPaused = value; }
     /// <summary>Thread-safe EOF state (updated by event loop, read by UI).</summary>
     public bool IsEof { get => _isEof; private set => _isEof = value; }
+
+    internal bool IsSimulatedForTesting { get; set; }
+
+    internal void SetStateForTesting(double currentTime, double duration, bool isPaused, bool isEof)
+    {
+        IsSimulatedForTesting = true;
+        CurrentTime = Math.Max(0, currentTime);
+        Duration = Math.Max(0, duration);
+        IsPaused = isPaused;
+        IsEof = isEof;
+    }
 
     /// <summary>
     /// THROTTLE_01 — true while ANY live <see cref="MpvIpcClient"/> has a file loaded and is
@@ -605,8 +616,29 @@ public class MpvIpcClient : IDisposable
     {
         lock (_seekGate)
         {
-            if (_disposed || _mpvHandle == 0 || _requiresReload)
+            if (_disposed || _requiresReload)
                 return Task.FromResult(new MpvCommandResult(_disposed ? MpvCommandStatus.Disposed : MpvCommandStatus.Unavailable));
+
+            if (_mpvHandle == 0)
+            {
+                if (IsSimulatedForTesting)
+                {
+                    if (args.Length > 2 && args[0] == "set" && args[1] == "pause")
+                    {
+                        IsPaused = args[2] == "yes";
+                        if (!IsPaused) IsEof = false;
+                    }
+                    else if (args.Length > 1 && args[0] == "seek" && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double target))
+                    {
+                        CurrentTime = Math.Max(0, target);
+                        IsEof = false;
+                    }
+                    return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Accepted));
+                }
+                return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Unavailable));
+            }
+
+
             bool seek = readProperty == null && args[0] == "seek";
             bool absolute = seek && args.Length > 2 && args[2].Contains("absolute", StringComparison.Ordinal);
             string key = string.Join("\0", args);
@@ -681,7 +713,7 @@ public class MpvIpcClient : IDisposable
     {
         lock (_seekGate)
         {
-            if (name == "pause" && value == "no" && IsEof && !_seekInProgress)
+            if (name == "pause" && value == "no" && IsEof && !_seekInProgress && (Duration <= 0 || CurrentTime >= Duration - 0.05))
                 _ = SendCommandAsync("seek", 0, "absolute");
             return Enqueue(["set", name, value]);
         }

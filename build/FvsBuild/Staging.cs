@@ -38,18 +38,20 @@ internal static class Staging
 
     private static readonly string[] StarterMp3 =
     [
-        "Bonnie Tyler - Holding Out For A Hero.mp3",
+        // MEDIALICENSE_01 — only royalty-free tracks; the attribution .txt travels with its song.
+        "!_Janji - Heroes Tonight (No CopyRight).mp3",
+        "!_Janji - Heroes Tonight (No CopyRight).txt",
         "Cool Dance Background Music (No CopyRights).mp3",
     ];
 
     private static readonly string[] StarterMeme =
     [
-        "What the fuck am I doing here (Robert Deniro) - Landscape.mp4",
-        "What the fuck am I doing here (Robert Deniro) - Portrait.mp4",
-        "Donald Trump - He Died like a Dog.mp4",
-        "I will find you and I will kill you.mp4",
-        "Terminated.png",
-        "What The Fuck.jpg",
+        // MEDIALICENSE_01 — only original, generated media ships (no third-party film/TV/news clips).
+        "Countdown - Landscape.mp4",
+        "Countdown - Portrait.mp4",
+        "Quick Flash - Portrait.mp4",
+        "Sunset Gradient.png",
+        "Test Card.jpg",
         "oopsie.png",
     ];
 

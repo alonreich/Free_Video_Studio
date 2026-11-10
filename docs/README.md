@@ -1,4 +1,4 @@
-﻿# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS — START HERE
+# FREE VIDEO STUDIO: ARCHITECTURAL SPECIFICATIONS — START HERE
 
 > **This file is the ONE entry point for every developer and AI agent** (ONBOARD_01). `project_structure.txt`
 > and `AGENTS.md` at the repository root only point here. Read §0 completely before you inspect or change
@@ -209,7 +209,7 @@ CoreLogger.cs  CrashLogDigest.cs  CropConfigDefaults.cs  CropConfigStore.cs  Dep
 ⚠dev.cmd  DiskSpaceGuard.cs  FvsBuild/Program.cs  ⚠GranularSpeedEditorWindow.axaml.cs
 IpcProtocol.cs  ⚠LaneDiskCache.cs  LatestEstimateWorker.cs  ⚠MainWindow.ToolReturn.cs
 MaskOverlayManager.cs  MergerAutosaveStore.cs  ⚠MergerSession.cs  NamedPipeStateClient.cs
-NamedPipeStateServer.cs  ProjectRecoveryService.cs  ⚠RecoveryManager.cs  RuntimeLog.cs
+NamedPipeStateServer.cs  PipeAccess.cs  ProjectRecoveryService.cs  ⚠RecoveryManager.cs  RuntimeLog.cs
 SettingsManager.cs  SingleInstanceGuard.cs  StateTransferStore.cs  ⚠StorageProviderFilePicker.cs  ⚠ToolNavigator.cs
 GeminiClient.cs  IAiVisionProvider.cs  GeminiProvider.cs  ClaudeProvider.cs  OpenAiProvider.cs  AiVisionProviders.cs  AiFrameSequenceExtractor.cs  CommentaryService.cs  SecretProtector.cs  SecretLeakTests.cs
 UiStateStore.cs  ⚠UpdateService.cs  ⚠VideoMergerWindow.Session.cs  ⚠WindowBoundsHelper.cs
@@ -279,7 +279,7 @@ AI bake-off tool:     .\tools\AiBakeOff\AiBakeOff.csproj (AIBAKEOFF_01: develope
                       not in the solution, not shipped)
 A/V regression gate:  .\tests\run-av-tests.cmd -> .\tests\FreeVideoStudio.AvRegression.Tests (AVREG_01, section 0.3a):
                       38 scenarios S01-S38 on the real player (PlayerRig/PlaybackProbe) and real exports
-                      (ExportRig/Verify/MergerRig) of generated marker media; output in tests\AvRegression (git-ignored).
+                      (ExportRig/Verify/MergerRig) of generated marker media; output in logs\ and tests\AvRegression (git-ignored).
                       TestHarness.ps1 validates nonempty, complete TRX results and required scenarios; skipped tests fail the gate.
                       TestHarness.Tests.ps1 guards parsing, exclusive runs and allowlisted output cleanup.
 All-suite runner:     .\tests\run-all-tests.cmd adds MediaPipelineChecks exports/decoder soak and DesktopPreviewSmoke.

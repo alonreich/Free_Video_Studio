@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -205,6 +205,7 @@ public sealed class MpvVideoView : Control, IDisposable
     private int _renderTextureH;
 
     public MpvIpcClient? IpcClient { get; private set; }
+    internal void SetIpcClientForTesting(MpvIpcClient client) => IpcClient = client;
 
     private async Task InitializeMpvAsync(string mpvPath)
     {

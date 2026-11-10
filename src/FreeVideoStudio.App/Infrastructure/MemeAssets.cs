@@ -61,6 +61,8 @@ public static class MemeAssets
     /// "What the fuck am I doing here (Robert Deniro).mp4" was split into Landscape and Portrait
     /// files, both lists kept the old name, and staging refused to build.
     /// ArchitectureRuleTests.StarterListsMatchTheStagingLists keeps the two lists identical.
+    /// MEDIALICENSE_01 — every name here must be original or royalty-free media: the installer and
+    /// the in-app "Download more" library (raw files of this public repository) redistribute them.
     /// Deliberately a handful — the full mp3 library alone is 197 MB; everything else is one click
     /// away via the per-category download buttons.
     /// </summary>
@@ -69,17 +71,17 @@ public static class MemeAssets
         {
             [SongCategory] = new[]
             {
-                "Bonnie Tyler - Holding Out For A Hero.mp3",
+                "!_Janji - Heroes Tonight (No CopyRight).mp3",
+                "!_Janji - Heroes Tonight (No CopyRight).txt",
                 "Cool Dance Background Music (No CopyRights).mp3",
             },
             [MemeCategoryFolder] = new[]
             {
-                "What the fuck am I doing here (Robert Deniro) - Landscape.mp4",
-                "What the fuck am I doing here (Robert Deniro) - Portrait.mp4",
-                "Donald Trump - He Died like a Dog.mp4",
-                "I will find you and I will kill you.mp4",
-                "Terminated.png",
-                "What The Fuck.jpg",
+                "Countdown - Landscape.mp4",
+                "Countdown - Portrait.mp4",
+                "Quick Flash - Portrait.mp4",
+                "Sunset Gradient.png",
+                "Test Card.jpg",
                 "oopsie.png",
             },
         };
@@ -96,7 +98,8 @@ public static class MemeAssets
     private static readonly HashSet<string> PrependByDefault =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "I will find you and I will kill you.mp4",
+            "Countdown - Landscape.mp4",
+            "Countdown - Portrait.mp4",
         };
 
     /// <summary>True when this meme should default to playing BEFORE the video.</summary>

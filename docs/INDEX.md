@@ -413,6 +413,7 @@ Voiceover timing additions (all listed specs govern these files):
   OwnedLruCache.cs                           04
   ViewportThumbnailLoader.cs                 04
   NamedPipeStateClient.cs                    05
+  PipeAccess.cs                              05
   PreviewDetachController.cs                 04
   PreviewMonitorWindow.axaml                 04
   SingleInstanceGuard.cs                     05
@@ -1254,6 +1255,7 @@ FfmpegPcmPipe                                04 §9 UI-MERGERQUEUE | 02 §6 AUD-
 MusicEnergyAnalysis                          02 §6 AUD-DIALOGS
 UIIPC_01                                     05 §4d SYS-IPCLIFETIME | 05 §3 SYS-WINSTATE
 IPCDEADLINE_01                               05 §4d SYS-IPCLIFETIME
+PIPEAUTH_01                                  05 §4d SYS-IPCLIFETIME
 SessionStateWriter                           05 §4d SYS-IPCLIFETIME
 SaveBoundsOnClose                            05 §3 SYS-WINSTATE
 FilmStripSource                              04 §9 UI-MERGERQUEUE

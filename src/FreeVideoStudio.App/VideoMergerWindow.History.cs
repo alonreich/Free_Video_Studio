@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -137,6 +137,7 @@ public partial class VideoMergerWindow
             _musicQueueSignature = "";
 
             MergerSession.SyncQueue(VideoQueue, _clipIds, target.Clips);
+            _captionTrack = target.Captions;
             _lastEdl = target;
 
             {

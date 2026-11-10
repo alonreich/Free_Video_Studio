@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -156,7 +156,7 @@ public partial class VideoMergerWindow
         bool holding = TickPreviewEffects(ipc, ref merged);
 
         if (!holding && _clipLoadGraceTicks == 0 && !_mergedEndReached
-            && (ipc.IsEof || merged >= total - 0.03) && (!ipc.IsPaused || ipc.IsEof))
+            && ((ipc.IsEof && merged >= total - 0.25) || merged >= total - 0.03) && (!ipc.IsPaused || ipc.IsEof))
         {
             _mergedEndReached = true;
             _ = ipc.SetPropertyAsync("pause", "yes");
@@ -191,7 +191,7 @@ public partial class VideoMergerWindow
 
         var markers = MarkersCanvasCtl;
         if (markers != null && !_draggingThumbMarker && !_draggingClipChip && !_chipPressed)
-            DrawMergedTimeline(markers, this.FindControl<Canvas>("TimelineScaleCanvas"));
+            DrawMergedTimeline(markers, ScaleCanvasCtl);
 
         UpdateMergerThumbnailButton();
         UpdateMergerMusicPreview(PreviewOutputSec(merged), playing);
@@ -201,8 +201,9 @@ public partial class VideoMergerWindow
 
     private void DrawMergedTimeline(Canvas markers, Canvas? scale)
     {
-        double w = markers.Bounds.Width;
-        double h = Math.Max(24, markers.Bounds.Height);
+        double w = markers.Bounds.Width > 0 ? markers.Bounds.Width : markers.Width;
+        if (w <= 0 && BlocksLaneCtl != null) w = BlocksLaneCtl.Bounds.Width > 0 ? BlocksLaneCtl.Bounds.Width : BlocksLaneCtl.Width;
+        double h = Math.Max(24, markers.Bounds.Height > 0 ? markers.Bounds.Height : markers.Height);
         double total = _timeline.TotalSec;
         if (w <= 0 || total <= 0) return;
 

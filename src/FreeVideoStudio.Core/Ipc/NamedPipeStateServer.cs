@@ -32,6 +32,7 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ManualResetEventSlim _readyEvent = new(false);
     private Task? _listenTask;
+    private int _liveConnections;
     private bool _isDisposed;
     private bool _isDirty;
     private System.Timers.Timer? _debounceTimer;
@@ -160,18 +161,23 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
             NamedPipeServerStream? serverStream = null;
             try
             {
-                serverStream = new NamedPipeServerStream(
+                // PIPEAUTH_01 — owner-only DACL; FirstPipeInstance whenever none of OUR instances is
+                // live, so this server can never silently join a pipe another account created first.
+                PipeOptions options = Volatile.Read(ref _liveConnections) == 0
+                    ? PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance
+                    : PipeOptions.Asynchronous;
+                serverStream = PipeAccess.CreateServer(
                     IpcProtocol.PipeName,
                     PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    options);
 
                 _readyEvent.Set();
 
                 await serverStream.WaitForConnectionAsync(ct).ConfigureAwait(false);
 
                 NamedPipeServerStream connection = serverStream;
+                Interlocked.Increment(ref _liveConnections);
                 _ = Task.Run(async () =>
                 {
                     using (connection)
@@ -184,8 +190,12 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
                         {
                             CoreLogger.Warn("IpcServer", $"Error handling client connection: {ex.Message}");
                         }
+                        finally
+                        {
+                            Interlocked.Decrement(ref _liveConnections);
+                        }
                     }
-                }, ct);
+                }, CancellationToken.None);
             }
             catch (OperationCanceledException swallowed2)
             {

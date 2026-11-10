@@ -263,20 +263,17 @@ public static class SingleInstanceGuard
     ///   3. Payloads are length-capped and must look like a local video path
     ///      (<see cref="IsAcceptableHandoffPath"/>).
     ///
-    /// NOTE ON THE ACL. A `PipeSecurity` DACL would be worthwhile defence-in-depth on top of the
-    /// above, but `PipeSecurity`/`NamedPipeServerStreamAcl` live in the separate
-    /// `System.IO.Pipes.AccessControl` NuGet package, which this project does not reference. Adding
-    /// a package to the NativeAOT single-EXE build is not a change worth making blind, so it is
-    /// deliberately left out: an untrusted local process can still CONNECT, but it is identified
-    /// and disconnected without being read, which removes the exploitable behaviour. If that
-    /// package is ever added, switch this method to `NamedPipeServerStreamAcl.Create` with a DACL
-    /// granting the current user and LocalSystem only.
+    ///   4. PIPEAUTH_01 — the pipe carries an owner-only DACL (current user + LocalSystem, via
+    ///      <see cref="FreeVideoStudio.Core.Ipc.PipeAccess.CreateServer"/>, inbox in net9.0-windows)
+    ///      and is created with <c>FirstPipeInstance</c> (one instance at a time, so none of ours
+    ///      is ever live here): it can never join a pipe another account squatted first. The
+    ///      sending side verifies the server's account before writing (<see cref="TrySendHandoff"/>).
     /// </summary>
     private static NamedPipeServerStream CreateSecuredPipeServer()
     {
-        return new NamedPipeServerStream(
+        return FreeVideoStudio.Core.Ipc.PipeAccess.CreateServer(
             PipeName, PipeDirection.In, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance);
     }
 
     /// <summary>
@@ -340,6 +337,13 @@ public static class SingleInstanceGuard
         {
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(HandoffTimeoutMs);
+
+            // PIPEAUTH_01 — the path is handed only to a listener running as this same user.
+            if (!FreeVideoStudio.Core.Ipc.PipeAccess.IsServerTrusted(client))
+            {
+                RuntimeLog.Fail("SingleInstance", "Refused the handoff: the listening pipe belongs to a different user account.");
+                return false;
+            }
 
             using var writer = new StreamWriter(client);
             writer.Write(videoPath ?? string.Empty);

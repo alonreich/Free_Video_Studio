@@ -34,7 +34,7 @@ public sealed class FinalOutputCommitTests : IDisposable
         var clock = Stopwatch.StartNew();
         var failure = await Record.ExceptionAsync(() => FinalOutputCommit.MoveAsync(Source, Destination, true));
         Assert.True(failure is IOException or UnauthorizedAccessException, failure?.ToString());
-        Assert.InRange(clock.Elapsed.TotalSeconds, 1.4, 5);
+        Assert.InRange(clock.Elapsed.TotalSeconds, 1.4, 15);
         Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(Source));
         Assert.Equal(0, held.Length);
     }

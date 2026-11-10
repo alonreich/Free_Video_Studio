@@ -1,4 +1,4 @@
-﻿
+
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -54,6 +54,8 @@ public partial class VideoMergerWindow
     private Canvas? WaveLaneCtl => _cWaveLane ??= this.FindControl<Canvas>("MergerWaveformLane");
     private Canvas? _cBlocksLane;
     private Canvas? BlocksLaneCtl => _cBlocksLane ??= this.FindControl<Canvas>("MergerClipBlocksLane");
+    private Canvas? _cScaleCanvas;
+    private Canvas? ScaleCanvasCtl => _cScaleCanvas ??= this.FindControl<Canvas>("TimelineScaleCanvas");
 
     /// <summary>AOTCLEAN_01 — in-app reorder drag payload (application-private format; replaces the obsolete string key "VideoItem").</summary>
     private static readonly Avalonia.Input.DataFormat<string> VideoItemFormat = Avalonia.Input.DataFormat.CreateStringApplicationFormat("fvs.merger.video-item");

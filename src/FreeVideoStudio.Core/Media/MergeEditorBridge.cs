@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -33,7 +33,8 @@ public sealed record MergeEditorState(
     double FreezeDurationS,
     IReadOnlyList<CutRange> Cuts,
     IReadOnlyList<MemePlacement> Memes,
-    double BaseSpeed);
+    double BaseSpeed,
+    CaptionTrack? Captions = null);
 
 /// <summary>The whole merge as ONE editor source.</summary>
 public sealed class MergeEditorSource
@@ -229,7 +230,7 @@ public sealed class MergeEditorSource
         segments.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         cuts.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));
-        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed);
+        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed, edl.Captions);
     }
 
 
@@ -301,7 +302,12 @@ public sealed class MergeEditorSource
                 Effects = old with { Speed = speed[i], Cuts = cuts[i], Memes = memes[i], Freezes = keptFreezes },
             };
         }
-        return edl with { Clips = clips, BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed };
+        return edl with
+        {
+            Clips = clips,
+            BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed,
+            Captions = st.Captions,
+        };
     }
 
     /// <summary>

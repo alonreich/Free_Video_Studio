@@ -1275,3 +1275,11 @@ CAPTIONFIT_01=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
 CLEANUPBOUND_01=src/FreeVideoStudio.Core/Infrastructure/SafeDirectoryCleanup.cs
 LEGACYKEEP_01=src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs
 PROJECTIO_01=src/FreeVideoStudio.App/Services/ProjectSession.cs
+# PIPEAUTH_01 — owner-only pipe DACL, FirstPipeInstance and client-side server identity check (05 SYS-IPCLIFETIME).
+PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/PipeAccess.cs
+PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
+PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs
+PIPEAUTH_01=src/FreeVideoStudio.App/SingleInstanceGuard.cs
+# MEDIALICENSE_01 — only original/royalty-free media is staged into the installer and served by Download more (03 STARTER_01).
+MEDIALICENSE_01=build/FvsBuild/Staging.cs
+MEDIALICENSE_01=src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs
