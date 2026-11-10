@@ -310,5 +310,43 @@ public class MergerSessionTests
         Assert.Equal(1, ids.IndexOf(id3));
         Assert.Equal(-1, ids.IndexOf(id2));
     }
+
+    [Fact]
+    public void MergerSession_Captions_PreservedInCapture_AndTrackedInDescribeChange()
+    {
+        var ids = new ClipIdList();
+        ids.Insert(0, 1);
+        var state = new MergerUiState { Paths = new[] { @"C:\c\a.mp4" }, Ids = ids.Ids };
+        var initialEdl = MergerSession.Capture(state, Analysis, FileId, timeline: null, previous: null);
+        Assert.Null(initialEdl.Captions);
+
+        var track = new CaptionTrack(
+            CaptionStyle.PopIn, CaptionPosition.Top, CaptionTone.Hype, "en",
+            new[] { new CaptionLine(1, 0.0, 2.0, "Intro narration") });
+
+        var stateWithCaptions = state with { Captions = track };
+        var edlWithCaptions = MergerSession.Capture(stateWithCaptions, Analysis, FileId, timeline: null, previous: initialEdl);
+        Assert.NotNull(edlWithCaptions.Captions);
+        Assert.Equal(track, edlWithCaptions.Captions);
+
+        var (labelAdd, _) = MergerSession.DescribeChange(initialEdl, edlWithCaptions);
+        Assert.Equal("add captions", labelAdd);
+
+        var (labelRemove, _) = MergerSession.DescribeChange(edlWithCaptions, initialEdl);
+        Assert.Equal("remove captions", labelRemove);
+
+        var modifiedTrack = track with { Tone = CaptionTone.Chill };
+        var edlWithModifiedCaptions = edlWithCaptions with { Captions = modifiedTrack };
+        var (labelEdit, _) = MergerSession.DescribeChange(edlWithCaptions, edlWithModifiedCaptions);
+        Assert.Equal("edit captions", labelEdit);
+
+        var nextEdl = MergerSession.Capture(state, Analysis, FileId, timeline: null, previous: edlWithCaptions);
+        Assert.NotNull(nextEdl.Captions);
+        Assert.Equal(track, nextEdl.Captions);
+
+        // MERGER_CAPTIONS_02 — an explicit clear removes the previous track instead of resurrecting it.
+        var cleared = MergerSession.Capture(state with { ClearCaptions = true }, Analysis, FileId, timeline: null, previous: edlWithCaptions);
+        Assert.Null(cleared.Captions);
+    }
 }
 

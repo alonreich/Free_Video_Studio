@@ -1108,7 +1108,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             if (!string.IsNullOrEmpty(startPath) && Directory.Exists(startPath))
             {
-                try { Environment.CurrentDirectory = startPath; } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
                 options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(new Uri(startPath));
             }
         }

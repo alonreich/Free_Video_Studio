@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -124,7 +124,8 @@ public partial class VideoMergerWindow
 
             var editor = await GranularSpeedEditorWindow.CreateAsync(
                 source.MpvUrl, 0, source.TotalMs, state.Segments, state.BaseSpeed,
-                state.FreezeTimeMs, state.FreezeDurationS, portrait, res, null, state.Cuts, state.Memes);
+                state.FreezeTimeMs, state.FreezeDurationS, portrait, res, null, state.Cuts, state.Memes,
+                existingCaptions: state.Captions ?? _captionTrack ?? CurrentEdl.Captions);
             editor.AvailableMemes = memes;
             editor.MergeSource = source;
             await editor.ShowDialog(this);
@@ -135,10 +136,12 @@ public partial class VideoMergerWindow
                 return;
             }
 
+            _captionTrack = editor.ResultCaptionTrack;
             var result = new MergeEditorState(
                 editor.ResultSegments.ToList(), editor.ResultFreezeTimeMs, editor.ResultFreezeDurationS,
-                editor.ResultCuts.ToList(), editor.ResultMemes.ToList(), editor.ResultBaseSpeed);
-            var next = source.FromEditor(result, CurrentEdl);
+                editor.ResultCuts.ToList(), editor.ResultMemes.ToList(), editor.ResultBaseSpeed,
+                editor.ResultCaptionTrack);
+            var next = source.FromEditor(result, CurrentEdl) with { Captions = editor.ResultCaptionTrack };
 
             _lastEdl = next;
             if (Math.Abs(_baseSpeed - next.BaseSpeed) > 0.001)

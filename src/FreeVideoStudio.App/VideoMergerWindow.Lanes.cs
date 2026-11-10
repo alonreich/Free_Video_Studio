@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -181,6 +181,7 @@ public partial class VideoMergerWindow
             RuntimeLog.Info("MERGER", $"Lanes: {filmTiles.Count - filmTodo.Count}/{filmTiles.Count} filmstrip and {waveTiles.Count - waveTodo.Count}/{waveTiles.Count} waveform tiles from memory; the rest from the disk cache or ffmpeg, in the background.");
         _ = _filmRunner.RunAsync(filmTodo, BuildFilmTileAsync, LaneParallelism);
         _ = _waveRunner.RunAsync(waveTodo, BuildWaveTileAsync, LaneParallelism);
+        RedrawTimelineSelection();
     }
 
     /// <summary>WAVEPIXEL_01 — the waveform lane's presenter (created with the lane).</summary>

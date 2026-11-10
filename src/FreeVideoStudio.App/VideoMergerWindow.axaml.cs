@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -2009,6 +2009,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 {
                     VideoQueue.Move(oldIndex, targetIndex);
                     SelectQueueRow(targetIndex, preview: false);
+                    RedrawTimelineSelection();
                 }
             }
             var videoList = VideoListCtl;

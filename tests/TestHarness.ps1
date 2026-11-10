@@ -1,7 +1,7 @@
 # TESTGATE_01 / TESTCLEAN_01. docs/README.md#GOV-AVGATE, 05#SYS-STORAGE-TABLE.
 # Definitions only: importing this file never launches a suite or deletes output.
 function Get-TestOutputRoots([string]$RepositoryRoot) {
-    foreach ($relative in @('TestResults', 'artifacts\code-export-tests', 'tests\AvRegression', 'tests\MediaPipelineChecks\artifacts',
+    foreach ($relative in @('logs', 'TestResults', 'artifacts\code-export-tests', 'tests\AvRegression', 'tests\MediaPipelineChecks\artifacts',
         'tests\FreeVideoStudio.Core.Tests\TestResults', 'tests\FreeVideoStudio.App.Tests\TestResults',
         'tests\FreeVideoStudio.AvRegression.Tests\TestResults', 'tests\FvsVerify.Tests\TestResults')) {
         [IO.Path]::GetFullPath((Join-Path $RepositoryRoot $relative))
@@ -70,7 +70,7 @@ function New-TestFailure([string]$Suite, [string]$Message) {
 function Read-TestResults([string]$Path, [string]$Suite, [int]$ExitCode,
                           [string[]]$RequiredScenarios = @()) {
     $records = @()
-    if ($ExitCode -ne 0) { $records += New-TestFailure $Suite "test process exited $ExitCode; see tests\AvRegression\last-run.log" }
+    if ($ExitCode -ne 0) { $records += New-TestFailure $Suite "test process exited $ExitCode; see logs\last-run.log" }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return @($records) + @(New-TestFailure $Suite 'Missing test results; suite did not complete.')
     }

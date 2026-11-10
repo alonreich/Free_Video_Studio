@@ -10,9 +10,10 @@ param([ValidateSet('full', 'quick', 'all')][string]$Mode = 'full')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 $root = Split-Path -Parent $PSScriptRoot
+$logsDir = Join-Path $root 'logs'
 $out = Join-Path $root 'tests\AvRegression'
-$results = Join-Path $out 'results'
-$runLog = Join-Path $out 'last-run.log'
+$results = Join-Path $logsDir 'results'
+$runLog = Join-Path $logsDir 'last-run.log'
 $started = Get-Date
 $lease = $null
 $oldNative = $env:FVS_TEST_NATIVE_MPV
@@ -36,7 +37,7 @@ function Invoke-Check([string]$name, [string]$exe, [string[]]$arguments) {
     $code = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     [pscustomobject]@{ Suite = $name; Name = $name; Outcome = $(if ($code -eq 0) { 'Passed' } else { 'Failed' });
-        Message = $(if ($code -eq 0) { '' } else { "Exited $code; see tests\AvRegression\last-run.log" }); Where = '' }
+        Message = $(if ($code -eq 0) { '' } else { "Exited $code; see logs\last-run.log" }); Where = '' }
 }
 try {
     Set-Location $root
@@ -44,7 +45,8 @@ try {
     Reset-TestOutputs $root
     $env:FVS_TEST_OUTPUT_MANAGED = '1'
     $null = New-Item -ItemType Directory -Force -Path $results
-    "AV gate run $started ($Mode)" | Set-Content -Encoding UTF8 $runLog
+    $null = New-Item -ItemType Directory -Force -Path $out
+    "AV gate run $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') ($Mode)" | Set-Content -Encoding UTF8 $runLog
     $env:FVS_TEST_NATIVE_MPV = '1'
     $all = @(Invoke-Check 'Harness' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tests/TestHarness.Tests.ps1'))
     $required = if ($Mode -eq 'quick') { @('S01','S02','S03','S04','S05','S06','S07','S08') } else { @(1..38 | ForEach-Object { 'S{0:D2}' -f $_ }) }
@@ -81,10 +83,11 @@ try {
         $lines += "     $($failure.Message)"
         if ($failure.Where) { $lines += "     at $($failure.Where)" }
     }
+    $summary + $lines | Set-Content -Encoding UTF8 (Join-Path $logsDir 'LAST_RESULT.txt')
     $summary + $lines | Set-Content -Encoding UTF8 (Join-Path $out 'LAST_RESULT.txt')
     $summary | Write-Output
     $lines | Select-Object -First 36 | Write-Output
-    if ($failed.Count -gt 12) { "More failures: tests\AvRegression\LAST_RESULT.txt" | Write-Output }
+    if ($failed.Count -gt 12) { "More failures: logs\LAST_RESULT.txt" | Write-Output }
     $result = if ($verdict -eq 'PASS') { 0 } else { 1 }
 } catch {
     "AV GATE: FAIL - $($_.Exception.Message)" | Write-Output

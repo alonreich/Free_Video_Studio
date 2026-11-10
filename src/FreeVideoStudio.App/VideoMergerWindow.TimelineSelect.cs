@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
@@ -78,7 +78,7 @@ public partial class VideoMergerWindow
         if (_draggingClipChip || _chipPressed) return;
         InvalidateMergedTimelineDrawing();
         var markers = MarkersCanvasCtl;
-        if (markers != null && TimelineMatchesQueue()) DrawMergedTimeline(markers, null);
+        if (markers != null && TimelineMatchesQueue()) DrawMergedTimeline(markers, ScaleCanvasCtl);
     }
 
     private void DrawTimelineSelection(Canvas markers, double w, double h, double total)
@@ -119,7 +119,7 @@ public partial class VideoMergerWindow
         var lane = BlocksLaneCtl;
         if (lane == null) return;
         lane.Children.Clear();
-        bool show = FilmLaneCtl?.IsVisible == true && total > 0 && w > 0;
+        bool show = TimelineMatchesQueue() && total > 0 && w > 0;
         lane.IsVisible = show;
         if (!show) return;
 
@@ -146,6 +146,7 @@ public partial class VideoMergerWindow
             };
             Canvas.SetLeft(block, x0);
             Canvas.SetTop(block, 0);
+            block.Tag = c.Path;
             block.PointerEntered += (_, _) => { if (!_draggingClipChip) { block.BoxShadow = glow; block.BorderBrush = hoverOutline; } };
             block.PointerExited += (_, _) => { if (!_draggingClipChip) { block.BoxShadow = default; block.BorderBrush = outline; } };
             AttachClipChip(block, i, lane);
@@ -210,7 +211,7 @@ public partial class VideoMergerWindow
         chip.PointerMoved += (_, e) =>
         {
             if (!_chipPressed) return;
-            if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) { EndClipChip(markers, commitX: null); return; }
+            if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) { EndClipChip(markers, commitX: null); e.Pointer.Capture(null); return; }
             double x = e.GetPosition(markers).X;
             if (!_draggingClipChip && Math.Abs(x - _chipPressX) < ChipDragThresholdPx) return;
             if (!_draggingClipChip)
@@ -227,9 +228,9 @@ public partial class VideoMergerWindow
         {
             if (!_chipPressed) return;
             double x = e.GetPosition(markers).X;
-            e.Pointer.Capture(null);
             chip.Cursor = Infrastructure.GrabCursors.Open;
             EndClipChip(markers, commitX: x);
+            e.Pointer.Capture(null);
             e.Handled = true;
         };
         chip.PointerCaptureLost += (_, _) =>
@@ -241,7 +242,9 @@ public partial class VideoMergerWindow
 
     private void ShowInsertBar(Canvas markers, double x)
     {
-        double w = markers.Bounds.Width;
+        double w = markers.Bounds.Width > 0 ? markers.Bounds.Width : markers.Width;
+        if (w <= 0 && BlocksLaneCtl != null) w = BlocksLaneCtl.Bounds.Width > 0 ? BlocksLaneCtl.Bounds.Width : BlocksLaneCtl.Width;
+        if (w <= 0 && MarkersCanvasCtl != null) w = MarkersCanvasCtl.Bounds.Width > 0 ? MarkersCanvasCtl.Bounds.Width : MarkersCanvasCtl.Width;
         var blocks = TimelineBlocks(w);
         int target = TimelineReorder.TargetIndex(blocks, _chipFrom, x);
         double bx = TimelineReorder.InsertionX(blocks, _chipFrom, target);
@@ -283,12 +286,16 @@ public partial class VideoMergerWindow
         }
         if (commitX is not double x) { RedrawTimelineSelection(); return; }
 
-        int to = TimelineReorder.TargetIndex(TimelineBlocks(markers.Bounds.Width), from, x);
+        double w = markers.Bounds.Width > 0 ? markers.Bounds.Width : markers.Width;
+        if (w <= 0 && BlocksLaneCtl != null) w = BlocksLaneCtl.Bounds.Width > 0 ? BlocksLaneCtl.Bounds.Width : BlocksLaneCtl.Width;
+        if (w <= 0 && MarkersCanvasCtl != null) w = MarkersCanvasCtl.Bounds.Width > 0 ? MarkersCanvasCtl.Bounds.Width : MarkersCanvasCtl.Width;
+        int to = TimelineReorder.TargetIndex(TimelineBlocks(w), from, x);
         if (to != from)
         {
             RuntimeLog.Info("MERGER", $"Timeline drag: clip {from + 1} moved to position {to + 1}.");
             VideoQueue.Move(from, to);
             SelectQueueRow(to, preview: false);
+            VideoListCtl?.InvalidateVisual();
         }
         RedrawTimelineSelection();
     }

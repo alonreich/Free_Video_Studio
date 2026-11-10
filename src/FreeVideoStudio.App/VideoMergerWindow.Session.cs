@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
@@ -33,6 +33,7 @@ public partial class VideoMergerWindow
 
     private readonly ClipIdList _clipIds = new();
     private MergeEdl? _lastEdl;
+    private CaptionTrack? _captionTrack;
     private bool _edlCapturePosted;
     private bool _restoringSession;
 
@@ -120,6 +121,8 @@ public partial class VideoMergerWindow
                 ThumbPath = _thumbPath,
                 ThumbSourceSec = _thumbSourceSec,
                 Music = _musicIsStale ? null : MusicStateFromResult(_musicResult),
+                Captions = _captionTrack,
+                ClearCaptions = _captionTrack == null && _lastEdl?.Captions != null,
             };
             var edl = MergerSession.Capture(state, AnalysisFor, FileIdentity, TimelineMatchesQueue() ? _timeline : null, _lastEdl);
             if (_musicIsStale && _lastEdl?.Music is EdlMusic keep) edl = edl with { Music = keep };

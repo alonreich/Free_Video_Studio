@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -613,15 +613,45 @@ public partial class MainWindow
                 scaleCanvas.Children.Add(startText);
             }
 
+            // TRIMDRAG_COMMIT_01 — release, release seen late (move with no button) and capture loss
+            // all COMMIT the dragged START through this one exit (THUMB_02 three-exit rule).
+            void CommitStartDrag(Avalonia.Input.IPointer? pointer, bool redraw)
+            {
+                if (!_draggingStartMarker) return;
+                _draggingStartMarker = false;
+                try { pointer?.Capture(null); } catch (System.Exception swallowedCap) { RuntimeLog.Swallowed(swallowedCap); }
+
+                SetTrimStart(_trimStartMs);
+                _trimStartSet = true;
+                var sliderRel = TimelineSliderCtl;
+                if (sliderRel != null && duration > 0)
+                {
+                    _isTimerUpdatingSlider = true;
+                    sliderRel.Value = Math.Clamp((_trimStartMs / 1000.0 / duration) * 100.0, 0.0, 100.0);
+                    _isTimerUpdatingSlider = false;
+                    ShowPlayheadBadge(_trimStartMs / 1000.0, sliderRel.Value);
+                }
+                RuntimeLog.Info("UI", $"Trim START marker dragged to {TimeSpan.FromMilliseconds(_trimStartMs):hh\\:mm\\:ss\\.ff}.");
+
+                if (ActiveVideoHost?.IpcClient?.IsPaused == true)
+                {
+                    _ = SeekInternal(_trimStartMs / 1000.0);
+                }
+
+                var markStartBtn = this.FindControl<Avalonia.Controls.Button>("MarkStartButton");
+                if (markStartBtn != null) markStartBtn.Content = "START: " + FormatTime(TimeSpan.FromMilliseconds(_trimStartMs));
+                PlayUiSound();
+                ShowTacticalFeedback("🏁 " + TimeSpan.FromMilliseconds(_trimStartMs).ToString("mm\\:ss\\.ff"));
+                ShowTimelineGlow(_trimStartMs, Avalonia.Media.Brushes.SeaGreen);
+                if (redraw) UpdateTimelineMarkers();
+                UpdateEstimatedQuality();
+                SaveRecoveryState(label: "move trim start");
+                UpdateDraggingVisuals(canvasWidth, duration);
+            }
+
             startHitBox.PointerMoved += (s,e) => {
                 if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) {
-                    if (_draggingStartMarker) {
-                        _draggingStartMarker = false;
-                        try { e.Pointer.Capture(null); } catch (System.Exception swallowed2)
-                        {
-                            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
-                        }
-                    }
+                    CommitStartDrag(e.Pointer, redraw: true);
                     return;
                 }
                 if (_draggingStartMarker) {
@@ -641,37 +671,20 @@ public partial class MainWindow
                     Avalonia.Controls.Canvas.SetLeft(startText, ClampLabelLeft(newX + 5, 36));
                     UpdateDraggingVisuals(canvasWidth, duration);
                     _ = SeekInternal(newStartSec);
-                }
-            };
-
-            startHitBox.PointerReleased += (s,e) => {
-                if (_draggingStartMarker) {
-                    _draggingStartMarker = false;
-                    e.Pointer.Capture(null);
-
-                    SetTrimStart(_trimStartMs);
-                    _trimStartSet = true;
-                    RuntimeLog.Info("UI", $"Trim START marker dragged to {TimeSpan.FromMilliseconds(_trimStartMs):hh\\:mm\\:ss\\.ff}.");
-
-                    if (ActiveVideoHost?.IpcClient?.IsPaused == true)
+                    var slider = TimelineSliderCtl;
+                    if (slider != null && duration > 0)
                     {
-                        _ = SeekInternal(_trimStartMs / 1000.0);
+                        _isTimerUpdatingSlider = true;
+                        slider.Value = Math.Clamp((newStartSec / duration) * 100.0, 0.0, 100.0);
+                        _isTimerUpdatingSlider = false;
+                        ShowPlayheadBadge(newStartSec, slider.Value);
                     }
-
-                    var markStartBtn = this.FindControl<Avalonia.Controls.Button>("MarkStartButton");
-                    if (markStartBtn != null) markStartBtn.Content = "START: " + FormatTime(TimeSpan.FromMilliseconds(_trimStartMs));
-                    PlayUiSound();
-                    ShowTacticalFeedback("🏁 " + TimeSpan.FromMilliseconds(_trimStartMs).ToString("mm\\:ss\\.ff"));
-                    ShowTimelineGlow(_trimStartMs, Avalonia.Media.Brushes.SeaGreen);
-                    UpdateTimelineMarkers();
-                    UpdateEstimatedQuality(); 
-                    SaveRecoveryState(label: "move trim start"); 
-                    UpdateDraggingVisuals(canvasWidth, duration);
                 }
             };
-        }
 
-        if (_trimEndMs > 0)
+            startHitBox.PointerReleased += (s,e) => CommitStartDrag(e.Pointer, redraw: true);
+            startHitBox.PointerCaptureLost += (s, e) => CommitStartDrag(null, redraw: false);
+        }
         {
             double endX = (_trimEndMs / 1000.0 / duration) * canvasWidth;
             var endHitBox = new Avalonia.Controls.Border {
@@ -706,15 +719,45 @@ public partial class MainWindow
                 scaleCanvas.Children.Add(endText);
             }
 
+            // TRIMDRAG_COMMIT_01 — the END marker's one commit exit (release / late release / capture loss).
+            void CommitEndDrag(Avalonia.Input.IPointer? pointer, bool redraw)
+            {
+                if (!_draggingEndMarker) return;
+                _draggingEndMarker = false;
+                try { pointer?.Capture(null); } catch (System.Exception swallowedCap) { RuntimeLog.Swallowed(swallowedCap); }
+
+                _trimEndSet = true;
+                _userExplicitMarkEnd = true;
+                var sliderRelEnd = TimelineSliderCtl;
+                if (sliderRelEnd != null && duration > 0)
+                {
+                    _isTimerUpdatingSlider = true;
+                    sliderRelEnd.Value = Math.Clamp((_trimEndMs / 1000.0 / duration) * 100.0, 0.0, 100.0);
+                    _isTimerUpdatingSlider = false;
+                    ShowPlayheadBadge(_trimEndMs / 1000.0, sliderRelEnd.Value);
+                }
+                RebaseMemesAfterTrimChange();
+                RuntimeLog.Info("UI", $"Trim END marker dragged to {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
+
+                if (ActiveVideoHost?.IpcClient?.IsPaused == true)
+                {
+                    _ = SeekInternal(_trimEndMs / 1000.0);
+                }
+
+                var markEndBtn = this.FindControl<Avalonia.Controls.Button>("MarkEndButton");
+                if (markEndBtn != null) markEndBtn.Content = "END: " + FormatTime(TimeSpan.FromMilliseconds(_trimEndMs));
+                PlayUiSound();
+                ShowTacticalFeedback("🏁 " + TimeSpan.FromMilliseconds(_trimEndMs).ToString("mm\\:ss\\.ff"));
+                ShowTimelineGlow(_trimEndMs, Avalonia.Media.Brushes.SeaGreen);
+                if (redraw) UpdateTimelineMarkers();
+                UpdateEstimatedQuality();
+                SaveRecoveryState(label: "move trim end");
+                UpdateDraggingVisuals(canvasWidth, duration);
+            }
+
             endHitBox.PointerMoved += (s,e) => {
                 if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) {
-                    if (_draggingEndMarker) {
-                        _draggingEndMarker = false;
-                        try { e.Pointer.Capture(null); } catch (System.Exception swallowed)
-                        {
-                            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
-                        }
-                    }
+                    CommitEndDrag(e.Pointer, redraw: true);
                     return;
                 }
                 if (_draggingEndMarker) {
@@ -736,34 +779,20 @@ public partial class MainWindow
                     if (scaleCanvas != null) Avalonia.Controls.Canvas.SetLeft(endText, ClampLabelLeft(newX - 28, 28));
                     UpdateDraggingVisuals(canvasWidth, duration);
                     _ = SeekInternal(newEndSec);
-                }
-            };
-            endHitBox.PointerReleased += (s,e) => {
-                if (_draggingEndMarker) {
-                    _draggingEndMarker = false;
-                    e.Pointer.Capture(null);
-                    _trimEndSet = true;
-                    RebaseMemesAfterTrimChange();
-                    RuntimeLog.Info("UI", $"Trim END marker dragged to {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
-
-                    if (ActiveVideoHost?.IpcClient?.IsPaused == true)
+                    _userExplicitMarkEnd = true;
+                    var slider = TimelineSliderCtl;
+                    if (slider != null && duration > 0)
                     {
-                        _ = SeekInternal(_trimEndMs / 1000.0);
+                        _isTimerUpdatingSlider = true;
+                        slider.Value = Math.Clamp((newEndSec / duration) * 100.0, 0.0, 100.0);
+                        _isTimerUpdatingSlider = false;
+                        ShowPlayheadBadge(newEndSec, slider.Value);
                     }
-
-                    var markEndBtn = this.FindControl<Avalonia.Controls.Button>("MarkEndButton");
-                    if (markEndBtn != null) markEndBtn.Content = "END: " + FormatTime(TimeSpan.FromMilliseconds(_trimEndMs));
-                    PlayUiSound();
-                    ShowTacticalFeedback("🏁 " + TimeSpan.FromMilliseconds(_trimEndMs).ToString("mm\\:ss\\.ff"));
-                    ShowTimelineGlow(_trimEndMs, Avalonia.Media.Brushes.SeaGreen);
-                    UpdateTimelineMarkers();
-                    UpdateEstimatedQuality(); 
-                    SaveRecoveryState(label: "move trim end"); 
-                    UpdateDraggingVisuals(canvasWidth, duration);
                 }
             };
+            endHitBox.PointerReleased += (s,e) => CommitEndDrag(e.Pointer, redraw: true);
+            endHitBox.PointerCaptureLost += (s, e) => CommitEndDrag(null, redraw: false);
         }
-
         if (_musicWizardResult != null && !string.IsNullOrEmpty(_musicWizardResult.MusicFilePath))
         {
             double mStartX = (_musicWizardResult.TimelineStartSeconds / duration) * canvasWidth;
@@ -911,7 +940,21 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
                 SaveRecoveryState(label: "move music start");
             };
+            startHitBox.PointerCaptureLost += (s, e) => {
+                if (_draggingMusicStart) {
+                    _draggingMusicStart = false;
+                    UpdateTimelineMarkers();
+                }
+            };
             startHitBox.PointerMoved += (s, e) => {
+                if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) {
+                    if (_draggingMusicStart) {
+                        _draggingMusicStart = false;
+                        try { e.Pointer.Capture(null); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                        UpdateTimelineMarkers();
+                    }
+                    return;
+                }
                 if (_draggingMusicStart) {
                     double currentX = e.GetPosition(canvas).X;
 
@@ -942,7 +985,21 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
                 SaveRecoveryState(label: "move music end");
             };
+            endHitBox.PointerCaptureLost += (s, e) => {
+                if (_draggingMusicEnd) {
+                    _draggingMusicEnd = false;
+                    UpdateTimelineMarkers();
+                }
+            };
             endHitBox.PointerMoved += (s, e) => {
+                if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) {
+                    if (_draggingMusicEnd) {
+                        _draggingMusicEnd = false;
+                        try { e.Pointer.Capture(null); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                        UpdateTimelineMarkers();
+                    }
+                    return;
+                }
                 if (_draggingMusicEnd) {
                     double currentX = e.GetPosition(canvas).X;
 
@@ -987,7 +1044,21 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
                 SaveRecoveryState(label: "move music");
             };
+            musicRect.PointerCaptureLost += (s, e) => {
+                if (_draggingMusicBlock) {
+                    _draggingMusicBlock = false;
+                    UpdateTimelineMarkers();
+                }
+            };
             musicRect.PointerMoved += (s, e) => {
+                if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) {
+                    if (_draggingMusicBlock) {
+                        _draggingMusicBlock = false;
+                        try { e.Pointer.Capture(null); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                        UpdateTimelineMarkers();
+                    }
+                    return;
+                }
                 if (_draggingMusicBlock) {
                     double currentX = e.GetPosition(canvas).X;
                     double dxSeconds = ((currentX - dragStartPointerX) / canvasWidth) * duration;
@@ -1580,6 +1651,45 @@ public partial class MainWindow
                     SetTimelineCameraHoverRecursive(childControl, opacity);
                 }
             }
+        }
+    }
+
+    internal void SimulateDragStartMarkerForTesting(double newX, double canvasWidth, double duration)
+    {
+        double currentEndSec = _trimEndMs / 1000.0;
+        double currentEndX = (currentEndSec / duration) * canvasWidth;
+        if (_trimEndMs > 0 && newX >= currentEndX) newX = currentEndX - 1;
+        double newStartSec = (newX / canvasWidth) * duration;
+        _trimStartMs = newStartSec * 1000.0;
+        _trimStartSet = true;
+        _ = SeekInternal(newStartSec);
+        var slider = TimelineSliderCtl;
+        if (slider != null && duration > 0)
+        {
+            _isTimerUpdatingSlider = true;
+            slider.Value = Math.Clamp((newStartSec / duration) * 100.0, 0.0, 100.0);
+            _isTimerUpdatingSlider = false;
+            ShowPlayheadBadge(newStartSec, slider.Value);
+        }
+    }
+
+    internal void SimulateDragEndMarkerForTesting(double newX, double canvasWidth, double duration)
+    {
+        double currentStartSec = _trimStartMs / 1000.0;
+        double currentStartX = (currentStartSec / duration) * canvasWidth;
+        if (newX <= currentStartX) newX = currentStartX + 1;
+        double newEndSec = (newX / canvasWidth) * duration;
+        _trimEndMs = newEndSec * 1000.0;
+        _trimEndSet = true;
+        _userExplicitMarkEnd = true;
+        _ = SeekInternal(newEndSec);
+        var slider = TimelineSliderCtl;
+        if (slider != null && duration > 0)
+        {
+            _isTimerUpdatingSlider = true;
+            slider.Value = Math.Clamp((newEndSec / duration) * 100.0, 0.0, 100.0);
+            _isTimerUpdatingSlider = false;
+            ShowPlayheadBadge(newEndSec, slider.Value);
         }
     }
 

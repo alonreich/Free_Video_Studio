@@ -1,4 +1,4 @@
-﻿using FreeVideoStudio.Core.Media;
+using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.Core.Undo;
 using Xunit;
 
@@ -146,5 +146,22 @@ public sealed class S21_S26_MergerTests
         var m = new MergerRig(await ClipsAsync(3));
         var scan = await m.ExportAsync(Repo.WorkDir("S26"));
         m.Verify(scan);
+    }
+
+    [Fact, Trait("Tier", "Quick")]
+    public async Task S26b_ContinuousPlaybackThroughMultipleClips_NeverPausesAtJoins()
+    {
+        var clips = await ClipsAsync(3);
+        var m = new MergerRig(clips);
+        await using var p = PlayerRig.Create("merger", extra: MergerRig.PlayerOptions);
+        await m.LoadPreviewAsync(p);
+
+        double join1 = System.Linq.Enumerable.First(m.Joins);
+        await p.SeekAsync(join1 - 0.5, "before join 1");
+        await p.PlayAsync();
+
+        await p.Probe.PlayFor("playing continuously across clip join", 1800);
+        Av.True("playhead advanced past join 1", p.Ipc.CurrentTime > join1 + 0.5, $"playhead at {p.Ipc.CurrentTime:0.000}s");
+        Av.True("player remained unpaused across internal join", !p.Ipc.IsPaused, "paused state");
     }
 }

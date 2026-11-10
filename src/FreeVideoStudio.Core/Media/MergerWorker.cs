@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -796,8 +796,46 @@ public class MergerWorker : IDisposable
                     int canvasH = OutputRatio == TargetAspectRatio.Portrait9x16 ? 1920 : 1080;
                     bool isPortrait = OutputRatio == TargetAspectRatio.Portrait9x16;
 
+                    CaptionTrack trackToBurn = CaptionTrack;
+                    if (frameAuthority != null || Math.Abs(speedFactor - 1.0) > 0.001)
+                    {
+                        var mappedLines = new List<CaptionLine>(CaptionTrack.Lines.Count);
+                        foreach (var l in CaptionTrack.Lines)
+                        {
+                            double lineStart = frameAuthority != null
+                                ? frameAuthority.MergedSecToBodyOutputSec(l.SourceStartSec)
+                                : l.SourceStartSec / speedFactor;
+                            double lineEnd = frameAuthority != null
+                                ? frameAuthority.MergedSecToBodyOutputSec(l.SourceEndSec)
+                                : l.SourceEndSec / speedFactor;
+
+                            List<CaptionWord>? mappedWords = null;
+                            if (l.Words != null && l.Words.Count > 0)
+                            {
+                                mappedWords = new List<CaptionWord>(l.Words.Count);
+                                foreach (var w in l.Words)
+                                {
+                                    double wStart = frameAuthority != null
+                                        ? frameAuthority.MergedSecToBodyOutputSec(w.StartSec)
+                                        : w.StartSec / speedFactor;
+                                    double wEnd = frameAuthority != null
+                                        ? frameAuthority.MergedSecToBodyOutputSec(w.EndSec)
+                                        : w.EndSec / speedFactor;
+                                    mappedWords.Add(new CaptionWord(w.Text, wStart, wEnd, w.Syllables));
+                                }
+                            }
+                            mappedLines.Add(l with
+                            {
+                                SourceStartSec = lineStart,
+                                SourceEndSec = lineEnd,
+                                Words = mappedWords
+                            });
+                        }
+                        trackToBurn = CaptionTrack with { Lines = mappedLines };
+                    }
+
                     string assContent = CaptionAssWriter.GenerateAss(
-                        CaptionTrack,
+                        trackToBurn,
                         timeline: null,
                         outputW: canvasW,
                         outputH: canvasH,

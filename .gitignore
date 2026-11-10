@@ -65,3 +65,4 @@ settings.json.corrupt-*.bak
 /tests/MediaPipelineChecks/artifacts/
 /tests/AvRegression/
 /tests/.test-run.lock
+/logs/
