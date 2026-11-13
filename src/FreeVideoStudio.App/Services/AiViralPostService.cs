@@ -44,6 +44,40 @@ public sealed record ViralPostOutcome(ViralPostStatus Status, ViralPostResult? P
 /// </summary>
 public static class AiViralPostService
 {
+    public static readonly TimeSpan OverallDeadline = TimeSpan.FromSeconds(75);
+
+    private sealed record CachedFrameSet(double DurationSec, IReadOnlyList<AiImageInput> Images);
+    private const int MaxFrameCacheEntries = 16;
+    private static readonly object s_frameCacheLock = new();
+    private static readonly Dictionary<string, CachedFrameSet> s_frameCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> s_frameCacheOrder = new();
+
+    internal static void ClearFrameCacheForTests()
+    {
+        lock (s_frameCacheLock)
+        {
+            s_frameCache.Clear();
+            s_frameCacheOrder.Clear();
+        }
+    }
+
+    internal static int CachedFrameSetCount
+    {
+        get { lock (s_frameCacheLock) return s_frameCache.Count; }
+    }
+
+    private static string BuildVideoFingerprint(string videoPath)
+    {
+        long size = 0, mtime = 0;
+        try
+        {
+            var fi = new FileInfo(videoPath);
+            if (fi.Exists) { size = fi.Length; mtime = fi.LastWriteTimeUtc.Ticks; }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
+        return $"{videoPath}|{size}|{mtime}";
+    }
+
     private const string ViralPostJsonSchema = """
         {
           "type": "object",
@@ -75,13 +109,24 @@ public static class AiViralPostService
     /// without a key; <see cref="ViralPostStatus.Failed"/> with a plain reason otherwise. Never dresses a stock
     /// template up as an AI answer. <paramref name="avoidTitle"/> (a regenerate) asks for a different take.
     /// </summary>
-    public static async Task<ViralPostOutcome> GenerateAsync(
+    public static Task<ViralPostOutcome> GenerateAsync(
         string ffmpegPath,
         string videoPath,
         AiVendor vendor,
         string apiKey,
         string? model = null,
         string? avoidTitle = null,
+        CancellationToken ct = default)
+        => GenerateWithStatusAsync(ffmpegPath, videoPath, vendor, apiKey, model, avoidTitle, null, ct);
+
+    public static async Task<ViralPostOutcome> GenerateWithStatusAsync(
+        string ffmpegPath,
+        string videoPath,
+        AiVendor vendor,
+        string apiKey,
+        string? model = null,
+        string? avoidTitle = null,
+        Action<string>? statusCallback = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
@@ -90,32 +135,67 @@ public static class AiViralPostService
         if (string.IsNullOrWhiteSpace(apiKey))
             return new ViralPostOutcome(ViralPostStatus.NoKey, null, "Add an AI key to get a title, caption and hashtags written for this video.");
 
+        var provider = AiVisionProviders.Get(vendor);
+        string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : provider.DefaultModel;
+        string vendorName = AiVisionProviders.DisplayName(vendor);
+
+        using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadlineCts.CancelAfter(OverallDeadline);
+        CancellationToken runCt = deadlineCts.Token;
+
         var tempFrames = new List<string>();
         try
         {
-            var provider = AiVisionProviders.Get(vendor);
-            string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : provider.DefaultModel;
+            string fp = BuildVideoFingerprint(videoPath);
+            CachedFrameSet? cached;
+            lock (s_frameCacheLock) s_frameCache.TryGetValue(fp, out cached);
 
-            double durationSec = await AiFfmpeg.ProbeDurationSecAsync(ffmpegPath, videoPath, ct).ConfigureAwait(false);
-            if (durationSec <= 0) durationSec = 30.0;
-
-            var images = new List<AiImageInput>();
-            foreach (double frac in new[] { 0.20, 0.50, 0.80 })
+            double durationSec;
+            IReadOnlyList<AiImageInput> images;
+            if (cached != null && cached.Images.Count > 0)
             {
-                ct.ThrowIfCancellationRequested();
-                double t = Math.Clamp(durationSec * frac, 0.2, Math.Max(0.2, durationSec - 0.2));
-                string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_viral_frame_{Guid.NewGuid():N}.jpg");
-                tempFrames.Add(tempPath);
+                durationSec = cached.DurationSec;
+                images = cached.Images;
+                statusCallback?.Invoke($"Reused {images.Count} cached stills from exported video…");
+            }
+            else
+            {
+                statusCallback?.Invoke("Measuring exported video length…");
+                durationSec = await AiFfmpeg.ProbeDurationSecAsync(ffmpegPath, videoPath, runCt).ConfigureAwait(false);
+                if (durationSec <= 0) durationSec = 30.0;
 
-                if (await AiFfmpeg.ExtractFrameJpegAsync(ffmpegPath, videoPath, t, tempPath, ct).ConfigureAwait(false))
+                var extracted = new List<AiImageInput>();
+                double[] fracs = { 0.20, 0.50, 0.80 };
+                for (int i = 0; i < fracs.Length; i++)
                 {
-                    byte[] data = await File.ReadAllBytesAsync(tempPath, ct).ConfigureAwait(false);
-                    images.Add(new AiImageInput(data, "image/jpeg", $"Scene at {t:F1}s of {durationSec:F0}s"));
+                    runCt.ThrowIfCancellationRequested();
+                    double t = Math.Clamp(durationSec * fracs[i], 0.2, Math.Max(0.2, durationSec - 0.2));
+                    statusCallback?.Invoke($"Extracting still {i + 1} of {fracs.Length} ({t:0.0}s)…");
+                    string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_viral_frame_{Guid.NewGuid():N}.jpg");
+                    tempFrames.Add(tempPath);
+
+                    if (await AiFfmpeg.ExtractFrameJpegAsync(ffmpegPath, videoPath, t, tempPath, runCt).ConfigureAwait(false))
+                    {
+                        byte[] data = await File.ReadAllBytesAsync(tempPath, runCt).ConfigureAwait(false);
+                        extracted.Add(new AiImageInput(data, "image/jpeg", $"Scene at {t:F1}s of {durationSec:F0}s"));
+                    }
+                }
+
+                if (extracted.Count == 0)
+                    return new ViralPostOutcome(ViralPostStatus.Failed, null, "Could not read frames from the exported video.");
+
+                images = extracted;
+                lock (s_frameCacheLock)
+                {
+                    if (!s_frameCache.ContainsKey(fp))
+                    {
+                        while (s_frameCacheOrder.Count >= MaxFrameCacheEntries)
+                            s_frameCache.Remove(s_frameCacheOrder.Dequeue());
+                        s_frameCache[fp] = new CachedFrameSet(durationSec, images);
+                        s_frameCacheOrder.Enqueue(fp);
+                    }
                 }
             }
-
-            if (images.Count == 0)
-                return new ViralPostOutcome(ViralPostStatus.Failed, null, "Could not read frames from the exported video.");
 
             string different = string.IsNullOrWhiteSpace(avoidTitle)
                 ? string.Empty
@@ -133,6 +213,7 @@ public static class AiViralPostService
                 Return strictly a JSON object matching the requested schema.
                 """;
 
+            statusCallback?.Invoke($"Asking {vendorName} ({effectiveModel}) to write title, caption & hashtags…");
             string jsonResponse = await provider.GenerateJsonAsync(
                 apiKey,
                 effectiveModel,
@@ -141,12 +222,23 @@ public static class AiViralPostService
                 video: null,
                 ViralPostJsonSchema,
                 options: GeminiCallOptions.Creative,
-                ct: ct).ConfigureAwait(false);
+                userLog: beat => statusCallback?.Invoke($"{vendorName} ({effectiveModel}): {beat}"),
+                ct: runCt).ConfigureAwait(false);
 
             ViralPostResult? post = TryParseJsonResponse(jsonResponse);
-            return post != null
-                ? new ViralPostOutcome(ViralPostStatus.AiGenerated, post, null)
-                : new ViralPostOutcome(ViralPostStatus.Failed, null, "The AI's answer could not be read. Try again.");
+            if (post == null)
+            {
+                RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact(
+                    $"{vendorName} ({effectiveModel}) unparseable viral post response. Prompt excerpt: {Truncate(prompt, 400)} | Raw response: {Truncate(jsonResponse, 1200)}",
+                    apiKey));
+                return new ViralPostOutcome(ViralPostStatus.Failed, null, "The AI's answer could not be read. Try again.");
+            }
+            return new ViralPostOutcome(ViralPostStatus.AiGenerated, post, null);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new ViralPostOutcome(ViralPostStatus.Failed, null,
+                $"Timed out after {(int)OverallDeadline.TotalSeconds}s waiting on {vendorName} ({effectiveModel}). Click ↻ RETRY to try again.");
         }
         catch (OperationCanceledException)
         {
@@ -174,6 +266,9 @@ public static class AiViralPostService
             }
         }
     }
+
+    private static string Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "…");
 
     /// <summary>AIVIRAL_HONEST_01 — the parsed post, or null when the answer has no usable title (no stock filler).</summary>
     public static ViralPostResult? TryParseJsonResponse(string? json)

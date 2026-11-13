@@ -28,7 +28,7 @@
 | Machine state (pre USERSCOPE_01) | `%ProgramData%\Fortnite Video Software` | none (per-user only) |
 | Temp root | `%TEMP%\FreeVideoStudio` | `%TEMP%\FreeVideoStudio` |
 | Main App export name | `Fortnite-Video-N.mp4` | `FreeVideoStudio-N.mp4` (editable, OUTNAME_01) |
-| Video Merger export name | `Merged-Videos-N.mp4` | `Merged-Videos-N.mp4` (editable, OUTNAME_01) |
+| Video Merger export name | `Merged-Videos-N.mp4` | `FreeVideoStudio-merged-N.mp4` (the one editable name + "-merged", SETNAMEONE_01) |
 | Rescued render prefix | `Fortnite-Video-RECOVERED-` | `FreeVideoStudio-RECOVERED-` |
 | GitHub repository | `alonreich/FreeVideoStudio_C-` | `alonreich/Free_Video_Studio` (GitHub redirects the old address) |
 | Diagnostic report header | FORTNITE VIDEO SOFTWARE — DIAGNOSTIC REPORT | FREE VIDEO STUDIO — DIAGNOSTIC REPORT |
@@ -54,7 +54,7 @@ Old-brand clients poll `releases/latest` of the old repository address. GitHub r
    If the transactional path did not run (manual install), `AppDataPaths` copies the legacy roots
    on first start. The machine root is copied once per user (USERSCOPE_01).
 4. **Settings (`SettingsManager` schema 11).** Older settings files receive
-   `MainOutputBaseName = "FreeVideoStudio"` and `MergerOutputBaseName = "Merged-Videos"`, so the
+   `MainOutputBaseName = "FreeVideoStudio"` (the Video Merger appends `-merged`, SETNAMEONE_01), so the
    first export after the update is `FreeVideoStudio-1.mp4`. Output folders are preserved.
 5. **Residue removal (REBRAND_02, `LegacyResidueSweep`).** On every normal launch, once no
    old-brand install or process exists and no upgrade transaction is open:
@@ -70,12 +70,12 @@ Old-brand clients poll `releases/latest` of the old repository address. GitHub r
 
 ## 3. Automatic file naming and save folders  {#REBRAND-OUTNAME}
 
-Settings › **Output Files** edits, per tool:
+Settings › **Files & Folders** sets one save folder and one file name for both tools:
 
-* **Save folder** — `MainOutputDirectory` / `MergerOutputDirectory`. Empty = Windows Downloads
-  (`OutputFolderResolver`, ISSUE_04).
-* **File name** — `MainOutputBaseName` (default `FreeVideoStudio`) / `MergerOutputBaseName`
-  (default `Merged-Videos`). Files are `<name>-1.mp4`, `<name>-2.mp4`, … using the first free
+* **Save folder** — `MainOutputDirectory` = `MergerOutputDirectory` (one folder for both tools since
+  SETFOLDERONE_01). Empty = Windows Downloads (`OutputFolderResolver`, ISSUE_04).
+* **File name** — `MainOutputBaseName` (default `FreeVideoStudio`); the Video Merger uses that name +
+  `-merged` (SETNAMEONE_01; `MergerOutputBaseName` removed). Files are `<name>-1.mp4`, `<name>-2.mp4`, … using the first free
   number. `OutputFileNaming.Sanitize` removes path separators and invalid characters, reserved
   device names and trailing dots/spaces, and clamps to 80 characters; invalid input reverts to the
   default. Spec: `03` FFM-OUTNAME.

@@ -24,7 +24,8 @@ public static class MemeManagementService
 
     public static async Task<List<MemeItem>> ScanMemesAsync()
     {
-        string memeFolder = MemeDirectory.GetActive();
+        await MemeDirectory.WhenReadyAsync().ConfigureAwait(true);
+        string memeFolder = MemeDirectory.EnsureActiveExists();
         try
         {
             return await MemeCatalog.ScanAsync(memeFolder, ResolveFfprobePath());
@@ -83,7 +84,8 @@ public static class MemeManagementService
         await dlg.ShowDialog(parent);
         if (!dlg.Result) return (0, null);
 
-        string memeDir = MemeDirectory.GetActive();
+        await MemeDirectory.WhenReadyAsync().ConfigureAwait(true);
+        string memeDir = MemeDirectory.EnsureActiveExists();
         var result = await CloudSyncProgressWindow.RunAsync(
             parent, $"Downloading {label}",
             (progress, ct) => MemeCatalog.SyncMemesAsync(memeDir, category, progress, ct));

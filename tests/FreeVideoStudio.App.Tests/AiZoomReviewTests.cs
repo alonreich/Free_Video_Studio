@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -44,7 +44,7 @@ public sealed class AiZoomReviewTests
     private static GeminiClient Client(FakeHandler h, List<TimeSpan>? delays = null)
         => new(new HttpClient(h) { Timeout = Timeout.InfiniteTimeSpan }, _ => { }, (d, _) => { delays?.Add(d); return Task.CompletedTask; });
 
-    private static readonly GeminiCallOptions Fast = new(TimeSpan.FromSeconds(5), 3, TimeSpan.FromSeconds(30));
+    private static readonly GeminiCallOptions Fast = new(TimeSpan.FromSeconds(5), 3, TimeSpan.FromSeconds(30)) { ExpectJson = false };
 
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void Redact_RemovesRawGoogleKeysAnywhere()
     {
-        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000000000", null); // SECRETSCAN_ALLOW
+        string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000000000", null);
         Assert.DoesNotContain("AIza", red);
     }
 

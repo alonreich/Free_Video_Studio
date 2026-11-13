@@ -46,7 +46,7 @@ public sealed class GeminiProvider : IAiVisionProvider
         string configured = GeminiClient.ResolveModel(model);
         string geminiSchema = AiJsonSchema.ToGeminiDialect(jsonSchema);
 
-        string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured);
+        string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured, apiKey);
         try
         {
             return await GenerateWithFpsFallbackAsync(apiKey, resolvedModel, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
@@ -64,16 +64,27 @@ public sealed class GeminiProvider : IAiVisionProvider
         string jsonSchema, AiReasoningConfig? reasoning, GeminiCallOptions options, Action<string>? userLog, CancellationToken ct)
     {
         double? temperature = options.Temperature ?? (GeminiClient.PrefersDefaultTemperature(model) ? null : 0);
-        byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: true, temperature);
-        try
+        bool includeFps = true;
+        AiReasoningConfig? effectiveReasoning = AiReasoningPolicy.IsRejectedBy(AiVendor.Google, model) ? null : reasoning;
+        for (int pass = 0; ; pass++)
         {
-            return await _client.GenerateAsync(apiKey, model, requestBody, options, userLog, ct).ConfigureAwait(false);
-        }
-        catch (GeminiException ex) when (video != null && ex.Kind == GeminiErrorKind.BadRequest)
-        {
-            CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
-            byte[] retryBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: false, temperature);
-            return await _client.GenerateAsync(apiKey, model, retryBody, options, userLog, ct).ConfigureAwait(false);
+            byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, effectiveReasoning, includeFps, temperature, model);
+            try
+            {
+                return await _client.GenerateAsync(apiKey, model, requestBody, options, userLog, ct).ConfigureAwait(false);
+            }
+            catch (GeminiException ex) when (pass < 2 && effectiveReasoning != null && AiAnswerGuard.IsReasoningRejection(ex))
+            {
+                AiReasoningPolicy.MarkRejected(AiVendor.Google, model);
+                effectiveReasoning = null;
+                CoreLogger.Info("GEMINI", $"Model '{model}' refused the thinking setting; retrying with its default.");
+            }
+            catch (GeminiException ex) when (pass < 2 && video != null && includeFps && AiAnswerGuard.IsFpsRejection(ex))
+            {
+                userLog?.Invoke($"Google Gemini ({model}) rejected custom FPS metadata — retrying clip with default sampling…");
+                CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
+                includeFps = false;
+            }
         }
     }
 
@@ -84,7 +95,8 @@ public sealed class GeminiProvider : IAiVisionProvider
         string jsonSchema,
         AiReasoningConfig? reasoning,
         bool includeVideoFps,
-        double? temperature = null)
+        double? temperature = null,
+        string? model = null)
     {
         int estimatedSize = 4096 + prompt.Length * 2;
         if (video != null) estimatedSize += video.Data.Length * 4 / 3 + 128;
@@ -174,6 +186,13 @@ public sealed class GeminiProvider : IAiVisionProvider
                 {
                     w.WriteStartObject("thinkingConfig");
                     w.WriteNumber("thinkingBudget", 0);
+                    w.WriteEndObject();
+                }
+                else if (reasoning.Level == AiReasoningLevel.Low)
+                {
+                    w.WriteStartObject("thinkingConfig");
+                    if (GeminiClient.PrefersDefaultTemperature(model)) w.WriteString("thinkingLevel", "low");
+                    else w.WriteNumber("thinkingBudget", 512);
                     w.WriteEndObject();
                 }
             }

@@ -19,7 +19,7 @@
                 <!-- Row 1: Header Instructions -->
                 <StackPanel Grid.Row="1" Margin="28,16,28,8" Spacing="4">
                     <TextBlock Text="Select the Character to Track" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <TextBlock Name="PickerIntroText" Text="Gemini looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
+                    <TextBlock Name="PickerIntroText" Text="The AI looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
                     <TextBlock Name="LookaheadNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                 </StackPanel>

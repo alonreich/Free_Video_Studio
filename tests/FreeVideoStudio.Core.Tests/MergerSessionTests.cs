@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -344,7 +344,6 @@ public class MergerSessionTests
         Assert.NotNull(nextEdl.Captions);
         Assert.Equal(track, nextEdl.Captions);
 
-        // MERGER_CAPTIONS_02 — an explicit clear removes the previous track instead of resurrecting it.
         var cleared = MergerSession.Capture(state with { ClearCaptions = true }, Analysis, FileId, timeline: null, previous: edlWithCaptions);
         Assert.Null(cleared.Captions);
     }

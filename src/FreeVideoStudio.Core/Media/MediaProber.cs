@@ -37,17 +37,17 @@ public class MediaProber
     /// The caching contract is unchanged: a failed probe or a timeout returns an empty object and
     /// is NOT cached (the next call retries); an unexpected exception caches the empty object.
     /// </summary>
-    public async Task<JsonObject> ProbeAsync()
+    public async Task<JsonObject> ProbeAsync(CancellationToken ct = default)
     {
         if (_probeData != null) return _probeData;
-        await _probeLock.WaitAsync();
+        await _probeLock.WaitAsync(ct);
         try
         {
             if (_probeData != null) return _probeData;
 
             try
             {
-                var result = await MediaMetadataProbe.ProbeAsync(_ffprobePath, _videoPath, TimeSpan.FromSeconds(15), CancellationToken.None, _backend);
+                var result = await MediaMetadataProbe.ProbeAsync(_ffprobePath, _videoPath, TimeSpan.FromSeconds(15), ct, _backend);
                 if (result.Ok)
                 {
                     _probeData = result.Data;
@@ -58,11 +58,19 @@ public class MediaProber
                 CoreLogger.Fail("FFprobe", $"{result.Backend}: {result.Error}");
                 return new JsonObject();
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (OperationCanceledException)
             {
                 CoreLogger.Fail("FFprobe", "FFprobe timed out after 15 seconds.");
                 return new JsonObject();
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (System.Exception swallowed)
         {
@@ -76,9 +84,9 @@ public class MediaProber
         return _probeData;
     }
 
-    public async Task<double> GetDurationAsync()
+    public async Task<double> GetDurationAsync(CancellationToken ct = default)
     {
-        var data = await ProbeAsync();
+        var data = await ProbeAsync(ct);
         var format = data["format"]?.AsObject();
         if (format != null && format["duration"] != null)
         {

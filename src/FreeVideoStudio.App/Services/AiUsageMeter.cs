@@ -60,6 +60,44 @@ public static class AiUsageMeter
     private static readonly AsyncLocal<Scope?> Current = new();
     private static readonly object Gate = new();
     private static readonly Dictionary<AiVendor, AiRateLimitSnapshot> LastKnown = new();
+    private static readonly Dictionary<string, AiRateLimitSnapshot> AccountLimits = new();
+    private static readonly Queue<string> History = new();
+    private static readonly AiUsageTally Session = new();
+    private static long _sessionAttempts;
+    private static decimal _sessionUsd;
+    private static bool _sessionUnknownPrice;
+    internal static string CurrentTaskId => Current.Value?.Id ?? "connection";
+
+    internal static void RequestStarted(AiVendor vendor, string key)
+    {
+        string account = AiResultCache.Key(vendor.ToString(), key);
+        Interlocked.Increment(ref _sessionAttempts);
+        lock (Gate)
+            for (Scope? s = Current.Value; s != null; s = s.Parent)
+            {
+                s.Attempts++;
+                if (s.Account == null)
+                {
+                    s.Account = account;
+                    if (AccountLimits.TryGetValue(account, out var before) && DateTime.UtcNow - before.TakenUtc < TimeSpan.FromMinutes(1))
+                        s.Before = before;
+                }
+            }
+    }
+
+    public static string SessionSummary()
+    {
+        lock (Gate)
+            return $"This session: {History.Count} AI task{(History.Count == 1 ? "" : "s")} · {Session.TotalTokens:N0} tokens"
+                + (Session.TotalTokens == 0 ? "" : _sessionUnknownPrice ? " · price unavailable for some models" : $" · {AiCostEstimator.FormatApproxUsd(_sessionUsd)} (estimate)")
+                + (_sessionAttempts > Session.Requests ? " · some requests have no usage report" : "");
+    }
+
+    public static string SessionDetails()
+    {
+        lock (Gate) return SessionSummary() + "\n\n" + string.Join("\n", History)
+            + "\n\nTokens are provider-reported. Costs are estimates, not bills. Cancelled or disconnected requests may still be charged. Connection checks are included. Quota is a recent rate-limit snapshot, not an account balance.";
+    }
 
     /// <summary>The company's last reported allowance this session, or null.</summary>
     public static AiRateLimitSnapshot? LastKnownFor(AiVendor vendor)
@@ -68,23 +106,60 @@ public static class AiUsageMeter
     }
 
     /// <summary>Starts counting one task. Dispose (or let it go) when the task is over.</summary>
+    /// <summary>AITRACE_01 — the id of the most recently started AI task (shown as "Reference" in error messages;
+    /// every log line of that task carries <c>task=&lt;id&gt;</c>).</summary>
+    public static string LastTaskId => Volatile.Read(ref _lastTaskId);
+
+    /// <summary>AITRACE_01 — appended to AI error messages. SHOW LOGS opens the log; searching it for
+    /// <c>task=&lt;id&gt;</c> finds that task's prompts and raw answers (keys removed).</summary>
+    public static string ReferenceSuffix => "\n\nReference: " + LastTaskId;
+    private static string _lastTaskId = "none";
+
+    /// <summary>AIUSAGE_04 — the tasks of this session, newest last (for Settings › AI).</summary>
+    public static IReadOnlyList<string> SessionHistory()
+    {
+        lock (Gate) return History.ToArray();
+    }
+
     public static Scope BeginTask(string taskName, AiVendor vendor)
     {
-        var scope = new Scope(taskName, vendor, LastKnownFor(vendor), Current.Value);
+        var scope = new Scope(taskName, vendor, null, Current.Value);
+        Volatile.Write(ref _lastTaskId, scope.Id);
         Current.Value = scope;
         return scope;
     }
 
     /// <summary>Called by the providers after every successful answer. Never throws.</summary>
     public static void Record(AiVendor vendor, long input, long output, long thinking, AiRateLimitSnapshot? limits)
+        => Record(vendor, model: null, input, output, thinking, limits);
+
+    /// <summary>Called by providers with model info so approximate cost estimation stays accurate. Never throws.</summary>
+    public static void Record(AiVendor vendor, string? model, long input, long output, long thinking, AiRateLimitSnapshot? limits, string? apiKey = null)
     {
         try
         {
-            if (limits != null)
-                lock (Gate) LastKnown[vendor] = limits;
+            lock (Gate)
+            {
+                Session.Add(input, output, thinking);
+                _sessionUsd += AiCostEstimator.EstimateCostUsd(vendor, model, input, output, thinking);
+                _sessionUnknownPrice |= !AiCostEstimator.HasReferenceRate(vendor, model);
+                if (limits != null)
+                {
+                    LastKnown[vendor] = limits;
+                    if (apiKey != null)
+                    {
+                        if (AccountLimits.Count >= 32) AccountLimits.Clear();
+                        AccountLimits[AiResultCache.Key(vendor.ToString(), apiKey)] = limits;
+                    }
+                }
+            }
             for (Scope? s = Current.Value; s != null; s = s.Parent)
             {
                 s.Tally.Add(input, output, thinking);
+                if (!string.IsNullOrWhiteSpace(model)) s.LastModel = model.Trim();
+                s.EstimatedUsd += AiCostEstimator.EstimateCostUsd(vendor, model ?? s.LastModel, input, output, thinking);
+                s.UnknownPrice |= !AiCostEstimator.HasReferenceRate(vendor, model);
+                if (limits != null) s.LastLimits = limits;
                 if (limits != null && s.FirstSeen == null)
                 {
                     s.FirstSeen = limits;
@@ -170,11 +245,37 @@ public static class AiUsageMeter
         }
 
         public string TaskName { get; }
+        public string Id { get; } = Guid.NewGuid().ToString("N")[..12];
+        internal string? Account { get; set; }
+        internal long Attempts { get; set; }
+        internal bool UnknownPrice { get; set; }
+        internal AiRateLimitSnapshot? LastLimits { get; set; }
+        private bool _disposed;
+        private AiEstimatedUsage? _estimate;
         public AiVendor Vendor { get; }
-        public AiRateLimitSnapshot? Before { get; }
+        public string? LastModel { get; internal set; }
+        public decimal EstimatedUsd { get; internal set; }
+        public AiRateLimitSnapshot? Before { get; internal set; }
         internal Scope? Parent { get; }
         public AiUsageTally Tally { get; } = new();
-        public AiRateLimitSnapshot? After => LastKnownFor(Vendor);
+        public AiRateLimitSnapshot? After => LastLimits;
+
+        /// <summary>Concise token + approximate USD summary comparing consumed usage against an optional pre-run estimate.</summary>
+        /// <remarks>AIUSAGE_04 — the ONE usage sentence every AI feature shows after a run, e.g.
+        /// "Used 10,850 tokens (~$0.0031, estimate) · estimated beforehand: ~12,000 tokens (~$0.0040)".
+        /// Token counts are what the company reported; every dollar figure is labelled an estimate.</remarks>
+        public string SummaryWithEstimate(AiEstimatedUsage? estimated = null)
+        {
+            _estimate = estimated ?? _estimate;
+            string actual = Tally.Requests == 0
+                ? (Attempts == 0 ? "No new AI request" : "Usage not reported — the request may still be charged")
+                : $"Used {Tally.TotalTokens:N0} tokens" + (UnknownPrice ? " (price unavailable)" : $" ({AiCostEstimator.FormatApproxUsd(EstimatedUsd)}, estimate)")
+                    + (Attempts > Tally.Requests ? " · some usage not reported" : "");
+            if (_estimate == null) return actual;
+            string estPrice = UnknownPrice || LastModel == null || !AiCostEstimator.HasReferenceRate(Vendor, LastModel)
+                ? "" : $" ({AiCostEstimator.FormatApproxUsd(_estimate.EstimatedUsd)})";
+            return actual + $" · estimated beforehand: ~{_estimate.EstimatedTotalTokens:N0} tokens{estPrice}";
+        }
 
         /// <summary>The allowance the company reported after this task's FIRST answer, and that answer's tokens.</summary>
         internal AiRateLimitSnapshot? FirstSeen { get; set; }
@@ -204,6 +305,15 @@ public static class AiUsageMeter
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            string summary = $"{TaskName}: {SummaryWithEstimate()}";
+            lock (Gate)
+            {
+                while (History.Count >= 40) History.Dequeue();
+                History.Enqueue(summary);
+            }
+            CoreLogger.Info("AI-Usage", $"task={Id} {summary}");
             if (ReferenceEquals(Current.Value, this)) Current.Value = Parent;
         }
     }

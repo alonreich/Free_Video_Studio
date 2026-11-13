@@ -146,7 +146,6 @@ internal sealed class PlayerRig : IAsyncDisposable
         if (paused) await Cmd(Ipc.SetPropertyAsync("pause", "yes"), "pause");
 
 
-
         bool Opened()
 
         {
@@ -245,8 +244,6 @@ internal sealed class PlayerRig : IAsyncDisposable
         }
 
     }
-
-
 
 
     internal static bool HasLanded(double position, double target, double tolerance, bool seeking,

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 using Xunit;
 
@@ -21,7 +21,7 @@ public sealed class SafeDirectoryCleanupTests : IDisposable
         File.SetAttributes(file, FileAttributes.ReadOnly);
         SafeDirectoryCleanup.DeleteTree(tree);
         Assert.False(Directory.Exists(tree));
-        SafeDirectoryCleanup.DeleteTree(tree); // already absent
+        SafeDirectoryCleanup.DeleteTree(tree);
     }
 
     [Theory]
@@ -106,7 +106,6 @@ public sealed class SafeDirectoryCleanupTests : IDisposable
 
     private void Junction(string link, string target)
     {
-        // Fixed fixture paths only; junction creation requires neither elevation nor Developer Mode.
         var psi = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true };
         psi.Arguments = $"/d /c mklink /J \"{link}\" \"{target}\"";
@@ -118,7 +117,6 @@ public sealed class SafeDirectoryCleanupTests : IDisposable
 
     public void Dispose()
     {
-        // Unlink fixtures explicitly before recursively cleaning the test-owned directory.
         foreach (string link in _links) if (Directory.Exists(link)) Directory.Delete(link);
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }

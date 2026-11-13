@@ -169,21 +169,13 @@ public sealed class SettingsMusicFolderTests : IDisposable
         Assert.Null(writer.ReadSnapshot()["CustomMusicDirectory"]);
     }
 
+    /// <summary>SETMERGERMOVED_01 — "Skip cover pictures" lives in the Video Merger only (one place, no duplicate).</summary>
     [AvaloniaFact]
-    public void ScraperWording_SettingsWindow_LabelsAndTooltips()
+    public void ScraperSwitch_IsNotDuplicatedInSettings()
     {
         var win = new SettingsWindow(_paths);
-        var cb = win.FindControl<CheckBox>("MergerThumbnailScraperCheckBox");
-        Assert.NotNull(cb);
-
-        Assert.Equal("Skip cover pictures", cb.Content);
-        Assert.Equal("Skip cover pictures", AutomationProperties.GetName(cb));
-
-        string? tip = ToolTip.GetTip(cb)?.ToString();
-        Assert.NotNull(tip);
-        Assert.StartsWith("Removes the tiny cover picture added to the start of some clips, so it does not flash between videos.", tip);
-        Assert.Contains("Eligible cover pictures are cut from the 2nd clip onward.", tip);
-        Assert.Contains("The first clip keeps its cover picture unless you pick a custom thumbnail in the merger.", tip);
+        Assert.Null(win.FindControl<CheckBox>("MergerThumbnailScraperCheckBox"));
+        win.Close();
     }
 
     [AvaloniaFact]

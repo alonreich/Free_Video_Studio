@@ -1,4 +1,4 @@
-using Avalonia.Platform.Storage;
+﻿using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -287,6 +287,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         WireComponents();
 
         var services = Infrastructure.AppServices.Current;
+        _settingsServices = services.SettingsWindow;
         _projectSession = new Services.ProjectSession(
             services.Projects,
             services.FilePicker,
@@ -304,10 +305,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         _projectSession.StateChanged += (_, _) => RefreshProjectTitle();
         _projectSession.DocumentApplied += (_, document) => OnProjectDocumentApplied(document);
-
-        _recoveryService.WireDocumentSource(
-            () => _projectSession!.Capture(forExplicitSave: false),
-            BuildRecoveryTransientMetadata);
 
         this.Opened += (s, e) => { _ = FreeVideoStudio.App.Services.UpdateService.RunStartupCheckAsync(this); };
     }
@@ -478,8 +475,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     /// STARTER_01 — first-run delivery of the shipped songs and memes.
     ///
     /// MEMEFOLDER_02 — the move of an old <c>Videos\Free Video Studio\Memes</c> folder to
-    /// <c>Videos\FreeVideoStudio\Memes</c> is NOT done here: it runs inside
-    /// <see cref="MemeDirectory.GetActive"/> the first time anything asks for the folder, so the
+    /// <c>Videos\FreeVideoStudio\Memes</c> is NOT done here: it is started once at app startup
+    /// (MEMEPURE_01, <see cref="MemeDirectory.StartLegacyMigration"/>) and awaited here, so the
     /// scan, a recovery restore and this delivery can never see the folder half-moved.
     ///
     /// The combo is populated on window Loaded in parallel with this method. When this method
@@ -490,10 +487,11 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     {
         try
         {
+            await Infrastructure.MemeDirectory.WhenReadyAsync();
             int delivered = await Task.Run(() => {
                 string musicFolder = Infrastructure.MemeDirectory.GetMusicRoot();
                 string videosFolder = Infrastructure.MemeDirectory.GetVideosRoot();
-                string memeFolder = Infrastructure.MemeDirectory.GetActive();
+                string memeFolder = Infrastructure.MemeDirectory.EnsureActiveExists();
                 int added = 0;
 
                 if (!Directory.Exists(memeFolder)) Directory.CreateDirectory(memeFolder);
@@ -519,6 +517,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             });
 
             if (delivered > 0) Dispatcher.UIThread.Post(PopulateMemeComboBox);
+
+            if (Infrastructure.ProtectedFolderGate.TakePendingNotice())
+                await Infrastructure.ProtectedFolderGate.ShowNoticeAsync(this);
         }
         catch (Exception ex)
         {
@@ -641,23 +642,33 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         e.Handled = true;
     }
 
-    private async void OnVideoDrop(object? sender, DragEventArgs e)
+    /// <summary>ASYNCSAFE_01 — Avalonia handler; the work is a Task whose every fault is reported, never rethrown on the dispatcher.</summary>
+    private void OnVideoDrop(object? sender, DragEventArgs e) => _ = OnVideoDropAsync(e);
+
+    private async Task OnVideoDropAsync(DragEventArgs e)
     {
-        var dropzone = AmbientDropzoneCtl;
-        dropzone?.Deactivate();
-        var uploadOverlay = UploadOverlayCtl;
-        if (uploadOverlay != null && uploadOverlay.IsVisible)
+        try
         {
-            uploadOverlay.Opacity = 0.95;
-        }
+            var dropzone = AmbientDropzoneCtl;
+            dropzone?.Deactivate();
+            var uploadOverlay = UploadOverlayCtl;
+            if (uploadOverlay != null && uploadOverlay.IsVisible)
+            {
+                uploadOverlay.Opacity = 0.95;
+            }
 
-        var files = e.DataTransfer.TryGetFiles();
-        if (files == null)
+            var files = e.DataTransfer.TryGetFiles();
+            if (files == null)
+            {
+                return;
+            }
+
+            await HandleExternalFileDropAsync(files.Select(f => f.Path.LocalPath).ToArray());
+        }
+        catch (Exception ex)
         {
-            return;
+            Core.Abstractions.Faults.Degraded("UPLOAD", "The dropped file could not be opened. Try Upload Video instead; your current work is untouched.", ex);
         }
-
-        await HandleExternalFileDropAsync(files.Select(f => f.Path.LocalPath).ToArray());
     }
 
     /// <summary>
@@ -1769,17 +1780,27 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private bool CheckRdpGpuBlocked() => ExportViewModel.CheckRdpGpuBlocked();
 
-    private async void RdpFixButton_Click(object? sender, RoutedEventArgs e)
+    /// <summary>ASYNCSAFE_01 — XAML Click handler forwards to a Task that reports its own faults.</summary>
+    private void RdpFixButton_Click(object? sender, RoutedEventArgs e) => _ = RdpFixAsync();
+
+    private async Task RdpFixAsync()
     {
-        bool success = await _viewModel.Export.AutoFixRdpGpuPolicyAsync();
-        if (success)
+        try
         {
-            ShowTacticalFeedback("RDP policy updated! Please re-connect or reboot.");
-            await InitializeHardwareScanAsync();
+            bool success = await _viewModel.Export.AutoFixRdpGpuPolicyAsync();
+            if (success)
+            {
+                ShowTacticalFeedback("RDP policy updated! Please re-connect or reboot.");
+                await InitializeHardwareScanAsync();
+            }
+            else
+            {
+                ShowTacticalFeedback("Failed to update RDP policy.");
+            }
         }
-        else
+        catch (Exception ex)
         {
-            ShowTacticalFeedback("Failed to update RDP policy.");
+            Core.Abstractions.Faults.Degraded("RDP", "The remote-desktop graphics fix did not finish. Exports still work, just more slowly.", ex);
         }
     }
     private double GetCurrentMpvTime() { return ActiveVideoHost?.IpcClient?.CurrentTime ?? 0.0; }
@@ -1801,7 +1822,20 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return _baseSpeed;
     }
 
-    private async void InitializeMpv() => await StartVideoHostAsync();
+    /// <summary>ASYNCSAFE_01 — a video-host start failure is reported, never allowed to end the process.</summary>
+    private void InitializeMpv() => _ = InitializeMpvAsync();
+
+    private async Task InitializeMpvAsync()
+    {
+        try
+        {
+            await StartVideoHostAsync();
+        }
+        catch (Exception ex)
+        {
+            Core.Abstractions.Faults.Degraded("PLAYER", "The video preview could not start. You can still upload, edit and export; reopening the app usually brings the preview back.", ex);
+        }
+    }
 
     private void OnSeekCompleted()
     {
@@ -1987,11 +2021,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     {
         if (action == "whatsapp")
         {
-            Process.Start(new ProcessStartInfo("whatsapp://send?text=CheckOutThisVideo") { UseShellExecute = true });   // NOCMD_01 — shell opens the link; no hidden "cmd /c start" (SYS-AVCLEAN).
+            Services.ShellLauncher.TryOpen("whatsapp://send?text=CheckOutThisVideo", "SHARE");   // NOCMD_01 — shell opens the link; no hidden "cmd /c start" (SYS-AVCLEAN).
         }
         else if (action == "folder")
         {
-            Process.Start(new ProcessStartInfo("explorer.exe", ".") { CreateNoWindow = true });
+            try { Services.ShellLauncher.Launch(new ProcessStartInfo("explorer.exe", ".") { CreateNoWindow = true }); }
+            catch (Exception ex) { RuntimeLog.Fail("UI", $"Could not open the output folder: {ex.Message}"); }
         }
 
         ShutdownVideoPipelineForProcessExit();
@@ -2090,6 +2125,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
 
         _recovery.MarkCleanShutdownIntent();
+        _aiEliminationScanCts?.Cancel();
 
         RuntimeLog.Info("UI", "Closing MainWindow. Saving state and cleaning up asynchronously.");
 
@@ -2620,20 +2656,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     /// </summary>
 
     private bool HasUnsavedWork() => _recoveryService.HasUnsavedWork(_viewModel, _viewModel.Timeline, _viewModel.Export);
-
-    private async void OnExportConfigClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        await SettingsBackupService.ExportSettingsAsync(this, _paths);
-    }
-
-    private async void OnImportConfigClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        await SettingsBackupService.ImportSettingsAsync(this, _paths, () =>
-        {
-            _recovery.MarkCleanShutdownIntent();
-            ShutdownVideoPipelineForProcessExit();
-        });
-    }
 
     /// <summary>
     /// NOMASK_01 — refuses the Crop Tools hand-off while the reserved "No Mask Profile" is active,

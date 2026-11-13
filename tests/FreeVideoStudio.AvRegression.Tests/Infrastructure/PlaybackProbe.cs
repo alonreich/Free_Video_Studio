@@ -157,7 +157,6 @@ internal sealed class PlaybackProbe(PlayerRig rig)
         lock (_avsync) av = _avsync.ToArray();
 
 
-
         Analyze(phase, s, seeks, av, fromMs, toMs, speed, expectMoving, allowEnd, requireAvSync: false);
 
     }
@@ -198,7 +197,6 @@ internal sealed class PlaybackProbe(PlayerRig rig)
             throw new AvDefect($"{phase}: playback reached an unexpected end");
 
 
-
         double stallStart = double.NaN, lastPos = double.NaN, worstStall = 0, worstAt = 0;
 
         foreach (var x in s)
@@ -224,7 +222,6 @@ internal sealed class PlaybackProbe(PlayerRig rig)
             throw new AvDefect($"{phase}: STALL — playhead frozen {worstStall:0}ms at {worstAt:0.00}s while playing (budget {Budget.StallMs}ms)");
 
 
-
         for (int i = 1; i < s.Length; i++)
 
         {
@@ -238,7 +235,6 @@ internal sealed class PlaybackProbe(PlayerRig rig)
                 throw new AvDefect($"{phase}: STUTTER — playhead jumped back {back * 1000:0}ms at {s[i].Pos:0.00}s during playback");
 
         }
-
 
 
         var live = s.Where(x => !x.Paused && !x.Seeking && !AtEnd(x) && !NearSeek(x.WallMs) && !double.IsNaN(x.Pos)).ToArray();
@@ -266,8 +262,6 @@ internal sealed class PlaybackProbe(PlayerRig rig)
         if (!expectMoving && live.Length > 20 && live[^1].Pos - live[0].Pos > 0.05)
 
             throw new AvDefect($"{phase}: playhead moved {live[^1].Pos - live[0].Pos:0.00}s while it should hold still");
-
-
 
 
         av = av.Where(a => a.WallMs >= fromMs + Budget.StartGraceMs && a.WallMs <= toMs && !NearSeek(a.WallMs)).ToArray();

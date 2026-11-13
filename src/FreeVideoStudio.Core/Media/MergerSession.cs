@@ -114,20 +114,6 @@ public sealed class ClipIdList
             if (i >= 0 && i < _ids.Count) result.Add(_ids[i]);
         return result;
     }
-
-    /// <summary>QUEUEOCCURRENCE_01 — Resolves <paramref name="ids"/> to their current row indices; returns null if any id is missing.</summary>
-    public List<int>? ResolveIndices(IEnumerable<Guid> ids)
-    {
-        var result = new List<int>();
-        foreach (var id in ids)
-        {
-            int idx = IndexOf(id);
-            if (idx < 0) return null;
-            result.Add(idx);
-        }
-        result.Sort();
-        return result;
-    }
 }
 
 /// <summary>

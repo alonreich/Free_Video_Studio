@@ -48,7 +48,7 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
-    private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
+    internal record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
 
@@ -794,8 +794,7 @@ public class GranularSpeedBuilder
                 if (!string.IsNullOrEmpty(aSrc))
                     fullParts.Add($"{aSrc}anullsink");
 
-                fullParts.Add($"anullsrc=r=48000:cl=stereo," +
-                              $"atrim=duration={freezeQuantDur.ToString("F5", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS{aChunkLabel}");
+                fullParts.Add(FreezeSoundEffect.Source(freezeQuantDur, aChunkLabel));
 
                 finalDuration += freezeQuantDur;
             }
@@ -885,10 +884,10 @@ public class GranularSpeedBuilder
     /// coordinate chain documented in docs/README.md (formerly project_structure.txt) is unchanged; with no per-frame scale
     /// in this branch the padding costs nothing meaningful.
     /// </summary>
-    private static string BuildConstantZoomFilter(
+    internal static string BuildConstantZoomFilter(
         string preScale, ZoomConfig zc, double resW, double resH, int outW, int outH, double p, double chunkStartSec = 0)
     {
-        if (!string.IsNullOrEmpty(zc.AiTrackingTrajectory))
+        if (!string.IsNullOrEmpty(zc.AiTrackingTrajectory) && p >= 0.999)
         {
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(zc.AiTrackingTrajectory);
             if (traj != null)

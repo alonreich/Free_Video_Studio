@@ -3,11 +3,15 @@
 # Test-suite audit: executable evidence and bounded generated-output ownership.
 TESTGATE_01=tests/run-av-tests.ps1
 TESTCLEAN_01=tests/run-av-tests.ps1
-TESTCLEAN_02=tests/TestArtifactDirectory.cs
-TESTDESKTOP_01=tests/DesktopPreviewSmoke/Program.cs
-MERGERBOUNDARY_01=tests/DesktopPreviewSmoke/MergerSmokeApp.cs
-MERGERGAPLESS_01=src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs
-OUTPUTCOMMIT_01=src/FreeVideoStudio.Core/Media/FinalOutputCommit.cs
+# RETIRED TESTCLEAN_02 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED TESTOUT_01 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+TESTOUT_01=tests/TestHarness.ps1
+# RETIRED TESTDESKTOP_01 (tests/DesktopPreviewSmoke/Program.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERBOUNDARY_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERGAPLESS_01 (src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERPROBE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERPROBE_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED OUTPUTCOMMIT_01 (src/FreeVideoStudio.Core/Media/FinalOutputCommit.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 #
 # SYS-DEVBUILD / VERIFYHALT_01. Each entry names a comment tag that sits next to a specific fix and
 # the file it must appear in. If a tag is absent, the fix was reverted (a test cycle is about to be
@@ -533,7 +537,7 @@ SPLICE_03=src/FreeVideoStudio.Core/Media/MemeLoudness.cs
 # RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 CLIPLEVEL_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
 CLIPLEVEL_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-CLIPLEVEL_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+# RETIRED CLIPLEVEL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — Settings Video Merger section moved to the merger (SETMERGERMOVED_01)
 VOLCURVE_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
 VOLCURVE_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 # RETIRED VOLMUTE_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
@@ -556,7 +560,7 @@ VOPREVIEW_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
 DUCKSTRENGTH_01=src/FreeVideoStudio.Core/Media/FilterGraphBuilder.cs
 # RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.Core/Media/AudioFilterChain.cs) — comment removed in 9aed91d refactor
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/ViewModels/MixProtectionViewModel.cs
-DUCKSTRENGTH_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+# RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — strength handles replaced by Keep game sounds clear (SETSOUNDONE_01)
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 # RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
@@ -834,7 +838,7 @@ NODROPPER_01=src/FreeVideoStudio.Core/Infrastructure/InstallPayload.cs
 NODROPPER_01=tests/FreeVideoStudio.App.Tests/AvCleanRuleTests.cs
 NODROPPER_01=tests/FreeVideoStudio.Core.Tests/SmartUpdateTests.cs
 # NOTEMPEXEC_01 — no self-copy to %TEMP%, nothing elevated staged in %TEMP%; leftovers go on the delete-on-restart list (05 SYS-AVCLEAN).
-NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
+# RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentFootprint.cs
 NOTEMPEXEC_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
 # RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
@@ -992,7 +996,7 @@ AISCHEMA_01=src/FreeVideoStudio.App/Services/AiJsonSchema.cs
 AITEMP_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
 AIFFMPEG_01=src/FreeVideoStudio.App/Services/AiFfmpeg.cs
 AIDEFAULT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-AIDEFAULT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED AIDEFAULT_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — per-feature AI rows removed (SETAIONE_01)
 AICOMMENTARY_SPEED_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
 AICOMMENTARY_MERGE_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
 AICOMMENTARY_REPORT_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
@@ -1036,7 +1040,7 @@ AICONSENT_02=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 # RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
 # RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 # RETIRED AICONSENT_02 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
-AICONSENT_02=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED AICONSENT_02 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — permission boxes removed, a saved key is the permission (SETNOCONSENTUI_01)
 # RETIRED AIVENDORCAPS_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
 AIREASONING_01=src/FreeVideoStudio.App/Services/IAiVisionProvider.cs
 # RETIRED AIZEROFRAMES_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — comment removed in 9aed91d refactor
@@ -1138,7 +1142,7 @@ SETMUSICDIR_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Output.cs
 # RETIRED MEMEPENDING_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
 # RETIRED SETSAVEFAIL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
 SETLOUD_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
-SETZOOM_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETZOOM_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — fast-move zoom follows the strength (SETZOOMONE_01)
 SETGAME_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
 SETDEPS_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
 # RETIRED SETAITEST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
@@ -1277,9 +1281,153 @@ LEGACYKEEP_01=src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs
 PROJECTIO_01=src/FreeVideoStudio.App/Services/ProjectSession.cs
 # PIPEAUTH_01 — owner-only pipe DACL, FirstPipeInstance and client-side server identity check (05 SYS-IPCLIFETIME).
 PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/PipeAccess.cs
-PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
-PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs
+# RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 PIPEAUTH_01=src/FreeVideoStudio.App/SingleInstanceGuard.cs
 # MEDIALICENSE_01 — only original/royalty-free media is staged into the installer and served by Download more (03 STARTER_01).
-MEDIALICENSE_01=build/FvsBuild/Staging.cs
+# RETIRED MEDIALICENSE_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 MEDIALICENSE_01=src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs
+
+# Settings audit round 2 (2026-11-10): AI permission per company, '/' refused as a shortcut, File-menu backup goes through Settings.
+# RETIRED SETCONSENTVENDOR_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — permission boxes removed (SETNOCONSENTUI_01)
+SETKEYS_03=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+FILEBACKUP_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# Architecture audit 2026-11-11 (docs/changes.md): crash-safe handlers, frozen settings snapshot, pure meme lookup,
+# non-blocking texture import, settings seams, typed settings, disposing cancellation and shell launches.
+ASYNCSAFE_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+ASYNCSAFE_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+SETTINGSFREEZE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+MEMEPURE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+RENDERIMPORT_01=src/FreeVideoStudio.App/MpvVideoView.cs
+SETTINGSDI_01=src/FreeVideoStudio.App/Services/SettingsWindowServices.cs
+AIKEYCANCEL_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.Services.cs
+SETBACKUPIO_01=src/FreeVideoStudio.App/Services/SettingsWindowServices.cs
+SETTINGSTYPES_01=src/FreeVideoStudio.App/Infrastructure/SettingsTypes.cs
+CTSSLOT_01=src/FreeVideoStudio.App/Infrastructure/CtsSlot.cs
+SHELLLAUNCH_01=src/FreeVideoStudio.App/Services/ShellLauncher.cs
+VIRALVM_01=src/FreeVideoStudio.App/ViewModels/ViralPostViewModel.cs
+# NOHIDDENTOOLS_01 — no hidden Windows event / force-kill tool; the task tool only when an old task exists (05 SYS-AVCLEAN).
+NOHIDDENTOOLS_01=src/FreeVideoStudio.App/CrashLogDigest.cs
+NOHIDDENTOOLS_01=src/FreeVideoStudio.App/Services/LegacyScheduledTask.cs
+# RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+NOHIDDENTOOLS_01=tests/FreeVideoStudio.App.Tests/AvFriendlyBehaviourTests.cs
+# NOLOGONHOOK_01 — no Active Setup run-at-logon entry (05 SYS-AVCLEAN).
+# RETIRED NOLOGONHOOK_01 (src/FreeVideoStudio.App/Services/UpgradeRegistration.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# CFASAFE_01 — the app keeps working, quietly, under Windows "Controlled folder access" (05 SYS-CFASAFE).
+CFASAFE_01=src/FreeVideoStudio.Core/Infrastructure/ControlledFolderAccess.cs
+CFASAFE_01=src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs
+CFASAFE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+CFASAFE_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# 2026-11-11 false-positive audit, part 2 (05 SYS-AVCLEAN / SYS-SIGNING / SYS-CFASAFE).
+NOMEMREAD_01=src/FreeVideoStudio.Core/Infrastructure/ProcessImage.cs
+# RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/Services/InstallDiscovery.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+OPENWITHHOME_01=src/FreeVideoStudio.App/ShellFileAssociation.cs
+# RETIRED NOMUIWIPE_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+NOLOCALPORT_01=src/FreeVideoStudio.Core/Ipc/PipeAccess.cs
+NOLOCALPORT_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+# RETIRED NOLOCALPORT_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOLURKER_01 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SIGNDEPS_01=build/FvsBuild/CodeSigning.cs
+CFAFFMPEG_01=src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs
+# RETIRED CFAFFMPEG_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# SIGNPATH_01 — SignPath Foundation signature trusted only with the publisher-signed hash; OSSMEDIA_01 open media (05 SYS-SIGNING, 03).
+SIGNPATH_01=src/FreeVideoStudio.App/Services/AuthenticodeVerifier.cs
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SIGNPATH_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# RETIRED OSSMEDIA_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED OSSMEDIA_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETABOUTSAVE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETABOUTSAVE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+SETLASTALWAYS_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+SETLASTALWAYS_01=src/FreeVideoStudio.App/MainWindow.Export.cs
+# RETIRED SETFREEZEDEF_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETKEYSFIRST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETCHOICES_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — start-value lists replaced by one choice (SETSTARTONE_01)
+# RETIRED SETUPDCOPY_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — update check boxes replaced by one choice (SETUPDATEONE_01)
+# RETIRED SETNOMETERED_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETZOOMCAP_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — fast-move zoom slider removed (SETZOOMONE_01)
+SETNAMEWARN_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETRESTORECONFIRM_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Tools.cs
+SETLABELFIT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETDECLUTTER_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETUPDATEONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETUPDATEONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETNOBETA_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# RETIRED SETNOBETA_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETCLICKONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETADVANCED_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETSTARTONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETSAFEONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETSAFEONE_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETEDITORMEMORY_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+SETMERGERMOVED_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETFOLDERONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETSOUNDONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETMUSICVOL_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/Infrastructure/VoiceOverAudioTools.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETNOCONSENTUI_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETKEYONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETKEYONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED SETAIONE_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETZOOMONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETZOOMONE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETCAMONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/FreezeSoundEffect.cs
+# RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
+# RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/RenderedMixGate.cs
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/OutputTimeline.cs
+SETNAMEONE_01=src/FreeVideoStudio.Core/Media/OutputFileNaming.cs
+SETNAMEONE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+SETNAMEONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+FREEZESFX_02=src/FreeVideoStudio.App/Services/FreezeSoundPreview.cs
+FREEZESFX_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+FREEZESFX_02=src/FreeVideoStudio.Core/Media/FreezeSoundEffect.cs
+AIANSWER_01=src/FreeVideoStudio.App/Services/AiAnswerGuard.cs
+AIANSWER_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
+# RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AICLAUDETOOL_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIREASONING_02=src/FreeVideoStudio.App/Services/AiReasoningPolicy.cs
+# RETIRED AIREASONING_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIFPSFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/GeminiTrackingService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/AiMusicAutoFitService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIREUSE_04=src/FreeVideoStudio.App/Services/AiAnswerDiskStore.cs
+AIREUSE_04=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+AIPARTRETRY_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
+AIPARTRETRY_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
+AICOMMENTARY_KEEP_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
+# RETIRED AICOMMENTARY_KEEP_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AICOMMENTARY_ONCE_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AICOMMENTARY_CUTS_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
+AIUSAGE_04=src/FreeVideoStudio.App/Services/AiCostEstimator.cs
+AIUSAGE_04=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+# RETIRED AIUSAGE_04 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIAPPROVE_01=src/FreeVideoStudio.App/Services/AiRunApproval.cs
+# RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIHUDTRANSPORT_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIHUDERRORS_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIHUDERRORS_01=src/FreeVideoStudio.Core/Media/AiHudDetection.cs
+AITRACE_01=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+# RETIRED AIELIM_04 (src/FreeVideoStudio.App/MainWindow.AiElimination.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIMERGEKILLS_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
+# RETIRED AIMERGEKILLS_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIPROGRESS_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml
+# RETIRED AIPARITY_02 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIELIM_05 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests

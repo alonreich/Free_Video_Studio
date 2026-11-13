@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
@@ -75,7 +75,38 @@ public static partial class PipeAccess
             inBufferSize: 0, outBufferSize: 0, CachedSecurity.Value);
     }
 
-    // Built once: the listen loops create a new instance per connection and must stay cheap.
+    /// <summary>
+    /// NOLOCALPORT_01 — the installer's channel to its elevated worker and to the first launch of the
+    /// new version. It used to be a TCP port on 127.0.0.1, and third-party firewalls (ESET, Norton,
+    /// Comodo, ZoneAlarm…) ask about or silently block an unknown program that listens on a port —
+    /// the update then failed. A named pipe is not network traffic. The worker may run under ANOTHER
+    /// account (a standard user typing an administrator's password, UPGRADE_07), so besides the
+    /// current user and LocalSystem the DACL admits elevated administrators — who could reach any
+    /// local channel anyway. The 64-hex-digit token in the first message still decides who is the
+    /// worker. One instance, and it must be the first: nobody can pre-create the name.
+    /// </summary>
+    public static NamedPipeServerStream CreateUpgradeServer(string name)
+    {
+        if (!OperatingSystem.IsWindows())
+            return new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        PipeSecurity security = CreateOwnerOnlySecurity();
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        return NamedPipeServerStreamAcl.Create(
+            name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance,
+            inBufferSize: 256 * 1024, outBufferSize: 256 * 1024, security);
+    }
+
+    /// <summary>NOLOCALPORT_01 — a fresh, unguessable name for <see cref="CreateUpgradeServer"/>.</summary>
+    public static string NewUpgradePipeName() => UpgradePipePrefix + Guid.NewGuid().ToString("N");
+
+    /// <summary>NOLOCALPORT_01 — true only for names <see cref="NewUpgradePipeName"/> makes (checked before connecting).</summary>
+    public static bool IsUpgradePipeName(string? name) =>
+        name is { Length: 56 } && name.StartsWith(UpgradePipePrefix, StringComparison.Ordinal) &&
+        name.AsSpan(UpgradePipePrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0;
+
+    private const string UpgradePipePrefix = "FreeVideoStudio-Upgrade-";
+
     private static readonly Lazy<PipeSecurity> CachedSecurity = new(CreateOwnerOnlySecurity);
 
     /// <summary>
@@ -122,7 +153,7 @@ public static partial class PipeAccess
             {
                 using WindowsIdentity peer = new(token);
                 using WindowsIdentity self = WindowsIdentity.GetCurrent();
-                return self.User != null && self.User.Equals(peer.User);
+                return self.User is { } me && peer.User is { } them && me.Equals(them);
             }
             finally { CloseHandle(token); }
         }

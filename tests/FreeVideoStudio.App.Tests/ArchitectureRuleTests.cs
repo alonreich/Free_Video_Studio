@@ -277,7 +277,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void AsyncVoidMethodsDoNotIncrease()
     {
-        const int Baseline = 29;
+        const int Baseline = 24;
 
         var sites = new List<string>();
 
@@ -399,7 +399,7 @@ public sealed class ArchitectureRuleTests
             ["MainWindow.axaml.cs"]                = 3144,
             ["VideoMergerWindow.axaml.cs"]         = 2240,
             ["PhaseOverlayControl.axaml.cs"]       = 2425,
-            ["SettingsWindow.axaml.cs"]            = 369,
+            ["SettingsWindow.axaml.cs"]            = 324,
         };
 
         const int LimitForNewFiles = 1000;

@@ -26,19 +26,16 @@ public partial class SettingsWindow : Window
 {
     private const string LastTabStateKey = "SettingsLastTab";
 
-    private readonly ApplicationPaths _paths;
-    private readonly SessionStateWriter _writer;
+    /// <summary>SETTINGSDI_01 — everything this window talks to, injected (see SettingsWindowServices).</summary>
+    private readonly Services.SettingsWindowServices _services;
     private bool _isSafeToClose;
     private bool _closePromptOpen;
-
-    /// <summary>The music folder as the state store held it when the window opened; null = unknown (unprimed writer).</summary>
-    private readonly string? _initialMusicFolder;
 
     /// <summary>SETPREVIEW_01 — the look the app had when Settings opened, restored by CANCEL / Discard.</summary>
     private readonly ThemeMode _openTheme;
     private readonly FontScale _openFontScale;
     private readonly string _openMaskOverlay;
-    private readonly string _openEncoder;
+    private readonly EncoderPreference _openEncoder;
     private readonly string _openMemeFolder;
 
     private KeyBindRowViewModel? _waitingRow;
@@ -46,52 +43,45 @@ public partial class SettingsWindow : Window
     /// <summary>All pending values (SETTINGSVM_01).</summary>
     public SettingsViewModel Vm { get; }
 
-    public SettingsWindow() : this(null, null) { }
+    /// <summary>XAML previewer / places without the composition root: the production services.</summary>
+    public SettingsWindow() : this(Services.SettingsWindowServices.CreateDefault()) { }
 
-    public SettingsWindow(ApplicationPaths? paths, SessionStateWriter? writer = null)
+    /// <summary>Tests: production services on <paramref name="paths"/>, optionally with a fake session-state writer.</summary>
+    public SettingsWindow(ApplicationPaths? paths, SessionStateWriter? writer = null) : this(ServicesFor(paths, writer)) { }
+
+    public SettingsWindow(Services.SettingsWindowServices services)
     {
-        _paths = paths ?? ApplicationPaths.CreateDefault();
-        _writer = writer ?? SessionStateWriter.For(_paths);
-
-        var settings = SettingsManager.Instance;
+        _services = services ?? throw new ArgumentNullException(nameof(services));
+        var settings = services.Store.Current;
         _openTheme = settings.ThemeMode;
         _openFontScale = settings.FontScale;
         _openMaskOverlay = settings.ActiveMaskOverlay;
-        _openEncoder = string.IsNullOrWhiteSpace(settings.VideoEncoderOverride) ? "Auto" : settings.VideoEncoderOverride;
+        _openEncoder = settings.VideoEncoderOverride;
         _openMemeFolder = settings.MemeDirectoryPath ?? "";
 
-        string music = "";
-        try
-        {
-            var state = _writer.ReadSnapshot();
-            if (state.TryGetPropertyValue("CustomMusicDirectory", out var node) && node != null)
-            {
-                music = node.GetValue<string>() ?? "";
-                _initialMusicFolder = music;
-            }
-            else if (_writer.IsPrimed)
-            {
-                _initialMusicFolder = "";
-            }
-        }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-
-        Vm = new SettingsViewModel(settings, music, SafeGameProfiles());
+        Vm = SettingsViewModel.Open(services, SafeGameProfiles());
+        Closed += (_, _) => Vm.Dispose();
 
         InitializeComponent();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
         DataContext = this;
 
         Vm.PropertyChanged += OnVmPropertyChanged;
-        BuildVideoEncoderStatus();
         BuildAiTrackingUi();
         BuildAboutUi();
         BuildSearch();
         RestoreLastTab();
+        BuildWindowBehavior();
 
         AddHandler(KeyDownEvent, OnCaptureKeyDown, RoutingStrategies.Tunnel);
         KeyDown += OnWindowKeyDown;
         AttachTitleBarDrag();
+    }
+
+    private static Services.SettingsWindowServices ServicesFor(ApplicationPaths? paths, SessionStateWriter? writer)
+    {
+        var d = Services.SettingsWindowServices.CreateDefault(paths);
+        return writer == null ? d : d with { State = new Services.SessionStateSink(writer) };
     }
 
     private static IReadOnlyList<string> SafeGameProfiles()
@@ -225,7 +215,10 @@ public partial class SettingsWindow : Window
         Vm.KeyBindStatus = Vm.TryAssignKey(row, e.Key) ?? "";
     }
 
-    /// <summary>SETKEYS_02 — Esc = Cancel, Enter = Save, unless a control already used the key.</summary>
+    /// <summary>
+    /// SETKEYS_02 — Esc = Cancel, Enter = Save, unless a control already used the key.
+    /// SETENTER_01 — plain Enter while typing in a text box only finishes typing; Ctrl+Enter always saves.
+    /// </summary>
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled) return;
@@ -235,11 +228,13 @@ public partial class SettingsWindow : Window
             if (ClearSearchIfActive()) return;
             _ = RequestCloseAsync();
         }
-        else if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
+        else if (e.Key == Key.Enter && (e.KeyModifiers == KeyModifiers.Control
+                 || (e.KeyModifiers == KeyModifiers.None && FocusManager?.GetFocusedElement() is not TextBox)))
         {
             e.Handled = true;
             SaveAndClose();
         }
+        else if (e.Key == Key.F1) e.Handled = ShowHelpForFocused();
     }
 
 
@@ -261,7 +256,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            var state = _writer.ReadSnapshot();
+            var state = _services.State.ReadSnapshot();
             if (state.TryGetPropertyValue(LastTabStateKey, out var node) && node != null && Tabs is { } tc)
             {
                 int i = node.GetValue<int>();
@@ -274,7 +269,8 @@ public partial class SettingsWindow : Window
     private void RememberLastTab()
     {
         if (Tabs is not { } tc || tc.SelectedIndex < 0) return;
-        try { _writer.Enqueue(new JsonObject { [LastTabStateKey] = tc.SelectedIndex }); }
+        if (_forcedSection == CurrentSection) return;
+        try { _services.State.Enqueue(new JsonObject { [LastTabStateKey] = tc.SelectedIndex }); }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
@@ -292,12 +288,8 @@ public partial class SettingsWindow : Window
         }
     }
 
-    public static async Task<bool> ShowAboutAsync(Window owner)
-    {
-        var settingsWin = new SettingsWindow();
-        settingsWin.SelectTab("About");
-        return await settingsWin.ShowDialog<bool>(owner);
-    }
+    public static async Task<bool> ShowAboutAsync(Window owner, Services.SettingsWindowServices? services = null)
+        => await ShowSectionAsync(owner, SettingsSection.About, services);
 
     /// <summary>One line in the footer: what just happened, or why a save failed (SETSAVEFAIL_01).</summary>
     private void SetFooterStatus(string text, bool isError = false)
@@ -305,36 +297,6 @@ public partial class SettingsWindow : Window
         if (this.FindNameScope()?.Find("FooterStatusText") is not TextBlock t) return;
         t.Text = text;
         t.Foreground = ThemeResources.Brush(this, isError ? "AppDangerBrush" : "AppTextMutedBrush", t.Foreground ?? Avalonia.Media.Brushes.Gray);
-    }
-
-
-    private void BuildVideoEncoderStatus()
-    {
-        if (this.FindNameScope()?.Find("VideoEncoderStatusText") is not TextBlock status) return;
-        _ = Task.Run(() =>
-        {
-            string text;
-            try
-            {
-                var mgr = new EncoderManager(null, null);
-                text = mgr.AvailableEncoders.Count == 0
-                    ? "Found on this computer: no graphics-card video chip."
-                    : "Found on this computer: " + string.Join(", ", mgr.AvailableEncoders
-                        .Select(e => e switch
-                        {
-                            "h264_nvenc" => "NVIDIA",
-                            "h264_amf" => "AMD",
-                            "h264_qsv" => "Intel",
-                            _ => e
-                        }));
-            }
-            catch (Exception ex)
-            {
-                RuntimeLog.Swallowed(ex);
-                text = "Could not check this computer's video chips.";
-            }
-            Dispatcher.UIThread.Post(() => status.Text = text);
-        });
     }
 
 

@@ -10,42 +10,29 @@ using FreeVideoStudio.Core.Media;
 namespace FreeVideoStudio.App.Controls;
 
 /// <summary>
-/// OUTNAME_01 — Settings › Files &amp; Folders. Per tool (Main App, Video Merger): the save folder
-/// (<see cref="AppSettings.MainOutputDirectory"/> / <see cref="AppSettings.MergerOutputDirectory"/>,
-/// ISSUE_04) and the automatic file-name base. Also the music folder (SETMUSICDIR_01: read-only box +
+/// OUTNAME_01 — Settings › Files &amp; Folders. ONE save folder for both tools (SETFOLDERONE_01: written to
+/// <see cref="AppSettings.MainOutputDirectory"/> and <see cref="AppSettings.MergerOutputDirectory"/>,
+/// ISSUE_04) and ONE automatic file name (SETNAMEONE_01: the Video Merger adds "-merged" to it). Also the music folder (SETMUSICDIR_01: read-only box +
 /// Browse, so a half-typed path can never be saved) and the meme folder (MEMEPENDING_01: pending until
-/// SAVE). Values are pending in <see cref="SettingsViewModel"/>; <see cref="ApplyPendingOutputSettings"/>
-/// writes them inside the single SETTX_01 transaction in <c>SaveAndClose</c>.
+/// SAVE). Values are pending in <see cref="SettingsViewModel"/>; <c>SettingsViewModel.Commit</c>
+/// writes them inside the single SETTX_01 transaction.
 ///
 /// An empty folder means "the real Windows Downloads folder, resolved at export time"
 /// (<see cref="OutputFolderResolver"/>). A folder is only accepted when it is writable now.
 /// </summary>
 public partial class SettingsWindow
 {
-    private readonly string _previousMergerOutputDir = SettingsManager.Instance.MergerOutputDirectory ?? "";
-
-    private void OnChangeMainOutputFolder(object? sender, RoutedEventArgs e) =>
-        _ = ChangeOutputFolderAsync(merger: false);
-
-    private void OnChangeMergerOutputFolder(object? sender, RoutedEventArgs e) =>
-        _ = ChangeOutputFolderAsync(merger: true);
+    private void OnChangeSaveFolder(object? sender, RoutedEventArgs e) => _ = ChangeSaveFolderAsync();
 
     /// <summary>ASYNCUI_02 — Task-returning; <see cref="PickFolderAsync"/> never throws.</summary>
-    private async System.Threading.Tasks.Task ChangeOutputFolderAsync(bool merger)
+    private async System.Threading.Tasks.Task ChangeSaveFolderAsync()
     {
-        string? picked = await PickFolderAsync(
-            merger ? Vm.MergerOutputDirectory : Vm.MainOutputDirectory,
-            merger ? "Choose where the Video Merger saves merged videos" : "Choose where the Main App saves finished videos",
-            requireWritable: true);
-        if (picked == null) return;
-        if (merger) Vm.MergerOutputDirectory = picked;
-        else Vm.MainOutputDirectory = picked;
+        string? picked = await PickFolderAsync(Vm.SaveFolder, "Choose where finished videos are saved", requireWritable: true);
+        if (picked != null) Vm.SaveFolder = picked;
     }
 
-    private void OnResetMainOutputFolder(object? sender, RoutedEventArgs e) { Vm.MainOutputDirectory = ""; Vm.OutputFilesStatus = ""; }
-    private void OnResetMergerOutputFolder(object? sender, RoutedEventArgs e) { Vm.MergerOutputDirectory = ""; Vm.OutputFilesStatus = ""; }
+    private void OnResetSaveFolder(object? sender, RoutedEventArgs e) { Vm.SaveFolder = ""; Vm.OutputFilesStatus = ""; }
     private void OnResetMainOutputBaseName(object? sender, RoutedEventArgs e) => Vm.MainOutputBaseName = OutputFileNaming.MainDefaultBaseName;
-    private void OnResetMergerOutputBaseName(object? sender, RoutedEventArgs e) => Vm.MergerOutputBaseName = OutputFileNaming.MergerDefaultBaseName;
 
     private void OnBrowseMusicFolder(object? sender, RoutedEventArgs e) => _ = BrowseMusicFolderAsync();
 
@@ -83,14 +70,12 @@ public partial class SettingsWindow
 
     private void OnResetMemeFolder(object? sender, RoutedEventArgs e) => Vm.MemeDirectoryPath = "";
 
+    /// <summary>MEMEPURE_01 / SHELLLAUNCH_01 — the default folder is created only here, where it is about to be opened.</summary>
     private void OnOpenMemeFolder(object? sender, RoutedEventArgs e)
     {
-        try
-        {
-            string dir = string.IsNullOrWhiteSpace(Vm.MemeDirectoryPath) ? MemeDirectory.GetActive() : Vm.MemeDirectoryPath;
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dir, UseShellExecute = true });
-        }
-        catch (Exception ex) { RuntimeLog.Fail("Memes", $"Open meme folder failed: {ex.Message}"); }
+        string dir = string.IsNullOrWhiteSpace(Vm.MemeDirectoryPath) ? MemeDirectory.EnsureActiveExists() : Vm.MemeDirectoryPath;
+        if (!Services.ShellLauncher.TryOpen(dir, "Memes"))
+            Vm.OutputFilesStatus = "⚠ Windows could not open the meme folder.";
     }
 
     /// <summary>Returns a folder the user picked, or null (cancelled / unusable — the status line explains).</summary>
@@ -133,26 +118,4 @@ public partial class SettingsWindow
         }
     }
 
-    /// <summary>OUTNAME_01 — applied inside the SaveAndClose settings transaction.</summary>
-    private void ApplyPendingOutputSettings(AppSettings s)
-    {
-        SettingsViewModel.CopySection(Vm.P, s, SettingsSection.Files);
-    }
-
-    /// <summary>
-    /// ISSUE_04 — the Video Merger also restores its folder from the IPC state store when it opens.
-    /// Keep that copy in step after a committed change so the merger shows the folder chosen here.
-    /// </summary>
-    private void SyncMergerOutputDirectoryState()
-    {
-        if (string.Equals(_previousMergerOutputDir, Vm.MergerOutputDirectory, StringComparison.OrdinalIgnoreCase)) return;
-        try
-        {
-            _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
-            {
-                ["MergerOutputDirectory"] = Vm.MergerOutputDirectory
-            });
-        }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-    }
 }

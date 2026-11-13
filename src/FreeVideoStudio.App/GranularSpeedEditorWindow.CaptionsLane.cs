@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -184,7 +184,6 @@ public partial class GranularSpeedEditorWindow
                 if (!e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) return;
                 _selectedCaptionLineId = lineId;
                 RedrawCaptionsLane();
-                // The redraw replaced every cue block: drag the NEW one, not the detached original.
                 var fresh = canvas.Children.OfType<Border>().FirstOrDefault(b => b.Tag is int id && id == lineId) ?? border;
                 BeginCaptionDrag(CaptionDragTarget.Move, lineId, currentLine, e.GetPosition(canvas), fresh, e.Pointer);
                 e.Handled = true;
@@ -232,8 +231,6 @@ public partial class GranularSpeedEditorWindow
         _captionDragCurrentStartSec = line.SourceStartSec;
         _captionDragCurrentEndSec = line.SourceEndSec;
         _captionDragElement = element;
-        // Capture on the lane canvas so the drag keeps tracking outside the cue block; losing the
-        // capture (focus change, Alt+Tab) commits through PointerCaptureLost -> CommitCaptionDrag.
         if (pointer != null && _captionsCanvas != null) pointer.Capture(_captionsCanvas);
     }
 
@@ -319,7 +316,6 @@ public partial class GranularSpeedEditorWindow
         _captionDragTarget = CaptionDragTarget.None;
         _captionDragLineId = -1;
         _captionDragElement = null;
-        // State is cleared first, so the PointerCaptureLost this raises re-enters as a no-op.
         pointer?.Capture(null);
 
         if (_edit.CaptionTrack?.Lines == null) return;
@@ -452,7 +448,7 @@ public partial class GranularSpeedEditorWindow
 
     private async Task RegenerateCaptionLineAsync(int lineId, double startSec, double endSec)
     {
-        if (_edit.CaptionTrack == null) return;
+        if (_edit.CaptionTrack == null || _aiCommentaryRunning || _isAiCommentaryPreviewing) return;
         var track = _edit.CaptionTrack;
         var settings = SettingsManager.Instance;
         var config = settings.GetUsageConfig(AiUsage.Commentary);
@@ -462,14 +458,14 @@ public partial class GranularSpeedEditorWindow
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             await ErrorReporter.ShowAsync(this, "API Key Missing",
-                $"Please configure an API key for {config.Vendor} in Settings › AI Features.");
+                $"Please configure an API key for {AiVisionProviders.DisplayName(config.Vendor)} in Settings › AI.");
             return;
         }
 
         double duration = Math.Max(0.5, endSec - startSec);
         string videoPath = _edit.VideoPath;
         double requestStartSec = startSec;
-        double timelineOffsetSec = 0.0;
+        double timelineOffsetSec = _edit.TrimStartMs / 1000.0;
         if (_edit.IsMergeMode && _mergeSource != null)
         {
             var clip = _mergeSource.Clips.FirstOrDefault(c => (startSec * 1000.0) >= (c.StartMs - MergeEditorSource.FrameMs) && (endSec * 1000.0) <= (c.EndMs + MergeEditorSource.FrameMs));
@@ -494,14 +490,15 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
+        string effectiveModel = settings.GetEffectiveModel(AiUsage.Commentary);
         var request = new CommentaryRequest(
             videoPath,
             requestStartSec,
             duration,
             config.Vendor,
-            settings.GetEffectiveModel(AiUsage.Commentary),
+            effectiveModel,
             track.Tone,
-            AiGameProfiles.Parse(settings.AiTrackingGameProfile),
+            settings.AiTrackingGameProfile,
             track.Language,
             track.Style,
             track.Position,
@@ -513,15 +510,36 @@ public partial class GranularSpeedEditorWindow
             Look: track.Look,
             Size: track.Size);
 
-        Notify($"Regenerating caption line #{lineId} via {config.Vendor}...");
+        var est = AiCostEstimator.EstimateCommentary(config.Vendor, effectiveModel, duration, isRewrite: true);
+        using var usage = AiUsageMeter.BeginTask("AI Commentary Rewrite", config.Vendor);
+        var ct = _aiCommentaryCts.Renew();
+        _aiCommentaryRunning = true;
+        _closeDuringCommentaryConfirmed = false;
+        if (AiCommentaryBtnCtl is { } rewriteButton) rewriteButton.IsEnabled = false;
+        if (AiCommentaryProgressOverlayCtl is { } rewriteOverlay) rewriteOverlay.IsVisible = true;
+        var statusProgress = new Progress<string>(msg =>
+        {
+            if (!ct.IsCancellationRequested && AiCommentaryStatusLabelCtl is { } label) label.Text = msg;
+        });
+        Action<string> stepLog = msg =>
+        {
+            RuntimeLog.Info("AiCommentary", msg);
+        };
+        Notify($"Rewriting line #{lineId} via {AiVisionProviders.DisplayName(config.Vendor)} ({effectiveModel}) · {AiCostEstimator.FormatPreRunBanner(est, config.Vendor, effectiveModel)}");
 
         try
         {
-            var genTrack = await CommentaryService.GenerateCommentaryAsync(request, apiKey);
+            var genTrack = await CommentaryService.GenerateCommentaryAsync(request, apiKey, statusProgress, stepLog, ct);
+            ct.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(track, _edit.CaptionTrack))
+            {
+                Notify("Captions changed while writing. Your edits were kept; try again.");
+                return;
+            }
+            string summary = usage.SummaryWithEstimate(est);
+            RuntimeLog.Info("AiUsage", $"AI Commentary Rewrite: {summary}");
             if (genTrack.Lines is { Count: > 0 } && genTrack.Lines[0] is { } newLine)
             {
-                PushUndo("regenerate caption line");
-
                 var updatedLines = track.Lines!.Select(l =>
                 {
                     if (l.Id != lineId) return l;
@@ -537,21 +555,29 @@ public partial class GranularSpeedEditorWindow
                     };
                 }).ToList();
 
-                _edit.CaptionTrack = track with { Lines = updatedLines };
-                SyncCaptionsPreviewSubtitles();
-                RedrawCaptionsLane();
-                ScheduleGranularRecoverySave();
-                Notify($"Caption #{lineId} regenerated successfully.");
+                BeginAiCommentaryPreview(track with { Lines = updatedLines }, startSec);
+                if (AiCommentaryPreviewBarCtl is { } bar)
+                    SetAiUsageLines(bar, "AiCommentary", (summary, "Review the new line, then Keep or Discard."));
             }
             else
             {
-                Notify("AI did not generate replacement text for this segment.");
+                Notify($"AI did not generate replacement text for this segment. {summary}");
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Notify($"Caption rewrite cancelled. {usage.SummaryWithEstimate(est)}");
         }
         catch (Exception ex)
         {
             RuntimeLog.Fail("AiCommentary", $"Regeneration failed: {ex.Message}");
-            await ErrorReporter.ShowAsync(this, "Regeneration Failed", ex.Message);
+            await ErrorReporter.ShowAsync(this, "Regeneration Failed", $"{ex.Message}\n\n{usage.SummaryWithEstimate(est)}");
+        }
+        finally
+        {
+            _aiCommentaryRunning = false;
+            if (AiCommentaryProgressOverlayCtl is { } overlay) overlay.IsVisible = false;
+            if (AiCommentaryBtnCtl is { } button) button.IsEnabled = true;
         }
     }
 }

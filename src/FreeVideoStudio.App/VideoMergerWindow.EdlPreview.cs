@@ -115,7 +115,6 @@ public partial class VideoMergerWindow
     {
         try
         {
-            // MERGERGAPLESS_01: format changes between clips must not drain/reopen WASAPI.
             await ipc.SetPropertyAsync("gapless-audio", "yes");
             await ipc.SetPropertyAsync("hr-seek", "yes");
             await ipc.SetPropertyAsync("mute", _previewMuted ? "yes" : "no");

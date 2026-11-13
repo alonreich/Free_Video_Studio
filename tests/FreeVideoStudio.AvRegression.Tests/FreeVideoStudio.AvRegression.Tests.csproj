@@ -11,6 +11,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- TESTOUT_01: dotnet test writes results only to logs\AV_Results (docs/05 SYS-STORAGE-TABLE). -->
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\AV_Results</VSTestResultsDirectory>
     <IsTestProject>true</IsTestProject>
     <NuGetAudit>false</NuGetAudit>
     <NoWarn>$(NoWarn);xUnit1004</NoWarn>
@@ -27,5 +29,8 @@
     <!-- The real player engine, loaded by MpvWrapper's [LibraryImport("libmpv-2.dll")]. -->
     <None Include="..\..\binaries\libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
   </ItemGroup>
 </Project>

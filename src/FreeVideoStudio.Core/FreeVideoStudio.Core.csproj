@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <AssemblyName>FreeVideoStudio.Core</AssemblyName>
@@ -37,7 +37,7 @@
     <Company>Alon Reich</Company>
     <Authors>Alon Reich</Authors>
     <Product>Free Video Studio</Product>
-    <Copyright>Copyright © 2026 Alon Reich. All rights reserved.</Copyright>
+    <Copyright>Copyright © 2026 Alon Reich. Licensed under the GNU GPL v3.</Copyright>
     <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 

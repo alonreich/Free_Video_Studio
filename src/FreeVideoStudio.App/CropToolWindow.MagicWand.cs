@@ -112,46 +112,39 @@ public partial class CropToolWindow
         => !s_wandCloudDeclinedThisSession && WandDetection.AiService is { IsConfigured: true };
 
     /// <summary>
-    /// AIHUD_05 — the privacy notice. Shown before the FIRST cloud transmission, and again until
-    /// the user agrees; "offline only" is remembered for the session. A dialog that cannot be shown
-    /// is treated as "no" (ConfirmDialogWindow.AskAsync's own rule).
+    /// AIHUD_05 / SETNOCONSENTUI_01 — saving an API key already authorizes cloud calls for that vendor.
+    /// If no key is configured, Magic Wand runs silently offline without modal consent prompts.
     /// </summary>
-    private async Task<bool> ConfirmWandCloudConsentAsync()
+    private Task<bool> ConfirmWandCloudConsentAsync()
     {
         var wandSettings = SettingsManager.Instance;
-        var vendor = wandSettings.GetUsageConfig(FreeVideoStudio.App.Services.AiUsage.MagicWand).Vendor;
-        if (AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, vendor)) return true;
+        var cfg = wandSettings.GetUsageConfig(AiUsage.MagicWand);
+        if (string.IsNullOrWhiteSpace(wandSettings.GetApiKey(cfg.Vendor)))
+            return Task.FromResult(false);
 
-        // If key is configured, user explicitly configured it; auto-consent without interrupting (Proposal #12)
-        if (!string.IsNullOrWhiteSpace(wandSettings.GetApiKey(vendor)))
+        if (!AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, cfg.Vendor))
         {
-            SettingsManager.Update(s => { s.AiMagicWandCloudConsent = true; s.AiMagicWandCloudConsentVendor = vendor.ToString(); });
-            return true;
+            SettingsManager.Update(s =>
+            {
+                s.AiMagicWandCloudConsent = true;
+                s.AiMagicWandCloudConsentVendor = cfg.Vendor;
+            });
         }
+        return Task.FromResult(true);
+    }
 
-        string provider = FreeVideoStudio.App.Services.AiVisionProviders.DisplayName(vendor);
-        bool yes = await Controls.ConfirmDialogWindow.AskAsync(
-            this,
-            $"The Magic Wand can ask {provider} for extra HUD suggestions.\n\n" +
-            $"To do that, ONE still image — the frozen frame you are looking at — will be sent to {provider} " +
-            "(the AI provider set in Settings › AI Features). Your video is never uploaded.\n\n" +
-            "The offline Magic Wand runs either way, and nothing is applied until you pick a box yourself.\n\n" +
-            $"Send this frame to {provider}?",
-            $"Magic Wand: send one frame to {provider}?",
-            "Send one frame",
-            "Offline only");
-
-        if (yes)
+    internal void UpdateMagicWandAvailabilityUi()
+    {
+        var s = SettingsManager.Instance;
+        var cfg = s.GetUsageConfig(AiUsage.MagicWand);
+        bool hasKey = !string.IsNullOrWhiteSpace(s.GetApiKey(cfg.Vendor));
+        string providerName = AiVisionProviders.DisplayName(cfg.Vendor);
+        if (!_wandRunning)
         {
-            SettingsManager.Update(s => { s.AiMagicWandCloudConsent = true; s.AiMagicWandCloudConsentVendor = vendor.ToString(); });
-            RuntimeLog.Info("CROP", $"User allowed the Magic Wand to send one frame to {provider}.");
+            SetStatus(hasKey
+                ? $"AI ready: {providerName} ({s.GetEffectiveModel(AiUsage.MagicWand)}). Click Magic Wand to detect HUD pieces."
+                : "Offline Magic Wand ready (or connect an AI provider in Settings › AI for cloud HUD suggestions).");
         }
-        else
-        {
-            s_wandCloudDeclinedThisSession = true;
-            RuntimeLog.Info("CROP", "User chose offline-only Magic Wand for this session.");
-        }
-        return yes;
     }
 
     private async Task RunMagicWandAsync()
@@ -202,20 +195,37 @@ public partial class CropToolWindow
             return;
         }
 
+        var wandSettings = SettingsManager.Instance;
+        var wandCfg = wandSettings.GetUsageConfig(AiUsage.MagicWand);
+        string wandModel = wandSettings.GetEffectiveModel(AiUsage.MagicWand);
+        string wandProviderName = AiVisionProviders.DisplayName(wandCfg.Vendor);
+        AiEstimatedUsage? wandEstimate = null;
+
         _wandRunning = true;
         _wandStopRequested = false;
         SetEnabled("MagicWandButton", false);
 
-        using var usage = AiUsageMeter.BeginTask("Magic Wand", SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor);
+        using var usage = AiUsageMeter.BeginTask("Magic Wand", wandCfg.Vendor);
 
         try
         {
             bool useAi = aiAvailable && await ConfirmWandCloudConsentAsync();
+            if (useAi)
+            {
+                wandEstimate = AiCostEstimator.EstimateMagicWand(wandCfg.Vendor, wandModel);
+                _wandActiveAiLabel = $"{wandProviderName} ({wandModel})";
+                _wandActiveEstimateBanner = AiCostEstimator.FormatPreRunBanner(wandEstimate, wandCfg.Vendor, wandModel);
+            }
+            else
+            {
+                _wandActiveAiLabel = null;
+                _wandActiveEstimateBanner = null;
+            }
 
             SetContent("MagicWandButton", "ANALYSING…");
             SetWizardState(3, "Refine Box", useAi
-                ? "Looking through the clip for HUD pieces, and asking the AI about this frame."
-                : "Looking through the clip for HUD pieces.");
+                ? $"Step 1: Scanning clip locally for HUD pieces, then asking {_wandActiveAiLabel} ({_wandActiveEstimateBanner})…"
+                : "Scanning clip locally for HUD pieces.");
 
             ShowWandOverlay();
 
@@ -305,11 +315,11 @@ public partial class CropToolWindow
             int confirmed = candidates.Count(c => c.Source == HudCandidateSource.Fused);
             RuntimeLog.Info("CROP", $"Magic Wand found {candidates.Count} candidate region(s) (AI outcome {result.AiOutcome?.ToString() ?? "off"}, AI-only {aiOnly}, AI-confirmed {confirmed}).");
 
-            string shortProv = WandDetection.AiService?.ProviderName ?? "AI";
+            string shortProv = _wandActiveAiLabel ?? WandDetection.AiService?.ProviderName ?? "AI";
             string aiNote = result.AiOutcome == AiHudOutcome.Success && (aiOnly + confirmed) > 0
                 ? $" {shortProv} agreed on {confirmed} (✓) and suggested {aiOnly} more (dashed)."
                 : string.Empty;
-            string usageNote = usage.Tally.TotalTokens > 0 ? $" [{usage.Report().UsageLine}]" : string.Empty;
+            string usageNote = usage.Tally.TotalTokens > 0 ? $" [{usage.SummaryWithEstimate(wandEstimate)}]" : string.Empty;
             SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote}{usageNote} " +
                              "Click a box to select it, adjust it, then label it — nothing is added until you do.");
         }
@@ -356,9 +366,13 @@ public partial class CropToolWindow
         ShowMagicWandCandidates();
         SetEnabled("MagicWandButton", true);
         SetContent("MagicWandButton", "\u23F9 STOP AI SUGGESTIONS");
-        string providerName = WandDetection.AiService?.ProviderName ?? "The AI";
-        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. {providerName} is still looking for more — you can start reviewing now.");
+        string providerName = _wandActiveAiLabel ?? WandDetection.AiService?.ProviderName ?? "The AI";
+        string estNote = string.IsNullOrEmpty(_wandActiveEstimateBanner) ? "" : $" ({_wandActiveEstimateBanner})";
+        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. Step 2: Waiting for {providerName}{estNote} — you can start reviewing now.");
     }
+
+    private string? _wandActiveAiLabel;
+    private string? _wandActiveEstimateBanner;
 
     /// <summary>
     /// Source-pixel candidates -> drawable specs. Runs on the UI thread because role lookup reads
@@ -430,11 +444,18 @@ public partial class CropToolWindow
         if (!_wandRunning) return;
         _wandHighWaterPercent = Math.Clamp(Math.Max(_wandHighWaterPercent, beat.Percent), 0, 100);
 
+        string stageText = beat.Stage;
+        if (stageText.StartsWith("Waiting for ", StringComparison.Ordinal) && !string.IsNullOrEmpty(_wandActiveAiLabel))
+        {
+            string est = string.IsNullOrEmpty(_wandActiveEstimateBanner) ? "" : $" ({_wandActiveEstimateBanner})";
+            stageText = $"Step 2: Waiting for {_wandActiveAiLabel}{est}…";
+        }
+
         if (this.FindControl<ProgressBar>("WandProgressBar") is { } bar) bar.Value = _wandHighWaterPercent;
         if (this.FindControl<TextBlock>("WandPercentText") is { } pct) pct.Text = _wandHighWaterPercent + "%";
-        if (this.FindControl<TextBlock>("WandStageText") is { } stage) stage.Text = beat.Stage;
+        if (this.FindControl<TextBlock>("WandStageText") is { } stage) stage.Text = stageText;
 
-        SetStatus(beat.Stage);
+        SetStatus(stageText);
     }
 
     /// <summary>

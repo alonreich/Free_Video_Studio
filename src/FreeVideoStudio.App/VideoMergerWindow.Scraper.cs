@@ -110,7 +110,7 @@ public partial class VideoMergerWindow
         _ = _videoHost?.IpcClient?.SetPropertyAsync("pause", "yes");
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            Services.ShellLauncher.Launch(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
             RuntimeLog.Info("MERGER", $"Opened {System.IO.Path.GetFileName(path)} in the default video app.");
         }
         catch (Exception ex)

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -9,7 +9,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.DesktopPreviewSmoke;
 
-// MERGERBOUNDARY_01: exercise the real window timer, queue, selection and GPU output.
 internal sealed class MergerSmokeApp : AvaloniaApp
 {
     private static readonly List<string> Clips = [];
@@ -73,11 +72,11 @@ internal sealed class MergerSmokeApp : AvaloniaApp
                    && clock.ElapsedMilliseconds < 10000) await Task.Delay(50);
             if (Field(window, "_timeline") is not MergedTimeline timeline || timeline.Clips.Count != 3)
                 throw new InvalidOperationException("Queue analysis did not finish.");
+            if (timeline.TotalSec <= 0 || Field(window, "_edlUrl") == null)
+                throw new InvalidOperationException($"Queue analysis failed: merged length {timeline.TotalSec:F3}s, EDL {(Field(window, "_edlUrl") == null ? "not loaded" : "loaded")}.");
             await Task.Delay(500);
             FreeVideoStudio.App.Controls.CoachOverlay.Cancel(window);
             window.Activate();
-            // Do not seek or force play here: adding files must start the normal preview,
-            // and its initial per-file-to-EDL handoff must work without intervention.
             bool[] seen = new bool[3];
             uint[] pixels = new uint[3];
             int obscured = 0;
@@ -90,7 +89,6 @@ internal sealed class MergerSmokeApp : AvaloniaApp
                 double time = ipc.CurrentTime;
                 long now = clock.ElapsedMilliseconds;
                 if (time > previous + 0.005) lastAdvance = now;
-                // Match the A/V gate's 250 ms stall and 450 ms startup budgets.
                 if (now > 450 && now - lastAdvance > 250)
                     throw new InvalidOperationException($"Merger playback stalled at {time:F3}s for {now - lastAdvance}ms; paused={ipc.IsPaused}, eof={ipc.IsEof}.");
                 var (index, _) = timeline.Locate(time);

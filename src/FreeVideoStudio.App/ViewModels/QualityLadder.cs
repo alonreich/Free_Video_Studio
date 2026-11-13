@@ -190,18 +190,6 @@ public static class QualityLadder
         return targetMb;
     }
 
-    /// <summary>
-    /// QUALITY_01 — the colour the size readout is painted in. Bands follow the words, so the
-    /// user gets the same "this is bad / this is fine / this is great" signal the old label gave.
-    /// </summary>
-    public static string ColorFor(int index)
-    {
-        index = ClampIndex(index);
-        if (index <= 2) return "#e74c3c";
-        if (index <= 6) return "White";
-        return "#2ecc71";
-    }
-
     /// <summary>QUALITY_01 — "≈ 171 MB", or "1.9 GB" once megabytes stop being readable.</summary>
     public static string FormatSize(double megabytes)
         => FreeVideoStudio.Core.Media.OutputFileSize.FormatMegabytes(megabytes);

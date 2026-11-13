@@ -17,11 +17,14 @@ internal static class Repo
     public static string Ffmpeg => System.IO.Path.Combine(Path, "binaries", "ffmpeg.exe");
     public static string Ffprobe => System.IO.Path.Combine(Path, "binaries", "ffprobe.exe");
 
-    /// <summary>Everything this suite writes lives under tests/AvRegression/ (git-ignored).</summary>
-    public static string OutRoot => System.IO.Path.Combine(Path, "tests", "AvRegression");
+    /// <summary>
+    /// TESTOUT_01: everything this suite writes lives under logs\AV_Results\work\ (git-ignored),
+    /// replaced at the start of every run so only the latest run's media, state and scenarios remain.
+    /// </summary>
+    public static string OutRoot => FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork("AV");
     public static string MediaDir => Directory.CreateDirectory(System.IO.Path.Combine(OutRoot, "media")).FullName;
     public static string WorkDir(string scenario) =>
-        Directory.CreateDirectory(System.IO.Path.Combine(OutRoot, "work", scenario + "-" + DateTime.Now.ToString("HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6])).FullName;
+        Directory.CreateDirectory(System.IO.Path.Combine(OutRoot, "scenarios", scenario + "-" + DateTime.Now.ToString("HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6])).FullName;
 
     /// <summary>
     /// Runs before any test touches the app: the app's settings, logs and caches go to a throw-away

@@ -42,13 +42,6 @@ internal sealed class PendingFailedTake
     public DateTime TimestampUtc { get; } = DateTime.UtcNow;
     public string? SourceManifestPath { get; set; }
 
-    /// <summary>Legacy alias. NOT a persistence decision — see <see cref="MustRemainDurable"/>.</summary>
-    public bool DiscardedByUser
-    {
-        get => State == TakeRecoveryState.Discarded;
-        set { if (value && State == TakeRecoveryState.Pending) State = TakeRecoveryState.Discarded; }
-    }
-
     /// <summary>Predicate 1 — blocks Apply.</summary>
     public bool BlocksApply => State == TakeRecoveryState.Pending || State == TakeRecoveryState.Validating;
 
@@ -57,8 +50,6 @@ internal sealed class PendingFailedTake
 
     /// <summary>Predicate 3 — terminal: this take's record may be removed from storage.</summary>
     public bool IsTerminal => !MustRemainDurable;
-
-    public bool IsResolved => !BlocksApply;
 
     public PendingFailedTake(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason, string? id = null)
     {

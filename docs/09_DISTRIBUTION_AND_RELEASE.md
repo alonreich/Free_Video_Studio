@@ -1,4 +1,4 @@
-# SPECIFICATION 09: DISTRIBUTION, UPDATE SIZE & REPOSITORY WEIGHT
+﻿# SPECIFICATION 09: DISTRIBUTION, UPDATE SIZE & REPOSITORY WEIGHT
 
 ## Code Mini-Map: Bound Source Files & Symbols
 
@@ -66,7 +66,7 @@
 | Test projects and assemblies | `FreeVideoStudio.App.Tests`, `FreeVideoStudio.Core.Tests` |
 | Standalone installer output | `compiled/FreeVideoStudio.exe` — an Inno Setup package (NODROPPER_01, §3c DIST-INSTALLER) |
 | Installed executable | `FreeVideoStudio.exe` (version resource `OriginalFilename`/`InternalName` = `FreeVideoStudio.exe`, PEIDENTITY_01) |
-| Application / installer icon | `assets/icons/FreeVideoStudio.ico` (csproj `ApplicationIcon` + `InnoInstaller.IconPath`), cropped from `assets/icons/FreeVideoStudio.jpg` with no outer padding and transparent rounded corners; sizes 16–256 px (APPICON_01) |
+| Application / installer icon | `assets/icons/FreeVideoStudio.ico` (csproj `ApplicationIcon` + `InnoInstaller.IconPath`), no outer padding, transparent rounded corners (its source picture is no longer kept in the repository); sizes 16–256 px (APPICON_01) |
 | Embedded payload resource | **none** — retired by NODROPPER_01; `AvCleanRuleTests` fails if one comes back |
 | App-only archive | **retired** (`FreeVideoStudio.App.update.zip` is no longer built or published; smart updates replace it; the client code that could read one was removed too, COMPACTGONE_01) |
 | Runtime manifest | `runtime.manifest.json` in the staged release and under `obj/ReleaseAssets` |
@@ -102,9 +102,8 @@ Numbers taken on 2026-09-21, against `arch/04-mvvm`:
 
 Two separate defects hide in that table, and they need separate fixes.
 
-* **Every patch costs 322 MB.** `UpdateService` fetches one release asset — the whole installer —
-  and reinstalls. A one-line typo fix therefore reships FFmpeg. The download timeout is thirty
-  minutes, which is an admission of how long this takes.
+* **Every patch cost 322 MB (2026-09-21 baseline; fixed by [DIST-SMART](#DIST-SMART)).** `UpdateService`
+  fetched one release asset — the whole installer — and reinstalled, so a one-line fix reshipped FFmpeg.
 
   ⚠️ The damage is not bandwidth, it is **delivery**. On a metered or slow connection the rational
   response is to turn updates off, and a user who has turned updates off does not receive the next
@@ -128,54 +127,33 @@ embedded in the program. The size (FFmpeg + libmpv + starter media) is unchanged
 somewhat tighter than deflate did.
 
 ⚠️ **The mandate is worth re-examining, and this spec does not pretend otherwise.** It buys "one
-file on disk", a property no user of a video editor has asked for. It costs: a 322 MB download, a
-322 MB re-download per patch, an extract-on-first-run step with its own failure modes, the ban on a
-DI container (`COMPOSITION_01` cites `TrimMode=full` as the reason), and hand-written AOT-safe JSON
-(`PROJ-AOT`). Four architectural taxes for one cosmetic win.
+file on disk", a property no user of a video editor has asked for. Remaining costs: a 322 MB first
+install, the ban on a DI container (`COMPOSITION_01` cites `TrimMode=full`) and hand-written AOT-safe
+JSON (`PROJ-AOT`). The repeat download is removed by [DIST-SMART](#DIST-SMART); the first-run
+extraction by NODROPPER_01.
 
 **This spec does not repeal it.** Repealing it is a product decision with a migration behind it —
-installer, upgrade path, signing story. What this spec does is remove the part of the cost that
-recurs: the *repeat* download.
+installer, upgrade path, signing story.
 
 ---
 
-## 3. The Split: One Runtime, Many App Patches  {#DIST-SPLIT}
+## 3. Packaging, Manifests & Old-Client Bridges  {#DIST-SPLIT}
 
-* **`SYS-PAYLOADSPLIT` — a release may publish two packages and one tiny sidecar.**
+* **Current packaging (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` (runtime
+  fingerprint: ordinal-sorted paths, lengths and SHA-256 of codec libraries and starter assets; app
+  executables, manifests and debug symbols excluded) and `install.manifest.json` into staging, plus
+  `obj/ReleaseAssets/runtime.manifest.json`. `compiled/` contains only `FreeVideoStudio.exe`. The client
+  chooses smart ([DIST-SMART](#DIST-SMART)), else the full installer; any doubt resolves to the full installer.
+* **A manifest is a hint, never a trust decision.** Whatever is downloaded is SHA-256 verified against the
+  signed list and Authenticode-checked (05 SYS-SIGNING, `UPDATETRUST_02`).
+* **History — `SYS-PAYLOADSPLIT` / COMPACTGONE_01.** Releases before NODROPPER_01 also published
+  `FreeVideoStudio.App.update.zip` (app-only package, chosen when the fingerprint matched). It was a second
+  NativeAOT program carrying the app in its resources (the dropper pattern §3c removes). The package stopped
+  being built at NODROPPER_01; the client code (`RuntimeAlreadyMatchesAsync`, `ExtractCompactInstaller`,
+  app-only `UpdateRelease` fields) was removed on 2026-10-18, since a client only updates to the NEWEST
+  release. Do not reintroduce it: choosing an app-only package against mismatched codecs fails at export
+  time on the user's machine.
 
-  | Asset | Contents | When it is used |
-  | :--- | :--- | :--- |
-  | `FreeVideoStudio.exe` | everything (322 MB) | first install, or the runtime changed |
-  | `FreeVideoStudio.App.update.zip` | the application only | the runtime already matches |
-  | `runtime.manifest.json` | a fingerprint, a few hundred bytes | always read first |
-
-* **The fingerprint includes content hashes of reusable payload files.** It is computed during
-  packaging, over ordinal-sorted paths, lengths and SHA-256 hashes. Application executables,
-  manifests and debug symbols are excluded; codec libraries and starter assets are included.
-  An equal-size binary or asset change therefore selects the full installer. Startup checks read
-  the stored sidecar; the user-approved update also verifies installed file bytes before reuse.
-* **⚠️ EVERY UNCERTAINTY RESOLVES TO THE BIG DOWNLOAD.** `RuntimeAlreadyMatchesAsync` returns true
-  only when the release published a small package AND advertised a fingerprint AND it matches what
-  is installed. No small package, no sidecar, an unreadable local manifest, a network failure, a
-  cancel, or a genuine mismatch — all return false.
-
-  The asymmetry is the whole design. Wrongly choosing the big download costs bandwidth. Wrongly
-  choosing the small one installs an application against codec binaries it was not built for, and
-  that fails **at export time, on the user's machine, after they have done the work**.
-
-* **The fingerprint decides WHAT to fetch and never WHETHER TO TRUST IT.** Whatever is downloaded
-  is still SHA-256 verified against the release digest and still Authenticode-checked
-  (`05` §5 SYS-SIGNING, `UPDATETRUST_02`). A manifest is a hint, and hints are not a security
-  boundary.
-
-* **Current packaging behavior (NODROPPER_01).** `Staging.WriteManifests` writes `runtime.manifest.json` and `install.manifest.json` into the staging folder, so fresh installs receive the fingerprint, and writes `obj/ReleaseAssets/runtime.manifest.json`. **The compact package is no longer built or published**: it was a second NativeAOT program carrying the app inside its own resources — the same dropper pattern §3c removes — and smart updates (§3a) already download only what changed. `compiled/` contains only `FreeVideoStudio.exe`. **COMPACTGONE_01 (2026-10-18): the client code that could read a compact package is removed** (`RuntimeAlreadyMatchesAsync`, `ExtractCompactInstaller`, the app-only fields of `UpdateRelease`). It was dormant code that could never run: a client only ever updates to the NEWEST release, and no release since NODROPPER_01 carries the package. The client chooses smart (§3a), else the full installer. The two bullets below are history.
-
-* **Operational compact updates (dormant since NODROPPER_01 — kept for releases that still publish the package).** `FromFolder` excludes the root application and uninstaller.
-  Before selecting a compact update, the updater verifies the installed file manifest, requires
-  the canonical install location, a published package digest and a matching runtime fingerprint.
-  It fetches the selected asset and verifies its digest. The archive must contain exactly one
-  installer executable, which is Authenticode-checked before launch. The installer embeds the
-  new complete manifest and refuses to reuse any installed file with different bytes.
 * **Build ordering (NODROPPER_01).** ONE NativeAOT publish of the program into staging; rewrite its
   PE identity (PEIDENTITY_01); sign it; stage dependencies; write the manifests; build the smart
   assets and the signed file list for the installer (`SmartUpdateBuilder.Prepare`); compile the Inno
@@ -198,9 +176,9 @@ recurs: the *repeat* download.
   the one place a file name and its `OriginalFilename` differ, and only for that download. Remove the
   alias only together with automatic updates for copies released before 2026-10-12.
 * **Publication transaction.** Upload all assets (setup, its two aliases, runtime manifest, smart files) to a draft created FROM THE PUSHED
-  TAG (`--verify-tag`, RELTAG_01), verify every asset by name and SHA-256, then publish it as latest (a beta: as a pre-release, BETA_01).
+  TAG (`--verify-tag`, RELTAG_01), verify every asset by name and SHA-256, then publish it as latest (a beta: as a pre-release, BETA_01; manual download only, the app reads `/releases/latest` and never offers it, SETNOBETA_01).
   Failed uploads stay unpublished. Publication never deletes an existing release first; after a successful
-  publish, releases beyond the retention window are deleted and their TAGS ARE KEPT (RETAIN_01, §3d).
+  publish, releases beyond the retention window lose only their downloadable files; pages, notes and TAGS ARE KEPT (RETAIN_01/RETAIN_02, §3d).
 
 ---
 
@@ -321,10 +299,10 @@ recurs: the *repeat* download.
 
 * **Local Output Directory (`.\compiled\`) Invariant:** `.\compiled\` strictly holds **only the single latest installer** (`FreeVideoStudio.exe`). Any stray files, extra sidecars or older binaries are purged and treated as build failures (`Staging.ValidateCompiledOutput`).
 * **RETAIN_02 — retention removes FILES, never history (2026-10-18).** `PruneOldReleases` used to run `gh release delete`, which deletes the release PAGE and its NOTES with the files. It now removes only the downloadable files of a release beyond the window (`gh release delete-asset`, oldest first, only after the new release is verified and public); the release, its title, its notes and its tag stay forever, and a release that already has no files is skipped. The decision (`ReleasesToPrune`) is unchanged. The bullet below is the older rule it refines.
-* **RETAIN_01 — Official GitHub Release Retention (last 5 stable releases, tags kept forever):** after a successful publish `GitHubReleasePublisher.PruneOldReleases` keeps the newest **5 stable releases** (the new one included) and the newest **3 betas that are still newer than the newest stable** (`ReleasesToPrune`, ordered by VERSION, drafts ignored); every other release is deleted with `gh release delete --yes` — **without `--cleanup-tag`**. The old `--cleanup-tag` deleted the git tag too, so any version a user still ran stopped being traceable to its source after the sixth release, contradicting the publisher's own promise. Tags are never deleted.
+* **RETAIN_01 — Official GitHub Release Retention (last 5 stable releases, tags kept forever):** after a successful publish `GitHubReleasePublisher.PruneOldReleases` keeps the newest **5 stable releases** (the new one included) and the newest **3 betas that are still newer than the newest stable** (`ReleasesToPrune`, ordered by VERSION, drafts ignored); every other release is pruned — files only since RETAIN_02 (`gh release delete-asset`), never the tag. The old `--cleanup-tag` deleted the git tag too, so any version a user still ran stopped being traceable to its source after the sixth release, contradicting the publisher's own promise. Tags are never deleted.
 * **Rolling Changelog Contract (`docs/CHANGELOG.md` + `docs/changes.md`):** see §3f DIST-RELEASENOTES. The user changelog keeps exactly the 5 latest releases plus `## Upcoming`; the technical log keeps 10 plus `## Unreleased`. Both are pruned by the release itself (`ReleaseChangelog.Promote`), not by memory. **RELRECORD_01: pruned sections move to `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` (`ReleaseChangelog.Archive`, newest first, written before the main file, never duplicated); full history is kept.** Every `## v…` heading in `docs/CHANGELOG.md` must be a pushed tag (CI job `Release records`, and the gate). The four headings that named versions never published (v2026.10.04.1120 – v2026.10.13.2238) were moved to the archive on 2026-10-18.
 * **Smart Update Delta Continuity:** DELTABASE_01 (§3a): every release build makes sure the last 3 published programs are patch bases, verified against their signed update lists.
-* **Pre-Flight Disk Space & Connection Awareness:** UPDATESPACE_01 (05 SYS-AUTOUPDATE): free space is checked per drive for what an update really writes (smart: the changed files; full: the download plus what the installer unpacks), and metered connections are honoured according to user preferences.
+* **Pre-Flight Disk Space & Connection Awareness:** UPDATESPACE_01 (05 SYS-AUTOUPDATE): free space is checked per drive for what an update really writes (smart: the changed files; full: the download plus what the installer unpacks). (The metered-connection preference was removed, SETNOMETERED_01.)
 
 ---
 

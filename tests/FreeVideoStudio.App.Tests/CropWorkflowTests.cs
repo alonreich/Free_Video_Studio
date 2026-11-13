@@ -46,8 +46,8 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     {
         _previousRoot = Environment.GetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable);
         Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, _root);
-        SettingsManager.Instance.ActiveMaskOverlay = "Fortnite";
-        SettingsManager.Instance.LastEditedCropProfile = "";
+        SettingsManager.ReplaceInstanceForTests(s => s.ActiveMaskOverlay = "Fortnite");
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "");
         return Task.CompletedTask;
     }
 
@@ -94,7 +94,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public void ProfileWriteFailureIsReported()
     {
         MaskOverlayManager.EnsureDefaults();
-        SettingsManager.Instance.ActiveMaskOverlay = "Blocked";
+        SettingsManager.ReplaceInstanceForTests(s => s.ActiveMaskOverlay = "Blocked");
         Directory.CreateDirectory(Profile("Blocked"));
         Assert.False(MaskOverlayManager.SyncActiveProfileFromCurrentConfig());
     }
@@ -184,7 +184,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     [AvaloniaFact]
     public void FirstUse_NoPreviousProfile_PickerEmpty_GateLocked()
     {
-        SettingsManager.Instance.LastEditedCropProfile = "";
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "");
         var window = new CropToolWindow();
         var edit = (CropEditSession)Get(window, "_edit")!;
         var combo = window.FindControl<ComboBox>("CropToolMaskOverlayCombo");
@@ -204,7 +204,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public async Task ReopenSavedValidProfile_GateUnlocked_IdentityVerified()
     {
         MaskOverlayManager.EnsureDefaults();
-        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "Fortnite");
         var window = new CropToolWindow();
         Dispatcher.UIThread.RunJobs();
         await Task.Delay(50);
@@ -235,7 +235,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         {
             File.WriteAllText(Profile(profileName), content);
         }
-        SettingsManager.Instance.LastEditedCropProfile = profileName;
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = profileName);
 
         var window = new CropToolWindow();
         Dispatcher.UIThread.RunJobs();
@@ -258,7 +258,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public async Task FailedProfileLoadAfterValidProfile_PreservesPriorValidStateWithoutRelabeling()
     {
         MaskOverlayManager.EnsureDefaults();
-        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "Fortnite");
         var window = new CropToolWindow();
         Dispatcher.UIThread.RunJobs();
         await Task.Delay(50);
@@ -297,7 +297,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         AtomicJsonFile.WriteObject(otherProfilePath, otherConfig);
         string originalOtherText = File.ReadAllText(otherProfilePath);
 
-        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "Fortnite");
         var window = new CropToolWindow();
         Dispatcher.UIThread.RunJobs();
         await Task.Delay(50);
@@ -306,7 +306,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         var edit = (CropEditSession)Get(window, "_edit")!;
         Assert.Equal("Fortnite", edit.ActiveProfile);
 
-        SettingsManager.Instance.ActiveMaskOverlay = "OtherProfile";
+        SettingsManager.ReplaceInstanceForTests(s => s.ActiveMaskOverlay = "OtherProfile");
 
         var role = CropEditSession.BuiltInRoles[0];
         edit.AdoptSavedLayer(new CropLayer
@@ -346,7 +346,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public async Task PartialWriteFailure_SyncFails_RemainsDirty()
     {
         MaskOverlayManager.EnsureDefaults();
-        SettingsManager.Instance.LastEditedCropProfile = "Fortnite";
+        SettingsManager.ReplaceInstanceForTests(s => s.LastEditedCropProfile = "Fortnite");
         var window = new CropToolWindow();
         Dispatcher.UIThread.RunJobs();
         await Task.Delay(50);

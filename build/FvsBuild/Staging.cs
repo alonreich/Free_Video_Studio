@@ -38,15 +38,14 @@ internal static class Staging
 
     private static readonly string[] StarterMp3 =
     [
-        // MEDIALICENSE_01 — only royalty-free tracks; the attribution .txt travels with its song.
-        "!_Janji - Heroes Tonight (No CopyRight).mp3",
-        "!_Janji - Heroes Tonight (No CopyRight).txt",
-        "Cool Dance Background Music (No CopyRights).mp3",
+        "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).mp3",
+        "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).txt",
+        "!_System Recall - Aftertune (No CopyRights).mp3",
+        "!_System Recall - Aftertune (No CopyRights).txt",
     ];
 
     private static readonly string[] StarterMeme =
     [
-        // MEDIALICENSE_01 — only original, generated media ships (no third-party film/TV/news clips).
         "Countdown - Landscape.mp4",
         "Countdown - Portrait.mp4",
         "Quick Flash - Portrait.mp4",

@@ -290,7 +290,6 @@ public partial class VideoMergerWindow
     internal void TriggerDropForTesting(Avalonia.Input.DragEventArgs e) => VideoList_Drop(VideoListCtl, e);
     internal static Avalonia.Input.DataFormat<string> VideoItemFormatForTesting => VideoItemFormat;
     internal void TriggerClipActionsKeyDownForTesting(KeyEventArgs e) => ClipActionsKeyDown(this, e);
-    internal bool MoveQueueClipsForTesting(IReadOnlyList<Guid> ids, int direction) => MoveQueueClips(ids, direction);
     internal bool RemoveQueueClipsForTesting(IReadOnlyList<Guid> ids) => RemoveQueueClips(ids);
     internal Canvas? BlocksLaneCtlForTesting => BlocksLaneCtl;
     internal bool TickMergedPlaybackForTesting() => TickMergedPlayback();

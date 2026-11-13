@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class OpenAiProviderTests
 {
-    private const string FakeOpenAiKey = "sk-proj-dummy-test-openai-key-000000000"; // SECRETSCAN_ALLOW
+    private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

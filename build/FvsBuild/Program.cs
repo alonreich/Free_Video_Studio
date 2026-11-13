@@ -293,6 +293,7 @@ internal static class Program
         }
         if (!PeIdentity.FixOriginalFilename(Staging.StagedProgramPath, log)) return false;
         if (!CodeSigning.SignIfNeeded(Staging.StagedProgramPath, log)) return false;
+        if (!CodeSigning.SignDependenciesWhenPubliclyTrusted(Staging.StagingDirPath, Staging.StagedProgramPath, log)) return false;
         if (!Staging.WriteManifests(log))
         {
             return false;

@@ -36,8 +36,9 @@
                     <MenuItem Header="_File">
                         <MenuItem Name="MenuUploadVideo" Header="Upload Video..." ToolTip.Tip="Upload an MP4 or MKV video file from your computer to start editing." />
                         <Separator />
-                        <MenuItem Name="MenuExportConfig" Header="Backup Settings..." ToolTip.Tip="Save all your current settings to a backup file so you don't lose them." />
-                        <MenuItem Name="MenuImportConfig" Header="Restore Settings..." ToolTip.Tip="Load your saved settings from a previous backup." />
+                        <!-- FILEBACKUP_01 — both open Settings › General and run its Backup / Import. -->
+                        <MenuItem Name="MenuExportConfig" Header="Backup Settings..." ToolTip.Tip="Save all your settings to one file, for example to move them to a new computer. Your AI keys are left out on purpose." />
+                        <MenuItem Name="MenuImportConfig" Header="Restore Settings..." ToolTip.Tip="Load your settings from a backup file. You can look them over first: nothing changes until you press SAVE." />
                         <Separator />
                         <MenuItem Name="MenuSettingsBtn" Header="_Settings" ToolTip.Tip="Open the settings menu to tweak how the application works." />
                         <MenuItem Name="MenuAboutBtn" Header="_About" ToolTip.Tip="View application version, system details, and check for updates." />

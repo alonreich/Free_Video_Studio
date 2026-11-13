@@ -4,7 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$testRoot = Join-Path $PSScriptRoot ('artifacts\native-smoke-' + (Get-Date -Format yyyyMMdd-HHmmss))
+# TESTOUT_01: output goes only to logs\NativeSmoke_Results\work, replaced on every run.
+. (Join-Path $PSScriptRoot '..\TestHarness.ps1')
+$testRoot = Enter-SuiteOutput ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'NativeSmoke'
 $stateRoot = Join-Path $testRoot 'state'
 $tempRoot = Join-Path $testRoot 'temp'
 $logRoot = Join-Path $testRoot 'logs'

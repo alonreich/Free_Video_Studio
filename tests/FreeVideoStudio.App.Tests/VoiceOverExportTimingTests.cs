@@ -25,7 +25,7 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
         string ffmpeg = Path.Combine(RepoRoot.Path, "binaries", "ffmpeg.exe");
         string ffprobe = Path.Combine(RepoRoot.Path, "binaries", "ffprobe.exe");
         Assert.True(File.Exists(ffmpeg), "This integration test requires bundled FFmpeg.");
-        string work = Path.Combine(RepoRoot.Path, "tests", "MediaPipelineChecks", "artifacts", "voice-" + name + "-" + Guid.NewGuid().ToString("N"));
+        string work = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "voice-" + name + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         using var isolated = LiveCaptureDriver.IsolateProgramData(Path.Combine(work, "state"));
         string source = Path.Combine(work, "source.mkv");
@@ -112,7 +112,7 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
         Assert.True(success, worker.FailureDetail ?? exported);
         double[] pictureEvents = await PictureEvents(exported, "export");
         string rawAudio = Path.Combine(work, "export.f32");
-        await Run("-i", exported, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", rawAudio);
+        await Run("-i", exported, "-vn", "-af", "highpass=f=500:p=2,highpass=f=500:p=2", "-ac", "1", "-ar", "48000", "-f", "f32le", rawAudio);
         byte[] bytes = await File.ReadAllBytesAsync(rawAudio);
         float[] samples = new float[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
         var audioEvents = new List<double>(); bool wasLoud = false;

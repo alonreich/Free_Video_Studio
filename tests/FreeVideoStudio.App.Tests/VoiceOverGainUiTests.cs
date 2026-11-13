@@ -16,7 +16,7 @@ public class VoiceOverGainUiTests
     [AvaloniaFact]
     public async Task ApplySavesGainWithoutChangingRecordedSamples()
     {
-        string root = Path.Combine(RepoRoot.Path, "TestResults", "voice-gain-apply-" + Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "voice-gain-apply-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         using var isolated = LiveCaptureDriver.IsolateProgramData(root);
         using var capture = new VoiceCaptureSession(new SampleCaptureDevices(), a => a());
@@ -74,7 +74,7 @@ public class VoiceOverGainUiTests
     [AvaloniaFact]
     public void StudioDefaultsToUnityRestoresGainAndScalesRail()
     {
-        string root = Path.Combine(RepoRoot.Path, "TestResults", "voice-gain-ui-" + Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "voice-gain-ui-" + Guid.NewGuid().ToString("N"));
         using var isolated = LiveCaptureDriver.IsolateProgramData(root);
         using var capture = new VoiceCaptureSession(new SampleCaptureDevices(), a => a());
         var window = new VoiceOverWindow(capture) { Width = 980, Height = 640 };

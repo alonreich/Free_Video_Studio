@@ -51,7 +51,7 @@ public sealed class MusicWizardResultPlanTests
     private static MusicWizardResult WizardResult(double start, double end, double speed, double songLength,
         double songOffset, bool loop, List<SpeedSegment>? segments = null, List<CutRange>? cuts = null)
     {
-        string root = System.IO.Path.Combine(RepoRoot.Path, "TestResults", "music-end-" + System.Guid.NewGuid().ToString("N"));
+        string root = System.IO.Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "music-end-" + System.Guid.NewGuid().ToString("N"));
         using var isolated = LiveCaptureDriver.IsolateProgramData(root);
         var window = new MusicWizardWindow();
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;

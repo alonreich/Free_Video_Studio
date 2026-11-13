@@ -1,11 +1,13 @@
 ﻿
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App;
@@ -17,16 +19,18 @@ namespace FreeVideoStudio.App;
 /// that only Windows Error Reporting saw (the ones you'd otherwise dig out of Event Viewer
 /// by hand) end up in the same .log file as everything else.
 ///
-/// NativeAOT-safe: shells out to the built-in <c>wevtutil.exe</c> instead of the
-/// reflection-heavy <c>System.Diagnostics.EventLog</c> managed API. Reading the Application
-/// log does not require elevation.
+/// NOHIDDENTOOLS_01 — reads the log through the Windows Event Log API (wevtapi.dll, direct
+/// P/Invoke: NativeAOT-safe, unlike the reflection-heavy <c>System.Diagnostics.EventLog</c>). It used
+/// to start the hidden Windows event tool on EVERY launch; a program that starts hidden system tools
+/// at startup is what antivirus behaviour rules score (SYS-AVCLEAN). Reading the Application log does
+/// not require elevation. Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md #SYS-AVCLEAN.
 /// </summary>
-internal static class CrashLogDigest
+internal static partial class CrashLogDigest
 {
     /// <summary>Fire-and-forget: runs off the UI/startup thread so it never delays launch.</summary>
     public static Task RunAsync() => Task.Run(Run);
 
-    private static async Task Run()
+    private static void Run()
     {
         try
         {
@@ -42,57 +46,12 @@ internal static class CrashLogDigest
                 "or Provider[@Name='Application Hang'] or Provider[@Name='Windows Error Reporting']) " +
                 $"and TimeCreated[@SystemTime>='{sinceIso}']]]";
 
-            var psi = new ProcessStartInfo
-            {
-                FileName = "wevtutil.exe",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-            };
-            psi.ArgumentList.Add("qe");
-            psi.ArgumentList.Add("Application");
-            psi.ArgumentList.Add("/q:" + query);
-            psi.ArgumentList.Add("/f:text");
-            psi.ArgumentList.Add("/rd:true");
-            psi.ArgumentList.Add("/c:100");
-
-            using var proc = Process.Start(psi);
-            if (proc == null) return;
-
-            var readOutput = proc.StandardOutput.ReadToEndAsync();
-            var readError = proc.StandardError.ReadToEndAsync();
-
-            using var cts = new System.Threading.CancellationTokenSource(15000);
-            try
-            {
-                await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException swallowed)
-            {
-                await GracefulProcessTerminator.TerminateAsync(
-                proc, "EVENTLOG DIGEST", attemptQuitCommand: false).ConfigureAwait(false);
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
-            }
-
-            string output = await readOutput.ConfigureAwait(false);
-            _ = await readError.ConfigureAwait(false);
-
             int ingested = 0;
-            if (!string.IsNullOrWhiteSpace(output))
+            foreach (string xml in ReadEvents(query, MaxEvents))
             {
-                foreach (string block in SplitEvents(output))
-                {
-                    if (block.IndexOf("FreeVideoStudio", StringComparison.OrdinalIgnoreCase) < 0
-                        && block.IndexOf(exe, StringComparison.OrdinalIgnoreCase) < 0
-                        && block.IndexOf("ffmpeg.exe", StringComparison.OrdinalIgnoreCase) < 0
-                        && block.IndexOf("ffprobe.exe", StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    RuntimeLog.Fail("EVENTLOG CRASH", Condense(block));
-                    ingested++;
-                }
+                if (!Mentions(xml, exe)) continue;
+                RuntimeLog.Fail("EVENTLOG CRASH", CondenseXml(xml));
+                ingested++;
             }
 
             if (ingested > 0)
@@ -107,47 +66,119 @@ internal static class CrashLogDigest
         }
     }
 
-    private static IEnumerable<string> SplitEvents(string text)
+    private const int MaxEvents = 100;
+    private const uint EvtQueryChannelPath = 0x1;
+    private const uint EvtQueryReverseDirection = 0x200;
+    private const uint EvtRenderEventXml = 1;
+    private const int ErrorInsufficientBuffer = 122;
+
+    [LibraryImport("wevtapi.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    private static partial nint EvtQuery(nint session, string path, string query, uint flags);
+
+    [LibraryImport("wevtapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static unsafe partial bool EvtNext(nint resultSet, uint eventsSize, nint* events, uint timeoutMs, uint flags, uint* returned);
+
+    [LibraryImport("wevtapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static unsafe partial bool EvtRender(nint context, nint fragment, uint flags, uint bufferBytes, char* buffer, uint* bufferUsed, uint* propertyCount);
+
+    [LibraryImport("wevtapi.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool EvtClose(nint handle);
+
+    /// <summary>
+    /// NOHIDDENTOOLS_01 — the newest <paramref name="max"/> events of the Application log that match
+    /// <paramref name="query"/>, each as its event XML. Empty when the log cannot be read: a crash
+    /// digest must never disturb a launch.
+    /// </summary>
+    internal static unsafe List<string> ReadEvents(string query, int max)
     {
-        var sb = new StringBuilder();
-        foreach (string line in text.Split('\n'))
+        var events = new List<string>();
+        if (!OperatingSystem.IsWindows()) return events;
+        nint results = EvtQuery(0, "Application", query, EvtQueryChannelPath | EvtQueryReverseDirection);
+        if (results == 0)
         {
-            if (line.StartsWith("Event[", StringComparison.Ordinal) && sb.Length > 0)
-            {
-                yield return sb.ToString();
-                sb.Clear();
-            }
-            sb.Append(line).Append('\n');
+            RuntimeLog.Info("EVENTLOG DIGEST", $"The Windows event log could not be queried (error {Marshal.GetLastPInvokeError()}).");
+            return events;
         }
-        if (sb.Length > 0) yield return sb.ToString();
+        try
+        {
+            const int Batch = 16;
+            nint* handles = stackalloc nint[Batch];
+            while (events.Count < max)
+            {
+                uint returned = 0;
+                if (!EvtNext(results, Batch, handles, 5000, 0, &returned) || returned == 0) break;
+                for (int i = 0; i < returned; i++)
+                {
+                    try
+                    {
+                        if (events.Count < max && RenderXml(handles[i]) is { Length: > 0 } xml) events.Add(xml);
+                    }
+                    finally { EvtClose(handles[i]); }
+                }
+            }
+        }
+        finally { EvtClose(results); }
+        return events;
     }
 
-    /// <summary>Collapse a wevtutil text block into one readable line, dropping boilerplate.</summary>
-    private static string Condense(string block)
+    private static unsafe string? RenderXml(nint eventHandle)
     {
-        var keep = new List<string>();
-        foreach (string raw in block.Split('\n'))
+        uint used = 0, properties = 0;
+        if (EvtRender(0, eventHandle, EvtRenderEventXml, 0, null, &used, &properties)) return null;
+        if (Marshal.GetLastPInvokeError() != ErrorInsufficientBuffer || used == 0 || used > 1_000_000) return null;
+        char[] buffer = new char[(used / 2) + 1];
+        fixed (char* p = buffer)
         {
-            string line = raw.Trim();
-            if (line.Length == 0) continue;
-            if (line.StartsWith("Event[", StringComparison.Ordinal)) continue;
-            if (StartsWithAny(line, "Log Name:", "Level:", "Opcode:", "Task:", "Keyword:",
-                    "User:", "User Name:", "Computer:", "Record Id:", "Correlation:", "Execution:")) continue;
-            if (line.Equals("Description:", StringComparison.OrdinalIgnoreCase)) continue;
-            keep.Add(line);
+            if (!EvtRender(0, eventHandle, EvtRenderEventXml, (uint)(buffer.Length * 2), p, &used, &properties)) return null;
+        }
+        return new string(buffer, 0, Math.Min(buffer.Length, (int)(used / 2))).TrimEnd((char)0);
+    }
+
+    /// <summary>True when the event names this app or one of its media helpers (pure, unit-tested).</summary>
+    internal static bool Mentions(string xml, string exe) =>
+        xml.Contains("FreeVideoStudio", StringComparison.OrdinalIgnoreCase)
+        || xml.Contains(exe, StringComparison.OrdinalIgnoreCase)
+        || xml.Contains("ffmpeg.exe", StringComparison.OrdinalIgnoreCase)
+        || xml.Contains("ffprobe.exe", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Collapses one event's XML into a readable line: source, event number, time, then the values
+    /// Windows recorded (faulting program, module, exception code, …). Pure, unit-tested. XML that
+    /// cannot be read is kept as shortened text rather than lost.
+    /// </summary>
+    internal static string CondenseXml(string xml)
+    {
+        const int cap = 1200;
+        var keep = new List<string>();
+        try
+        {
+            XElement root = XDocument.Parse(xml).Root!;
+            XElement? system = root.Elements().FirstOrDefault(e => e.Name.LocalName == "System");
+            string? provider = system?.Elements().FirstOrDefault(e => e.Name.LocalName == "Provider")?.Attribute("Name")?.Value;
+            string? id = system?.Elements().FirstOrDefault(e => e.Name.LocalName == "EventID")?.Value;
+            string? time = system?.Elements().FirstOrDefault(e => e.Name.LocalName == "TimeCreated")?.Attribute("SystemTime")?.Value;
+            if (!string.IsNullOrWhiteSpace(provider)) keep.Add("Source: " + provider);
+            if (!string.IsNullOrWhiteSpace(id)) keep.Add("Event ID: " + id);
+            if (!string.IsNullOrWhiteSpace(time)) keep.Add("Date: " + time);
+            foreach (XElement data in root.Descendants().Where(e => e.Name.LocalName == "Data"))
+            {
+                string value = string.Join(" ", data.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                if (value.Length > 0) keep.Add(value);
+            }
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            keep.Clear();
+            keep.Add(string.Join(" ", xml.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
         }
 
         string joined = string.Join(" | ", keep);
-        const int cap = 1200;
         if (joined.Length > cap) joined = joined.Substring(0, cap) + " …(truncated)";
         return joined;
-    }
-
-    private static bool StartsWithAny(string line, params string[] prefixes)
-    {
-        foreach (string p in prefixes)
-            if (line.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
     }
 
     private static DateTime ReadMarker(string path)
@@ -175,9 +206,9 @@ internal static class CrashLogDigest
             }
             finally { if (acquired) mutex.ReleaseMutex(); }
         }
-        catch (Exception ex) 
-        { 
-            RuntimeLog.Info("EVENTLOG DIGEST", $"ReadMarker failed, falling back to 3 days ago: {ex.Message}"); 
+        catch (Exception ex)
+        {
+            RuntimeLog.Info("EVENTLOG DIGEST", $"ReadMarker failed, falling back to 3 days ago: {ex.Message}");
         }
         return DateTime.UtcNow.AddDays(-3);
     }
@@ -202,9 +233,9 @@ internal static class CrashLogDigest
             }
             finally { if (acquired) mutex.ReleaseMutex(); }
         }
-        catch (Exception ex) 
-        { 
-            RuntimeLog.Info("EVENTLOG DIGEST", $"WriteMarker failed: {ex.Message}"); 
+        catch (Exception ex)
+        {
+            RuntimeLog.Info("EVENTLOG DIGEST", $"WriteMarker failed: {ex.Message}");
         }
     }
 }

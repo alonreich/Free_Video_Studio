@@ -71,9 +71,10 @@ public static class MemeAssets
         {
             [SongCategory] = new[]
             {
-                "!_Janji - Heroes Tonight (No CopyRight).mp3",
-                "!_Janji - Heroes Tonight (No CopyRight).txt",
-                "Cool Dance Background Music (No CopyRights).mp3",
+                "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).mp3",
+                "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).txt",
+                "!_System Recall - Aftertune (No CopyRights).mp3",
+                "!_System Recall - Aftertune (No CopyRights).txt",
             },
             [MemeCategoryFolder] = new[]
             {
@@ -124,6 +125,7 @@ public static class MemeAssets
     public static int DeliverStarter(string category, string destination)
     {
         int copied = 0;
+        int failed = 0;
         try
         {
             string marker = MarkerPath(category);
@@ -162,7 +164,14 @@ public static class MemeAssets
                 catch (Exception ex)
                 {
                     RuntimeLog.Info("Starter", $"Could not deliver '{name}': {ex.Message}");
+                    failed++;
                 }
+            }
+
+            if (failed > 0)
+            {
+                RuntimeLog.Info("Starter", $"{failed} starter '{category}' file(s) could not be copied to {destination}; delivery will be tried again.");
+                return copied;
             }
 
             File.WriteAllText(marker, DateTime.UtcNow.ToString("o"));

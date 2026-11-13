@@ -560,7 +560,6 @@ public partial class MusicWizardWindow : Window
     }
     private void SharedInit()
     {
-        if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes)
         {
             try
             {
@@ -2699,7 +2698,6 @@ public partial class MusicWizardWindow : Window
 
     private void SaveWizardVolumes()
     {
-        if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes) return;
         try
         {
             var updates = new System.Text.Json.Nodes.JsonObject();

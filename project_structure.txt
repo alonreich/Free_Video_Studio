@@ -9,5 +9,5 @@ before touching this repository lives in ONE document:
 It holds the non-negotiable rules (including the ban on running .\Build.cmd),
 the reading order, what to record before finishing a task (docs\changes.md and
 docs\CHANGELOG.md), the build/test commands, which document answers what, and
-the repository map (§5) that used to live in this file.
+the repository map (now .\docs\REPO_MAP.md) that used to live in this file.
 ===============================================================================

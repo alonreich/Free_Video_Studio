@@ -144,26 +144,27 @@ public sealed class DiagnosticReport
     {
         if (string.IsNullOrEmpty(line)) return string.Empty;
 
+        string result = SecretRedactor.RedactSecrets(line);
         const string marker = @"\Users\";
-        int i = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (i < 0) return line;
+        int i = result.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return result;
 
-        var sb = new StringBuilder(line.Length);
+        var sb = new StringBuilder(result.Length);
         int from = 0;
 
         while (i >= 0)
         {
             int nameStart = i + marker.Length;
-            int nameEnd = line.IndexOf('\\', nameStart);
-            if (nameEnd < 0) nameEnd = line.Length;
+            int nameEnd = result.IndexOf('\\', nameStart);
+            if (nameEnd < 0) nameEnd = result.Length;
 
-            sb.Append(line, from, nameStart - from).Append("<user>");
+            sb.Append(result, from, nameStart - from).Append("<user>");
             from = nameEnd;
 
-            i = line.IndexOf(marker, from, StringComparison.OrdinalIgnoreCase);
+            i = result.IndexOf(marker, from, StringComparison.OrdinalIgnoreCase);
         }
 
-        sb.Append(line, from, line.Length - from);
+        sb.Append(result, from, result.Length - from);
         return sb.ToString();
     }
 

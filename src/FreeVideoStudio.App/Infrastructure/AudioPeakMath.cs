@@ -19,15 +19,6 @@ internal static class AudioPeakMath
 {
     internal static double DbToLinear(double db) => Math.Pow(10.0, db / 20.0);
 
-    internal static string FormatSeconds(double seconds)
-    {
-        seconds = Math.Max(0, seconds);
-        var ts = TimeSpan.FromSeconds(seconds);
-        return ts.TotalHours >= 1
-            ? ts.ToString(@"h\:mm\:ss\.ff")
-            : ts.ToString(@"m\:ss\.ff");
-    }
-
     internal static void DeleteTempFile(ref string? path)
     {
         if (!string.IsNullOrEmpty(path) && File.Exists(path))

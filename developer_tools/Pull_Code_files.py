@@ -34,6 +34,7 @@ IGNORED_DIRS = {
     'old_code', 'artifacts', 'packages', 'testresults', 'venv', '.venv', 'env',
     '.pytest_cache', '__pycache__', 'claude outputs', '.devlogs', '.fvs_xfer',
     '.gemini', 'backup', '.ssh', '.aws', '.azure', 'avregression',
+    'logs',  # TESTOUT_01: every test result lives in logs\<Suite>_Results; opt in with --test-result.
 }
 SOURCE_EXTENSIONS = {
     '.cs', '.axaml', '.cmd', '.bat', '.ps1', '.py', '.json', '.json5', '.xml',

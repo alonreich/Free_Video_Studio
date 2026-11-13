@@ -237,20 +237,7 @@ internal static partial class UpdateService
         vm.LaterRequested += () =>
         {
             CloseToast();
-            lock (BackgroundGate)
-            {
-                if (_waitingInstaller is null && _preparedUpdate != null)
-                {
-                    try
-                    {
-                        _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RuntimeLog.Fail("UPDATE", $"Could not launch deferred installer: {ex.Message}");
-                    }
-                }
-            }
+            Dispatcher.UIThread.Post(EnsureInstallOnExit);
             if (MainWindowOrNull() is { } main)
                 FloatingNotice.Info(main, "The update will prompt for administrator permission (UAC) and install when you close Free Video Studio.");
         };

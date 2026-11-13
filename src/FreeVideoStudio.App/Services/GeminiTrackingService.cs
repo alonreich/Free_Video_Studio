@@ -1,7 +1,4 @@
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/01_TIMELINE_COORDINATE_MATH.md (TL-AITRACKING), docs/04_UI_UX_AVALONIA_SPEC.md (UI-AIZOOM)
-// Invariants, constants, and threading models must match spec bit-for-bit.
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -65,6 +62,17 @@ public sealed record AiDiscoveryResult(
     string F1, string F2, string F3,
     double T1, double T2, double T3,
     double LookaheadOffsetSec);
+
+/// <summary>AIPARTRETRY_01 — what to do when one part of a multi-part AI run failed twice.</summary>
+public enum AiPartFailureChoice
+{
+    /// <summary>Ask the AI about that part again.</summary>
+    Retry,
+    /// <summary>Keep every other part; leave this one out (Smart Zoom: camera stays wide; Commentary: no lines).</summary>
+    Skip,
+    /// <summary>Stop the run with the error.</summary>
+    Stop,
+}
 
 /// <summary>Everything one AI SMART ZOOM tracking run needs. Times are SOURCE seconds of <see cref="VideoPath"/>.</summary>
 public sealed record AiTrackingRequest(
@@ -174,11 +182,6 @@ public static class GeminiTrackingService
 
     /// <summary>AIFPS_01 — requested sampling rate for the tracking clip (Gemini's default is 1 frame per second).</summary>
     public const double TrackingFps = 2.0;
-
-    /// <summary>Verifies a key with ONE tiny request against <paramref name="modelName"/>. Never throws.</summary>
-    public static Task<(bool Success, string Message)> TestApiKeyAsync(
-        string apiKey, string? modelName = null, CancellationToken cancellationToken = default)
-        => GeminiClient.Shared.TestKeyAsync(apiKey, modelName, cancellationToken);
 
     /// <summary>
     /// Extracts 3 candidate still frames from start, middle, and end of the segment for multi-angle discovery.
@@ -320,22 +323,6 @@ public static class GeminiTrackingService
         await AsyncProcessRunner.RunAsync(psi, budget, token).ConfigureAwait(false);
     }
 
-    /// <summary>Width/height of a JPEG on disk (the full-size candidate still), or (0,0).</summary>
-    public static (int Width, int Height) ReadImageSize(string? path)
-    {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return (0, 0);
-        try
-        {
-            using var codec = SKCodec.Create(path);
-            return codec == null ? (0, 0) : (codec.Info.Width, codec.Info.Height);
-        }
-        catch (Exception ex)
-        {
-            CoreLogger.Swallowed(ex);
-            return (0, 0);
-        }
-    }
-
 
     /// <summary>B4 — generateContent body: prompt, media parts, temperature 0 (omitted for Gemini 3+, AITEMP_02), JSON MIME type and a response schema.</summary>
     internal static byte[] BuildRequest(string prompt, IReadOnlyList<(string MimeType, byte[] Data, double? Fps)> media, Action<Utf8JsonWriter> writeSchema, string? model = null)
@@ -454,23 +441,26 @@ public static class GeminiTrackingService
             media.Add(("image/jpeg", await File.ReadAllBytesAsync(f, cancellationToken).ConfigureAwait(false), null));
         }
 
-        string text;
-        if (session.Vendor == AiVendor.Google && session.Provider == null)
+        string discoveryPrompt = AiTrackingPrompts.Discovery(profile);
+        string reuseKey = AiResultCache.Key("discovery-v1", session.Vendor.ToString(), session.Model, discoveryPrompt,
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[0].Item2)),
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[1].Item2)),
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[2].Item2)));
+        string text = await AiResultCache.RunAsync(reuseKey, async () =>
         {
-            byte[] body = BuildRequest(AiTrackingPrompts.Discovery(profile), media, WriteDiscoverySchema, session.Model);
-            text = await session.GenerateAsync(body, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
+            if (session.Vendor == AiVendor.Google && session.Provider == null)
+            {
+                byte[] body = BuildRequest(discoveryPrompt, media, WriteDiscoverySchema, session.Model);
+                return await session.GenerateAsync(body, cancellationToken).ConfigureAwait(false);
+            }
             var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
             var images = new List<AiImageInput>(3);
             for (int i = 0; i < media.Count; i++)
             {
                 images.Add(new AiImageInput(media[i].Item2, "image/jpeg", $"[Candidate Still {i + 1}]"));
             }
-            string prompt = AiTrackingPrompts.Discovery(profile);
-            text = await provider.GenerateJsonAsync(session.ApiKey, session.Model, prompt, images, null, DiscoveryJsonSchema, null, GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
-        }
+            return await provider.GenerateJsonAsync(session.ApiKey, session.Model, discoveryPrompt, images, null, DiscoveryJsonSchema, null, GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
+        }, answer => AiAnswerGuard.IsReadableJson(answer), cancellationToken, consoleLog, refresh: session.Provider != null).ConfigureAwait(false);
         CoreLogger.Info("AI-Discovery", session.Redact($"{session.VendorName} discovery answer ({text.Length} chars): {GeminiClient.Truncate(text, 800)}"));
 
         List<DiscoveredSubject> raw = ParseDiscovery(text, session.VendorName);
@@ -635,12 +625,13 @@ public static class GeminiTrackingService
         GeminiModelSession session,
         IProgress<string>? statusProgress = null,
         Action<string>? consoleLog = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<int, int, AiProviderException, Task<AiPartFailureChoice>>? onPartFailed = null)
     {
         ArgumentNullException.ThrowIfNull(req);
         ArgumentNullException.ThrowIfNull(session);
         if (!File.Exists(req.VideoPath)) throw new FileNotFoundException("Video file not found", req.VideoPath);
-        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, $"No {session.VendorName} API key is configured. Add one in Settings › AI Features.");
+        if (!session.HasKey) throw new GeminiException(GeminiErrorKind.InvalidKey, $"No {session.VendorName} API key is configured. Add one in Settings › AI.");
         if (req.SourceDurationSec > MaxTrackSec + 0.01)
             throw new InvalidOperationException($"AI SMART ZOOM can follow a target for up to {MaxTrackSec:0} seconds. Split this segment into shorter blocks and track each one.");
 
@@ -653,6 +644,7 @@ public static class GeminiTrackingService
                 consoleLog?.Invoke($"Attached a close-up of '{(string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label)}' ({refCrop.Length / 1024} KB) as the visual reference.");
         }
 
+        bool directFrameSampling = !(session.Vendor == AiVendor.Google && session.Provider == null);
         var chunks = PlanChunks(req.SourceDurationSec);
         var all = new List<RawSubjectWaypoint>();
         (int ymin, int xmin, int ymax, int xmax) box = (target.Ymin, target.Xmin, target.Ymax, target.Xmax);
@@ -666,23 +658,68 @@ public static class GeminiTrackingService
             double sliceLen = Math.Max(ce - cs, MinSliceSec);
             string part = chunks.Count > 1 ? $" (part {k + 1} of {chunks.Count})" : "";
 
-            statusProgress?.Report($"Phase 3: Preparing the clip{part}…");
-            byte[] mp4 = await SliceAsync(req.VideoPath, req.SourceStartSec + cs, sliceLen, consoleLog, cancellationToken).ConfigureAwait(false);
+            byte[]? mp4 = null;
+            IReadOnlyList<AiImageInput>? preSampledFrames = null;
+            if (directFrameSampling)
+            {
+                statusProgress?.Report($"Step 3 of 4 · Taking pictures{part}…");
+                consoleLog?.Invoke($"Phase 3: Extracting {TrackingFps:0.#} fps JPEG frames directly for {session.VendorName}{part} (skipping MP4 re-encode)...");
+                preSampledFrames = await AiFrameSequenceExtractor.SampleFramesAsync(
+                    req.VideoPath,
+                    req.SourceStartSec + cs,
+                    sliceLen,
+                    TrackingFps,
+                    targetWidth: 640,
+                    log: consoleLog,
+                    ct: cancellationToken).ConfigureAwait(false);
+                if (preSampledFrames.Count == 0)
+                    throw new AiProviderException(session.Vendor, AiProviderErrorKind.MalformedResponse,
+                        "No pictures could be read from this part of the block, so it was not sent to the AI. Try again or pick a slightly different block.",
+                        "frame sampling produced 0 frames");
+            }
+            else
+            {
+                statusProgress?.Report($"Step 3 of 4 · Preparing the clip{part}…");
+                mp4 = await SliceAsync(req.VideoPath, req.SourceStartSec + cs, sliceLen, consoleLog, cancellationToken).ConfigureAwait(false);
+            }
 
             double observedInChunk = k == 0 ? Math.Clamp(observedAt - cs, 0, sliceLen) : 0;
-            statusProgress?.Report($"Phase 3: Tracking '{(string.IsNullOrWhiteSpace(target.Label) ? "target" : target.Label)}'{part}…");
+            statusProgress?.Report($"Step 3 of 4 · Following '{(string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label)}'{part}…");
 
-            List<RawSubjectWaypoint> waypoints;
-            try
+            List<RawSubjectWaypoint>? waypoints = null;
+            for (int partAttempt = 0; waypoints == null; partAttempt++)
             {
-                waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, refCrop, mp4, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
-            }
-            catch (GeminiException ex) when (useFps && ex.Kind == GeminiErrorKind.BadRequest)
-            {
-                useFps = false;
-                consoleLog?.Invoke($"{session.VendorName} refused the custom frame rate; retrying at its default 1 frame per second.");
-                CoreLogger.Info("AI-Tracking", session.Redact($"fps metadata refused: {ex.Detail}"));
-                waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, refCrop, mp4, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, refCrop, mp4, preSampledFrames, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
+                }
+                catch (GeminiException ex) when (useFps && !directFrameSampling && AiAnswerGuard.IsFpsRejection(ex))
+                {
+                    useFps = false;
+                    consoleLog?.Invoke($"{session.VendorName} refused the custom frame rate; retrying at its default 1 frame per second.");
+                    CoreLogger.Info("AI-Tracking", session.Redact($"fps metadata refused: {ex.Detail}"));
+                }
+                catch (AiProviderException ex) when (IsPartFailure(ex))
+                {
+                    CoreLogger.Warn("AI-Tracking", session.Redact($"Part {k + 1}/{chunks.Count} failed ({ex.Kind}): {ex.Message} {ex.Detail}"));
+                    if (partAttempt == 0)
+                    {
+                        consoleLog?.Invoke($"Part {k + 1} of {chunks.Count} failed ({ex.Message}) — trying it once more…");
+                        continue;
+                    }
+                    AiPartFailureChoice choice = onPartFailed == null
+                        ? AiPartFailureChoice.Stop
+                        : await onPartFailed(k + 1, chunks.Count, ex).ConfigureAwait(false);
+                    if (choice == AiPartFailureChoice.Retry) continue;
+                    if (choice == AiPartFailureChoice.Stop) throw;
+                    consoleLog?.Invoke($"Part {k + 1} of {chunks.Count} skipped — the camera stays wide for that stretch.");
+                    waypoints = new List<RawSubjectWaypoint>
+                    {
+                        new() { Time = 0, Visible = false },
+                        new() { Time = Math.Round(sliceLen, 3), Visible = false },
+                    };
+                }
             }
 
             int sanitized = SanitizeWaypointsAgainstLocalPlayer(waypoints, k == 0 ? target : null, box, req.Profile, consoleLog);
@@ -711,7 +748,7 @@ public static class GeminiTrackingService
             throw new GeminiException(GeminiErrorKind.MalformedResponse, $"{session.VendorName} returned no tracking points for this target. Try a clearer segment.");
 
         cancellationToken.ThrowIfCancellationRequested();
-        statusProgress?.Report("Phase 4: Smoothing the camera path…");
+        statusProgress?.Report("Step 4 of 4 · Smoothing the camera path…");
         var trajectory = AiTrajectorySmoother.SmoothTrajectory(
             all, req.SourceDurationSec, req.SourceWidth, req.SourceHeight,
             req.BaseScale, req.MinScale, req.DeadbandPercent, req.AvoidHud, req.PortraitMode, req.HudZones);
@@ -719,12 +756,18 @@ public static class GeminiTrackingService
         return trajectory;
     }
 
+    /// <summary>AIPARTRETRY_01 — failures that belong to ONE part (another try may work); account problems are not.</summary>
+    internal static bool IsPartFailure(AiProviderException ex)
+        => ex.Kind is AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Blocked or AiProviderErrorKind.Timeout
+            or AiProviderErrorKind.Overloaded or AiProviderErrorKind.Network or AiProviderErrorKind.RateLimited
+            or AiProviderErrorKind.Truncated or AiProviderErrorKind.BadRequest;
+
     public const string TrackingJsonSchema = "{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"time\":{\"type\":\"NUMBER\"},\"visible\":{\"type\":\"BOOLEAN\"},\"cx\":{\"type\":\"INTEGER\"},\"cy\":{\"type\":\"INTEGER\"},\"w\":{\"type\":\"INTEGER\"},\"h\":{\"type\":\"INTEGER\"}},\"required\":[\"time\",\"visible\"]}}";
 
     private static async Task<List<RawSubjectWaypoint>> TrackChunkAsync(
         GeminiModelSession session, AiGameProfile profile, string label,
         (int ymin, int xmin, int ymax, int xmax) box, double observedAt, byte[]? refCrop,
-        byte[] mp4, double sliceLen, bool useFps, Action<string>? consoleLog, CancellationToken ct)
+        byte[]? mp4, IReadOnlyList<AiImageInput>? preSampledFrames, double sliceLen, bool useFps, Action<string>? consoleLog, CancellationToken ct)
     {
         double interval = useFps ? 1.0 / TrackingFps : 1.0;
         string prompt = AiTrackingPrompts.Tracking(profile, label, box, observedAt, refCrop != null, interval, sliceLen);
@@ -734,7 +777,7 @@ public static class GeminiTrackingService
         {
             var media = new List<(string, byte[], double?)>(2);
             if (refCrop != null) media.Add(("image/jpeg", refCrop, null));
-            media.Add(("video/mp4", mp4, useFps ? TrackingFps : null));
+            media.Add(("video/mp4", mp4 ?? throw new InvalidOperationException("MP4 slice missing for Gemini tracking."), useFps ? TrackingFps : null));
 
             byte[] body = BuildRequest(prompt, media, WriteTrackingSchema, session.Model);
             text = await session.GenerateAsync(body, ct).ConfigureAwait(false);
@@ -742,8 +785,10 @@ public static class GeminiTrackingService
         else
         {
             var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
-            var sampledFrames = await AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync(
-                mp4, TrackingFps, targetWidth: 640, log: consoleLog, ct: ct).ConfigureAwait(false);
+            var sampledFrames = preSampledFrames
+                ?? (mp4 != null
+                    ? await AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync(mp4, TrackingFps, targetWidth: 640, log: consoleLog, ct: ct).ConfigureAwait(false)
+                    : Array.Empty<AiImageInput>());
             if (sampledFrames.Count == 0)
                 throw new AiProviderException(session.Vendor, AiProviderErrorKind.MalformedResponse,
                     "No pictures could be read from this part of the block, so it was not sent to the AI. Try again or pick a slightly different block.",
@@ -754,13 +799,13 @@ public static class GeminiTrackingService
             {
                 images.Add(new AiImageInput(refCrop, "image/jpeg", "[Reference Target Crop]"));
             }
-            images.AddRange(sampledFrames);
+            foreach (var frame in sampledFrames) images.Add(frame with { Detail = AiReasoningPolicy.ImageDetail(AiUsage.DenseTracking) });
 
             text = await provider.GenerateJsonAsync(session.ApiKey, session.Model, prompt, images, null, TrackingJsonSchema, null, GeminiCallOptions.Tracking, consoleLog, ct).ConfigureAwait(false);
         }
 
         CoreLogger.Info("AI-Tracking", session.Redact($"{session.VendorName} tracking answer ({text.Length} chars): {GeminiClient.Truncate(text, 800)}"));
-        consoleLog?.Invoke($"Received {text.Length} characters of tracking data.");
+        consoleLog?.Invoke($"Received {text.Length} characters of tracking data from {session.VendorName}.");
         return ParseWaypoints(text, session.VendorName);
     }
 
@@ -775,6 +820,8 @@ public static class GeminiTrackingService
         }
         catch (JsonException ex)
         {
+            CoreLogger.Warn("AI-Tracking", FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(
+                $"{vendorName} tracking JSON parse error ({ex.Message}). Raw answer: {GeminiClient.Truncate(text, 800)}"));
             throw new GeminiException(GeminiErrorKind.MalformedResponse,
                 $"{vendorName}'s tracking answer could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));
         }

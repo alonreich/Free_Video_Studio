@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -95,29 +95,23 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             Assert.NotNull(lane);
             lane.Width = 600;
             var markers = window.FindControl<Canvas>("TimelineMarkersCanvas");
-            if (markers != null) markers.Width = 600; // 3 clips: 0..200, 200..400, 400..600
+            if (markers != null) markers.Width = 600;
 
             window.RedrawTimelineSelectionForTesting();
 
-            // Drag clip 0 to commitX = 350 (between clip 1 and clip 2 -> target index 1)
             window.TriggerEndClipChipForTesting(from: 0, commitX: 350.0);
 
-            // VideoQueue should now be v2, v1, v3
             Assert.Equal(new[] { v2, v1, v3 }, window.VideoQueue);
 
-            // Selection must track the moved clip (index 1)
             var selected = window.SelectedQueueIndicesForTesting();
             Assert.Equal(new[] { 1 }, selected);
 
-            // Now drag clip 2 (v3) to commitX = 50 (start -> target index 0)
-            // Note: need to re-sync timeline for subsequent drags
             var reorderedTimeline = CreateTimeline(window.VideoQueue, 5.0);
             window.SetTimelineForTesting(reorderedTimeline);
             window.RedrawTimelineSelectionForTesting();
 
             window.TriggerEndClipChipForTesting(from: 2, commitX: 50.0);
 
-            // VideoQueue should now be v3, v2, v1
             Assert.Equal(new[] { v3, v2, v1 }, window.VideoQueue);
             Assert.Equal(new[] { 0 }, window.SelectedQueueIndicesForTesting());
         }
@@ -139,7 +133,7 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             window.VideoQueue.Add(v1);
             window.VideoQueue.Add(v2);
 
-            var timeline = CreateTimeline(new[] { v1, v2 }, 5.0); // Total 10.0s
+            var timeline = CreateTimeline(new[] { v1, v2 }, 5.0);
             window.SetTimelineForTesting(timeline);
 
             var ipc = new MpvIpcClient();
@@ -148,14 +142,12 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             window.SetVideoHostForTesting(host);
             window.SetLoadedEdlForTesting("test-edl", 0);
 
-            // Simulate reaching end of clip 1 (5.0s) where mpv briefly reports IsEof = true
             ipc.SetStateForTesting(currentTime: 5.0, duration: 10.0, isPaused: false, isEof: true);
             window.SetMergedEndReachedForTesting(false);
 
             bool handled = window.TickMergedPlaybackForTesting();
             Assert.True(handled);
 
-            // Playback MUST NOT end or pause at internal join!
             Assert.False(window.MergedEndReachedForTesting);
             Assert.False(ipc.IsPaused);
         }
@@ -177,7 +169,7 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             window.VideoQueue.Add(v1);
             window.VideoQueue.Add(v2);
 
-            var timeline = CreateTimeline(new[] { v1, v2 }, 5.0); // Total 10.0s
+            var timeline = CreateTimeline(new[] { v1, v2 }, 5.0);
             window.SetTimelineForTesting(timeline);
 
             var ipc = new MpvIpcClient();
@@ -186,17 +178,14 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             window.SetVideoHostForTesting(host);
             window.SetLoadedEdlForTesting("test-edl", 0);
 
-            // Serve initial ticks to let preview plan and EDL settle past grace ticks
             for (int i = 0; i < 5; i++) window.TickMergedPlaybackForTesting();
 
-            // Simulate reaching true end of total merged timeline (9.98s / 10.0s)
             ipc.SetStateForTesting(currentTime: 9.98, duration: 10.0, isPaused: false, isEof: true);
             window.SetMergedEndReachedForTesting(false);
 
             bool handled = window.TickMergedPlaybackForTesting();
             Assert.True(handled);
 
-            // True end reached -> must pause
             Assert.True(window.MergedEndReachedForTesting);
             Assert.True(ipc.IsPaused);
         }
@@ -231,11 +220,9 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
 
             window.RedrawTimelineSelectionForTesting();
 
-            // Drag clip 1 far to the left (negative X) -> clamps to index 0
             window.TriggerEndClipChipForTesting(from: 1, commitX: -100.0);
             Assert.Equal(new[] { v2, v1, v3 }, window.VideoQueue);
 
-            // Drag clip 0 far to the right (past width 600) -> clamps to last index 2
             var t2 = CreateTimeline(window.VideoQueue, 5.0);
             window.SetTimelineForTesting(t2);
             window.RedrawTimelineSelectionForTesting();
@@ -280,7 +267,6 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             Assert.Equal(vB, borders[1].Tag);
             Assert.Equal(vC, borders[2].Tag);
 
-            // Drag clip A (from: 0) to between B and C (drop at X = 350, past B mid 300)
             window.TriggerEndClipChipForTesting(from: 0, commitX: 350.0);
 
             Assert.Equal(new[] { vB, vA, vC }, window.VideoQueue);
@@ -293,7 +279,6 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             Assert.Equal(vA, borders[1].Tag);
             Assert.Equal(vC, borders[2].Tag);
 
-            // Drag clip C (from: 2) to between B and A (drop at X = 150, past B mid 100)
             window.TriggerEndClipChipForTesting(from: 2, commitX: 150.0);
 
             Assert.Equal(new[] { vB, vC, vA }, window.VideoQueue);
@@ -340,7 +325,6 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
 
             window.RedrawTimelineSelectionForTesting();
 
-            // Drag c4 (index 3) to between c1 and c2 (drop at 150)
             window.TriggerEndClipChipForTesting(from: 3, commitX: 150.0);
 
             Assert.Equal(new[] { v1, v4, v2, v3 }, window.VideoQueue);
@@ -350,7 +334,6 @@ public sealed class VideoMergerTimelinePlaybackTests : IDisposable
             var borders = lane.Children.OfType<Border>().ToList();
             Assert.Equal(new[] { v1, v4, v2, v3 }, borders.Select(b => b.Tag as string));
 
-            // Drag c1 (index 0) to between c2 and c3 (drop at 550, past c2 midpoint 500)
             window.TriggerEndClipChipForTesting(from: 0, commitX: 550.0);
 
             Assert.Equal(new[] { v4, v2, v1, v3 }, window.VideoQueue);

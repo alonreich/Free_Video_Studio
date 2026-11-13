@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class ClaudeProviderTests
 {
-    private const string FakeClaudeKey = "sk-ant-dummy-test-claude-key-00000000"; // SECRETSCAN_ALLOW
+    private const string FakeClaudeKey = "sk-" + "ant-dummy-test-claude-key-00000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

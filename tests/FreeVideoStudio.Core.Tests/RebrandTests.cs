@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Media;
 using Xunit;
@@ -46,7 +46,10 @@ public sealed class RebrandTests : IDisposable
     {
         Assert.Equal("FreeVideoStudio-1.mp4", OutputFileNaming.NumberedFileName(OutputFileNaming.MainDefaultBaseName, 1));
         Assert.Equal("FreeVideoStudio-3.mp4", OutputFileNaming.NumberedFileName(OutputFileNaming.MainDefaultBaseName, 3));
-        Assert.Equal("Merged-Videos-2.mp4", OutputFileNaming.NumberedFileName(OutputFileNaming.MergerDefaultBaseName, 2));
+        Assert.Equal("FreeVideoStudio-merged-2.mp4", OutputFileNaming.NumberedFileName(OutputFileNaming.MergerDefaultBaseName, 2));
+        Assert.Equal("Clips-merged", OutputFileNaming.MergerBaseFor("Clips"));
+        Assert.Equal("FreeVideoStudio-merged", OutputFileNaming.MergerBaseFor("   "));
+        Assert.True(OutputFileNaming.MergerBaseFor(new string('x', 500)).Length <= OutputFileNaming.MaxBaseNameLength);
         Assert.NotEqual(OutputFileNaming.MainRecoveredPrefix, OutputFileNaming.MergerRecoveredPrefix);
     }
 

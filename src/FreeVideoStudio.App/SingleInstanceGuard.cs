@@ -338,7 +338,6 @@ public static class SingleInstanceGuard
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(HandoffTimeoutMs);
 
-            // PIPEAUTH_01 — the path is handed only to a listener running as this same user.
             if (!FreeVideoStudio.Core.Ipc.PipeAccess.IsServerTrusted(client))
             {
                 RuntimeLog.Fail("SingleInstance", "Refused the handoff: the listening pipe belongs to a different user account.");

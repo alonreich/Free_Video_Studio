@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
@@ -234,7 +234,7 @@
                                             <!-- Step shape = an instant jump -->
                                             <Path Data="M 0,16 L 12,16 L 12,2 L 26,2" Stroke="{DynamicResource AppZoomBrush}" StrokeThickness="2.5" VerticalAlignment="Center"/>
                                             <StackPanel>
-                                                <TextBlock Text="Snap straight in" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                <TextBlock Text="Instant Zoom-In Effect" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                                 <TextBlock Text="Jumps instantly" FontSize="{DynamicResource AppFontSize9}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                                             </StackPanel>
                                         </StackPanel>
@@ -246,8 +246,8 @@
                                             <!-- Ramp shape = a gradual glide -->
                                             <Path Data="M 0,16 L 6,16 C 14,16 12,2 26,2" Stroke="{DynamicResource AppZoomBrush}" StrokeThickness="2.5" VerticalAlignment="Center"/>
                                             <StackPanel>
-                                                <TextBlock Text="Glide in over half a second" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                <TextBlock Text="Eases in, then eases out" FontSize="{DynamicResource AppFontSize9}" Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                                <TextBlock Text="Slow Zoom-In Effect" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                <TextBlock Text="Glides in over half a second" FontSize="{DynamicResource AppFontSize9}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                                             </StackPanel>
                                         </StackPanel>
                                     </RadioButton>
@@ -765,10 +765,15 @@
                                 HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI tracking operation"/>
                     </Grid>
 
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBlock Name="AiTrackingEstimateText" Text="" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
+                        <TextBlock Name="AiTrackingElapsedText" Grid.Column="1" Text="Elapsed: 0:00" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+
                     <!-- Large Status Banner -->
                     <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14,10">
-                        <TextBlock Name="AiTrackingStatusLabel" Text="Phase 1: Slicing segment preview..." TextAlignment="Center"
+                        <TextBlock Name="AiTrackingStatusLabel" Text="Step 1 of 4 · Getting ready…" TextAlignment="Center"
                                    Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"
                                    FontSize="{DynamicResource AppFontSize14}"/>
                     </Border>
@@ -777,7 +782,8 @@
                     <ProgressBar IsIndeterminate="True" Height="6" CornerRadius="3"
                                  Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
 
-                    <!-- Expanded Console Log Output -->
+                    <!-- AIPROGRESS_02: the technical log is one click away, closed by default -->
+                    <Expander Header="Details (technical log)" IsExpanded="False" HorizontalAlignment="Stretch">
                     <Border Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
                         <ScrollViewer Name="AiTrackingConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -785,6 +791,7 @@
                                        FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>
+                    </Expander>
                 </StackPanel>
             </Border>
         </Border>
@@ -811,6 +818,11 @@
                                 HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI commentary generation"/>
                     </Grid>
 
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBlock Name="AiCommentaryEstimateText" Text="" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
+                        <TextBlock Name="AiCommentaryElapsedText" Grid.Column="1" Text="Elapsed: 0:00" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+
                     <!-- Large Status Banner -->
                     <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14,10">
@@ -823,7 +835,8 @@
                     <ProgressBar Name="AiCommentaryProgressBar" IsIndeterminate="True" Height="6" CornerRadius="3"
                                  Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
 
-                    <!-- Expanded Console Log Output -->
+                    <!-- AIPROGRESS_02: the technical log is one click away, closed by default -->
+                    <Expander Header="Details (technical log)" IsExpanded="False" HorizontalAlignment="Stretch">
                     <Border Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
                         <ScrollViewer Name="AiCommentaryConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -831,6 +844,7 @@
                                        FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>
+                    </Expander>
                 </StackPanel>
             </Border>
         </Border>

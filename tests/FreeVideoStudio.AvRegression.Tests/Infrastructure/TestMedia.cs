@@ -6,7 +6,7 @@ namespace FreeVideoStudio.AvRegression.Tests;
 internal sealed record Clip(string Path, double DurationSec, double Fps, double[] Events, bool HasAudio, int Width, int Height);
 
 /// <summary>
-/// Generated marker media (cached under tests/AvRegression/media). Markers sit at IRREGULAR, seeded
+/// Generated marker media (cached under logs/AV_Results/work/media). Markers sit at IRREGULAR, seeded
 /// times so a drift of exactly one period can never look correct.
 /// <list type="bullet">
 /// <item>Gameplay: black picture, a 3-frame WHITE flash + a 50 ms 400 Hz pulse at every event, and the frame number as a barcode in the top strip (exposes skipped/repeated frames).</item>

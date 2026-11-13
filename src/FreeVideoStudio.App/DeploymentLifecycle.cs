@@ -85,7 +85,6 @@ internal static class DeploymentLifecycle
         return 0;
     }
 
-    // NOTEMPEXEC_01: uninstall runs in place; never copy or launch an executable from TEMP.
     internal static async Task<int> RunUninstallWorkerAsync(string[] args)
     {
         bool quiet = args.Any(a => a.Equals("--quiet", StringComparison.OrdinalIgnoreCase));
@@ -142,27 +141,6 @@ internal static class DeploymentLifecycle
                 QueueSelfCleanup(runningFrom);
             }
         }
-    }
-
-    private static async Task<(bool IsUpgrade, string? ExistingVersion)> ReportExistingVersionAsync()
-    {
-        string? existingVersion = GetInstalledVersion();
-        bool hasFolder = Directory.Exists(DeploymentFootprint.InstallFolder);
-        bool hasExe = File.Exists(DeploymentFootprint.InstallPath);
-
-        if (hasFolder || hasExe || !string.IsNullOrWhiteSpace(existingVersion))
-        {
-            string direction = DescribeVersionTransition(existingVersion);
-            await DeploymentReporter.StepAsync(
-                "EXISTING INSTALL DETECTED",
-                $"Installed='{existingVersion ?? "unknown"}', installer='{GetCurrentVersion()}' ({direction}). " +
-                $"folderExists={hasFolder}, exeExists={hasExe}.",
-                3).ConfigureAwait(false);
-            return (true, existingVersion);
-        }
-
-        await DeploymentReporter.StepAsync("FRESH INSTALL", "No previous installation was detected.", 3).ConfigureAwait(false);
-        return (false, null);
     }
 
     /// <summary>ISSUE_02 — classifies installer version vs installed version.</summary>
@@ -356,7 +334,8 @@ internal static class DeploymentLifecycle
         await KillAllProcessesAsync().ConfigureAwait(false);
 
         await DeploymentReporter.StepAsync("CLEANUP TASKS", "Removing scheduled startup task if it exists.", start + 10).ConfigureAwait(false);
-        await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000).ConfigureAwait(false);
+        if (Services.LegacyScheduledTask.Exists(DeploymentFootprint.ScheduledTaskName))
+            await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000).ConfigureAwait(false);
 
         List<string> targets = DeploymentFootprint.GetDirectoryPurgeTargets(includeInstallFolder: true, includeUserData: includeUserData)
             .Concat(OperatingSystem.IsWindows() ? Services.ProtectedWorkerStage.ExistingFolders() : [])
@@ -398,7 +377,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    // CLEANUPBOUND_01: no path-based recursion, attribute changes or reboot queue after failure.
     private static async Task PurgeDirectoryRecursiveAsync(string directory)
     {
         try
@@ -506,40 +484,6 @@ internal static class DeploymentLifecycle
             await DeleteRegistrySubKeyTreeAsync(hive, view, appKey).ConfigureAwait(false);
         }
 
-        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
-        {
-            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
-            {
-                using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-                foreach (string mui in new[]
-                         {
-                             @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
-                             @"Software\Microsoft\Windows\ShellNoRoam\MUICache",
-                             @"Software\Microsoft\Windows\Shell\MuiCache"
-                         })
-                {
-                    try
-                    {
-                        using RegistryKey? key = baseKey.OpenSubKey(mui, writable: true);
-                        if (key is null)
-                        {
-                            continue;
-                        }
-
-                        foreach (string valueName in key.GetValueNames())
-                        {
-                            if (valueName.Contains("FreeVideoStudio", StringComparison.OrdinalIgnoreCase) ||
-                                valueName.Contains("Free Video Studio", StringComparison.OrdinalIgnoreCase))
-                            {
-                                key.DeleteValue(valueName, throwOnMissingValue: false);
-                                await DeploymentReporter.StepAsync("REGISTRY MUI", $"{hive}\\{mui}\\{valueName}", null).ConfigureAwait(false);
-                            }
-                        }
-                    }
-                    catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-                }
-            }
-        }
     }
 
     private static async Task DeleteRegistrySubKeyTreeAsync(RegistryHive hive, RegistryView view, string path)
@@ -570,34 +514,24 @@ internal static class DeploymentLifecycle
             {
                 foreach (Process process in Process.GetProcessesByName(name))
                 {
-                    if (process.Id == current.Id)
+                    using (process)
                     {
-                        continue;
-                    }
+                        if (process.Id == current.Id)
+                        {
+                            continue;
+                        }
 
-                    foundAny = true;
-                    await TerminateProcessAsync(process).ConfigureAwait(false);
-                }
-            }
+                        string? path = ProcessImage.TryGetPath(process.Id);
+                        if (string.IsNullOrWhiteSpace(path) ||
+                            !path.StartsWith(installRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
 
-            foreach (Process process in Process.GetProcesses())
-            {
-                if (process.Id == current.Id)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    string? path = process.MainModule?.FileName;
-                    if (!string.IsNullOrWhiteSpace(path) &&
-                        path.StartsWith(installRoot, StringComparison.OrdinalIgnoreCase))
-                    {
                         foundAny = true;
                         await TerminateProcessAsync(process).ConfigureAwait(false);
                     }
                 }
-                catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
             }
 
             if (!foundAny)
@@ -623,8 +557,7 @@ internal static class DeploymentLifecycle
         }
         catch (Exception ex)
         {
-            await DeploymentReporter.StepAsync("PROCESS TASKKILL", $"Falling back to taskkill for PID {process.Id}: {ex.Message}", null).ConfigureAwait(false);
-            await RunHiddenProcessAsync("taskkill.exe", $"/F /PID {process.Id} /T", 3000).ConfigureAwait(false);
+            await DeploymentReporter.StepAsync("PROCESS SKIP", $"PID {process.Id} could not be ended: {ex.Message}", null).ConfigureAwait(false);
             global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
@@ -901,7 +834,7 @@ internal static class DeploymentLifecycle
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = exe,
                 Arguments = args,
