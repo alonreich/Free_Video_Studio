@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj" />
@@ -187,7 +187,7 @@
     <Product>Free Video Studio</Product>
     <AssemblyTitle>Free Video Studio</AssemblyTitle>
     <Description>Trim, speed-ramp, add music and export gameplay clips for social video.</Description>
-    <Copyright>Copyright © 2026 Alon Reich. All rights reserved.</Copyright>
+    <Copyright>Copyright © 2026 Alon Reich. Licensed under the GNU GPL v3.</Copyright>
     <NeutralLanguage>en-US</NeutralLanguage>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>

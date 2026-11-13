@@ -88,7 +88,7 @@ public sealed class AiViralPostTests
             Assert.Equal(AiVendor.Google, config.Vendor);
 
             var custom = new AiUsageConfig(AiVendor.OpenAI, "gpt-4o");
-            SettingsManager.Instance.SetUsageConfig(AiUsage.ViralPost, custom);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.ViralPost, custom));
 
             var retrieved = SettingsManager.Instance.GetUsageConfig(AiUsage.ViralPost);
             Assert.Equal(AiVendor.OpenAI, retrieved.Vendor);
@@ -96,7 +96,7 @@ public sealed class AiViralPostTests
         }
         finally
         {
-            SettingsManager.Instance.SetUsageConfig(AiUsage.ViralPost, original);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.ViralPost, original));
         }
     }
 }

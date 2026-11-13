@@ -37,6 +37,7 @@ public static class ShellFileAssociation
         {
             string? exePath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return;
+            if (!IsInstalledProgram(exePath)) return;
 
             string command = $"\"{exePath}\" \"%1\"";
             string stamp = $"{StampVersion}|{exePath}";
@@ -81,6 +82,21 @@ public static class ShellFileAssociation
         catch (Exception ex)
         {
             RuntimeLog.Info("OPEN WITH", $"Association registration skipped: {ex.Message}");
+        }
+    }
+
+    /// <summary>OPENWITHHOME_01 — true only for the program in the install folder.</summary>
+    internal static bool IsInstalledProgram(string exePath)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(exePath), Path.GetFullPath(DeploymentFootprint.InstallPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return false;
         }
     }
 }

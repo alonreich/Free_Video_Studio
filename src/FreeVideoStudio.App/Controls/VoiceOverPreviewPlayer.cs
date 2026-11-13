@@ -146,16 +146,6 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
         _takes.Clear();
     }
 
-    public void DisposeTakes()
-    {
-        lock (_stateGate)
-        {
-            if (_disposed) return;
-            _latest = _latest with { Takes = [], Revision = _latest.Revision + 1 };
-            _pending.Writer.TryWrite(_latest);
-        }
-    }
-
     public void Dispose()
     {
         lock (_stateGate)

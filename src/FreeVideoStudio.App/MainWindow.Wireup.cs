@@ -20,6 +20,30 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow
 {
+    /// <summary>SETTINGSDI_01 — the composition root's Settings services (set in the constructor).</summary>
+    private SettingsWindowServices? _settingsServices;
+
+    private SettingsWindowServices SettingsServices => _settingsServices ??= SettingsWindowServices.CreateDefault(_paths);
+
+    /// <summary>
+    /// FILEBACKUP_01 — every way into the Settings window (the Settings menu, File › Backup / Restore)
+    /// ends here, so a SAVE always refreshes the same parts of the main window.
+    /// </summary>
+    private async Task OpenSettingsAsync(Func<Window, Task<bool>> show)
+    {
+        try
+        {
+            if (!await show(this)) return;
+            UpdateTooltips();
+            RefreshTransportKeyBindings();
+            ApplyMaskProfileToOverlayUi();
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("SETTINGS", $"The Settings window failed: {ex.Message}");
+        }
+    }
+
     private void WireComponents()
     {
         this.AddHandler(DragDrop.DragEnterEvent, OnVideoDragEnter);
@@ -91,17 +115,10 @@ public partial class MainWindow
         var settingsBtn = this.FindControl<MenuItem>("MenuSettingsBtn");
         if (settingsBtn != null)
         {
-            settingsBtn.Click += async (s, e) =>
+            settingsBtn.Click += (s, e) =>
             {
                 RuntimeLog.Info("UI", "User clicked Settings menu button.");
-                var settingsWin = new FreeVideoStudio.App.Controls.SettingsWindow();
-                bool changed = await settingsWin.ShowDialog<bool>(this);
-                if (changed)
-                {
-                    UpdateTooltips();
-                    RefreshTransportKeyBindings();
-                    ApplyMaskProfileToOverlayUi();
-                }
+                _ = OpenSettingsAsync(owner => new FreeVideoStudio.App.Controls.SettingsWindow(SettingsServices).ShowDialog<bool>(owner));
             };
         }
 
@@ -123,10 +140,18 @@ public partial class MainWindow
         };
 
         var menuExportConfig = this.FindControl<MenuItem>("MenuExportConfig");
-        if (menuExportConfig != null) menuExportConfig.Click += OnExportConfigClicked;
+        if (menuExportConfig != null) menuExportConfig.Click += (s, e) =>
+        {
+            RuntimeLog.Info("UI", "User clicked File -> Backup Settings.");
+            _ = OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowBackupAsync(owner, import: false, SettingsServices));
+        };
 
         var menuImportConfig = this.FindControl<MenuItem>("MenuImportConfig");
-        if (menuImportConfig != null) menuImportConfig.Click += OnImportConfigClicked;
+        if (menuImportConfig != null) menuImportConfig.Click += (s, e) =>
+        {
+            RuntimeLog.Info("UI", "User clicked File -> Restore Settings.");
+            _ = OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowBackupAsync(owner, import: true, SettingsServices));
+        };
 
         var menuExit = this.FindControl<MenuItem>("MenuExit");
         if (menuExit != null) menuExit.Click += (s, e) => Close();
@@ -158,7 +183,7 @@ public partial class MainWindow
             menuAboutBtn.Click += async (s, e) =>
             {
                 RuntimeLog.Info("UI", "User clicked File -> About.");
-                await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this);
+                await OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(owner, SettingsServices));
             };
         }
 
@@ -168,7 +193,7 @@ public partial class MainWindow
             menuHelpAbout.Click += async (s, e) =>
             {
                 RuntimeLog.Info("UI", "User clicked Help -> About.");
-                await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this);
+                await OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(owner, SettingsServices));
             };
         }
 

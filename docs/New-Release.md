@@ -1,4 +1,4 @@
-# NEW RELEASE — WHAT TO DO NOW (about 10 minutes, free)
+﻿# NEW RELEASE — WHAT TO DO NOW (about 10 minutes, free)
 
 **Why:** every new release is a brand-new file, and Windows has never seen it before.
 Microsoft Defender's AI may call it a virus for the first few days. Telling Microsoft
@@ -54,9 +54,32 @@ For each name (for example Avast, Kaspersky, Bitdefender):
 ## Good habits (they make every next release safer)
 
 - **Release less often.** Every release starts from zero trust. Bundle fixes into fewer releases.
-- **Never change the app's name, publisher (Alon Reich), or certificate.** Trust builds up on these.
+- **Change the app's name, publisher or certificate only for the planned SignPath move (below, SIGNPATH_01).** Trust builds up on these.
 - **Never upload the same release twice.** One submission per new version is enough.
 - **Never tell users to turn off their antivirus.** Point them to the GitHub release page instead.
+
+## Free ways to be trusted (no money needed — do these once, not per release)
+
+Windows 11's **Smart App Control** blocks any program that isn't signed by a company Windows trusts,
+and there is no "Run anyway" button. Your own certificate can't fix that. These routes cost nothing:
+
+1. **SignPath Foundation (free signing for open-source apps) — CHOSEN.** The repository is now GPL-3.0
+   and has the pages SignPath asks for (`CODE_SIGNING_POLICY.md`, `PRIVACY.md`, `THIRD_PARTY_NOTICES.md`).
+   Do these in order:
+   1. Push those files to GitHub and turn on two-factor sign-in for your GitHub account.
+   2. **Publish one normal release first** (signed as today). It teaches every installed copy to accept
+      the SignPath certificate (SIGNPATH_01). Copies that skip it must reinstall by hand once.
+   3. Apply at **https://signpath.org** (Apply / open-source program) with
+      `https://github.com/alonreich/Free_Video_Studio`. Point them to `CODE_SIGNING_POLICY.md`.
+   4. When accepted, SignPath gives you an organization ID, a project and an API token. Store the token
+      as a GitHub Actions secret; then ask the assistant to add the GitHub Actions release build with the
+      SignPath signing step (it needs those IDs).
+   5. On the download page, publisher shows **"SignPath Foundation"** (that is how their free program works).
+2. **Microsoft Store (free for individual developers).**
+   - Register at **https://storedeveloper.microsoft.com** (individual accounts are free).
+   - Store apps are signed by Microsoft, so Smart App Control trusts them. It needs an MSIX package
+     of the app (a separate project); inside the Store, the Store does the updates.
+3. **Keep doing Steps 1–4 above every release.** It builds trust for each new file, for free.
 
 Honest limits: this improves your odds, it doesn't guarantee anything. Microsoft reviews by hand
 and gives no deadline. Only a paid, publicly trusted signing certificate removes the "unknown

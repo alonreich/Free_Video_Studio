@@ -1095,6 +1095,25 @@ public class ProcessWorker : IDisposable
 
                 string? finalVoLabelScope = effectiveTakes.Count > 0 ? "[vo_mixed_all]" : null;
 
+                string? freezeDipBody = null, freezeDipFinal = null;
+                if (musicTracks.Count > 0 && SpeedSegments != null && SpeedSegments.Any(sg => sg.Speed < 0.01))
+                {
+                    var freezeWindows = OutputTimeline.Create(
+                        actualExtractEndMs - actualExtractStartMs,
+                        SpeedSegments,
+                        SpeedFactor,
+                        actualExtractStartMs,
+                        cuts: exportCuts).FreezeOutputRanges();
+                    freezeDipBody = FreezeSoundEffect.MusicDipPulse(freezeWindows);
+                    freezeDipFinal = FreezeSoundEffect.MusicDipPulse(freezeWindows.Select(w =>
+                    {
+                        double shift = introDurationSec + memes
+                            .Where(m => m.CutOutputSec - introDurationSec <= w.StartOutputSec + 1e-6)
+                            .Sum(m => m.DurationSec);
+                        return (w.StartOutputSec + shift, w.EndOutputSec + shift);
+                    }));
+                }
+
                 string currentALabel = aPreparedPad;
                 if (!mixMusicAfterMeme)
                 {
@@ -1114,7 +1133,8 @@ public class ProcessWorker : IDisposable
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null,
+                        freezeMusicDipPulse: freezeDipBody);
 
                     foreach (var part in built.chains)
                     {
@@ -1427,7 +1447,8 @@ public class ProcessWorker : IDisposable
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null,
+                        freezeMusicDipPulse: freezeDipFinal);
 
                     foreach (var part in built.chains)
                     {

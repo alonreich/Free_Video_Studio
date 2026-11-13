@@ -102,7 +102,7 @@ internal static class InstallDiscovery
                     try
                     {
                         if (process.HasExited) continue;
-                        string? executable = process.MainModule?.FileName;
+                        string? executable = ProcessImage.GetPath(process.Id);
                         if (executable != null && roots.Any(root => UpgradeFiles.IsWithin(executable, root)))
                             throw new IOException("Finish editing, exporting or recording and close all app windows, including other Windows sessions, before updating.");
                     }
@@ -140,7 +140,7 @@ internal static class InstallDiscovery
                 try
                 {
                     if (excludedPids.Contains(process.Id) || process.HasExited) continue;
-                    string? executable = process.MainModule?.FileName;
+                    string? executable = ProcessImage.GetPath(process.Id);
                     keep = executable != null && rootList.Any(root => UpgradeFiles.IsWithin(executable, root));
                 }
                 catch (System.ComponentModel.Win32Exception ex)

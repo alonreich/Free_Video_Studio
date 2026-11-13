@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- TESTOUT_01: dotnet test writes results only to logs\App_Results (docs/05 SYS-STORAGE-TABLE). -->
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\App_Results</VSTestResultsDirectory>
     <IsTestProject>true</IsTestProject>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
@@ -19,5 +21,8 @@
     <!-- SYS-VERIFYTOOL: the sentinel check is shared code, not a second regex scraper. -->
     <ProjectReference Include="..\..\build\FvsVerify\FvsVerify.csproj" />
     <ProjectReference Include="..\..\build\FvsBuild\FvsBuild.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
   </ItemGroup>
 </Project>

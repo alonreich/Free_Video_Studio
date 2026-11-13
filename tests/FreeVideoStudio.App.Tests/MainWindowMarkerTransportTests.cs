@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Avalonia.Headless.XUnit;
 using FreeVideoStudio.App;
@@ -71,15 +71,12 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         Assert.True(window.UserExplicitMarkEndForTesting);
         Assert.True(ipc.IsPaused);
 
-        // Hitting Play transport
         window.TogglePlayPauseTransportForTesting();
 
-        // Must resume playing from current position (12.0s), NOT rewind to Mark Start (2.0s)
         Assert.False(ipc.IsPaused);
         Assert.Equal(12.0, ipc.CurrentTime, 0.1);
         Assert.False(window.UserExplicitMarkEndForTesting);
 
-        // Next playback timer tick must keep playing past Mark End
         window.PlaybackTimerTickForTesting();
         Assert.False(ipc.IsPaused);
     }
@@ -91,10 +88,8 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         window.SetTrimPointsForTesting(startMs: 2000.0, endMs: 10000.0);
         window.SetUserExplicitMarkEndForTesting(false);
 
-        // Hitting Play transport when playhead is sought past Mark End (15.0s > 10.0s)
         window.TogglePlayPauseTransportForTesting();
 
-        // Must play from sought position (15.0s), NOT rewind to Mark Start (2.0s)
         Assert.False(ipc.IsPaused);
         Assert.Equal(15.0, ipc.CurrentTime, 0.1);
     }
@@ -106,13 +101,10 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         window.SetTrimPointsForTesting(startMs: 3000.0, endMs: 20000.0);
         window.SetUserExplicitMarkEndForTesting(false);
 
-        // Natural end of clip
         ipc.SetStateForTesting(currentTime: 20.0, duration: 20.0, isPaused: true, isEof: true);
 
-        // Hitting Play transport at natural end
         window.TogglePlayPauseTransportForTesting();
 
-        // Must rewind to Mark Start (3.0s)
         Assert.False(ipc.IsPaused);
         Assert.Equal(3.0, ipc.CurrentTime, 0.1);
     }
@@ -123,11 +115,9 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 9.96, isPaused: false);
         window.SetTrimPointsForTesting(startMs: 2000.0, endMs: 10000.0);
 
-        // Playback passes Mark End (10.0s) — must NOT park, must keep playing
         window.PlaybackTimerTickForTesting();
         Assert.False(ipc.IsPaused);
 
-        // When playback reaches the natural end of the clip (20.0s), it parks
         ipc.SetStateForTesting(currentTime: 19.96, duration: 20.0, isPaused: false, isEof: false);
         window.PlaybackTimerTickForTesting();
         Assert.True(ipc.IsPaused);
@@ -141,7 +131,6 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
 
         window.PlaybackTimerTickForTesting();
 
-        // Must remain playing
         Assert.False(ipc.IsPaused);
     }
 
@@ -151,7 +140,6 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 5.0, isPaused: true);
         window.SetTrimPointsForTesting(startMs: 2000.0, endMs: 18000.0);
 
-        // Drag Mark End to x = 500 on canvas width 1000 (corresponds to 10.0s)
         window.SimulateDragEndMarkerForTesting(newX: 500.0, canvasWidth: 1000.0, duration: 20.0);
 
         Assert.Equal(10000.0, window.TrimEndMsForTesting, 0.01);
@@ -167,13 +155,10 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
     public void DraggingMarkEnd_ClampsBeforeMarkStart()
     {
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 8.0, isPaused: true);
-        // Start is at 4000ms (4.0s). At width 1000, 4.0s is x = 200.
         window.SetTrimPointsForTesting(startMs: 4000.0, endMs: 15000.0);
 
-        // Attempt dragging Mark End to x = 100 (which is before Start)
         window.SimulateDragEndMarkerForTesting(newX: 100.0, canvasWidth: 1000.0, duration: 20.0);
 
-        // Should be clamped to currentStartX + 1 = 201px => 4.02s
         Assert.True(window.TrimEndMsForTesting > 4000.0);
         Assert.True(ipc.CurrentTime > 4.0);
     }
@@ -188,7 +173,6 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
 
         Assert.True(window.TrimStartSetForTesting);
         Assert.Equal(5000.0, window.TrimStartMsForTesting, 0.01);
-        // Mark Start must NOT pause the video
         Assert.False(ipc.IsPaused);
 
         var slider = window.TimelineSliderCtlForTesting;
@@ -202,7 +186,6 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 2.0, isPaused: true);
         window.SetTrimPointsForTesting(startMs: 1000.0, endMs: 18000.0);
 
-        // Drag Mark Start to x = 300 on canvas width 1000 (corresponds to 6.0s)
         window.SimulateDragStartMarkerForTesting(newX: 300.0, canvasWidth: 1000.0, duration: 20.0);
 
         Assert.Equal(6000.0, window.TrimStartMsForTesting, 0.01);
@@ -217,13 +200,10 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
     public void DraggingMarkStart_ClampsBeforeMarkEnd()
     {
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 2.0, isPaused: true);
-        // End is at 10000ms (10.0s). At width 1000, 10.0s is x = 500.
         window.SetTrimPointsForTesting(startMs: 1000.0, endMs: 10000.0);
 
-        // Attempt dragging Mark Start to x = 700 (after End)
         window.SimulateDragStartMarkerForTesting(newX: 700.0, canvasWidth: 1000.0, duration: 20.0);
 
-        // Should be clamped to currentEndX - 1 = 499px => 9.98s
         Assert.True(window.TrimStartMsForTesting < 10000.0);
         Assert.True(ipc.CurrentTime < 10.0);
     }
@@ -234,16 +214,12 @@ public sealed class MainWindowMarkerTransportTests : IDisposable
         var (window, ipc) = SetupMainWindow(durationSec: 20.0, initialTimeSec: 15.0, isPaused: true);
         window.SetTrimPointsForTesting(startMs: 2000.0, endMs: 10000.0);
 
-        // At 15.0s, trying to Mark Start when End is 10.0s must be rejected
         ipc.SetStateForTesting(currentTime: 15.0, duration: 20.0, isPaused: true, isEof: false);
         window.ExecuteMarkStartForTesting();
-        // Start remains 2000ms
         Assert.Equal(2000.0, window.TrimStartMsForTesting, 0.01);
 
-        // At 1.0s, trying to Mark End when Start is 2000ms must be rejected
         ipc.SetStateForTesting(currentTime: 1.0, duration: 20.0, isPaused: true, isEof: false);
         window.ExecuteMarkEndForTesting();
-        // End remains 10000ms
         Assert.Equal(10000.0, window.TrimEndMsForTesting, 0.01);
     }
 

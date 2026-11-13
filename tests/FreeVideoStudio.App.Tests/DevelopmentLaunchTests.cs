@@ -40,7 +40,7 @@ public sealed class DevelopmentLaunchTests
         var assembly = System.Reflection.Assembly.Load("FvsBuild");
         var staging = assembly.GetType("FvsBuild.Staging", true)!;
         var stage = staging.GetMethod("StageDependencies")!;
-        string root = Path.Combine(RepoRoot.Path, "TestResults", "dev-staging-" + Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "dev-staging-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         string previous = Environment.CurrentDirectory;
         try

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -72,7 +73,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw Classify((int)response.StatusCode, body, key, "models", response.Headers.RetryAfter?.Delta);
+                throw Classify((int)response.StatusCode, body, key, "models", AiHttpHelper.ParseRetryAfter(response));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -117,7 +118,44 @@ public sealed class OpenAiProvider : IAiVisionProvider
         {
             CoreLogger.Swallowed(ex);
         }
+        names.Sort(CompareOpenAiModelsNewestFirst);
         return names;
+    }
+
+    private static int CompareOpenAiModelsNewestFirst(string a, string b)
+    {
+        var ka = ParseOpenAiSortKey(a);
+        var kb = ParseOpenAiSortKey(b);
+        int c = kb.VersionScore.CompareTo(ka.VersionScore);
+        if (c != 0) return c;
+        c = kb.TierRank.CompareTo(ka.TierRank);
+        if (c != 0) return c;
+        c = kb.DateStamp.CompareTo(ka.DateStamp);
+        if (c != 0) return c;
+        return string.CompareOrdinal(a, b);
+    }
+
+    private static (double VersionScore, int TierRank, int DateStamp) ParseOpenAiSortKey(string name)
+    {
+        double version = 0;
+        Match mGpt = Regex.Match(name, @"^gpt-(\d+)(?:\.(\d+))?(o)?", RegexOptions.IgnoreCase);
+        Match mO = Regex.Match(name, @"^o(\d+)", RegexOptions.IgnoreCase);
+        if (mGpt.Success && int.TryParse(mGpt.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int major))
+        {
+            int minor = mGpt.Groups[2].Success && int.TryParse(mGpt.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mn) ? mn * 10 : 0;
+            if (mGpt.Groups[3].Success) minor += 5;
+            version = major + minor / 100.0;
+        }
+        else if (mO.Success && int.TryParse(mO.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int oMajor))
+        {
+            version = oMajor + 0.01;
+        }
+        int tier = name.Contains("nano", StringComparison.OrdinalIgnoreCase) ? 0
+            : name.Contains("mini", StringComparison.OrdinalIgnoreCase) ? 1
+            : name.Contains("pro", StringComparison.OrdinalIgnoreCase) ? 2 : 3;
+        Match d = Regex.Match(name, @"(\d{4}-\d{2}-\d{2})$");
+        int dateStamp = d.Success && int.TryParse(d.Groups[1].Value.Replace("-", ""), NumberStyles.Integer, CultureInfo.InvariantCulture, out int dt) ? dt : 99999999;
+        return (version, tier, dateStamp);
     }
 
     public async Task<string> GenerateJsonAsync(
@@ -134,29 +172,64 @@ public sealed class OpenAiProvider : IAiVisionProvider
     {
         string key = apiKey?.Trim() ?? string.Empty;
         if (key.Length == 0)
-            throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No OpenAI API key is configured. Add one in Settings.");
+            throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No OpenAI API key is configured. Add one in Settings › AI.");
 
         options ??= GeminiCallOptions.Tracking;
-        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
+        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model), key);
 
+        if (reasoning != null && AiReasoningPolicy.IsRejectedBy(Vendor, resolvedModel)) reasoning = null;
         AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: true);
         byte[] requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning, options.Temperature);
         bool fallbackTried = false;
+        bool jsonRetried = false;
+        bool reasoningDropped = false;
 
         for (int attempt = 0; ; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                string responseBody = await PostOnceAsync(ChatEndpoint, key, resolvedModel, requestBody, options.Timeout, ct).ConfigureAwait(false);
+                string responseBody = await AiHttpHelper.SendWithProgressAsync(
+                    "OpenAI", resolvedModel, requestBody.Length, attempt, options.MaxRetries, options.Timeout, userLog,
+                    () => PostOnceAsync(ChatEndpoint, key, resolvedModel, requestBody, options.Timeout, userLog, ct),
+                    ct).ConfigureAwait(false);
+                if (AiAnswerGuard.IsTruncated(Vendor, responseBody))
+                {
+                    RuntimeLog.Fail("OPENAI_PARSE", GeminiClient.Redact($"Model '{resolvedModel}' answer cut off at its length limit. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
+                    throw AiAnswerGuard.Truncated(Vendor, AiAnswerGuard.StopReason(Vendor, responseBody));
+                }
                 if (TryExtractContent(responseBody, out string result, out string? error, out bool refused))
-                    return string.IsNullOrWhiteSpace(jsonSchema) ? result : AiJsonSchema.Normalize(result, schema.Wrapped);
+                {
+                    if (string.IsNullOrWhiteSpace(jsonSchema)) return result;
+                    string normalized = AiJsonSchema.Normalize(result, schema.Wrapped);
+                    if (AiAnswerGuard.IsReadableJson(normalized)) return normalized;
+                    RuntimeLog.Fail("OPENAI_PARSE", GeminiClient.Redact($"Model '{resolvedModel}' answer is not readable JSON. Raw answer: {GeminiClient.Truncate(result, 1200)}", key));
+                    if (!jsonRetried)
+                    {
+                        jsonRetried = true;
+                        userLog?.Invoke($"OpenAI ({resolvedModel}) sent an answer that could not be read — asking once more…");
+                        attempt--;
+                        continue;
+                    }
+                    throw new AiProviderException(Vendor, AiProviderErrorKind.MalformedResponse,
+                        "OpenAI's answer could not be read twice in a row. Please try again.", "answer is not JSON");
+                }
 
+                RuntimeLog.Fail("OPENAI_PARSE", GeminiClient.Redact(
+                    $"Model '{resolvedModel}' parse failure ({error}, refused={refused}). Prompt snippet: {GeminiClient.Truncate(prompt, 240)} | Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
                 if (refused)
                     throw new AiProviderException(Vendor, AiProviderErrorKind.Blocked,
                         "OpenAI declined to analyse this footage. Try a different segment.", GeminiClient.Redact(error, key));
                 throw new AiProviderException(Vendor, AiProviderErrorKind.MalformedResponse,
                     "OpenAI answer could not be parsed.", GeminiClient.Redact(error, key));
+            }
+            catch (AiProviderException ex) when (!reasoningDropped && reasoning != null && AiAnswerGuard.IsReasoningRejection(ex))
+            {
+                reasoningDropped = true;
+                AiReasoningPolicy.MarkRejected(Vendor, resolvedModel);
+                reasoning = null;
+                requestBody = BuildOpenAiRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning, options.Temperature);
+                attempt--;
             }
             catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
             {
@@ -172,6 +245,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 TimeSpan wait = ex.RetryAfter ?? TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt + 1)));
                 if (wait > options.MaxRetryDelay)
                 {
+                    userLog?.Invoke($"OpenAI ask-back wait ({wait.TotalSeconds:0}s) exceeds retry ceiling ({options.MaxRetryDelay.TotalSeconds:0}s) — stopping.");
                     _log($"OpenAI {ex.Kind}: suggested wait {wait.TotalSeconds:0}s exceeds ceiling — aborting retry.");
                     throw;
                 }
@@ -188,10 +262,12 @@ public sealed class OpenAiProvider : IAiVisionProvider
         }
     }
 
-    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
+    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, Action<string>? userLog, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
+        AiUsageMeter.RequestStarted(Vendor, key);
+        string diagnosticId = AiDiagnostics.Start("OpenAI", model, requestBody, key);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -201,14 +277,18 @@ public sealed class OpenAiProvider : IAiVisionProvider
 
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+            AiDiagnostics.Write(diagnosticId, $"HTTP {(int)response.StatusCode} response={body}", key);
             if (response.IsSuccessStatusCode)
             {
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseOpenAiUsage(body);
-                AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseOpenAiLimits(response));
+                AiUsageMeter.Record(Vendor, model, inTok, outTok, thinkTok, AiUsageMeter.ParseOpenAiLimits(response), key);
+                long totalTok = inTok + outTok + thinkTok;
+                if (totalTok > 0)
+                    userLog?.Invoke($"OpenAI ({model}): {totalTok:N0} tokens ({inTok:N0} in + {outTok:N0} out{(thinkTok > 0 ? $" + {thinkTok:N0} reason" : "")}).");
                 return body;
             }
 
-            TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
+            TimeSpan? retryAfter = AiHttpHelper.ParseRetryAfter(response);
             throw Classify((int)response.StatusCode, body, key, model, retryAfter);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -247,7 +327,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
             w.WriteStartObject();
             w.WriteString("model", model);
 
-            if (reasoning != null && reasoning.Level != AiReasoningLevel.Default && reasoning.Level != AiReasoningLevel.Off)
+            if (reasoning != null && reasoning.Level != AiReasoningLevel.Default && reasoning.Level != AiReasoningLevel.Off && !SupportsTemperature(model))
             {
                 string effort = reasoning.Level switch
                 {
@@ -310,6 +390,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 w.WriteString("type", "image_url");
                 w.WriteStartObject("image_url");
                 w.WriteString("url", $"data:{img.MimeType};base64,{Convert.ToBase64String(img.Data)}");
+                if (!string.IsNullOrEmpty(img.Detail)) w.WriteString("detail", img.Detail);
                 w.WriteEndObject();
                 w.WriteEndObject();
             }
@@ -410,7 +491,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
                     $"Your OpenAI account is not permitted to use '{model}'.", detail, status);
             case 404:
                 return new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.ModelNotFound,
-                    $"The AI model '{model}' is not available on OpenAI (it may have been retired). Choose another model in Settings › AI Features.", detail, status);
+                    $"The AI model '{model}' is not available on OpenAI (it may have been retired). Choose another model in Settings › AI.", detail, status);
             case 429:
                 if (openAiCode.Contains("quota", StringComparison.OrdinalIgnoreCase) || openAiMsg.Contains("quota", StringComparison.OrdinalIgnoreCase))
                 {

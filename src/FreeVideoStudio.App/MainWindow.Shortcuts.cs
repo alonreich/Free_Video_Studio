@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -111,8 +111,6 @@ public partial class MainWindow
 
         var kb = SettingsManager.Instance.KeyBinds;
 
-        // FILEDELETE_01 — Direct file deletion from a focused ListBox item on Key.Delete is by design
-        // for speed and ease of use when managing/uploading video files from the picker.
         if (e.Key == Key.Delete)
         {
             if (FocusManager?.GetFocusedElement() is ListBox listBox && listBox.SelectedItem is string filePath)

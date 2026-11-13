@@ -131,15 +131,10 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
                 key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                 key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
             }
-            using (RegistryKey setup = root.CreateSubKey(ActiveSetupKey))
-            {
-                setup.SetValue("", DeploymentFootprint.DisplayName + " user migration");
-                setup.SetValue("Version", DeploymentLifecycle.GetCurrentVersion().Replace('.', ','));
-                setup.SetValue("StubPath", $"\"{DeploymentFootprint.InstallPath}\" --complete-user-migration");
-            }
+            root.DeleteSubKeyTree(ActiveSetupKey, throwOnMissingSubKey: false);
             await ReplaceAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Free Video Studio.lnk")).ConfigureAwait(false);
             string? publicDesktop = KnownFolders.GetPublicDesktop();
-            if (publicDesktop != null && SavedLinks().Any(p => Path.GetDirectoryName(p) == publicDesktop))
+            if (publicDesktop != null && SavedLinks().Any(p => Path.GetDirectoryName(p) == publicDesktop) && DesktopWritable(publicDesktop))
                 await ReplaceAsync(Path.Combine(publicDesktop, "Free Video Studio.lnk")).ConfigureAwait(false);
         }
         else
@@ -148,11 +143,24 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
             string? desktop = KnownFolders.GetDesktop();
             string? shared = KnownFolders.GetPublicDesktop();
             bool publicIcon = shared != null && File.Exists(Path.Combine(shared, "Free Video Studio.lnk"));
-            if (desktop != null && !publicIcon)
+            if (desktop != null && !publicIcon && DesktopWritable(desktop))
                 await ReplaceAsync(Path.Combine(desktop, "Free Video Studio.lnk")).ConfigureAwait(false);
             if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Free Video Studio.lnk")))
                 await ReplaceAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Free Video Studio.lnk")).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// CFASAFE_01 — Desktop is a folder Windows' "Controlled folder access" protects. When Windows
+    /// refuses this program there, the Desktop icon is skipped instead of failing the step: it used to
+    /// throw, so the Start menu entry after it was never written, the step was retried at every start,
+    /// and every retry showed a Windows "blocked" notification. The Start menu entry is always written.
+    /// </summary>
+    private static bool DesktopWritable(string desktop)
+    {
+        if (Infrastructure.ProtectedFolderGate.CanWriteNow(desktop)) return true;
+        RuntimeLog.Info("Upgrade", "The Desktop icon was skipped: Windows 'Controlled folder access' is protecting the Desktop. The Start menu entry is used.");
+        return false;
     }
 
     public async Task RemoveLegacyAsync()

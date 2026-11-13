@@ -104,16 +104,12 @@ public static class LegacyResidueSweep
             {
                 if (MoveRescuedRender(file, currentTempRoot)) moved++;
             }
-            // LEGACYKEEP_01: TEMP may contain applied voice recordings referenced by projects
-            // anywhere on disk. Moving rescued renders does not prove other files disposable.
             kept++;
         }
 
         foreach ((string legacy, string current) in legacyUserRoots)
         {
             if (!Directory.Exists(legacy) || SamePath(legacy, current)) continue;
-            // LEGACYKEEP_01: a same-named destination is not a verified preserved copy. Retain
-            // the original root, including conflicts and absolute paths held by saved projects.
             kept++;
         }
 

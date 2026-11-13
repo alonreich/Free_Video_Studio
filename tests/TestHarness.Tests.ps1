@@ -2,8 +2,8 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
-$fixture = Join-Path $repo 'TestResults\harness-tests'
-Remove-TestOutput $repo $fixture
+# TESTOUT_01: this suite's own output folder is logs\Harness_Results\work (a fake repository).
+$fixture = Enter-SuiteOutput $repo 'Harness'
 $null = New-Item -ItemType Directory -Force (Join-Path $fixture 'tests')
 [IO.File]::WriteAllText((Join-Path $fixture 'FreeVideoStudio.sln'), 'fixture repository')
 $checks = 0
@@ -37,7 +37,7 @@ foreach ($bad in @('<TestRun><Results /></TestRun>', '<broken', (Trx NotExecuted
 }
 Check (@(Read-TestResults (Join-Path $fixture 'missing.trx') AV 0 | Where-Object Outcome -eq 'Failed').Count -gt 0) 'Missing TRX passed.'
 
-$owned = Join-Path $fixture 'tests\AvRegression'
+$owned = Join-Path $fixture 'logs\AV_Results'
 $outside = Join-Path $fixture 'user-media'
 Put (Join-Path $outside 'keep.mp4')
 Put (Join-Path $owned 'work\old.bin')
@@ -48,12 +48,16 @@ Refuses { Remove-TestOutput $fixture $fixture } 'Deleting the repository root wa
 Refuses { Remove-TestOutput $fixture $outside } 'Deleting user media was accepted.'
 Refuses { Remove-TestOutput $fixture ($owned + '-other') } 'A sibling-prefix path was accepted.'
 Refuses { Remove-TestOutput $fixture (Join-Path $owned '..\user-media') } 'Traversal was accepted.'
+Refuses { Remove-TestOutput $fixture (Join-Path $fixture 'logs') } 'Deleting the whole logs folder was accepted.'
+Refuses { Remove-TestOutput $fixture (Join-Path $fixture 'TestResults') } 'A retired output folder was accepted.'
+Refuses { Remove-TestOutput $fixture (Join-Path $fixture 'logs\Bad_Name_Results') } 'A malformed suite folder was accepted.'
+Refuses { Reset-TestOutputs $fixture @('..\x') } 'A traversing suite name was accepted.'
 $null = New-Item -ItemType Junction -Path (Join-Path $owned 'outside-link') -Target $outside
 Remove-TestOutput $fixture $owned
 Check (-not (Test-Path -LiteralPath $owned)) 'Previous output/media/state survived cleanup.'
 Check (Test-Path -LiteralPath (Join-Path $outside 'keep.mp4')) 'Cleanup followed a child junction.'
 $null = New-Item -ItemType Junction -Path $owned -Target $outside
-Refuses { Reset-TestOutputs $fixture } 'A linked output root was accepted.'
+Refuses { Reset-TestOutputs $fixture @('AV') } 'A linked output root was accepted.'
 Check (Test-Path -LiteralPath (Join-Path $outside 'keep.mp4')) 'Root-link rejection modified the target.'
 # Unlink this verified fixture junction itself; never recurse into its target.
 [IO.Directory]::Delete($owned)

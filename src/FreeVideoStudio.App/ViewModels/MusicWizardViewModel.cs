@@ -86,9 +86,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     private bool _transportVisible;
     public bool TransportVisible { get => _transportVisible; set => SetProperty(ref _transportVisible, value); }
 
-    private string _addColumnHeader = "Add";
-    public string AddColumnHeader { get => _addColumnHeader; set => SetProperty(ref _addColumnHeader, value); }
-
     public RelayCommand? AddSongCommand { get; set; }
     public RelayCommand? FillRestCommand { get; set; }
     public RelayCommand? MoveEarlierCommand { get; set; }

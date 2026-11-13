@@ -109,7 +109,7 @@ public partial class MainWindow
             if (!applied)
             {
                 RuntimeLog.Fail("RECOVERY", "The recovered project document could not be applied to the editor.");
-                await PreserveFailedRestoreSnapshotAsync(); // RESTOREFAIL_01
+                await PreserveFailedRestoreSnapshotAsync();
                 return;
             }
 
@@ -257,6 +257,7 @@ public partial class MainWindow
             var addMemeCbRestore = AddMemeCheckboxCtl;
             if (addMemeCbRestore != null) addMemeCbRestore.IsChecked = addMeme;
 
+            await Infrastructure.MemeDirectory.WhenReadyAsync();
             string memeFilePath = FreeVideoStudio.Core.Infrastructure.MigrationPathResolver.ResolveSavedFile((string?)state["memeFilePath"] ?? "");
             string memeFile = (string?)state["memeFile"] ?? "";
             string restoreTarget = !string.IsNullOrEmpty(memeFilePath) ? memeFilePath

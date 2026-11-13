@@ -64,6 +64,7 @@ public partial class VideoMergerWindow
         var wizard = new MusicWizardWindow(VideoQueue.ToList(), MusicTimelineTotalSec(), _baseSpeed)
         {
             MergerClipWindows = MusicClipWindows(),
+            MergerComposite = EdlDescribesQueue() ? FreeVideoStudio.Core.Media.CompositeTimeline.Build(CurrentEdl) : null,
             InitialState = resume,
         };
         await wizard.ShowDialog(this);

@@ -143,17 +143,8 @@ internal static class VoiceOverAudioTools
         var settings = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance;
         bool dirty = false;
 
-        if (settings.VoiceProtectGameMode == FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.RememberLastChoice &&
-            settings.VoiceProtectGameLast != duckGame)
-        {
-            dirty = true;
-        }
-
-        if (settings.VoiceProtectMusicMode == FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.RememberLastChoice &&
-            settings.VoiceProtectMusicLast != duckMusic)
-        {
-            dirty = true;
-        }
+        if (settings.VoiceProtectGameLast != duckGame) dirty = true;
+        if (settings.VoiceProtectMusicLast != duckMusic) dirty = true;
 
         if (!dirty) return;
 
@@ -161,15 +152,8 @@ internal static class VoiceOverAudioTools
         {
             bool committed = FreeVideoStudio.App.Infrastructure.SettingsManager.Update(s =>
             {
-                if (s.VoiceProtectGameMode == FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.RememberLastChoice)
-                {
-                    s.VoiceProtectGameLast = duckGame;
-                }
-
-                if (s.VoiceProtectMusicMode == FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.RememberLastChoice)
-                {
-                    s.VoiceProtectMusicLast = duckMusic;
-                }
+                s.VoiceProtectGameLast = duckGame;
+                s.VoiceProtectMusicLast = duckMusic;
             });
             if (committed)
             {

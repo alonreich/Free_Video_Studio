@@ -269,7 +269,7 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         s.AiCommentaryLastLanguage = r.Language;
         s.AiCommentaryLastEntireTimeline = r.EntireTimeline;
         s.AiCommentaryLastNotes = r.CustomNotes ?? "";
-        s.AiTrackingGameProfile = r.Profile.ToString();
+        s.AiTrackingGameProfile = r.Profile;
         s.AiCommentaryLastPreset = r.Preset.ToString();
         var mix = r.EffectivePersonality;
         s.AiCommentaryLastFunny = mix.Funny;

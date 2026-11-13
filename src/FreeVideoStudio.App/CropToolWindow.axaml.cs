@@ -411,10 +411,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ButtonClick("MagicWandButton", async (_, _) => await RunMagicWandAsync());
         ButtonClick("CropToolAiSettingsButton", async (_, _) =>
         {
-            var vendor = Infrastructure.SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
-            if (await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, Services.AiUsage.MagicWand))
+            if (await Controls.SettingsWindow.ShowSectionAsync(this, ViewModels.SettingsSection.Ai, Services.SettingsWindowServices.CreateDefault()))
             {
                 s_wandCloudDeclinedThisSession = false;
+                UpdateMagicWandAvailabilityUi();
             }
         });
 
@@ -3893,7 +3893,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             });
 
 
-            string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "FreeVideoStudio.exe";
+            string exePath = Environment.ProcessPath ?? "FreeVideoStudio.exe";
 
             var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, "run-ui") { UseShellExecute = false });
             if (p != null)

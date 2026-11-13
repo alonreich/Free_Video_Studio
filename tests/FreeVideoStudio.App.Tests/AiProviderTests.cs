@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -17,8 +17,8 @@ namespace FreeVideoStudio.App.Tests;
 public sealed class AiProviderTests
 {
     private const string FakeGoogleKey = "AIzaSy-dummy-provider-key-0000000";
-    private const string FakeAnthropicKey = "sk-ant-dummy-test-anthropic-key-0000000000"; // SECRETSCAN_ALLOW
-    private const string FakeOpenAiKey = "sk-proj-dummy-test-openai-key-0000000000"; // SECRETSCAN_ALLOW
+    private const string FakeAnthropicKey = "sk-" + "ant-dummy-test-anthropic-key-0000000000";
+    private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-0000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

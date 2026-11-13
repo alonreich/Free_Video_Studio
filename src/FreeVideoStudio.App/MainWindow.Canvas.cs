@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -613,8 +613,6 @@ public partial class MainWindow
                 scaleCanvas.Children.Add(startText);
             }
 
-            // TRIMDRAG_COMMIT_01 — release, release seen late (move with no button) and capture loss
-            // all COMMIT the dragged START through this one exit (THUMB_02 three-exit rule).
             void CommitStartDrag(Avalonia.Input.IPointer? pointer, bool redraw)
             {
                 if (!_draggingStartMarker) return;
@@ -719,7 +717,6 @@ public partial class MainWindow
                 scaleCanvas.Children.Add(endText);
             }
 
-            // TRIMDRAG_COMMIT_01 — the END marker's one commit exit (release / late release / capture loss).
             void CommitEndDrag(Avalonia.Input.IPointer? pointer, bool redraw)
             {
                 if (!_draggingEndMarker) return;

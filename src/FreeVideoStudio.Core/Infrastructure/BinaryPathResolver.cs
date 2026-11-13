@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 
 namespace FreeVideoStudio.Core.Infrastructure;
@@ -19,7 +19,6 @@ public static class BinaryPathResolver
                 if (File.Exists(path1)) return path1;
             }
 
-            // Walk up to locate repository root in dev / test environments
             var current = new DirectoryInfo(root);
             while (current is not null)
             {

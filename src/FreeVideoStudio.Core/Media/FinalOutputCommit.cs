@@ -5,7 +5,6 @@ namespace FreeVideoStudio.Core.Media;
 
 internal static class FinalOutputCommit
 {
-    // OUTPUTCOMMIT_01: retry only transient destination locks; retain overwrite policy and surface final failure.
     internal static async Task MoveAsync(string source, string destination, bool overwrite)
     {
         var elapsed = Stopwatch.StartNew();

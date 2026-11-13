@@ -43,8 +43,8 @@ namespace FreeVideoStudio.App.Services;
 /// * RECHECK_01 — while the app stays open the automatic check repeats every
 ///   <see cref="RecheckInterval"/> (same consent, settings, throttle and "skipped" rules), so a user who
 ///   never closes the app still hears about a new version the same day.
-/// * BETA_01 — the Beta channel takes the HIGHEST version among published releases, pre-releases
-///   included; Stable reads /releases/latest, which never returns a pre-release.
+/// * SETNOBETA_01 — one release line: /releases/latest, which never returns a pre-release (the Beta
+///   channel, BETA_01, was removed).
 /// * "Remind me later" (UPDATEUX_01) = not now; the same release is offered again on a later
 ///   start (the user said not-now, not never).
 /// * "Skip this version" remembers THE TAG in UiStateStore; that exact release is never offered
@@ -63,86 +63,9 @@ internal static partial class UpdateService
 {
     private const string DevelopmentUpdateMessage = "Development copy: close the app and run dev.cmd to rebuild the current source.";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
-    private const string ReleasesApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases";
 
     /// <summary>WHATSNEW_01 — the human-readable list of releases (each one keeps its notes forever, RETAIN_02).</summary>
     internal const string ReleasesPageUrl = "https://github.com/alonreich/Free_Video_Studio/releases";
-
-    [System.Runtime.InteropServices.DllImport("ole32.dll", ExactSpelling = true)]
-    private static extern int CoCreateInstance(
-        in Guid rclsid,
-        IntPtr pUnkOuter,
-        uint dwClsContext,
-        in Guid riid,
-        out IntPtr ppv);
-
-    private static bool TryGetWindowsNetworkCost(out uint cost)
-    {
-        cost = 0;
-        if (!OperatingSystem.IsWindows()) return false;
-        try
-        {
-            var clsid = new Guid("DCB00C01-570F-4A9B-8D69-199FDBA5723B");
-            var iid = new Guid("DCB00008-570F-4A9B-8D69-199FDBA5723B");
-            int hr = CoCreateInstance(in clsid, IntPtr.Zero, 1 /* CLSCTX_INPROC_SERVER */, in iid, out IntPtr pManager);
-            if (hr != 0 || pManager == IntPtr.Zero) return false;
-            try
-            {
-                unsafe
-                {
-                    void** vtable = *(void***)pManager;
-                    delegate* unmanaged[Stdcall]<IntPtr, uint*, void*, int> getCost =
-                        (delegate* unmanaged[Stdcall]<IntPtr, uint*, void*, int>)vtable[3];
-                    uint c = 0;
-                    if (getCost(pManager, &c, null) == 0)
-                    {
-                        cost = c;
-                        return true;
-                    }
-                }
-            }
-            finally
-            {
-                System.Runtime.InteropServices.Marshal.Release(pManager);
-            }
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Swallowed(ex);
-        }
-        return false;
-    }
-
-    internal static bool IsMeteredOrConstrainedConnection()
-    {
-        try
-        {
-            if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
-                return false;
-
-            const uint MeteredMask = 0x2 | 0x4 | 0x10000 | 0x20000 | 0x40000 | 0x80000;
-            if (TryGetWindowsNetworkCost(out uint cost))
-            {
-                if ((cost & MeteredMask) != 0) return true;
-                if ((cost & 0x1) != 0) return false;
-            }
-
-            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
-                    (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wwanpp ||
-                     ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wwanpp2))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Swallowed(ex);
-        }
-        return false;
-    }
 
     /// <summary>
     /// NODROPPER_01 — the full installer is an Inno Setup package. Releases also carry the same bytes
@@ -345,12 +268,9 @@ internal static partial class UpdateService
                 return;
             }
 
-            bool isMetered = SettingsManager.Instance.AvoidMeteredNetworkUpdates && IsMeteredOrConstrainedConnection();
-            bool autoDownload = SettingsManager.Instance.AutoDownloadUpdates && !isMetered;
-
-            if (!autoDownload)
+            if (!SettingsManager.Instance.AutoDownloadUpdates)
             {
-                string reason = isMetered ? "a metered connection was detected" : "automatic background downloads are turned off in Settings";
+                const string reason = "automatic background downloads are turned off in Settings";
                 RuntimeLog.Info("UPDATE", $"Newer version {remote} is available; automatic background download skipped because {reason}.");
                 RecordResult($"Version {remote} is available. Download skipped because {reason}. You can check and download manually via Settings › About.");
                 Dispatcher.UIThread.Post(() =>
@@ -381,6 +301,9 @@ internal static partial class UpdateService
     /// Check for Updates always works. Returns true when automatic checks are allowed now. Closing the
     /// question without answering counts as "not now" and it is asked again on the next start.
     /// </summary>
+    /// <summary>SIGNPATH_01 — the privacy policy shown on the first start after installing (code-signing condition).</summary>
+    internal const string PrivacyPolicyUrl = "https://github.com/alonreich/Free_Video_Studio/blob/main/PRIVACY.md";
+
     private static async Task<bool> AskUpdateConsentAsync(Window owner)
     {
         try
@@ -393,7 +316,8 @@ internal static partial class UpdateService
                     "Free Video Studio can check GitHub for a newer version by itself, a few minutes after it starts. "
                     + "When one exists it is downloaded in the background and you choose when it is installed."
                     + Environment.NewLine + Environment.NewLine
-                    + "You can change this any time in Settings › About.",
+                    + "You can change this any time in Settings › General. Nothing else is sent anywhere unless you ask for it "
+                    + "(AI features use only the company whose key you enter). Privacy policy: " + PrivacyPolicyUrl,
                     "Check for updates automatically?", "Yes, check for updates", "No, I'll check myself");
                 return (bool?)yes;
             });
@@ -660,8 +584,7 @@ internal static partial class UpdateService
         if (DevReleaseFolder is { } devFolder) return await QueryLocalDevReleaseAsync(devFolder).ConfigureAwait(false);
         try
         {
-            bool isBeta = string.Equals(SettingsManager.Instance.UpdateChannel, "Beta", StringComparison.OrdinalIgnoreCase);
-            string targetUrl = isBeta ? ReleasesApiUrl + "?per_page=30" : LatestReleaseApiUrl;
+            string targetUrl = LatestReleaseApiUrl;
 
             using var cts = new CancellationTokenSource(ProbeTimeout);
             using var response = await Http.GetAsync(targetUrl, cts.Token).ConfigureAwait(false);
@@ -677,24 +600,16 @@ internal static partial class UpdateService
             }
 
             string json = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-            JsonObject? root = null;
-            if (isBeta)
+            JsonObject? root = JsonNode.Parse(json)?.AsObject();
+            if (root?["draft"]?.GetValue<bool>() == true || root?["prerelease"]?.GetValue<bool>() == true)
             {
-                root = PickBetaRelease(JsonNode.Parse(json)?.AsArray());
-            }
-            else
-            {
-                root = JsonNode.Parse(json)?.AsObject();
-                if (root?["draft"]?.GetValue<bool>() == true || root?["prerelease"]?.GetValue<bool>() == true)
-                {
-                    RuntimeLog.Info("UPDATE", "Latest release is a draft/prerelease; staying silent.");
-                    return (null, "No finished release is published yet.");
-                }
+                RuntimeLog.Info("UPDATE", "Latest release is a draft/prerelease; staying silent.");
+                return (null, "No finished release is published yet.");
             }
 
             if (root is null)
             {
-                return (null, isBeta ? "No releases found on Beta channel." : "No finished release is published yet.");
+                return (null, "No finished release is published yet.");
             }
 
             string? tag = root["tag_name"]?.GetValue<string>();
@@ -760,28 +675,6 @@ internal static partial class UpdateService
             RuntimeLog.Info("UPDATE", $"Release probe failed (offline or blocked?): {ex.Message}");
             return (null, "Could not reach GitHub to check for updates (no internet connection, or it is blocked).");
         }
-    }
-
-    /// <summary>
-    /// BETA_01 — the newest published release by VERSION (not by list order), pre-releases included.
-    /// Drafts and tags that are not versions are ignored. Null when there is none.
-    /// </summary>
-    internal static JsonObject? PickBetaRelease(JsonArray? releases)
-    {
-        JsonObject? best = null;
-        string? bestTag = null;
-        foreach (JsonNode? item in releases ?? [])
-        {
-            if (item is not JsonObject obj || obj["draft"]?.GetValue<bool>() == true) continue;
-            string? tag = obj["tag_name"]?.GetValue<string>();
-            if (!DeploymentLifecycle.TryParseVersion(tag, out _)) continue;
-            if (bestTag is null || DeploymentLifecycle.CompareVersions(tag, bestTag) > 0)
-            {
-                best = obj;
-                bestTag = tag;
-            }
-        }
-        return best;
     }
 
     /// <summary>

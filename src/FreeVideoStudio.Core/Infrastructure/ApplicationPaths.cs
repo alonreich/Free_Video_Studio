@@ -75,6 +75,10 @@ public sealed class ApplicationPaths
     /// <summary>LANECACHE_02 — the Merger's filmstrip frames and waveform peaks, per clip, across sessions.</summary>
     public string LaneCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "lanes");
 
+    /// <summary>AIREUSE_04 — finished AI answers that are worth keeping across launches (the Kill Tracker's
+    /// per-file scan), keyed by a hash of file identity + company + model. Disposable: a missing file is a re-scan.</summary>
+    public string AiAnswerCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "ai");
+
     public string InstallerReportFile => Path.Combine(TempDirectory, "FreeVideoStudio_Install_Report.txt");
 
     /// <summary>

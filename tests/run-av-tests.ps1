@@ -3,26 +3,33 @@
   full = A/V + Core/App + verifier + Python + harness checks.
   all = full + standalone media exports + native decoder soak.
   quick = iteration only, never the completion gate.
-  Each invocation replaces previous generated test output before starting.
+  TESTOUT_01: every suite writes ONLY to logs\<Suite>_Results\ (console.log, <Suite>.trx, work\).
+  A suite's folder is replaced right before that suite runs, so each holds exactly its latest result;
+  suites this mode does not run keep their last result. Gate verdict: logs\Gate_Results\LAST_RESULT.txt.
 #>
 param([ValidateSet('full', 'quick', 'all')][string]$Mode = 'full')
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 $root = Split-Path -Parent $PSScriptRoot
-$logsDir = Join-Path $root 'logs'
-$out = Join-Path $root 'tests\AvRegression'
-$results = Join-Path $logsDir 'results'
-$runLog = Join-Path $logsDir 'last-run.log'
+$gateDir = Get-TestSuiteRoot $root 'Gate'
 $started = Get-Date
 $lease = $null
 $oldNative = $env:FVS_TEST_NATIVE_MPV
 $oldManaged = $env:FVS_TEST_OUTPUT_MANAGED
 
+function Enter-Suite([string]$name) {
+    Reset-TestOutputs $root @($name)
+    $suiteDir = Get-TestSuiteRoot $root $name
+    $null = New-Item -ItemType Directory -Force -Path $suiteDir
+    return $suiteDir
+}
 function Invoke-Suite([string]$name, [string]$project, [string]$filter, [string[]]$required = @()) {
-    $trx = Join-Path $results "$name.trx"
+    $suiteDir = Enter-Suite $name
+    $runLog = Join-Path $suiteDir 'console.log'
+    $trx = Join-Path $suiteDir "$name.trx"
     $dargs = @('test', (Join-Path $root $project), '-c', 'Release', '--nologo', '-v', 'q',
-        '--logger', "trx;LogFileName=$name.trx", '--results-directory', $results)
+        '--logger', "trx;LogFileName=$name.trx", '--results-directory', $suiteDir)
     if ($filter) { $dargs += @('--filter', $filter) }
     # Native stderr is diagnostic text, not a PowerShell exception (including under PS 5).
     $ErrorActionPreference = 'Continue'
@@ -32,21 +39,19 @@ function Invoke-Suite([string]$name, [string]$project, [string]$filter, [string[
     Read-TestResults $trx $name $code $required
 }
 function Invoke-Check([string]$name, [string]$exe, [string[]]$arguments) {
+    $runLog = Join-Path (Enter-Suite $name) 'console.log'
     $ErrorActionPreference = 'Continue'
     & $exe @arguments *>> $runLog
     $code = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     [pscustomobject]@{ Suite = $name; Name = $name; Outcome = $(if ($code -eq 0) { 'Passed' } else { 'Failed' });
-        Message = $(if ($code -eq 0) { '' } else { "Exited $code; see logs\last-run.log" }); Where = '' }
+        Message = $(if ($code -eq 0) { '' } else { "Exited $code; see logs\${name}_Results\console.log" }); Where = '' }
 }
 try {
     Set-Location $root
     $lease = Enter-TestRun $root
-    Reset-TestOutputs $root
     $env:FVS_TEST_OUTPUT_MANAGED = '1'
-    $null = New-Item -ItemType Directory -Force -Path $results
-    $null = New-Item -ItemType Directory -Force -Path $out
-    "AV gate run $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') ($Mode)" | Set-Content -Encoding UTF8 $runLog
+    $null = Enter-Suite 'Gate'
     $env:FVS_TEST_NATIVE_MPV = '1'
     $all = @(Invoke-Check 'Harness' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tests/TestHarness.Tests.ps1'))
     $required = if ($Mode -eq 'quick') { @('S01','S02','S03','S04','S05','S06','S07','S08') } else { @(1..38 | ForEach-Object { 'S{0:D2}' -f $_ }) }
@@ -83,11 +88,11 @@ try {
         $lines += "     $($failure.Message)"
         if ($failure.Where) { $lines += "     at $($failure.Where)" }
     }
-    $summary + $lines | Set-Content -Encoding UTF8 (Join-Path $logsDir 'LAST_RESULT.txt')
-    $summary + $lines | Set-Content -Encoding UTF8 (Join-Path $out 'LAST_RESULT.txt')
+    $summary + "  Run: $($started.ToString('yyyy-MM-dd HH:mm:ss')); each suite's output: logs\<Suite>_Results\" + $lines |
+        Set-Content -Encoding UTF8 (Join-Path $gateDir 'LAST_RESULT.txt')
     $summary | Write-Output
     $lines | Select-Object -First 36 | Write-Output
-    if ($failed.Count -gt 12) { "More failures: logs\LAST_RESULT.txt" | Write-Output }
+    if ($failed.Count -gt 12) { "More failures: logs\Gate_Results\LAST_RESULT.txt" | Write-Output }
     $result = if ($verdict -eq 'PASS') { 0 } else { 1 }
 } catch {
     "AV GATE: FAIL - $($_.Exception.Message)" | Write-Output

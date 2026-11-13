@@ -129,7 +129,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://web.whatsapp.com",
                 UseShellExecute = true
@@ -144,7 +144,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://www.instagram.com/",
                 UseShellExecute = true
@@ -172,7 +172,7 @@ public partial class FinishedDialogWindow : Window
                 attrDlg.SetAttributionText(_attributionText);
                 await attrDlg.ShowDialog(this);
             }
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://studio.youtube.com/",
                 UseShellExecute = true
@@ -200,7 +200,7 @@ public partial class FinishedDialogWindow : Window
                 attrDlg.SetAttributionText(_attributionText);
                 await attrDlg.ShowDialog(this);
             }
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://www.tiktok.com/creator-center/upload",
                 UseShellExecute = true
@@ -241,7 +241,7 @@ public partial class FinishedDialogWindow : Window
             {
                 var psi = new ProcessStartInfo { FileName = "explorer.exe", UseShellExecute = false };
                 psi.ArgumentList.Add("/select," + _outputPath);
-                Process.Start(psi);
+                Services.ShellLauncher.Launch(psi);
             }
         }
         catch (Exception ex)

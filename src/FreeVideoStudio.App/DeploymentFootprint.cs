@@ -83,7 +83,6 @@ internal static class DeploymentFootprint
 
     /// <summary>NOSPACE_01 — the spaced scratch folder used before this change.</summary>
     public static readonly string LegacyTempAppFolder = Path.Combine(TempRoot, DisplayName);
-    public static readonly string DeploymentTempRoot = Path.Combine(TempAppFolder, "Lifecycle");
     public static readonly string InstallReportPath = Path.Combine(TempRoot, "FreeVideoStudio.log");
 
     public static string TempRoot => Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot,
@@ -94,7 +93,10 @@ internal static class DeploymentFootprint
     [
         "FreeVideoStudio",
         "FreeVideoStudio.App",
-        "Uninstall"
+        "Uninstall",
+        "ffmpeg",
+        "ffprobe",
+        "mpv"
     ];
 
     public static readonly string[] ShortcutFileNames =
@@ -237,11 +239,6 @@ internal static class DeploymentFootprint
         yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
-    }
-
-    public static (RegistryHive Hive, RegistryView View, string SubKeyPath) GetCanonicalUninstallRegistryTarget()
-    {
-        return (RegistryHive.LocalMachine, RegistryView.Registry64, UninstallKeyPath);
     }
 
     public static IEnumerable<(RegistryHive Hive, RegistryView View, string SubKeyPath)> GetUninstallRegistryPurgeTargets()

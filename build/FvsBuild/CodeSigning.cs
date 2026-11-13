@@ -154,6 +154,77 @@ internal static class CodeSigning
     }
 
     /// <summary>
+    /// SIGNDEPS_01 — signs the bundled third-party programs and libraries (FFmpeg, ffprobe, mpv and
+    /// their DLLs) in staging, but ONLY with a publicly trusted certificate (FVS_SIGN_PFX).
+    ///
+    /// <para>
+    /// WHY: Smart App Control, the "prevalence" attack-surface-reduction rule and company allow-lists
+    /// judge every .exe and .dll on its own. An unsigned FFmpeg is blocked even when the app is allowed,
+    /// and the app then opens with a dead preview or a failing export.
+    /// </para>
+    /// <para>
+    /// WHY NOT WITH THE REPOSITORY CERTIFICATE: these files are the upstream builds, byte for byte, and
+    /// Microsoft's cloud may already know those exact bytes (reputation is per file hash). Signing them
+    /// with a certificate nobody else trusts would change every hash, throw that reputation away and
+    /// gain nothing, so without FVS_SIGN_PFX they are left exactly as published. Files that already
+    /// carry a valid signature are never re-signed. Spec: 05 SYS-SIGNING.
+    /// </para>
+    /// </summary>
+    public static bool SignDependenciesWhenPubliclyTrusted(string stagingDir, string programPath, BuildLog log)
+    {
+        string? pfx = Environment.GetEnvironmentVariable("FVS_SIGN_PFX");
+        string password = Environment.GetEnvironmentVariable("FVS_SIGN_PASS") ?? string.Empty;
+        if (string.IsNullOrEmpty(pfx))
+        {
+            log.Info("[Sign] Bundled tools (FFmpeg, mpv) are left byte-identical to upstream: no publicly trusted");
+            log.Info("[Sign] certificate (FVS_SIGN_PFX) is set, and their existing reputation is worth more (SIGNDEPS_01).");
+            return true;
+        }
+        if (!File.Exists(pfx))
+        {
+            log.Error($"ERROR: FVS_SIGN_PFX is set but the file does not exist: {pfx}");
+            return false;
+        }
+        string? signtool = Cli.FindOnPath("signtool.exe") ?? FindWindowsKitsSigntool();
+        if (signtool is null)
+        {
+            log.Error("ERROR: FVS_SIGN_PFX is set but signtool.exe could not be found.");
+            return false;
+        }
+
+        string program = Path.GetFullPath(programPath);
+        var unsigned = new List<string>();
+        foreach (string file in Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories))
+        {
+            string ext = Path.GetExtension(file);
+            if (!ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(Path.GetFullPath(file), program, StringComparison.OrdinalIgnoreCase)) continue;
+            if (Cli.RunQuiet(signtool, ["verify", "/pa", "/q", file]) == 0) continue;
+            unsigned.Add(file);
+        }
+        if (unsigned.Count == 0)
+        {
+            log.Info("[Sign] Every bundled tool already carries a valid signature.");
+            return true;
+        }
+
+        log.Info($"[Sign] Signing {unsigned.Count} bundled tool file(s) (SIGNDEPS_01)...");
+        foreach (string file in unsigned)
+        {
+            int exit = Cli.RunStreaming(signtool,
+                ["sign", "/fd", "SHA256", "/f", pfx, "/p", password, "/tr", "http://timestamp.digicert.com", "/td", "SHA256", file],
+                log);
+            if (exit != 0 || Cli.RunQuiet(signtool, ["verify", "/pa", "/q", file]) != 0)
+            {
+                log.Error($"ERROR: signing the bundled file failed: {file}");
+                return false;
+            }
+        }
+        log.Success("[Sign] Bundled tools signed and verified.");
+        return true;
+    }
+
+    /// <summary>
     /// DIST-SMART / UPDATEPIN_01 — the certificate (with its private key) that signs update.json.
     /// The REPOSITORY certificate first, because installed copies trust only the pinned root
     /// (PublisherRoot) for the list — even when the program itself is signed with a bought

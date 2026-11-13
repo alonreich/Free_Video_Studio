@@ -34,7 +34,7 @@ string root = Directory.GetCurrentDirectory();
 string ffmpeg = Path.Combine(root, "binaries", "ffmpeg.exe");
 if (!File.Exists(ffmpeg)) throw new InvalidOperationException("Run from the workspace root.");
 using var outputLease = TestArtifactDirectory.Begin(root,
-    args.Contains("--libav-soak") ? "tests/MediaPipelineChecks/artifacts/soak" : "tests/MediaPipelineChecks/artifacts/current", out string work);
+    args.Contains("--libav-soak") ? "DecoderSoak" : "Media", out string work);
 Directory.CreateDirectory(Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TMP", Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TEMP", Path.Combine(work, "temp"));

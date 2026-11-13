@@ -79,11 +79,6 @@ public sealed class HudDetectionCoordinator : IDisposable
     /// <summary>The provider, if any. The UI reads <see cref="IAiHudDetectionService.ProviderName"/> for the privacy notice.</summary>
     public IAiHudDetectionService? AiService => _ai;
 
-    public long CurrentGeneration
-    {
-        get { lock (_gate) return _generation; }
-    }
-
     public bool IsCurrent(long generation)
     {
         lock (_gate) return !_disposed && generation == _generation;
@@ -231,6 +226,7 @@ public sealed class HudDetectionCoordinator : IDisposable
             AiHudOutcome.RateLimited => "The AI provider is rate-limiting requests right now. The offline Magic Wand results are still shown.",
             AiHudOutcome.NetworkError => "AI HUD suggestions are unavailable (no connection). The offline Magic Wand results are still shown.",
             AiHudOutcome.MalformedResponse => "The AI returned an answer that could not be used. The offline Magic Wand results are still shown.",
+            AiHudOutcome.AccountProblem => $"{result.UserMessage ?? "Your AI key or model needs attention in Settings › AI."} The offline Magic Wand results are still shown.",
             _ => "AI HUD suggestions are unavailable right now. The offline Magic Wand results are still shown.",
         };
         if (message != null)

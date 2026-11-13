@@ -27,6 +27,7 @@ public enum GeminiErrorKind
     BadRequest,
     Blocked,
     MalformedResponse,
+    Truncated,
 }
 
 /// <summary>
@@ -55,11 +56,17 @@ public sealed record GeminiCallOptions(TimeSpan Timeout, int MaxRetries, TimeSpa
     /// <summary>AITEMP_01 — the temperature creative writing tasks use.</summary>
     public const double CreativeTemperature = 0.9;
 
+    /// <summary>
+    /// AIANSWER_01 — the answer must be one JSON value. An unreadable one is asked again ONCE by the transport
+    /// (every provider), so features no longer need their own retry. False only for the plain-text key test.
+    /// </summary>
+    public bool ExpectJson { get; init; } = true;
+
     /// <summary>AITEMP_01 — <see cref="Tracking"/> timeouts with <see cref="CreativeTemperature"/>.</summary>
     public static GeminiCallOptions Creative => Tracking with { Temperature = CreativeTemperature };
 
     /// <summary>AI SMART ZOOM: the user is waiting on a modal, a video upload + analysis can take minutes.</summary>
-    public static readonly GeminiCallOptions Tracking = new(TimeSpan.FromSeconds(180), 3, TimeSpan.FromSeconds(30));
+    public static readonly GeminiCallOptions Tracking = new(TimeSpan.FromSeconds(90), 1, TimeSpan.FromSeconds(15));
 
     /// <summary>Key test / model list: short and never retried.</summary>
     public static readonly GeminiCallOptions Quick = new(TimeSpan.FromSeconds(20), 0, TimeSpan.Zero);
@@ -148,20 +155,7 @@ public sealed class GeminiClient
     /// or an exception.
     /// </summary>
     public static string Redact(string? text, string? apiKey)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        string result = text;
-        if (!string.IsNullOrWhiteSpace(apiKey))
-            result = result.Replace(apiKey.Trim(), "[REDACTED]", StringComparison.Ordinal);
-        result = Regex.Replace(result, @"(?i)(key=)[^&\s""']+", "$1REDACTED");
-        result = Regex.Replace(result, @"(?i)(x-goog-api-key\s*[:=]\s*)\S+", "$1REDACTED");
-        result = Regex.Replace(result, @"(?i)(x-api-key\s*[:=]\s*)\S+", "$1REDACTED");
-        result = Regex.Replace(result, @"(?i)(authorization\s*[:=]\s*)[^\r\n]+", "$1REDACTED");
-        result = Regex.Replace(result, @"AIza[0-9A-Za-z_\-]{30,}", "[REDACTED]");
-        result = Regex.Replace(result, @"sk-ant-[0-9A-Za-z_\-]{20,}", "[REDACTED]");
-        result = Regex.Replace(result, @"sk-[0-9A-Za-z_\-]{20,}", "[REDACTED]");
-        return result;
-    }
+        => FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(text, apiKey);
 
     public static string Truncate(string? s, int max)
         => string.IsNullOrEmpty(s) ? string.Empty : (s.Length <= max ? s : s[..max] + "…");
@@ -299,23 +293,23 @@ public sealed class GeminiClient
 
         if (status == 401 || keyProblem)
             return new GeminiException(GeminiErrorKind.InvalidKey,
-                "Google rejected your Gemini API key. Check it in Settings › AI Features (Test Connection), or create a new key in Google AI Studio.",
+                "Google rejected your Gemini API key. Check it in Settings › AI (Test Connection), or create a new key in Google AI Studio.",
                 detail, status);
 
         switch (status)
         {
             case 403:
                 return new GeminiException(GeminiErrorKind.PermissionDenied,
-                    $"Your Gemini API key is not allowed to use the model '{model}'. Choose another model in Settings › AI Features, or check the key's project in Google AI Studio.",
+                    $"Your Gemini API key is not allowed to use the model '{model}'. Choose another model in Settings › AI, or check the key's project in Google AI Studio.",
                     detail, status);
             case 404:
                 return new GeminiException(GeminiErrorKind.ModelNotFound,
-                    $"The AI model '{model}' is not available for your key (it may have been retired). Choose another model in Settings › AI Features.",
+                    $"The AI model '{model}' is not available for your key (it may have been retired). Choose another model in Settings › AI.",
                     detail, status);
             case 429:
                 if (perDay || googleMessage.Contains("per day", StringComparison.OrdinalIgnoreCase))
                     return new GeminiException(GeminiErrorKind.QuotaExhausted,
-                        $"Your daily Gemini quota for '{model}' is used up. It resets once a day — try again later, or choose another model in Settings › AI Features.",
+                        $"Your daily Gemini quota for '{model}' is used up. It resets once a day — try again later, or choose another model in Settings › AI.",
                         detail, status);
                 int wait = (int)Math.Ceiling((retryDelay ?? TimeSpan.FromSeconds(30)).TotalSeconds);
                 return new GeminiException(GeminiErrorKind.RateLimited,
@@ -364,21 +358,45 @@ public sealed class GeminiClient
     {
         string key = apiKey?.Trim() ?? string.Empty;
         if (key.Length == 0)
-            throw new GeminiException(GeminiErrorKind.InvalidKey, "No Gemini API key is configured. Add one in Settings › AI Features.");
+            throw new GeminiException(GeminiErrorKind.InvalidKey, "No Gemini API key is configured. Add one in Settings › AI.");
         string resolved = ResolveModel(model);
         string url = ModelsEndpoint + resolved + ":generateContent";
 
+        bool jsonRetried = false;
         for (int attempt = 0; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             GeminiException failure;
             try
             {
-                string body = await PostOnceAsync(url, key, requestBody, options.Timeout, cancellationToken).ConfigureAwait(false);
+                string body = await AiHttpHelper.SendWithProgressAsync(
+                    "Google Gemini", resolved, requestBody.Length, attempt, options.MaxRetries, options.Timeout, userLog,
+                    () => PostOnceAsync(url, key, requestBody, options.Timeout, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseGeminiUsage(body);
-                AiUsageMeter.Record(AiVendor.Google, inTok, outTok, thinkTok, null);
+                AiUsageMeter.Record(AiVendor.Google, resolved, inTok, outTok, thinkTok, null, key);
+                long totalTok = inTok + outTok + thinkTok;
+                if (totalTok > 0)
+                    userLog?.Invoke($"Google Gemini ({resolved}): {totalTok:N0} tokens ({inTok:N0} in + {outTok:N0} out{(thinkTok > 0 ? $" + {thinkTok:N0} think" : "")}).");
+                if (AiAnswerGuard.IsTruncated(AiVendor.Google, body))
+                {
+                    RuntimeLog.Fail("GEMINI_PARSE", Redact($"Model '{resolved}' answer cut off at its length limit. Raw response: {Truncate(body, 1200)}", key));
+                    throw (GeminiException)AiAnswerGuard.Truncated(AiVendor.Google, "MAX_TOKENS");
+                }
                 if (TryExtractModelText(body, out string text, out string? error, out bool blocked))
-                    return text;
+                {
+                    if (!options.ExpectJson || AiAnswerGuard.IsReadableJson(text)) return text;
+                    RuntimeLog.Fail("GEMINI_PARSE", Redact($"Model '{resolved}' answer is not readable JSON. Raw answer: {Truncate(text, 1200)}", key));
+                    if (!jsonRetried)
+                    {
+                        jsonRetried = true;
+                        userLog?.Invoke($"Google Gemini ({resolved}) sent an answer that could not be read — asking once more…");
+                        attempt--;
+                        continue;
+                    }
+                    throw new GeminiException(GeminiErrorKind.MalformedResponse, "Gemini's answer could not be read twice in a row. Please try again.", "answer is not JSON");
+                }
+                RuntimeLog.Fail("GEMINI_PARSE", Redact($"Model '{resolved}' unreadable output ({error}). Raw response: {Truncate(body, 1200)}", key));
                 failure = blocked
                     ? new GeminiException(GeminiErrorKind.Blocked, "Gemini declined to analyse this footage. Try a different segment.", Redact(error, key))
                     : new GeminiException(GeminiErrorKind.MalformedResponse, "Gemini's answer could not be read. Please try again.", Redact(error, key));
@@ -389,6 +407,7 @@ public sealed class GeminiClient
                 TimeSpan wait = ex.RetryAfter ?? BackoffFor(attempt);
                 if (wait > options.MaxRetryDelay)
                 {
+                    userLog?.Invoke($"Google Gemini ask-back wait ({wait.TotalSeconds:0}s) exceeds retry limit ({options.MaxRetryDelay.TotalSeconds:0}s) — stopping.");
                     _log($"Gemini {ex.Kind}: suggested wait {wait.TotalSeconds:0}s exceeds the {options.MaxRetryDelay.TotalSeconds:0}s ceiling — not retrying.");
                     throw;
                 }
@@ -410,6 +429,8 @@ public sealed class GeminiClient
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
+        AiUsageMeter.RequestStarted(AiVendor.Google, key);
+        string diagnosticId = AiDiagnostics.Start("Google", ModelFromUrl(url), requestBody, key);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -418,8 +439,9 @@ public sealed class GeminiClient
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+            AiDiagnostics.Write(diagnosticId, $"HTTP {(int)response.StatusCode} response={body}", key);
             if (response.IsSuccessStatusCode) return body;
-            TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
+            TimeSpan? retryAfter = AiHttpHelper.ParseRetryAfter(response);
             string model = ModelFromUrl(url);
             throw Classify((int)response.StatusCode, body, key, model, retryAfter);
         }
@@ -458,7 +480,7 @@ public sealed class GeminiClient
         try
         {
             byte[] body = Encoding.UTF8.GetBytes("{\"contents\":[{\"parts\":[{\"text\":\"Reply with the single word OK.\"}]}],\"generationConfig\":{\"maxOutputTokens\":16}}");
-            await GenerateAsync(apiKey, resolved, body, GeminiCallOptions.Quick, null, cancellationToken).ConfigureAwait(false);
+            await GenerateAsync(apiKey, resolved, body, GeminiCallOptions.Quick with { ExpectJson = false }, null, cancellationToken).ConfigureAwait(false);
             return (true, $"Key verified with model {resolved}.");
         }
         catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.MalformedResponse)
@@ -498,7 +520,7 @@ public sealed class GeminiClient
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw Classify((int)response.StatusCode, body, key, "models", response.Headers.RetryAfter?.Delta);
+                throw Classify((int)response.StatusCode, body, key, "models", AiHttpHelper.ParseRetryAfter(response));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

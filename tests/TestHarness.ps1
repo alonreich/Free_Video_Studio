@@ -1,11 +1,9 @@
 # TESTGATE_01 / TESTCLEAN_01. docs/README.md#GOV-AVGATE, 05#SYS-STORAGE-TABLE.
 # Definitions only: importing this file never launches a suite or deletes output.
-function Get-TestOutputRoots([string]$RepositoryRoot) {
-    foreach ($relative in @('logs', 'TestResults', 'artifacts\code-export-tests', 'tests\AvRegression', 'tests\MediaPipelineChecks\artifacts',
-        'tests\FreeVideoStudio.Core.Tests\TestResults', 'tests\FreeVideoStudio.App.Tests\TestResults',
-        'tests\FreeVideoStudio.AvRegression.Tests\TestResults', 'tests\FvsVerify.Tests\TestResults')) {
-        [IO.Path]::GetFullPath((Join-Path $RepositoryRoot $relative))
-    }
+# TESTOUT_01: the ONLY place test output may live is logs\<Suite>_Results\ (console.log, <Suite>.trx, work\).
+function Get-TestSuiteRoot([string]$RepositoryRoot, [string]$Suite) {
+    if ($Suite -cnotmatch '^[A-Za-z]+$') { throw "Not a test suite name: $Suite" }
+    [IO.Path]::GetFullPath((Join-Path $RepositoryRoot "logs\${Suite}_Results"))
 }
 
 function Assert-TestOutputPath([string]$RepositoryRoot, [string]$Path) {
@@ -15,10 +13,8 @@ function Assert-TestOutputPath([string]$RepositoryRoot, [string]$Path) {
     }
     if ($Path -match '(^|[\\/])\.\.([\\/]|$)') { throw 'Cleanup refuses traversal.' }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
-    $allowed = @(Get-TestOutputRoots $repo | Where-Object {
-        $full.Equals($_, [StringComparison]::OrdinalIgnoreCase) -or
-        $full.StartsWith($_ + '\', [StringComparison]::OrdinalIgnoreCase)
-    })
+    $logs = [regex]::Escape((Join-Path $repo 'logs'))
+    $allowed = @($full | Where-Object { $_ -imatch "^$logs\\[A-Za-z]+_Results(\\.+)?$" })
     if ($allowed.Count -eq 0) { throw "Not a test-output directory: $full" }
     # A root/ancestor junction would redirect even an apparently safe absolute path.
     $parent = [IO.DirectoryInfo]::new($full)
@@ -56,11 +52,22 @@ function Enter-TestRun([string]$RepositoryRoot) {
     catch { throw 'Another test run owns the output folders, or the test lock cannot be opened.' }
 }
 
-function Reset-TestOutputs([string]$RepositoryRoot) {
-    $paths = @(Get-TestOutputRoots $RepositoryRoot)
+function Reset-TestOutputs([string]$RepositoryRoot, [string[]]$Suites) {
+    $paths = @($Suites | ForEach-Object { Get-TestSuiteRoot $RepositoryRoot $_ })
     # Validate ALL destinations before the first deletion.
     foreach ($path in $paths) { $null = Assert-TestOutputPath $RepositoryRoot $path }
     foreach ($path in $paths) { Remove-TestOutput $RepositoryRoot $path }
+}
+
+# A suite started on its own replaces its whole folder; under the gate (FVS_TEST_OUTPUT_MANAGED=1) the
+# gate already emptied it and is writing console.log there, so only work\ is replaced. Returns work\.
+function Enter-SuiteOutput([string]$RepositoryRoot, [string]$Suite) {
+    $suiteRoot = Get-TestSuiteRoot $RepositoryRoot $Suite
+    $work = Join-Path $suiteRoot 'work'
+    if ($env:FVS_TEST_OUTPUT_MANAGED -eq '1') { Remove-TestOutput $RepositoryRoot $work }
+    else { Remove-TestOutput $RepositoryRoot $suiteRoot }
+    $null = New-Item -ItemType Directory -Force -Path $work
+    return $work
 }
 
 function New-TestFailure([string]$Suite, [string]$Message) {
@@ -70,7 +77,7 @@ function New-TestFailure([string]$Suite, [string]$Message) {
 function Read-TestResults([string]$Path, [string]$Suite, [int]$ExitCode,
                           [string[]]$RequiredScenarios = @()) {
     $records = @()
-    if ($ExitCode -ne 0) { $records += New-TestFailure $Suite "test process exited $ExitCode; see logs\last-run.log" }
+    if ($ExitCode -ne 0) { $records += New-TestFailure $Suite "test process exited $ExitCode; see logs\${Suite}_Results\console.log" }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return @($records) + @(New-TestFailure $Suite 'Missing test results; suite did not complete.')
     }

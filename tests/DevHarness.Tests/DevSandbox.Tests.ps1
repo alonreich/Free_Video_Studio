@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'build\DevSandbox.ps1')
 . (Join-Path $repo 'tests\TestHarness.ps1')
-$testRoot = Join-Path $repo 'TestResults\dev-sandbox'
-Remove-TestOutput $repo $testRoot
+# TESTOUT_01: this suite's own output folder is logs\DevSandbox_Results\work.
+$testRoot = Enter-SuiteOutput $repo 'DevSandbox'
 $data = Join-Path $testRoot 'dev\data'
 $keep = Join-Path $testRoot 'dev\keep'
 $old = Join-Path $testRoot 'old\data'
@@ -104,4 +104,4 @@ New-Item -ItemType Junction -Path (Join-Path $helperRoot 'outside') -Target $pro
 Must-Refuse { New-DevHelperScratch $helperRoot $helperHome } 'Helper cleanup followed a junction.'
 Check (Test-Path (Join-Path $production 'settings.json')) 'Helper cleanup touched production.'
 Write-Host 'Dev sandbox: preservation, managed refresh, retained dependencies, path/lock/junction guards and locked helper relaunch passed.'
-# Small synthetic fixtures are retained in ignored TestResults for inspection.
+# Small synthetic fixtures stay in logs\DevSandbox_Results\work until this suite runs again.

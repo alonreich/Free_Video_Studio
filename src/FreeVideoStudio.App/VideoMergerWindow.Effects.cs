@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -128,7 +128,10 @@ public partial class VideoMergerWindow
                 existingCaptions: state.Captions ?? _captionTrack ?? CurrentEdl.Captions);
             editor.AvailableMemes = memes;
             editor.MergeSource = source;
+            using var killScanCts = new System.Threading.CancellationTokenSource();
+            _ = ScanMergeClipsForKillsAsync(source, editor, killScanCts.Token);
             await editor.ShowDialog(this);
+            killScanCts.Cancel();
 
             if (!editor.Accepted)
             {
@@ -169,6 +172,56 @@ public partial class VideoMergerWindow
         {
             _granularOpen = false;
             UpdateMergerGranularButton();
+        }
+    }
+
+    /// <summary>
+    /// AIMERGEKILLS_01 (docs/04 UI-MERGER-KILLS) — with "Mark my kills" on, each merged clip is scanned (a saved or
+    /// earlier scan of the same file is reused, AIREUSE_04) and the kills inside the kept part of each clip are
+    /// handed to the speed editor in MERGED seconds, so the ✕ markers appear there and AI Commentary gets the
+    /// kill timings for clips of the Merger too. Runs in the background; closing the editor stops it.
+    /// </summary>
+    private async Task ScanMergeClipsForKillsAsync(MergeEditorSource source, GranularSpeedEditorWindow editor, System.Threading.CancellationToken ct)
+    {
+        try
+        {
+            var settings = Infrastructure.SettingsManager.Instance;
+            if (!settings.AiEliminationTrackerEnabled) return;
+            var config = settings.GetUsageConfig(Services.AiUsage.EliminationTracker);
+            string apiKey = settings.GetApiKey(config.Vendor);
+            if (string.IsNullOrWhiteSpace(apiKey)) return;
+            string model = settings.GetEffectiveModel(Services.AiUsage.EliminationTracker);
+            string ffmpeg = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
+
+            var mergedSec = new System.Collections.Generic.List<double>();
+            foreach (var clip in source.Clips)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!System.IO.File.Exists(clip.Path)) continue;
+                double durationSec = await Services.AiFfmpeg.ProbeDurationSecAsync(ffmpeg, clip.Path, ct);
+                if (durationSec <= 0) continue;
+                using var usage = Services.AiUsageMeter.BeginTask("AI Kill Tracker (Merger clip)", config.Vendor);
+                var result = await Task.Run(() => Services.AiEliminationTrackerService.ScanAsync(
+                    ffmpeg, clip.Path, durationSec, config.Vendor, apiKey, model,
+                    status => RuntimeLog.Info("AIElimination", $"Merger clip {clip.Index + 1}: {status}"), ct), ct);
+                foreach (var m in result.Markers)
+                {
+                    long us = (long)Math.Round(m.TimestampSec * 1_000_000.0);
+                    if (us < clip.KeepInUs || us > clip.KeepOutUs) continue;
+                    mergedSec.Add(clip.ToMergedMs(us) / 1000.0);
+                }
+                RuntimeLog.Info("AIElimination", $"Merger clip {clip.Index + 1}: {result.Summary} {usage.SummaryWithEstimate()}");
+                var snapshot = mergedSec.OrderBy(t => t).ToList();
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested) editor.SetAiEliminations(snapshot); });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            RuntimeLog.Info("AIElimination", "Merger kill scan stopped (speed editor closed).");
+        }
+        catch (Exception ex) when (ex is Services.AiProviderException or System.IO.IOException or InvalidOperationException)
+        {
+            RuntimeLog.Fail("AIElimination", $"Merger kill scan failed (reference {Services.AiUsageMeter.LastTaskId}): {ex.Message}");
         }
     }
 }

@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.App.ViewModels;
@@ -117,19 +117,13 @@ public sealed class ReleaseHardeningTests
         }
     }
 
+    /// <summary>SETNOBETA_01 — there is one release line: the updater has no Beta channel any more.</summary>
     [Fact]
-    public void Beta01_TheBetaChannelTakesTheHighestVersion_NotTheFirstListed()
+    public void NoBetaChannel_TheUpdaterReadsTheLatestReleaseOnly()
     {
-        var releases = JsonNode.Parse("""
-            [
-              {"tag_name":"v2026.10.15.0900","draft":false,"prerelease":false},
-              {"tag_name":"v2026.10.17.0900","draft":true,"prerelease":true},
-              {"tag_name":"v2026.10.16.0900","draft":false,"prerelease":true},
-              {"tag_name":"latest-docs","draft":false,"prerelease":false}
-            ]
-            """)!.AsArray();
-        Assert.Equal("v2026.10.16.0900", UpdateService.PickBetaRelease(releases)?["tag_name"]?.GetValue<string>());
-        Assert.Null(UpdateService.PickBetaRelease(new JsonArray()));
+        string src = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Services", "UpdateService.cs"));
+        Assert.DoesNotContain("PickBetaRelease", src);
+        Assert.Contains("string targetUrl = LatestReleaseApiUrl;", src);
     }
 
     [Fact]

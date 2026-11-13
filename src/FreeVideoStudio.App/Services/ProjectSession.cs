@@ -143,7 +143,6 @@ public sealed class ProjectSession
     /// an autosave issued before Ctrl+S cannot land on top of it. UI completion uses a generation
     /// and sequence stamp so delayed results cannot replace a newer document or clear new edits.
     /// </summary>
-    // PROJECTIO_01: only the UI enqueues; the task chain orders ALL file work without a UI lock.
     private Task _ioTail = Task.CompletedTask;
     private bool _explicitIoPending;
     private readonly bool _hasFastMask;
@@ -577,7 +576,7 @@ public sealed class ProjectSession
         try
         {
             try { await _ioTail; }
-            catch (Exception ex) { RuntimeLog.Swallowed(ex); } // The owning command already reports its failure.
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
             await PendingAutosave;
             if (!IsDirty) return true;
 
@@ -620,7 +619,6 @@ public sealed class ProjectSession
             return await WriteToAsync(CurrentPath!, announce: true);
         string? video = _viewModel.LoadedVideoPath;
         if (string.IsNullOrWhiteSpace(video)) return true;
-        // Resolve the close-time name on the same worker as the write, never on the dispatcher.
         return await WriteToAsync(null, announce: true, closeVideo: video);
     }
 
@@ -845,7 +843,6 @@ public sealed class ProjectSession
             _readLiveMaskFast,
             fallback: null);
 
-    // PROJECTIO_01 — snapshot UI state before yielding; disk/metadata/sidecars share one worker queue.
     private async Task<bool> WriteToAsync(string? path, bool announce, string? closeVideo = null)
     {
         ProjectDocument document = Capture();
@@ -928,7 +925,6 @@ public sealed class ProjectSession
         catch (Exception ex) { RuntimeLog.Swallowed(ex); return ProjectIoResult.Fail(ex.Message); }
     }
 
-    // Bound user-command admission: repeated shortcuts never accumulate snapshots behind slow storage.
     private async Task<bool> RunCommandAsync(Func<Task<bool>> command)
     {
         if (_explicitIoPending)

@@ -144,14 +144,6 @@ public static partial class MpvWrapper
     }
 
 
-    /// <summary>Sets the 'pause' property.</summary>
-    public static void SetPause(nint handle, bool pause)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "pause", pause ? "yes" : "no");
-    }
-
-
     /// <summary>Sets the 'volume' property (integer 0–100+).</summary>
     public static void SetVolume(nint handle, int volume)
     {
@@ -197,37 +189,6 @@ public static partial class MpvWrapper
         if (handle == nint.Zero) return;
         string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
         mpv_command_string(handle, $"loadfile \"{safePath}\"");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — loads an ASS subtitle file into libmpv (sub-add) for live preview.
-    /// </summary>
-    public static void AddSubtitles(nint handle, string path, bool select = true)
-    {
-        if (handle == nint.Zero) return;
-        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        string flag = select ? "select" : "auto";
-        mpv_command_string(handle, $"sub-add \"{safePath}\" {flag}");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — removes subtitle tracks from libmpv preview.
-    /// </summary>
-    public static void RemoveSubtitles(nint handle)
-    {
-        if (handle == nint.Zero) return;
-        mpv_command_string(handle, "sub-remove");
-    }
-
-    /// <summary>
-    /// Sets the 'start' property independently BEFORE a loadfile, per project
-    /// IPC rule (mpv ignores options embedded in the loadfile command).
-    /// </summary>
-    public static void SetStartPosition(nint handle, double seconds)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "start",
-                seconds > 0 ? seconds.ToString(CultureInfo.InvariantCulture) : "0");
     }
 
 

@@ -10,10 +10,12 @@ namespace FreeVideoStudio.Core.Media;
 ///
 /// <para>
 /// Each sub-application owns ONE base name, edited in Settings › Output Files and stored in
-/// <c>AppSettings.MainOutputBaseName</c> / <c>AppSettings.MergerOutputBaseName</c>. A finished
+/// <c>AppSettings.MainOutputBaseName</c> (the Video Merger adds "-merged", SETNAMEONE_01). A finished
 /// render is saved as <c>&lt;base&gt;-&lt;N&gt;.mp4</c> where N is the first free index in the
 /// destination folder (1, 2, 3 …). Defaults: <see cref="MainDefaultBaseName"/> →
-/// <c>FreeVideoStudio-1.mp4</c>, <see cref="MergerDefaultBaseName"/> → <c>Merged-Videos-1.mp4</c>.
+/// <c>FreeVideoStudio-1.mp4</c>, <see cref="MergerDefaultBaseName"/> → <c>FreeVideoStudio-merged-1.mp4</c>.
+/// SETNAMEONE_01: there is ONE name; the Video Merger adds <see cref="MergerSuffix"/> to it
+/// (<see cref="MergerBaseFor"/>), so the two tools' files are told apart without a second setting.
 /// </para>
 ///
 /// <para>
@@ -36,8 +38,23 @@ public static class OutputFileNaming
     /// <summary>OUTNAME_01 — Main App default: FreeVideoStudio-1.mp4, FreeVideoStudio-2.mp4 …</summary>
     public const string MainDefaultBaseName = "FreeVideoStudio";
 
-    /// <summary>OUTNAME_01 — Video Merger default: Merged-Videos-1.mp4, Merged-Videos-2.mp4 …</summary>
-    public const string MergerDefaultBaseName = "Merged-Videos";
+    /// <summary>SETNAMEONE_01 — what the Video Merger adds to the one file name.</summary>
+    public const string MergerSuffix = "-merged";
+
+    /// <summary>OUTNAME_01 / SETNAMEONE_01 — Video Merger default: FreeVideoStudio-merged-1.mp4 …</summary>
+    public const string MergerDefaultBaseName = MainDefaultBaseName + MergerSuffix;
+
+    /// <summary>
+    /// SETNAMEONE_01 — the Video Merger's file-name base for the user's one name: the cleaned name plus
+    /// <see cref="MergerSuffix"/> (kept within <see cref="MaxBaseNameLength"/>). "Clips" → "Clips-merged".
+    /// </summary>
+    public static string MergerBaseFor(string? name)
+    {
+        string main = Sanitize(name, MainDefaultBaseName);
+        int room = MaxBaseNameLength - MergerSuffix.Length;
+        if (main.Length > room) main = main[..room].TrimEnd('.', ' ', '-', '_');
+        return main + MergerSuffix;
+    }
 
     /// <summary>RESCUE_01 — fixed prefix of a rescued Main App render in the temp root.</summary>
     public const string MainRecoveredPrefix = "FreeVideoStudio-RECOVERED-";

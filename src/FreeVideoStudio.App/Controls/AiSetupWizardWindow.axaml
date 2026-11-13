@@ -28,17 +28,20 @@
                         <!-- Provider Selection Tabs -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10">
                             <StackPanel Spacing="8">
-                                <TextBlock Text="Select an AI provider to connect (you can connect more than one):"
+                                <TextBlock Text="1. Choose your AI provider (you can connect more than one):"
                                            Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
                                 <Grid ColumnDefinitions="*, *, *">
-                                    <Button Name="VendorGoogleBtn" Grid.Column="0" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Google Gemini"/>
+                                    <Button Name="VendorGoogleBtn" Grid.Column="0" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Google Gemini ★"/>
                                     <Button Name="VendorAnthropicBtn" Grid.Column="1" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Anthropic Claude"/>
                                     <Button Name="VendorOpenAiBtn" Grid.Column="2" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="OpenAI"/>
                                 </Grid>
+                                <TextBlock Name="VendorCapabilityHint"
+                                           Text="★ Recommended — Google Gemini watches video + hears audio and has a free tier. Claude and OpenAI read sampled video stills (no audio)."
+                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- STEP 1: Get Your Free Key -->
+                        <!-- STEP 1: Get Your Key -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -62,25 +65,42 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- STEP 2: Paste and Verify -->
+                        <!-- STEP 2: Paste Key, Choose Model & Verify -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
                                         <TextBlock Text="2" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
-                                    <TextBlock Text="Step 2: Paste and Verify" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Step 2: Paste key, pick model, and verify" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <Grid ColumnDefinitions="*, Auto" Margin="0,4,0,0">
+                                <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,4,0,0">
                                     <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your API key here..."
                                              AutomationProperties.Name="API Key"
-                                             Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
-                                    <Button Name="TestAndSaveBtn" Grid.Column="1" Classes="Success" Content="Test and Save Key" Cursor="Hand"
-                                             ToolTip.Tip="Checks the key with the AI company, then saves it encrypted."/>
+                                             Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,6,0"/>
+                                    <ToggleButton Name="WizardRevealKeyBtn" Grid.Column="1" Classes="Secondary" Content="Show" Cursor="Hand" Margin="0,0,8,0"
+                                                  ToolTip.Tip="Show or hide your pasted API key"/>
+                                    <Button Name="TestAndSaveBtn" Grid.Column="2" Classes="Success" Content="Test &amp; Save" Cursor="Hand"
+                                            ToolTip.Tip="Checks the key with the AI provider, loads available models, then saves encrypted."/>
                                 </Grid>
 
-                                <TextBlock Name="VerificationStatusLabel" Text="Paste key and click Test and Save Key."
+                                <Grid ColumnDefinitions="Auto, *, Auto" Margin="0,2,0,0">
+                                    <TextBlock Grid.Column="0" Text="Model:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                               FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                    <ComboBox Name="WizardModelCombo" Grid.Column="1" HorizontalAlignment="Stretch" Margin="0,0,8,0"
+                                              ToolTip.Tip="Model used by default with this provider (you can also customize per feature in Settings › AI)."/>
+                                    <Button Name="WizardRefreshModelsBtn" Grid.Column="2" Classes="Secondary" Content="Refresh Models" Cursor="Hand"
+                                            ToolTip.Tip="Ask this AI provider for the live list of models your key can use."/>
+                                </Grid>
+                                <TextBlock Name="WizardModelHintText"
+                                           Text="Recommended model is pre-selected. You can switch models anytime here or in Settings › AI."
+                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+
+                                <ProgressBar Name="WizardProgressBar" IsIndeterminate="True" Height="4" IsVisible="False" Margin="0,2,0,0"/>
+                                <TextBlock Name="WizardVerboseStepText" Text="" IsVisible="False"
+                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                <TextBlock Name="VerificationStatusLabel" Text="Paste your key and click Test &amp; Save."
                                            Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>

@@ -21,7 +21,6 @@ public sealed class TimelineViewModel : ViewModelBase
     private int _mainSpeedSliderValue = 11;
     private double _freezeTimeMs = -1;
     private double _freezeDurationS = 1.0;
-    private bool _isCurrentlyFrozen;
     private string _timeElapsedText = "00:00:00";
     private string _timeRemainingText = "-00:00:00";
     private string _speedLabelText = "1.1x — Normal";
@@ -125,12 +124,6 @@ public sealed class TimelineViewModel : ViewModelBase
     {
         get => _freezeDurationS;
         set => SetProperty(ref _freezeDurationS, value);
-    }
-
-    public bool IsCurrentlyFrozen
-    {
-        get => _isCurrentlyFrozen;
-        set => SetProperty(ref _isCurrentlyFrozen, value);
     }
 
     public string TimeElapsedText
@@ -312,45 +305,6 @@ public sealed class TimelineViewModel : ViewModelBase
             totalMs += (trimEndMs - cursor) / Math.Max(0.001, baseSpeed);
         }
         return Math.Max(1.0, totalMs);
-    }
-
-    /// <summary>
-    /// QUALITY_03 — of the finished video's milliseconds, how many are a HELD STILL FRAME.
-    ///
-    /// Deliberately mirrors CalculateEffectiveDurationMs's own loop, clamp for clamp, including
-    /// its `Math.Abs(seg.Speed) &lt; 0.001` test for a freeze and its overlap handling. The two
-    /// numbers are only meaningful together — a freeze total measured by different rules than the
-    /// duration it is subtracted from would drift, and the export would aim at a size derived from
-    /// two disagreeing timelines.
-    /// ⚠️ If CalculateEffectiveDurationMs's segment walk ever changes, this must change with it.
-    /// </summary>
-    public double CalculateFreezeOutputMs()
-    {
-        var speedSegments = BuildExportSpeedSegments();
-        if (speedSegments == null || speedSegments.Count == 0) return 0.0;
-
-        double trimStartMs = IsTrimStartSet ? TrimStartMs : 0.0;
-        double trimEndMs = (IsTrimEndSet && TrimEndMs > trimStartMs) ? TrimEndMs : LoadedVideoDurationMs;
-        double frozenMs = 0.0;
-        double cursor = trimStartMs;
-
-        var sorted = new List<SpeedSegment>(speedSegments);
-        sorted.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
-
-        foreach (var seg in sorted)
-        {
-            double segStart = Math.Max(trimStartMs, Math.Max(seg.StartMs, cursor));
-            double segEnd = Math.Min(trimEndMs, seg.EndMs);
-            if (segEnd <= segStart) continue;
-
-            if (Math.Abs(seg.Speed) < 0.001)
-            {
-                frozenMs += (segEnd - segStart);
-            }
-            cursor = Math.Max(cursor, segEnd);
-        }
-
-        return Math.Max(0.0, frozenMs);
     }
 
     private (double StartMs, double EndMs, double BaseSpeed, int Segments, int Cuts)? _previewTimelineKey;
@@ -584,7 +538,6 @@ public sealed class TimelineViewModel : ViewModelBase
         _thumbnailSet = false;
         _freezeTimeMs = -1;
         _freezeDurationS = 1.0;
-        _isCurrentlyFrozen = false;
         ApplyMainSpeedPreset(SpeedPresetButtons.NativeDefaultSpeed);
         Cuts.Clear();
         SpeedSegments.Clear();

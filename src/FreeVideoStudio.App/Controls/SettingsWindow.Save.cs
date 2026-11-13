@@ -1,35 +1,24 @@
 ﻿using System;
 using Avalonia.Controls;
 using FreeVideoStudio.App.Infrastructure;
-using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.Controls;
 
 public partial class SettingsWindow : Window
 {
     /// <summary>
-    /// SETTX_01 — ONE settings transaction writes every pending value (SettingsViewModel.WriteTo).
-    /// Side effects that are not settings.json (crop layout, meme rescan, state-store copies) run only
-    /// after that commit succeeded.
+    /// SETTX_01 — the view-model commits every pending value in ONE settings transaction (and writes
+    /// the state-store copies after it). SETTINGSDI_01: the window only applies what is visible —
+    /// the theme, the crop layout, the meme list — and closes.
     /// </summary>
     internal void SaveAndClose()
     {
-        bool committed = SettingsManager.Update(s =>
-        {
-            if (s.AutoUpdateChecks != Vm.AutoUpdateChecks) s.UpdateConsentAsked = true;
-            Vm.WriteTo(s);
-            ApplyPendingOutputSettings(s);
-        });
-
-        if (!committed)
+        if (!Vm.Commit())
         {
             SetFooterStatus("⚠ Your settings could not be saved. Another Free Video Studio window may be saving at the same moment, " +
                             "or the settings file is read-only. Wait a second and press SAVE again.", isError: true);
-            RuntimeLog.Fail("SETTINGS", "Settings save failed: the settings transaction did not commit.");
             return;
         }
-
-        SyncMergerOutputDirectoryState();
 
         ThemeManager.ApplyTheme(Vm.P.ThemeMode);
         ThemeManager.ApplyFontScale(Vm.P.FontScale);
@@ -37,27 +26,14 @@ public partial class SettingsWindow : Window
         if (!string.Equals(Vm.P.ActiveMaskOverlay, _openMaskOverlay, StringComparison.Ordinal))
             MaskOverlayManager.ApplyProfile(Vm.P.ActiveMaskOverlay);
 
-        string encoder = SettingsManager.Instance.VideoEncoderOverride;
-        if (!string.Equals(encoder, _openEncoder, StringComparison.OrdinalIgnoreCase))
-            RuntimeLog.Info("Settings", $"Video encoder override changed: {_openEncoder} -> {encoder}");
+        if (Vm.P.VideoEncoderOverride != _openEncoder)
+            RuntimeLog.Info("Settings", $"Video encoder override changed: {_openEncoder} -> {Vm.P.VideoEncoderOverride}");
 
         if (!string.Equals(Vm.MemeDirectoryPath, _openMemeFolder, StringComparison.OrdinalIgnoreCase))
         {
             RuntimeLog.Info("Memes", "Meme directory changed in Settings.");
             MemeDirectory.NotifyChanged();
         }
-
-        try
-        {
-            if (_initialMusicFolder != null || !string.IsNullOrEmpty(Vm.MusicFolder))
-            {
-                _writer.Enqueue(new System.Text.Json.Nodes.JsonObject
-                {
-                    ["CustomMusicDirectory"] = Vm.MusicFolder
-                });
-            }
-        }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
         _isSafeToClose = true;
         Close(true);

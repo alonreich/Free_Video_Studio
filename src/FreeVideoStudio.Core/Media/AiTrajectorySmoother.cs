@@ -649,18 +649,6 @@ public static class AiTrajectorySmoother
                     targetCenterX - halfW, headY, targetCenterX + halfW, Math.Max(feetY, headY + 1), zones);
             }
 
-            if (portraitMode && sourceW > 0 && sourceH > 0)
-            {
-                double scalePortrait = Math.Max((double)CoordinateConstants.InternalW / sourceW, (double)CoordinateConstants.InternalH / sourceH);
-                double survW = CoordinateConstants.InternalW / scalePortrait;
-                double minSliceX = (sourceW - survW) / 2.0;
-                double maxSliceX = minSliceX + survW;
-                if (cropW <= survW)
-                {
-                    cropX = Math.Clamp(cropX, minSliceX, maxSliceX - cropW);
-                }
-            }
-
             cropX = Math.Clamp(cropX, 0.0, Math.Max(0.0, sourceW - cropW));
             cropY = Math.Clamp(cropY, 0.0, Math.Max(0.0, sourceH - cropH));
 

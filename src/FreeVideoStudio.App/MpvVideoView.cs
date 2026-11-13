@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -50,7 +50,6 @@ public sealed class MpvVideoView : Control, IDisposable
     internal const int SwapChainSize = 16;
     private const ulong ProducerKey = 0;
     private const ulong ConsumerKey = 1;
-    private const int KeyedMutexWaitMs = 0;
 
     private uint[] _glFramebuffers = new uint[SwapChainSize];
     private uint[] _glTextures = new uint[SwapChainSize];
@@ -136,15 +135,8 @@ public sealed class MpvVideoView : Control, IDisposable
         return gates;
     }
 
-    /// <summary>GPUPRESENT_01 — log the first drop only; count the rest.</summary>
+    /// <summary>GPUPRESENT_01 — log the first drop only.</summary>
     private volatile bool _presentDropLogged;
-
-    /// <summary>GPUPRESENT_01 — INERT diagnostic. Frames skipped because a present was still in
-    /// flight for that slot. A number that climbs steadily means the UI thread is the bottleneck.</summary>
-    private long _droppedPresentCount;
-
-    /// <summary>GPUPRESENT_01 — exposed for diagnostics only; never used for control flow.</summary>
-    public long DroppedPresentCount => System.Threading.Interlocked.Read(ref _droppedPresentCount);
 
     /// <summary>FREEZEDIAG_03 — INERT diagnostic. Last coarse step seen on the UI thread.</summary>
     public static volatile string LastUiStep = "idle";
@@ -743,11 +735,9 @@ public sealed class MpvVideoView : Control, IDisposable
     internal INativeTeardownInvoker NativeTeardownInvoker { get; set; } = DefaultNativeTeardownInvoker.Instance;
     internal Task<PreviewShutdownResult>? ActiveNativeReleaseTask { get => _activeNativeReleaseTask; set => _activeNativeReleaseTask = value; }
     internal Task? ActiveCompositorDisposalTask { get => _activeCompositorDisposalTask; set => _activeCompositorDisposalTask = value; }
-    internal CompositorDisposalBatch? CompositorBatch => _compositorDisposalBatch;
     internal CompositorDisposalBatch? CompositorDisposalBatchForTesting { get => _compositorDisposalBatch; set => _compositorDisposalBatch = value; }
     internal NativeTeardownOperation? ActiveTeardownOperation { get => _activeTeardownOperation; set => _activeTeardownOperation = value; }
     internal System.Threading.SemaphoreSlim[] PresentGates => _presentGates;
-    internal ImportedImageSlot?[] ImportedImages => _importedImages;
     internal Task<NativeDetachedResources> FinalizeUiResourcesOnUiThreadForTesting() => FinalizeUiResourcesOnUiThreadAsync();
 
     internal NativeDetachedResources CreateNativeDetachedResourcesForTesting(
@@ -2036,13 +2026,12 @@ public sealed class MpvVideoView : Control, IDisposable
 
                 if (slotIndex < 0)
                 {
-                    System.Threading.Interlocked.Increment(ref _droppedPresentCount);
                     if (!_presentDropLogged)
                     {
                         _presentDropLogged = true;
                         RuntimeLog.Debug(InteropLogStep,
                             "Dropped a frame: every swap-chain slot still has a present in flight. " +
-                            "Further drops are counted, not logged.");
+                            "Further drops are not logged.");
                     }
                     if (_consecutiveDeclines > 30)
                     {
@@ -2577,44 +2566,96 @@ public sealed class MpvVideoView : Control, IDisposable
 
         if (_disposing) return null;
 
-        var importCompletion = new System.Threading.Tasks.TaskCompletionSource<ICompositionImportedGpuImage?>();
+        long epoch = System.Threading.Interlocked.Read(ref _textureEpoch);
+        PendingImport? pending = System.Threading.Volatile.Read(ref _pendingImports[index]);
+        if (pending != null)
+        {
+            if (!pending.IsDone)
+            {
+                LastRenderStep = $"import[{index}]: waiting for the UI thread (frame declined, not blocked)";
+                return null;
+            }
+
+            System.Threading.Interlocked.CompareExchange(ref _pendingImports[index], null, pending);
+            ICompositionImportedGpuImage? done = pending.Image;
+            if (done == null || !pending.TryClaim()) return null;
+            if (pending.Epoch == epoch && pending.Handle == sharedHandle && !_disposing) return done;
+
+            DisposeImportedImageOnUiThread(done);
+            return null;
+        }
+
+        var request = new PendingImport(epoch, sharedHandle);
+        System.Threading.Volatile.Write(ref _pendingImports[index], request);
         Dispatcher.UIThread.Post(() =>
         {
             LastUiStep = $"import[{index}]: calling gpu.ImportImage";
-            try { importCompletion.TrySetResult(gpu.ImportImage(platformHandle, props)); }
+            ICompositionImportedGpuImage? image = null;
+            try
+            {
+                if (!_disposing) image = gpu.ImportImage(platformHandle, props);
+            }
             catch (Exception ex)
             {
                 LastUiStep = $"import[{index}]: threw {ex.GetType().Name}";
                 RuntimeLog.SwallowedThrottled(ex);
-                importCompletion.TrySetResult(null);
             }
-            LastUiStep = $"import[{index}]: ImportImage returned";
-        });
-        LastRenderStep = $"import[{index}]: render thread waiting on UI import";
 
-        if (!importCompletion.Task.Wait(UiImportTimeoutMs))
-        {
-            if (!_importTimeoutLogged)
+            if (image != null && _disposing)
             {
-                _importTimeoutLogged = true;
-                RuntimeLog.Fail(InteropLogStep,
-                    $"Shared-texture import did not reach the UI thread within {UiImportTimeoutMs}ms; declining this frame.");
+                DisposeImportedImageOnUiThread(image);
+                image = null;
             }
-            return null;
-        }
 
-        return importCompletion.Task.Result;
+            request.Complete(image);
+            if (image != null && !ReferenceEquals(System.Threading.Volatile.Read(ref _pendingImports[index]), request) && request.TryClaim())
+                DisposeImportedImageOnUiThread(image);
+            LastUiStep = $"import[{index}]: ImportImage returned";
+            if (_renderThreadRunning && !_disposing)
+            {
+                try { _renderSignal.Set(); } catch (ObjectDisposedException ex) { RuntimeLog.Swallowed(ex); }
+            }
+        }, DispatcherPriority.Render);
+        LastRenderStep = $"import[{index}]: posted to the UI thread";
+        return null;
     }
 
-    /// <summary>
-    /// ZOOMHANG_01 — how long the render thread will wait for the UI thread to import a texture.
-    /// Generous enough that a busy-but-alive UI thread is never mistaken for a dead one, short
-    /// enough that a dead one cannot hold the render thread past a single teardown.
-    /// </summary>
-    private const int UiImportTimeoutMs = 750;
+    /// <summary>RENDERIMPORT_01 — one in-flight UI-thread import for a swap-chain slot.</summary>
+    private sealed class PendingImport
+    {
+        public PendingImport(long epoch, nint handle) { Epoch = epoch; Handle = handle; }
+        public long Epoch { get; }
+        public nint Handle { get; }
 
-    /// <summary>ZOOMHANG_01 — log the import timeout once, not 15 times a second.</summary>
-    private volatile bool _importTimeoutLogged;
+        private ICompositionImportedGpuImage? _image;
+        private volatile bool _done;
+
+        /// <summary>Written once by the UI thread; the volatile flag publishes <see cref="Image"/> to the render thread.</summary>
+        public void Complete(ICompositionImportedGpuImage? image) { _image = image; _done = true; }
+        public bool IsDone => _done;
+        public ICompositionImportedGpuImage? Image => _image;
+
+        private int _claimed;
+
+        /// <summary>Exactly one party (the render thread using it, or whoever abandons it) owns the image.</summary>
+        public bool TryClaim() => System.Threading.Interlocked.Exchange(ref _claimed, 1) == 0;
+    }
+
+    /// <summary>RENDERIMPORT_01 — abandon every in-flight import (textures released); a finished image is disposed here, a late one by its UI callback.</summary>
+    private void AbandonPendingImports()
+    {
+        for (int i = 0; i < SwapChainSize; i++)
+        {
+            PendingImport? p = System.Threading.Interlocked.Exchange(ref _pendingImports[i], null);
+            if (p != null && p.IsDone && p.Image is { } image && p.TryClaim()) DisposeImportedImageOnUiThread(image);
+        }
+    }
+
+    /// <summary>RENDERIMPORT_01 — per-slot import hand-off (render thread reads, UI thread completes).</summary>
+    private readonly PendingImport?[] _pendingImports = new PendingImport?[SwapChainSize];
+
+    /// <summary>RENDERIMPORT_01 — bumped whenever the shared textures are released, so a late import for old textures is discarded.</summary>
+    private long _textureEpoch;
 
     private static bool SupportsImageHandleType(ICompositionGpuInterop gpu, string handleType)
     {
@@ -2631,6 +2672,8 @@ public sealed class MpvVideoView : Control, IDisposable
 
     private void ReleaseRenderTexture()
     {
+        System.Threading.Interlocked.Increment(ref _textureEpoch);
+        AbandonPendingImports();
         for (int i = 0; i < SwapChainSize; i++)
         {
             if (_dxInteropObjects[i] != nint.Zero)

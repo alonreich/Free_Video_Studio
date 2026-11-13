@@ -93,7 +93,16 @@ public class RenderedMixParityTests
     public void UnitySpeed_IsANoOp_InExportAndNeedsNoMix()
     {
         Assert.Empty(AudioTempoFilterBuilder.Build(1.0, rubberbandAvailable: true));
-        Assert.False(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0, 0.0 }));
+        Assert.False(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0 }));
+    }
+
+    /// <summary>FREEZESFX_01 — a freeze carries the slow-motion sound, so the preview plays the rendered mix.</summary>
+    [Fact]
+    public void Freeze_NeedsTheRenderedMix_ForItsSound()
+    {
+        Assert.True(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0, 0.0 }));
+        Assert.True(PreviewMixPolicy.IsFreeze(0.0));
+        Assert.False(PreviewMixPolicy.IsFreeze(1.0));
     }
 
     [Theory]
@@ -447,6 +456,18 @@ public class AiTrajectoryParityTests
         var cuts = new List<OutputTimeline.Cut> { new(2.8, 3.0) };
         var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(10_000, new List<SpeedSegment> { seg }, 1.0, 0, needHudBranch: false, cuts: cuts);
         Assert.Contains("(t+1.000)", graph);
+    }
+
+    [Fact]
+    public void AFreezeInsideTheGlide_ShowsTheBox_LikeThePreview()
+    {
+        var traj = Trajectory(dynamicScale: false);
+        var zc = new GranularSpeedBuilder.ZoomConfig(2.0, 4.0, 0, 0, 960, 540, "1920x1080", true, traj.ToJson());
+        string glide = GranularSpeedBuilder.BuildConstantZoomFilter("scale=1920:1080", zc, 1920, 1080, 1920, 1080, 0.5, 0.0);
+        string held = GranularSpeedBuilder.BuildConstantZoomFilter("scale=1920:1080", zc, 1920, 1080, 1920, 1080, 1.0, 0.0);
+        Assert.DoesNotContain(traj.ToFfmpegCropFilter(), glide);
+        Assert.Contains("pad=", glide);
+        Assert.Contains(traj.ToFfmpegCropFilter(), held);
     }
 
     /// <summary>A tiny evaluator for the subset of ffmpeg's expression language the crop filters use.</summary>

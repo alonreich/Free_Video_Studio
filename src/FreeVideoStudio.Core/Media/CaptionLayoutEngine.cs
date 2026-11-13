@@ -42,7 +42,6 @@ public static class CaptionLayoutEngine
     public const int PortraitHeight = 1920;
     public const int PortraitVoidTop = 150;
     public const int PortraitVoidBottom = 150;
-    public const int PortraitContentHeight = 1620;
 
     public const int LandscapeWidth = 1920;
     public const int LandscapeHeight = 1080;

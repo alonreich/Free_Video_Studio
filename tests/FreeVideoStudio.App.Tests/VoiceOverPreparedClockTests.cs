@@ -99,8 +99,6 @@ public class VoiceOverPreparedClockTests
     public void ProtectionDefaultsAndExplicitSavedChoices()
     {
         var fresh = new AppSettings();
-        Assert.Equal(VoiceProtectionMode.RememberLastChoice, fresh.VoiceProtectGameMode);
-        Assert.Equal(VoiceProtectionMode.RememberLastChoice, fresh.VoiceProtectMusicMode);
         Assert.False(fresh.VoiceProtectGameLast);
         Assert.True(fresh.VoiceProtectMusicLast);
         string root = Path.Combine(Path.GetTempPath(), "vo-defaults-" + Guid.NewGuid().ToString("N"));

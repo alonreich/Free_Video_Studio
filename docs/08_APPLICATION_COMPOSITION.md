@@ -6,7 +6,11 @@
 
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
-| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `SettingsWindow`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Services/SettingsWindowServices.cs` | `SettingsWindowServices`, `ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink` | `CreateDefault`, `SETTINGSDI_01`, `SETBACKUPIO_01` | The Settings window's seams. **⚠ CO-GOVERNED BY: 04** |
+| `src/FreeVideoStudio.App/AvaloniaApp.axaml.cs` | `AvaloniaApp` | `OnDispatcherUnhandledException`, `IsProcessCorrupting`, `ASYNCSAFE_01` | Last-line UI-thread fault hook. |
+| `src/FreeVideoStudio.App/Infrastructure/CtsSlot.cs` | `CtsSlot` | `Renew`, `Cancel`, `Dispose`, `CTSSLOT_01` | One disposing cancellation slot per operation. |
+| `src/FreeVideoStudio.App/Services/ShellLauncher.cs` | `ShellLauncher` | `Launch`, `TryOpen`, `SHELLLAUNCH_01` | Every shell launch; releases the process handle at once. |
 | `src/FreeVideoStudio.Core/Abstractions/Fault.cs` | `FaultTier`, `Fault` | `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_01` | Failure classification vocabulary. |
 | `src/FreeVideoStudio.Core/Abstractions/IFaultSink.cs` | `IFaultSink`, `FaultSinkExtensions`, `NullFaultSink` | `Report`, `Guard`, `GuardAsync`, `GuardValue` | The one destination for a caught exception. |
 | `src/FreeVideoStudio.App/Services/UserFacingFaultSink.cs` | `UserFacingFaultSink`, `AvaloniaUserNotifier` | `Report`, `ShouldSurface`, `FAULTSTORM_01`, `Notify` | Fault → log / pill / dialog routing table. |
@@ -16,7 +20,8 @@
 | `src/FreeVideoStudio.App/Abstractions/IFilePickerService.cs` | `IFilePickerService`, `FilePickerRequest` | `SaveFileAsync`, `OpenFileAsync`, `INJSEAM_04`, `FilePickerRequest` | OS file-dialog seam. |
 | `src/FreeVideoStudio.App/Services/StorageProviderFilePicker.cs` | `StorageProviderFilePicker` | `PICKERMEMORY_01`, `SaveFileAsync`, `OpenFileAsync`, `StorageProviderFilePicker` | Picker implementation + directory memory. **⚠ CO-GOVERNED BY: 05** |
 | `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` | `ArchitectureRuleTests` | `ARCHTEST_01`, `ASYNCUI_01`, `ASYNCUI_02`, `NoControlCarriesBothCommandAndClick` | The specs' rules, made executable. |
-| `tests/TestHarness.ps1`, `tests/TestHarness.Tests.ps1`, `tests/run-av-tests.ps1`, `tests/run-all-tests.cmd` | Test gate | `TESTGATE_01`, `TESTCLEAN_01` | Fail-closed result validation and exclusive, bounded output cleanup; 05 SYS-STORAGE-TABLE. |
+| `tests/TestHarness.ps1`, `tests/TestHarness.Tests.ps1`, `tests/run-av-tests.ps1`, `tests/run-all-tests.cmd` | Test gate | `TESTGATE_01`, `TESTCLEAN_01`, `TESTOUT_01`, `Get-TestSuiteRoot`, `Enter-SuiteOutput`, `Reset-TestOutputs` | Fail-closed result validation; every suite writes only to `logs\<Suite>_Results\`, replaced per suite (README GOV-TESTOUT); 05 SYS-STORAGE-TABLE. |
+| `tests/TestArtifactDirectory.cs`, `tests/*/TestOutputSuite.cs` | Test output owner | `TESTOUT_01`, `TESTCLEAN_02`, `SuiteWork`, `Begin`, `PrepareSuite`, `Reset` | C#/xUnit and standalone checks write only to their `logs\<Suite>_Results\work`; `TestArtifactDirectoryTests.NoTestWritesOutsideTheLogsSuiteFolders`. |
 | `tests/DesktopPreviewSmoke/Program.cs`, `tests/DesktopPreviewSmoke/MergerSmokeApp.cs` | Desktop smoke applications | `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | Actual GPU output and actual merger window playback across joins; 01 TL-COMPOSITE, 04 UI-MERGERQUEUE/UI-GPUPRESENT2. |
 | `src/FreeVideoStudio.App/ViewModels/VoiceOverGainViewModel.cs` | `VoiceOverGainViewModel` | `Percent`, `Gain`, `ResetCommand`, `CanEdit` | Voice gain bindings; co-governed by 02 AUD-VOICEOVER and 04 UI-THEME. |
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 05** |
@@ -60,6 +65,21 @@
   | `INJSEAM_02` | `IClock` | wall time, so the 24h update throttle and the 14-day log trim are testable without sleeping |
   | `INJSEAM_03` | `IUserNotifier` / `IActiveWindowProvider` | a live Avalonia `Window`, so a view-model needs no dispatcher |
   | `INJSEAM_04` | `IFilePickerService` | native OS dialogs, so Save/Open Project can be regression-tested |
+  | `SETTINGSDI_01` | `SettingsWindowServices` (`ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink`) | the settings file, the AI companies, the FFmpeg chip probe, backup files, the updater and the session-state store, so the Settings view-model (save, key tests, routing, backups) is testable without a window, the internet, a GPU or real files. Built once in `AppServices.Initialize` (`AppServices.SettingsWindow`); `CreateDefault()` exists only where no root is in reach |
+
+* **`ASYNCSAFE_01` — no UI-thread fault ends the process unless the runtime is unusable.** Avalonia
+  event handlers that do async work are `void` forwarders to a `Task` method whose whole body reports
+  through `Faults` (`OnVideoDrop`, `RdpFixButton_Click`, `InitializeMpv` were `async void` with no
+  catch). `AvaloniaApp` also installs `Dispatcher.UIThread.UnhandledException` as the last line of
+  defence: a fault is reported as `Degraded` and marked handled; only process-corrupting exceptions
+  (`IsProcessCorrupting`: out-of-memory, access violation, …) are let through.
+* **`CTSSLOT_01` / `SHELLLAUNCH_01` — native-resource hygiene.** A per-operation cancellation source is
+  held in a `CtsSlot` (renewing cancels AND disposes the previous source; the owner disposes the slot
+  on close). Every shell launch goes through `ShellLauncher`, which disposes the returned `Process`
+  wrapper at once (the launched program is unaffected), so no native process handle waits for a
+  finaliser.
+* **`VIRALVM_01` — the Finished screen's AI post** runs in `ViralPostViewModel` (generator injectable);
+  `FinishedDialogWindow` only draws its `ViralPostView`.
 
   ⚠️ `FileProjectStore` is a **forward**, not a second implementation. The atomic-write protocol, the `.bak` cascade and the amputation rule stay in `ProjectStore`/`ProjectSerializer` under spec 06. `05_SYSTEM_LIFECYCLE_STORAGE.md` §4c is explicit: *never reimplement this sequence at a call site*.
 

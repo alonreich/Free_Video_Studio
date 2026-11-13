@@ -77,7 +77,7 @@ public partial class ErrorDialogWindow : Window
                 return;
             }
 
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = _logPath,
                 UseShellExecute = true
@@ -88,7 +88,7 @@ public partial class ErrorDialogWindow : Window
         {
             try
             {
-                Process.Start(new ProcessStartInfo
+                Services.ShellLauncher.Launch(new ProcessStartInfo
                 {
                     FileName = "explorer.exe",
                     Arguments = $"/select,\"{_logPath}\"",

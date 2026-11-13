@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -55,8 +55,6 @@ public static class SafeDirectoryCleanup
         bool isDirectory = (info.Attributes & (uint)FileAttributes.Directory) != 0;
         if (isDirectory)
         {
-            // The pinned parent cannot be exchanged for a junction during enumeration or child open.
-            // New entries may make final disposition fail; they never trigger an unverified retry.
             foreach (string child in Directory.EnumerateFileSystemEntries(path))
                 DeleteEntry(child, null, depth + 1, onPinned);
         }
@@ -89,7 +87,6 @@ public static class SafeDirectoryCleanup
             if (!GetFileInformationByHandle(handle, out info)) ThrowLastError(path);
             if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0)
                 throw new IOException($"Cleanup refused a linked file or directory: {path}");
-            // Changing attributes on a multiply-linked file would affect a name outside this tree.
             if (delete && info.Links > 1 && (info.Attributes & (uint)FileAttributes.ReadOnly) != 0)
                 throw new IOException($"Cleanup refused a read-only hard-linked file: {path}");
             return handle;

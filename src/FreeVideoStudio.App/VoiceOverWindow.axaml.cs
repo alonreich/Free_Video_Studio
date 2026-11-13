@@ -392,7 +392,6 @@ public partial class VoiceOverWindow : Window
     private volatile bool _isCommitted = false;
     private string? _lastApplyErrorMessage = null;
     private bool _lastTakeFailedFinalization = false;
-    private Exception? _lastTakeFinalizationError = null;
 
     internal FreeVideoStudio.App.Services.VoiceOverRecoveryManager RecoveryManager => _recovery;
     internal IReadOnlyList<FreeVideoStudio.App.Services.PendingFailedTake> PendingFailedTakes => _recovery.PendingFailedTakes;
@@ -402,15 +401,12 @@ public partial class VoiceOverWindow : Window
 
     internal Button? DiscardFailedTakesButtonControl => _discardFailedTakesButton;
     internal Button? RecoverFailedTakesButtonControl => _recoverFailedTakesButton;
-    internal Button? DeleteFailedTakesButtonControl => _discardFailedTakesButton;
-    internal Button? RestoreFailedTakesButtonControl => _recoverFailedTakesButton;
     internal TextBlock? VoiceOverHintTextControl => _voiceOverHintText;
 
     internal bool IsApplyingInFlight { get => _isApplying; set => _isApplying = value; }
     internal bool IsCommitted { get => _isCommitted; set => _isCommitted = value; }
     internal string? LastApplyErrorMessage => _lastApplyErrorMessage;
     internal bool LastTakeFailedFinalization => _lastTakeFailedFinalization;
-    internal Exception? LastTakeFinalizationError => _lastTakeFinalizationError;
     internal List<VoiceOverSession> Sessions => _sessions;
     internal VoiceOverSession? CurrentSession { get => _currentSession; set => _currentSession = value; }
     internal bool IsRecordingLive { get => _isRecording; set => _isRecording = value; }
@@ -1475,35 +1471,14 @@ public partial class VoiceOverWindow : Window
     {
         var settings = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance;
 
-        Apply(_duckAudioCb, settings.VoiceProtectGameMode, projectGame, settings.VoiceProtectGameLast,
-            "Protect VoiceOver Recording from Game-Play Sound");
-        Apply(_duckMusicCb, settings.VoiceProtectMusicMode, projectMusic, settings.VoiceProtectMusicLast,
-            "Protect VoiceOver Recording from Music");
+        Apply(_duckAudioCb, projectGame, settings.VoiceProtectGameLast);
+        Apply(_duckMusicCb, projectMusic, settings.VoiceProtectMusicLast);
 
-        static void Apply(CheckBox? box, FreeVideoStudio.App.Infrastructure.VoiceProtectionMode mode,
-                          bool? projectChoice, bool rememberedChoice, string label)
+        static void Apply(CheckBox? box, bool? projectChoice, bool rememberedChoice)
         {
             if (box == null) return;
-
-            switch (mode)
-            {
-                case FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.AlwaysOn:
-                    box.IsChecked = true;
-                    box.IsEnabled = false;
-                    ToolTip.SetTip(box, $"Settings > Sound & Music is set to always protect your voice, so \"{label}\" is locked on. Change it there to unlock this.");
-                    break;
-
-                case FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.AlwaysOff:
-                    box.IsChecked = false;
-                    box.IsEnabled = false;
-                    ToolTip.SetTip(box, $"Settings > Sound & Music is set to never protect your voice, so \"{label}\" is locked off. Change it there to unlock this.");
-                    break;
-
-                default:
-                    box.IsChecked = projectChoice ?? rememberedChoice;
-                    box.IsEnabled = true;
-                    break;
-            }
+            box.IsChecked = projectChoice ?? rememberedChoice;
+            box.IsEnabled = true;
         }
     }
 
@@ -2765,7 +2740,6 @@ public partial class VoiceOverWindow : Window
             _lastTakeFailedFinalization = HasUnresolvedFailedTakes;
             if (!HasUnresolvedFailedTakes)
             {
-                _lastTakeFinalizationError = null;
                 _lastApplyErrorMessage = null;
             }
 
@@ -2801,7 +2775,6 @@ public partial class VoiceOverWindow : Window
             {
                 _ = ObserveRecoveryStoreAsync(_recovery.RegisterFailedTakeAsync(session, takeOutcome, failureReason));
                 _lastTakeFailedFinalization = true;
-                _lastTakeFinalizationError = takeOutcome?.Error;
                 _lastTakeWasRejected = true;
                 _lastApplyErrorMessage = $"Microphone finalization failed: {takeOutcome?.Error?.Message ?? "device error"}. Your audio is preserved on disk.";
                 UpdateFailedTakesUi();

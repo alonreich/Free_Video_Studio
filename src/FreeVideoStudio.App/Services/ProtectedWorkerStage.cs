@@ -273,7 +273,9 @@ internal sealed class ProtectedWorkerStage : IDisposable
 
     private static void RequirePublisher(string exe)
     {
-        var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(exe, Environment.ProcessPath, out string detail);
+        string? self = Environment.ProcessPath;
+        string? selfSha = string.IsNullOrEmpty(self) ? null : FreeVideoStudio.Core.Infrastructure.UpgradeFiles.Hash(self);
+        var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(exe, self, out string detail, selfSha);
         if (verdict == AuthenticodeVerifier.TrustVerdict.Trusted) return;
 #if DEBUG
         if (verdict == AuthenticodeVerifier.TrustVerdict.NoAnchor)

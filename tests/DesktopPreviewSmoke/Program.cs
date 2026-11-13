@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -13,7 +13,6 @@ using FreeVideoStudio.Testing;
 
 namespace FreeVideoStudio.DesktopPreviewSmoke;
 
-// TESTDESKTOP_01: real desktop pixels, real GPU player, real detach controller; never headless.
 internal static class Program
 {
     internal static string Root = "";
@@ -25,7 +24,9 @@ internal static class Program
     {
         Root = Directory.GetCurrentDirectory();
         if (!File.Exists(Path.Combine(Root, "FreeVideoStudio.sln"))) throw new InvalidOperationException("Run from repository root.");
-        using var outputLease = TestArtifactDirectory.Begin(Root, "tests/AvRegression/desktop", out Work);
+        using var outputLease = TestArtifactDirectory.Begin(Root,
+            !args.Contains("--merger") ? "DesktopPreview" : args.Contains("--silent-middle") ? "MergerSilentDesktop" : "MergerDesktop",
+            out Work);
         Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, Path.Combine(Work, "state"));
         Environment.SetEnvironmentVariable("FVS_DEV_LOG_DIR", Directory.CreateDirectory(Path.Combine(Work, "logs")).FullName);
         string temp = Directory.CreateDirectory(Path.Combine(Work, "temp")).FullName;
@@ -53,7 +54,6 @@ internal static class Program
             if (!process.WaitForExit(30000)) { process.Kill(true); throw new TimeoutException("Desktop fixture generation timed out."); }
             if (process.ExitCode != 0) throw new InvalidOperationException(errors.GetAwaiter().GetResult());
         }
-        // A stalled UI must terminate this test process with failure, never hang the suite forever.
         using var watchdog = new Timer(_ => { Console.Error.WriteLine("FAIL: desktop preview exceeded 60 seconds."); Environment.Exit(1); }, null, 60000, Timeout.Infinite);
         return AppBuilder.Configure<SmokeApp>().UsePlatformDetect().WithInterFont()
             .StartWithClassicDesktopLifetime(args);
@@ -99,7 +99,6 @@ internal sealed class SmokeApp : Application
         {
             Require(VideoRenderMode.Initialize().UseHardwareAcceleration, "Hardware GPU preview unavailable; this tier cannot pass on a software fallback.");
             await video.StartMpvProcessAsync(Path.Combine(Program.Root, "binaries", "mpv.exe")).WaitAsync(TimeSpan.FromSeconds(10));
-            // Read-only assertion of the selected production path, without adding a test switch to it.
             var software = typeof(MpvVideoView).GetField("_swMode", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Update the desktop test's render-path assertion.");
             Require(software.GetValue(video) is false, "WGL/D3D initialization fell back to software.");

@@ -1,4 +1,4 @@
-; ════════════════════════════════════════════════════════════════════════════════════════════════
+﻿; ════════════════════════════════════════════════════════════════════════════════════════════════
 ; NODROPPER_01 — THE FREE VIDEO STUDIO INSTALLER (Inno Setup 6.3 or newer)
 ;
 ; Spec: docs/09_DISTRIBUTION_AND_RELEASE.md #DIST-INSTALLER. Compiled by build\FvsBuild\InnoInstaller.cs;
@@ -53,7 +53,7 @@ AppVerName=Free Video Studio {#AppVersion}
 AppPublisher=Alon Reich
 AppPublisherURL=https://github.com/alonreich/Free_Video_Studio
 AppSupportURL=https://github.com/alonreich/Free_Video_Studio/issues
-AppCopyright=Copyright © 2026 Alon Reich. All rights reserved.
+AppCopyright=Copyright © 2026 Alon Reich. Licensed under the GNU GPL v3.
 ; PEIDENTITY_01 — the installer's version resource names its own file and the same publisher as the program.
 VersionInfoVersion={#AppVersion}
 VersionInfoTextVersion={#AppVersion}
@@ -62,7 +62,7 @@ VersionInfoProductTextVersion={#AppVersion}
 VersionInfoCompany=Alon Reich
 VersionInfoDescription=Free Video Studio Setup
 VersionInfoProductName=Free Video Studio
-VersionInfoCopyright=Copyright © 2026 Alon Reich. All rights reserved.
+VersionInfoCopyright=Copyright © 2026 Alon Reich. Licensed under the GNU GPL v3.
 VersionInfoOriginalFileName=FreeVideoStudio.exe
 OutputDir={#OutputDir}
 OutputBaseFilename=FreeVideoStudio

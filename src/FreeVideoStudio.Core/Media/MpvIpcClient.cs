@@ -124,9 +124,6 @@ public class MpvIpcClient : IDisposable
     private ulong _seekStateReply, _seekPositionReply;
     private const ulong RecoveryStopReply = ulong.MaxValue;
     internal static readonly TimeSpan NativeWorkTimeout = TimeSpan.FromSeconds(10);
-    public int CommandBacklog => _commands.Count;
-    public int CommandHighWatermark => _commands.HighWatermark;
-    public bool RequiresReload => _requiresReload;
     public event Action<string>? PlaybackFaulted;
 
     /// <summary>True from seek submission until mpv has finished seeking, including paused seeks.</summary>
@@ -671,41 +668,6 @@ public class MpvIpcClient : IDisposable
             }
             return request.Task;
         }
-    }
-
-    /// <summary>
-    /// ISSUE_15 — true when an argument cannot be pasted into an mpv command string as-is.
-    ///
-    /// WHAT WAS WRONG: the old test was <c>str.Contains(' ') || str.Contains('\\')</c>, and the
-    /// escaping was a bare <c>Replace("\\", "\\\\")</c>. A DOUBLE QUOTE in a filename was
-    /// therefore neither a reason to quote nor something that got escaped, so a file such as
-    /// <c>My "best" clip.mp4</c> produced a command mpv could not parse. mpv reports nothing
-    /// useful for a malformed command string, so the preview (or the added audio track) simply
-    /// did nothing, with no error anywhere. Every FFmpeg call in the suite was hardened against
-    /// exactly this class of filename; the player commands were missed.
-    ///
-    /// A <c>#</c> starts a comment in mpv's parser and a leading/trailing space would be eaten,
-    /// so those are covered too. An empty argument must be quoted or it disappears entirely.
-    /// </summary>
-    private static bool NeedsMpvQuoting(string s)
-    {
-        if (s.Length == 0) return true;
-        foreach (char c in s)
-        {
-            if (c is ' ' or '\t' or '\\' or '"' or '\'' or '#' or '\r' or '\n') return true;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// ISSUE_15 — wraps an argument in mpv's double-quoted string syntax, escaping the two
-    /// characters that are special INSIDE such a string: the backslash and the double quote.
-    /// Order matters — backslashes must be doubled first, otherwise the backslashes introduced
-    /// while escaping the quotes would themselves be doubled.
-    /// </summary>
-    private static string QuoteForMpv(string s)
-    {
-        return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
     }
 
     /// <summary>Sets a property on the same ordered queue as seeks and file loads.</summary>

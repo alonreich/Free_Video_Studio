@@ -11,6 +11,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
+    <!-- TESTOUT_01: dotnet test writes results only to logs\Verifier_Results (docs/05 SYS-STORAGE-TABLE). -->
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\Verifier_Results</VSTestResultsDirectory>
     <PublishAot>false</PublishAot>
   </PropertyGroup>
 
@@ -27,4 +29,7 @@
     <ProjectReference Include="..\..\build\FvsVerify\FvsVerify.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
+  </ItemGroup>
 </Project>

@@ -61,31 +61,57 @@ public static class AiVisionProviders
 
     private static readonly object RemapGate = new();
     private static readonly Dictionary<string, string> SessionRemap = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<AiVendor, string> ActiveKeyFingerprints = new();
+
+    private static string KeyFingerprint(string? apiKey)
+    {
+        string trimmed = apiKey?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0) return "none";
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(trimmed));
+        return Convert.ToHexString(hash, 0, 6);
+    }
+
+    private static void SyncKeyFingerprintLocked(AiVendor vendor, string fp)
+    {
+        if (fp == "none") return;
+        if (ActiveKeyFingerprints.TryGetValue(vendor, out string? prev) && prev != fp)
+        {
+            string prefix = $"{vendor}:";
+            foreach (string k in SessionRemap.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+                SessionRemap.Remove(k);
+        }
+        ActiveKeyFingerprints[vendor] = fp;
+    }
 
     /// <summary>
     /// AIMODELFALLBACK_02 — the model this session actually calls for <paramref name="configured"/>: the
-    /// configured name, unless an earlier call this session found it gone (404) and switched to a live one.
+    /// configured name, unless an earlier call this session found it gone (404) and switched to a live one
+    /// for the same API key.
     /// </summary>
-    public static string EffectiveModel(AiVendor vendor, string configured)
+    public static string EffectiveModel(AiVendor vendor, string configured, string? apiKey = null)
     {
+        string fp = KeyFingerprint(apiKey);
         lock (RemapGate)
+        {
+            if (fp != "none")
+            {
+                SyncKeyFingerprintLocked(vendor, fp);
+                if (SessionRemap.TryGetValue($"{vendor}:{fp}:{configured}", out string? scoped)) return scoped;
+            }
             return SessionRemap.TryGetValue($"{vendor}:{configured}", out string? live) ? live : configured;
-    }
-
-    /// <summary>Test seam: forgets every session remap.</summary>
-    internal static void ResetSessionRemapForTests()
-    {
-        lock (RemapGate) SessionRemap.Clear();
+        }
     }
 
     /// <summary>
     /// AIMODELFALLBACK_02 — after a 404 on <paramref name="missing"/>, lists the key's live models and picks the
     /// best replacement (newest stable general model of the same family). The choice is remembered for the rest
-    /// of the session so later calls skip the 404; the user's setting is NOT changed. Null when nothing fits
-    /// or the list cannot be read.
+    /// of the session (scoped by API key fingerprint) so later calls skip the 404; the user's setting is NOT changed.
     /// </summary>
     public static async Task<string?> FindLiveReplacementAsync(IAiVisionProvider provider, string apiKey, string missing, Action<string>? userLog, CancellationToken ct)
     {
+        string vendorName = DisplayName(provider.Vendor);
+        userLog?.Invoke($"Model '{missing}' is not available on {vendorName} — checking your key for a live replacement…");
+
         IReadOnlyList<string> available;
         try
         {
@@ -97,14 +123,25 @@ public static class AiVisionProviders
         }
         catch (Exception ex)
         {
+            userLog?.Invoke($"Could not fetch replacement model list from {vendorName}: {ex.Message}");
             CoreLogger.Info("AI", $"Model list unavailable after a 404 on '{missing}': {ex.GetType().Name}");
             return null;
         }
 
         string? pick = PickReplacement(provider.Vendor, available, missing);
-        if (pick == null) return null;
-        lock (RemapGate) SessionRemap[$"{provider.Vendor}:{missing}"] = pick;
-        string line = $"The AI model '{missing}' is no longer available for your key — using '{pick}' instead. Pick a model in Settings › AI Features to make this permanent.";
+        if (pick == null)
+        {
+            userLog?.Invoke($"No live replacement model was found for '{missing}' on your {vendorName} key.");
+            return null;
+        }
+        string fp = KeyFingerprint(apiKey);
+        lock (RemapGate)
+        {
+            SyncKeyFingerprintLocked(provider.Vendor, fp);
+            SessionRemap[$"{provider.Vendor}:{fp}:{missing}"] = pick;
+            SessionRemap[$"{provider.Vendor}:{missing}"] = pick;
+        }
+        string line = $"The AI model '{missing}' is no longer available for your key — switching to '{pick}' automatically. Pick a model in Settings › AI to make this permanent.";
         userLog?.Invoke(line);
         CoreLogger.Info("AI", line);
         return pick;
@@ -195,7 +232,7 @@ public static class AiVisionProviders
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = AnthropicConsoleKeysUrl, UseShellExecute = true });
+            ShellLauncher.Launch(new ProcessStartInfo { FileName = AnthropicConsoleKeysUrl, UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -207,7 +244,7 @@ public static class AiVisionProviders
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = OpenAiPlatformKeysUrl, UseShellExecute = true });
+            ShellLauncher.Launch(new ProcessStartInfo { FileName = OpenAiPlatformKeysUrl, UseShellExecute = true });
         }
         catch (Exception ex)
         {

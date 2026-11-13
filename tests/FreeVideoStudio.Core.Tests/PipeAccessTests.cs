@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -61,7 +61,6 @@ public sealed class PipeAccessTests
     public void ProcessOwnershipCheckFailsClosedForAnotherAccount()
     {
         Assert.True(PipeAccess.IsProcessOwnedByCurrentUser((uint)Environment.ProcessId));
-        // PID 4 is the kernel "System" process: never this user, and must be refused.
         Assert.False(PipeAccess.IsProcessOwnedByCurrentUser(4));
     }
 }

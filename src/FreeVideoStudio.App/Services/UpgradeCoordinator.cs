@@ -1,10 +1,10 @@
 ﻿using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
+using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.Core.Ipc;
 
 namespace FreeVideoStudio.App.Services;
 
@@ -232,8 +232,8 @@ internal static class UpgradeCoordinator
         JsonObject? session = null;
         bool uacDeclined = false, cancelled = false;
         string? previousVersion = null;
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        var healthListener = new TcpListener(IPAddress.Loopback, 0);
+        string pipeName = PipeAccess.NewUpgradePipeName(), healthPipeName = PipeAccess.NewUpgradePipeName();
+        using var acceptCancel = new CancellationTokenSource();
         try
         {
             if (UpgradeInstallWorker.IsElevated())
@@ -258,12 +258,11 @@ internal static class UpgradeCoordinator
             string workerPath = protectedWorker.ExecutablePath;
 
             progress.Step(UpgradeStep.Permission, UpgradeText.PermissionDetail(kind));
-            listener.Start();
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Task<UpgradeChannel> workerAccept = AcceptAsync(pipeName, token, acceptCancel.Token);
             var start = new ProcessStartInfo(workerPath) { UseShellExecute = true, Verb = "runas" };
             start.ArgumentList.Add("--upgrade-worker");
-            start.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            start.ArgumentList.Add(pipeName);
             start.ArgumentList.Add(token);
             start.ArgumentList.Add("--allow-downgrade");
             try
@@ -279,7 +278,7 @@ internal static class UpgradeCoordinator
             {
                 protectedWorker.Dispose();
             }
-            channel = await AcceptAsync(listener, token).ConfigureAwait(false);
+            channel = await workerAccept.ConfigureAwait(false);
             channel.Progress = detail => ReportWorkerProgress(progress, detail);
             string? smart = recovery ? null : SmartFromArgs(args);
             await channel.SendAsync("mode", recovery ? "recover" : smart is null ? "install" : "install|" + smart).ConfigureAwait(false);
@@ -330,11 +329,11 @@ internal static class UpgradeCoordinator
             progress.Step(UpgradeStep.Start, kind == UpgradeKind.Install
                 ? "Opening Free Video Studio for the first time…"
                 : "Opening the new version and checking that it started correctly…");
-            healthListener.Start();
             string healthToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             bool noLaunch = args.Contains("--no-launch", StringComparer.OrdinalIgnoreCase);
-            app = StartApp(((IPEndPoint)healthListener.LocalEndpoint).Port, healthToken, previousVersion, kind, noLaunch);
-            health = await AcceptAsync(healthListener, healthToken).ConfigureAwait(false);
+            Task<UpgradeChannel> healthAccept = AcceptAsync(healthPipeName, healthToken, acceptCancel.Token);
+            app = StartApp(healthPipeName, healthToken, previousVersion, kind, noLaunch);
+            health = await healthAccept.ConfigureAwait(false);
             string pid = await health.ExpectAsync("healthy").ConfigureAwait(false);
             if (pid != app.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) || app.HasExited)
                 throw new IOException("The new app did not confirm its startup.");
@@ -435,7 +434,8 @@ internal static class UpgradeCoordinator
         {
             health?.Dispose(); channel?.Dispose(); worker?.Dispose(); app?.Dispose();
             if (workerExecutable.IsCompletedSuccessfully) workerExecutable.Result.Dispose();
-            listener.Stop(); healthListener.Stop(); gate.Release();
+            acceptCancel.Cancel();
+            gate.Release();
         }
     }
 
@@ -750,13 +750,13 @@ internal static class UpgradeCoordinator
 
     private static void Save(JsonObject session) => AtomicJsonFile.WriteObject(SessionPath, session);
 
-    private static Process StartApp(int? port = null, string? token = null, string? previousVersion = null, UpgradeKind kind = UpgradeKind.Update, bool noLaunch = false)
+    private static Process StartApp(string? pipe = null, string? token = null, string? previousVersion = null, UpgradeKind kind = UpgradeKind.Update, bool noLaunch = false)
     {
         var start = new ProcessStartInfo(DeploymentFootprint.InstallPath) { UseShellExecute = false, WorkingDirectory = InstallDiscovery.Destination };
         start.ArgumentList.Add("run-ui");
-        if (port.HasValue)
+        if (pipe is not null)
         {
-            start.ArgumentList.Add("--upgrade-health"); start.ArgumentList.Add(port.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            start.ArgumentList.Add("--upgrade-health"); start.ArgumentList.Add(pipe);
             start.ArgumentList.Add(token!);
             start.ArgumentList.Add(UpgradeFinishedNotice.KindArgument);
             start.ArgumentList.Add(kind == UpgradeKind.Install ? "install" : "update");
@@ -773,18 +773,35 @@ internal static class UpgradeCoordinator
         return Process.Start(start) ?? throw new IOException("Could not start the installed app.");
     }
 
-    private static async Task<UpgradeChannel> AcceptAsync(TcpListener listener, string token)
+    /// <summary>
+    /// NOLOCALPORT_01 — the pipe <paramref name="pipeName"/> is created NOW (synchronously, before the
+    /// caller starts the other process), as the only instance, and only same-user / administrator /
+    /// SYSTEM callers may connect (<c>PipeAccess.CreateUpgradeServer</c>). Exactly one connection is
+    /// accepted and its first message must be <paramref name="token"/>; anything else ends the upgrade.
+    /// It is never re-created, so no other program can ever own the name while the worker looks for it.
+    /// </summary>
+    private static Task<UpgradeChannel> AcceptAsync(string pipeName, string token, CancellationToken cancel = default)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-        while (true)
+        NamedPipeServerStream server = PipeAccess.CreateUpgradeServer(pipeName);
+        return AcceptOnceAsync(server, token, cancel);
+    }
+
+    private static async Task<UpgradeChannel> AcceptOnceAsync(NamedPipeServerStream server, string token, CancellationToken cancel)
+    {
+        var candidate = new UpgradeChannel(server);
+        try
         {
-            var candidate = new UpgradeChannel(await listener.AcceptTcpClientAsync(timeout.Token).ConfigureAwait(false));
-            try
-            {
-                if (await candidate.ExpectAsync("hello", TimeSpan.FromSeconds(5)).ConfigureAwait(false) == token) return candidate;
-            }
-            catch (Exception ex) when (ex is IOException or OperationCanceledException) { RuntimeLog.Swallowed(ex); }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            timeout.CancelAfter(TimeSpan.FromMinutes(3));
+            await server.WaitForConnectionAsync(timeout.Token).ConfigureAwait(false);
+            if (await candidate.ExpectAsync("hello", TimeSpan.FromSeconds(5)).ConfigureAwait(false) != token)
+                throw new IOException("An unexpected program answered the installer. Nothing was changed.");
+            return candidate;
+        }
+        catch
+        {
             candidate.Dispose();
+            throw;
         }
     }
 
@@ -803,10 +820,11 @@ internal static class UpgradeCoordinator
     public static async Task ConfirmWindowAsync(string[] args)
     {
         int index = Array.IndexOf(args, "--upgrade-health");
-        if (index < 0 || index + 2 >= args.Length || !int.TryParse(args[index + 1], out int port)) return;
-        using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, port).ConfigureAwait(false);
+        if (index < 0 || index + 2 >= args.Length || !PipeAccess.IsUpgradePipeName(args[index + 1])) return;
+        var client = new NamedPipeClientStream(".", args[index + 1], PipeDirection.InOut, PipeOptions.Asynchronous);
         using var channel = new UpgradeChannel(client);
+        await client.ConnectAsync(30_000).ConfigureAwait(false);
+        if (!PipeAccess.IsServerTrusted(client)) throw new IOException("The installer's channel is not owned by this user.");
         await channel.SendAsync("hello", args[index + 2]).ConfigureAwait(false);
         if (Infrastructure.SettingsManager.LoadFailureMessage != null)
             throw new IOException("Saved settings did not load successfully.");

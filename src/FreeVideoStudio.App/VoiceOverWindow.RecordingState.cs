@@ -121,7 +121,6 @@ public partial class VoiceOverWindow
     internal Rectangle? LiveRegionVisual => _liveRegionRect;
     internal Border? LiveLabelVisual => _liveLabel;
     internal Path? LiveEnvelopeVisual => _liveEnvelopePath;
-    internal Path? FrozenRegionsVisual => _frozenRegionsPath;
     internal int FinalizingTakeCount => _finalizingTakes.Count;
     internal LiveTakeSnapshot? LiveSnapshot => _liveSnapshot;
     internal double RunCapturedSeconds => _runCapturedSeconds + (_liveSnapshot?.CapturedSeconds ?? 0);
@@ -131,8 +130,6 @@ public partial class VoiceOverWindow
     internal double TrimStartSec => _trimStartSec;
     internal void TriggerTimerTick() => Timer_Tick(this, EventArgs.Empty);
     internal void TriggerRefreshRecordingIndicator() => RefreshRecordingIndicator();
-    internal void ConfigureTimelineForTesting(double effectiveDurationSec) => BuildStudioTimeline(effectiveDurationSec);
-    internal double TriggerSourceEndForCapturedAudio(double startAbsSec, double capturedSec) => SourceEndForCapturedAudio(startAbsSec, capturedSec);
     internal (double X1, double X2)? LiveRegionPixels { get; private set; }
     internal FreeVideoStudio.Core.Media.OutputTimeline? StudioTimeline => _timeline;
 

@@ -222,9 +222,6 @@ public sealed class MicrophoneSpectrumAnalyzer
     /// <summary>Frequency resolution: one FFT bin, SampleRate / FftSize.</summary>
     public double BinWidthHz => (double)Format.SampleRate / _fftSize;
 
-    /// <summary>Upper edge actually used: min(requested max, Nyquist - 2 bins).</summary>
-    public double EffectiveMaxHz => Bands.IsDefaultOrEmpty ? _maxHz : Bands[^1].HighHz;
-
     /// <summary>Latency of one complete analysis window in seconds.</summary>
     public double WindowSeconds => (double)_fftSize / Format.SampleRate;
 

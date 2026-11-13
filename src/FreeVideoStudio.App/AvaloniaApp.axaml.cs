@@ -63,8 +63,34 @@ public partial class AvaloniaApp : Application
         desktop.Exit += (_, _) => Infrastructure.WindowsAudioSessionSync.Stop();
     }
 
+    /// <summary>
+    /// ASYNCSAFE_01 — the last line of defence for UI-thread faults (an exception escaping an
+    /// event handler or an async continuation). Before this, the only hook was
+    /// AppDomain.UnhandledException, which can only log while the process dies. A recoverable
+    /// fault is now reported through the fault sink (a notice, the session survives); only a
+    /// fault that leaves the runtime itself unusable is allowed to end the process.
+    /// </summary>
+    private static void OnDispatcherUnhandledException(object? sender, Avalonia.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        var ex = e.Exception;
+        if (IsProcessCorrupting(ex))
+        {
+            RuntimeLog.Fail("UI", $"Unrecoverable UI-thread fault: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+        FreeVideoStudio.Core.Abstractions.Faults.Degraded("UI",
+            "Something went wrong with that action, so it was stopped. Your project and the rest of the app are still fine.", ex);
+        e.Handled = true;
+    }
+
+    internal static bool IsProcessCorrupting(System.Exception ex) =>
+        ex is System.OutOfMemoryException or System.AccessViolationException or System.InvalidProgramException
+           or System.Threading.ThreadAbortException or System.BadImageFormatException;
+
     public override void OnFrameworkInitializationCompleted()
     {
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += OnDispatcherUnhandledException;
+
         if (Services.UpgradeBrokerHost.IsActive && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime broker)
         {
             Services.UpgradeBrokerHost.Attach(broker);
@@ -90,7 +116,11 @@ public partial class AvaloniaApp : Application
             bool isCropTool = System.Linq.Enumerable.Any(argsList, a => a.Equals("--crop-tool", System.StringComparison.OrdinalIgnoreCase));
             bool isMerger = System.Linq.Enumerable.Any(argsList, a => a.Equals("--merger", System.StringComparison.OrdinalIgnoreCase));
 
-            if (!isInstallWorker && !isCleanupWorker) StartSharedMasterVolume(desktop);
+            if (!isInstallWorker && !isCleanupWorker)
+            {
+                StartSharedMasterVolume(desktop);
+                _ = Infrastructure.MemeDirectory.StartLegacyMigration();
+            }
 
             if (isInstallWorker || isCleanupWorker)
             {

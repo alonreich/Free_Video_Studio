@@ -161,8 +161,6 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
             NamedPipeServerStream? serverStream = null;
             try
             {
-                // PIPEAUTH_01 — owner-only DACL; FirstPipeInstance whenever none of OUR instances is
-                // live, so this server can never silently join a pipe another account created first.
                 PipeOptions options = Volatile.Read(ref _liveConnections) == 0
                     ? PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance
                     : PipeOptions.Asynchronous;

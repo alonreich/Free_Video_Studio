@@ -35,14 +35,6 @@ public class AudioFilterChain
     /// previews lay songs out exactly the way this chain plays them.</summary>
     private const double CrossfadeOutSec = MusicCrossfade.OutgoingFadeSec;
 
-    /// <summary>
-    /// Song-to-song: the INCOMING song starts this long before the outgoing song ends, and
-    /// fades in across exactly that overlap — so the two are audible together for 3 seconds
-    /// with the old one already 4 seconds into its 7-second decay.
-    /// XFADEPLAN_01 — shared with <see cref="MusicCrossfade"/>.
-    /// </summary>
-    private const double CrossfadeInSec = MusicCrossfade.IncomingOverlapSec;
-
     /// <summary>Fade applied at the very start and the very end of the whole music bed.</summary>
     private const double EdgeFadeSec = 1.5;
 
@@ -61,6 +53,10 @@ public class AudioFilterChain
     /// ISSUE_04 — false when the user dragged the music-end note marker to the RIGHT of
     /// MARK END. The music is asking to outlast the video, so there is nothing left to fade
     /// over: it is cut dead at MARK END. True gives the normal <see cref="EdgeFadeSec"/> tail.
+    /// </param>
+    /// <param name="freezeMusicDipPulse">
+    /// FREEZESFX_01 — <see cref="FreezeSoundEffect.MusicDipPulse"/> on the music's clock: 1 while a freeze
+    /// plays. Non-null means the music bed dips under every freeze and comes back after it.
     /// </param>
     /// <param name="voiceProtectMusicPulse">
     /// VOPROT_01 — "Protect VoiceOver Recording from Music". An ffmpeg expression that evaluates to
@@ -91,7 +87,8 @@ public class AudioFilterChain
         bool musicLeadFadeIn = true,
         bool musicTailFadeOut = true,
         string? voiceOverLabel = null,
-        string? voiceProtectMusicPulse = null)
+        string? voiceProtectMusicPulse = null,
+        string? freezeMusicDipPulse = null)
     {
         var chain = new List<string>();
 
@@ -283,6 +280,13 @@ public class AudioFilterChain
         double legacyRatio = GetDouble(musicConfig, "ducking_ratio", SidechainCompressNode.TunedRatio);
         bool duckingEnabled = ReadBool(musicConfig, "ducking_enabled",
                                        legacyRatio > SidechainCompressNode.BypassRatio + 0.0001);
+
+        if (!string.IsNullOrEmpty(freezeMusicDipPulse))
+        {
+            chain.Add($"{bgMusicLabel}{FreezeSoundEffect.MusicDipFilter(freezeMusicDipPulse)}[a_bg_freeze_dip]");
+            bgMusicLabel = "[a_bg_freeze_dip]";
+            CoreLogger.Info("Audio", $"Freeze effect: music dipped {FreezeSoundEffect.DipDepth:P0} under each freeze.");
+        }
 
         if (!string.IsNullOrEmpty(voiceProtectMusicPulse))
         {

@@ -431,13 +431,6 @@ public static class CoordinateMath
         return (fx, fy, fw * factor, fh * factor);
     }
 
-    public static (int x, int y, int w, int h) ScaleRectInt(
-        (int x, int y, int w, int h) rect, double scaleFactor)
-    {
-        var (x, y, w, h) = ScaleRect(rect, scaleFactor);
-        return (ScaleRound(x), ScaleRound(y), Math.Max(1, FracCeil(w)), Math.Max(1, FracCeil(h)));
-    }
-
     /// <summary>
     /// RATIOLOCK_01 — the smallest step a HUD layer's backend size may move in.
     ///

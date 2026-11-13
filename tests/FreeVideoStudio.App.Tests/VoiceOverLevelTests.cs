@@ -18,7 +18,7 @@ public class VoiceOverLevelTests(ITestOutputHelper log)
     [InlineData(1.5, true)]
     public async Task LiveVoiceRenderedPreviewAndExportHaveTheSameLevel(double gain, bool meme)
     {
-        string work = Path.Combine(RepoRoot.Path, "TestResults", "voice-level-" + Guid.NewGuid().ToString("N"));
+        string work = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), "voice-level-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         using var isolated = LiveCaptureDriver.IsolateProgramData(Path.Combine(work, "state"));
         string ffmpeg = Path.Combine(RepoRoot.Path, "binaries", "ffmpeg.exe");

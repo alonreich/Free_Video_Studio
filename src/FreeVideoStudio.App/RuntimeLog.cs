@@ -344,7 +344,8 @@ public static class RuntimeLog
             
             if (!acquired) path += $".crash.{Environment.ProcessId}.log";
 
-            string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [FATAL] {step} - {detail}{Environment.NewLine}";
+            string safeDetail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(detail);
+            string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [FATAL] {step} - {safeDetail}{Environment.NewLine}";
             byte[] bytes = Encoding.UTF8.GetBytes(line);
             using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
             fs.Write(bytes, 0, bytes.Length);
@@ -373,7 +374,8 @@ public static class RuntimeLog
             ResetForProcess();
         }
 
-        string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {step} - {detail}{Environment.NewLine}";
+        string safeDetail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(detail);
+        string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {step} - {safeDetail}{Environment.NewLine}";
         SafeWrite(line);
         try { LogAppended?.Invoke(line.TrimEnd()); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
     }

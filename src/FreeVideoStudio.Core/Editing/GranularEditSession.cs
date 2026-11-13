@@ -120,9 +120,6 @@ public sealed partial class GranularEditSession
 
     public bool HasFreeze => FreezeTimeMs >= 0;
 
-    /// <summary>The freeze in TRIM-RELATIVE ms, or -1 — the form <see cref="OutputTimeline"/> takes.</summary>
-    public double FreezeRelativeMs => FreezeTimeMs >= 0 ? FreezeTimeMs - TrimStartMs : -1;
-
 
     /// <summary>The selected block's index, or -1.</summary>
     public int SelectedSegmentIndex { get; set; } = -1;

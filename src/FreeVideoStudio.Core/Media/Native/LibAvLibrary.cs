@@ -50,9 +50,6 @@ internal static class LibAvLibrary
     private static readonly object Gate = new();
     private static LoadState? _state;
 
-    /// <summary>Directory the libraries were loaded from, or null.</summary>
-    public static string? LoadedDirectory => Volatile.Read(ref _state)?.Directory;
-
     /// <summary>Loads (once) and verifies the libraries. Never throws.</summary>
     public static bool TryEnsureLoaded(string? ffprobePath, out string detail)
     {

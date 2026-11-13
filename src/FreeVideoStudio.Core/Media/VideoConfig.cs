@@ -8,18 +8,8 @@ namespace FreeVideoStudio.Core.Media;
 
 public class VideoConfig
 {
-    public int DefaultMainWidth = 1280;
-    public int DefaultMainHeight = 1920;
-    public int MobileMainWidth = 1080;
-    public int MobileMainHeight = 1920;
-    public double FadeDuration = 1.0;
-    public int WrapAtPx = 1100;
-    public int SafeMaxPx = 1200;
     public int BaseFontSize = 110;
     public int MinFontSize = 36;
-    public int LineSpacing = -10;
-    public double MeasureFudge = 1.12;
-    public int ShadowPadPx = 5;
 
     /// <summary>
     /// Returns (keepHighestRes, targetMB, qualityLevel).

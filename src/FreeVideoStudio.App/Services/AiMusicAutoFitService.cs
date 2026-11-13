@@ -49,6 +49,67 @@ public static class AiMusicAutoFitService
     /// <summary>AIMUSIC_PROGRESS_01 — the hard limit for a whole Auto-Fit run (frames + AI + song analysis).</summary>
     public static readonly TimeSpan OverallDeadline = TimeSpan.FromSeconds(120);
 
+    private const int MaxCacheEntries = 64;
+    private static readonly object s_cacheLock = new();
+    private static readonly Dictionary<string, byte[]> s_frameCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> s_frameOrder = new();
+    private static readonly Dictionary<string, MusicEnergyAnalysis.Result> s_energyCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> s_energyOrder = new();
+
+    private static string BuildFrameCacheKey(string videoPath, double sourceSec)
+    {
+        long mtime = 0;
+        try { mtime = File.GetLastWriteTimeUtc(videoPath).Ticks; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
+        return $"{videoPath}|{sourceSec:F2}|{mtime}";
+    }
+
+    private static string BuildEnergyCacheKey(string audioPath)
+    {
+        long size = 0, mtime = 0;
+        try
+        {
+            var info = new FileInfo(audioPath);
+            if (info.Exists) { size = info.Length; mtime = info.LastWriteTimeUtc.Ticks; }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
+        return $"{audioPath}|{size}|{mtime}";
+    }
+
+    private static byte[]? TryGetCachedFrame(string key)
+    {
+        lock (s_cacheLock) return s_frameCache.TryGetValue(key, out byte[]? b) ? b : null;
+    }
+
+    private static void StoreCachedFrame(string key, byte[] data)
+    {
+        lock (s_cacheLock)
+        {
+            if (s_frameCache.ContainsKey(key)) return;
+            while (s_frameOrder.Count >= MaxCacheEntries)
+                s_frameCache.Remove(s_frameOrder.Dequeue());
+            s_frameCache[key] = data;
+            s_frameOrder.Enqueue(key);
+        }
+    }
+
+    private static MusicEnergyAnalysis.Result? TryGetCachedEnergy(string key)
+    {
+        lock (s_cacheLock) return s_energyCache.TryGetValue(key, out MusicEnergyAnalysis.Result? r) ? r : null;
+    }
+
+    private static void StoreCachedEnergy(string key, MusicEnergyAnalysis.Result energy)
+    {
+        lock (s_cacheLock)
+        {
+            if (s_energyCache.ContainsKey(key)) return;
+            while (s_energyOrder.Count >= MaxCacheEntries)
+                s_energyCache.Remove(s_energyOrder.Dequeue());
+            s_energyCache[key] = energy;
+            s_energyOrder.Enqueue(key);
+        }
+    }
+
     private const string AutoFitJsonSchema = """
         {
           "type": "object",
@@ -121,14 +182,25 @@ public static class AiMusicAutoFitService
             {
                 var scene = scenes[i];
                 ct.ThrowIfCancellationRequested();
-                statusCallback?.Invoke($"Step 1 of 3 — taking pictures of your video ({i + 1} of {scenes.Count})…");
                 if (string.IsNullOrWhiteSpace(scene.VideoPath) || !File.Exists(scene.VideoPath)) continue;
+
+                string frameKey = BuildFrameCacheKey(scene.VideoPath, scene.SourceSec);
+                byte[]? data = TryGetCachedFrame(frameKey);
+                if (data != null)
+                {
+                    statusCallback?.Invoke($"Step 1 of 3 — reused cached frame {i + 1} of {scenes.Count} ({scene.SourceSec:0.0}s of {Path.GetFileName(scene.VideoPath)})…");
+                    images.Add(new AiImageInput(data, "image/jpeg", $"Scene at {scene.OutputSec.ToString("F1", CultureInfo.InvariantCulture)}s of {videoDurationSec.ToString("F1", CultureInfo.InvariantCulture)}s"));
+                    continue;
+                }
+
+                statusCallback?.Invoke($"Step 1 of 3 — extracting frame {i + 1} of {scenes.Count} ({scene.SourceSec:0.0}s of {Path.GetFileName(scene.VideoPath)})…");
                 string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_music_frame_{Guid.NewGuid():N}.jpg");
                 tempFrames.Add(tempPath);
 
                 if (await AiFfmpeg.ExtractFrameJpegAsync(ffmpegPath, scene.VideoPath, scene.SourceSec, tempPath, ct).ConfigureAwait(false))
                 {
-                    byte[] data = await File.ReadAllBytesAsync(tempPath, ct).ConfigureAwait(false);
+                    data = await File.ReadAllBytesAsync(tempPath, ct).ConfigureAwait(false);
+                    StoreCachedFrame(frameKey, data);
                     images.Add(new AiImageInput(data, "image/jpeg", $"Scene at {scene.OutputSec.ToString("F1", CultureInfo.InvariantCulture)}s of {videoDurationSec.ToString("F1", CultureInfo.InvariantCulture)}s"));
                 }
             }
@@ -139,37 +211,61 @@ public static class AiMusicAutoFitService
             var listed = availableTracks.Take(MaxSongsInPrompt).ToList();
             string prompt = BuildPrompt(listed, availableTracks.Count, images.Count, videoDurationSec);
 
-            statusCallback?.Invoke($"Step 2 of 3 — {vendorName} is looking at {images.Count} pictures and {listed.Count} song names…");
-            string responseJson = await provider.GenerateJsonAsync(
-                apiKey,
-                effectiveModel,
-                prompt,
-                images,
-                video: null,
-                AutoFitJsonSchema,
-                options: CallOptions,
-                userLog: statusCallback,
-                ct: ct).ConfigureAwait(false);
+            statusCallback?.Invoke($"Step 2 of 3 — {vendorName} ({effectiveModel}) is analyzing {images.Count} scene frames and {listed.Count} song titles…");
+            var keyParts = new List<string?> { "music-autofit-v1", vendor.ToString(), effectiveModel, prompt };
+            foreach (var img in images) keyParts.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(img.Data)));
+            string responseJson = await AiResultCache.RunAsync(AiResultCache.Key(keyParts.ToArray()),
+                () => provider.GenerateJsonAsync(
+                    apiKey,
+                    effectiveModel,
+                    prompt,
+                    images,
+                    video: null,
+                    AutoFitJsonSchema,
+                    options: CallOptions,
+                    userLog: statusCallback,
+                    ct: ct),
+                answer => ParseChoice(answer, listed) != null, ct, statusCallback).ConfigureAwait(false);
 
-            var (track, mood, reason) = ParseChoice(responseJson, listed)
-                ?? throw new AiMusicAutoFitException($"{vendorName} did not name a song from your list, so nothing was changed. Try again.");
+            var parsedChoice = ParseChoice(responseJson, listed);
+            if (parsedChoice == null)
+            {
+                RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact(
+                    $"{vendorName} ({effectiveModel}) unparseable song selection. Prompt excerpt: {Truncate(prompt, 400)} | Raw response: {Truncate(responseJson, 1200)}",
+                    apiKey));
+                throw new AiMusicAutoFitException($"{vendorName} did not name a song from your list, so nothing was changed. Try again.");
+            }
+            var (track, mood, reason) = parsedChoice.Value;
 
-            statusCallback?.Invoke($"Step 3 of 3 — finding where '{Path.GetFileNameWithoutExtension(track.FilePath)}' gets going…");
+            string songLabel = Path.GetFileNameWithoutExtension(track.FilePath);
+            string energyKey = BuildEnergyCacheKey(track.FilePath);
+            MusicEnergyAnalysis.Result? energy = TryGetCachedEnergy(energyKey);
+            if (energy != null)
+            {
+                statusCallback?.Invoke($"Step 3 of 3 — reused cached loudness curve for '{songLabel}'…");
+            }
+            else
+            {
+                statusCallback?.Invoke($"Step 3 of 3 — measuring loudness curve of '{songLabel}'…");
+            }
             double trackDuration = track.DurationSec > 0 ? track.DurationSec : 0;
             double inSec = 0;
             string startNote;
-            MusicEnergyAnalysis.Result? energy = null;
-            try
+            if (energy == null)
             {
-                energy = await MusicEnergyAnalysis.AnalyzeFileAsync(ffmpegPath, track.FilePath, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                RuntimeLog.Swallowed(ex);
+                try
+                {
+                    energy = await MusicEnergyAnalysis.AnalyzeFileAsync(ffmpegPath, track.FilePath, ct).ConfigureAwait(false);
+                    if (energy != null) StoreCachedEnergy(energyKey, energy);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Swallowed(ex);
+                }
             }
             if (energy != null && energy.DurationSeconds > 0) trackDuration = energy.DurationSeconds;
             if (trackDuration <= 0) trackDuration = 120.0;
@@ -304,4 +400,7 @@ public static class AiMusicAutoFitService
         var ts = TimeSpan.FromSeconds(Math.Max(0, sec));
         return $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
     }
+
+    private static string Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "…");
 }

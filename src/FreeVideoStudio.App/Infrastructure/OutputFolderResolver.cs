@@ -40,9 +40,7 @@ public static class OutputFolderResolver
 
     private static void SetConfigured(AppScope scope, string path)
     {
-        bool committed = scope == AppScope.Merger
-            ? SettingsManager.Update(s => s.MergerOutputDirectory = path)
-            : SettingsManager.Update(s => s.MainOutputDirectory = path);
+        bool committed = SettingsManager.Update(s => { s.MainOutputDirectory = path; s.MergerOutputDirectory = path; });
 
         if (!committed)
         {
@@ -64,7 +62,8 @@ public static class OutputFolderResolver
         string configured = GetConfigured(scope);
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            if (KnownFolders.IsWritableDirectory(configured))
+            if (ProtectedFolderGate.CanWrite(configured) && KnownFolders.IsWritableDirectory(configured) &&
+                await Task.Run(() => ProtectedFolderGate.FfmpegCanWrite(configured)))
             {
                 return configured;
             }
@@ -72,6 +71,8 @@ public static class OutputFolderResolver
             RuntimeLog.Fail("Output",
                 $"{scope} saved output folder is missing or not writable — falling back to Downloads.");
             RuntimeLog.Debug("Output", $"Unusable saved output folder: {configured}");
+            if (ProtectedFolderGate.TakePendingNotice())
+                await ProtectedFolderGate.ShowNoticeAsync(owner);
         }
 
         string? downloads = KnownFolders.GetDownloads();

@@ -68,6 +68,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     private readonly IFaultSink _faults;
     private readonly Action<string> _log;
     private readonly AiHudResultCache _cache;
+    private static readonly AiHudResultCache SharedCache = new();
     private readonly Func<AiVendor>? _vendorProvider;
     private readonly IAiVisionProvider? _visionProvider;
 
@@ -99,7 +100,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         _http = httpClient ?? SharedClient.Value;
         _timeout = timeout is { } t && t > TimeSpan.Zero ? t : DefaultTimeout;
         _log = log ?? (line => CoreLogger.Info(LogArea, line));
-        _cache = cache ?? new AiHudResultCache();
+        _cache = cache ?? (httpClient == null ? SharedCache : new AiHudResultCache());
         _vendorProvider = vendorProvider;
         _visionProvider = visionProvider;
     }
@@ -152,78 +153,28 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
             return cached;
         }
 
-        if (vendor != AiVendor.Google || _visionProvider != null)
-        {
-            try
-            {
-                IAiVisionProvider provider = _visionProvider ?? AiVisionProviders.Get(vendor);
-                var images = new[] { new AiImageInput(frame.JpegBytes, "image/jpeg") };
-                _log($"AI HUD: sending ONE frame ({frame.JpegBytes.Length / 1024} KB JPEG, source {frame.SourceWidth}x{frame.SourceHeight}) to {ProviderName} model {model}.");
-                using var providerTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                providerTimeoutCts.CancelAfter(_timeout);
-                string responseJson = await provider.GenerateJsonAsync(apiKey, model, Prompt, images, null, HudJsonSchema, null, GeminiCallOptions.Quick, _log, providerTimeoutCts.Token).ConfigureAwait(false);
-                AiHudParseResult parsedResult = AiHudResponseParser.Parse(responseJson);
-                if (parsedResult.IsMalformed)
-                    return Fail(AiHudOutcome.MalformedResponse, parsedResult.Error, apiKey);
-
-                var detectionResult = new AiHudDetectionResult(AiHudOutcome.Success, parsedResult.Candidates, $"{parsedResult.Candidates.Count} accepted, {parsedResult.Rejected} rejected");
-                _cache.Store(cacheKey, detectionResult);
-                _log($"AI HUD: {parsedResult.Candidates.Count} candidate(s) accepted, {parsedResult.Rejected} rejected by validation (model {model}).");
-                return detectionResult;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException ex)
-            {
-                _faults.Recoverable(FaultArea, $"AI HUD request timed out after {_timeout.TotalSeconds:0}s ({ex.GetType().Name}).");
-                return Fail(AiHudOutcome.Timeout, $"no answer within {_timeout.TotalSeconds:0}s", apiKey);
-            }
-            catch (AiProviderException ex)
-            {
-                AiHudOutcome outcome = ex.Kind switch
-                {
-                    AiProviderErrorKind.RateLimited or AiProviderErrorKind.QuotaExhausted => AiHudOutcome.RateLimited,
-                    AiProviderErrorKind.Timeout => AiHudOutcome.Timeout,
-                    AiProviderErrorKind.Network => AiHudOutcome.NetworkError,
-                    AiProviderErrorKind.MalformedResponse => AiHudOutcome.MalformedResponse,
-                    _ => AiHudOutcome.ModelError,
-                };
-                string detail = Redact($"{ex.Kind}: {ex.Message} {ex.Detail}", apiKey);
-                _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
-                return Fail(outcome, detail, apiKey);
-            }
-            catch (Exception ex)
-            {
-                string detail = Redact($"{ex.GetType().Name}: {ex.Message}", apiKey);
-                _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
-                return Fail(AiHudOutcome.NetworkError, detail, apiKey);
-            }
-        }
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(_timeout);
-
-        model = AiVisionProviders.EffectiveModel(AiVendor.Google, model);
-        string? responseText;
-        HttpStatusCode status;
-        bool fallbackTried = false;
-
-    sendAgain:
-        string url = Endpoint + model + ":generateContent";
+        IAiVisionProvider provider = _visionProvider
+            ?? (vendor == AiVendor.Google ? new GeminiProvider(new GeminiClient(_http, _log)) : AiVisionProviders.Get(vendor));
+        var options = new GeminiCallOptions(_timeout, 0, TimeSpan.Zero);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.TryAddWithoutValidation(ApiKeyHeader, apiKey);
-            request.Content = new ByteArrayContent(BuildRequestBody(frame.JpegBytes, model));
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-
+            var images = new[] { new AiImageInput(frame.JpegBytes, "image/jpeg", null, AiReasoningPolicy.ImageDetail(AiUsage.MagicWand)) };
             _log($"AI HUD: sending ONE frame ({frame.JpegBytes.Length / 1024} KB JPEG, source {frame.SourceWidth}x{frame.SourceHeight}) to {ProviderName} model {model}.");
+            using var providerTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            providerTimeoutCts.CancelAfter(_timeout + TimeSpan.FromSeconds(1));
+            string responseJson = await provider.GenerateJsonAsync(apiKey, model, Prompt, images, null, HudJsonSchema,
+                AiReasoningPolicy.For(AiUsage.MagicWand), options, _log, providerTimeoutCts.Token).ConfigureAwait(false);
+            AiHudParseResult parsedResult = AiHudResponseParser.Parse(responseJson);
+            if (parsedResult.IsMalformed)
+            {
+                RuntimeLog.Fail("AIHUD_PARSE", Redact($"Provider {vendor} '{model}' malformed HUD JSON ({parsedResult.Error}). Raw: {Truncate(responseJson, 1200)}", apiKey));
+                return Fail(AiHudOutcome.MalformedResponse, parsedResult.Error, apiKey);
+            }
 
-            using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
-            status = response.StatusCode;
-            responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+            var detectionResult = new AiHudDetectionResult(AiHudOutcome.Success, parsedResult.Candidates, $"{parsedResult.Candidates.Count} accepted, {parsedResult.Rejected} rejected");
+            _cache.Store(cacheKey, detectionResult);
+            _log($"AI HUD: {parsedResult.Candidates.Count} candidate(s) accepted, {parsedResult.Rejected} rejected by validation (model {model}).");
+            return detectionResult;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -234,48 +185,28 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
             _faults.Recoverable(FaultArea, $"AI HUD request timed out after {_timeout.TotalSeconds:0}s ({ex.GetType().Name}).");
             return Fail(AiHudOutcome.Timeout, $"no answer within {_timeout.TotalSeconds:0}s", apiKey);
         }
-        catch (HttpRequestException ex)
+        catch (AiProviderException ex)
         {
-            AiHudOutcome outcome = ex.StatusCode == HttpStatusCode.TooManyRequests ? AiHudOutcome.RateLimited : AiHudOutcome.NetworkError;
-            string detail = Redact($"{ex.GetType().Name}: {ex.Message}", apiKey);
+            AiHudOutcome outcome = ex.Kind switch
+            {
+                AiProviderErrorKind.RateLimited => AiHudOutcome.RateLimited,
+                AiProviderErrorKind.Timeout => AiHudOutcome.Timeout,
+                AiProviderErrorKind.Network or AiProviderErrorKind.Overloaded => AiHudOutcome.NetworkError,
+                AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Truncated => AiHudOutcome.MalformedResponse,
+                AiProviderErrorKind.InvalidKey or AiProviderErrorKind.PermissionDenied
+                    or AiProviderErrorKind.ModelNotFound or AiProviderErrorKind.QuotaExhausted => AiHudOutcome.AccountProblem,
+                _ => AiHudOutcome.ModelError,
+            };
+            string detail = Redact($"{ex.Kind}: {ex.Message} {ex.Detail}", apiKey);
             _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
-            return Fail(outcome, detail, apiKey);
+            return Fail(outcome, detail, apiKey) with { UserMessage = Redact(ex.Message, apiKey) };
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or IOException or InvalidOperationException or ObjectDisposedException)
         {
             string detail = Redact($"{ex.GetType().Name}: {ex.Message}", apiKey);
             _faults.Recoverable(FaultArea, $"AI HUD request failed: {detail}");
             return Fail(AiHudOutcome.NetworkError, detail, apiKey);
         }
-
-        if (status == HttpStatusCode.TooManyRequests)
-            return Fail(AiHudOutcome.RateLimited, "HTTP 429", apiKey);
-
-        if (status == HttpStatusCode.NotFound && !fallbackTried)
-        {
-            fallbackTried = true;
-            string? live = await AiVisionProviders.FindLiveReplacementAsync(AiVisionProviders.Get(AiVendor.Google), apiKey, model, _log, timeoutCts.Token).ConfigureAwait(false);
-            if (live != null)
-            {
-                model = live;
-                goto sendAgain;
-            }
-        }
-
-        if ((int)status < 200 || (int)status > 299)
-            return Fail(AiHudOutcome.ModelError, $"HTTP {(int)status}: {Truncate(responseText, 300)}", apiKey);
-
-        if (!TryExtractModelText(responseText, out string modelText, out string? extractError))
-            return Fail(AiHudOutcome.MalformedResponse, extractError ?? "no text in response", apiKey);
-
-        AiHudParseResult parsed = AiHudResponseParser.Parse(modelText);
-        if (parsed.IsMalformed)
-            return Fail(AiHudOutcome.MalformedResponse, parsed.Error, apiKey);
-
-        var result = new AiHudDetectionResult(AiHudOutcome.Success, parsed.Candidates, $"{parsed.Candidates.Count} accepted, {parsed.Rejected} rejected");
-        _cache.Store(cacheKey, result);
-        _log($"AI HUD: {parsed.Candidates.Count} candidate(s) accepted, {parsed.Rejected} rejected by validation (model {model}).");
-        return result;
     }
 
     /// <summary>

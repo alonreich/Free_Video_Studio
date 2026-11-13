@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
@@ -12,20 +12,23 @@
         CanResize="True"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30"
-        WindowStartupLocation="Manual">
+        WindowStartupLocation="CenterOwner">
     <!-- ISSUE_09 (audit round 4): Topmost="True" removed — Settings floated above every OTHER
          application on the OS. It now yields to other apps like the rest of the 8 tracked windows.
 
          SETTINGSIA_01 (settings audit, 28 items): 10 tabs became 6 + About. Every value is BOUND to
          SettingsViewModel (SETTINGSVM_01) and is pending until SAVE; CANCEL / Esc / ✕ ask before
          throwing changes away (SETUNSAVED_01). SETWIDTH_01: every page shares one width
-         (Classes="Page", 680px) and no button has a fixed Width, so labels never get cut off. -->
+         (Classes="Page", 680px) and no button has a fixed Width, so labels never get cut off.
+         SETCENTER_01: the first open (no saved bounds) is centred on the window that opened it;
+         WindowBoundsHelper switches to Manual once bounds are saved.
+         SETDECLUTTER_01 (settings round 4): one control per idea, every page one centred column. -->
     <Window.Styles>
         <Style Selector="StackPanel.Page">
             <Setter Property="Margin" Value="12,10,16,16"/>
             <Setter Property="Spacing" Value="10"/>
             <Setter Property="MaxWidth" Value="680"/>
-            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style Selector="TextBlock.H1">
             <Setter Property="FontSize" Value="{DynamicResource AppFontSize16}"/>
@@ -56,6 +59,13 @@
             <Setter Property="Orientation" Value="Horizontal"/>
             <Setter Property="Background" Value="Transparent"/>
         </Style>
+        <!-- SETLABELFIT_01 — label columns are Auto (they were fixed 200/260px, and a horizontal LabelRow never
+             wraps, so at the larger text sizes labels were cut off). MinWidth keeps the controls of the rows
+             lined up at normal size; the column grows with the text size instead of clipping. -->
+        <Style Selector="Grid > StackPanel.LabelRow">
+            <Setter Property="MinWidth" Value="200"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+        </Style>
         <Style Selector="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
         </Style>
@@ -82,7 +92,7 @@
                 </Border>
 
                 <!-- SETSEARCH_01 — instant search across every tab. -->
-                <TextBox Grid.Row="1" Name="SettingsSearchBox" Margin="15,12,15,0" MaxWidth="680" HorizontalAlignment="Left" MinWidth="420"
+                <TextBox Grid.Row="1" Name="SettingsSearchBox" Margin="15,12,15,0" MaxWidth="680" HorizontalAlignment="Center" MinWidth="420"
                          Watermark="🔍  Search settings (for example: music, keys, folder, update)…"
                          AutomationProperties.Name="Search settings"
                          ToolTip.Tip="Type a word to find a setting. Click a result to jump straight to it. Press Esc to clear."/>
@@ -95,7 +105,7 @@
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Classes="Page">
                                     <TextBlock Classes="H1" Text="Look" Margin="0,4,0,0"/>
-                                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="10">
                                         <StackPanel Classes="LabelRow" ToolTip.Tip="The colours of the whole app.&#x0a;&#x0a;Dark: light text on a dark background (easy on the eyes, best for video).&#x0a;Light: dark text on a white background.&#x0a;Match Windows: follows the light/dark choice in your Windows settings.&#x0a;&#x0a;You see the change right away. CANCEL puts the old colours back.">
                                             <TextBlock Classes="Label" Text="Colours"/>
                                             <TextBlock Classes="Info"/>
@@ -121,53 +131,27 @@
                                     </Grid>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <TextBlock Classes="H1" Text="Updates"/>
-                                    <CheckBox Name="AutoUpdateChecksCheckbox" Content="Check for updates when the app starts"
-                                              IsChecked="{Binding Vm.AutoUpdateChecks, Mode=TwoWay}"
-                                              ToolTip.Tip="ON: once a day, when the app opens, it quietly asks GitHub (where the app is published) whether a newer version exists.&#x0a;OFF: the app never checks by itself. You can still press 'Check now' on the About tab."/>
-                                    <CheckBox Name="AutoDownloadUpdatesCheckbox" Content="Download updates in the background" Margin="28,0,0,0"
-                                              IsChecked="{Binding Vm.AutoDownloadUpdates, Mode=TwoWay}"
-                                              IsEnabled="{Binding Vm.AutoUpdateChecks}"
-                                              ToolTip.Tip="ON: a new version downloads by itself while you work, so it is ready to install when you are.&#x0a;OFF: the app only tells you an update exists.&#x0a;(Greyed out when update checks are off.)"/>
-                                    <CheckBox Name="AvoidMeteredNetworkUpdatesCheckbox" Content="Not on metered connections (phone hotspot)" Margin="56,0,0,0"
-                                              IsChecked="{Binding Vm.AvoidMeteredNetworkUpdates, Mode=TwoWay}"
-                                              IsEnabled="{Binding Vm.CanChooseMetered}"
-                                              ToolTip.Tip="ON: background downloads wait when you are on a connection that costs money per megabyte, like a phone hotspot.&#x0a;(Greyed out when background downloads are off.)"/>
-                                    <StackPanel Classes="LabelRow" Spacing="0" Margin="0,4,0,0"
-                                                ToolTip.Tip="Stable: tested versions only. Pick this unless you like trying new things first.&#x0a;Beta: test versions arrive earlier. They have the newest features but may have bugs.">
-                                        <TextBlock Classes="Label" Text="Version type" Margin="0,0,16,0"/>
-                                        <RadioButton GroupName="UpdateChannel" Name="ChannelStableRadio" Content="Stable" IsChecked="{Binding Vm.IsStableChannel, Mode=TwoWay}"/>
-                                        <RadioButton GroupName="UpdateChannel" Name="ChannelBetaRadio" Content="Beta" IsChecked="{Binding Vm.IsBetaChannel, Mode=TwoWay}"/>
+                                    <!-- SETUPDATEONE_01 — one 3-way choice (was two dependent check boxes + a Stable/Beta pair, SETNOBETA_01). -->
+                                    <StackPanel Classes="LabelRow" ToolTip.Tip="How the app keeps itself up to date. It asks GitHub (where the app is published) a few minutes after it opens, and every few hours while it stays open.&#x0a;&#x0a;Download automatically: a new version downloads by itself while you work, ready to install when you are.&#x0a;Just tell me: the app only says a new version exists.&#x0a;Never check: the app never checks by itself. You can still press 'Check for updates now' on the About tab.">
+                                        <TextBlock Classes="H1" Text="Updates" Margin="0"/>
                                         <TextBlock Classes="Info"/>
                                     </StackPanel>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <RadioButton GroupName="UpdateMode" Name="UpdateAutoRadio" Content="Download automatically" IsChecked="{Binding Vm.UpdateAuto, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="UpdateMode" Name="UpdateNotifyRadio" Content="Just tell me" IsChecked="{Binding Vm.UpdateNotify, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="UpdateMode" Name="UpdateNeverRadio" Content="Never check" IsChecked="{Binding Vm.UpdateNever, Mode=TwoWay}"/>
+                                    </WrapPanel>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <!-- AUDIO_06 — the app's own button sounds (never part of an export). -->
-                                    <TextBlock Classes="H1" Text="Button sounds"/>
-                                    <CheckBox Name="UiSoundsEnabledCheckbox" Content="Click sounds" IsChecked="{Binding Vm.UiSoundsEnabled, Mode=TwoWay}"
-                                              ToolTip.Tip="The small clicks and chimes the app plays when you press a button.&#x0a;They only come out of your speakers while you work. They are NEVER in your exported video, and they are muted while you record a voice-over."/>
-                                    <Grid ColumnDefinitions="*, Auto" MaxWidth="480" HorizontalAlignment="Left" Margin="28,0,0,0" IsEnabled="{Binding Vm.UiSoundsEnabled}">
+                                    <!-- AUDIO_06 / SETCLICKONE_01 — one slider: all the way left = off. -->
+                                    <TextBlock Classes="H1" Text="Click sounds"/>
+                                    <Grid ColumnDefinitions="*, Auto" MaxWidth="480" HorizontalAlignment="Left">
                                         <Slider Name="UiSoundVolumeSlider" Grid.Column="0" Minimum="0" Maximum="100" MinWidth="240" MaxWidth="400" MinHeight="44"
                                                 Value="{Binding Vm.UiSoundVolume, Mode=TwoWay}" TickFrequency="1" IsSnapToTickEnabled="True"
                                                 AutomationProperties.Name="Click sound volume"
-                                                ToolTip.Tip="How loud the click sounds are. Does not change your video, your music or your voice-over."/>
+                                                ToolTip.Tip="The small clicks and chimes the app plays when you press a button. Slide all the way left to turn them off.&#x0a;They only come out of your speakers while you work. They are NEVER in your exported video, and they are muted while you record a voice-over."/>
                                         <TextBlock Name="UiSoundVolumeLabel" Grid.Column="1" Text="{Binding Vm.UiSoundVolumeLabel}" Foreground="{DynamicResource AppTextMutedBrush}" FontWeight="Bold" MinWidth="48" TextAlignment="Right" VerticalAlignment="Center" Margin="12,0,0,0"/>
                                     </Grid>
-
-                                    <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <!-- G03 — which chip encodes the final video. -->
-                                    <TextBlock Classes="H1" Text="Export speed"/>
-                                    <Grid ColumnDefinitions="200,*">
-                                        <StackPanel Classes="LabelRow" ToolTip.Tip="Making the final video is heavy work. A graphics card does it fast; the processor does it slowly.&#x0a;&#x0a;Automatic checks your computer and picks the fastest chip. Leave it on Automatic unless exports are suddenly very slow, then pick your graphics card by name.&#x0a;If you pick a chip your computer does not have, the export stops with a clear message instead of quietly using something else.">
-                                            <TextBlock Classes="Label" Text="Chip that makes videos"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Column="1" Name="VideoEncoderComboBox" MinWidth="260" HorizontalAlignment="Left"
-                                                  ItemsSource="{Binding Vm.EncoderNames}" SelectedIndex="{Binding Vm.EncoderIndex, Mode=TwoWay}"
-                                                  AutomationProperties.Name="Chip that makes videos"
-                                                  ToolTip.Tip="Automatic is recommended."/>
-                                    </Grid>
-                                    <TextBlock Name="VideoEncoderStatusText" Classes="Hint" Text=""/>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
                                     <!-- SETBACKUP_01 -->
@@ -181,17 +165,43 @@
                                     </StackPanel>
                                     <TextBlock Name="BackupStatusText" Classes="Hint" Text=""/>
 
+                                    <!-- SETADVANCED_01 — rarely-needed options, folded away. -->
+                                    <Expander Name="GeneralAdvancedExpander" Header="Advanced" HorizontalAlignment="Stretch" Margin="0,8,0,0"
+                                              ToolTip.Tip="Options most people never need to change.">
+                                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                                            <Grid ColumnDefinitions="Auto,*">
+                                                <StackPanel Classes="LabelRow" ToolTip.Tip="Making the final video is heavy work. A graphics card does it fast; the processor does it slowly.&#x0a;&#x0a;Automatic checks your computer and picks the fastest chip. Leave it on Automatic unless exports are suddenly very slow, then pick your graphics card by name.&#x0a;Chips this computer can't use are greyed out.">
+                                                    <TextBlock Classes="Label" Text="Speed up exports with"/>
+                                                    <TextBlock Classes="Info"/>
+                                                </StackPanel>
+                                                <!-- SETCHIPS_01 — chips this PC can't use are greyed out (the saved one always stays pickable). -->
+                                                <ComboBox Grid.Column="1" Name="VideoEncoderComboBox" MinWidth="260" HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding Vm.EncoderItems}" SelectedIndex="{Binding Vm.EncoderIndex, Mode=TwoWay}"
+                                                          AutomationProperties.Name="Speed up exports with"
+                                                          ToolTip.Tip="Automatic is recommended.">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:EncoderChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                    <ComboBox.Styles>
+                                                        <Style Selector="ComboBoxItem" x:DataType="vm:EncoderChoiceItem">
+                                                            <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
+                                                        </Style>
+                                                    </ComboBox.Styles>
+                                                </ComboBox>
+                                            </Grid>
+                                            <TextBlock Name="VideoEncoderStatusText" Classes="Hint" Text="{Binding Vm.DetectedChipsLine}"/>
+                                        </StackPanel>
+                                    </Expander>
+
                                     <!-- SETDANGER_01 — destructive actions live here only, behind a confirmation. -->
                                     <Border Name="DangerZoneBorder" Margin="0,18,0,0" BorderBrush="{DynamicResource AppDangerBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                                         <StackPanel Spacing="8">
                                             <TextBlock Text="Danger Zone" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" Foreground="{DynamicResource AppDangerBrush}"/>
-                                            <TextBlock Classes="Hint" Text="These cannot be taken back once you press SAVE. Each one asks first."/>
-                                            <WrapPanel Orientation="Horizontal">
-                                                <Button Name="RemoveAllKeysBtn" Classes="Danger" Content="Remove all AI keys" Click="OnRemoveAllKeys" Cursor="Hand" Margin="0,0,10,6"
-                                                        ToolTip.Tip="Deletes the saved Google, Anthropic and OpenAI keys from this computer. AI features stop working until you paste a key again."/>
-                                                <Button Name="ResetAllSettingsBtn" Classes="Danger" Content="Reset all settings" Click="OnResetAllSettings" Cursor="Hand" Margin="0,0,10,6"
-                                                        ToolTip.Tip="Puts every setting on every tab back to how it was when the app was installed. Your AI keys are kept."/>
-                                            </WrapPanel>
+                                            <TextBlock Classes="Hint" Text="This cannot be taken back once you press SAVE. It asks first."/>
+                                            <Button Name="ResetAllSettingsBtn" Classes="Danger" Content="Reset all settings" Click="OnResetAllSettings" Cursor="Hand" HorizontalAlignment="Left"
+                                                    ToolTip.Tip="Puts every setting on every tab back to how it was when the app was installed. Your AI keys are kept."/>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -204,7 +214,7 @@
                                 <StackPanel Classes="Page">
                                     <!-- SETGAME_01 — ONE game choice: the crop layout AND the AI camera view. -->
                                     <TextBlock Classes="H1" Text="Your game" Margin="0,4,0,0"/>
-                                    <Grid ColumnDefinitions="200,*">
+                                    <Grid ColumnDefinitions="Auto,*">
                                         <StackPanel Classes="LabelRow" ToolTip.Tip="Pick the game you record. Every game puts its health bar, map and weapons in different places.&#x0a;&#x0a;The app uses this to cut those parts out neatly for phone videos, and the AI camera uses it to know what to follow.&#x0a;'No Mask' means: do not cut anything out.">
                                             <TextBlock Classes="Label" Text="Game"/>
                                             <TextBlock Classes="Info"/>
@@ -216,118 +226,60 @@
                                     </Grid>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <!-- SETDEFAULTS_01 — what a freshly opened video starts with. -->
-                                    <TextBlock Classes="H1" Text="Every new video starts with"/>
-                                    <TextBlock Classes="Hint" Text="'Same as last time' means: whatever you used for your last exported video."/>
-                                    <Grid ColumnDefinitions="200,190,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
-                                        <StackPanel Classes="LabelRow" ToolTip.Tip="How fast a new video plays.&#x0a;1.0x is real speed, 1.1x is a little faster (good for gameplay), 2.0x is double speed.&#x0a;&#x0a;'Always this value': every video starts at the speed on the slider.&#x0a;'Same as last time': starts at the speed you used for your last export.">
+                                    <!-- SETSTARTONE_01 — one choice for how every new video starts. -->
+                                    <StackPanel Classes="LabelRow" ToolTip.Tip="What a freshly opened video starts with.&#x0a;&#x0a;Like my last video: speed, quality, phone format, teammates and fades start the way your last exported video was made.&#x0a;With my defaults: they always start with the values below.">
+                                        <TextBlock Classes="H1" Text="New videos start" Margin="0"/>
+                                        <TextBlock Classes="Info"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton GroupName="StartMode" Name="StartLikeLastRadio" Content="Like my last video" IsChecked="{Binding Vm.StartLikeLast, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="StartMode" Name="StartDefaultsRadio" Content="With my defaults" IsChecked="{Binding Vm.StartWithDefaults, Mode=TwoWay}"/>
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" Margin="28,0,0,0" IsEnabled="{Binding Vm.StartWithDefaults}">
+                                        <StackPanel Classes="LabelRow" ToolTip.Tip="How fast a new video plays.&#x0a;1.0x is real speed, 1.1x is a little faster (good for gameplay), 2.0x is double speed.">
                                             <TextBlock Classes="Label" Text="Speed"/>
                                             <TextBlock Classes="Info"/>
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1" Name="SpeedBehaviorCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsViewModel.ValueBehaviorChoices}" SelectedIndex="{Binding Vm.SpeedBehaviorIndex, Mode=TwoWay}" AutomationProperties.Name="Speed: how it is picked" ToolTip.Tip="Always the same speed, or the speed you used last time."/>
-                                        <Grid Grid.Column="2" ColumnDefinitions="*,Auto" IsEnabled="{Binding Vm.IsSpeedFixed}">
-                                            <Slider Name="DefaultSpeedSlider" Minimum="0.1" Maximum="4.0" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5" MinWidth="140"
+                                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" MaxWidth="360" HorizontalAlignment="Left">
+                                            <Slider Name="DefaultSpeedSlider" Minimum="0.1" Maximum="4.0" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5" MinWidth="200"
                                                     Value="{Binding Vm.DefaultSpeed, Mode=TwoWay}" AutomationProperties.Name="Starting speed" ToolTip.Tip="Drag to pick the starting speed (0.1x to 4.0x)."/>
                                             <TextBlock Grid.Column="1" Text="{Binding Vm.DefaultSpeedLabel}" MinWidth="44" TextAlignment="Right" VerticalAlignment="Center" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
                                         </Grid>
 
-                                        <StackPanel Grid.Row="1" Classes="LabelRow" ToolTip.Tip="How sharp the finished video looks. Sharper = bigger file.&#x0a;&#x0a;'Always this value': every video starts on the quality you pick here.&#x0a;'Same as last time': starts on the quality of your last export.">
+                                        <StackPanel Grid.Row="1" Classes="LabelRow" ToolTip.Tip="How sharp the finished video looks. Sharper = bigger file.">
                                             <TextBlock Classes="Label" Text="Quality"/>
                                             <TextBlock Classes="Info"/>
                                         </StackPanel>
-                                        <ComboBox Grid.Row="1" Grid.Column="1" Name="QualityBehaviorCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsViewModel.ValueBehaviorChoices}" SelectedIndex="{Binding Vm.QualityBehaviorIndex, Mode=TwoWay}" AutomationProperties.Name="Quality: how it is picked" ToolTip.Tip="Always the same quality, or the quality you used last time."/>
-                                        <ComboBox Grid.Row="1" Grid.Column="2" Name="QualityCombo" MinWidth="160" HorizontalAlignment="Left" IsEnabled="{Binding Vm.IsQualityFixed}" ItemsSource="{Binding Vm.QualityNames}" SelectedIndex="{Binding Vm.QualityIndex, Mode=TwoWay}" AutomationProperties.Name="Starting quality" ToolTip.Tip="The quality every new video starts on."/>
+                                        <ComboBox Grid.Row="1" Grid.Column="1" Name="QualityCombo" MinWidth="200" HorizontalAlignment="Left" ItemsSource="{Binding Vm.QualityNames}" SelectedIndex="{Binding Vm.QualityIndex, Mode=TwoWay}" AutomationProperties.Name="Starting quality" ToolTip.Tip="The quality every new video starts on."/>
 
-                                        <StackPanel Grid.Row="2" Classes="LabelRow" ToolTip.Tip="Phone format: makes a tall video (9:16) for TikTok, Shorts and Reels.&#x0a;&#x0a;On: always starts in phone format.  Off: always starts wide.&#x0a;Same as last time: starts the way your last export was made.">
-                                            <TextBlock Classes="Label" Text="Phone format (9:16)"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Row="2" Grid.Column="1" Name="PortraitBehaviorCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsViewModel.CheckBehaviorChoices}" SelectedIndex="{Binding Vm.PortraitBehaviorIndex, Mode=TwoWay}" AutomationProperties.Name="Phone format at start" ToolTip.Tip="On, Off, or the same as your last export."/>
-
-                                        <StackPanel Grid.Row="3" Classes="LabelRow" ToolTip.Tip="Show teammates: keeps your teammates' names and health bars in the video.&#x0a;&#x0a;On / Off: always starts that way.  Same as last time: like your last export.&#x0a;Games with 'No Mask' never show them.">
-                                            <TextBlock Classes="Label" Text="Show teammates"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Row="3" Grid.Column="1" Name="TeammatesBehaviorCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsViewModel.CheckBehaviorChoices}" SelectedIndex="{Binding Vm.TeammatesBehaviorIndex, Mode=TwoWay}" AutomationProperties.Name="Show teammates at start" ToolTip.Tip="On, Off, or the same as your last export."/>
-
-                                        <StackPanel Grid.Row="4" Classes="LabelRow" ToolTip.Tip="Fade in and out: the video gently fades from black at the start and back to black at the end.&#x0a;&#x0a;On / Off: always starts that way.  Same as last time: like your last export.">
-                                            <TextBlock Classes="Label" Text="Fade in and out"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Row="4" Grid.Column="1" Name="FadeBehaviorCombo" HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:SettingsViewModel.CheckBehaviorChoices}" SelectedIndex="{Binding Vm.FadeBehaviorIndex, Mode=TwoWay}" AutomationProperties.Name="Fade in and out at start" ToolTip.Tip="On, Off, or the same as your last export."/>
+                                        <WrapPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+                                            <CheckBox Name="DefaultPortraitCheckBox" Content="Phone format (9:16)" Margin="0,0,18,0" IsChecked="{Binding Vm.DefaultPortrait, Mode=TwoWay}"
+                                                      ToolTip.Tip="Makes a tall video for TikTok, Shorts and Reels."/>
+                                            <CheckBox Name="DefaultTeammatesCheckBox" Content="Show teammates" Margin="0,0,18,0" IsChecked="{Binding Vm.DefaultTeammates, Mode=TwoWay}"
+                                                      ToolTip.Tip="Keeps your teammates' names and health bars in the video. Games with 'No Mask' never show them."/>
+                                            <CheckBox Name="DefaultFadeCheckBox" Content="Fade in and out" IsChecked="{Binding Vm.DefaultFade, Mode=TwoWay}"
+                                                      ToolTip.Tip="The video gently fades from black at the start and back to black at the end."/>
+                                        </WrapPanel>
                                     </Grid>
 
-                                    <TextBlock Classes="H1" Text="Speed Editor"/>
-                                    <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto" RowSpacing="10">
-                                        <StackPanel Classes="LabelRow" ToolTip.Tip="When you add a zoom in the Speed Editor, how the camera gets there.&#x0a;&#x0a;Instant: jumps straight in (a hard cut).&#x0a;Gradual: glides in slowly.">
-                                            <TextBlock Classes="Label" Text="New zooms"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                            <RadioButton GroupName="ZoomType" Name="ZoomInstantRadio" Content="Instant" IsChecked="{Binding Vm.ZoomInstant, Mode=TwoWay}"/>
-                                            <RadioButton GroupName="ZoomType" Name="ZoomSlowRadio" Content="Gradual" IsChecked="{Binding Vm.ZoomSlow, Mode=TwoWay}"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Row="1" Classes="LabelRow" ToolTip.Tip="When you freeze the picture in the Speed Editor, how long it stays frozen before the video moves again.">
-                                            <TextBlock Classes="Label" Text="Freeze length"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Row="1" Grid.Column="1" Name="FreezeCombo" MinWidth="160" HorizontalAlignment="Left" ItemsSource="{x:Static vm:SettingsViewModel.FreezeChoices}" SelectedIndex="{Binding Vm.FreezeIndex, Mode=TwoWay}" AutomationProperties.Name="Freeze length" ToolTip.Tip="How long a new freeze lasts."/>
-                                    </Grid>
-
+                                    <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
+                                    <!-- SETMERGERMOVED_01 — the Video Merger switches (Skip cover pictures, Even out the volume) live in the merger only. -->
                                     <TextBlock Classes="H1" Text="Caption text"/>
                                     <!-- CAPTIONWIPE_01 -->
                                     <CheckBox Name="KeepCaptionCheckBox" Content="Keep my caption for the next video" IsChecked="{Binding Vm.KeepOverlayTextBetweenVideos, Mode=TwoWay}"
                                               ToolTip.Tip="This is about the words you type across the top of the video.&#x0a;&#x0a;OFF (normal): every new video starts with an empty box, so you can never accidentally publish a clip with the last one's title.&#x0a;&#x0a;ON: the words stay and carry over to the next video. Handy for a series with the same title, but then it is on you to change it."/>
 
-                                    <!-- SCRAPER_05 / CLIPLEVEL_01 — same flags as the Video Merger's own checkboxes. -->
-                                    <TextBlock Classes="H1" Text="Video Merger"/>
-                                    <CheckBox Name="MergerThumbnailScraperCheckBox" Content="Skip cover pictures" AutomationProperties.Name="Skip cover pictures" IsChecked="{Binding Vm.MergerThumbnailScraper, Mode=TwoWay}"
-                                              ToolTip.Tip="Removes the tiny cover picture added to the start of some clips, so it does not flash between videos. Eligible cover pictures are cut from the 2nd clip onward. The first clip keeps its cover picture unless you pick a custom thumbnail in the merger." />
-                                    <CheckBox Name="MergerMatchClipLoudnessCheckBox" Content="Even out the volume between clips" IsChecked="{Binding Vm.MergerMatchClipLoudness, Mode=TwoWay}"
-                                              ToolTip.Tip="When merging, measure every clip and bring the quiet and loud ones toward the middle (at most 12 dB), so the merged video does not jump in volume from one clip to the next. Off: every clip keeps its recorded volume." />
-
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <!-- SETCONFIRM_01 — one wording ("Ask before …"), grouped by the tool that asks. -->
-                                    <TextBlock Classes="H1" Text="Safety questions"/>
-                                    <TextBlock Classes="Hint" Text="Tick a box to be asked 'Are you sure?' first. Untick it and the action happens straight away."/>
-
-                                    <TextBlock Classes="Label" Text="Main App" Margin="0,6,0,0"/>
-                                    <CheckBox Content="Ask before CANCEL closes the app" IsChecked="{Binding Vm.ConfirmMainAppCancel, Mode=TwoWay}"
-                                              ToolTip.Tip="The CANCEL button on the main screen closes the whole app. Leave this on so a slip of the mouse never closes your work."/>
-                                    <CheckBox Content="Ask before opening the Video Merger or Crop Tool" IsChecked="{Binding Vm.ConfirmMainAppSwitchTool, Mode=TwoWay}"
-                                              ToolTip.Tip="Those tools replace the main screen. You are only asked when you actually have edits in progress, never right after uploading a video."/>
-                                    <CheckBox Content="Ask before 'Exit App' or 'New File' on the finished screen" IsChecked="{Binding Vm.ConfirmFinishedDialogExit, Mode=TwoWay}"
-                                              ToolTip.Tip="Off out of the box. These two buttons sit next to OPEN FOLDER and either close the app or start a new project."/>
-
-                                    <TextBlock Classes="Label" Text="Speed Editor" Margin="0,6,0,0"/>
-                                    <CheckBox Content="Ask before deleting a speed segment" IsChecked="{Binding Vm.ConfirmGranularDeleteSegment, Mode=TwoWay}"
-                                              ToolTip.Tip="Covers the DELETE SEGMENT button, the Delete key and the little red ✕. You can always undo a delete with Ctrl+Z."/>
-                                    <CheckBox Content="Ask before 'Clear All Segments'" IsChecked="{Binding Vm.ConfirmGranularClearAll, Mode=TwoWay}"
-                                              ToolTip.Tip="Clear All removes every speed segment, freeze and zoom in one click. You can undo it with Ctrl+Z."/>
-                                    <CheckBox Content="Ask before cutting a part out of the video (DELETE PARTS)" IsChecked="{Binding Vm.ConfirmMainAppCut, Mode=TwoWay}"
-                                              ToolTip.Tip="Off out of the box so cutting stays fast. A cut made by accident can be taken straight back with Ctrl+Z."/>
-
-                                    <TextBlock Classes="Label" Text="Video Merger" Margin="0,6,0,0"/>
-                                    <CheckBox Content="Ask before removing a clip" IsChecked="{Binding Vm.ConfirmVideoMergerRemove, Mode=TwoWay}"
-                                              ToolTip.Tip="Covers the Delete key, right-click and Remove. Off: the clip is removed at once and a notice tells you Ctrl+Z brings it back."/>
-                                    <CheckBox Content="Ask before 'Clear All' clips" IsChecked="{Binding Vm.ConfirmVideoMergerClearAll, Mode=TwoWay}"
-                                              ToolTip.Tip="Clear All empties the whole list of clips you are merging."/>
-
-                                    <TextBlock Classes="Label" Text="Crop Tool" Margin="0,6,0,0"/>
-                                    <CheckBox Content="Ask before 'Reset' (whole layout)" IsChecked="{Binding Vm.ConfirmCropToolReset, Mode=TwoWay}"
-                                              ToolTip.Tip="Reset throws away every box you drew for this game's layout and starts again."/>
-                                    <CheckBox Content="Ask before deleting a layer" IsChecked="{Binding Vm.ConfirmCropToolDelete, Mode=TwoWay}"
-                                              ToolTip.Tip="A layer is one of the boxes (health bar, map…) you drew in the Crop Tool."/>
-
-                                    <TextBlock Classes="Label" Text="Voice Over" Margin="0,6,0,0"/>
-                                    <CheckBox Content="Ask before deleting a recording" IsChecked="{Binding Vm.ConfirmVoiceOverDeleteTake, Mode=TwoWay}"
-                                              ToolTip.Tip="Off out of the box. The recording's sound file is deleted from your computer straight away and cannot be brought back."/>
+                                    <!-- SETSAFEONE_01 — one switch replaces the eleven "Ask before…" boxes. -->
+                                    <TextBlock Classes="H1" Text="Safety"/>
+                                    <CheckBox Name="AskBeforeRiskyCheckBox" Content="Ask 'Are you sure?' before things you can't undo" IsChecked="{Binding Vm.AskBeforeRiskyActions, Mode=TwoWay}"
+                                              ToolTip.Tip="ON (recommended): the app asks first before closing with work in progress, leaving your edit for the Video Merger or Crop Tool, clearing the merger's whole list, resetting a whole crop layout, or deleting a voice recording.&#x0a;&#x0a;Things you can take back with Ctrl+Z (deleting a segment, cutting a part, removing a clip…) never ask.&#x0a;&#x0a;OFF: the app never asks."/>
                                 </StackPanel>
                             </ScrollViewer>
                         </TabItem>
 
                         <!-- ═════════════════════════ FILES & FOLDERS ═════════════════════════ -->
-                        <!-- OUTNAME_01 / ISSUE_04 — where each tool saves finished videos and how they are named. -->
+                        <!-- OUTNAME_01 / ISSUE_04 — where finished videos are saved and how they are named. -->
                         <TabItem Header="Files &amp; Folders" Name="FilesTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Classes="Page">
@@ -342,35 +294,28 @@
                                     </StackPanel>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
+                                    <!-- SETFOLDERONE_01 — one save folder for the Main App and the Video Merger. -->
                                     <TextBlock Classes="H1" Text="Finished videos"/>
                                     <TextBlock Classes="Hint" Text="Each video gets the name you type plus the next free number, so nothing is ever overwritten."/>
 
-                                    <TextBlock Classes="Label" Text="Main App: save to" Margin="0,6,0,0"/>
-                                    <TextBox Name="MainOutputFolderTextBox" IsReadOnly="True" Text="{Binding Vm.MainOutputFolderDisplay}" AutomationProperties.Name="Main App save folder" ToolTip.Tip="Where the Main App saves finished videos."/>
+                                    <TextBlock Classes="Label" Text="Save to" Margin="0,6,0,0"/>
+                                    <TextBox Name="SaveFolderTextBox" IsReadOnly="True" Text="{Binding Vm.SaveFolderDisplay}" AutomationProperties.Name="Save folder" ToolTip.Tip="Where the Main App and the Video Merger save finished videos."/>
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Name="ChangeMainOutputFolderBtn" Click="OnChangeMainOutputFolder" Classes="Primary" Content="Change folder…" Cursor="Hand" ToolTip.Tip="Pick the folder the Main App saves finished videos into."/>
-                                        <Button Name="ResetMainOutputFolderBtn" Click="OnResetMainOutputFolder" Classes="Secondary" Content="Use Downloads" Cursor="Hand" ToolTip.Tip="Go back to saving into your Windows Downloads folder."/>
+                                        <Button Name="ChangeSaveFolderBtn" Click="OnChangeSaveFolder" Classes="Primary" Content="Change folder…" Cursor="Hand" ToolTip.Tip="Pick the folder finished videos are saved into."/>
+                                        <Button Name="ResetSaveFolderBtn" Click="OnResetSaveFolder" Classes="Secondary" Content="Use Downloads" Cursor="Hand" ToolTip.Tip="Go back to saving into your Windows Downloads folder."/>
                                     </StackPanel>
-                                    <TextBlock Classes="Label" Text="Main App: file name"/>
+
+                                    <!-- SETNAMEONE_01 — ONE file name; the Video Merger adds "-merged" to it. -->
+                                    <TextBlock Classes="Label" Text="File name" Margin="0,6,0,0"/>
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <TextBox Name="MainOutputBaseNameTextBox" Text="{Binding Vm.MainOutputBaseName, Mode=TwoWay}" MinWidth="300" MaxLength="80" AutomationProperties.Name="Main App file name"
-                                                 ToolTip.Tip="The name in front of the number. Example: FreeVideoStudio gives FreeVideoStudio-1.mp4, FreeVideoStudio-2.mp4 … Letters Windows does not allow in file names are removed for you."/>
+                                        <TextBox Name="MainOutputBaseNameTextBox" Text="{Binding Vm.MainOutputBaseName, Mode=TwoWay}" MinWidth="300" MaxLength="80" AutomationProperties.Name="File name"
+                                                 ToolTip.Tip="The name in front of the number. Example: Clips gives Clips-1.mp4, Clips-2.mp4 … from the Main App, and Clips-merged-1.mp4, Clips-merged-2.mp4 … from the Video Merger. Letters Windows does not allow in file names are removed for you."/>
                                         <Button Name="ResetMainOutputBaseNameBtn" Click="OnResetMainOutputBaseName" Classes="Secondary" Content="Default" Cursor="Hand" ToolTip.Tip="Restore the default name."/>
                                     </StackPanel>
+                                    <!-- SETNAMEWARN_01 — what SAVE will change in the typed name, said before SAVE. -->
+                                    <TextBlock Name="MainOutputNameWarningText" Text="{Binding Vm.MainOutputNameWarning}" IsVisible="{Binding Vm.MainOutputNameWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                               Foreground="{DynamicResource AppDangerBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                     <TextBlock Name="MainOutputNamePreviewText" Classes="Hint" Text="{Binding Vm.MainOutputNamePreview}"/>
-
-                                    <TextBlock Classes="Label" Text="Video Merger: save to" Margin="0,10,0,0"/>
-                                    <TextBox Name="MergerOutputFolderTextBox" IsReadOnly="True" Text="{Binding Vm.MergerOutputFolderDisplay}" AutomationProperties.Name="Video Merger save folder" ToolTip.Tip="Where the Video Merger saves merged videos."/>
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Name="ChangeMergerOutputFolderBtn" Click="OnChangeMergerOutputFolder" Classes="Primary" Content="Change folder…" Cursor="Hand" ToolTip.Tip="Pick the folder the Video Merger saves merged videos into."/>
-                                        <Button Name="ResetMergerOutputFolderBtn" Click="OnResetMergerOutputFolder" Classes="Secondary" Content="Use Downloads" Cursor="Hand" ToolTip.Tip="Go back to saving into your Windows Downloads folder."/>
-                                    </StackPanel>
-                                    <TextBlock Classes="Label" Text="Video Merger: file name"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <TextBox Name="MergerOutputBaseNameTextBox" Text="{Binding Vm.MergerOutputBaseName, Mode=TwoWay}" MinWidth="300" MaxLength="80" AutomationProperties.Name="Video Merger file name"
-                                                 ToolTip.Tip="The name in front of the number. Example: Merged-Videos gives Merged-Videos-1.mp4, Merged-Videos-2.mp4 …"/>
-                                        <Button Name="ResetMergerOutputBaseNameBtn" Click="OnResetMergerOutputBaseName" Classes="Secondary" Content="Default" Cursor="Hand" ToolTip.Tip="Restore the default name."/>
-                                    </StackPanel>
                                     <TextBlock Name="MergerOutputNamePreviewText" Classes="Hint" Text="{Binding Vm.MergerOutputNamePreview}"/>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
@@ -392,76 +337,18 @@
                         <TabItem Header="Sound &amp; Music" Name="SoundTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Name="GeneralPanel" Classes="Page">
-                                    <TextBlock Classes="H1" Text="Music and game sound" Margin="0,4,0,0"/>
-                                    <TextBlock Classes="Hint" Text="When your video has background music, these helpers stop the music from hiding your game sounds. Slide a handle up for stronger, down for gentler. The middle is normal."/>
-                                    <!-- DUCKSTRENGTH_01 — two switches + two strength handles (styled like the Music Wizard's
-                                         MIX rack). The handles start in the MIDDLE = the tuned out-of-the-box value; whole steps
-                                         only (SidechainCompressNode.RatioFor), so nothing ever jumps. -->
-                                    <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,6,0,0" MaxWidth="640" HorizontalAlignment="Left">
-                                        <Border Grid.Column="0" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False"
-                                                ToolTip.Tip="How much quieter the music gets when the game gets loud.&#x0a;&#x0a;Middle = normal (recommended).&#x0a;Up = the music gets quieter during loud game moments.&#x0a;Down = the music stays louder.">
-                                            <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <TextBlock Grid.Row="0" Text="DIP" HorizontalAlignment="Center" FontWeight="Bold"
-                                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" IsHitTestVisible="False"/>
-                                                <TextBlock Grid.Row="2" Name="DuckingStrengthLabel" Text="{Binding Vm.Mix.DuckingLabel}" HorizontalAlignment="Center"
-                                                           Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" IsHitTestVisible="False"/>
-                                                <!-- SLIDER_07/09: no Width, slider painted last, labels not hit-testable. -->
-                                                <Slider Grid.Row="1" Name="DuckingStrengthSlider" Classes="CompactSlider" Orientation="Vertical"
-                                                        Minimum="0" Maximum="100" Value="{Binding Vm.Mix.DuckingStrength, Mode=TwoWay}"
-                                                        TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="1" LargeChange="5"
-                                                        MinHeight="130" HorizontalAlignment="Center" VerticalAlignment="Stretch" ClipToBounds="False"
-                                                        AutomationProperties.Name="Music dip strength"
-                                                        IsEnabled="{Binding Vm.Mix.DuckingEnabled}"/>
-                                            </Grid>
-                                        </Border>
-                                        <Border Grid.Column="1" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False" Margin="-1,0,0,0"
-                                                ToolTip.Tip="How much room the music makes for game sounds and voices.&#x0a;&#x0a;Middle = normal (recommended).&#x0a;Up = game sounds come through clearer.&#x0a;Down = the music keeps more of its own sound.">
-                                            <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <TextBlock Grid.Row="0" Text="ROOM" HorizontalAlignment="Center" FontWeight="Bold"
-                                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" IsHitTestVisible="False"/>
-                                                <TextBlock Grid.Row="2" Name="CarvingStrengthLabel" Text="{Binding Vm.Mix.CarvingLabel}" HorizontalAlignment="Center"
-                                                           Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" IsHitTestVisible="False"/>
-                                                <!-- SLIDER_07/09: no Width, slider painted last, labels not hit-testable. -->
-                                                <Slider Grid.Row="1" Name="CarvingStrengthSlider" Classes="CompactSlider" Orientation="Vertical"
-                                                        Minimum="0" Maximum="100" Value="{Binding Vm.Mix.CarvingStrength, Mode=TwoWay}"
-                                                        TickFrequency="1" IsSnapToTickEnabled="True" SmallChange="1" LargeChange="5"
-                                                        MinHeight="130" HorizontalAlignment="Center" VerticalAlignment="Stretch" ClipToBounds="False"
-                                                        AutomationProperties.Name="Make room strength"
-                                                        IsEnabled="{Binding Vm.Mix.CarvingEnabled}"/>
-                                            </Grid>
-                                        </Border>
-                                        <StackPanel Grid.Column="2" Margin="14,0,0,0" Spacing="4" VerticalAlignment="Top">
-                                            <CheckBox Name="DuckingEnabledCheckbox" Content="Music dips when the game gets loud" IsChecked="{Binding Vm.Mix.DuckingEnabled, Mode=TwoWay}"
-                                                      ToolTip.Tip="Leave this ON.&#x0a;&#x0a;When something loud happens in your game (a shot, a shout, a crash), the music gets quieter for a moment so you can hear it. Then the music comes back.&#x0a;&#x0a;OFF: the music stays at the same volume all the time.&#x0a;Handle: DIP."/>
-                                            <CheckBox Name="CarvingEnabledCheckbox" Content="Music makes room for game sounds" IsChecked="{Binding Vm.Mix.CarvingEnabled, Mode=TwoWay}"
-                                                      ToolTip.Tip="Leave this ON.&#x0a;&#x0a;Music and game sounds often sound alike, so they blur together. This makes a little space in the music, only while the game is making noise, so voices and game sounds stay clear.&#x0a;&#x0a;OFF: the music is never changed.&#x0a;Handle: ROOM."/>
-                                            <Button Name="ResetMixStrengthsBtn" Content="Back to normal" Classes="Secondary" HorizontalAlignment="Left" Cursor="Hand" Margin="0,6,0,0"
-                                                    Command="{Binding Vm.Mix.ResetCommand}"
-                                                    ToolTip.Tip="Puts both handles back in the middle (the normal setting)."/>
-                                            <TextBlock Classes="Hint" FontStyle="Italic" Text="You hear the result in the main preview after the Add Music wizard closes, and in every export."/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <CheckBox Name="RememberVolumesCheckbox" Content="Remember my music and video volumes" IsChecked="{Binding Vm.RememberMusicVolumes, Mode=TwoWay}"
-                                              ToolTip.Tip="ON: the Add Music wizard starts with the music and video volumes you set last time.&#x0a;OFF: it starts with the normal volumes every time."/>
-
-                                    <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
-                                    <!-- VOPROT_02 — who owns the two Voice Over Studio protection checkboxes. -->
-                                    <TextBlock Classes="H1" Text="Voice over"/>
-                                    <TextBlock Classes="Hint" Text="While your recorded voice plays, the Voice Over Studio can turn the game and the music down so your words stay clear."/>
-                                    <Grid ColumnDefinitions="260,*" RowDefinitions="Auto,Auto" RowSpacing="10">
-                                        <StackPanel Classes="LabelRow" ToolTip.Tip="Controls the 'protect from gameplay sound' switch in the Voice Over Studio.&#x0a;&#x0a;Same as last time: the switch starts the way you left it.&#x0a;Always on / Always off: the switch is locked that way (it shows greyed out in the studio).">
-                                            <TextBlock Classes="Label" Text="Turn the game down for my voice"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Column="1" Name="VoiceProtectGameComboBox" MinWidth="200" HorizontalAlignment="Left" ItemsSource="{x:Static vm:SettingsViewModel.VoiceProtectChoices}" SelectedIndex="{Binding Vm.VoiceProtectGameIndex, Mode=TwoWay}" AutomationProperties.Name="Turn the game down for my voice" ToolTip.Tip="Same as last time, always on, or always off."/>
-                                        <StackPanel Grid.Row="1" Classes="LabelRow" ToolTip.Tip="Controls the 'protect from music' switch in the Voice Over Studio. Does nothing on videos without music.&#x0a;&#x0a;Same as last time: the switch starts the way you left it.&#x0a;Always on / Always off: the switch is locked that way.">
-                                            <TextBlock Classes="Label" Text="Turn the music down for my voice"/>
-                                            <TextBlock Classes="Info"/>
-                                        </StackPanel>
-                                        <ComboBox Grid.Row="1" Grid.Column="1" Name="VoiceProtectMusicComboBox" MinWidth="200" HorizontalAlignment="Left" ItemsSource="{x:Static vm:SettingsViewModel.VoiceProtectChoices}" SelectedIndex="{Binding Vm.VoiceProtectMusicIndex, Mode=TwoWay}" AutomationProperties.Name="Turn the music down for my voice" ToolTip.Tip="Same as last time, always on, or always off."/>
-                                    </Grid>
+                                    <!-- SETSOUNDONE_01 — one 4-way choice replaces two switches, two strength handles and a reset button. -->
+                                    <StackPanel Classes="LabelRow" Margin="0,4,0,0" ToolTip.Tip="When your video has background music, the app stops the music from hiding your game sounds: the music gets quieter for a moment when the game gets loud, and makes a little room for voices and game sounds.&#x0a;&#x0a;Off: the music is never changed.&#x0a;Gentle: the music gives way only a little.&#x0a;Normal (recommended): the tuned out-of-the-box setting.&#x0a;Strong: game sounds always come through clearly.&#x0a;&#x0a;You hear it in the main preview and in every export.">
+                                        <TextBlock Classes="H1" Text="Keep game sounds clear" Margin="0"/>
+                                        <TextBlock Classes="Info"/>
+                                    </StackPanel>
+                                    <TextBlock Classes="Hint" Text="When your video has music: how much the music gives way to your game sounds."/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <RadioButton GroupName="ClearSound" Name="ClearOffRadio" Content="Off" IsChecked="{Binding Vm.ClearOff, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="ClearSound" Name="ClearGentleRadio" Content="Gentle" IsChecked="{Binding Vm.ClearGentle, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="ClearSound" Name="ClearNormalRadio" Content="Normal" IsChecked="{Binding Vm.ClearNormal, Mode=TwoWay}"/>
+                                        <RadioButton GroupName="ClearSound" Name="ClearStrongRadio" Content="Strong" IsChecked="{Binding Vm.ClearStrong, Mode=TwoWay}"/>
+                                    </WrapPanel>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
                                     <!-- SETLOUD_01 — one 3-way choice (was a list + a contradicting master switch). -->
@@ -500,15 +387,17 @@
                         </TabItem>
 
                         <!-- ═════════════════════════ AI ═════════════════════════ -->
-                        <!-- AIPROVIDER_UI_01 / AIDEFAULT_01 / AISETTINGS_UI_02 — ONE tab for everything AI. SETPRIORITY_01:
-                             the feature switches come first; the keys sit in one panel below them. -->
+                        <!-- AIPROVIDER_UI_01 / SETAIONE_01 — ONE AI company for every feature, ONE key box (SETKEYONE_01).
+                             AI permissions are given by saving a key (SETNOCONSENTUI_01). -->
                         <TabItem Header="AI" Name="AiFeaturesTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Classes="Page" Spacing="14">
                                     <TextBlock Classes="Hint" Margin="0,4,0,0" Text="AI runs in the cloud with your own key. Nothing is sent until you use an AI feature."/>
                                     <Border Classes="Card" BorderBrush="{DynamicResource AppWarningBrush}" IsVisible="{Binding Vm.AiNeedsKey}">
-                                        <TextBlock Classes="Hint" Foreground="{DynamicResource AppWarningBrush}" Text="Add an AI key in 'AI keys' below first. Greyed-out features switch on as soon as their company has a key."/>
+                                        <TextBlock Classes="Hint" Foreground="{DynamicResource AppWarningBrush}" Text="Add an AI key in 'AI keys' first. Greyed-out features switch on as soon as their company has a key."/>
                                     </Border>
+                                    <!-- SETKEYSFIRST_01 — the "AI keys" panel moves here (top) when no key is saved yet. -->
+                                    <StackPanel Name="AiKeysTopHost"/>
 
                                     <TextBlock Classes="H1" Text="Features" Margin="0"/>
                                     <Border Classes="Card">
@@ -527,21 +416,13 @@
                                             <TextBlock Classes="Hint" Text="Puts a red ✕ above the timeline at each of your kills. Sends up to 60 still pictures per video to your AI company."/>
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Classes="Hint" Text="Always available where you work: AI SMART ZOOM and AI COMMENTARY in the Speed Editor, MAGIC WAND in the Crop Tool, and AI Auto-Fit in the Add Music wizard."/>
+                                    <TextBlock Classes="Hint" Text="Always available where you work: AI SMART ZOOM and AI COMMENTARY in the Speed Editor, MAGIC WAND in the Crop Tool, and AI Auto-Fit in the Add Music wizard. Saving a key lets them send pictures and short clips to that company."/>
 
-                                    <!-- Privacy: what each on-demand feature may send. -->
-                                    <TextBlock Classes="H1" Text="What may be sent" Margin="0"/>
-                                    <CheckBox Name="AiZoomConsentCheckbox" IsEnabled="{Binding Vm.AiZoomReady}" IsChecked="{Binding Vm.AiZoomConsent, Mode=TwoWay}"
-                                              Content="AI Smart Zoom: still pictures and short silent clips"
-                                              ToolTip.Tip="Lets AI SMART ZOOM send still pictures and short, silent, small clips of your video to your AI company so it can follow the action.&#x0a;OFF: it asks you the first time you press AI SMART ZOOM."/>
-                                    <CheckBox Name="AiWandConsentCheckbox" IsEnabled="{Binding Vm.AiWandReady}" IsChecked="{Binding Vm.AiWandConsent, Mode=TwoWay}"
-                                              Content="Magic Wand (Crop Tool): one still picture"
-                                              ToolTip.Tip="Lets the Crop Tool's Magic Wand send the paused picture to your AI company for extra suggestions.&#x0a;OFF: it asks first. The Magic Wand works without the internet either way."/>
-                                    <CheckBox Name="AiCommentaryConsentCheckbox" IsEnabled="{Binding Vm.AiCommentaryReady}" IsChecked="{Binding Vm.AiCommentaryConsent, Mode=TwoWay}"
-                                              Content="AI Commentary: short clips with game sound"
-                                              ToolTip.Tip="Lets AI COMMENTARY send short clips (with the game's sound) or still pictures to your AI company so it can comment on them.&#x0a;OFF: it asks you the first time you press AI COMMENTARY."/>
+                                    <!-- AIUSAGE_04 — what AI cost in this session (tokens reported by the company; dollars are estimates). -->
+                                    <TextBlock Name="AiSessionUsageText" Classes="Hint" TextWrapping="Wrap"
+                                               AutomationProperties.Name="AI usage this session"/>
 
-                                    <!-- 1. AI provider used by every feature -->
+                                    <!-- SETAIONE_01 — one company for every feature; the model is under Advanced (SETAIMODEL_01). -->
                                     <TextBlock Classes="H1" Text="AI company" Margin="0"/>
                                     <Border Classes="Card">
                                         <StackPanel Spacing="8">
@@ -550,124 +431,57 @@
                                                 <TextBlock Name="AiDefaultRecommendedBadge" Grid.Column="1" Text="★ Recommended: Google Gemini · gemini-3.8-flash"
                                                            Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             </Grid>
-                                            <Grid ColumnDefinitions="170, 10, *, 10, Auto, 10, Auto">
-                                                <ComboBox Name="AiDefaultVendorCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="AI company" ToolTip.Tip="Which AI company to use. You need a key from that company."/>
-                                                <ComboBox Name="AiDefaultModelCombo" Grid.Column="2" HorizontalAlignment="Stretch" AutomationProperties.Name="AI model" ToolTip.Tip="Which of that company's AI models to use. The recommended one is fast and cheap."/>
-                                                <Button Name="AiDefaultRefreshBtn" Grid.Column="4" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Asks the company which models your key can use and updates the list."/>
-                                                <Button Name="AiDefaultUseRecommendedBtn" Grid.Column="6" Classes="Secondary" Content="Use recommended" Cursor="Hand" ToolTip.Tip="Google Gemini with the recommended model."/>
-                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <ComboBox Name="AiDefaultVendorCombo" MinWidth="200" AutomationProperties.Name="AI company" ToolTip.Tip="Which AI company to use. You need a key from that company."/>
+                                                <Button Name="AiDefaultUseRecommendedBtn" Classes="Secondary" Content="Use recommended" Cursor="Hand" ToolTip.Tip="Google Gemini with the recommended model."/>
+                                            </StackPanel>
+                                            <Expander Name="AiModelExpander" Header="Advanced: AI model" HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="Which of that company's AI models to use. The recommended one is fast and cheap. Most people never change this.">
+                                                <Grid ColumnDefinitions="*, 10, Auto" Margin="0,8,0,0">
+                                                    <ComboBox Name="AiDefaultModelCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="AI model" ToolTip.Tip="Which of that company's AI models to use. The recommended one is fast and cheap."/>
+                                                    <Button Name="AiDefaultRefreshBtn" Grid.Column="2" Classes="Secondary" Content="Refresh" Cursor="Hand" ToolTip.Tip="Asks the company which models your key can use and updates the list."/>
+                                                </Grid>
+                                            </Expander>
                                         </StackPanel>
                                     </Border>
 
+                                    <!-- SETKEYONE_01 — paste ANY key: the company is recognised from it. -->
                                     <Expander Name="AiKeysExpander" Header="AI keys" HorizontalAlignment="Stretch"
                                               ToolTip.Tip="A key is like a password from the AI company that lets the app use its AI on your account. Keys are stored encrypted, for your Windows account only.">
-                                        <StackPanel Spacing="12" Margin="0,8,0,0">
-                                            <!-- Google Gemini -->
-                                            <Border Name="AiGeminiKeyCard" Classes="Card">
-                                                <StackPanel Spacing="8">
-                                                    <TextBlock Text="Google Gemini key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                    <Grid ColumnDefinitions="*, Auto, Auto">
-                                                        <TextBox Name="AiGeminiApiKeyTextBox" PasswordChar="•" Watermark="Paste your Google Gemini key here…" Text="{Binding Vm.GeminiApiKey, Mode=TwoWay}"
-                                                                 MinWidth="240" Margin="0,0,10,0" AutomationProperties.Name="Google Gemini key"/>
-                                                        <Button Name="AiTestConnectionBtn" Grid.Column="1" Classes="Primary" Content="Test" Cursor="Hand" MinWidth="80"
-                                                                ToolTip.Tip="Checks the key with Google, using the model picked above."/>
-                                                        <Button Name="AiRemoveKeyBtn" Grid.Column="2" Classes="Secondary" Content="Remove" Cursor="Hand" Margin="10,0,0,0"
-                                                                ToolTip.Tip="Clears this key. It is deleted when you press SAVE."/>
-                                                    </Grid>
-                                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Button Name="AiGetFreeKeyBtn" Classes="Secondary" Content="Get a free Google key" Cursor="Hand"
-                                                                ToolTip.Tip="Opens Google AI Studio in your browser, where you can make a free key."/>
-                                                        <TextBlock Name="AiConnectionStatusText" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"
-                                                                   Foreground="{DynamicResource AppTextMutedBrush}" Text="Not tested yet" TextWrapping="Wrap" MaxWidth="380"/>
-                                                    </StackPanel>
-                                                </StackPanel>
-                                            </Border>
-                                            <!-- Anthropic Claude -->
-                                            <Border Name="AiClaudeKeyCard" Classes="Card">
-                                                <StackPanel Spacing="8">
-                                                    <TextBlock Text="Anthropic Claude key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                    <Grid ColumnDefinitions="*, Auto, Auto">
-                                                        <TextBox Name="AiClaudeApiKeyTextBox" PasswordChar="•" Watermark="Paste your Anthropic key (sk-ant-…) here…" Text="{Binding Vm.ClaudeApiKey, Mode=TwoWay}"
-                                                                 MinWidth="240" Margin="0,0,10,0" AutomationProperties.Name="Anthropic Claude key"/>
-                                                        <Button Name="AiTestClaudeBtn" Grid.Column="1" Classes="Primary" Content="Test" Cursor="Hand" MinWidth="80"
-                                                                ToolTip.Tip="Checks the key with Anthropic."/>
-                                                        <Button Name="AiRemoveClaudeKeyBtn" Grid.Column="2" Classes="Secondary" Content="Remove" Cursor="Hand" Margin="10,0,0,0"
-                                                                ToolTip.Tip="Clears this key. It is deleted when you press SAVE."/>
-                                                    </Grid>
-                                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Button Name="AiGetClaudeKeyBtn" Classes="Secondary" Content="Get an Anthropic key" Cursor="Hand"
-                                                                ToolTip.Tip="Opens the Anthropic Console in your browser, where you can make a key."/>
-                                                        <TextBlock Name="AiClaudeStatusText" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"
-                                                                   Foreground="{DynamicResource AppTextMutedBrush}" Text="Not tested yet" TextWrapping="Wrap" MaxWidth="380"/>
-                                                    </StackPanel>
-                                                </StackPanel>
-                                            </Border>
-                                            <!-- OpenAI -->
-                                            <Border Name="AiOpenAiKeyCard" Classes="Card">
-                                                <StackPanel Spacing="8">
-                                                    <TextBlock Text="OpenAI key" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                                    <Grid ColumnDefinitions="*, Auto, Auto">
-                                                        <TextBox Name="AiOpenAiApiKeyTextBox" PasswordChar="•" Watermark="Paste your OpenAI key (sk-…) here…" Text="{Binding Vm.OpenAiApiKey, Mode=TwoWay}"
-                                                                 MinWidth="240" Margin="0,0,10,0" AutomationProperties.Name="OpenAI key"/>
-                                                        <Button Name="AiTestOpenAiBtn" Grid.Column="1" Classes="Primary" Content="Test" Cursor="Hand" MinWidth="80"
-                                                                ToolTip.Tip="Checks the key with OpenAI."/>
-                                                        <Button Name="AiRemoveOpenAiKeyBtn" Grid.Column="2" Classes="Secondary" Content="Remove" Cursor="Hand" Margin="10,0,0,0"
-                                                                ToolTip.Tip="Clears this key. It is deleted when you press SAVE."/>
-                                                    </Grid>
-                                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Button Name="AiGetOpenAiKeyBtn" Classes="Secondary" Content="Get an OpenAI key" Cursor="Hand"
-                                                                ToolTip.Tip="Opens the OpenAI platform in your browser, where you can make a key."/>
-                                                        <TextBlock Name="AiOpenAiStatusText" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"
-                                                                   Foreground="{DynamicResource AppTextMutedBrush}" Text="Not tested yet" TextWrapping="Wrap" MaxWidth="380"/>
-                                                    </StackPanel>
-                                                </StackPanel>
-                                            </Border>
+                                        <StackPanel Spacing="10" Margin="0,8,0,0">
+                                            <TextBlock Classes="Hint" Text="Paste a key from Google, Anthropic or OpenAI. The app recognises the company by itself."/>
+                                            <Grid ColumnDefinitions="*, Auto, Auto">
+                                                <TextBox Name="AiNewKeyTextBox" PasswordChar="•" Watermark="Paste any AI key here…" MinWidth="240" Margin="0,0,10,0"
+                                                         AutomationProperties.Name="Paste an AI key"/>
+                                                <!-- SETREVEAL_01 — show the key while checking it for typos; hidden again on leaving the tab or window. -->
+                                                <ToggleButton Name="AiNewKeyRevealBtn" Grid.Column="1" Classes="Secondary" Content="👁" MinWidth="40" Margin="0,0,10,0" Cursor="Hand"
+                                                              IsChecked="{Binding #AiNewKeyTextBox.RevealPassword, Mode=TwoWay}" AutomationProperties.Name="Show the key"
+                                                              ToolTip.Tip="Shows the key as letters so you can check it. It goes back to dots when you leave this tab."/>
+                                                <Button Name="AiAddKeyBtn" Grid.Column="2" Classes="Primary" Content="Add key" Cursor="Hand" MinWidth="90"
+                                                        ToolTip.Tip="Recognises the company, checks the key with it, and keeps it (saved when you press SAVE)."/>
+                                            </Grid>
+                                            <TextBlock Name="AiAddKeyStatusText" Classes="Hint" Text="" TextWrapping="Wrap"/>
+                                            <!-- One row per saved key (built in SettingsWindow.AiTracking.cs). -->
+                                            <StackPanel Name="AiSavedKeysPanel" Spacing="8"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <TextBlock Classes="Hint" Text="No key yet? Get one:" VerticalAlignment="Center"/>
+                                                <Button Name="AiGetFreeKeyBtn" Classes="Secondary" Content="Google (free)" Cursor="Hand" ToolTip.Tip="Opens Google AI Studio in your browser, where you can make a free key."/>
+                                                <Button Name="AiGetClaudeKeyBtn" Classes="Secondary" Content="Anthropic" Cursor="Hand" ToolTip.Tip="Opens the Anthropic Console in your browser, where you can make a key."/>
+                                                <Button Name="AiGetOpenAiKeyBtn" Classes="Secondary" Content="OpenAI" Cursor="Hand" ToolTip.Tip="Opens the OpenAI platform in your browser, where you can make a key."/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Smart Zoom camera -->
-                                    <Expander Header="AI Smart Zoom camera" HorizontalAlignment="Stretch">
-                                        <StackPanel Spacing="12" Margin="0,8,0,0">
-                                            <StackPanel Spacing="4">
-                                                <StackPanel Classes="LabelRow" ToolTip.Tip="Tells the AI who must never be followed (your own character in third-person games, your own hands and gun in first-person games) and where the game's corner displays are.&#x0a;&#x0a;This is picked for you from 'Your game' on the Editing tab. Change it only if the camera follows the wrong thing.">
-                                                    <TextBlock Classes="Label" Text="Camera view"/>
-                                                    <TextBlock Classes="Info"/>
-                                                </StackPanel>
-                                                <ComboBox Name="AiGameProfileCombo" MinWidth="260" ItemsSource="{Binding Vm.AiCameraViewNames}" SelectedIndex="{Binding Vm.AiCameraViewIndex, Mode=TwoWay}" AutomationProperties.Name="Camera view"/>
-                                                <TextBlock Classes="Hint" Text="Picked automatically from 'Your game' on the Editing tab."/>
-                                            </StackPanel>
-                                            <StackPanel Spacing="4" ToolTip.Tip="How close the camera moves in when the action is calm or slow. Bigger number = closer.">
-                                                <Grid ColumnDefinitions="*, Auto">
-                                                    <TextBlock Classes="Label" Text="Normal zoom"/>
-                                                    <TextBlock Name="AiBaseZoomLabel" Grid.Column="1" Text="{Binding Vm.AiZoomBaseLabel}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                                </Grid>
-                                                <Slider Name="AiBaseZoomSlider" Minimum="1.5" Maximum="4.0" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5" Value="{Binding Vm.AiZoomBaseScale, Mode=TwoWay}" AutomationProperties.Name="Normal zoom"/>
-                                            </StackPanel>
-                                            <StackPanel Spacing="4" ToolTip.Tip="When the action moves fast, the camera backs off to this zoom so nothing runs out of the picture.&#x0a;It can never be closer than the normal zoom above.">
-                                                <Grid ColumnDefinitions="*, Auto">
-                                                    <TextBlock Classes="Label" Text="Zoom on fast moves"/>
-                                                    <TextBlock Name="AiMinZoomLabel" Grid.Column="1" Text="{Binding Vm.AiZoomMinLabel}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                                </Grid>
-                                                <Slider Name="AiMinZoomSlider" Minimum="1.1" Maximum="{Binding Vm.AiZoomMinMaximum}" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.2" Value="{Binding Vm.AiZoomMinScale, Mode=TwoWay}" AutomationProperties.Name="Zoom on fast moves"/>
-                                                <TextBlock Classes="Hint" Text="Can't be closer than the normal zoom."/>
-                                            </StackPanel>
-                                            <StackPanel Spacing="4" ToolTip.Tip="Tiny movements smaller than this are ignored, so the camera does not twitch.&#x0a;Higher = calmer camera. Lower = follows more closely.">
-                                                <Grid ColumnDefinitions="*, Auto">
-                                                    <TextBlock Classes="Label" Text="Steadiness"/>
-                                                    <TextBlock Name="AiDeadbandLabel" Grid.Column="1" Text="{Binding Vm.AiZoomDeadbandLabel}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
-                                                </Grid>
-                                                <Slider Name="AiDeadbandSlider" Minimum="0" Maximum="6" TickFrequency="0.5" IsSnapToTickEnabled="True" SmallChange="0.5" LargeChange="1" Value="{Binding Vm.AiZoomDeadbandPercent, Mode=TwoWay}" AutomationProperties.Name="Steadiness"/>
-                                            </StackPanel>
-                                            <CheckBox Name="AiAvoidHudCheckbox" Content="Keep the camera off the game's corner displays" IsChecked="{Binding Vm.AiZoomAvoidHud, Mode=TwoWay}"
-                                                      ToolTip.Tip="Moves the zoom away from the health bar, map and weapon corners when it can do so without losing the action. Uses your Crop Tool layout, or the usual corners."/>
-                                        </StackPanel>
-                                    </Expander>
-
-                                    <!-- Advanced: one feature, a different AI -->
-                                    <Expander Name="AiAdvancedExpander" Header="Advanced: a different AI for one feature" HorizontalAlignment="Stretch">
-                                        <StackPanel Spacing="8" Margin="0,8,0,0">
-                                            <TextBlock Classes="Hint" Text="Tick a feature to give it its own AI company and model. Unticked features use the AI company above."/>
-                                            <StackPanel Name="AiOverridesPanel" Spacing="6"/>
+                                    <!-- SETZOOMONE_01 — one "Zoom strength" slider; the rest of the camera is tuned. -->
+                                    <Expander Header="AI Smart Zoom camera" HorizontalAlignment="Stretch"
+                                              ToolTip.Tip="How close AI SMART ZOOM follows the action in the Speed Editor.">
+                                        <StackPanel Spacing="4" Margin="0,8,0,0" ToolTip.Tip="How close the camera moves in. Bigger number = closer.&#x0a;When the action moves fast, the camera backs off a little by itself so nothing runs out of the picture.">
+                                            <Grid ColumnDefinitions="*, Auto">
+                                                <TextBlock Classes="Label" Text="Zoom strength"/>
+                                                <TextBlock Name="AiBaseZoomLabel" Grid.Column="1" Text="{Binding Vm.AiZoomBaseLabel}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"/>
+                                            </Grid>
+                                            <Slider Name="AiBaseZoomSlider" Minimum="1.5" Maximum="4.0" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5" Value="{Binding Vm.AiZoomBaseScale, Mode=TwoWay}" AutomationProperties.Name="Zoom strength"/>
+                                            <TextBlock Classes="Hint" Text="The camera follows the game you picked on the Editing tab."/>
                                         </StackPanel>
                                     </Expander>
                                 </StackPanel>
@@ -682,7 +496,7 @@
                                         <TextBlock Text="Free Video Studio" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                                         <TextBlock Name="AboutVersionText" Text="Version" FontSize="{DynamicResource AppFontSize13}" FontWeight="SemiBold" Foreground="{DynamicResource AppAccentBrush}"/>
                                         <TextBlock Text="Free Video Studio — Trim, speed-ramp, add music and export gameplay clips." Classes="Hint"/>
-                                        <TextBlock Text="Copyright © 2026 Alon Reich. All rights reserved." Classes="Hint"/>
+                                        <TextBlock Text="Copyright © 2026 Alon Reich. Licensed under the GNU GPL v3." Classes="Hint"/>
                                     </StackPanel>
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1"/>
                                     <StackPanel Spacing="6">
@@ -691,7 +505,7 @@
                                             <TextBlock Grid.Row="0" Text="Runtime:" Foreground="{DynamicResource AppTextMutedBrush}" FontWeight="SemiBold"/>
                                             <TextBlock Name="AboutPlatformText" Grid.Row="0" Grid.Column="1" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap"/>
                                             <TextBlock Grid.Row="1" Text="Video chip:" Foreground="{DynamicResource AppTextMutedBrush}" FontWeight="SemiBold"/>
-                                            <TextBlock Name="AboutGpuText" Grid.Row="1" Grid.Column="1" Text="Detecting…" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap"/>
+                                            <TextBlock Name="AboutGpuText" Grid.Row="1" Grid.Column="1" Text="{Binding Vm.EncoderSummary}" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap"/>
                                             <TextBlock Grid.Row="2" Text="App data folder:" Foreground="{DynamicResource AppTextMutedBrush}" FontWeight="SemiBold"/>
                                             <TextBlock Name="AboutStorageText" Grid.Row="2" Grid.Column="1" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap"/>
                                         </Grid>
@@ -699,7 +513,7 @@
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1"/>
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="Updates" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                        <TextBlock Classes="Hint" Text="Update preferences (automatic checks, downloads, Stable or Beta) are on the General tab."/>
+                                        <TextBlock Classes="Hint" Text="How the app updates itself is set on the General tab."/>
                                         <WrapPanel Orientation="Horizontal">
                                             <Button Name="CheckUpdatesNowBtn" Classes="Primary" Content="Check for updates now" Cursor="Hand" Margin="0,0,12,6"
                                                     ToolTip.Tip="Asks GitHub right now whether a newer version of Free Video Studio exists."/>
@@ -723,7 +537,7 @@
                     </TabControl>
 
                     <!-- SETSEARCH_01 — results float over the tabs while the search box has text. -->
-                    <Border Name="SearchResultsBorder" IsVisible="False" VerticalAlignment="Top" HorizontalAlignment="Left" MaxWidth="680" MinWidth="420"
+                    <Border Name="SearchResultsBorder" IsVisible="False" VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="680" MinWidth="420"
                             Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppAccentBrush}" BorderThickness="1" CornerRadius="6" Padding="4" ZIndex="10">
                         <ListBox Name="SearchResultsList" MaxHeight="300" Background="Transparent" AutomationProperties.Name="Search results"/>
                     </Border>
@@ -737,7 +551,7 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
                         <!-- ISSUE_08 (audit round 4): CANCEL is Secondary suite-wide (red = destructive data loss only) -->
                         <Button Name="CancelBtn" Classes="Secondary" Content="CANCEL" MinWidth="90" Click="OnCancelClicked" ToolTip.Tip="Close without saving (Esc)"/>
-                        <Button Name="SaveBtn" Classes="Success" Content="SAVE" MinWidth="90" Click="OnSaveClicked" ToolTip.Tip="Save your changes and close (Enter)"/>
+                        <Button Name="SaveBtn" Classes="Success" Content="SAVE" MinWidth="90" Click="OnSaveClicked" ToolTip.Tip="Save your changes and close (Ctrl+Enter, or Enter when you are not typing in a box)"/>
                     </StackPanel>
                 </Grid>
             </Grid>

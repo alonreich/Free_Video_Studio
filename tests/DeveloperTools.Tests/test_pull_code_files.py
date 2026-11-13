@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import io
 import math
+import os
 import shutil
 from pathlib import Path
 import tempfile
@@ -22,23 +23,28 @@ sys.modules[spec.name] = exporter
 spec.loader.exec_module(exporter)
 
 
+SUITE = REPO / 'logs' / 'Python_Results'
+WORK = SUITE / 'work'
+
+
 def setUpModule():
-    # TESTCLEAN_01: exactly this suite's generated tree, never source or user exports.
-    base = REPO / 'artifacts' / 'code-export-tests'
-    if base.resolve() != REPO.resolve() / 'artifacts' / 'code-export-tests':
+    # TESTOUT_01 / TESTCLEAN_01: this suite writes only to logs/Python_Results. Run on its own it replaces
+    # the whole folder; under the gate (FVS_TEST_OUTPUT_MANAGED=1) the gate emptied it and is writing
+    # console.log there, so only work/ is replaced. Never source or user exports.
+    target = WORK if os.environ.get('FVS_TEST_OUTPUT_MANAGED') == '1' else SUITE
+    if target.resolve() != REPO.resolve() / 'logs' / target.relative_to(REPO / 'logs'):
         raise RuntimeError('Refusing redirected test output')
-    for parent in (base, base.parent):
+    for parent in (WORK, SUITE, SUITE.parent):
         if parent.exists() and exporter.is_link(parent):
             raise RuntimeError('Refusing linked test output')
-    if base.exists():
-        shutil.rmtree(base)
+    if target.exists():
+        shutil.rmtree(target)
 
 
 class ExportTests(unittest.TestCase):
     def setUp(self):
-        base = REPO / 'artifacts' / 'code-export-tests'
-        base.mkdir(parents=True, exist_ok=True)
-        self.work = Path(tempfile.mkdtemp(prefix='case_', dir=base))
+        WORK.mkdir(parents=True, exist_ok=True)
+        self.work = Path(tempfile.mkdtemp(prefix='case_', dir=WORK))
         self.root = self.work / 'repo'
         self.root.mkdir()
         self.out = self.work / 'exports'

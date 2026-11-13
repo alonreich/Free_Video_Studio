@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,8 +27,6 @@ public partial class MainWindow
 
     /// <summary>AIELIM_03 — the speed editor while it is open, so late scan results still reach it.</summary>
     private GranularSpeedEditorWindow? _openGranularEditor;
-
-    public IReadOnlyList<double> AiEliminationTimestamps => _aiEliminationTimestamps;
 
     public void SetAiEliminations(IEnumerable<double>? timestamps)
     {
@@ -73,7 +71,7 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 RuntimeLog.Info("AIElimination", "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
-                SetAiEliminationStatus("AI kill scan: no AI key (Settings › AI Features)", true, videoPath);
+                SetAiEliminationStatus("AI kill scan: no AI key (Settings › AI)", true, videoPath);
                 return;
             }
 
@@ -87,9 +85,20 @@ public partial class MainWindow
                 return;
             }
             string model = settings.GetEffectiveModel(AiUsage.EliminationTracker);
+            string vendorName = AiVisionProviders.DisplayName(config.Vendor);
+            var est = AiCostEstimator.EstimateKillTracker(config.Vendor, model, AiEliminationTrackerService.MomentBudget(durationSec));
+            string currentStep = $"Starting {vendorName} ({model})…";
+            var startedUtc = DateTime.UtcNow;
 
             _isAiEliminationScanning = true;
-            SetAiEliminationStatus("AI: scanning for kills…", false, videoPath);
+            SetAiEliminationStatus($"AI ({vendorName} {model}): scanning… ({AiCostEstimator.FormatPreRunBanner(est, config.Vendor, model)})", false, videoPath);
+            using var elapsedTimer = new System.Threading.Timer(_ =>
+            {
+                if (cts.IsCancellationRequested || !_isAiEliminationScanning) return;
+                int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
+                SetAiEliminationStatus($"AI: {currentStep} ({secs}s)", false, videoPath);
+            }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
             using var usage = AiUsageMeter.BeginTask("AI Kill Tracker", config.Vendor);
             var result = await Task.Run(() => AiEliminationTrackerService.ScanAsync(
                 ffmpegPath,
@@ -100,14 +109,20 @@ public partial class MainWindow
                 model,
                 status =>
                 {
+                    currentStep = status;
                     RuntimeLog.Info("AIElimination", status);
-                    if (!cts.IsCancellationRequested) SetAiEliminationStatus("AI: " + status, false, videoPath);
+                    if (!cts.IsCancellationRequested)
+                    {
+                        int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
+                        SetAiEliminationStatus(secs >= 1 ? $"AI: {status} ({secs}s)" : "AI: " + status, false, videoPath);
+                    }
                 },
                 cts.Token), cts.Token).ConfigureAwait(false);
 
             _isAiEliminationScanning = false;
-            string usageNote = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
-            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary}{usageNote} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
+            string usageSummary = usage.Tally.TotalTokens > 0 ? $" · {usage.SummaryWithEstimate(est)}" : "";
+            string usageChipNote = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
+            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary}{usageSummary} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
             Dispatcher.UIThread.Post(() =>
             {
                 if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
@@ -118,17 +133,17 @@ public partial class MainWindow
                     _aiEliminationTimestamps.Add(m.TimestampSec);
                     _aiEliminationMarkers.Add(m);
                 }
-                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary + usageNote;
+                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary + usageChipNote;
                 _aiEliminationStatusIsError = result.Failed;
                 QueueTimelineRedrawPass(DispatcherPriority.Background);
 
                 _openGranularEditor?.SetAiEliminations(_aiEliminationTimestamps);
                 if (result.Failed)
-                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary);
+                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary + usageSummary);
                 else if (result.Markers.Count > 0)
-                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.");
+                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.{usageSummary}");
                 else
-                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary);
+                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary + usageSummary);
             });
         }
         catch (OperationCanceledException)
@@ -138,8 +153,10 @@ public partial class MainWindow
         catch (Exception ex)
         {
             _isAiEliminationScanning = false;
-            RuntimeLog.Swallowed(ex);
-            SetAiEliminationStatus("AI kill scan failed.", true, videoPath);
+            string reason = ex is AiProviderException pe ? pe.Message : "something unexpected stopped it. Try reopening the video.";
+            string reference = AiUsageMeter.LastTaskId;
+            RuntimeLog.Fail("AIElimination", $"Kill scan failed (reference {reference}): {ex.GetType().Name}: {ex.Message}");
+            SetAiEliminationStatus($"AI kill scan failed: {reason} (Reference: {reference})", true, videoPath);
         }
     }
 

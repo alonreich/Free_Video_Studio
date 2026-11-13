@@ -93,14 +93,14 @@
                         <!-- Title Row -->
                         <Grid Name="ViralTitleRow" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
                             <TextBlock Text="TITLE:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox Name="ViralTitleTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBox Name="ViralTitleTextBox" Grid.Column="1" IsReadOnly="False" Watermark="Post title (editable before copying)" ToolTip.Tip="Edit title if needed, then click Copy." FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <Button Name="CopyViralTitleBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY TITLE" ToolTip.Tip="Copy viral title to clipboard." Click="OnCopyViralTitleClicked"/>
                         </Grid>
 
                         <!-- Caption & Tags Row -->
                         <Grid Name="ViralCaptionRow" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
                             <TextBlock Text="CAPTION &amp; TAGS:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox Name="ViralDescriptionTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxHeight="60" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBox Name="ViralDescriptionTextBox" Grid.Column="1" IsReadOnly="False" Watermark="Post caption and hashtags (editable before copying)" ToolTip.Tip="Edit caption or hashtags if needed, then click Copy." FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="84" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <Button Name="CopyViralDescBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY CAPTION" ToolTip.Tip="Copy caption and hashtags to clipboard." Click="OnCopyViralDescriptionClicked"/>
                         </Grid>
 

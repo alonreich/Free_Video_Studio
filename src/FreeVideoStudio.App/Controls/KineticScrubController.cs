@@ -39,9 +39,6 @@ public sealed class KineticScrubController : IDisposable
     /// <summary>Fired when the fling has fully settled.</summary>
     public event Action? FlingSettled;
 
-    /// <summary>Whether a fling animation is currently active.</summary>
-    public bool IsFlinging => _isFlinging;
-
     public KineticScrubController()
     {
         _timer = new DispatcherTimer { Interval = TickInterval };

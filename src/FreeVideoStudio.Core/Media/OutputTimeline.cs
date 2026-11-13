@@ -637,7 +637,16 @@ public sealed class OutputTimeline
     /// The accumulation below walks every preceding chunk at its own speed, which is the only
     /// thing that stays correct when a 2x segment sits between the clip start and the meme.
     /// </summary>
-    public List<(string Id, double StartOutputSec, double EndOutputSec)> InsertionOutputRanges()
+    public List<(string Id, double StartOutputSec, double EndOutputSec)> InsertionOutputRanges() => Ranges(ch => ch.IsInsertion && ch.InsertionId != null, ch => ch.InsertionId!);
+
+    /// <summary>
+    /// FREEZESFX_01 — where each freeze (held frame) plays in the finished body, in output seconds.
+    /// The export dips the music across these windows under the freeze's slow-motion sound.
+    /// </summary>
+    public List<(double StartOutputSec, double EndOutputSec)> FreezeOutputRanges() =>
+        Ranges(ch => ch.IsFreeze, _ => "").Select(r => (r.StartOutputSec, r.EndOutputSec)).ToList();
+
+    private List<(string Id, double StartOutputSec, double EndOutputSec)> Ranges(Func<Chunk, bool> pick, Func<Chunk, string> id)
     {
         var ranges = new List<(string, double, double)>();
         double acc = 0;
@@ -647,9 +656,9 @@ public sealed class OutputTimeline
             if (ch.IsCut) continue;
 
             double outLen = ch.OutputLengthSec;
-            if (ch.IsInsertion && ch.InsertionId != null)
+            if (pick(ch))
             {
-                ranges.Add((ch.InsertionId, acc, acc + outLen));
+                ranges.Add((id(ch), acc, acc + outLen));
             }
             acc += outLen;
         }

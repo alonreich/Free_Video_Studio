@@ -72,6 +72,8 @@ public enum AiHudOutcome
     NetworkError,
     ModelError,
     MalformedResponse,
+    /// <summary>AIHUDERRORS_01 — key rejected, no permission, model gone or quota used up: only the user can fix it.</summary>
+    AccountProblem,
 }
 
 /// <summary>
@@ -80,6 +82,9 @@ public enum AiHudOutcome
 /// </summary>
 public sealed record AiHudDetectionResult(AiHudOutcome Outcome, IReadOnlyList<AiHudCandidate> Candidates, string? Detail)
 {
+    /// <summary>AIHUDERRORS_01 — the provider's plain-English sentence for the user (no credential), or null.</summary>
+    public string? UserMessage { get; init; }
+
     public static AiHudDetectionResult Failed(AiHudOutcome outcome, string? detail)
         => new(outcome, Array.Empty<AiHudCandidate>(), detail);
 }

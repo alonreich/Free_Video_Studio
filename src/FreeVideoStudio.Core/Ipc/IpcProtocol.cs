@@ -355,7 +355,6 @@ public static class IpcProtocol
             }, stream);
 
             await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-            // PIPEAUTH_01 — never send state to a server that does not run as this user.
             if (!PipeAccess.IsServerTrusted(client))
             {
                 CoreLogger.Fail("IpcClient", $"{request} refused: the state pipe is served by a different user account.");
@@ -388,12 +387,6 @@ public static class IpcProtocol
         {
             client?.Dispose();
         }
-    }
-
-    public static void WriteJsonFrame(Stream stream, IpcOpcode opcode, JsonObject? obj)
-    {
-        byte[] payload = ToUtf8Bytes(obj);
-        WriteFrame(stream, opcode, payload);
     }
 
     public static async ValueTask WriteJsonFrameAsync(Stream stream, IpcOpcode opcode, JsonObject? obj, CancellationToken ct = default)

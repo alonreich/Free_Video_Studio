@@ -1,9 +1,16 @@
 ﻿using System.Collections.Generic;
+using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
 public partial class MusicWizardWindow
 {
+    /// <summary>
+    /// Full composite merger timeline (including speed ramps, freezes, cuts, and kept windows)
+    /// when opened from the Video Merger with an intact timeline. Null falls back to flat clip windows.
+    /// </summary>
+    public CompositeTimeline? MergerComposite { get; set; }
+
     /// <summary>
     /// SCRAPER_02 — the kept window (SOURCE seconds) of every merger clip, index-aligned with the
     /// queue, taken from the merger's MergedTimeline. With the Thumbnail Scraper on, removed intros
